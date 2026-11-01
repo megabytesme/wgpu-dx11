@@ -247,6 +247,10 @@ extern crate wgpu_types as wgt;
 #[macro_use]
 extern crate std;
 
+/// Experimental DX11 adapter diagnostics; rendering is not implemented.
+#[cfg(all(windows, feature = "dx11"))]
+pub mod dx11;
+
 /// DirectX12 API internals.
 #[cfg(dx12)]
 pub mod dx12;

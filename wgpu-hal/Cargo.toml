@@ -135,7 +135,13 @@ gles = [
     "windows/Win32_UI_WindowsAndMessaging",
 ]
 ## Experimental DX11 adapter diagnostics; no wgpu rendering backend is available yet.
-dx11 = []
+dx11 = [
+    "windows/Win32_Foundation",
+    "windows/Win32_Graphics_Direct3D",
+    "windows/Win32_Graphics_Direct3D11",
+    "windows/Win32_Graphics_Dxgi",
+    "windows/Win32_Graphics_Dxgi_Common",
+]
 
 ## Enables the DX12 backend when targeting Windows.
 dx12 = [
