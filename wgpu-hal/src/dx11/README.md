@@ -12,7 +12,9 @@ is the native D3D feature-level value, not a claim of WebGPU compatibility.
 Device-creation failures are reported per adapter as HRESULTs. It also tries
 an explicitly requested feature level 9_1 on each hardware adapter. The native
 adapter/device handles are owned and the immediate context is mutex-protected;
-these are experimental building blocks and are not wgpu HAL types.
+these are experimental building blocks and are not wgpu HAL types. Internal
+copy-only buffers support checked byte writes and blocking staging readback;
+they are initially uninitialized and do not implement WebGPU buffer semantics.
 
 This is diagnostic scaffolding only. There is no `wgpu-hal` DX11 `Api`, no
 wgpu DX11 adapter, surface, shader implementation, command submission, or

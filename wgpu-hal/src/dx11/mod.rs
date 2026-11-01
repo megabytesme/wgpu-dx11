@@ -2,6 +2,7 @@
 //!
 //! This module probes native hardware but is not a wgpu HAL implementation.
 //! In particular, a D3D feature level alone does not establish WebGPU support.
+mod buffer;
 mod device;
 
 pub use device::{
