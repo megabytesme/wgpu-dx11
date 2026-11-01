@@ -80,6 +80,11 @@ impl Instance {
             display: instance_desc.display.take(),
         };
 
+        #[cfg(all(windows, feature = "dx11"))]
+        if instance_desc.backends.contains(Backends::DX11) {
+            log::warn!("DX11 is experimental and has no usable wgpu backend yet");
+        }
+
         #[cfg(all(vulkan, not(target_os = "netbsd")))]
         this.try_add_hal(hal::api::Vulkan, &instance_desc, telemetry);
         #[cfg(metal)]
@@ -1488,5 +1493,18 @@ mod tests {
             &wgt::Limits::defaults(),
             &compliant_downlevel()
         ));
+    }
+}
+
+#[cfg(all(test, windows, feature = "dx11"))]
+mod dx11_scaffold_tests {
+    use super::{Backends, Instance};
+
+    #[test]
+    fn requesting_dx11_does_not_expose_a_stub_adapter() {
+        let mut desc = wgt::InstanceDescriptor::new_without_display_handle();
+        desc.backends = Backends::DX11;
+        let instance = Instance::new("dx11 unavailable test", desc, None);
+        assert!(instance.enumerate_adapters(Backends::DX11, false).is_empty());
     }
 }

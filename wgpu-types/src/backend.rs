@@ -49,6 +49,8 @@ pub enum Backend {
     Gl = 4,
     /// WebGPU in the browser
     BrowserWebGpu = 5,
+    /// Experimental Direct3D 11 identity. The backend is not implemented yet.
+    Dx11 = 6,
 }
 
 impl Backend {
@@ -60,6 +62,7 @@ impl Backend {
         Self::Dx12,
         Self::Gl,
         Self::BrowserWebGpu,
+        Self::Dx11,
     ];
 
     /// Returns the string name of the backend.
@@ -70,6 +73,7 @@ impl Backend {
             Backend::Vulkan => "vulkan",
             Backend::Metal => "metal",
             Backend::Dx12 => "dx12",
+            Backend::Dx11 => "dx11",
             Backend::Gl => "gl",
             Backend::BrowserWebGpu => "webgpu",
         }
@@ -108,6 +112,10 @@ bitflags::bitflags! {
         /// [`Backend::Dx12`].
         /// Supported on Windows 10 and later
         const DX12 = 1 << Backend::Dx12 as u32;
+
+        /// Experimental Direct3D 11 backend identity. This fork does not yet
+        /// expose a usable wgpu adapter or rendering implementation.
+        const DX11 = 1 << Backend::Dx11 as u32;
 
         /// [`Backend::BrowserWebGpu`].
         /// Supported when targeting the web through WebAssembly with the `webgpu` feature enabled.
@@ -176,6 +184,7 @@ impl Backends {
     /// Names:
     /// - vulkan = "vulkan" or "vk"
     /// - dx12   = "dx12" or "d3d12"
+    /// - dx11   = "dx11" or "d3d11" (experimental; no usable adapter yet)
     /// - metal  = "metal" or "mtl"
     /// - gles   = "opengl" or "gles" or "gl"
     /// - webgpu = "webgpu"
@@ -185,6 +194,7 @@ impl Backends {
             backends |= match backend.trim() {
                 "vulkan" | "vk" => Self::VULKAN,
                 "dx12" | "d3d12" => Self::DX12,
+                "dx11" | "d3d11" => Self::DX11,
                 "metal" | "mtl" => Self::METAL,
                 "opengl" | "gles" | "gl" => Self::GL,
                 "webgpu" => Self::BROWSER_WEBGPU,
@@ -1016,5 +1026,19 @@ impl GlFenceBehavior {
         } else {
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod dx11_tests {
+    use super::{Backend, Backends};
+
+    #[test]
+    fn dx11_selection_is_distinct_and_parses_both_names() {
+        assert_eq!(Backend::Dx11.to_str(), "dx11");
+        assert_eq!(Backends::from(Backend::Dx11), Backends::DX11);
+        assert_eq!(Backends::from_comma_list(" DX11, d3d11 "), Backends::DX11);
+        assert!(!Backends::DX11.intersects(Backends::DX12 | Backends::GL));
+        assert!(Backend::ALL.contains(&Backend::Dx11));
     }
 }

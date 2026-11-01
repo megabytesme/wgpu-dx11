@@ -2559,6 +2559,7 @@ impl Device {
                 return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend)
             }
             wgt::Backend::BrowserWebGpu => unreachable!(),
+            wgt::Backend::Dx11 => unreachable!("DX11 has no wgpu HAL implementation yet"),
         };
 
         let hal_desc = hal::ShaderModuleDescriptor {

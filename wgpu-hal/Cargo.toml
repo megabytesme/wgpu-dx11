@@ -134,6 +134,9 @@ gles = [
     "windows/Win32_System_LibraryLoader",
     "windows/Win32_UI_WindowsAndMessaging",
 ]
+## Experimental DX11 adapter diagnostics; no wgpu rendering backend is available yet.
+dx11 = []
+
 ## Enables the DX12 backend when targeting Windows.
 dx12 = [
     "dep:arrayvec",
