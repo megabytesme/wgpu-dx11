@@ -136,6 +136,7 @@ gles = [
 ]
 ## Experimental DX11 adapter diagnostics; no wgpu rendering backend is available yet.
 dx11 = [
+    "dep:parking_lot",
     "windows/Win32_Foundation",
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D11",
