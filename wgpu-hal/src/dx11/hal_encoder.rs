@@ -1298,32 +1298,42 @@ mod textured_tests {
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(false, false, false, false, false, None)
+        sampled_triangle(false, false, false, false, false, 0, None)
     }
 
     #[test]
     fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, false, false, false, false, None)
+        sampled_triangle(true, false, false, false, false, 0, None)
     }
 
     #[test]
     fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, false, false, None)
+        sampled_triangle(true, true, false, false, false, 0, None)
     }
 
     #[test]
     fn hal_encoder_blends_translucent_ui_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, true, true, false, false, None)
+        sampled_triangle(true, true, true, false, false, 0, None)
     }
 
     #[test]
     fn hal_encoder_samples_two_textures_with_hud_layout() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, true, false, None)
+        sampled_triangle(true, true, false, true, false, 0, None)
     }
 
     #[test]
     fn hal_encoder_inverts_crosshair_against_destination() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, true, true, None)
+        sampled_triangle(true, true, false, true, true, 0, None)
+    }
+
+    #[test]
+    fn hal_encoder_adds_hud_highlight() -> windows::core::Result<()> {
+        sampled_triangle(true, true, false, true, false, 1, None)
+    }
+
+    #[test]
+    fn hal_encoder_applies_hud_vignette() -> windows::core::Result<()> {
+        sampled_triangle(true, true, false, true, false, 2, None)
     }
 
     #[test]
@@ -1331,7 +1341,7 @@ mod textured_tests {
     fn real_horizon_hud_gpu_readback() -> windows::core::Result<()> {
         let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
         let source = std::fs::read_to_string(path).expect("read Horizon HUD shader");
-        sampled_triangle(true, true, true, true, false, Some(&source))
+        sampled_triangle(true, true, true, true, false, 0, Some(&source))
     }
 
     #[test]
@@ -1339,7 +1349,7 @@ mod textured_tests {
     fn real_horizon_crosshair_gpu_readback() -> windows::core::Result<()> {
         let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
         let source = std::fs::read_to_string(path).expect("read Horizon HUD shader");
-        sampled_triangle(true, true, false, true, true, Some(&source))
+        sampled_triangle(true, true, false, true, true, 0, Some(&source))
     }
 
     fn sampled_triangle(
@@ -1348,6 +1358,7 @@ mod textured_tests {
         alpha: bool,
         two: bool,
         invert: bool,
+        effect: u8,
         horizon_shader: Option<&str>,
     ) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
@@ -1540,6 +1551,10 @@ mod textured_tests {
             target_state.blend = Some(wgt::BlendState::ALPHA_BLENDING);
         } else if invert {
             target_state.blend = Some(super::super::hal_pipeline::CROSSHAIR_BLEND);
+        } else if effect == 1 {
+            target_state.blend = Some(super::super::hal_pipeline::ADDITIVE_BLEND);
+        } else if effect == 2 {
+            target_state.blend = Some(super::super::hal_pipeline::VIGNETTE_BLEND);
         }
         let targets = [Some(target_state)];
         let desc = crate::RenderPipelineDescriptor {
@@ -1636,7 +1651,12 @@ mod textured_tests {
                 .unwrap()
         };
         let second_texture = unsafe { device.create_texture(&texture_desc).unwrap() };
-        let second_texels: alloc::vec::Vec<u8> = [0u8, 255, 0, 255].repeat(16);
+        let second_texels: alloc::vec::Vec<u8> = if effect == 2 {
+            [0u8, 255, 255, 255]
+        } else {
+            [0u8, 255, 0, 255]
+        }
+        .repeat(16);
         native.write_rgba_texture(&second_texture, 0, 0, &second_texels)?;
         let second_view = unsafe {
             device
@@ -1893,7 +1913,11 @@ mod textured_tests {
             clear_value: wgt::Color {
                 r: 0.,
                 g: 0.,
-                b: if alpha || invert { 1. } else { 0. },
+                b: if alpha || invert || effect != 0 {
+                    1.
+                } else {
+                    0.
+                },
                 a: 1.,
             },
         })];
@@ -1978,6 +2002,10 @@ mod textured_tests {
             assert_eq!(actual[0], 0);
             assert!((127..=128).contains(&actual[1]) && (127..=128).contains(&actual[2]));
             assert_eq!(actual[3], 255);
+        } else if effect == 1 {
+            assert_eq!(actual, &[0, 255, 255, 255]);
+        } else if effect == 2 {
+            assert_eq!(actual, &[0, 0, 0, 255]);
         } else if invert {
             assert_eq!(
                 actual,

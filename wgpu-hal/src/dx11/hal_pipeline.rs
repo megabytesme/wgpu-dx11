@@ -33,6 +33,32 @@ pub(super) const CROSSHAIR_BLEND: wgt::BlendState = wgt::BlendState {
     },
 };
 
+pub(super) const ADDITIVE_BLEND: wgt::BlendState = wgt::BlendState {
+    color: wgt::BlendComponent {
+        src_factor: wgt::BlendFactor::One,
+        dst_factor: wgt::BlendFactor::One,
+        operation: wgt::BlendOperation::Add,
+    },
+    alpha: wgt::BlendComponent {
+        src_factor: wgt::BlendFactor::One,
+        dst_factor: wgt::BlendFactor::One,
+        operation: wgt::BlendOperation::Add,
+    },
+};
+
+pub(super) const VIGNETTE_BLEND: wgt::BlendState = wgt::BlendState {
+    color: wgt::BlendComponent {
+        src_factor: wgt::BlendFactor::Zero,
+        dst_factor: wgt::BlendFactor::OneMinusSrc,
+        operation: wgt::BlendOperation::Add,
+    },
+    alpha: wgt::BlendComponent {
+        src_factor: wgt::BlendFactor::Zero,
+        dst_factor: wgt::BlendFactor::One,
+        operation: wgt::BlendOperation::Add,
+    },
+};
+
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct PipelineLayout {
@@ -542,6 +568,8 @@ impl RenderPipeline {
                 blend != wgt::BlendState::ALPHA_BLENDING
                     && blend != wgt::BlendState::REPLACE
                     && blend != CROSSHAIR_BLEND
+                    && blend != ADDITIVE_BLEND
+                    && blend != VIGNETTE_BLEND
             })
             || target.write_mask != wgt::ColorWrites::ALL
         {
@@ -720,6 +748,8 @@ impl RenderPipeline {
                 .map_err(failure)?;
             if target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
                 || target.blend == Some(CROSSHAIR_BLEND)
+                || target.blend == Some(ADDITIVE_BLEND)
+                || target.blend == Some(VIGNETTE_BLEND)
             {
                 let mut desc = D3D11_BLEND_DESC::default();
                 desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
@@ -736,6 +766,15 @@ impl RenderPipeline {
                     desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;
                     desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
                     desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+                } else if target.blend == Some(ADDITIVE_BLEND) {
+                    desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+                    desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+                    desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+                } else if target.blend == Some(VIGNETTE_BLEND) {
+                    desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
+                    desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
+                    desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+                    desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
                 }
                 owner
                     .raw_device()
