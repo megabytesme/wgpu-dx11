@@ -14,18 +14,21 @@ mod hal_queue;
 mod instance;
 mod shader;
 mod surface;
+mod swapchain;
 mod texture;
 
 pub use adapter::Adapter;
 pub use api::{Api, Unavailable};
+pub use device::{
+    AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice, enumerate_native_adapters,
+};
 pub use hal_device::Device;
 pub use hal_encoder::CommandEncoder;
 pub use hal_queue::Queue;
 pub use instance::Instance;
 pub use surface::Surface;
-pub use device::{
-    AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice, enumerate_native_adapters,
-};
+#[doc(hidden)]
+pub use swapchain::{CoreWindowFrame, CoreWindowSwapchain};
 
 use alloc::{string::String, vec::Vec};
 use windows::core::Result;

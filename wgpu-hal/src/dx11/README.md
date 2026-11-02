@@ -27,3 +27,9 @@ The registered DX11 HAL instance deliberately exposes no adapters. It retains
 validated UWP CoreWindow handles as agile COM references, but HAL surface
 configuration, devices, shader pipelines and rendering are unavailable. Native
 diagnostic primitives do not yet implement WebGPU semantics.
+
+An internal CoreWindow swapchain owns its device and window, enforces one
+outstanding backbuffer, and implements presentation and resize. A strict x64
+UWP diagnostic checks GPU readback before and after resize at forced 9_1 and
+11_0 on desktop hardware. This primitive is
+not yet connected to `Surface::configure`, wgpu texture views, or HAL fences.
