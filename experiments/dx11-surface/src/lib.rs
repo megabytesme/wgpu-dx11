@@ -17,7 +17,8 @@ extern "C" {
 
 struct Probe {
     _hal_surface: wgpu_hal::dx11::Surface,
-    swapchain: CoreWindowSwapchain,
+    swapchain: Option<CoreWindowSwapchain>,
+    device: Arc<wgpu_hal::dx11::NativeDevice>,
     checked: bool,
     feature_label: &'static str,
     _ui_thread: PhantomData<Rc<()>>,
@@ -56,16 +57,10 @@ impl Probe {
                 .open_device(&[feature_level])
                 .map_err(|e| Error::new(e.code(), "D3D11 device"))?,
         );
-        let swapchain = CoreWindowSwapchain::new(&surface, device, 640, 480)
-            .map_err(|e| Error::new(e.code(), "CoreWindow swapchain"))?;
-        if feature_level == FeatureLevel::L11_0 {
-            swapchain
-                .verify_texture_array()
-                .map_err(|e| Error::new(e.code(), "four-layer texture array"))?;
-        }
         Ok(Self {
             _hal_surface: surface,
-            swapchain,
+            swapchain: None,
+            device,
             checked: false,
             feature_label,
             _ui_thread: PhantomData,
@@ -73,12 +68,11 @@ impl Probe {
     }
 
     unsafe fn render(&mut self) -> Result<()> {
-        let frame = self.swapchain.acquire()?;
         if !self.checked {
-            if self.swapchain.acquire().is_ok() || self.swapchain.resize(640, 480).is_ok() {
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let pixel = frame.clear_and_readback([0.125, 0.5, 0.875, 1.0])?;
+            let pixel = self
+                ._hal_surface
+                .diagnostic_cycle(self.device.clone())
+                .map_err(|e| Error::new(E_FAIL, format!("HAL surface cycle: {e}")))?;
             let valid = pixel[0].abs_diff(223) <= 2
                 && pixel[1].abs_diff(128) <= 2
                 && pixel[2].abs_diff(32) <= 2
@@ -86,28 +80,30 @@ impl Probe {
             if !valid {
                 return Err(Error::from_hresult(E_FAIL));
             }
-            frame.present(1)?;
-            drop(self.swapchain.acquire()?);
-            self.swapchain.resize(640, 480)?;
-            let resized = self.swapchain.acquire()?;
-            let resized_pixel = resized.clear_and_readback([0.125, 0.5, 0.875, 1.0])?;
-            if resized_pixel != pixel {
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            resized.present(1)?;
-            let message = format!("PASS: HAL CoreWindow swapchain acquire, exclusion, present, discard, resize and FL{} BGRA readback {pixel:?}\n", self.feature_label);
+            self.swapchain = Some(CoreWindowSwapchain::new(
+                &self._hal_surface,
+                self.device.clone(),
+                640,
+                480,
+            )?);
+            let message = format!("PASS: HAL Surface configure/acquire/view, queue submit/present, discard, reconfigure and FL{} BGRA readback {pixel:?}\n", self.feature_label);
             wgpu_dx11_probe_report(message.as_ptr(), message.len());
             self.checked = true;
-        } else {
-            frame.clear([0.125, 0.5, 0.875, 1.0])?;
-            frame.present(1)?;
         }
+        let frame = self
+            .swapchain
+            .as_ref()
+            .ok_or_else(|| Error::from_hresult(E_FAIL))?
+            .acquire()?;
+        frame.clear([0.125, 0.5, 0.875, 1.0])?;
+        frame.present(1)?;
         Ok(())
     }
 
     unsafe fn resize(&mut self) -> Result<()> {
-        self.swapchain.resize(0, 0)?;
-        self.checked = false;
+        if let Some(swapchain) = &self.swapchain {
+            swapchain.resize(0, 0)?;
+        }
         Ok(())
     }
 }

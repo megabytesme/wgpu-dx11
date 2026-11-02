@@ -53,7 +53,10 @@ impl crate::Queue for Queue {
         surface_textures: &[&<Self::A as crate::Api>::SurfaceTexture],
         signal_fence: (&<Self::A as crate::Api>::Fence, crate::FenceValue),
     ) -> Result<(), crate::DeviceError> {
-        if !surface_textures.is_empty() {
+        if surface_textures
+            .iter()
+            .any(|texture| !texture.belongs_to(&self.device))
+        {
             return Err(crate::DeviceError::Unexpected);
         }
         self.device
@@ -63,10 +66,10 @@ impl crate::Queue for Queue {
 
     unsafe fn present(
         &self,
-        _surface: &<Self::A as crate::Api>::Surface,
+        surface: &<Self::A as crate::Api>::Surface,
         texture: <Self::A as crate::Api>::SurfaceTexture,
     ) -> Result<(), crate::SurfaceError> {
-        match texture {}
+        surface.present(&self.device, texture)
     }
 
     unsafe fn wait_for_idle(&self) -> Result<(), crate::DeviceError> {

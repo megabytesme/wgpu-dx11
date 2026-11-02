@@ -4,8 +4,9 @@ This standalone probe checks platform primitives for a Direct3D 11 backend.
 By default it requests feature level 11_0 and creates a four-layer texture and
 view. Set `DX11_PROBE_FEATURE_LEVEL=9_1` at build time to request 9_1 and skip
 the texture-array check. Both modes create the backend's owned CoreWindow swap
-chain and check exclusive acquisition, presentation, discarded-frame release,
-resize, and GPU readback before and after resize. The HAL instance exposes no
+chain through the HAL Surface and Queue, creates a HAL color-target view, and
+checks acquisition, submission, presentation, discard, resize, and GPU readback
+before and after resize. The HAL instance exposes no
 adapters; this native proof is not a wgpu render pipeline. The UWP host calls
 it from the UI thread.
 

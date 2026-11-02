@@ -117,6 +117,26 @@ impl CoreWindowSwapchain {
         })
     }
 
+    pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
+        Arc::ptr_eq(&self.inner.device, device)
+    }
+
+    pub(super) fn owns(&self, frame: &CoreWindowFrame) -> bool {
+        Arc::ptr_eq(&self.inner, &frame.inner)
+    }
+
+    pub(super) fn release_bindings(&self) -> Result<()> {
+        let state = self.inner.state.lock();
+        if state.acquired {
+            return Err(Error::from_hresult(DXGI_ERROR_INVALID_CALL));
+        }
+        let context = self.inner.device.immediate_context();
+        unsafe {
+            context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
+        }
+        Ok(())
+    }
+
     /// Resize after the acquired frame and all derived views have been released.
     pub fn resize(&self, width: u32, height: u32) -> Result<()> {
         if (width == 0) != (height == 0) {
@@ -142,19 +162,25 @@ impl CoreWindowSwapchain {
 }
 
 impl CoreWindowFrame {
+    pub(super) fn texture(&self) -> Option<&ID3D11Texture2D> {
+        self.texture.as_ref()
+    }
+
+    pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
+        Arc::ptr_eq(&self.inner.device, device)
+    }
+
     /// Present this frame and release its backbuffer reference.
-    pub fn present(mut self, sync_interval: u32) -> Result<()> {
-        // Release our backbuffer reference before unblocking resize/acquisition.
+    pub fn present(self, sync_interval: u32) -> Result<()> {
+        self.present_for_hal(sync_interval).map(|_| ())
+    }
+
+    pub(super) fn present_for_hal(mut self, sync_interval: u32) -> Result<bool> {
         self.texture.take();
         let mut state = self.inner.state.lock();
-        let result = unsafe {
-            self.inner
-                .swapchain
-                .Present(sync_interval, DXGI_PRESENT(0))
-                .ok()
-        };
+        let status = unsafe { self.inner.swapchain.Present(sync_interval, DXGI_PRESENT(0)) };
         state.acquired = false;
-        result
+        classify_present_status(status)
     }
 
     /// Clear the current backbuffer for the UWP diagnostic.
@@ -183,19 +209,15 @@ impl CoreWindowFrame {
     /// Clear this frame and read its first BGRA pixel for the UWP diagnostic.
     #[doc(hidden)]
     pub fn clear_and_readback(&self, color: [f32; 4]) -> Result<[u8; 4]> {
+        self.clear(color)?;
+        self.readback()
+    }
+
+    pub(super) fn readback(&self) -> Result<[u8; 4]> {
         let texture = self
             .texture
             .as_ref()
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
-        let mut view = None;
-        unsafe {
-            self.inner.device.raw_device().CreateRenderTargetView(
-                texture,
-                None,
-                Some(&mut view),
-            )?;
-        }
-        let view = view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe {
             texture.GetDesc(&mut desc);
@@ -214,7 +236,6 @@ impl CoreWindowFrame {
         let staging = staging.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let context = self.inner.device.immediate_context();
         unsafe {
-            context.ClearRenderTargetView(&view, &color);
             context.CopyResource(&staging, texture);
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
@@ -227,6 +248,25 @@ impl CoreWindowFrame {
             context.Unmap(&staging, 0);
             Ok(pixel)
         }
+    }
+}
+
+fn classify_present_status(status: windows::core::HRESULT) -> Result<bool> {
+    // DXGI_STATUS_OCCLUDED is a successful HRESULT (winerror.h).
+    const DXGI_STATUS_OCCLUDED: i32 = 0x087a0001;
+    status.ok()?;
+    Ok(status.0 != DXGI_STATUS_OCCLUDED)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn present_distinguishes_occlusion_from_success_and_failure() {
+        assert!(classify_present_status(windows::core::HRESULT(0)).unwrap());
+        assert!(!classify_present_status(windows::core::HRESULT(0x087a0001)).unwrap());
+        assert!(classify_present_status(E_FAIL).is_err());
     }
 }
 

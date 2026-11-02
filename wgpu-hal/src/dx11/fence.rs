@@ -183,7 +183,7 @@ impl NativeDevice {
         }
     }
 
-    fn validate_fence(&self, fence: &NativeFence) -> Result<()> {
+    pub(super) fn validate_fence(&self, fence: &NativeFence) -> Result<()> {
         if self.raw_device().as_raw() != fence.owner.as_raw() {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
