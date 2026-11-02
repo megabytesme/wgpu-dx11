@@ -123,6 +123,38 @@ impl NativeDevice {
         Ok(state.completed)
     }
 
+    /// Wait for an already-submitted value, or return `false` on timeout.
+    /// A `None` timeout waits until completion or a device error.
+    #[allow(dead_code)]
+    pub(crate) fn wait_native_fence(
+        &self,
+        fence: &NativeFence,
+        value: u64,
+        timeout: Option<core::time::Duration>,
+    ) -> Result<bool> {
+        self.validate_fence(fence)?;
+        if value > fence.state.lock().last_signaled {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let start = std::time::Instant::now();
+        loop {
+            if self.poll_native_fence(fence)? >= value {
+                return Ok(true);
+            }
+            if let Some(limit) = timeout {
+                let Some(remaining) = limit.checked_sub(start.elapsed()) else {
+                    return Ok(false);
+                };
+                if remaining.is_zero() {
+                    return Ok(false);
+                }
+                std::thread::sleep(remaining.min(core::time::Duration::from_millis(1)));
+            } else {
+                std::thread::sleep(core::time::Duration::from_millis(1));
+            }
+        }
+    }
+
     fn validate_fence(&self, fence: &NativeFence) -> Result<()> {
         if self.raw_device().as_raw() != fence.owner.as_raw() {
             return Err(Error::from_hresult(E_INVALIDARG));
@@ -137,7 +169,7 @@ mod tests {
     use super::*;
     use crate::dx11::{FeatureLevel, enumerate_native_adapters};
     use alloc::vec;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[test]
     fn event_fence_tracks_real_gpu_copy_completion() -> Result<()> {
@@ -162,6 +194,12 @@ mod tests {
         let dynamic: &dyn crate::DynFence = &fence;
         assert!(dynamic.as_any().is::<NativeFence>());
         assert_eq!(device.poll_native_fence(&fence)?, 0);
+        assert!(device.wait_native_fence(&fence, 0, Some(Duration::ZERO))?);
+        assert!(
+            device
+                .wait_native_fence(&fence, 1, Some(Duration::ZERO))
+                .is_err()
+        );
         assert!(
             device
                 .submit_copy_commands_signaled(&commands, &fence, 0)
@@ -175,18 +213,10 @@ mod tests {
                 .is_err()
         );
         device.submit_copy_commands_signaled(&commands, &fence, 2)?;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            let completed = device.poll_native_fence(&fence)?;
-            if completed >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "D3D11 completion query timed out"
-            );
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        // The event may already be complete; either zero-timeout result is valid.
+        let _ = device.wait_native_fence(&fence, 2, Some(Duration::ZERO))?;
+        assert!(device.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+        assert!(device.wait_native_fence(&fence, 1, Some(Duration::ZERO))?);
         assert_eq!(
             device.read_byte_buffer(&destination, 0, 16)?,
             vec![0x5a; 16]
