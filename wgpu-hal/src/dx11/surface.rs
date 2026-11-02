@@ -118,13 +118,14 @@ impl Surface {
     pub unsafe fn diagnostic_cycle(
         &self,
         native: Arc<NativeDevice>,
+        shader_input: crate::NagaShader,
     ) -> Result<[u8; 4], crate::SurfaceError> {
         use crate::{DynDevice, DynQueue, DynSurface};
         let device = super::Device::new(native.clone());
-        let queue = super::Queue::new(native.clone());
+        let native_queue = super::Queue::new(native.clone());
         let fence = native.create_native_fence();
         let surface: &dyn DynSurface = self;
-        let queue: &dyn DynQueue = &queue;
+        let queue: &dyn DynQueue = &native_queue;
         let mut config = crate::SurfaceConfiguration {
             maximum_frame_latency: 1,
             present_mode: wgt::PresentMode::Fifo,
@@ -189,29 +190,156 @@ impl Surface {
         let native_view = view
             .as_any()
             .downcast_ref::<super::texture::NativeTextureView>()
-            .and_then(|view| view.render_target())
             .ok_or(crate::SurfaceError::Other("missing HAL render-target view"))?;
-        unsafe {
-            native
-                .immediate_context()
-                .ClearRenderTargetView(native_view, &[0.125, 0.5, 0.875, 1.0]);
+        let frame = texture
+            .frame
+            .as_ref()
+            .ok_or(crate::SurfaceError::Other("missing frame"))?;
+        frame.clear([0., 0., 1., 1.]).map_err(surface_error)?;
+        let before = frame.readback().map_err(surface_error)?;
+        if before != [255, 0, 0, 255] {
+            return Err(crate::SurfaceError::Other("unexpected initial frame pixel"));
         }
-        unsafe {
-            DynDevice::destroy_texture_view(&device, view);
+        let shader = unsafe {
+            crate::Device::create_shader_module(
+                &device,
+                &crate::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                },
+                crate::ShaderInput::Naga(shader_input),
+            )
         }
-        let frame = first
-            .texture
-            .as_any()
-            .downcast_ref::<SurfaceTexture>()
-            .and_then(|texture| texture.frame.as_ref())
-            .ok_or(crate::SurfaceError::Other("unexpected surface texture"))?;
-        let pixel = frame.readback().map_err(surface_error)?;
+        .map_err(|_| crate::SurfaceError::Other("shader module failed"))?;
+        let layout = unsafe {
+            crate::Device::create_pipeline_layout(
+                &device,
+                &crate::PipelineLayoutDescriptor {
+                    label: None,
+                    flags: crate::PipelineLayoutFlags::empty(),
+                    bind_group_layouts: &[],
+                    immediate_size: 0,
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let attributes = [wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }];
+        let buffers = [Some(crate::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: &attributes,
+        })];
+        let constants = naga::back::PipelineConstants::default();
+        let stage = |entry_point| crate::ProgrammableStage {
+            module: &shader,
+            entry_point,
+            constants: &constants,
+            zero_initialize_workgroup_memory: false,
+        };
+        let targets = [Some(wgt::TextureFormat::Bgra8Unorm.into())];
+        let pipeline = unsafe {
+            crate::Device::create_render_pipeline(
+                &device,
+                &crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &buffers,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                },
+            )
+        }
+        .map_err(|_| crate::SurfaceError::Other("render pipeline failed"))?;
+        let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
+        let bytes: alloc::vec::Vec<u8> = vertices.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        let vertex = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &crate::BufferDescriptor {
+                    label: None,
+                    size: bytes.len() as u64,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        native
+            .write_byte_buffer(&vertex, 0, &bytes)
+            .map_err(surface_error)?;
+        let color = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: native_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color {
+                r: 0.,
+                g: 0.,
+                b: 0.,
+                a: 1.,
+            },
+        })];
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent: config.extent,
+            sample_count: 1,
+            color_attachments: &color,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let mut encoder = unsafe {
+            crate::Device::create_command_encoder(
+                &device,
+                &crate::CommandEncoderDescriptor {
+                    label: None,
+                    queue: &native_queue,
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None)
+                .map_err(crate::SurfaceError::Device)?;
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass)
+                .map_err(crate::SurfaceError::Device)?;
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&vertex, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder)
+                .map_err(crate::SurfaceError::Device)?
+        };
         unsafe {
             queue
-                .submit(&[], &[first.texture.as_ref()], (&fence, 1))
+                .submit(&[&commands], &[first.texture.as_ref()], (&fence, 1))
                 .map_err(crate::SurfaceError::Device)?;
+            queue.wait_for_idle().map_err(crate::SurfaceError::Device)?;
         }
+        let pixel = frame.readback().map_err(surface_error)?;
         unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+            DynDevice::destroy_texture_view(&device, view);
             queue.present(surface, first.texture)?;
             queue.wait_for_idle().map_err(crate::SurfaceError::Device)?;
         }
@@ -234,7 +362,7 @@ impl Surface {
                 "unexpected resized surface texture",
             ))?;
         let resized_pixel = frame
-            .clear_and_readback([0.125, 0.5, 0.875, 1.0])
+            .clear_and_readback([1.0, 0.0, 0.0, 1.0])
             .map_err(surface_error)?;
         if pixel != resized_pixel {
             return Err(crate::SurfaceError::Other(

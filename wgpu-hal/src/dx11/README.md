@@ -35,3 +35,8 @@ UWP diagnostic checks GPU readback before and after resize at forced 9_1 and
 11_0 on desktop hardware. The primitive backs a restricted HAL surface and
 queue path, including HAL texture views
 and fence ownership checks. Adapter enumeration remains empty.
+
+A restricted FL 9_1 render path records one unblended triangle-list pass with
+one Float32x2 vertex stream. A strict UWP diagnostic compiles resource-free WGSL,
+records it through the HAL encoder, submits it, checks a backbuffer pixel and
+presents. It does not provide general shaders, render passes, or WebGPU.

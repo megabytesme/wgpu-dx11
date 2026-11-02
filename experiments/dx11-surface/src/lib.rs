@@ -69,14 +69,23 @@ impl Probe {
 
     unsafe fn render(&mut self) -> Result<()> {
         if !self.checked {
+            let module = naga::front::wgsl::parse_str("@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }").map_err(|_| Error::from_hresult(E_FAIL))?;
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .map_err(|_| Error::from_hresult(E_FAIL))?;
+            let shader = wgpu_hal::NagaShader {
+                module: std::borrow::Cow::Owned(module),
+                info,
+                debug_source: None,
+            };
             let pixel = self
                 ._hal_surface
-                .diagnostic_cycle(self.device.clone())
+                .diagnostic_cycle(self.device.clone(), shader)
                 .map_err(|e| Error::new(E_FAIL, format!("HAL surface cycle: {e}")))?;
-            let valid = pixel[0].abs_diff(223) <= 2
-                && pixel[1].abs_diff(128) <= 2
-                && pixel[2].abs_diff(32) <= 2
-                && pixel[3] == 255;
+            let valid = pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 255 && pixel[3] == 255;
             if !valid {
                 return Err(Error::from_hresult(E_FAIL));
             }
@@ -86,7 +95,7 @@ impl Probe {
                 640,
                 480,
             )?);
-            let message = format!("PASS: HAL Surface configure/acquire/view, queue submit/present, discard, reconfigure and FL{} BGRA readback {pixel:?}\n", self.feature_label);
+            let message = format!("PASS: HAL WGSL triangle via Surface/encoder/queue/present, discard, reconfigure and FL{} BGRA readback {pixel:?}\n", self.feature_label);
             wgpu_dx11_probe_report(message.as_ptr(), message.len());
             self.checked = true;
         }
