@@ -5,6 +5,7 @@
 mod buffer;
 mod device;
 mod shader;
+mod texture;
 
 pub use device::{
     AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice, enumerate_native_adapters,
