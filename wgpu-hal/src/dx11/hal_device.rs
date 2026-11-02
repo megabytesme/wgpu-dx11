@@ -255,11 +255,20 @@ impl crate::Device for Device {
         desc: &ShaderModuleDescriptor,
         shader: ShaderInput,
     ) -> Result<<Self::A as Api>::ShaderModule, ShaderError> {
-        Err(DeviceError::Unexpected.into())
+        match shader {
+            ShaderInput::Naga(shader) => Ok(super::hal_shader::ShaderModule::new(
+                self.native.clone(),
+                shader,
+                desc.runtime_checks,
+            )),
+            _ => Err(ShaderError::Compilation(
+                "D3D11 HAL accepts only Naga shaders".into(),
+            )),
+        }
     }
 
     unsafe fn destroy_shader_module(&self, module: <Self::A as Api>::ShaderModule) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(module)
     }
 
     unsafe fn create_render_pipeline(

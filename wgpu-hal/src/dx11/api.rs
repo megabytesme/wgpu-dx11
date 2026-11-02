@@ -60,7 +60,7 @@ impl crate::Api for Api {
     type BindGroupLayout = Unavailable;
     type BindGroup = Unavailable;
     type PipelineLayout = Unavailable;
-    type ShaderModule = Unavailable;
+    type ShaderModule = super::hal_shader::ShaderModule;
     type RenderPipeline = Unavailable;
     type ComputePipeline = Unavailable;
     type RayTracingPipeline = Unavailable;

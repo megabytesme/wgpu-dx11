@@ -11,6 +11,7 @@ mod fence;
 mod hal_device;
 mod hal_encoder;
 mod hal_queue;
+mod hal_shader;
 mod instance;
 mod shader;
 mod surface;
@@ -20,7 +21,7 @@ mod texture;
 pub use adapter::Adapter;
 pub use api::{Api, Unavailable};
 pub use device::{
-    AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice, enumerate_native_adapters,
+    enumerate_native_adapters, AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice,
 };
 pub use hal_device::Device;
 pub use hal_encoder::CommandEncoder;
