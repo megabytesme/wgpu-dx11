@@ -11,9 +11,9 @@ use windows::{
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::Direct3D11::{
-            ID3D11Buffer, ID3D11Device, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC,
-            D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_USAGE_DEFAULT,
-            D3D11_USAGE_STAGING,
+            ID3D11Buffer, ID3D11Device, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
+            D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
+            D3D11_MAP_READ, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
         },
     },
 };
@@ -147,11 +147,15 @@ impl NativeDevice {
         let desc = D3D11_BUFFER_DESC {
             ByteWidth: size,
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: if usage.contains(wgt::BufferUses::VERTEX) {
+            BindFlags: (if usage.contains(wgt::BufferUses::VERTEX) {
                 D3D11_BIND_VERTEX_BUFFER.0 as u32
             } else {
                 0
-            },
+            }) | (if usage.contains(wgt::BufferUses::INDEX) {
+                D3D11_BIND_INDEX_BUFFER.0 as u32
+            } else {
+                0
+            }),
             ..Default::default()
         };
         let mut raw = None;
@@ -326,6 +330,40 @@ impl NativeDevice {
         if !buffer.usage.contains(wgt::BufferUses::VERTEX)
             || !offset.is_multiple_of(4)
             || length == 0
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let len = usize::try_from(length).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        self.checked_buffer_range(buffer, offset, len)?;
+        Ok((buffer.raw.clone(), length))
+    }
+
+    /// Validate and retain a 16- or 32-bit index-buffer binding.
+    #[allow(dead_code)] // The restricted indexed encoder will consume this.
+    pub(super) fn index_buffer(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        size: Option<NonZeroU64>,
+        format: wgt::IndexFormat,
+    ) -> Result<(ID3D11Buffer, u64)> {
+        let alignment = match format {
+            wgt::IndexFormat::Uint16 => 2,
+            wgt::IndexFormat::Uint32
+                if self.feature_level() != super::device::FeatureLevel::L9_1 =>
+            {
+                4
+            }
+            wgt::IndexFormat::Uint32 => return Err(Error::from_hresult(E_INVALIDARG)),
+        };
+        let remaining = u64::from(buffer.size)
+            .checked_sub(offset)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let length = size.map_or(remaining, NonZeroU64::get);
+        if !buffer.usage.contains(wgt::BufferUses::INDEX)
+            || !offset.is_multiple_of(alignment)
+            || length == 0
+            || !length.is_multiple_of(alignment)
         {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
