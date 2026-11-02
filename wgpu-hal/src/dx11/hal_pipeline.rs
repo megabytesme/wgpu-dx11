@@ -131,12 +131,22 @@ mod tests {
             device
                 .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
                     label: None,
-                    flags: crate::PipelineLayoutFlags::empty(),
+                    flags: crate::PipelineLayoutFlags::FIRST_VERTEX_INSTANCE
+                        | crate::PipelineLayoutFlags::NUM_WORK_GROUPS,
                     bind_group_layouts: &[],
                     immediate_size: 0,
                 })
                 .unwrap()
         };
+        assert!(unsafe {
+            device.create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::INDIRECT_BUILTIN_UPDATE,
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            })
+        }
+        .is_err());
         let attributes = [wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
             offset: 0,
@@ -522,7 +532,12 @@ impl PipelineLayout {
             [Some(layout)] if layout.belongs_to(&owner) => Some(layout.kind),
             _ => return Err(crate::DeviceError::Unexpected),
         };
-        if desc.immediate_size != 0 || !desc.flags.is_empty() {
+        // Core supplies these D3D12-specific root-constant flags on every
+        // layout. D3D11 has no such root constants; supported DX11 shaders
+        // and draws must still satisfy their own feature restrictions.
+        let accepted_flags = crate::PipelineLayoutFlags::FIRST_VERTEX_INSTANCE
+            | crate::PipelineLayoutFlags::NUM_WORK_GROUPS;
+        if desc.immediate_size != 0 || !accepted_flags.contains(desc.flags) {
             return Err(crate::DeviceError::Unexpected);
         }
         Ok(Self { owner, group })
