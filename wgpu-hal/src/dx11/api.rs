@@ -44,7 +44,7 @@ impl crate::Api for Api {
     type Queue = Queue;
     type CommandEncoder = CommandEncoder;
     type CommandBuffer = super::command::CopyCommandBuffer;
-    type Buffer = Unavailable;
+    type Buffer = super::buffer::NativeBuffer;
     type Texture = Unavailable;
     type SurfaceTexture = Unavailable;
     type TextureView = Unavailable;

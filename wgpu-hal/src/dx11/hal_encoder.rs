@@ -1,9 +1,12 @@
-//! Uninhabited fail-closed HAL trait scaffolding.
+//! Copy-only HAL encoder. Unsupported commands fail explicitly.
 #![allow(unused_variables)]
 
-use super::Api as Dx11Api;
+use super::{
+    Api as Dx11Api, buffer::NativeBufferCopy, command::CopyCommandBuffer, device::NativeDevice,
+};
 #[allow(unused_imports)]
 use crate::*;
+use alloc::sync::Arc;
 #[allow(unused_imports)]
 use alloc::{boxed::Box, vec::Vec};
 #[allow(unused_imports)]
@@ -13,50 +16,81 @@ use core::{
     time::Duration,
 };
 
-/// Cannot be constructed while the D3D11 HAL is incomplete.
+/// Copy-only recorder; it is not yet exposed by a wgpu adapter.
 #[derive(Debug)]
-pub enum CommandEncoder {}
+pub struct CommandEncoder {
+    device: Arc<NativeDevice>,
+    recording: Option<Vec<NativeBufferCopy>>,
+    failure: Option<DeviceError>,
+}
+impl CommandEncoder {
+    fn reject(&mut self) {
+        self.failure.get_or_insert(DeviceError::Unexpected);
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn new(device: Arc<NativeDevice>) -> Self {
+        Self {
+            device,
+            recording: None,
+            failure: None,
+        }
+    }
+}
 
 crate::impl_dyn_resource!(CommandEncoder);
 
 impl crate::CommandEncoder for CommandEncoder {
     type A = Dx11Api;
 
-    unsafe fn begin_encoding(&mut self, label: Label) -> Result<(), DeviceError> {
-        match *self {}
+    unsafe fn begin_encoding(&mut self, _label: Label) -> Result<(), DeviceError> {
+        if self.recording.is_some() {
+            return Err(DeviceError::Unexpected);
+        }
+        self.failure = None;
+        self.recording = Some(Vec::new());
+        Ok(())
     }
 
     unsafe fn discard_encoding(&mut self) {
-        match *self {}
+        self.recording = None;
+        self.failure = None;
     }
 
     unsafe fn end_encoding(&mut self) -> Result<<Self::A as Api>::CommandBuffer, DeviceError> {
-        match *self {}
+        let commands = self.recording.take().ok_or(DeviceError::Unexpected)?;
+        if let Some(error) = self.failure.take() {
+            return Err(error);
+        }
+        Ok(CopyCommandBuffer::from_copies(&self.device, commands))
     }
 
     unsafe fn reset_all<I>(&mut self, command_buffers: I)
     where
         I: Iterator<Item = <Self::A as Api>::CommandBuffer>,
     {
-        match *self {}
+        for command_buffer in command_buffers {
+            drop(command_buffer);
+        }
     }
 
     unsafe fn transition_buffers<'a, T>(&mut self, barriers: T)
     where
         T: Iterator<Item = BufferBarrier<'a, <Self::A as Api>::Buffer>>,
     {
-        match *self {}
+        // D3D11 tracks buffer hazards on its serialized immediate context.
+        for _ in barriers {}
     }
 
     unsafe fn transition_textures<'a, T>(&mut self, barriers: T)
     where
         T: Iterator<Item = TextureBarrier<'a, <Self::A as Api>::Texture>>,
     {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn clear_buffer(&mut self, buffer: &<Self::A as Api>::Buffer, range: MemoryRange) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn copy_buffer_to_buffer<T>(
@@ -67,7 +101,27 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferCopy>,
     {
-        match *self {}
+        let Some(commands) = &mut self.recording else {
+            self.failure = Some(DeviceError::Unexpected);
+            return;
+        };
+        if self.failure.is_some() {
+            return;
+        }
+        for region in regions {
+            let copy = match self.device.prepare_buffer_copy(src, dst, &region) {
+                Ok(copy) => copy,
+                Err(_) => {
+                    self.failure = Some(DeviceError::Unexpected);
+                    return;
+                }
+            };
+            if commands.try_reserve(1).is_err() {
+                self.failure = Some(DeviceError::OutOfMemory);
+                return;
+            }
+            commands.push(copy);
+        }
     }
 
     unsafe fn copy_texture_to_texture<T>(
@@ -79,7 +133,7 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = TextureCopy>,
     {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn copy_buffer_to_texture<T>(
@@ -90,7 +144,7 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferTextureCopy>,
     {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn copy_texture_to_buffer<T>(
@@ -102,7 +156,7 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferTextureCopy>,
     {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn copy_acceleration_structure_to_acceleration_structure(
@@ -111,7 +165,7 @@ impl crate::CommandEncoder for CommandEncoder {
         dst: &<Self::A as Api>::AccelerationStructure,
         copy: wgt::AccelerationStructureCopy,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_bind_group(
@@ -121,7 +175,7 @@ impl crate::CommandEncoder for CommandEncoder {
         group: &<Self::A as Api>::BindGroup,
         dynamic_offsets: &[wgt::DynamicOffset],
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_immediates(
@@ -130,35 +184,29 @@ impl crate::CommandEncoder for CommandEncoder {
         offset_bytes: u32,
         data: &[u32],
     ) {
-        match *self {}
+        self.reject()
     }
 
-    unsafe fn insert_debug_marker(&mut self, label: &str) {
-        match *self {}
-    }
+    unsafe fn insert_debug_marker(&mut self, _label: &str) {}
 
-    unsafe fn begin_debug_marker(&mut self, group_label: &str) {
-        match *self {}
-    }
+    unsafe fn begin_debug_marker(&mut self, _group_label: &str) {}
 
-    unsafe fn end_debug_marker(&mut self) {
-        match *self {}
-    }
+    unsafe fn end_debug_marker(&mut self) {}
 
     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn end_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn reset_queries(&mut self, set: &<Self::A as Api>::QuerySet, range: Range<u32>) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn copy_query_results(
@@ -169,22 +217,23 @@ impl crate::CommandEncoder for CommandEncoder {
         offset: wgt::BufferAddress,
         stride: wgt::BufferSize,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn begin_render_pass(
         &mut self,
         desc: &RenderPassDescriptor<<Self::A as Api>::QuerySet, <Self::A as Api>::TextureView>,
     ) -> Result<(), DeviceError> {
-        match *self {}
+        self.reject();
+        Err(DeviceError::Unexpected)
     }
 
     unsafe fn end_render_pass(&mut self) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_render_pipeline(&mut self, pipeline: &<Self::A as Api>::RenderPipeline) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_index_buffer<'a>(
@@ -192,7 +241,7 @@ impl crate::CommandEncoder for CommandEncoder {
         binding: BufferBinding<'a, <Self::A as Api>::Buffer>,
         format: wgt::IndexFormat,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_vertex_buffer<'a>(
@@ -200,23 +249,23 @@ impl crate::CommandEncoder for CommandEncoder {
         index: u32,
         binding: BufferBinding<'a, <Self::A as Api>::Buffer>,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_viewport(&mut self, rect: &Rect<f32>, depth_range: Range<f32>) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_scissor_rect(&mut self, rect: &Rect<u32>) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_stencil_reference(&mut self, value: u32) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_blend_constants(&mut self, color: &[f32; 4]) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw(
@@ -226,7 +275,7 @@ impl crate::CommandEncoder for CommandEncoder {
         first_instance: u32,
         instance_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_indexed(
@@ -237,7 +286,7 @@ impl crate::CommandEncoder for CommandEncoder {
         first_instance: u32,
         instance_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_indirect(
@@ -246,7 +295,7 @@ impl crate::CommandEncoder for CommandEncoder {
         offset: wgt::BufferAddress,
         draw_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_indexed_indirect(
@@ -255,7 +304,7 @@ impl crate::CommandEncoder for CommandEncoder {
         offset: wgt::BufferAddress,
         draw_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_indirect_count(
@@ -266,7 +315,7 @@ impl crate::CommandEncoder for CommandEncoder {
         count_offset: wgt::BufferAddress,
         max_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_indexed_indirect_count(
@@ -277,7 +326,7 @@ impl crate::CommandEncoder for CommandEncoder {
         count_offset: wgt::BufferAddress,
         max_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_mesh_tasks(
@@ -286,7 +335,7 @@ impl crate::CommandEncoder for CommandEncoder {
         group_count_y: u32,
         group_count_z: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_mesh_tasks_indirect(
@@ -295,7 +344,7 @@ impl crate::CommandEncoder for CommandEncoder {
         offset: wgt::BufferAddress,
         draw_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn draw_mesh_tasks_indirect_count(
@@ -306,26 +355,26 @@ impl crate::CommandEncoder for CommandEncoder {
         count_offset: wgt::BufferAddress,
         max_count: u32,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn begin_compute_pass(
         &mut self,
         desc: &ComputePassDescriptor<<Self::A as Api>::QuerySet>,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn end_compute_pass(&mut self) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_compute_pipeline(&mut self, pipeline: &<Self::A as Api>::ComputePipeline) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn dispatch_workgroups(&mut self, count: [u32; 3]) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn dispatch_workgroups_indirect(
@@ -333,19 +382,19 @@ impl crate::CommandEncoder for CommandEncoder {
         buffer: &<Self::A as Api>::Buffer,
         offset: wgt::BufferAddress,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn begin_ray_tracing_pass(&mut self, desc: &RayTracingPassDescriptor) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn end_ray_tracing_pass(&mut self) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_ray_tracing_pipeline(&mut self, pipeline: &<Self::A as Api>::RayTracingPipeline) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn trace_rays<'a>(
@@ -355,7 +404,7 @@ impl crate::CommandEncoder for CommandEncoder {
         miss_group_data: PipelineGroupData<'a, <Self::A as Api>::Buffer>,
         intersection_group_data: PipelineGroupData<'a, <Self::A as Api>::Buffer>,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn build_acceleration_structures<'a, T>(&mut self, descriptor_count: u32, descriptors: T)
@@ -369,14 +418,14 @@ impl crate::CommandEncoder for CommandEncoder {
             >,
         >,
     {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn place_acceleration_structure_barrier(
         &mut self,
         barrier: AccelerationStructureBarrier,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn read_acceleration_structure_compact_size(
@@ -384,7 +433,7 @@ impl crate::CommandEncoder for CommandEncoder {
         acceleration_structure: &<Self::A as Api>::AccelerationStructure,
         buf: &<Self::A as Api>::Buffer,
     ) {
-        match *self {}
+        self.reject()
     }
 
     unsafe fn set_acceleration_structure_dependencies(
@@ -392,5 +441,65 @@ impl crate::CommandEncoder for CommandEncoder {
         dependencies: &[&<Self::A as Api>::AccelerationStructure],
     ) {
         panic!("DX11 HAL is unavailable")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        DynCommandBuffer, DynQueue,
+        dx11::{FeatureLevel, Queue, enumerate_native_adapters},
+    };
+    use alloc::vec;
+    use core::{num::NonZeroU64, time::Duration};
+
+    #[test]
+    fn hal_copy_encoder_records_submits_and_can_discard() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let device = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let source = device.create_byte_buffer(16)?;
+        let output = device.create_byte_buffer(16)?;
+        let discarded = device.create_byte_buffer(16)?;
+        device.write_byte_buffer(&source, 0, &[0x39; 16])?;
+        device.write_byte_buffer(&output, 0, &[0; 16])?;
+        device.write_byte_buffer(&discarded, 0, &[0; 16])?;
+        let region = BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: NonZeroU64::new(16).unwrap(),
+        };
+        let mut native_encoder = CommandEncoder::new(device.clone());
+        let encoder: &mut dyn DynCommandEncoder = &mut native_encoder;
+        unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(&source, &discarded, core::slice::from_ref(&region));
+            encoder.discard_encoding();
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(&source, &output, core::slice::from_ref(&region));
+        }
+        let commands = unsafe { encoder.end_encoding().unwrap() };
+        let fence = device.create_native_fence();
+        let queue = Queue::new(device.clone());
+        let dyn_commands: [&dyn DynCommandBuffer; 1] = [commands.as_ref()];
+        unsafe {
+            DynQueue::submit(&queue, &dyn_commands, &[], (&fence, 1)).unwrap();
+        }
+        assert!(device.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        assert_eq!(device.read_byte_buffer(&output, 0, 16)?, vec![0x39; 16]);
+        assert_eq!(device.read_byte_buffer(&discarded, 0, 16)?, vec![0; 16]);
+        unsafe {
+            encoder.reset_all(vec![commands]);
+            encoder.begin_encoding(None).unwrap();
+            encoder.clear_buffer(&output, 0..16);
+            assert!(matches!(
+                encoder.end_encoding(),
+                Err(DeviceError::Unexpected)
+            ));
+        }
+        Ok(())
     }
 }

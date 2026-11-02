@@ -29,6 +29,13 @@ pub struct CopyCommandBuffer {
 }
 
 impl CopyCommandBuffer {
+    pub(super) fn from_copies(device: &NativeDevice, copies: Vec<NativeBufferCopy>) -> Self {
+        Self {
+            owner: device.raw_device().clone(),
+            copies,
+        }
+    }
+
     pub(super) fn validate_device(&self, device: &NativeDevice) -> Result<()> {
         if device.raw_device().as_raw() != self.owner.as_raw() {
             return Err(Error::from_hresult(E_INVALIDARG));

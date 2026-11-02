@@ -19,7 +19,8 @@ use windows::{
 /// An uninitialized D3D11 byte buffer tied to the creating native device.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct NativeBuffer {
+#[doc(hidden)]
+pub struct NativeBuffer {
     raw: ID3D11Buffer,
     owner: ID3D11Device,
     size: u32,
