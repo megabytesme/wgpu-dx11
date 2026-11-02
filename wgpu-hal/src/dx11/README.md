@@ -40,8 +40,8 @@ A restricted FL 9_1 render path records a triangle-list pass with replace or
 standard alpha, crosshair inversion, additive and vignette blending and
 one interleaved vertex stream. Its supported attributes are Float32 vectors and
 Unorm8x4, with validated stride and draw bounds. Scissor rectangles are checked
-against the attachment extent, including empty rectangles. A strict UWP diagnostic
-compiles resource-free WGSL,
+against the attachment extent, including empty rectangles. Large triangle-list
+draws are split at the FL9 primitive limit. A strict UWP diagnostic compiles WGSL,
 uploads a texture through mapped-buffer and recorded-copy paths, records a
 sampled triangle through the HAL encoder, checks a backbuffer pixel and presents. This sampled shader uses unchecked runtime behavior; the path does
 not provide general shaders, render passes, or WebGPU.
