@@ -57,7 +57,7 @@ D3D11, so these paths may stall; unsupported subresources and layouts fail.
 A private uniform-range prototype stages an ordinary logical buffer range and
 updates a separate constant buffer in full before binding. A single fixed
 uniform group is supported with validated shader layout, either alone or
-together with one 2D texture and sampler. When no minimum binding size is
+together with one or two 2D textures and samplers. When no minimum binding size is
 provided, each draw checks the bound range against the shader's required size;
 dynamic offsets and checked uniform shaders remain unsupported.
 The staging path may stall and avoids D3D11's partial-update restriction.

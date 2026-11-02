@@ -15,6 +15,7 @@ pub(super) enum GroupKind {
     TextureSampler,
     Uniform { minimum: u64 },
     UniformTextureSampler { minimum: u64 },
+    UniformTwoTextures { minimum: u64 },
 }
 
 #[doc(hidden)]
@@ -37,6 +38,7 @@ pub(super) enum GroupResources {
         uniform: Arc<UniformBinding>,
         texture: ID3D11ShaderResourceView,
         sampler: ID3D11SamplerState,
+        secondary: Option<(ID3D11ShaderResourceView, ID3D11SamplerState)>,
     },
 }
 
@@ -62,6 +64,55 @@ impl BindGroupLayout {
             return Err(crate::DeviceError::Unexpected);
         }
         let kind = match desc.entries {
+            [uniform, texture, sampler, second_texture, second_sampler]
+                if uniform.binding == 0
+                    && uniform.count.is_none()
+                    && uniform.visibility
+                        == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
+                    && [texture, second_texture]
+                        .iter()
+                        .enumerate()
+                        .all(|(index, entry)| {
+                            entry.binding == 1 + 2 * index as u32
+                                && entry.visibility == wgt::ShaderStages::FRAGMENT
+                                && entry.count.is_none()
+                                && matches!(
+                                    entry.ty,
+                                    wgt::BindingType::Texture {
+                                        sample_type: wgt::TextureSampleType::Float {
+                                            filterable: true
+                                        },
+                                        view_dimension: wgt::TextureViewDimension::D2,
+                                        multisampled: false,
+                                    }
+                                )
+                        })
+                    && [sampler, second_sampler]
+                        .iter()
+                        .enumerate()
+                        .all(|(index, entry)| {
+                            entry.binding == 2 + 2 * index as u32
+                                && entry.visibility == wgt::ShaderStages::FRAGMENT
+                                && entry.count.is_none()
+                                && matches!(
+                                    entry.ty,
+                                    wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
+                                )
+                        }) =>
+            {
+                match uniform.ty {
+                    wgt::BindingType::Buffer {
+                        ty: wgt::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size,
+                    } if min_binding_size.map_or(0, |value| value.get()) <= 65536 => {
+                        GroupKind::UniformTwoTextures {
+                            minimum: min_binding_size.map_or(0, |value| value.get()),
+                        }
+                    }
+                    _ => return Err(crate::DeviceError::Unexpected),
+                }
+            }
             [uniform, texture, sampler]
                 if uniform.binding == 0
                     && uniform.count.is_none()
@@ -166,6 +217,57 @@ impl BindGroup {
             return Err(crate::DeviceError::Unexpected);
         }
         let resources = match desc.layout.kind {
+            GroupKind::UniformTwoTextures { minimum } => {
+                if desc.buffers.len() != 1
+                    || desc.textures.len() != 2
+                    || desc.samplers.len() != 2
+                    || desc.entries.len() != 5
+                    || desc.entries.iter().enumerate().any(|(index, entry)| {
+                        entry.binding != index as u32
+                            || entry.resource_index != if index >= 3 { 1 } else { 0 }
+                            || entry.count != 1
+                    })
+                    || desc
+                        .textures
+                        .iter()
+                        .any(|binding| binding.usage != wgt::TextureUses::RESOURCE)
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let binding = &desc.buffers[0];
+                let length = owner
+                    .uniform_binding_length(binding.buffer, binding.offset, binding.size)
+                    .map_err(super::hal_device::device_error)?;
+                if length < minimum {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let uniform = owner
+                    .prepare_uniform_binding(binding.buffer, binding.offset, length)
+                    .map_err(super::hal_device::device_error)?;
+                let mut views = alloc::vec::Vec::new();
+                for index in 0..2 {
+                    let sampler = desc.samplers[index];
+                    let native_sampler = sampler.raw_for(owner)?;
+                    let (texture, dimensions) = owner
+                        .sampled_view(desc.textures[index].view)
+                        .map_err(super::hal_device::device_error)?;
+                    if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
+                        && sampler.wraps()
+                        && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
+                    {
+                        return Err(crate::DeviceError::Unexpected);
+                    }
+                    views.push((texture, native_sampler));
+                }
+                let secondary = views.pop().ok_or(crate::DeviceError::Unexpected)?;
+                let (texture, sampler) = views.pop().ok_or(crate::DeviceError::Unexpected)?;
+                GroupResources::UniformTextureSampler {
+                    uniform: Arc::new(uniform),
+                    texture,
+                    sampler,
+                    secondary: Some(secondary),
+                }
+            }
             GroupKind::UniformTextureSampler { minimum } => {
                 if desc.buffers.len() != 1
                     || desc.textures.len() != 1
@@ -205,6 +307,7 @@ impl BindGroup {
                     uniform: Arc::new(uniform),
                     texture,
                     sampler: native_sampler,
+                    secondary: None,
                 }
             }
             GroupKind::Uniform { minimum } => {

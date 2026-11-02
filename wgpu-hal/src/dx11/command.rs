@@ -52,6 +52,7 @@ pub(super) enum NativeCommand {
     },
     SetUniformGroup(Arc<UniformBinding>),
     SetTextureGroup {
+        slot: u32,
         texture: ID3D11ShaderResourceView,
         sampler: ID3D11SamplerState,
     },
@@ -170,9 +171,13 @@ impl CommandBuffer {
                         context.PSSetShader(Some(fragment), None);
                     }
                     NativeCommand::SetUniformGroup(uniform) => uniform.execute(context)?,
-                    NativeCommand::SetTextureGroup { texture, sampler } => {
-                        context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
-                        context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
+                    NativeCommand::SetTextureGroup {
+                        slot,
+                        texture,
+                        sampler,
+                    } => {
+                        context.PSSetShaderResources(*slot, Some(&[Some(texture.clone())]));
+                        context.PSSetSamplers(*slot, Some(&[Some(sampler.clone())]));
                     }
                     NativeCommand::SetVertex {
                         buffer,

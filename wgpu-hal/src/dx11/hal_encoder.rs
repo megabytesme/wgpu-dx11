@@ -282,6 +282,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         let mut uniform_command = None;
+        let mut secondary_command = None;
         let command = match &group.resources {
             super::hal_bind_group::GroupResources::TextureSampler { texture, sampler }
             | super::hal_bind_group::GroupResources::UniformTextureSampler {
@@ -301,12 +302,29 @@ impl crate::CommandEncoder for CommandEncoder {
                 }
                 if let super::hal_bind_group::GroupResources::UniformTextureSampler {
                     uniform,
+                    secondary,
                     ..
                 } = &group.resources
                 {
                     uniform_command = Some(NativeCommand::SetUniformGroup(uniform.clone()));
+                    if let Some((texture, sampler)) = secondary {
+                        let Ok(sampled) = (unsafe { texture.GetResource() }) else {
+                            self.reject();
+                            return;
+                        };
+                        if sampled.as_raw() == target.as_raw() {
+                            self.reject();
+                            return;
+                        }
+                        secondary_command = Some(NativeCommand::SetTextureGroup {
+                            slot: 1,
+                            texture: texture.clone(),
+                            sampler: sampler.clone(),
+                        });
+                    }
                 }
                 NativeCommand::SetTextureGroup {
+                    slot: 0,
                     texture: texture.clone(),
                     sampler: sampler.clone(),
                 }
@@ -325,6 +343,9 @@ impl crate::CommandEncoder for CommandEncoder {
         render.bound_group = Some(group.kind);
         self.record(command);
         if let Some(command) = uniform_command {
+            self.record(command);
+        }
+        if let Some(command) = secondary_command {
             self.record(command);
         }
     }
@@ -1276,32 +1297,44 @@ mod textured_tests {
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(false, false, false)
+        sampled_triangle(false, false, false, false)
     }
 
     #[test]
     fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, false, false)
+        sampled_triangle(true, false, false, false)
     }
 
     #[test]
     fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false)
+        sampled_triangle(true, true, false, false)
     }
 
     #[test]
     fn hal_encoder_blends_translucent_ui_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, true, true)
+        sampled_triangle(true, true, true, false)
     }
 
-    fn sampled_triangle(combined: bool, multi: bool, alpha: bool) -> windows::core::Result<()> {
+    #[test]
+    fn hal_encoder_samples_two_textures_with_hud_layout() -> windows::core::Result<()> {
+        sampled_triangle(true, true, false, true)
+    }
+
+    fn sampled_triangle(
+        combined: bool,
+        multi: bool,
+        alpha: bool,
+        two: bool,
+    ) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(native.clone());
-        let source = if multi {
+        let source = if two {
+            "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @group(0) @binding(3) var t2: texture_2d<f32>; @group(0) @binding(4) var s2: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5)) * textureSample(t2, s2, vec2f(0.5)) * color * in.color; }"
+        } else if multi {
             "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)) * color * in.color; }"
         } else if combined {
             "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)) * color; }"
@@ -1366,6 +1399,24 @@ mod textured_tests {
                 count: None,
             },
         ]);
+        if two {
+            entries.push(wgt::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+            entries.push(wgt::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            });
+        }
         if combined {
             let mut invalid_entries = entries.clone();
             invalid_entries[0].ty = wgt::BindingType::Buffer {
@@ -1458,7 +1509,11 @@ mod textured_tests {
         }
         assert_eq!(
             pipeline.group,
-            Some(if combined {
+            Some(if two {
+                super::super::hal_bind_group::GroupKind::UniformTwoTextures {
+                    minimum: if multi { 0 } else { 16 },
+                }
+            } else if combined {
                 super::super::hal_bind_group::GroupKind::UniformTextureSampler {
                     minimum: if multi { 0 } else { 16 },
                 }
@@ -1484,7 +1539,9 @@ mod textured_tests {
         let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
         let mut texels = alloc::vec![0; 64];
         for pixel in texels.chunks_exact_mut(4) {
-            pixel.copy_from_slice(if combined {
+            pixel.copy_from_slice(if two {
+                &[255, 255, 255, 255]
+            } else if combined {
                 &[255, 255, 0, 255]
             } else {
                 &[0, 255, 0, 255]
@@ -1495,6 +1552,23 @@ mod textured_tests {
             device
                 .create_texture_view(
                     &texture,
+                    &crate::TextureViewDescriptor {
+                        label: None,
+                        format: wgt::TextureFormat::Rgba8Unorm,
+                        dimension: wgt::TextureViewDimension::D2,
+                        usage: wgt::TextureUses::RESOURCE,
+                        range: wgt::ImageSubresourceRange::default(),
+                    },
+                )
+                .unwrap()
+        };
+        let second_texture = unsafe { device.create_texture(&texture_desc).unwrap() };
+        let second_texels: alloc::vec::Vec<u8> = [0u8, 255, 0, 255].repeat(16);
+        native.write_rgba_texture(&second_texture, 0, 0, &second_texels)?;
+        let second_view = unsafe {
+            device
+                .create_texture_view(
+                    &second_texture,
                     &crate::TextureViewDescriptor {
                         label: None,
                         format: wgt::TextureFormat::Rgba8Unorm,
@@ -1520,11 +1594,18 @@ mod textured_tests {
                 })
                 .unwrap()
         };
-        let texture_bindings = [crate::TextureBinding {
+        let mut texture_bindings = alloc::vec![crate::TextureBinding {
             view: &view,
             usage: wgt::TextureUses::RESOURCE,
         }];
-        let sampler_bindings = [&sampler];
+        let mut sampler_bindings = alloc::vec![&sampler];
+        if two {
+            texture_bindings.push(crate::TextureBinding {
+                view: &second_view,
+                usage: wgt::TextureUses::RESOURCE,
+            });
+            sampler_bindings.push(&sampler);
+        }
         let uniform = unsafe {
             device
                 .create_buffer(&crate::BufferDescriptor {
@@ -1546,13 +1627,36 @@ mod textured_tests {
         native.write_byte_buffer(&uniform, 0, &color_bytes)?;
         let uniform_bindings = [crate::BufferBinding::new_unchecked(&uniform, 0, None)];
         let buffer_bindings: &[_] = if combined { &uniform_bindings } else { &[] };
-        let group_entries: alloc::vec::Vec<_> = (0..if combined { 3 } else { 2 })
+        let group_entries: alloc::vec::Vec<_> = (0..if two {
+            5
+        } else if combined {
+            3
+        } else {
+            2
+        })
             .map(|binding| crate::BindGroupEntry {
                 binding,
-                resource_index: 0,
+                resource_index: if binding >= 3 { 1 } else { 0 },
                 count: 1,
             })
             .collect();
+        if two {
+            let mut invalid_entries = group_entries.clone();
+            invalid_entries[3].resource_index = 0;
+            assert!(unsafe {
+                device.create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: buffer_bindings,
+                    samplers: &sampler_bindings,
+                    textures: &texture_bindings,
+                    entries: &invalid_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+            }
+            .is_err());
+        }
         let group = unsafe {
             device
                 .create_bind_group(&crate::BindGroupDescriptor {
@@ -1572,7 +1676,11 @@ mod textured_tests {
         for position in vertices.chunks_exact(2) {
             bytes.extend(position.iter().flat_map(|v| v.to_ne_bytes()));
             if multi {
-                bytes.extend_from_slice(&[0, 255, 0, 255]);
+                bytes.extend_from_slice(if two {
+                    &[255, 255, 255, 255]
+                } else {
+                    &[0, 255, 0, 255]
+                });
             }
         }
         let buffer = unsafe {
@@ -1634,10 +1742,16 @@ mod textured_tests {
                 )
                 .unwrap()
         };
-        let alias_textures = [crate::TextureBinding {
+        let mut alias_textures = alloc::vec![crate::TextureBinding {
             view: &sampled_target,
             usage: wgt::TextureUses::RESOURCE,
         }];
+        if two {
+            alias_textures.push(crate::TextureBinding {
+                view: &second_view,
+                usage: wgt::TextureUses::RESOURCE,
+            });
+        }
         let alias_group = unsafe {
             device
                 .create_bind_group(&crate::BindGroupDescriptor {
@@ -1651,6 +1765,34 @@ mod textured_tests {
                     external_textures: &[],
                 })
                 .unwrap()
+        };
+        let secondary_alias_group = if two {
+            let textures = [
+                crate::TextureBinding {
+                    view: &view,
+                    usage: wgt::TextureUses::RESOURCE,
+                },
+                crate::TextureBinding {
+                    view: &sampled_target,
+                    usage: wgt::TextureUses::RESOURCE,
+                },
+            ];
+            Some(unsafe {
+                device
+                    .create_bind_group(&crate::BindGroupDescriptor {
+                        label: None,
+                        layout: &group_layout,
+                        buffers: buffer_bindings,
+                        samplers: &sampler_bindings,
+                        textures: &textures,
+                        entries: &group_entries,
+                        acceleration_structures: &[],
+                        external_textures: &[],
+                    })
+                    .unwrap()
+            })
+        } else {
+            None
         };
         let color = [Some(crate::ColorAttachment {
             target: crate::Attachment {
@@ -1718,6 +1860,13 @@ mod textured_tests {
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &alias_group, &[]);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            if let Some(group) = secondary_alias_group.as_ref() {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, group, &[]);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            }
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);

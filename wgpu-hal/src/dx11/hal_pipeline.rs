@@ -534,7 +534,8 @@ impl RenderPipeline {
         let mut required_uniform_size = 0;
         if let Some(
             super::hal_bind_group::GroupKind::Uniform { minimum }
-            | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum },
+            | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum }
+            | super::hal_bind_group::GroupKind::UniformTwoTextures { minimum },
         ) = desc.layout.group
         {
             for module in [vertex_stage.module, fragment.module] {
@@ -591,11 +592,35 @@ impl RenderPipeline {
                 kind: ShaderBindingKind::Sampler,
             },
         ];
+        let two_texture_bindings = [
+            combined_bindings[0],
+            combined_bindings[1],
+            combined_bindings[2],
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 3,
+                },
+                slot: 1,
+                kind: ShaderBindingKind::Texture2dFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 4,
+                },
+                slot: 1,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
         let bindings: &[_] = match desc.layout.group {
             Some(super::hal_bind_group::GroupKind::TextureSampler) => &bindings,
             Some(super::hal_bind_group::GroupKind::Uniform { .. }) => &uniform_binding,
             Some(super::hal_bind_group::GroupKind::UniformTextureSampler { .. }) => {
                 &combined_bindings
+            }
+            Some(super::hal_bind_group::GroupKind::UniformTwoTextures { .. }) => {
+                &two_texture_bindings
             }
             None => &[],
         };
