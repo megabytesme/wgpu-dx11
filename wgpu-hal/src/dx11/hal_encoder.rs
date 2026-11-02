@@ -659,10 +659,27 @@ impl crate::CommandEncoder for CommandEncoder {
             offset,
             stride,
         });
-        self.record(NativeCommand::Draw {
-            first: first_vertex,
-            count: vertex_count,
-        });
+        // Feature level 9 limits the number of primitives per Draw. Split on
+        // triangle boundaries so a large HAL draw retains its topology.
+        let max_vertices = match self.device.feature_level() {
+            super::device::FeatureLevel::L9_1 => 65_535 * 3,
+            super::device::FeatureLevel::L9_2 | super::device::FeatureLevel::L9_3 => 1_048_575 * 3,
+            _ => u32::MAX,
+        };
+        let mut first = first_vertex;
+        let mut remaining = vertex_count;
+        while remaining != 0 {
+            let count = remaining.min(max_vertices);
+            self.record(NativeCommand::Draw { first, count });
+            remaining -= count;
+            if remaining != 0 {
+                let Some(next) = first.checked_add(count) else {
+                    self.reject();
+                    return;
+                };
+                first = next;
+            }
+        }
     }
 
     unsafe fn draw_indexed(
@@ -1409,6 +1426,11 @@ mod textured_tests {
     }
 
     #[test]
+    fn hal_encoder_splits_large_level_9_triangle_draw() -> windows::core::Result<()> {
+        sampled_triangle(true, false, false, false, false, 5, None)
+    }
+
+    #[test]
     #[ignore = "requires HORIZON_HUD_SHADER pointing to Horizon's hud.wgsl"]
     fn real_horizon_hud_gpu_readback() -> windows::core::Result<()> {
         let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
@@ -1848,6 +1870,12 @@ mod textured_tests {
             [-1., -1., 3., -1., -1., 3.]
         };
         let mut bytes = alloc::vec::Vec::new();
+        if effect == 5 {
+            for _ in 0..(65_535 * 3) {
+                bytes.extend_from_slice(&2.0f32.to_ne_bytes());
+                bytes.extend_from_slice(&2.0f32.to_ne_bytes());
+            }
+        }
         for position in vertices.chunks_exact(2) {
             bytes.extend(position.iter().flat_map(|v| v.to_ne_bytes()));
             if horizon_shader.is_some() {
@@ -2086,7 +2114,13 @@ mod textured_tests {
                 crate::BufferBinding::new_unchecked(&buffer, 0, None),
             );
             crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
-            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::draw(
+                &mut encoder,
+                0,
+                if effect == 5 { 65_535 * 3 + 3 } else { 3 },
+                0,
+                1,
+            );
             crate::CommandEncoder::end_render_pass(&mut encoder);
         }
         let command = unsafe { crate::CommandEncoder::end_encoding(&mut encoder).unwrap() };
