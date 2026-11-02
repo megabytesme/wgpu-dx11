@@ -9,10 +9,10 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
-                D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ,
-                D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC,
-                D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, ID3D11Device, ID3D11RenderTargetView,
-                ID3D11ShaderResourceView, ID3D11Texture2D,
+                D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX,
+                D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
+                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, ID3D11Device,
+                ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
             },
             Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
         },
@@ -61,6 +61,15 @@ impl NativeRenderTarget {
     pub(crate) fn raw_view(&self) -> &ID3D11RenderTargetView {
         &self.view
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TextureWrite {
+    pub(crate) mip: u32,
+    pub(crate) layer: u32,
+    pub(crate) origin: [u32; 2],
+    pub(crate) extent: [u32; 2],
+    pub(crate) row_pitch: u32,
 }
 
 fn invalid() -> Error {
@@ -214,18 +223,74 @@ impl NativeDevice {
         bytes: &[u8],
     ) -> Result<()> {
         self.check_texture_owner(texture)?;
-        let (width, _, index, expected) = subresource_layout(texture, mip, layer)?;
+        let (width, height, _, expected) = subresource_layout(texture, mip, layer)?;
         if bytes.len() != expected {
             return Err(invalid());
         }
+        self.write_rgba_region(
+            texture,
+            TextureWrite {
+                mip,
+                layer,
+                origin: [0, 0],
+                extent: [width, height],
+                row_pitch: width * 4,
+            },
+            bytes,
+        )
+    }
+
+    /// Upload a checked rectangle with an explicit source row pitch.
+    pub(crate) fn write_rgba_region(
+        &self,
+        texture: &NativeTexture,
+        write: TextureWrite,
+        bytes: &[u8],
+    ) -> Result<()> {
+        let TextureWrite {
+            mip,
+            layer,
+            origin,
+            extent,
+            row_pitch,
+        } = write;
+        self.check_texture_owner(texture)?;
+        let (width, height, index, _) = subresource_layout(texture, mip, layer)?;
+        let right = origin[0].checked_add(extent[0]).ok_or_else(invalid)?;
+        let bottom = origin[1].checked_add(extent[1]).ok_or_else(invalid)?;
+        if right > width || bottom > height {
+            return Err(invalid());
+        }
+        if extent.contains(&0) {
+            return Ok(());
+        }
+        let row_bytes = extent[0].checked_mul(4).ok_or_else(invalid)?;
+        if row_pitch < row_bytes {
+            return Err(invalid());
+        }
+        let required = (row_pitch as usize)
+            .checked_mul((extent[1] - 1) as usize)
+            .and_then(|v| v.checked_add(row_bytes as usize))
+            .ok_or_else(invalid)?;
+        if bytes.len() < required {
+            return Err(invalid());
+        }
+        let area = D3D11_BOX {
+            left: origin[0],
+            top: origin[1],
+            front: 0,
+            right,
+            bottom,
+            back: 1,
+        };
         let context = self.immediate_context();
         unsafe {
             context.UpdateSubresource(
                 &texture.raw,
                 index,
-                None,
+                Some(&area),
                 bytes.as_ptr().cast(),
-                width * 4,
+                row_pitch,
                 0,
             );
         }
@@ -319,18 +384,92 @@ mod tests {
         assert!(dynamic_texture.as_any().is::<NativeTexture>());
         let dynamic_view: &mut dyn crate::DynTextureView = &mut view;
         assert!(dynamic_view.as_any_mut().is::<NativeTextureView>());
-        let base = vec![31; 8 * 4 * 4];
-        let mip = vec![93; 4 * 2 * 4];
+        let mut base = vec![31; 8 * 4 * 4];
+        let mut mip = vec![93; 4 * 2 * 4];
         device.write_rgba_texture(&texture, 0, 0, &base)?;
         device.write_rgba_texture(&texture, 1, 1, &mip)?;
         assert_eq!(device.read_rgba_texture(&texture, 0, 0)?, base);
         assert_eq!(device.read_rgba_texture(&texture, 1, 1)?, mip);
+        let mut bytes: Vec<u8> = (0..28).collect();
+        bytes[12..16].fill(255);
+        let write = TextureWrite {
+            mip: 0,
+            layer: 0,
+            origin: [1, 1],
+            extent: [3, 2],
+            row_pitch: 16,
+        };
+        device.write_rgba_region(&texture, write, &bytes)?;
+        base[36..48].copy_from_slice(&bytes[..12]);
+        base[68..80].copy_from_slice(&bytes[16..28]);
+        assert_eq!(device.read_rgba_texture(&texture, 0, 0)?, base);
+        let mip_write = TextureWrite {
+            mip: 1,
+            layer: 1,
+            origin: [1, 0],
+            extent: [2, 2],
+            row_pitch: 8,
+        };
+        device.write_rgba_region(&texture, mip_write, &[42; 16])?;
+        mip[4..12].fill(42);
+        mip[20..28].fill(42);
+        assert_eq!(device.read_rgba_texture(&texture, 1, 1)?, mip);
+        assert!(device
+            .write_rgba_region(
+                &texture,
+                TextureWrite {
+                    row_pitch: 11,
+                    ..write
+                },
+                &bytes
+            )
+            .is_err());
+        assert!(device
+            .write_rgba_region(&texture, write, &bytes[..27])
+            .is_err());
+        assert!(device
+            .write_rgba_region(
+                &texture,
+                TextureWrite {
+                    origin: [7, 0],
+                    extent: [2, 1],
+                    row_pitch: 8,
+                    ..write
+                },
+                &bytes
+            )
+            .is_err());
+        assert!(device
+            .write_rgba_region(
+                &texture,
+                TextureWrite {
+                    origin: [u32::MAX, 0],
+                    extent: [1, 1],
+                    row_pitch: 4,
+                    ..write
+                },
+                &bytes
+            )
+            .is_err());
+        assert!(device
+            .write_rgba_region(
+                &texture,
+                TextureWrite {
+                    origin: [8, 4],
+                    extent: [0, 0],
+                    row_pitch: 0,
+                    ..write
+                },
+                &[]
+            )
+            .is_ok());
         assert!(device.write_rgba_texture(&texture, 1, 1, &[0; 3]).is_err());
         assert!(device.read_rgba_texture(&texture, 3, 0).is_err());
         assert!(device.read_rgba_texture(&texture, 0, 2).is_err());
         let other = adapter.open_device(&[FeatureLevel::L11_0])?;
         assert!(other.create_texture_view(&texture).is_err());
         assert!(other.read_rgba_texture(&texture, 0, 0).is_err());
+        assert!(other.write_rgba_region(&texture, write, &bytes).is_err());
         Ok(())
     }
 
