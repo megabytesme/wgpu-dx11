@@ -30,6 +30,36 @@ pub(crate) struct NativeBuffer {
 crate::impl_dyn_resource!(NativeBuffer);
 impl crate::DynBuffer for NativeBuffer {}
 
+/// Validated copy retaining its source and destination COM resources.
+#[derive(Debug)]
+pub(super) struct NativeBufferCopy {
+    source: ID3D11Buffer,
+    destination: ID3D11Buffer,
+    destination_offset: u32,
+    source_box: D3D11_BOX,
+}
+
+impl NativeBufferCopy {
+    /// The caller must hold this device's immediate-context mutex.
+    pub(super) fn execute(
+        &self,
+        context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
+    ) {
+        unsafe {
+            context.CopySubresourceRegion(
+                &self.destination,
+                0,
+                self.destination_offset,
+                0,
+                0,
+                &self.source,
+                0,
+                Some(&self.source_box),
+            );
+        }
+    }
+}
+
 impl NativeDevice {
     /// Allocate a copy-only byte buffer. Its initial contents are unspecified.
     #[allow(dead_code)]
@@ -93,6 +123,18 @@ impl NativeDevice {
         destination: &NativeBuffer,
         region: &crate::BufferCopy,
     ) -> Result<()> {
+        let command = self.prepare_buffer_copy(source, destination, region)?;
+        let context = self.immediate_context();
+        command.execute(&context);
+        Ok(())
+    }
+
+    pub(super) fn prepare_buffer_copy(
+        &self,
+        source: &NativeBuffer,
+        destination: &NativeBuffer,
+        region: &crate::BufferCopy,
+    ) -> Result<NativeBufferCopy> {
         let size = region.size.get();
         if region.src_offset % wgt::COPY_BUFFER_ALIGNMENT != 0
             || region.dst_offset % wgt::COPY_BUFFER_ALIGNMENT != 0
@@ -104,28 +146,19 @@ impl NativeDevice {
         let len = usize::try_from(size).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
         let (src_start, src_end) = self.checked_buffer_range(source, region.src_offset, len)?;
         let (dst_start, _) = self.checked_buffer_range(destination, region.dst_offset, len)?;
-        let area = D3D11_BOX {
-            left: src_start,
-            right: src_end,
-            top: 0,
-            bottom: 1,
-            front: 0,
-            back: 1,
-        };
-        let context = self.immediate_context();
-        unsafe {
-            context.CopySubresourceRegion(
-                &destination.raw,
-                0,
-                dst_start,
-                0,
-                0,
-                &source.raw,
-                0,
-                Some(&area),
-            );
-        }
-        Ok(())
+        Ok(NativeBufferCopy {
+            source: source.raw.clone(),
+            destination: destination.raw.clone(),
+            destination_offset: dst_start,
+            source_box: D3D11_BOX {
+                left: src_start,
+                right: src_end,
+                top: 0,
+                bottom: 1,
+                front: 0,
+                back: 1,
+            },
+        })
     }
 
     /// Blocking diagnostic readback through a staging buffer.
