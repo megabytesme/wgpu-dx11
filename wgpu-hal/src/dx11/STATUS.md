@@ -21,6 +21,8 @@ not evidence of full WebGPU conformance.
   scissors, replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
+- Restricted 16-bit, zero-base indexed draws validate GPU index contents at
+  replay and preserve draw order. The staging readback can stall the CPU.
 - The real Horizon HUD and crosshair shaders have passed FL9_1 GPU readback;
   the HUD path has also passed an isolated x64 UWP surface diagnostic.
 
@@ -33,10 +35,11 @@ not evidence of full WebGPU conformance.
   texture formats/dimensions/mips/arrays, sampler modes, render states and
   buffer usages required by valid wgpu applications. Several restrictions,
   including specific bind-group shapes, cannot be described by `Limits`.
-- Implement indexed and instanced rendering, depth/stencil paths and other
+- Complete indexed and instanced rendering, depth/stencil paths and other
   operations needed by Horizon. On 9_1 the native index format is restricted
   to 16-bit and index values to 65,534; combined vertex/index native bindings
-  on 9_1/9_2 need emulation. The current encoder rejects indexed draws.
+  on 9_1/9_2 need emulation. Other index formats, nonzero base vertices and
+  out-of-range indices currently fail rather than providing full wgpu semantics.
 - Replace or adapt Horizon compute/storage-dependent paths for 9_1, which has
   no native compute shaders. The opt-in Naga texel-load/dimensions experiments
   remain isolated proofs and are not enabled in the HAL.

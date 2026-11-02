@@ -2,6 +2,7 @@
 use super::{
     buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
+    hal_index::IndexBinding,
     hal_transfer::{BufferToTexture, TextureToBuffer},
     hal_uniform::UniformBinding,
 };
@@ -66,6 +67,15 @@ pub(super) enum NativeCommand {
     Draw {
         first: u32,
         count: u32,
+    },
+    DrawIndexed {
+        binding: Arc<IndexBinding>,
+        first: u32,
+        count: u32,
+        vertex_bytes: u64,
+        stride: u32,
+        extent: u32,
+        max_vertices: u32,
     },
     EndRender,
 }
@@ -206,6 +216,23 @@ impl CommandBuffer {
                         context.RSSetScissorRects(Some(core::slice::from_ref(rect)))
                     }
                     NativeCommand::Draw { first, count } => context.Draw(*count, *first),
+                    NativeCommand::DrawIndexed {
+                        binding,
+                        first,
+                        count,
+                        vertex_bytes,
+                        stride,
+                        extent,
+                        max_vertices,
+                    } => {
+                        binding.draw(
+                            context,
+                            *first,
+                            *count,
+                            (*vertex_bytes, *stride, *extent),
+                            *max_vertices,
+                        )?;
+                    }
                     NativeCommand::EndRender => context.ClearState(),
                 }
             }

@@ -38,6 +38,7 @@ struct RenderState {
     required_uniform_size: u64,
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
+    index: Option<Arc<super::hal_index::IndexBinding>>,
 }
 
 impl CommandEncoder {
@@ -464,6 +465,7 @@ impl crate::CommandEncoder for CommandEncoder {
             required_uniform_size: 0,
             vertex: None,
             vertex_layout: None,
+            index: None,
         });
         self.record(NativeCommand::BeginRender {
             target,
@@ -514,7 +516,23 @@ impl crate::CommandEncoder for CommandEncoder {
         binding: BufferBinding<'a, <Self::A as Api>::Buffer>,
         format: wgt::IndexFormat,
     ) {
-        self.reject()
+        if self.render.is_none() {
+            self.reject();
+            return;
+        }
+        let binding = match self.device.prepare_index_binding(
+            binding.buffer,
+            binding.offset,
+            binding.size,
+            format,
+        ) {
+            Ok(binding) => Arc::new(binding),
+            Err(error) => {
+                self.failure = Some(super::hal_device::device_error(error));
+                return;
+            }
+        };
+        self.render.as_mut().unwrap().index = Some(binding);
     }
 
     unsafe fn set_vertex_buffer<'a>(
@@ -690,7 +708,52 @@ impl crate::CommandEncoder for CommandEncoder {
         first_instance: u32,
         instance_count: u32,
     ) {
-        self.reject()
+        let Some(render) = self.render.as_ref() else {
+            self.reject();
+            return;
+        };
+        let (Some((buffer, offset, vertex_bytes)), Some((stride, extent)), Some(index)) = (
+            render.vertex.as_ref(),
+            render.vertex_layout,
+            render.index.as_ref(),
+        ) else {
+            self.reject();
+            return;
+        };
+        if !render.pipeline
+            || (render.required_group.is_some() && render.required_group != render.bound_group)
+            || render.bound_uniform_size < render.required_uniform_size
+            || first_instance != 0
+            || instance_count != 1
+            || base_vertex != 0
+            || !index.contains_range(first_index, index_count)
+        {
+            self.reject();
+            return;
+        }
+        let buffer = buffer.clone();
+        let offset = *offset;
+        let vertex_bytes = *vertex_bytes;
+        let index = index.clone();
+        let max_vertices = match self.device.feature_level() {
+            super::device::FeatureLevel::L9_1 => 65_535 * 3,
+            super::device::FeatureLevel::L9_2 | super::device::FeatureLevel::L9_3 => 1_048_575 * 3,
+            _ => u32::MAX,
+        };
+        self.record(NativeCommand::SetVertex {
+            buffer,
+            offset,
+            stride,
+        });
+        self.record(NativeCommand::DrawIndexed {
+            binding: index,
+            first: first_index,
+            count: index_count,
+            vertex_bytes,
+            stride,
+            extent,
+            max_vertices,
+        });
     }
 
     unsafe fn draw_indirect(
@@ -1431,6 +1494,11 @@ mod textured_tests {
     }
 
     #[test]
+    fn hal_encoder_draws_checked_u16_indices() -> windows::core::Result<()> {
+        sampled_triangle(true, false, false, false, false, 6, None)
+    }
+
+    #[test]
     #[ignore = "requires HORIZON_HUD_SHADER pointing to Horizon's hud.wgsl"]
     fn real_horizon_hud_gpu_readback() -> windows::core::Result<()> {
         let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
@@ -1902,6 +1970,22 @@ mod textured_tests {
                 .unwrap()
         };
         native.write_byte_buffer(&buffer, 0, &bytes)?;
+        let index_buffer = if effect == 6 {
+            let index = unsafe {
+                device
+                    .create_buffer(&crate::BufferDescriptor {
+                        label: None,
+                        size: 12,
+                        usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                        memory_flags: crate::MemoryFlags::empty(),
+                    })
+                    .unwrap()
+            };
+            native.write_byte_buffer(&index, 0, &[0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0])?;
+            Some(index)
+        } else {
+            None
+        };
         let extent = wgt::Extent3d {
             width: 8,
             height: 8,
@@ -2042,6 +2126,42 @@ mod textured_tests {
                 .unwrap()
         };
         unsafe {
+            if let Some(index) = index_buffer.as_ref() {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                crate::CommandEncoder::set_vertex_buffer(
+                    &mut encoder,
+                    0,
+                    crate::BufferBinding::new_unchecked(&buffer, 0, None),
+                );
+                crate::CommandEncoder::set_index_buffer(
+                    &mut encoder,
+                    crate::BufferBinding::new_unchecked(index, 2, None),
+                    wgt::IndexFormat::Uint16,
+                );
+                crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 1, 0, 1);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                crate::CommandEncoder::set_vertex_buffer(
+                    &mut encoder,
+                    0,
+                    crate::BufferBinding::new_unchecked(&buffer, 0, None),
+                );
+                crate::CommandEncoder::set_index_buffer(
+                    &mut encoder,
+                    crate::BufferBinding::new_unchecked(index, 2, None),
+                    wgt::IndexFormat::Uint16,
+                );
+                crate::CommandEncoder::draw_indexed(&mut encoder, 4, 3, 0, 0, 1);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            }
             if effect == 3 {
                 crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
                 crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
@@ -2114,13 +2234,22 @@ mod textured_tests {
                 crate::BufferBinding::new_unchecked(&buffer, 0, None),
             );
             crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
-            crate::CommandEncoder::draw(
-                &mut encoder,
-                0,
-                if effect == 5 { 65_535 * 3 + 3 } else { 3 },
-                0,
-                1,
-            );
+            if let Some(index) = index_buffer.as_ref() {
+                crate::CommandEncoder::set_index_buffer(
+                    &mut encoder,
+                    crate::BufferBinding::new_unchecked(index, 2, None),
+                    wgt::IndexFormat::Uint16,
+                );
+                crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 0, 1);
+            } else {
+                crate::CommandEncoder::draw(
+                    &mut encoder,
+                    0,
+                    if effect == 5 { 65_535 * 3 + 3 } else { 3 },
+                    0,
+                    1,
+                );
+            }
             crate::CommandEncoder::end_render_pass(&mut encoder);
         }
         let command = unsafe { crate::CommandEncoder::end_encoding(&mut encoder).unwrap() };
@@ -2155,6 +2284,34 @@ mod textured_tests {
         }
         if effect == 3 {
             assert_eq!(&pixels[..4], &[0, 0, 255, 255]);
+        }
+        if let Some(index) = index_buffer.as_ref() {
+            // Recording must not snapshot the data: GPU writes before submission
+            // can change the indices. Reject invalid values at replay time.
+            for invalid in [3u16, u16::MAX] {
+                unsafe {
+                    crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                    crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                    crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+                    crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                    crate::CommandEncoder::set_vertex_buffer(
+                        &mut encoder,
+                        0,
+                        crate::BufferBinding::new_unchecked(&buffer, 0, None),
+                    );
+                    crate::CommandEncoder::set_index_buffer(
+                        &mut encoder,
+                        crate::BufferBinding::new_unchecked(index, 2, None),
+                        wgt::IndexFormat::Uint16,
+                    );
+                    crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 0, 1);
+                    crate::CommandEncoder::end_render_pass(&mut encoder);
+                    let rejected = crate::CommandEncoder::end_encoding(&mut encoder).unwrap();
+                    native.write_byte_buffer(index, 4, &invalid.to_le_bytes())?;
+                    assert!(crate::Queue::submit(&queue, &[&rejected], &[], (&fence, 2)).is_err());
+                    crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(rejected));
+                }
+            }
         }
         unsafe {
             crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
