@@ -1229,6 +1229,30 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
     ) -> BackendResult {
         let binding = *global.binding.as_ref().unwrap();
 
+        if self.options.direct_sampler_bindings {
+            let target = self.options.resolve_resource_binding(&binding)
+                .map_err(|error| Error::Custom(error.to_string()))?;
+            if target.space != 0 {
+                return Err(Error::Unimplemented(
+                    "direct sampler register spaces are unsupported".into(),
+                ));
+            }
+            match module.types[global.ty].inner {
+                TypeInner::Sampler { .. } => {
+                    self.write_type(module, global.ty)?;
+                    let name = &self.names[&NameKey::GlobalVariable(handle)];
+                    writeln!(self.out, " {name} : register(s{});", target.register)?;
+                    return Ok(());
+                }
+                TypeInner::BindingArray { .. } => {
+                    return Err(Error::Unimplemented(
+                        "direct sampler binding arrays are unsupported".into(),
+                    ));
+                }
+                _ => unreachable!(),
+            }
+        }
+
         let key = super::SamplerIndexBufferKey {
             group: binding.group,
         };

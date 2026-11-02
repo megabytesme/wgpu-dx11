@@ -688,6 +688,132 @@ mod tests {
     }
 
     #[test]
+    fn naga_direct_sampler_emits_d3d11_registers_without_changing_default_mode() {
+        use naga::{
+            ShaderStage,
+            back::hlsl,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var image_sampler: sampler;
+            @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+                return textureSample(image, image_sampler, uv);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let pipeline = hlsl::PipelineOptions {
+            entry_point: Some((ShaderStage::Fragment, "main".into())),
+        };
+        let mut options = hlsl::Options {
+            shader_model: hlsl::ShaderModel::V5_0,
+            direct_sampler_bindings: true,
+            fake_missing_bindings: false,
+            ..Default::default()
+        };
+        for (binding, register) in [(0, 2), (1, 3)] {
+            options.binding_map.insert(
+                naga::ResourceBinding { group: 0, binding },
+                hlsl::BindTarget {
+                    register,
+                    ..Default::default()
+                },
+            );
+        }
+        let mut source = String::new();
+        let reflection = hlsl::Writer::new(&mut source, &options, &pipeline)
+            .write(&module, &info, None)
+            .expect("generate direct-sampler HLSL");
+        let name = reflection
+            .entry_point_names
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap();
+        assert!(source.contains("register(t2)"), "{source}");
+        assert!(source.contains("register(s3)"), "{source}");
+        assert!(!source.contains("nagaSamplerHeap"), "{source}");
+        for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::Pixel5_0] {
+            assert!(
+                compile_hlsl(&source, &name, profile)
+                    .unwrap_or_else(|error| panic!("{profile:?}: {error:?}\n{source}"))
+                    .starts_with(b"DXBC")
+            );
+        }
+        options
+            .binding_map
+            .get_mut(&naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            })
+            .unwrap()
+            .space = 1;
+        let mut rejected = String::new();
+        assert!(
+            hlsl::Writer::new(&mut rejected, &options, &pipeline)
+                .write(&module, &info, None)
+                .is_err()
+        );
+        options.direct_sampler_bindings = false;
+        options.fake_missing_bindings = true;
+        let mut default_source = String::new();
+        hlsl::Writer::new(&mut default_source, &options, &pipeline)
+            .write(&module, &info, None)
+            .unwrap();
+        assert!(
+            default_source.contains("nagaSamplerHeap"),
+            "{default_source}"
+        );
+    }
+
+    #[test]
+    fn naga_direct_sampler_rejects_binding_arrays() {
+        use naga::{
+            ShaderStage,
+            back::hlsl,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            enable wgpu_binding_array;
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var samplers: binding_array<sampler, 2>;
+            @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+                return textureSample(image, samplers[0], uv);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::all())
+            .validate(&module)
+            .unwrap();
+        let pipeline = hlsl::PipelineOptions {
+            entry_point: Some((ShaderStage::Fragment, "main".into())),
+        };
+        let mut options = hlsl::Options {
+            shader_model: hlsl::ShaderModel::V5_0,
+            direct_sampler_bindings: true,
+            fake_missing_bindings: false,
+            ..Default::default()
+        };
+        for binding in 0..2 {
+            options.binding_map.insert(
+                naga::ResourceBinding { group: 0, binding },
+                hlsl::BindTarget {
+                    register: binding,
+                    ..Default::default()
+                },
+            );
+        }
+        let mut source = String::new();
+        assert!(matches!(
+            hlsl::Writer::new(&mut source, &options, &pipeline).write(&module, &info, None),
+            Err(hlsl::Error::Unimplemented(_))
+        ));
+    }
+
+    #[test]
     fn naga_path_rejects_texture_bindings() {
         use naga::{
             ShaderStage,

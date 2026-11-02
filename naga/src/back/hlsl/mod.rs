@@ -517,6 +517,10 @@ pub struct Options {
     /// HLSL binding information for the sampler heap and comparison sampler heap.
     pub sampler_heap_target: SamplerHeapBindTargets,
 
+    /// Emit individually bound samplers instead of D3D12-style sampler heaps.
+    /// This experimental mode rejects sampler binding arrays and register spaces.
+    pub direct_sampler_bindings: bool,
+
     /// Mapping of each bind group's sampler index buffer to a bind target.
     #[cfg_attr(
         feature = "deserialize",
@@ -572,6 +576,7 @@ impl Default for Options {
             fake_missing_bindings: true,
             special_constants_binding: None,
             sampler_heap_target: SamplerHeapBindTargets::default(),
+            direct_sampler_bindings: false,
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,
             dynamic_storage_buffer_offsets_targets: alloc::collections::BTreeMap::new(),

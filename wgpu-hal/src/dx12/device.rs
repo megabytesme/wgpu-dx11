@@ -1488,6 +1488,7 @@ impl crate::Device for super::Device {
                 zero_initialize_workgroup_memory: true,
                 restrict_indexing: true,
                 sampler_heap_target,
+                direct_sampler_bindings: false,
                 sampler_buffer_binding_map,
                 external_texture_binding_map,
                 force_loop_bounding: true,
