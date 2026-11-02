@@ -34,7 +34,8 @@ struct RenderState {
     pipeline: bool,
     required_group: Option<super::hal_bind_group::GroupKind>,
     bound_group: Option<super::hal_bind_group::GroupKind>,
-    vertex_bytes: Option<u64>,
+    vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
+    vertex_layout: Option<(u32, u32)>,
 }
 
 impl CommandEncoder {
@@ -417,7 +418,8 @@ impl crate::CommandEncoder for CommandEncoder {
             pipeline: false,
             required_group: None,
             bound_group: None,
-            vertex_bytes: None,
+            vertex: None,
+            vertex_layout: None,
         });
         self.record(NativeCommand::BeginRender {
             target,
@@ -450,6 +452,7 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         render.pipeline = true;
         render.required_group = pipeline.group;
+        render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
         self.record(NativeCommand::SetPipeline {
             vertex: pipeline.vertex.clone(),
             fragment: pipeline.fragment.clone(),
@@ -486,8 +489,7 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        self.render.as_mut().unwrap().vertex_bytes = Some(len);
-        self.record(NativeCommand::SetVertex { buffer, offset });
+        self.render.as_mut().unwrap().vertex = Some((buffer, offset, len));
     }
 
     unsafe fn set_viewport(&mut self, rect: &Rect<f32>, depth_range: Range<f32>) {
@@ -559,20 +561,38 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        let Some(bytes) = render.vertex_bytes else {
+        let Some((buffer, offset, bytes)) = render.vertex.as_ref() else {
+            self.reject();
+            return;
+        };
+        let Some((stride, extent)) = render.vertex_layout else {
             self.reject();
             return;
         };
         let end = u64::from(first_vertex) + u64::from(vertex_count);
+        let required = if vertex_count == 0 {
+            Some(0)
+        } else {
+            (end - 1)
+                .checked_mul(u64::from(stride))
+                .and_then(|v| v.checked_add(u64::from(extent)))
+        };
         if !render.pipeline
             || (render.required_group.is_some() && render.required_group != render.bound_group)
             || first_instance != 0
             || instance_count != 1
-            || end > bytes / 8
+            || required.is_none_or(|required| required > *bytes)
         {
             self.reject();
             return;
         }
+        let buffer = buffer.clone();
+        let offset = *offset;
+        self.record(NativeCommand::SetVertex {
+            buffer,
+            offset,
+            stride,
+        });
         self.record(NativeCommand::Draw {
             first: first_vertex,
             count: vertex_count,
@@ -1242,22 +1262,29 @@ mod textured_tests {
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(false)
+        sampled_triangle(false, false)
     }
 
     #[test]
     fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true)
+        sampled_triangle(true, false)
     }
 
-    fn sampled_triangle(combined: bool) -> windows::core::Result<()> {
+    #[test]
+    fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
+        sampled_triangle(true, true)
+    }
+
+    fn sampled_triangle(combined: bool, multi: bool) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(native.clone());
-        let source = if combined {
+        let source = if multi {
+            "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)) * color * in.color; }"
+        } else if combined {
             "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)) * color; }"
         } else {
             "@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }"
@@ -1351,13 +1378,20 @@ mod textured_tests {
                 })
                 .unwrap()
         };
-        let attributes = [wgt::VertexAttribute {
+        let mut attributes = alloc::vec![wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
             offset: 0,
             shader_location: 0,
         }];
+        if multi {
+            attributes.push(wgt::VertexAttribute {
+                format: wgt::VertexFormat::Unorm8x4,
+                offset: 8,
+                shader_location: 1,
+            });
+        }
         let buffers = [Some(crate::VertexBufferLayout {
-            array_stride: 8,
+            array_stride: if multi { 12 } else { 8 },
             step_mode: wgt::VertexStepMode::Vertex,
             attributes: &attributes,
         })];
@@ -1462,7 +1496,11 @@ mod textured_tests {
                 })
                 .unwrap()
         };
-        let color: [f32; 4] = [0.0, 1.0, 1.0, 1.0];
+        let color: [f32; 4] = if multi {
+            [1.0; 4]
+        } else {
+            [0.0, 1.0, 1.0, 1.0]
+        };
         let color_bytes: alloc::vec::Vec<u8> = color.iter().flat_map(|v| v.to_ne_bytes()).collect();
         native.write_byte_buffer(&uniform, 0, &color_bytes)?;
         let uniform_bindings = [crate::BufferBinding::new_unchecked(&uniform, 0, None)];
@@ -1489,17 +1527,23 @@ mod textured_tests {
                 .unwrap()
         };
         let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
+        let mut bytes = alloc::vec::Vec::new();
+        for position in vertices.chunks_exact(2) {
+            bytes.extend(position.iter().flat_map(|v| v.to_ne_bytes()));
+            if multi {
+                bytes.extend_from_slice(&[0, 255, 0, 255]);
+            }
+        }
         let buffer = unsafe {
             device
                 .create_buffer(&crate::BufferDescriptor {
                     label: None,
-                    size: size_of_val(&vertices) as u64,
+                    size: bytes.len() as u64,
                     usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
                     memory_flags: crate::MemoryFlags::empty(),
                 })
                 .unwrap()
         };
-        let bytes: alloc::vec::Vec<u8> = vertices.iter().flat_map(|v| v.to_ne_bytes()).collect();
         native.write_byte_buffer(&buffer, 0, &bytes)?;
         let extent = wgt::Extent3d {
             width: 8,
@@ -1603,6 +1647,20 @@ mod textured_tests {
                 .unwrap()
         };
         unsafe {
+            if multi {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+                crate::CommandEncoder::set_vertex_buffer(
+                    &mut encoder,
+                    0,
+                    crate::BufferBinding::new_unchecked(&buffer, 0, None),
+                );
+                crate::CommandEncoder::draw(&mut encoder, 0, 4, 0, 1);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            }
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
             crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
@@ -1622,12 +1680,12 @@ mod textured_tests {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
-            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
             crate::CommandEncoder::set_vertex_buffer(
                 &mut encoder,
                 0,
                 crate::BufferBinding::new_unchecked(&buffer, 0, None),
             );
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
             crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
             crate::CommandEncoder::end_render_pass(&mut encoder);
         }

@@ -7,19 +7,19 @@ use super::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use windows::{
+    core::{Error, Interface, Result},
     Win32::{
         Foundation::E_INVALIDARG,
         Graphics::{
             Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             Direct3D11::{
-                D3D11_VIEWPORT, ID3D11Buffer, ID3D11DepthStencilView, ID3D11Device,
-                ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+                ID3D11Buffer, ID3D11DepthStencilView, ID3D11Device, ID3D11DeviceContext,
+                ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
                 ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11VertexShader,
+                ID3D11VertexShader, D3D11_VIEWPORT,
             },
         },
     },
-    core::{Error, Interface, Result},
 };
 
 /// Records validated copy commands without submitting GPU work.
@@ -57,6 +57,7 @@ pub(super) enum NativeCommand {
     SetVertex {
         buffer: ID3D11Buffer,
         offset: u32,
+        stride: u32,
     },
     SetViewport(D3D11_VIEWPORT),
     Draw {
@@ -170,12 +171,16 @@ impl CommandBuffer {
                         context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
                         context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
                     }
-                    NativeCommand::SetVertex { buffer, offset } => {
+                    NativeCommand::SetVertex {
+                        buffer,
+                        offset,
+                        stride,
+                    } => {
                         context.IASetVertexBuffers(
                             0,
                             1,
                             Some(&Some(buffer.clone())),
-                            Some(&8),
+                            Some(stride),
                             Some(offset),
                         );
                     }
@@ -243,7 +248,7 @@ impl CopyEncoder<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dx11::{FeatureLevel, enumerate_native_adapters};
+    use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
 
     #[test]
@@ -260,11 +265,9 @@ mod tests {
             CommandBuffer::from_commands(&device, alloc::vec![NativeCommand::InjectedFailure]);
         let result = unsafe { crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)) };
         assert_eq!(result, Err(crate::DeviceError::Unexpected));
-        assert!(
-            device
-                .wait_native_fence(&fence, 1, Some(core::time::Duration::ZERO))
-                .is_err()
-        );
+        assert!(device
+            .wait_native_fence(&fence, 1, Some(core::time::Duration::ZERO))
+            .is_err());
         Ok(())
     }
 

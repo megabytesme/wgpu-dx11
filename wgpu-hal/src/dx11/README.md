@@ -37,7 +37,9 @@ queue path, including HAL texture views
 and fence ownership checks. Adapter enumeration remains empty.
 
 A restricted FL 9_1 render path records one unblended triangle-list pass with
-one Float32x2 vertex stream. A strict UWP diagnostic compiles resource-free WGSL,
+one interleaved vertex stream. Its supported attributes are Float32 vectors and
+Unorm8x4, with validated stride and draw bounds. A strict UWP diagnostic
+compiles resource-free WGSL,
 uploads a texture through mapped-buffer and recorded-copy paths, records a
 sampled triangle through the HAL encoder, checks a backbuffer pixel and presents. This sampled shader uses unchecked runtime behavior; the path does
 not provide general shaders, render passes, or WebGPU.

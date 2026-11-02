@@ -9,7 +9,10 @@ use windows::{
             ID3D11VertexShader, D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
             D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
         },
-        Dxgi::Common::DXGI_FORMAT_R32G32_FLOAT,
+        Dxgi::Common::{
+            DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
+            DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
+        },
     },
 };
 
@@ -33,6 +36,8 @@ pub struct RenderPipeline {
     pub(super) rasterizer: ID3D11RasterizerState,
     pub(super) target_format: wgt::TextureFormat,
     pub(super) group: Option<super::hal_bind_group::GroupKind>,
+    pub(super) vertex_stride: u32,
+    pub(super) vertex_extent: u32,
 }
 
 #[cfg(test)]
@@ -491,9 +496,6 @@ impl RenderPipeline {
         let [Some(buffer)] = *vertex_buffers else {
             return Err(invalid());
         };
-        let [attribute] = buffer.attributes else {
-            return Err(invalid());
-        };
         let [Some(target)] = desc.color_targets else {
             return Err(invalid());
         };
@@ -507,11 +509,12 @@ impl RenderPipeline {
             || desc.depth_stencil.is_some()
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
-            || buffer.array_stride != 8
+            || buffer.array_stride == 0
+            || buffer.array_stride > 2048
+            || buffer.array_stride % 4 != 0
             || buffer.step_mode != wgt::VertexStepMode::Vertex
-            || attribute.format != wgt::VertexFormat::Float32x2
-            || attribute.offset != 0
-            || attribute.shader_location != 0
+            || buffer.attributes.is_empty()
+            || buffer.attributes.len() > 16
             || !matches!(
                 target.format,
                 wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
@@ -599,15 +602,39 @@ impl RenderPipeline {
             fragment.entry_point,
             bindings,
         )?;
-        let input_desc = [D3D11_INPUT_ELEMENT_DESC {
-            SemanticName: PCSTR(c"LOC".as_ptr().cast()),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R32G32_FLOAT,
-            InputSlot: 0,
-            AlignedByteOffset: 0,
-            InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        }];
+        let mut input_desc = alloc::vec::Vec::with_capacity(buffer.attributes.len());
+        let mut vertex_extent = 0u32;
+        let mut locations = 0u32;
+        for attribute in buffer.attributes {
+            let (format, size) = match attribute.format {
+                wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
+                wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
+                wgt::VertexFormat::Float32x3 => (DXGI_FORMAT_R32G32B32_FLOAT, 12),
+                wgt::VertexFormat::Float32x4 => (DXGI_FORMAT_R32G32B32A32_FLOAT, 16),
+                wgt::VertexFormat::Unorm8x4 => (DXGI_FORMAT_R8G8B8A8_UNORM, 4),
+                _ => return Err(invalid()),
+            };
+            let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
+            let end = offset.checked_add(size).ok_or_else(invalid)?;
+            if offset % 4 != 0
+                || u64::from(end) > buffer.array_stride
+                || attribute.shader_location >= 16
+                || locations & (1 << attribute.shader_location) != 0
+            {
+                return Err(invalid());
+            }
+            locations |= 1 << attribute.shader_location;
+            vertex_extent = vertex_extent.max(end);
+            input_desc.push(D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: PCSTR(c"LOC".as_ptr().cast()),
+                SemanticIndex: attribute.shader_location,
+                Format: format,
+                InputSlot: 0,
+                AlignedByteOffset: offset,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            });
+        }
         let raster_desc = D3D11_RASTERIZER_DESC {
             FillMode: D3D11_FILL_SOLID,
             CullMode: D3D11_CULL_NONE,
@@ -651,6 +678,8 @@ impl RenderPipeline {
             rasterizer: rasterizer.ok_or_else(invalid)?,
             target_format: target.format,
             group: desc.layout.group,
+            vertex_stride: buffer.array_stride as u32,
+            vertex_extent,
         })
     }
 }
