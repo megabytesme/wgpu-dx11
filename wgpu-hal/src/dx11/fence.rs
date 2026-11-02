@@ -48,7 +48,8 @@ impl NativeDevice {
     }
 
     /// Submit a copy-only command buffer and enqueue a GPU completion event.
-    /// Values must increase strictly. This is not `wgpu_hal::Queue::submit` yet.
+    /// Lower or equal signal values do not decrease the fence timeline.
+    /// This is not `wgpu_hal::Queue::submit` yet.
     #[allow(dead_code)]
     pub(crate) fn submit_copy_commands_signaled(
         &self,
@@ -69,9 +70,6 @@ impl NativeDevice {
         let query: ID3D11Asynchronous = query.ok_or_else(|| Error::from_hresult(E_FAIL))?.cast()?;
         // All fence operations take the fence lock before the context lock.
         let mut state = fence.state.lock();
-        if value <= state.last_signaled {
-            return Err(Error::from_hresult(E_INVALIDARG));
-        }
         state
             .pending
             .try_reserve(1)
@@ -84,7 +82,7 @@ impl NativeDevice {
             context.Flush();
         }
         state.pending.push_back(PendingEvent { value, query });
-        state.last_signaled = value;
+        state.last_signaled = state.last_signaled.max(value);
         Ok(())
     }
 
@@ -117,7 +115,7 @@ impl NativeDevice {
                 status.ok()?;
                 return Err(Error::from_hresult(E_FAIL));
             }
-            state.completed = event.value;
+            state.completed = state.completed.max(event.value);
             state.pending.pop_front();
         }
         Ok(state.completed)
@@ -200,32 +198,34 @@ mod tests {
                 .wait_native_fence(&fence, 1, Some(Duration::ZERO))
                 .is_err()
         );
-        assert!(
-            device
-                .submit_copy_commands_signaled(&commands, &fence, 0)
-                .is_err()
-        );
-        assert_eq!(device.read_byte_buffer(&destination, 0, 16)?, vec![0; 16]);
-        device.submit_copy_commands_signaled(&commands, &fence, 1)?;
-        assert!(
-            device
-                .submit_copy_commands_signaled(&commands, &fence, 1)
-                .is_err()
-        );
-        device.submit_copy_commands_signaled(&commands, &fence, 2)?;
-        // The event may already be complete; either zero-timeout result is valid.
-        let _ = device.wait_native_fence(&fence, 2, Some(Duration::ZERO))?;
-        assert!(device.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
-        assert!(device.wait_native_fence(&fence, 1, Some(Duration::ZERO))?);
+        // A zero signal still submits work, even though the timeline remains at zero.
+        device.submit_copy_commands_signaled(&commands, &fence, 0)?;
         assert_eq!(
             device.read_byte_buffer(&destination, 0, 16)?,
             vec![0x5a; 16]
+        );
+        assert_eq!(device.poll_native_fence(&fence)?, 0);
+        device.write_byte_buffer(&destination, 0, &[0; 16])?;
+        device.submit_copy_commands_signaled(&commands, &fence, 2)?;
+        device.write_byte_buffer(&source, 0, &[0xa5; 16])?;
+        // Lower/equal signals must still submit their copies and never regress the fence.
+        device.submit_copy_commands_signaled(&commands, &fence, 1)?;
+        device.submit_copy_commands_signaled(&commands, &fence, 2)?;
+        device.submit_copy_commands_signaled(&commands, &fence, 3)?;
+        // The event may already be complete; either zero-timeout result is valid.
+        let _ = device.wait_native_fence(&fence, 3, Some(Duration::ZERO))?;
+        assert!(device.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
+        assert!(device.wait_native_fence(&fence, 1, Some(Duration::ZERO))?);
+        assert_eq!(device.poll_native_fence(&fence)?, 3);
+        assert_eq!(
+            device.read_byte_buffer(&destination, 0, 16)?,
+            vec![0xa5; 16]
         );
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.poll_native_fence(&fence).is_err());
         assert!(
             other
-                .submit_copy_commands_signaled(&commands, &fence, 3)
+                .submit_copy_commands_signaled(&commands, &fence, 4)
                 .is_err()
         );
         Ok(())
