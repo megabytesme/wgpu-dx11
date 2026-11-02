@@ -12,6 +12,7 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResou
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum GroupKind {
+    Empty,
     TextureSampler,
     Uniform { minimum: u64 },
     UniformTextureSampler { minimum: u64 },
@@ -29,6 +30,7 @@ impl crate::DynBindGroupLayout for BindGroupLayout {}
 
 #[derive(Clone, Debug)]
 pub(super) enum GroupResources {
+    Empty,
     TextureSampler {
         texture: ID3D11ShaderResourceView,
         sampler: ID3D11SamplerState,
@@ -64,6 +66,7 @@ impl BindGroupLayout {
             return Err(crate::DeviceError::Unexpected);
         }
         let kind = match desc.entries {
+            [] => GroupKind::Empty,
             [uniform, texture, sampler, second_texture, second_sampler]
                 if uniform.binding == 0
                     && uniform.count.is_none()
@@ -217,6 +220,16 @@ impl BindGroup {
             return Err(crate::DeviceError::Unexpected);
         }
         let resources = match desc.layout.kind {
+            GroupKind::Empty => {
+                if !desc.entries.is_empty()
+                    || !desc.buffers.is_empty()
+                    || !desc.textures.is_empty()
+                    || !desc.samplers.is_empty()
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                GroupResources::Empty
+            }
             GroupKind::UniformTwoTextures { minimum } => {
                 if desc.buffers.len() != 1
                     || desc.textures.len() != 2
@@ -379,6 +392,53 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn empty_layout_and_group_enforce_owner_and_no_resources() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            return Ok(());
+        };
+        let device = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?));
+        let other = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?));
+        let layout = unsafe {
+            device
+                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &[],
+                })
+                .unwrap()
+        };
+        let desc = crate::BindGroupDescriptor {
+            label: None,
+            layout: &layout,
+            buffers: &[],
+            samplers: &[],
+            textures: &[],
+            entries: &[],
+            acceleration_structures: &[],
+            external_textures: &[],
+        };
+        let group = unsafe { device.create_bind_group(&desc).unwrap() };
+        assert!(matches!(group.resources, GroupResources::Empty));
+        assert!(unsafe { other.create_bind_group(&desc) }.is_err());
+        let malformed_entries = [crate::BindGroupEntry {
+            binding: 0,
+            resource_index: 0,
+            count: 1,
+        }];
+        let malformed = crate::BindGroupDescriptor {
+            entries: &malformed_entries,
+            ..desc
+        };
+        assert!(unsafe { device.create_bind_group(&malformed) }.is_err());
+        unsafe {
+            device.destroy_bind_group(group);
+            device.destroy_bind_group_layout(layout);
+        }
+        Ok(())
+    }
 
     #[test]
     fn hal_texture_sampler_group_checks_owner_and_fl9_npot_wrap() -> windows::core::Result<()> {
