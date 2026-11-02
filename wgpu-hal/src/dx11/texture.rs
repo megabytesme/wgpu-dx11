@@ -157,6 +157,24 @@ fn subresource_layout(
 }
 
 impl NativeDevice {
+    pub(super) fn texture_copy_texture_source(
+        &self,
+        texture: &NativeTexture,
+    ) -> Result<(ID3D11Texture2D, [u32; 2])> {
+        self.check_texture_owner(texture)?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { texture.raw.GetDesc(&mut desc) };
+        if !texture.usage.contains(wgt::TextureUses::COPY_SRC)
+            || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || desc.SampleDesc.Count != 1
+        {
+            return Err(invalid());
+        }
+        Ok((texture.raw.clone(), [desc.Width, desc.Height]))
+    }
+
     pub(super) fn texture_copy_destination(
         &self,
         texture: &NativeTexture,

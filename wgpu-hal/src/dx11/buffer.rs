@@ -64,6 +64,19 @@ impl NativeBufferCopy {
 }
 
 impl NativeDevice {
+    pub(super) fn texture_copy_buffer_destination(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        length: usize,
+    ) -> Result<ID3D11Buffer> {
+        if !buffer.usage.contains(wgt::BufferUses::COPY_DST) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.checked_buffer_range(buffer, offset, length)?;
+        Ok(buffer.raw.clone())
+    }
+
     pub(super) fn texture_copy_source(
         &self,
         buffer: &NativeBuffer,
