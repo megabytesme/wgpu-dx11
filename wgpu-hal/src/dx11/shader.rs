@@ -147,7 +147,7 @@ pub(crate) struct ShaderBinding {
     pub(crate) kind: ShaderBindingKind,
 }
 
-fn shader_binding_kind(
+pub(super) fn shader_binding_kind(
     module: &naga::Module,
     global: &naga::GlobalVariable,
 ) -> Option<ShaderBindingKind> {

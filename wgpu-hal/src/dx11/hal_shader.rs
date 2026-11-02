@@ -1,7 +1,10 @@
 //! Owned Naga shader modules for the private D3D11 HAL.
 use super::{
     device::NativeDevice,
-    shader::{compile_naga_with_bindings, ShaderBinding, ShaderProfile},
+    shader::{
+        compile_naga_with_bindings, shader_binding_kind, ShaderBinding, ShaderBindingKind,
+        ShaderProfile,
+    },
 };
 use alloc::{format, sync::Arc, vec::Vec};
 
@@ -104,7 +107,26 @@ mod tests {
             wgt::ShaderRuntimeChecks::checked(),
         );
         assert!(
-            matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 resource bindings are not implemented")
+            matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 texture loads are not implemented")
+        );
+        let uniform_module = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> color: vec4f; @fragment fn fs() -> @location(0) vec4f { return color; }").unwrap();
+        let uniform_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&uniform_module)
+        .unwrap();
+        let checked_uniform = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(uniform_module),
+                info: uniform_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::checked(),
+        );
+        assert!(
+            matches!(checked_uniform.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 buffer and storage bindings are not implemented")
         );
         // FL9 cannot compile Naga's integer guards; report a pipeline error
         // rather than bypassing them.
@@ -189,20 +211,52 @@ impl ShaderModule {
             || self.checks.task_shader_dispatch_tracking
             || self.checks.mesh_shader_primitive_indices_clamp
             || self.checks.int_div_checks;
-        // Sampled-resource robustness needs a separate FL9 audit; keep those
-        // shaders fail-closed when checks are requested. The resource-free
-        // path uses Naga's explicit checks and accepts checked shaders.
         if requests_checks
             && self
                 .shader
                 .module
                 .global_variables
                 .iter()
-                .any(|(_, global)| global.binding.is_some())
+                .any(|(_, global)| {
+                    global.binding.is_some()
+                        && !matches!(
+                            shader_binding_kind(&self.shader.module, global),
+                            Some(ShaderBindingKind::Texture2dFloat | ShaderBindingKind::Sampler)
+                        )
+                })
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "checked D3D11 resource bindings are not implemented".into(),
+                "checked D3D11 buffer and storage bindings are not implemented".into(),
+            ));
+        }
+        // Sampled views are checked single-mip RGBA8 2D resources and sampler
+        // address modes are validated with the view at bind-group creation.
+        // Keep explicit texel loads fail-closed until their FL9 bounds behavior
+        // is independently tested; scan helpers as well as entry points.
+        let has_texture_load = |function: &naga::Function| {
+            function
+                .expressions
+                .iter()
+                .any(|(_, expression)| matches!(expression, naga::Expression::ImageLoad { .. }))
+        };
+        if requests_checks
+            && (self
+                .shader
+                .module
+                .functions
+                .iter()
+                .any(|(_, function)| has_texture_load(function))
+                || self
+                    .shader
+                    .module
+                    .entry_points
+                    .iter()
+                    .any(|entry| has_texture_load(&entry.function)))
+        {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "checked D3D11 texture loads are not implemented".into(),
             ));
         }
         let profile = match stage {

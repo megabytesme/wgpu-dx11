@@ -196,7 +196,7 @@ mod tests {
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(native.clone());
-        let module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }").unwrap();
+        let module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(-1.0, 2.0)); }").unwrap();
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -208,7 +208,7 @@ mod tests {
                 .create_shader_module(
                     &crate::ShaderModuleDescriptor {
                         label: None,
-                        runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
                     },
                     crate::ShaderInput::Naga(crate::NagaShader {
                         module: Cow::Owned(module),
@@ -308,8 +308,9 @@ mod tests {
         let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
         let mut texels = alloc::vec![0; 64];
         for pixel in texels.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&[0, 255, 0, 255]);
+            pixel.copy_from_slice(&[255, 0, 0, 255]);
         }
+        texels[48..52].copy_from_slice(&[0, 255, 0, 255]);
         native.write_rgba_texture(&texture, 0, 0, &texels)?;
         let view = unsafe {
             device
