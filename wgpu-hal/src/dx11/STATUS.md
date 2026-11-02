@@ -3,8 +3,8 @@
 The `dx11` backend is experimental. Normal adapter enumeration returns no
 adapters: the current implementation does not meet wgpu's general device
 contract, and its restrictions cannot all be expressed as wgpu limits.
-Feature level 9_1 is a target for Horizon-specific compatibility work; it is
-not evidence of full WebGPU conformance.
+Feature level 9_1 is a target for restricted compatibility work; it is not
+evidence of full WebGPU conformance.
 
 ## Implemented private HAL paths
 
@@ -15,7 +15,7 @@ not evidence of full WebGPU conformance.
 - Single-mip RGBA8 sampled/color textures, texture views, bounded staging
   transfers, and restricted filtering samplers. On 9_1/9_2, translated
   finite maximum LODs require validated single-mip views.
-- Empty, one-uniform, one-texture/sampler, and the Horizon HUD-shaped
+- Empty, one-uniform, one-texture/sampler, and a two-texture overlay-shaped
   uniform/two-texture/two-sampler bind groups; restricted Naga/FXC shaders.
 - Triangle-list passes with one interleaved vertex buffer, bounds-checked
   scissors, replace/alpha/crosshair/additive/vignette blending, and splitting
@@ -23,8 +23,9 @@ not evidence of full WebGPU conformance.
   dynamic indexing.
 - Restricted 16-bit, zero-base indexed draws validate GPU index contents at
   replay and preserve draw order. The staging readback can stall the CPU.
-- The real Horizon HUD and crosshair shaders have passed FL9_1 GPU readback;
-  the HUD path has also passed an isolated x64 UWP surface diagnostic.
+- An original two-texture overlay shader passes checked FL9_1 GPU readback
+  with alpha and inversion blend states; its surface diagnostic also passed
+  a strict x64 UWP FL9_1 run.
 - A local, deliberately unsafe core bootstrap experiment with placeholder
   capabilities created a wgpu device, copied mapped buffers, and rendered an
   indexed triangle on FL9_1 with pixel readback. It is not an adapter or a
@@ -39,13 +40,15 @@ not evidence of full WebGPU conformance.
   buffer usages required by valid wgpu applications. Several restrictions,
   including specific bind-group shapes, cannot be described by `Limits`.
 - Complete indexed and instanced rendering, depth/stencil paths and other
-  operations needed by Horizon. On 9_1 the native index format is restricted
-  to 16-bit and index values to 65,534; combined vertex/index native bindings
+  operations needed by many applications. On 9_1 the native index format is
+  restricted to 16-bit and index values to 65,534; combined vertex/index bindings
   on 9_1/9_2 need emulation. Other index formats, nonzero base vertices and
   out-of-range indices currently fail rather than providing full wgpu semantics.
-- Replace or adapt Horizon compute/storage-dependent paths for 9_1, which has
-  no native compute shaders. The opt-in Naga texel-load/dimensions experiments
-  remain isolated proofs and are not enabled in the HAL.
+- Feature level 9_1 has no native compute shaders; applications relying on
+  compute or storage need alternatives. The opt-in Naga texel-load/dimensions
+  experiments remain isolated proofs and are not enabled in the HAL.
 - Validate real device format/features, target-specific UWP imports, shader
   semantics, device loss, synchronization and presentation on each target.
   Test-only success must not be presented as public adapter support.
+
+See [TESTING.md](TESTING.md) for the staged validation plan and hardware matrix.
