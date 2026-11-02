@@ -14,6 +14,7 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResou
 pub(super) enum GroupKind {
     TextureSampler,
     Uniform { minimum: u64 },
+    UniformTextureSampler { minimum: u64 },
 }
 
 #[doc(hidden)]
@@ -32,6 +33,11 @@ pub(super) enum GroupResources {
         sampler: ID3D11SamplerState,
     },
     Uniform(Arc<UniformBinding>),
+    UniformTextureSampler {
+        uniform: Arc<UniformBinding>,
+        texture: ID3D11ShaderResourceView,
+        sampler: ID3D11SamplerState,
+    },
 }
 
 #[doc(hidden)]
@@ -56,6 +62,41 @@ impl BindGroupLayout {
             return Err(crate::DeviceError::Unexpected);
         }
         let kind = match desc.entries {
+            [uniform, texture, sampler]
+                if uniform.binding == 0
+                    && uniform.count.is_none()
+                    && uniform.visibility
+                        == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
+                    && texture.binding == 1
+                    && sampler.binding == 2
+                    && texture.visibility == wgt::ShaderStages::FRAGMENT
+                    && sampler.visibility == wgt::ShaderStages::FRAGMENT
+                    && texture.count.is_none()
+                    && sampler.count.is_none()
+                    && matches!(
+                        texture.ty,
+                        wgt::BindingType::Texture {
+                            sample_type: wgt::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgt::TextureViewDimension::D2,
+                            multisampled: false,
+                        }
+                    )
+                    && matches!(
+                        sampler.ty,
+                        wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
+                    ) =>
+            {
+                match uniform.ty {
+                    wgt::BindingType::Buffer {
+                        ty: wgt::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(minimum),
+                    } if minimum.get() <= 65536 => GroupKind::UniformTextureSampler {
+                        minimum: minimum.get(),
+                    },
+                    _ => return Err(crate::DeviceError::Unexpected),
+                }
+            }
             [uniform]
                 if uniform.binding == 0
                     && uniform.count.is_none()
@@ -123,6 +164,47 @@ impl BindGroup {
             return Err(crate::DeviceError::Unexpected);
         }
         let resources = match desc.layout.kind {
+            GroupKind::UniformTextureSampler { minimum } => {
+                if desc.buffers.len() != 1
+                    || desc.textures.len() != 1
+                    || desc.samplers.len() != 1
+                    || desc.entries.len() != 3
+                    || desc.entries.iter().enumerate().any(|(index, entry)| {
+                        entry.binding != index as u32
+                            || entry.resource_index != 0
+                            || entry.count != 1
+                    })
+                    || desc.textures[0].usage != wgt::TextureUses::RESOURCE
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let binding = &desc.buffers[0];
+                let length = owner
+                    .uniform_binding_length(binding.buffer, binding.offset, binding.size)
+                    .map_err(super::hal_device::device_error)?;
+                if length < minimum {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let uniform = owner
+                    .prepare_uniform_binding(binding.buffer, binding.offset, length)
+                    .map_err(super::hal_device::device_error)?;
+                let sampler = desc.samplers[0];
+                let native_sampler = sampler.raw_for(owner)?;
+                let (texture, dimensions) = owner
+                    .sampled_view(desc.textures[0].view)
+                    .map_err(super::hal_device::device_error)?;
+                if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
+                    && sampler.wraps()
+                    && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                GroupResources::UniformTextureSampler {
+                    uniform: Arc::new(uniform),
+                    texture,
+                    sampler: native_sampler,
+                }
+            }
             GroupKind::Uniform { minimum } => {
                 if desc.buffers.len() != 1
                     || !desc.textures.is_empty()
@@ -189,8 +271,8 @@ impl BindGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
-    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
 
     #[test]

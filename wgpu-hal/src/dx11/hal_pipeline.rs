@@ -2,15 +2,15 @@
 use super::{api::Unavailable, device::NativeDevice, hal_shader::ShaderModule};
 use alloc::{string::ToString, sync::Arc};
 use windows::{
+    core::PCSTR,
     Win32::Graphics::{
         Direct3D11::{
-            D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, ID3D11ClassLinkage,
-            ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader,
+            ID3D11ClassLinkage, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+            ID3D11VertexShader, D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
+            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
         },
         Dxgi::Common::DXGI_FORMAT_R32G32_FLOAT,
     },
-    core::PCSTR,
 };
 
 #[doc(hidden)]
@@ -38,13 +38,13 @@ pub struct RenderPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
-    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
     use alloc::borrow::Cow;
     use core::num::NonZeroU64;
     use windows::Win32::Graphics::{
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-        Direct3D11::{D3D11_VIEWPORT, ID3D11DepthStencilView},
+        Direct3D11::{ID3D11DepthStencilView, D3D11_VIEWPORT},
     };
 
     #[test]
@@ -143,11 +143,9 @@ mod tests {
             .collect();
         native.write_byte_buffer(&buffer, 0, &bytes)?;
         assert!(native.vertex_buffer(&buffer, 1, None).is_err());
-        assert!(
-            native
-                .vertex_buffer(&buffer, 0, NonZeroU64::new(25))
-                .is_err()
-        );
+        assert!(native
+            .vertex_buffer(&buffer, 0, NonZeroU64::new(25))
+            .is_err());
         assert!(native.vertex_buffer(&buffer, 24, None).is_err());
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.vertex_buffer(&buffer, 0, None).is_err());
@@ -523,7 +521,11 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
-        if let Some(super::hal_bind_group::GroupKind::Uniform { minimum }) = desc.layout.group {
+        if let Some(
+            super::hal_bind_group::GroupKind::Uniform { minimum }
+            | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum },
+        ) = desc.layout.group
+        {
             for module in [vertex_stage.module, fragment.module] {
                 if module
                     .required_uniform_size()?
@@ -560,9 +562,31 @@ impl RenderPipeline {
             slot: 0,
             kind: ShaderBindingKind::Uniform,
         }];
+        let combined_bindings = [
+            uniform_binding[0],
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 1,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Texture2dFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 2,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
         let bindings: &[_] = match desc.layout.group {
             Some(super::hal_bind_group::GroupKind::TextureSampler) => &bindings,
             Some(super::hal_bind_group::GroupKind::Uniform { .. }) => &uniform_binding,
+            Some(super::hal_bind_group::GroupKind::UniformTextureSampler { .. }) => {
+                &combined_bindings
+            }
             None => &[],
         };
         let vertex_code = vertex_stage.module.compile_with_bindings(

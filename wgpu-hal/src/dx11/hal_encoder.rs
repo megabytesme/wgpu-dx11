@@ -2,9 +2,9 @@
 #![allow(unused_variables)]
 
 use super::{
-    Api as Dx11Api,
     command::{CommandBuffer, NativeCommand},
     device::NativeDevice,
+    Api as Dx11Api,
 };
 #[allow(unused_imports)]
 use crate::*;
@@ -278,8 +278,14 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         }
+        let mut uniform_command = None;
         let command = match &group.resources {
-            super::hal_bind_group::GroupResources::TextureSampler { texture, sampler } => {
+            super::hal_bind_group::GroupResources::TextureSampler { texture, sampler }
+            | super::hal_bind_group::GroupResources::UniformTextureSampler {
+                texture,
+                sampler,
+                ..
+            } => {
                 let (Ok(sampled), Ok(target)) = (unsafe { texture.GetResource() }, unsafe {
                     render.target.GetResource()
                 }) else {
@@ -289,6 +295,13 @@ impl crate::CommandEncoder for CommandEncoder {
                 if sampled.as_raw() == target.as_raw() {
                     self.reject();
                     return;
+                }
+                if let super::hal_bind_group::GroupResources::UniformTextureSampler {
+                    uniform,
+                    ..
+                } = &group.resources
+                {
+                    uniform_command = Some(NativeCommand::SetUniformGroup(uniform.clone()));
                 }
                 NativeCommand::SetTextureGroup {
                     texture: texture.clone(),
@@ -301,6 +314,9 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         render.bound_group = Some(group.kind);
         self.record(command);
+        if let Some(command) = uniform_command {
+            self.record(command);
+        }
     }
 
     unsafe fn set_immediates(
@@ -733,8 +749,8 @@ impl crate::CommandEncoder for CommandEncoder {
 mod tests {
     use super::*;
     use crate::{
+        dx11::{enumerate_native_adapters, FeatureLevel, Queue},
         DynCommandBuffer, DynQueue,
-        dx11::{FeatureLevel, Queue, enumerate_native_adapters},
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
@@ -1220,19 +1236,33 @@ mod tests {
 
 #[cfg(test)]
 mod textured_tests {
+    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
-    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
     use alloc::{borrow::Cow, sync::Arc};
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
+        sampled_triangle(false)
+    }
+
+    #[test]
+    fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
+        sampled_triangle(true)
+    }
+
+    fn sampled_triangle(combined: bool) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(native.clone());
-        let module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }").unwrap();
+        let source = if combined {
+            "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)) * color; }"
+        } else {
+            "@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }"
+        };
+        let module = naga::front::wgsl::parse_str(source).unwrap();
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -1254,9 +1284,23 @@ mod textured_tests {
                 )
                 .unwrap()
         };
-        let entries = [
-            wgt::BindGroupLayoutEntry {
+        let shift = u32::from(combined);
+        let mut entries = alloc::vec![];
+        if combined {
+            entries.push(wgt::BindGroupLayoutEntry {
                 binding: 0,
+                visibility: wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Buffer {
+                    ty: wgt::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: core::num::NonZeroU64::new(16),
+                },
+                count: None,
+            });
+        }
+        entries.extend([
+            wgt::BindGroupLayoutEntry {
+                binding: shift,
                 visibility: wgt::ShaderStages::FRAGMENT,
                 ty: wgt::BindingType::Texture {
                     sample_type: wgt::TextureSampleType::Float { filterable: true },
@@ -1266,12 +1310,28 @@ mod textured_tests {
                 count: None,
             },
             wgt::BindGroupLayoutEntry {
-                binding: 1,
+                binding: 1 + shift,
                 visibility: wgt::ShaderStages::FRAGMENT,
                 ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
                 count: None,
             },
-        ];
+        ]);
+        if combined {
+            let mut invalid_entries = entries.clone();
+            invalid_entries[0].ty = wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            };
+            assert!(unsafe {
+                device.create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &invalid_entries,
+                })
+            }
+            .is_err());
+        }
         let group_layout = unsafe {
             device
                 .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -1325,10 +1385,14 @@ mod textured_tests {
             cache: None,
         };
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
-        assert!(matches!(
+        assert_eq!(
             pipeline.group,
-            Some(super::super::hal_bind_group::GroupKind::TextureSampler)
-        ));
+            Some(if combined {
+                super::super::hal_bind_group::GroupKind::UniformTextureSampler { minimum: 16 }
+            } else {
+                super::super::hal_bind_group::GroupKind::TextureSampler
+            })
+        );
         let texture_desc = crate::TextureDescriptor {
             label: None,
             size: wgt::Extent3d {
@@ -1347,7 +1411,11 @@ mod textured_tests {
         let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
         let mut texels = alloc::vec![0; 64];
         for pixel in texels.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&[0, 255, 0, 255]);
+            pixel.copy_from_slice(if combined {
+                &[255, 255, 0, 255]
+            } else {
+                &[0, 255, 0, 255]
+            });
         }
         native.write_rgba_texture(&texture, 0, 0, &texels)?;
         let view = unsafe {
@@ -1384,24 +1452,34 @@ mod textured_tests {
             usage: wgt::TextureUses::RESOURCE,
         }];
         let sampler_bindings = [&sampler];
-        let group_entries = [
-            crate::BindGroupEntry {
-                binding: 0,
+        let uniform = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: 16,
+                    usage: wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let color: [f32; 4] = [0.0, 1.0, 1.0, 1.0];
+        let color_bytes: alloc::vec::Vec<u8> = color.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        native.write_byte_buffer(&uniform, 0, &color_bytes)?;
+        let uniform_bindings = [crate::BufferBinding::new_unchecked(&uniform, 0, None)];
+        let buffer_bindings: &[_] = if combined { &uniform_bindings } else { &[] };
+        let group_entries: alloc::vec::Vec<_> = (0..if combined { 3 } else { 2 })
+            .map(|binding| crate::BindGroupEntry {
+                binding,
                 resource_index: 0,
                 count: 1,
-            },
-            crate::BindGroupEntry {
-                binding: 1,
-                resource_index: 0,
-                count: 1,
-            },
-        ];
+            })
+            .collect();
         let group = unsafe {
             device
                 .create_bind_group(&crate::BindGroupDescriptor {
                     label: None,
                     layout: &group_layout,
-                    buffers: &[],
+                    buffers: buffer_bindings,
                     samplers: &sampler_bindings,
                     textures: &texture_bindings,
                     entries: &group_entries,
@@ -1480,7 +1558,7 @@ mod textured_tests {
                 .create_bind_group(&crate::BindGroupDescriptor {
                     label: None,
                     layout: &group_layout,
-                    buffers: &[],
+                    buffers: buffer_bindings,
                     samplers: &sampler_bindings,
                     textures: &alias_textures,
                     entries: &group_entries,
@@ -1559,7 +1637,8 @@ mod textured_tests {
         }
         assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
         let pixels = native.read_rgba_texture(&target, 0, 0)?;
-        assert_eq!(&pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &[0, 255, 0, 255]);
+        let expected = [0, 255, 0, 255];
+        assert_eq!(&pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &expected);
         unsafe {
             crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
         }
@@ -1569,14 +1648,14 @@ mod textured_tests {
 
 #[cfg(test)]
 mod uniform_tests {
+    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel, Queue};
     use crate::Device as _;
-    use crate::dx11::{Device, FeatureLevel, Queue, enumerate_native_adapters};
     use alloc::{borrow::Cow, sync::Arc, vec};
     use core::num::NonZeroU64;
 
     #[test]
-    fn uniform_group_drives_fl9_triangle_and_refreshes_after_partial_update()
-    -> windows::core::Result<()> {
+    fn uniform_group_drives_fl9_triangle_and_refreshes_after_partial_update(
+    ) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
             return Ok(());
@@ -1622,16 +1701,14 @@ mod uniform_tests {
             has_dynamic_offset: false,
             min_binding_size: None,
         };
-        assert!(
-            unsafe {
-                device.create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
-                    label: None,
-                    flags: crate::BindGroupLayoutFlags::empty(),
-                    entries: &no_minimum,
-                })
-            }
-            .is_err()
-        );
+        assert!(unsafe {
+            device.create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                label: None,
+                flags: crate::BindGroupLayoutFlags::empty(),
+                entries: &no_minimum,
+            })
+        }
+        .is_err());
         let group_layout = unsafe {
             device
                 .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -1806,21 +1883,19 @@ mod uniform_tests {
             16,
             NonZeroU64::new(8),
         )];
-        assert!(
-            unsafe {
-                device.create_bind_group(&crate::BindGroupDescriptor {
-                    label: None,
-                    layout: &group_layout,
-                    buffers: &short_binding,
-                    samplers: &[],
-                    textures: &[],
-                    entries: &group_entries,
-                    acceleration_structures: &[],
-                    external_textures: &[],
-                })
-            }
-            .is_err()
-        );
+        assert!(unsafe {
+            device.create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &group_layout,
+                buffers: &short_binding,
+                samplers: &[],
+                textures: &[],
+                entries: &group_entries,
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+        }
+        .is_err());
         let group = unsafe {
             device
                 .create_bind_group(&crate::BindGroupDescriptor {
