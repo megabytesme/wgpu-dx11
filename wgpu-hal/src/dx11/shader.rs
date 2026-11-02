@@ -1,5 +1,5 @@
 //! In-memory FXC shader compilation. WGSL lowering is not implemented here.
-use alloc::{ffi::CString, string::String, vec::Vec};
+use alloc::{ffi::CString, format, string::String, vec::Vec};
 use windows::{
     Win32::{
         Foundation::E_INVALIDARG,
@@ -110,6 +110,70 @@ pub(crate) fn compile_hlsl(
     Ok(bytes.to_vec())
 }
 
+/// Narrow Naga-to-DXBC errors. Resource binding remapping is not implemented.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) enum NagaCompileError {
+    UnsupportedBindings,
+    StageMismatch,
+    Translation(String),
+    Compilation(ShaderCompileError),
+}
+
+/// Translate a validated, resource-free Naga entry point and compile it to DXBC.
+///
+/// This deliberately rejects resource bindings; it is not a complete wgpu shader
+/// implementation. The selected FXC target still enforces its shader-model rules.
+#[allow(dead_code)]
+pub(crate) fn compile_resource_free_naga(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+) -> Result<Vec<u8>, NagaCompileError> {
+    use naga::back::hlsl;
+    let expected = match profile {
+        ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
+        ShaderProfile::PixelLevel9_1 | ShaderProfile::Pixel5_0 => naga::ShaderStage::Fragment,
+        ShaderProfile::Compute5_0 => naga::ShaderStage::Compute,
+    };
+    if expected != stage {
+        return Err(NagaCompileError::StageMismatch);
+    }
+    if module
+        .global_variables
+        .iter()
+        .any(|(_, global)| global.binding.is_some())
+    {
+        return Err(NagaCompileError::UnsupportedBindings);
+    }
+    let options = hlsl::Options {
+        shader_model: hlsl::ShaderModel::V5_0,
+        ..Default::default()
+    };
+    let pipeline = hlsl::PipelineOptions {
+        entry_point: Some((stage, entry.into())),
+    };
+    let mut source = String::new();
+    let reflection = hlsl::Writer::new(&mut source, &options, &pipeline)
+        .write(module, info, None)
+        .map_err(|error| NagaCompileError::Translation(format!("{error:?}")))?;
+    let mut names = reflection.entry_point_names.into_iter();
+    let name = names
+        .next()
+        .ok_or_else(|| {
+            NagaCompileError::Translation(String::from("missing generated entry point"))
+        })?
+        .map_err(|error| NagaCompileError::Translation(format!("{error:?}")))?;
+    if names.next().is_some() {
+        return Err(NagaCompileError::Translation(String::from(
+            "unexpected extra generated entry point",
+        )));
+    }
+    compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,18 +254,38 @@ mod tests {
             return Ok(());
         };
         let device = adapter.open_device(&[FeatureLevel::L9_1])?;
-        let vs_code = compile_hlsl(
-            "float4 main(float2 p : POSITION) : SV_POSITION { return float4(p, 0.5, 1); }",
-            "main",
+        use naga::{
+            ShaderStage,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            @vertex fn vertex_main(@location(0) p: vec2<f32>) -> @builtin(position) vec4<f32> {
+                return vec4<f32>(p, 0.5, 1.0);
+            }
+            @fragment fn fragment_main() -> @location(0) vec4<f32> {
+                return vec4<f32>(0.25, 0.5, 0.75, 1.0);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).expect("parse WGSL");
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .expect("validate WGSL");
+        let vs_code = compile_resource_free_naga(
+            &module,
+            &info,
+            ShaderStage::Vertex,
+            "vertex_main",
             ShaderProfile::VertexLevel9_1,
         )
-        .expect("compile FL 9_1 vertex shader");
-        let ps_code = compile_hlsl(
-            "float4 main() : SV_TARGET { return float4(0.25, 0.5, 0.75, 1); }",
-            "main",
+        .expect("compile WGSL vertex shader");
+        let ps_code = compile_resource_free_naga(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "fragment_main",
             ShaderProfile::PixelLevel9_1,
         )
-        .expect("compile FL 9_1 pixel shader");
+        .expect("compile WGSL fragment shader");
         let raw = device.raw_device();
         let context = device.immediate_context();
         let mut vs = None;
@@ -224,7 +308,7 @@ mod tests {
             ..Default::default()
         };
         let layout_desc = [D3D11_INPUT_ELEMENT_DESC {
-            SemanticName: PCSTR(c"POSITION".as_ptr().cast()),
+            SemanticName: PCSTR(c"LOC".as_ptr().cast()),
             SemanticIndex: 0,
             Format: DXGI_FORMAT_R32G32_FLOAT,
             InputSlot: 0,
@@ -316,6 +400,98 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn compiles_resource_free_naga_hlsl_for_level_9_1_and_5_0() {
+        use naga::{
+            ShaderStage,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            @vertex fn vertex_main(@location(0) p: vec2<f32>) -> @builtin(position) vec4<f32> {
+                return vec4<f32>(p, 0.5, 1.0);
+            }
+            @fragment fn fragment_main() -> @location(0) vec4<f32> {
+                return vec4<f32>(0.25, 0.5, 0.75, 1.0);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).expect("parse simple WGSL");
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .expect("validate simple WGSL");
+        for (stage, name, level_9, model_5) in [
+            (
+                ShaderStage::Vertex,
+                "vertex_main",
+                ShaderProfile::VertexLevel9_1,
+                ShaderProfile::Vertex5_0,
+            ),
+            (
+                ShaderStage::Fragment,
+                "fragment_main",
+                ShaderProfile::PixelLevel9_1,
+                ShaderProfile::Pixel5_0,
+            ),
+        ] {
+            for profile in [level_9, model_5] {
+                let bytes = compile_resource_free_naga(&module, &info, stage, name, profile)
+                    .unwrap_or_else(|error| panic!("{profile:?}: {error:?}"));
+                assert!(bytes.starts_with(b"DXBC"));
+            }
+        }
+        assert!(matches!(
+            compile_resource_free_naga(
+                &module,
+                &info,
+                ShaderStage::Vertex,
+                "vertex_main",
+                ShaderProfile::Pixel5_0
+            ),
+            Err(NagaCompileError::StageMismatch)
+        ));
+        let compute = naga::front::wgsl::parse_str("@compute @workgroup_size(1) fn main() {}")
+            .expect("parse compute WGSL");
+        let compute_info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&compute)
+            .expect("validate compute WGSL");
+        assert!(
+            compile_resource_free_naga(
+                &compute,
+                &compute_info,
+                ShaderStage::Compute,
+                "main",
+                ShaderProfile::Compute5_0
+            )
+            .expect("compile compute WGSL")
+            .starts_with(b"DXBC")
+        );
+    }
+
+    #[test]
+    fn naga_path_explicitly_rejects_bound_resources() {
+        use naga::{
+            ShaderStage,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            @group(0) @binding(0) var<uniform> color: vec4<f32>;
+            @fragment fn main() -> @location(0) vec4<f32> { return color; }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        assert!(matches!(
+            compile_resource_free_naga(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0
+            ),
+            Err(NagaCompileError::UnsupportedBindings)
+        ));
     }
 
     #[test]

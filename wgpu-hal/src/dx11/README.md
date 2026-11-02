@@ -16,9 +16,10 @@ these are experimental building blocks and are not wgpu HAL types. Internal
 copy-only buffers support checked byte writes and blocking staging readback;
 they are initially uninitialized and do not implement WebGPU buffer semantics.
 An internal in-memory FXC compiler can produce DXBC for selected FL 9_1 and
-shader-model 5 profiles. It accepts HLSL directly; WGSL lowering and validating
-shader features against the selected device remain unimplemented.
+shader-model 5 profiles. A narrow internal path translates validated Naga
+entry points without resource bindings, then compiles them with FXC. It rejects
+bound resources; general WGSL support and device capability validation remain
+unimplemented.
 
 This is diagnostic scaffolding only. There is no `wgpu-hal` DX11 `Api`, no
-wgpu DX11 adapter, surface, shader implementation, command submission, or
-rendering. UWP and ARM device execution have not yet been verified.
+wgpu DX11 adapter, surface, shader pipeline, command submission, or rendering. UWP and ARM device execution have not yet been verified.
