@@ -278,6 +278,11 @@ pub(crate) fn compile_naga_with_bindings(
         );
     }
     for (handle, global) in module.global_variables.iter() {
+        // Naga emits only globals reachable from this entry point. A module can
+        // therefore declare resources for other entry points without binding them here.
+        if entry_info[handle].is_empty() {
+            continue;
+        }
         if global.space == naga::AddressSpace::Immediate {
             return Err(NagaCompileError::UnsupportedBindings);
         }
@@ -702,6 +707,52 @@ mod tests {
             .expect("compile compute WGSL")
             .starts_with(b"DXBC")
         );
+    }
+
+    #[test]
+    fn naga_unused_entry_point_resources_need_no_binding() {
+        use naga::{
+            valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
+        };
+        let source = r#"
+            @group(0) @binding(0) var<uniform> color: vec4f;
+            @group(0) @binding(1) var unused_texture: texture_2d<f32>;
+            @group(0) @binding(2) var unused_sampler: sampler;
+            @fragment fn uses_color() -> @location(0) vec4f { return color; }
+            @fragment fn uses_texture() -> @location(0) vec4f { return textureSample(unused_texture, unused_sampler, vec2f(0.5)); }
+        "#;
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let mapping = UniformBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+        };
+        assert!(compile_naga_with_uniforms(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "uses_color",
+            ShaderProfile::PixelLevel9_1,
+            &[mapping]
+        )
+        .is_ok());
+        assert!(matches!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "uses_texture",
+                ShaderProfile::PixelLevel9_1,
+                &[mapping]
+            ),
+            Err(NagaCompileError::UnsupportedBindings)
+        ));
     }
 
     #[test]
