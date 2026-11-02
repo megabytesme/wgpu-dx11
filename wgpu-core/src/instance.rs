@@ -85,6 +85,9 @@ impl Instance {
             log::warn!("DX11 is experimental and has no usable wgpu backend yet");
         }
 
+        #[cfg(all(windows, feature = "dx11"))]
+        this.try_add_hal(hal::api::Dx11, &instance_desc, telemetry);
+
         #[cfg(all(vulkan, not(target_os = "netbsd")))]
         this.try_add_hal(hal::api::Vulkan, &instance_desc, telemetry);
         #[cfg(metal)]

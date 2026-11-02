@@ -123,6 +123,9 @@ impl Instance {
         if cfg!(dx12) {
             backends = backends.union(Backends::DX12);
         }
+        if cfg!(all(windows, feature = "dx11")) {
+            backends = backends.union(Backends::DX11);
+        }
         if cfg!(webgpu) {
             backends = backends.union(Backends::BROWSER_WEBGPU);
         }
@@ -308,6 +311,19 @@ impl Instance {
     #[cfg(wgpu_core)]
     pub fn generate_report(&self) -> Option<wgc::global::GlobalReport> {
         self.inner.as_core_opt().map(|ctx| ctx.generate_report())
+    }
+}
+
+#[cfg(all(test, windows, feature = "dx11"))]
+mod dx11_scaffold_tests {
+    use super::{Backends, Instance, InstanceDescriptor};
+
+    #[test]
+    fn dx11_only_instance_initializes() {
+        assert!(Instance::enabled_backend_features().contains(Backends::DX11));
+        let mut desc = InstanceDescriptor::new_without_display_handle();
+        desc.backends = Backends::DX11;
+        let _instance = Instance::new(desc);
     }
 }
 

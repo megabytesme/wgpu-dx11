@@ -23,5 +23,7 @@ storage, comparison samplers, and immediate bindings are rejected; general
 WGSL support and device capability validation remain unimplemented. A desktop
 FL 9_1 GPU test draws and reads back an actual sampled texture.
 
-This is diagnostic scaffolding only. There is no `wgpu-hal` DX11 `Api`, no
-wgpu DX11 adapter, surface, shader pipeline, command submission, or rendering. UWP and ARM device execution have not yet been verified.
+The registered DX11 HAL instance deliberately exposes no adapters. It retains
+validated UWP CoreWindow handles as agile COM references, but HAL surface
+configuration, devices, shader pipelines and rendering are unavailable. Native
+diagnostic primitives do not yet implement WebGPU semantics.
