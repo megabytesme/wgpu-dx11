@@ -38,8 +38,9 @@ and fence ownership checks. Adapter enumeration remains empty.
 
 A restricted FL 9_1 render path records one unblended triangle-list pass with
 one Float32x2 vertex stream. A strict UWP diagnostic compiles resource-free WGSL,
-records it through the HAL encoder, submits it, checks a backbuffer pixel and
-presents. It does not provide general shaders, render passes, or WebGPU.
+uploads a texture through mapped-buffer and recorded-copy paths, records a
+sampled triangle through the HAL encoder, checks a backbuffer pixel and presents. This sampled shader uses unchecked runtime behavior; the path does
+not provide general shaders, render passes, or WebGPU.
 
 The same restricted encoder can bind one validated fragment-stage 2D float
 texture and sampler. On feature level 9, non-power-of-two textures reject

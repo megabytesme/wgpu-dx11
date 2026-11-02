@@ -211,13 +211,42 @@ impl Surface {
             )
         }
         .map_err(|_| crate::SurfaceError::Other("shader module failed"))?;
+        let group_entries = [
+            wgt::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgt::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ];
+        let group_layout = unsafe {
+            crate::Device::create_bind_group_layout(
+                &device,
+                &crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &group_entries,
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
         let layout = unsafe {
             crate::Device::create_pipeline_layout(
                 &device,
                 &crate::PipelineLayoutDescriptor {
                     label: None,
                     flags: crate::PipelineLayoutFlags::empty(),
-                    bind_group_layouts: &[],
+                    bind_group_layouts: &[Some(&group_layout)],
                     immediate_size: 0,
                 },
             )
@@ -262,6 +291,140 @@ impl Surface {
             )
         }
         .map_err(|_| crate::SurfaceError::Other("render pipeline failed"))?;
+        let sampled = unsafe {
+            crate::Device::create_texture(
+                &device,
+                &crate::TextureDescriptor {
+                    label: None,
+                    size: wgt::Extent3d {
+                        width: 2,
+                        height: 2,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                    view_formats: alloc::vec![],
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let sampled_view = unsafe {
+            crate::Device::create_texture_view(
+                &device,
+                &sampled,
+                &crate::TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage: wgt::TextureUses::RESOURCE,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let sampler = unsafe {
+            crate::Device::create_sampler(
+                &device,
+                &crate::SamplerDescriptor {
+                    label: None,
+                    address_modes: [wgt::AddressMode::ClampToEdge; 3],
+                    mag_filter: wgt::FilterMode::Nearest,
+                    min_filter: wgt::FilterMode::Nearest,
+                    mipmap_filter: wgt::MipmapFilterMode::Nearest,
+                    lod_clamp: 0.0..f32::MAX,
+                    compare: None,
+                    anisotropy_clamp: 1,
+                    border_color: None,
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let texture_bindings = [crate::TextureBinding {
+            view: &sampled_view,
+            usage: wgt::TextureUses::RESOURCE,
+        }];
+        let sampler_bindings = [&sampler];
+        let entries = [
+            crate::BindGroupEntry {
+                binding: 0,
+                resource_index: 0,
+                count: 1,
+            },
+            crate::BindGroupEntry {
+                binding: 1,
+                resource_index: 0,
+                count: 1,
+            },
+        ];
+        let group = unsafe {
+            crate::Device::create_bind_group(
+                &device,
+                &crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    samplers: &sampler_bindings,
+                    textures: &texture_bindings,
+                    entries: &entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &crate::BufferDescriptor {
+                    label: None,
+                    size: 264,
+                    usage: wgt::BufferUses::MAP_WRITE | wgt::BufferUses::COPY_SRC,
+                    memory_flags: crate::MemoryFlags::empty(),
+                },
+            )
+        }
+        .map_err(crate::SurfaceError::Device)?;
+        let mapping = unsafe { crate::Device::map_buffer(&device, &upload, 0..264) }
+            .map_err(crate::SurfaceError::Device)?;
+        if mapping.is_coherent {
+            return Err(crate::SurfaceError::Other("unexpected coherent mapping"));
+        }
+        unsafe {
+            core::ptr::write_bytes(mapping.ptr.as_ptr(), 0, 264);
+            core::ptr::copy_nonoverlapping(
+                [0u8, 255, 0, 255, 0, 255, 0, 255].as_ptr(),
+                mapping.ptr.as_ptr(),
+                8,
+            );
+            core::ptr::copy_nonoverlapping(
+                [0u8, 255, 0, 255, 0, 255, 0, 255].as_ptr(),
+                mapping.ptr.as_ptr().add(256),
+                8,
+            );
+            crate::Device::flush_mapped_ranges(&device, &upload, core::iter::once(0..264));
+        }
+        let copy = crate::BufferTextureCopy {
+            buffer_layout: wgt::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+            texture_base: crate::TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: crate::FormatAspects::COLOR,
+            },
+            size: crate::CopyExtent {
+                width: 2,
+                height: 2,
+                depth: 1,
+            },
+        };
         let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
         let bytes: alloc::vec::Vec<u8> = vertices.iter().flat_map(|v| v.to_ne_bytes()).collect();
         let vertex = unsafe {
@@ -317,8 +480,15 @@ impl Surface {
         let commands = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None)
                 .map_err(crate::SurfaceError::Device)?;
+            crate::CommandEncoder::copy_buffer_to_texture(
+                &mut encoder,
+                &upload,
+                &sampled,
+                core::iter::once(copy),
+            );
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass)
                 .map_err(crate::SurfaceError::Device)?;
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
             crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
             crate::CommandEncoder::set_vertex_buffer(
                 &mut encoder,
@@ -339,6 +509,7 @@ impl Surface {
         let pixel = frame.readback().map_err(surface_error)?;
         unsafe {
             crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+            crate::Device::unmap_buffer(&device, &upload);
             DynDevice::destroy_texture_view(&device, view);
             queue.present(surface, first.texture)?;
             queue.wait_for_idle().map_err(crate::SurfaceError::Device)?;
@@ -362,7 +533,7 @@ impl Surface {
                 "unexpected resized surface texture",
             ))?;
         let resized_pixel = frame
-            .clear_and_readback([1.0, 0.0, 0.0, 1.0])
+            .clear_and_readback([0.0, 1.0, 0.0, 1.0])
             .map_err(surface_error)?;
         if pixel != resized_pixel {
             return Err(crate::SurfaceError::Other(

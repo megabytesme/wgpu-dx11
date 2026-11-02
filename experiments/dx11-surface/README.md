@@ -5,10 +5,12 @@ By default it requests feature level 11_0 and creates a four-layer texture and
 view. Set `DX11_PROBE_FEATURE_LEVEL=9_1` at build time to request 9_1 and skip
 the texture-array check. Both modes create the backend's owned CoreWindow swap
 chain through HAL Surface and Queue, compiles a resource-free WGSL shader,
-records a triangle through the HAL render encoder, and checks its GPU readback
-and presentation, plus discard and resize. The HAL instance exposes no
-adapters; this native proof is not a wgpu render pipeline. The UWP host calls
-it from the UI thread.
+uploads a sampled texture from a persistent CPU-shadow mapping through the
+HAL buffer-to-texture copy, records a textured triangle through the HAL render
+encoder, and checks GPU readback and presentation, plus discard and resize. The HAL instance exposes no
+adapters; this internal HAL proof is not a usable public wgpu backend. The
+textured test requests unchecked shader runtime behavior. The UWP host calls it
+from the UI thread.
 
 The UWP host writes its result to `LocalState/wgpu-dx11-surface-probe.txt`.
 It also handles resize and releases the backbuffer before resizing.
