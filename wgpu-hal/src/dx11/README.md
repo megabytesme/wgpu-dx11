@@ -17,9 +17,11 @@ copy-only buffers support checked byte writes and blocking staging readback;
 they are initially uninitialized and do not implement WebGPU buffer semantics.
 An internal in-memory FXC compiler can produce DXBC for selected FL 9_1 and
 shader-model 5 profiles. A narrow internal path translates validated Naga
-entry points with explicitly mapped uniform buffers, then compiles them with
-FXC. Texture, sampler, storage, and immediate bindings are rejected; general
-WGSL support and device capability validation remain unimplemented.
+entry points with explicitly mapped uniform buffers, plain 2D float textures,
+and non-comparison samplers, then compiles them with FXC. Texture arrays,
+storage, comparison samplers, and immediate bindings are rejected; general
+WGSL support and device capability validation remain unimplemented. A desktop
+FL 9_1 GPU test draws and reads back an actual sampled texture.
 
 This is diagnostic scaffolding only. There is no `wgpu-hal` DX11 `Api`, no
 wgpu DX11 adapter, surface, shader pipeline, command submission, or rendering. UWP and ARM device execution have not yet been verified.
