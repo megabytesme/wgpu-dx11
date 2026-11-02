@@ -45,3 +45,7 @@ The same restricted encoder can bind one validated fragment-stage 2D float
 texture and sampler. On feature level 9, non-power-of-two textures reject
 repeat/mirror addressing; unsupported layouts and texture/attachment aliasing
 are rejected rather than silently rendered incorrectly.
+
+Restricted RGBA8 buffer-to-texture and texture-to-buffer copies are recorded
+and replayed in queue order. They use staging and synchronous CPU mapping on
+D3D11, so these paths may stall; unsupported subresources and layouts fail.

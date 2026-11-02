@@ -91,7 +91,7 @@ impl NativeDevice {
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         let context = self.immediate_context();
         for command in commands {
-            command.replay(&context);
+            command.replay(&context)?;
         }
         unsafe {
             context.End(&query);

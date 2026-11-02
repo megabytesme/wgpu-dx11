@@ -179,7 +179,26 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferTextureCopy>,
     {
-        self.reject()
+        if self.render.is_some() || self.recording.is_none() {
+            self.reject();
+            return;
+        }
+        if self.failure.is_some() {
+            return;
+        }
+        for region in regions {
+            let transfer = match self.device.prepare_buffer_to_texture(src, dst, &region) {
+                Ok(transfer) => transfer,
+                Err(error) => {
+                    self.failure = Some(super::hal_device::device_error(error));
+                    return;
+                }
+            };
+            self.record(NativeCommand::BufferToTexture(transfer));
+            if self.failure.is_some() {
+                return;
+            }
+        }
     }
 
     unsafe fn copy_texture_to_buffer<T>(
@@ -191,7 +210,29 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferTextureCopy>,
     {
-        self.reject()
+        if self.render.is_some()
+            || self.recording.is_none()
+            || src_usage != wgt::TextureUses::COPY_SRC
+        {
+            self.reject();
+            return;
+        }
+        if self.failure.is_some() {
+            return;
+        }
+        for region in regions {
+            let transfer = match self.device.prepare_texture_to_buffer(src, dst, &region) {
+                Ok(transfer) => transfer,
+                Err(error) => {
+                    self.failure = Some(super::hal_device::device_error(error));
+                    return;
+                }
+            };
+            self.record(NativeCommand::TextureToBuffer(transfer));
+            if self.failure.is_some() {
+                return;
+            }
+        }
     }
 
     unsafe fn copy_acceleration_structure_to_acceleration_structure(
@@ -904,6 +945,143 @@ mod tests {
                 crate::CommandEncoder::end_encoding(&mut encoder),
                 Err(DeviceError::Unexpected)
             ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hal_encoder_submits_padded_buffer_to_texture_copy() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let device = dx11::Device::new(native.clone());
+        let queue = Queue::new(native.clone());
+        let source = unsafe {
+            Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 272,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let output = unsafe {
+            Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 272,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&output, 0, &[0x7f; 272])?;
+        let texture = unsafe {
+            Device::create_texture(
+                &device,
+                &TextureDescriptor {
+                    label: None,
+                    size: wgt::Extent3d {
+                        width: 4,
+                        height: 4,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::COPY_SRC,
+                    memory_flags: MemoryFlags::empty(),
+                    view_formats: vec![],
+                },
+            )
+            .unwrap()
+        };
+        native.write_rgba_texture(&texture, 0, 0, &[0; 64])?;
+        let region = BufferTextureCopy {
+            buffer_layout: wgt::TexelCopyBufferLayout {
+                offset: 8,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+            texture_base: TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d { x: 1, y: 1, z: 0 },
+                aspect: FormatAspects::COLOR,
+            },
+            size: CopyExtent {
+                width: 2,
+                height: 2,
+                depth: 1,
+            },
+        };
+        let mut bytes = vec![0; 272];
+        bytes[8..16].copy_from_slice(&[255, 0, 0, 255, 255, 0, 0, 255]);
+        bytes[264..272].copy_from_slice(&[0, 255, 0, 255, 0, 255, 0, 255]);
+        native.write_byte_buffer(&source, 0, &bytes)?;
+        let mut encoder = unsafe {
+            Device::create_command_encoder(
+                &device,
+                &CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                },
+            )
+            .unwrap()
+        };
+        let command = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_texture(
+                &mut encoder,
+                &source,
+                &texture,
+                core::iter::once(region.clone()),
+            );
+            crate::CommandEncoder::copy_texture_to_buffer(
+                &mut encoder,
+                &texture,
+                wgt::TextureUses::COPY_SRC,
+                &output,
+                core::iter::once(region),
+            );
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        assert_eq!(native.read_rgba_texture(&texture, 0, 0)?, vec![0; 64]);
+        let fence = native.create_native_fence();
+        unsafe {
+            crate::Queue::submit(&queue, &[&command], &[], (&fence, 1)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        for y in 0..4 {
+            for x in 0..4 {
+                let expected = match (x, y) {
+                    (1..=2, 1) => [255, 0, 0, 255],
+                    (1..=2, 2) => [0, 255, 0, 255],
+                    _ => [0, 0, 0, 0],
+                };
+                assert_eq!(&pixels[(y * 4 + x) * 4..(y * 4 + x + 1) * 4], &expected);
+            }
+        }
+        let result = native.read_byte_buffer(&output, 0, 272)?;
+        for (index, byte) in result.iter().enumerate() {
+            let expected = match index {
+                8..=15 => bytes[index],
+                264..=271 => bytes[index],
+                _ => 0x7f,
+            };
+            assert_eq!(*byte, expected, "output offset {index}");
+        }
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
         }
         Ok(())
     }

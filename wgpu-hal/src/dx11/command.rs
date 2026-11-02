@@ -2,6 +2,7 @@
 use super::{
     buffer::{NativeBuffer, NativeBufferCopy},
     device::NativeDevice,
+    hal_transfer::{BufferToTexture, TextureToBuffer},
 };
 use alloc::vec::Vec;
 use windows::{
@@ -30,6 +31,10 @@ pub(crate) struct CopyEncoder<'a> {
 #[derive(Debug)]
 pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
+    BufferToTexture(BufferToTexture),
+    TextureToBuffer(TextureToBuffer),
+    #[cfg(test)]
+    InjectedFailure,
     BeginRender {
         target: ID3D11RenderTargetView,
         clear: Option<[f32; 4]>,
@@ -83,11 +88,17 @@ impl CommandBuffer {
     }
 
     /// The caller must hold the owning device's immediate-context mutex.
-    pub(super) fn replay(&self, context: &ID3D11DeviceContext) {
+    pub(super) fn replay(&self, context: &ID3D11DeviceContext) -> Result<()> {
         for command in &self.commands {
             unsafe {
                 match command {
                     NativeCommand::Copy(copy) => copy.execute(context),
+                    NativeCommand::BufferToTexture(copy) => copy.execute(context)?,
+                    NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
+                    #[cfg(test)]
+                    NativeCommand::InjectedFailure => {
+                        return Err(Error::from_hresult(windows::Win32::Foundation::E_FAIL));
+                    }
                     NativeCommand::BeginRender {
                         target,
                         clear,
@@ -146,6 +157,7 @@ impl CommandBuffer {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -168,8 +180,7 @@ impl NativeDevice {
     pub(crate) fn submit_copy_commands(&self, command_buffer: &CommandBuffer) -> Result<()> {
         command_buffer.validate_device(self)?;
         let context = self.immediate_context();
-        command_buffer.replay(&context);
-        Ok(())
+        command_buffer.replay(&context)
     }
 }
 
@@ -204,6 +215,28 @@ mod tests {
     use super::*;
     use crate::dx11::{FeatureLevel, enumerate_native_adapters};
     use alloc::vec;
+
+    #[test]
+    fn replay_failure_reaches_queue_and_does_not_signal_fence() -> Result<()> {
+        use alloc::sync::Arc;
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let device = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let queue = crate::dx11::Queue::new(device.clone());
+        let fence = device.create_native_fence();
+        let commands =
+            CommandBuffer::from_commands(&device, alloc::vec![NativeCommand::InjectedFailure]);
+        let result = unsafe { crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)) };
+        assert_eq!(result, Err(crate::DeviceError::Unexpected));
+        assert!(
+            device
+                .wait_native_fence(&fence, 1, Some(core::time::Duration::ZERO))
+                .is_err()
+        );
+        Ok(())
+    }
 
     #[test]
     fn recorded_copy_submits_in_order_and_retains_resources() -> Result<()> {
