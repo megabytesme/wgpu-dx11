@@ -458,6 +458,7 @@ impl crate::CommandEncoder for CommandEncoder {
             fragment: pipeline.fragment.clone(),
             input: pipeline.input.clone(),
             rasterizer: pipeline.rasterizer.clone(),
+            blend: pipeline.blend.clone(),
         });
     }
 
@@ -1262,20 +1263,25 @@ mod textured_tests {
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(false, false)
+        sampled_triangle(false, false, false)
     }
 
     #[test]
     fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, false)
+        sampled_triangle(true, false, false)
     }
 
     #[test]
     fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
-        sampled_triangle(true, true)
+        sampled_triangle(true, true, false)
     }
 
-    fn sampled_triangle(combined: bool, multi: bool) -> windows::core::Result<()> {
+    #[test]
+    fn hal_encoder_blends_translucent_ui_on_level_9() -> windows::core::Result<()> {
+        sampled_triangle(true, true, true)
+    }
+
+    fn sampled_triangle(combined: bool, multi: bool, alpha: bool) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
             return Ok(());
@@ -1402,7 +1408,11 @@ mod textured_tests {
             constants: &constants,
             zero_initialize_workgroup_memory: false,
         };
-        let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+        let mut target_state: wgt::ColorTargetState = wgt::TextureFormat::Rgba8Unorm.into();
+        if alpha {
+            target_state.blend = Some(wgt::BlendState::ALPHA_BLENDING);
+        }
+        let targets = [Some(target_state)];
         let desc = crate::RenderPipelineDescriptor {
             label: None,
             layout: &layout,
@@ -1419,6 +1429,16 @@ mod textured_tests {
             cache: None,
         };
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+        if alpha {
+            let mut unsupported: wgt::ColorTargetState = wgt::TextureFormat::Rgba8Unorm.into();
+            unsupported.blend = Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+            let targets = [Some(unsupported)];
+            let unsupported_desc = crate::RenderPipelineDescriptor {
+                color_targets: &targets,
+                ..desc
+            };
+            assert!(unsafe { device.create_render_pipeline(&unsupported_desc) }.is_err());
+        }
         assert_eq!(
             pipeline.group,
             Some(if combined {
@@ -1496,7 +1516,9 @@ mod textured_tests {
                 })
                 .unwrap()
         };
-        let color: [f32; 4] = if multi {
+        let color: [f32; 4] = if alpha {
+            [1.0, 1.0, 1.0, 0.5]
+        } else if multi {
             [1.0; 4]
         } else {
             [0.0, 1.0, 1.0, 1.0]
@@ -1622,7 +1644,7 @@ mod textured_tests {
             clear_value: wgt::Color {
                 r: 0.,
                 g: 0.,
-                b: 0.,
+                b: if alpha { 1. } else { 0. },
                 a: 1.,
             },
         })];
@@ -1695,8 +1717,14 @@ mod textured_tests {
         }
         assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
         let pixels = native.read_rgba_texture(&target, 0, 0)?;
-        let expected = [0, 255, 0, 255];
-        assert_eq!(&pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &expected);
+        let actual = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
+        if alpha {
+            assert_eq!(actual[0], 0);
+            assert!((127..=128).contains(&actual[1]) && (127..=128).contains(&actual[2]));
+            assert_eq!(actual[3], 255);
+        } else {
+            assert_eq!(actual, &[0, 255, 0, 255]);
+        }
         unsafe {
             crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
         }

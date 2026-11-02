@@ -5,9 +5,12 @@ use windows::{
     core::PCSTR,
     Win32::Graphics::{
         Direct3D11::{
-            ID3D11ClassLinkage, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
-            ID3D11VertexShader, D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+            ID3D11BlendState, ID3D11ClassLinkage, ID3D11InputLayout, ID3D11PixelShader,
+            ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
+            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
+            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE, D3D11_FILL_SOLID,
+            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+            D3D11_RENDER_TARGET_BLEND_DESC,
         },
         Dxgi::Common::{
             DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
@@ -34,6 +37,7 @@ pub struct RenderPipeline {
     pub(super) fragment: ID3D11PixelShader,
     pub(super) input: ID3D11InputLayout,
     pub(super) rasterizer: ID3D11RasterizerState,
+    pub(super) blend: Option<ID3D11BlendState>,
     pub(super) target_format: wgt::TextureFormat,
     pub(super) group: Option<super::hal_bind_group::GroupKind>,
     pub(super) vertex_stride: u32,
@@ -519,7 +523,9 @@ impl RenderPipeline {
                 target.format,
                 wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
             )
-            || target.blend.is_some()
+            || target.blend.is_some_and(|blend| {
+                blend != wgt::BlendState::ALPHA_BLENDING && blend != wgt::BlendState::REPLACE
+            })
             || target.write_mask != wgt::ColorWrites::ALL
         {
             return Err(invalid());
@@ -641,7 +647,8 @@ impl RenderPipeline {
             DepthClipEnable: true.into(),
             ..Default::default()
         };
-        let (mut vertex, mut fragment, mut input, mut rasterizer) = (None, None, None, None);
+        let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend) =
+            (None, None, None, None, None);
         let failure = |error: windows::core::Error| {
             crate::PipelineError::Linkage(
                 wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
@@ -669,6 +676,26 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
                 .map_err(failure)?;
+            if target.blend == Some(wgt::BlendState::ALPHA_BLENDING) {
+                let mut desc = D3D11_BLEND_DESC::default();
+                desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
+                    BlendEnable: true.into(),
+                    SrcBlend: D3D11_BLEND_SRC_ALPHA,
+                    DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
+                    BlendOp: D3D11_BLEND_OP_ADD,
+                    SrcBlendAlpha: D3D11_BLEND_ONE,
+                    DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
+                    BlendOpAlpha: D3D11_BLEND_OP_ADD,
+                    RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+                };
+                owner
+                    .raw_device()
+                    .CreateBlendState(&desc, Some(&mut blend))
+                    .map_err(failure)?;
+                if blend.is_none() {
+                    return Err(invalid());
+                }
+            }
         }
         Ok(Self {
             owner: owner.clone(),
@@ -676,6 +703,7 @@ impl RenderPipeline {
             fragment: fragment.ok_or_else(invalid)?,
             input: input.ok_or_else(invalid)?,
             rasterizer: rasterizer.ok_or_else(invalid)?,
+            blend,
             target_format: target.format,
             group: desc.layout.group,
             vertex_stride: buffer.array_stride as u32,

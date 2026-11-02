@@ -48,6 +48,7 @@ pub(super) enum NativeCommand {
         fragment: ID3D11PixelShader,
         input: ID3D11InputLayout,
         rasterizer: ID3D11RasterizerState,
+        blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
     },
     SetUniformGroup(Arc<UniformBinding>),
     SetTextureGroup {
@@ -159,8 +160,10 @@ impl CommandBuffer {
                         fragment,
                         input,
                         rasterizer,
+                        blend,
                     } => {
                         context.RSSetState(Some(rasterizer));
+                        context.OMSetBlendState(blend.as_ref(), None, u32::MAX);
                         context.IASetInputLayout(Some(input));
                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         context.VSSetShader(Some(vertex), None);

@@ -36,7 +36,8 @@ UWP diagnostic checks GPU readback before and after resize at forced 9_1 and
 queue path, including HAL texture views
 and fence ownership checks. Adapter enumeration remains empty.
 
-A restricted FL 9_1 render path records one unblended triangle-list pass with
+A restricted FL 9_1 render path records a triangle-list pass with replace or
+standard alpha blending and
 one interleaved vertex stream. Its supported attributes are Float32 vectors and
 Unorm8x4, with validated stride and draw bounds. A strict UWP diagnostic
 compiles resource-free WGSL,
