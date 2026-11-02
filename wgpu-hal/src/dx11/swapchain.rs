@@ -7,22 +7,23 @@ use super::{device::NativeDevice, surface::Surface};
 use alloc::sync::Arc;
 use parking_lot::Mutex;
 use windows::{
+    core::{AgileReference, Error, Interface, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
-                D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, ID3D11DepthStencilView, ID3D11Texture2D,
+                ID3D11DepthStencilView, ID3D11Texture2D, D3D11_CPU_ACCESS_READ,
+                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_TEXTURE2D_DESC,
+                D3D11_USAGE_STAGING,
             },
             Dxgi::{
                 Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
-                DXGI_ERROR_INVALID_CALL, DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1,
-                DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-                DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIDevice, IDXGIFactory2, IDXGISwapChain1,
+                IDXGIDevice, IDXGIFactory2, IDXGISwapChain1, DXGI_ERROR_INVALID_CALL, DXGI_PRESENT,
+                DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
+                DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
     },
-    core::{AgileReference, Error, Interface, Result},
 };
 
 #[derive(Debug, Default)]
@@ -54,13 +55,14 @@ pub struct CoreWindowFrame {
 
 impl CoreWindowSwapchain {
     /// Create a two-buffer BGRA8 flip-sequential CoreWindow swap chain.
+    /// A zero width and height select the CoreWindow's current pixel size.
     pub fn new(
         surface: &Surface,
         device: Arc<NativeDevice>,
         width: u32,
         height: u32,
     ) -> Result<Self> {
-        if width == 0 || height == 0 {
+        if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let window = surface.core_window()?;
@@ -93,6 +95,12 @@ impl CoreWindowSwapchain {
                 state: Mutex::new(State::default()),
             }),
         })
+    }
+
+    /// Current swap-chain buffer dimensions in pixels.
+    pub fn size(&self) -> Result<[u32; 2]> {
+        let desc = unsafe { self.inner.swapchain.GetDesc1()? };
+        Ok([desc.Width, desc.Height])
     }
 
     /// Verify native 2D array allocation and view creation in the diagnostic.

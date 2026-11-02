@@ -102,18 +102,16 @@ impl Probe {
                     format!("unexpected triangle BGRA pixel {pixel:?}"),
                 ));
             }
-            self.swapchain = Some(CoreWindowSwapchain::new(
-                &self._hal_surface,
-                self.device.clone(),
-                640,
-                480,
-            )?);
+            let swapchain =
+                CoreWindowSwapchain::new(&self._hal_surface, self.device.clone(), 0, 0)?;
+            let [width, height] = swapchain.size()?;
+            self.swapchain = Some(swapchain);
             let shader_label = if cfg!(feature = "horizon-hud") {
                 "Horizon HUD WGSL"
             } else {
                 "textured WGSL"
             };
-            let message = format!("PASS: HAL {shader_label} triangle via mapped upload/Surface/encoder/queue/present, discard, reconfigure and FL{} BGRA readback {pixel:?}. The green screen indicates this completed.\n", self.feature_label);
+            let message = format!("PASS: HAL {shader_label} triangle via mapped upload/Surface/encoder/queue/present, discard, reconfigure and FL{} BGRA readback {pixel:?}. Green status surface: {width}x{height} pixels.\n", self.feature_label);
             wgpu_dx11_probe_report(message.as_ptr(), message.len());
             self.checked = true;
         }
