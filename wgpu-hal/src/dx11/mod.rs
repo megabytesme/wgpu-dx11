@@ -5,6 +5,7 @@
 mod buffer;
 mod command;
 mod device;
+mod fence;
 mod shader;
 mod texture;
 

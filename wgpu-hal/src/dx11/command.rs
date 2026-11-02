@@ -5,7 +5,10 @@ use super::{
 };
 use alloc::vec::Vec;
 use windows::{
-    Win32::{Foundation::E_INVALIDARG, Graphics::Direct3D11::ID3D11Device},
+    Win32::{
+        Foundation::E_INVALIDARG,
+        Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext},
+    },
     core::{Error, Interface, Result},
 };
 
@@ -22,6 +25,22 @@ pub(crate) struct CopyEncoder<'a> {
 pub(crate) struct CopyCommandBuffer {
     owner: ID3D11Device,
     copies: Vec<NativeBufferCopy>,
+}
+
+impl CopyCommandBuffer {
+    pub(super) fn validate_device(&self, device: &NativeDevice) -> Result<()> {
+        if device.raw_device().as_raw() != self.owner.as_raw() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        Ok(())
+    }
+
+    /// The caller must hold the owning device's immediate-context mutex.
+    pub(super) fn replay(&self, context: &ID3D11DeviceContext) {
+        for copy in &self.copies {
+            copy.execute(context);
+        }
+    }
 }
 
 crate::impl_dyn_resource!(CopyCommandBuffer);
@@ -42,13 +61,9 @@ impl NativeDevice {
     /// This does not yet signal a fence or implement `wgpu_hal::Queue`.
     #[allow(dead_code)]
     pub(crate) fn submit_copy_commands(&self, command_buffer: &CopyCommandBuffer) -> Result<()> {
-        if self.raw_device().as_raw() != command_buffer.owner.as_raw() {
-            return Err(Error::from_hresult(E_INVALIDARG));
-        }
+        command_buffer.validate_device(self)?;
         let context = self.immediate_context();
-        for copy in &command_buffer.copies {
-            copy.execute(&context);
-        }
+        command_buffer.replay(&context);
         Ok(())
     }
 }
