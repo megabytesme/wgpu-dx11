@@ -49,7 +49,7 @@ impl crate::Api for Api {
     type Device = Device;
     type Queue = Queue;
     type CommandEncoder = CommandEncoder;
-    type CommandBuffer = super::command::CopyCommandBuffer;
+    type CommandBuffer = super::command::CommandBuffer;
     type Buffer = super::buffer::NativeBuffer;
     type Texture = super::texture::NativeTexture;
     type SurfaceTexture = super::surface::SurfaceTexture;

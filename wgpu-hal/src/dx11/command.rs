@@ -1,4 +1,4 @@
-//! Copy-only command recording, before the complete wgpu encoder/queue exists.
+//! Recorded copy commands and a restricted FL9_1 render path.
 use super::{
     buffer::{NativeBuffer, NativeBufferCopy},
     device::NativeDevice,
@@ -7,7 +7,14 @@ use alloc::vec::Vec;
 use windows::{
     Win32::{
         Foundation::E_INVALIDARG,
-        Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext},
+        Graphics::{
+            Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+            Direct3D11::{
+                D3D11_VIEWPORT, ID3D11Buffer, ID3D11DepthStencilView, ID3D11Device,
+                ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+                ID3D11RenderTargetView, ID3D11VertexShader,
+            },
+        },
     },
     core::{Error, Interface, Result},
 };
@@ -19,20 +26,47 @@ pub(crate) struct CopyEncoder<'a> {
     copies: Vec<NativeBufferCopy>,
 }
 
+#[derive(Debug)]
+pub(super) enum NativeCommand {
+    Copy(NativeBufferCopy),
+    BeginRender {
+        target: ID3D11RenderTargetView,
+        clear: Option<[f32; 4]>,
+        width: u32,
+        height: u32,
+    },
+    SetPipeline {
+        vertex: ID3D11VertexShader,
+        fragment: ID3D11PixelShader,
+        input: ID3D11InputLayout,
+        rasterizer: ID3D11RasterizerState,
+    },
+    SetVertex {
+        buffer: ID3D11Buffer,
+        offset: u32,
+    },
+    SetViewport(D3D11_VIEWPORT),
+    Draw {
+        first: u32,
+        count: u32,
+    },
+    EndRender,
+}
+
 /// Owned commands retain their D3D11 resources until the command buffer drops.
 #[allow(dead_code)]
 #[derive(Debug)]
 #[doc(hidden)]
-pub struct CopyCommandBuffer {
+pub struct CommandBuffer {
     owner: ID3D11Device,
-    copies: Vec<NativeBufferCopy>,
+    commands: Vec<NativeCommand>,
 }
 
-impl CopyCommandBuffer {
-    pub(super) fn from_copies(device: &NativeDevice, copies: Vec<NativeBufferCopy>) -> Self {
+impl CommandBuffer {
+    pub(super) fn from_commands(device: &NativeDevice, commands: Vec<NativeCommand>) -> Self {
         Self {
             owner: device.raw_device().clone(),
-            copies,
+            commands,
         }
     }
 
@@ -45,14 +79,69 @@ impl CopyCommandBuffer {
 
     /// The caller must hold the owning device's immediate-context mutex.
     pub(super) fn replay(&self, context: &ID3D11DeviceContext) {
-        for copy in &self.copies {
-            copy.execute(context);
+        for command in &self.commands {
+            unsafe {
+                match command {
+                    NativeCommand::Copy(copy) => copy.execute(context),
+                    NativeCommand::BeginRender {
+                        target,
+                        clear,
+                        width,
+                        height,
+                    } => {
+                        context.ClearState();
+                        context.OMSetRenderTargets(
+                            Some(&[Some(target.clone())]),
+                            None::<&ID3D11DepthStencilView>,
+                        );
+                        context.OMSetBlendState(None, None, u32::MAX);
+                        context.OMSetDepthStencilState(None, 0);
+                        context.RSSetViewports(Some(&[D3D11_VIEWPORT {
+                            TopLeftX: 0.,
+                            TopLeftY: 0.,
+                            Width: *width as f32,
+                            Height: *height as f32,
+                            MinDepth: 0.,
+                            MaxDepth: 1.,
+                        }]));
+                        if let Some(color) = clear {
+                            context.ClearRenderTargetView(target, color);
+                        }
+                    }
+                    NativeCommand::SetPipeline {
+                        vertex,
+                        fragment,
+                        input,
+                        rasterizer,
+                    } => {
+                        context.RSSetState(Some(rasterizer));
+                        context.IASetInputLayout(Some(input));
+                        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        context.VSSetShader(Some(vertex), None);
+                        context.PSSetShader(Some(fragment), None);
+                    }
+                    NativeCommand::SetVertex { buffer, offset } => {
+                        context.IASetVertexBuffers(
+                            0,
+                            1,
+                            Some(&Some(buffer.clone())),
+                            Some(&8),
+                            Some(offset),
+                        );
+                    }
+                    NativeCommand::SetViewport(viewport) => {
+                        context.RSSetViewports(Some(core::slice::from_ref(viewport)))
+                    }
+                    NativeCommand::Draw { first, count } => context.Draw(*count, *first),
+                    NativeCommand::EndRender => context.ClearState(),
+                }
+            }
         }
     }
 }
 
-crate::impl_dyn_resource!(CopyCommandBuffer);
-impl crate::DynCommandBuffer for CopyCommandBuffer {}
+crate::impl_dyn_resource!(CommandBuffer);
+impl crate::DynCommandBuffer for CommandBuffer {}
 
 impl NativeDevice {
     /// Begin an internal copy-only recording.
@@ -64,11 +153,10 @@ impl NativeDevice {
         }
     }
 
-    /// Replay an internal copy-only command buffer in order under one lock.
-    ///
-    /// This does not yet signal a fence or implement `wgpu_hal::Queue`.
+    /// Replay a recorded command buffer in order under one lock.
+    /// This internal helper does not signal a fence.
     #[allow(dead_code)]
-    pub(crate) fn submit_copy_commands(&self, command_buffer: &CopyCommandBuffer) -> Result<()> {
+    pub(crate) fn submit_copy_commands(&self, command_buffer: &CommandBuffer) -> Result<()> {
         command_buffer.validate_device(self)?;
         let context = self.immediate_context();
         command_buffer.replay(&context);
@@ -94,11 +182,11 @@ impl CopyEncoder<'_> {
 
     /// Finish recording, retaining all resources for later submission.
     #[allow(dead_code)]
-    pub(crate) fn finish(self) -> CopyCommandBuffer {
-        CopyCommandBuffer {
-            owner: self.device.raw_device().clone(),
-            copies: self.copies,
-        }
+    pub(crate) fn finish(self) -> CommandBuffer {
+        CommandBuffer::from_commands(
+            self.device,
+            self.copies.into_iter().map(NativeCommand::Copy).collect(),
+        )
     }
 }
 
@@ -135,7 +223,7 @@ mod tests {
         }; // `input` has been dropped; the command buffer owns its COM reference.
         assert_eq!(device.read_byte_buffer(&output, 0, 16)?, vec![0; 16]);
         let dynamic: &dyn crate::DynCommandBuffer = &command_buffer;
-        assert!(dynamic.as_any().is::<CopyCommandBuffer>());
+        assert!(dynamic.as_any().is::<CommandBuffer>());
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.submit_copy_commands(&command_buffer).is_err());
         device.submit_copy_commands(&command_buffer)?;

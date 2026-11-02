@@ -1,5 +1,5 @@
-//! GPU-completion events for the internal copy-only queue prototype.
-use super::{command::CopyCommandBuffer, device::NativeDevice};
+//! GPU-completion events for the restricted HAL queue.
+use super::{command::CommandBuffer, device::NativeDevice};
 use alloc::collections::VecDeque;
 use parking_lot::Mutex;
 use windows::{
@@ -48,25 +48,25 @@ impl NativeDevice {
         }
     }
 
-    /// Submit a copy-only command buffer and enqueue a GPU completion event.
+    /// Submit a recorded command buffer and enqueue a GPU completion event.
     /// Lower or equal signal values do not decrease the fence timeline.
     /// This is not `wgpu_hal::Queue::submit` yet.
     #[allow(dead_code)]
     pub(crate) fn submit_copy_commands_signaled(
         &self,
-        commands: &CopyCommandBuffer,
+        commands: &CommandBuffer,
         fence: &NativeFence,
         value: u64,
     ) -> Result<()> {
         self.submit_copy_batches_signaled(&[commands], fence, value)
     }
 
-    /// Submit copy command buffers in order and signal one completion event.
+    /// Submit command buffers in order and signal one completion event.
     /// Validation completes before any GPU command is submitted.
     #[allow(dead_code)]
     pub(crate) fn submit_copy_batches_signaled(
         &self,
-        commands: &[&CopyCommandBuffer],
+        commands: &[&CommandBuffer],
         fence: &NativeFence,
         value: u64,
     ) -> Result<()> {

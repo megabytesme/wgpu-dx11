@@ -1,4 +1,4 @@
-//! Copy-only D3D11 HAL queue; no adapter exposes this incomplete queue yet.
+//! Restricted D3D11 HAL queue; no adapter exposes it yet.
 use super::{Api, device::NativeDevice};
 use alloc::sync::Arc;
 use windows::Win32::{
@@ -6,7 +6,7 @@ use windows::Win32::{
     Graphics::Dxgi::{DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET},
 };
 
-/// A serialized immediate-context queue for the currently supported copy path.
+/// A serialized immediate-context queue for the restricted command path.
 #[derive(Debug)]
 pub struct Queue {
     device: Arc<NativeDevice>,
