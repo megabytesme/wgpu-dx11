@@ -41,6 +41,15 @@ struct ShadowMapping {
 crate::impl_dyn_resource!(NativeBuffer);
 impl crate::DynBuffer for NativeBuffer {}
 
+/// A validated initialization range retaining the native buffer.
+#[allow(dead_code)] // Consumed by recorded clear commands.
+#[derive(Debug)]
+pub(super) struct NativeBufferClear {
+    pub(super) buffer: ID3D11Buffer,
+    pub(super) start: u32,
+    pub(super) end: u32,
+}
+
 /// Validated copy retaining its source and destination COM resources.
 #[derive(Debug)]
 pub(super) struct NativeBufferCopy {
@@ -72,6 +81,28 @@ impl NativeBufferCopy {
 }
 
 impl NativeDevice {
+    #[allow(dead_code)] // Used when recording buffer initialization clears.
+    pub(super) fn prepare_buffer_clear(
+        &self,
+        buffer: &NativeBuffer,
+        range: crate::MemoryRange,
+    ) -> Result<NativeBufferClear> {
+        if range.start >= range.end
+            || !range.start.is_multiple_of(4)
+            || !range.end.is_multiple_of(4)
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let length = usize::try_from(range.end - range.start)
+            .map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        let (start, end) = self.checked_buffer_range(buffer, range.start, length)?;
+        Ok(NativeBufferClear {
+            buffer: buffer.raw.clone(),
+            start,
+            end,
+        })
+    }
+
     pub(super) fn texture_copy_buffer_destination(
         &self,
         buffer: &NativeBuffer,
@@ -414,6 +445,51 @@ mod tests {
 
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
+
+    #[test]
+    fn prepare_initialization_clear_checks_range_and_retains_buffer() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            return Ok(());
+        };
+        let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        let other = adapter.open_device(&[FeatureLevel::L9_1])?;
+        // Internal initialization cannot depend on the user's buffer usage.
+        let buffer = device.create_buffer_with_usage(32, wgt::BufferUses::MAP_READ)?;
+        device.write_byte_buffer(&buffer, 0, &[0xa5; 32])?;
+        assert!(device.prepare_buffer_clear(&buffer, 4..4).is_err());
+        assert!(device.prepare_buffer_clear(&buffer, 3..12).is_err());
+        assert!(device.prepare_buffer_clear(&buffer, 4..36).is_err());
+        assert!(other.prepare_buffer_clear(&buffer, 4..20).is_err());
+        let clear = device.prepare_buffer_clear(&buffer, 4..20)?;
+        let region = D3D11_BOX {
+            left: clear.start,
+            right: clear.end,
+            top: 0,
+            bottom: 1,
+            front: 0,
+            back: 1,
+        };
+        let zeros = [0u8; 16];
+        unsafe {
+            device.immediate_context().UpdateSubresource(
+                &clear.buffer,
+                0,
+                Some(&region),
+                zeros.as_ptr().cast(),
+                0,
+                0,
+            );
+        }
+        let mut expected = vec![0xa5; 32];
+        expected[4..20].fill(0);
+        assert_eq!(device.read_byte_buffer(&buffer, 0, 32)?, expected);
+        drop(buffer);
+        let mut desc = D3D11_BUFFER_DESC::default();
+        unsafe { clear.buffer.GetDesc(&mut desc) };
+        assert_eq!(desc.ByteWidth, 32);
+        Ok(())
+    }
 
     #[test]
     fn native_buffers_round_trip_and_reject_invalid_access() -> Result<()> {
