@@ -102,6 +102,19 @@ impl NativeDevice {
         Ok(())
     }
 
+    /// Wait until all previously issued immediate-context work has completed.
+    /// This is an internal copy-queue primitive, not a complete HAL queue.
+    #[allow(dead_code)]
+    pub(crate) fn wait_for_copy_idle(&self) -> Result<()> {
+        let fence = self.create_native_fence();
+        self.submit_copy_batches_signaled(&[], &fence, 1)?;
+        if self.wait_native_fence(&fence, 1, None)? {
+            Ok(())
+        } else {
+            Err(Error::from_hresult(E_FAIL))
+        }
+    }
+
     /// Poll completed query events in submission order without flushing.
     #[allow(dead_code)]
     pub(crate) fn poll_native_fence(&self, fence: &NativeFence) -> Result<u64> {
@@ -228,6 +241,12 @@ mod tests {
         assert_eq!(device.read_byte_buffer(&output, 0, 16)?, vec![0x37; 16]);
         device.submit_copy_batches_signaled(&[], &fence, 2)?;
         assert!(device.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+        device.write_byte_buffer(&input, 0, &[0x61; 16])?;
+        device.write_byte_buffer(&output, 0, &[0; 16])?;
+        device.submit_copy_commands(&first)?;
+        device.submit_copy_commands(&second)?;
+        device.wait_for_copy_idle()?;
+        assert_eq!(device.read_byte_buffer(&output, 0, 16)?, vec![0x61; 16]);
         Ok(())
     }
 
