@@ -1291,33 +1291,42 @@ mod tests {
 
 #[cfg(test)]
 mod textured_tests {
+    extern crate std;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use alloc::{borrow::Cow, sync::Arc};
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(false, false, false, false)
+        sampled_triangle(false, false, false, false, None)
     }
 
     #[test]
     fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, false, false, false)
+        sampled_triangle(true, false, false, false, None)
     }
 
     #[test]
     fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, false)
+        sampled_triangle(true, true, false, false, None)
     }
 
     #[test]
     fn hal_encoder_blends_translucent_ui_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, true, true, false)
+        sampled_triangle(true, true, true, false, None)
     }
 
     #[test]
     fn hal_encoder_samples_two_textures_with_hud_layout() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, true)
+        sampled_triangle(true, true, false, true, None)
+    }
+
+    #[test]
+    #[ignore = "requires HORIZON_HUD_SHADER pointing to Horizon's hud.wgsl"]
+    fn real_horizon_hud_gpu_readback() -> windows::core::Result<()> {
+        let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
+        let source = std::fs::read_to_string(path).expect("read Horizon HUD shader");
+        sampled_triangle(true, true, true, true, Some(&source))
     }
 
     fn sampled_triangle(
@@ -1325,6 +1334,7 @@ mod textured_tests {
         multi: bool,
         alpha: bool,
         two: bool,
+        horizon_shader: Option<&str>,
     ) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
@@ -1332,7 +1342,9 @@ mod textured_tests {
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(native.clone());
-        let source = if two {
+        let source = if let Some(source) = horizon_shader {
+            source
+        } else if two {
             "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @group(0) @binding(3) var t2: texture_2d<f32>; @group(0) @binding(4) var s2: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5)) * textureSample(t2, s2, vec2f(0.5)) * color * in.color; }"
         } else if multi {
             "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)) * color * in.color; }"
@@ -1457,7 +1469,30 @@ mod textured_tests {
             offset: 0,
             shader_location: 0,
         }];
-        if multi {
+        if horizon_shader.is_some() {
+            attributes.extend([
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32x2,
+                    offset: 8,
+                    shader_location: 1,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Unorm8x4,
+                    offset: 16,
+                    shader_location: 2,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32,
+                    offset: 20,
+                    shader_location: 3,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32x2,
+                    offset: 24,
+                    shader_location: 4,
+                },
+            ]);
+        } else if multi {
             attributes.push(wgt::VertexAttribute {
                 format: wgt::VertexFormat::Unorm8x4,
                 offset: 8,
@@ -1465,7 +1500,13 @@ mod textured_tests {
             });
         }
         let buffers = [Some(crate::VertexBufferLayout {
-            array_stride: if multi { 12 } else { 8 },
+            array_stride: if horizon_shader.is_some() {
+                32
+            } else if multi {
+                12
+            } else {
+                8
+            },
             step_mode: wgt::VertexStepMode::Vertex,
             attributes: &attributes,
         })];
@@ -1486,12 +1527,20 @@ mod textured_tests {
             layout: &layout,
             vertex_processor: crate::VertexProcessor::Standard {
                 vertex_buffers: &buffers,
-                vertex_stage: stage("vs"),
+                vertex_stage: stage(if horizon_shader.is_some() {
+                    "vs_main"
+                } else {
+                    "vs"
+                }),
             },
             primitive: wgt::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgt::MultisampleState::default(),
-            fragment_stage: Some(stage("fs")),
+            fragment_stage: Some(stage(if horizon_shader.is_some() {
+                "fs_main"
+            } else {
+                "fs"
+            })),
             color_targets: &targets,
             multiview_mask: None,
             cache: None,
@@ -1610,20 +1659,26 @@ mod textured_tests {
             device
                 .create_buffer(&crate::BufferDescriptor {
                     label: None,
-                    size: 16,
+                    size: if horizon_shader.is_some() { 64 } else { 16 },
                     usage: wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
                     memory_flags: crate::MemoryFlags::empty(),
                 })
                 .unwrap()
         };
-        let color: [f32; 4] = if alpha {
+        let color: [f32; 4] = if horizon_shader.is_some() {
+            [8.0, 8.0, 1.0, 0.0]
+        } else if alpha {
             [1.0, 1.0, 1.0, 0.5]
         } else if multi {
             [1.0; 4]
         } else {
             [0.0, 1.0, 1.0, 1.0]
         };
-        let color_bytes: alloc::vec::Vec<u8> = color.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        let mut color_bytes: alloc::vec::Vec<u8> =
+            color.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        if horizon_shader.is_some() {
+            color_bytes.resize(64, 0);
+        }
         native.write_byte_buffer(&uniform, 0, &color_bytes)?;
         let uniform_bindings = [crate::BufferBinding::new_unchecked(&uniform, 0, None)];
         let buffer_bindings: &[_] = if combined { &uniform_bindings } else { &[] };
@@ -1671,11 +1726,20 @@ mod textured_tests {
                 })
                 .unwrap()
         };
-        let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
+        let vertices: [f32; 6] = if horizon_shader.is_some() {
+            [0., 8., 16., 8., 0., -8.]
+        } else {
+            [-1., -1., 3., -1., -1., 3.]
+        };
         let mut bytes = alloc::vec::Vec::new();
         for position in vertices.chunks_exact(2) {
             bytes.extend(position.iter().flat_map(|v| v.to_ne_bytes()));
-            if multi {
+            if horizon_shader.is_some() {
+                bytes.extend([0.5f32, 0.5].iter().flat_map(|v| v.to_ne_bytes()));
+                bytes.extend_from_slice(&[0, 255, 0, 128]);
+                bytes.extend_from_slice(&0.5f32.to_ne_bytes());
+                bytes.extend([0.5f32, 0.5].iter().flat_map(|v| v.to_ne_bytes()));
+            } else if multi {
                 bytes.extend_from_slice(if two {
                     &[255, 255, 255, 255]
                 } else {

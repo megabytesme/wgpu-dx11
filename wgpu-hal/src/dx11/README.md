@@ -61,3 +61,15 @@ together with one or two 2D textures and samplers. When no minimum binding size 
 provided, each draw checks the bound range against the shader's required size;
 dynamic offsets and checked uniform shaders remain unsupported.
 The staging path may stall and avoids D3D11's partial-update restriction.
+
+An optional hardware regression exercises Horizon's actual HUD shader without
+copying it into this repository. Point `HORIZON_HUD_SHADER` to Horizon's
+`crates/horizon-client-render/src/hud.wgsl`, then run:
+
+```text
+cargo test -p wgpu-hal --lib --no-default-features --features dx11 real_horizon_hud_gpu_readback -- --ignored
+```
+
+It tests an unchecked FL9_1 shader, the real HUD vertex/uniform layouts, two
+textures, alpha blending and pixel readback. It does not expose a wgpu adapter
+or demonstrate a full game.
