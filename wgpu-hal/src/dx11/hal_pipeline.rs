@@ -638,7 +638,7 @@ impl RenderPipeline {
             Some(super::hal_bind_group::GroupKind::UniformTwoTextures { .. }) => {
                 &two_texture_bindings
             }
-            None => &[],
+            Some(super::hal_bind_group::GroupKind::Empty) | None => &[],
         };
         let vertex_code = vertex_stage.module.compile_with_bindings(
             naga::ShaderStage::Vertex,

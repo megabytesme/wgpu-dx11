@@ -281,9 +281,18 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         }
+        if matches!(
+            group.resources,
+            super::hal_bind_group::GroupResources::Empty
+        ) {
+            render.bound_uniform_size = 0;
+            render.bound_group = Some(group.kind);
+            return;
+        }
         let mut uniform_command = None;
         let mut secondary_command = None;
         let command = match &group.resources {
+            super::hal_bind_group::GroupResources::Empty => unreachable!(),
             super::hal_bind_group::GroupResources::TextureSampler { texture, sampler }
             | super::hal_bind_group::GroupResources::UniformTextureSampler {
                 texture,
@@ -338,7 +347,8 @@ impl crate::CommandEncoder for CommandEncoder {
             | super::hal_bind_group::GroupResources::UniformTextureSampler { uniform, .. } => {
                 uniform.len()
             }
-            super::hal_bind_group::GroupResources::TextureSampler { .. } => 0,
+            super::hal_bind_group::GroupResources::TextureSampler { .. }
+            | super::hal_bind_group::GroupResources::Empty => 0,
         };
         render.bound_group = Some(group.kind);
         self.record(command);
@@ -483,7 +493,9 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         render.pipeline = true;
-        render.required_group = pipeline.group;
+        render.required_group = pipeline
+            .group
+            .filter(|group| *group != super::hal_bind_group::GroupKind::Empty);
         render.required_uniform_size = pipeline.required_uniform_size;
         render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
         self.record(NativeCommand::SetPipeline {
@@ -843,13 +855,40 @@ mod tests {
             )
             .unwrap()
         };
+        let empty_layout = unsafe {
+            crate::Device::create_bind_group_layout(
+                &device,
+                &BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: BindGroupLayoutFlags::empty(),
+                    entries: &[],
+                },
+            )
+            .unwrap()
+        };
+        let empty_group = unsafe {
+            crate::Device::create_bind_group(
+                &device,
+                &BindGroupDescriptor {
+                    label: None,
+                    layout: &empty_layout,
+                    buffers: &[],
+                    samplers: &[],
+                    textures: &[],
+                    entries: &[],
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                },
+            )
+            .unwrap()
+        };
         let layout = unsafe {
             crate::Device::create_pipeline_layout(
                 &device,
                 &PipelineLayoutDescriptor {
                     label: None,
                     flags: PipelineLayoutFlags::empty(),
-                    bind_group_layouts: &[],
+                    bind_group_layouts: &[Some(&empty_layout)],
                     immediate_size: 0,
                 },
             )
@@ -994,6 +1033,10 @@ mod tests {
                 0,
                 BufferBinding::new_unchecked(&buffer, 0, None),
             );
+            // Empty layouts require no binding; explicitly binding an empty group
+            // is also valid and must not change rendered output.
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &empty_group, &[]);
             crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
