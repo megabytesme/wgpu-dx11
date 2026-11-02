@@ -218,6 +218,12 @@ mod tests {
                 MinDepth: 0.,
                 MaxDepth: 1.,
             }]));
+            context.RSSetScissorRects(Some(&[windows::Win32::Foundation::RECT {
+                left: 0,
+                top: 0,
+                right: 8,
+                bottom: 8,
+            }]));
             context.RSSetState(Some(&pipeline.rasterizer));
             context.IASetInputLayout(Some(&pipeline.input));
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -454,6 +460,12 @@ mod tests {
                 Height: 8.,
                 MinDepth: 0.,
                 MaxDepth: 1.,
+            }]));
+            context.RSSetScissorRects(Some(&[windows::Win32::Foundation::RECT {
+                left: 0,
+                top: 0,
+                right: 8,
+                bottom: 8,
             }]));
             context.RSSetState(Some(&pipeline.rasterizer));
             context.IASetInputLayout(Some(&pipeline.input));
@@ -715,6 +727,7 @@ impl RenderPipeline {
             FillMode: D3D11_FILL_SOLID,
             CullMode: D3D11_CULL_NONE,
             DepthClipEnable: true.into(),
+            ScissorEnable: true.into(),
             ..Default::default()
         };
         let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend) =
