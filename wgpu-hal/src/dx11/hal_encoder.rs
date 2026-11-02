@@ -1723,7 +1723,7 @@ mod textured_tests {
                     mag_filter: wgt::FilterMode::Nearest,
                     min_filter: wgt::FilterMode::Nearest,
                     mipmap_filter: wgt::MipmapFilterMode::Nearest,
-                    lod_clamp: 0.0..f32::MAX,
+                    lod_clamp: 0.0..if two { 32.0 } else { f32::MAX },
                     compare: None,
                     anisotropy_clamp: 1,
                     border_color: None,

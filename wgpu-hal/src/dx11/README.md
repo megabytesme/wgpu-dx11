@@ -48,7 +48,9 @@ not provide general shaders, render passes, or WebGPU.
 The same restricted encoder can bind one validated fragment-stage 2D float
 texture and sampler. On feature level 9, non-power-of-two textures reject
 repeat/mirror addressing; unsupported layouts and texture/attachment aliasing
-are rejected rather than silently rendered incorrectly.
+are rejected rather than silently rendered incorrectly. FL9_1/9_2 support the
+default 0..32 sampler LOD range only for validated single-mip views; other
+non-native clamp ranges remain restricted.
 
 Restricted RGBA8 buffer-to-texture and texture-to-buffer copies are recorded
 and replayed in queue order. They use staging and synchronous CPU mapping on
