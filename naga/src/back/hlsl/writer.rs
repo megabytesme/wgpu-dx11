@@ -437,6 +437,133 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             self.write_global(module, global)?;
         }
 
+        if let Some(binding) = self.options.fl9_texel_load_proof {
+            if !self.options.direct_sampler_bindings
+                || self.options.special_constants_binding.is_some()
+                || self.options.immediates_target.is_some()
+                || !self.options.dynamic_storage_buffer_offsets_targets.is_empty()
+                || !self.options.sampler_buffer_binding_map.is_empty()
+                || !self.options.external_texture_binding_map.is_empty()
+                || !self.options.binding_map.get(&binding).is_some_and(|target| {
+                    target.space == 0
+                        && target.register == 0
+                        && target.binding_array_size.is_none()
+                        && target.dynamic_storage_buffer_offsets_index.is_none()
+                })
+            {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof requires reserved t0, s15 and b13 bindings".into(),
+                ));
+            }
+            if !matches!(
+                self.pipeline_options.entry_point,
+                Some((ShaderStage::Fragment, _))
+            ) {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof requires a fragment entry point".into(),
+                ));
+            }
+            let Some((handle, global)) = module
+                .global_variables
+                .iter()
+                .find(|&(_, global)| global.binding == Some(binding))
+            else {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof binding not found".into(),
+                ));
+            };
+            if !matches!(
+                module.types[global.ty].inner,
+                TypeInner::Image {
+                    dim: crate::ImageDimension::D2,
+                    arrayed: false,
+                    class: crate::ImageClass::Sampled {
+                        kind: ScalarKind::Float,
+                        multi: false
+                    }
+                }
+            ) {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof supports only sampled 2D float textures".into(),
+                ));
+            }
+            if module.global_variables.iter().any(|(_, global)| {
+                (global.binding.is_some() && global.binding != Some(binding))
+                    || global.space == crate::AddressSpace::Immediate
+            }) {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof does not support other bound resources".into(),
+                ));
+            }
+            let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
+                unreachable!()
+            };
+            let Some(entry) = module
+                .entry_points
+                .iter()
+                .find(|entry| entry.stage == ShaderStage::Fragment && entry.name == *entry_name)
+            else {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof entry point not found".into(),
+                ));
+            };
+            let inputs_supported = match *entry.function.arguments.as_slice() {
+                [] => true,
+                [ref arg] => {
+                    matches!(
+                        arg.binding,
+                        Some(crate::Binding::Location { location: 0, .. })
+                    ) && matches!(
+                        module.types[arg.ty].inner,
+                        TypeInner::Vector {
+                            size: crate::VectorSize::Bi,
+                            scalar: Scalar {
+                                kind: ScalarKind::Float,
+                                width: 4
+                            }
+                        }
+                    )
+                }
+                _ => false,
+            };
+            if !inputs_supported {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof supports only one location-0 vec2 input".into(),
+                ));
+            }
+            if !module.functions.is_empty()
+                || entry.function.body.iter().any(|statement| {
+                    !matches!(
+                        statement,
+                        crate::Statement::Emit(_) | crate::Statement::Return { .. }
+                    )
+                })
+                || entry
+                    .function
+                    .expressions
+                    .iter()
+                    .any(|(_, expression)| matches!(expression, crate::Expression::Select { .. }))
+            {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof rejects helper functions and control flow".into(),
+                ));
+            }
+            let name = &self.names[&NameKey::GlobalVariable(handle)];
+            writeln!(
+                self.out,
+                "SamplerState naga_fl9_load_sampler : register(s15);"
+            )?;
+            writeln!(self.out, "cbuffer naga_fl9_load_dimensions : register(b13) {{ float4 naga_fl9_load_size; }};")?;
+            writeln!(self.out, "float4 naga_fl9_load(float2 p, float mip) {{")?;
+            writeln!(
+                self.out,
+                "    float2 safe_p = clamp(p, float2(0.0, 0.0), naga_fl9_load_size.xy - 1.0);"
+            )?;
+            writeln!(self.out, "    float4 value = {name}.Sample(naga_fl9_load_sampler, (safe_p + 0.5) * naga_fl9_load_size.zw);")?;
+            writeln!(self.out, "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.x < naga_fl9_load_size.x && p.y < naga_fl9_load_size.y) ? value : float4(0.0, 0.0, 0.0, 0.0);")?;
+            writeln!(self.out, "}}")?;
+        }
+
         if !module.global_variables.is_empty() {
             // Add extra newline for readability
             writeln!(self.out)?;
@@ -4696,6 +4823,28 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         sample: Option<Handle<crate::Expression>>,
         level: Option<Handle<crate::Expression>>,
     ) -> Result<(), Error> {
+        if let Some(binding) = self.options.fl9_texel_load_proof {
+            let crate::Expression::GlobalVariable(handle) = func_ctx.expressions[image] else {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof requires a direct global texture".into(),
+                ));
+            };
+            if module.global_variables[handle].binding != Some(binding)
+                || array_index.is_some()
+                || sample.is_some()
+                || level.is_none()
+            {
+                return Err(Error::Custom(
+                    "unsupported FL9 texel-load proof operation".into(),
+                ));
+            }
+            write!(self.out, "naga_fl9_load(float2(")?;
+            self.write_expr(module, coordinate, func_ctx)?;
+            write!(self.out, "), float(")?;
+            self.write_expr(module, level.unwrap(), func_ctx)?;
+            write!(self.out, "))")?;
+            return Ok(());
+        }
         let mut wrapping_type = None;
         match *func_ctx.resolve_type(image, &module.types) {
             TypeInner::Image {

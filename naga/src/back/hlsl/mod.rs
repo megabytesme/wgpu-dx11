@@ -521,6 +521,15 @@ pub struct Options {
     /// This experimental mode rejects sampler binding arrays and register spaces.
     pub direct_sampler_bindings: bool,
 
+    /// Experimental opt-in proof for a fragment-stage, single-mip 2D float
+    /// texture load. The host must supply the texture dimensions and reciprocal
+    /// dimensions in `b13`, a nearest, clamp sampler in `s15`, and the texture
+    /// in `t0`. The
+    /// bound view must contain exactly one mip and have nonzero FL9 dimensions.
+    /// The caller must link a vertex shader with a matching location-0 varying.
+    /// This restricted proof rejects other resources, inputs and control flow.
+    pub fl9_texel_load_proof: Option<crate::ResourceBinding>,
+
     /// Mapping of each bind group's sampler index buffer to a bind target.
     #[cfg_attr(
         feature = "deserialize",
@@ -577,6 +586,7 @@ impl Default for Options {
             special_constants_binding: None,
             sampler_heap_target: SamplerHeapBindTargets::default(),
             direct_sampler_bindings: false,
+            fl9_texel_load_proof: None,
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,
             dynamic_storage_buffer_offsets_targets: alloc::collections::BTreeMap::new(),

@@ -23,6 +23,9 @@ mod surface;
 mod swapchain;
 mod texture;
 
+#[cfg(test)]
+mod fl9_texel_proof;
+
 pub use adapter::Adapter;
 pub use api::{Api, Unavailable};
 pub use device::{
