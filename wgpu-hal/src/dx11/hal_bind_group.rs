@@ -90,10 +90,12 @@ impl BindGroupLayout {
                     wgt::BindingType::Buffer {
                         ty: wgt::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: Some(minimum),
-                    } if minimum.get() <= 65536 => GroupKind::UniformTextureSampler {
-                        minimum: minimum.get(),
-                    },
+                        min_binding_size,
+                    } if min_binding_size.map_or(0, |value| value.get()) <= 65536 => {
+                        GroupKind::UniformTextureSampler {
+                            minimum: min_binding_size.map_or(0, |value| value.get()),
+                        }
+                    }
                     _ => return Err(crate::DeviceError::Unexpected),
                 }
             }
@@ -110,7 +112,7 @@ impl BindGroupLayout {
                         min_binding_size,
                     } => {
                         let minimum = min_binding_size.map_or(0, |v| v.get());
-                        if minimum == 0 || minimum > 65536 {
+                        if minimum > 65536 {
                             return Err(crate::DeviceError::Unexpected);
                         }
                         GroupKind::Uniform { minimum }

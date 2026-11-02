@@ -34,6 +34,8 @@ struct RenderState {
     pipeline: bool,
     required_group: Option<super::hal_bind_group::GroupKind>,
     bound_group: Option<super::hal_bind_group::GroupKind>,
+    bound_uniform_size: u64,
+    required_uniform_size: u64,
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
 }
@@ -313,6 +315,13 @@ impl crate::CommandEncoder for CommandEncoder {
                 NativeCommand::SetUniformGroup(uniform.clone())
             }
         };
+        render.bound_uniform_size = match &group.resources {
+            super::hal_bind_group::GroupResources::Uniform(uniform)
+            | super::hal_bind_group::GroupResources::UniformTextureSampler { uniform, .. } => {
+                uniform.len()
+            }
+            super::hal_bind_group::GroupResources::TextureSampler { .. } => 0,
+        };
         render.bound_group = Some(group.kind);
         self.record(command);
         if let Some(command) = uniform_command {
@@ -418,6 +427,8 @@ impl crate::CommandEncoder for CommandEncoder {
             pipeline: false,
             required_group: None,
             bound_group: None,
+            bound_uniform_size: 0,
+            required_uniform_size: 0,
             vertex: None,
             vertex_layout: None,
         });
@@ -452,6 +463,7 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         render.pipeline = true;
         render.required_group = pipeline.group;
+        render.required_uniform_size = pipeline.required_uniform_size;
         render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
         self.record(NativeCommand::SetPipeline {
             vertex: pipeline.vertex.clone(),
@@ -580,6 +592,7 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         if !render.pipeline
             || (render.required_group.is_some() && render.required_group != render.bound_group)
+            || render.bound_uniform_size < render.required_uniform_size
             || first_instance != 0
             || instance_count != 1
             || required.is_none_or(|required| required > *bytes)
@@ -1326,7 +1339,11 @@ mod textured_tests {
                 ty: wgt::BindingType::Buffer {
                     ty: wgt::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: core::num::NonZeroU64::new(16),
+                    min_binding_size: if multi {
+                        None
+                    } else {
+                        core::num::NonZeroU64::new(16)
+                    },
                 },
                 count: None,
             });
@@ -1354,7 +1371,7 @@ mod textured_tests {
             invalid_entries[0].ty = wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: None,
+                min_binding_size: core::num::NonZeroU64::new(65552),
             };
             assert!(unsafe {
                 device.create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -1442,7 +1459,9 @@ mod textured_tests {
         assert_eq!(
             pipeline.group,
             Some(if combined {
-                super::super::hal_bind_group::GroupKind::UniformTextureSampler { minimum: 16 }
+                super::super::hal_bind_group::GroupKind::UniformTextureSampler {
+                    minimum: if multi { 0 } else { 16 },
+                }
             } else {
                 super::super::hal_bind_group::GroupKind::TextureSampler
             })
@@ -1787,14 +1806,25 @@ mod uniform_tests {
             has_dynamic_offset: false,
             min_binding_size: None,
         };
-        assert!(unsafe {
-            device.create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
-                label: None,
-                flags: crate::BindGroupLayoutFlags::empty(),
-                entries: &no_minimum,
-            })
-        }
-        .is_err());
+        let no_minimum_group_layout = unsafe {
+            device
+                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &no_minimum,
+                })
+                .unwrap()
+        };
+        let no_minimum_layout = unsafe {
+            device
+                .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                    label: None,
+                    flags: crate::PipelineLayoutFlags::empty(),
+                    bind_group_layouts: &[Some(&no_minimum_group_layout)],
+                    immediate_size: 0,
+                })
+                .unwrap()
+        };
         let group_layout = unsafe {
             device
                 .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -1837,6 +1867,25 @@ mod uniform_tests {
                 .create_render_pipeline(&crate::RenderPipelineDescriptor {
                     label: None,
                     layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &vertex_layout,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                })
+                .unwrap()
+        };
+        let no_minimum_pipeline = unsafe {
+            device
+                .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &no_minimum_layout,
                     vertex_processor: crate::VertexProcessor::Standard {
                         vertex_buffers: &vertex_layout,
                         vertex_stage: stage("vs"),
@@ -1897,6 +1946,25 @@ mod uniform_tests {
             })
         };
         assert!(oversized_pipeline.is_err());
+        let oversized_no_minimum_pipeline = unsafe {
+            device
+                .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &no_minimum_layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &vertex_layout,
+                        vertex_stage: oversized_stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(oversized_stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                })
+                .unwrap()
+        };
         let extent = wgt::Extent3d {
             width: 8,
             height: 8,
@@ -1996,6 +2064,20 @@ mod uniform_tests {
                 })
                 .unwrap()
         };
+        let no_minimum_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &no_minimum_group_layout,
+                    buffers: &binding,
+                    samplers: &[],
+                    textures: &[],
+                    entries: &group_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
         let color = [Some(crate::ColorAttachment {
             target: crate::Attachment {
                 view: &view,
@@ -2030,6 +2112,29 @@ mod uniform_tests {
                 .unwrap()
         };
         let fence = native.create_native_fence();
+        unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_bind_group(
+                &mut encoder,
+                &no_minimum_layout,
+                0,
+                &no_minimum_group,
+                &[],
+            );
+            crate::CommandEncoder::set_render_pipeline(
+                &mut encoder,
+                &oversized_no_minimum_pipeline,
+            );
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&vertex, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+        }
         for (index, rgba) in [[1f32, 0., 0., 1.], [0., 1., 0., 1.]]
             .into_iter()
             .enumerate()
@@ -2039,8 +2144,19 @@ mod uniform_tests {
             let commands = unsafe {
                 crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
                 crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
-                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
-                crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                let (selected_layout, selected_group, selected_pipeline) = if index == 0 {
+                    (&no_minimum_layout, &no_minimum_group, &no_minimum_pipeline)
+                } else {
+                    (&layout, &group, &pipeline)
+                };
+                crate::CommandEncoder::set_bind_group(
+                    &mut encoder,
+                    selected_layout,
+                    0,
+                    selected_group,
+                    &[],
+                );
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, selected_pipeline);
                 crate::CommandEncoder::set_vertex_buffer(
                     &mut encoder,
                     0,

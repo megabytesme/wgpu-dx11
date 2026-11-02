@@ -40,6 +40,7 @@ pub struct RenderPipeline {
     pub(super) blend: Option<ID3D11BlendState>,
     pub(super) target_format: wgt::TextureFormat,
     pub(super) group: Option<super::hal_bind_group::GroupKind>,
+    pub(super) required_uniform_size: u64,
     pub(super) vertex_stride: u32,
     pub(super) vertex_extent: u32,
 }
@@ -530,18 +531,18 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
+        let mut required_uniform_size = 0;
         if let Some(
             super::hal_bind_group::GroupKind::Uniform { minimum }
             | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum },
         ) = desc.layout.group
         {
             for module in [vertex_stage.module, fragment.module] {
-                if module
-                    .required_uniform_size()?
-                    .is_some_and(|required| required > minimum)
-                {
+                let required = module.required_uniform_size()?.unwrap_or(0);
+                if minimum != 0 && required > minimum {
                     return Err(invalid());
                 }
+                required_uniform_size = required_uniform_size.max(required);
             }
         }
         use super::shader::{ShaderBinding, ShaderBindingKind};
@@ -706,6 +707,7 @@ impl RenderPipeline {
             blend,
             target_format: target.format,
             group: desc.layout.group,
+            required_uniform_size,
             vertex_stride: buffer.array_stride as u32,
             vertex_extent,
         })

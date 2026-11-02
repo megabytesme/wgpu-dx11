@@ -7,15 +7,15 @@
 //! correctness-first prototype and can stall the CPU.
 use super::{buffer::NativeBuffer, device::NativeDevice};
 use windows::{
+    core::{Error, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::Direct3D11::{
-            D3D11_BIND_CONSTANT_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ,
-            D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
-            ID3D11Buffer, ID3D11DeviceContext,
+            ID3D11Buffer, ID3D11DeviceContext, D3D11_BIND_CONSTANT_BUFFER, D3D11_BOX,
+            D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+            D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
         },
     },
-    core::{Error, Result},
 };
 
 /// Retains a checked source range, staging buffer and native constant buffer.
@@ -80,6 +80,10 @@ impl NativeDevice {
 }
 
 impl UniformBinding {
+    pub(super) fn len(&self) -> u64 {
+        u64::from(self.source_box.right - self.source_box.left)
+    }
+
     /// Copy the source range and bind slot b0 on both graphics stages.
     /// The caller holds the owning device's immediate-context lock.
     #[allow(dead_code)]
@@ -113,7 +117,7 @@ impl UniformBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
+    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use alloc::sync::Arc;
     use windows::Win32::Graphics::Direct3D11::D3D11_MAPPED_SUBRESOURCE;
 
