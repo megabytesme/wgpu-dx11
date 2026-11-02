@@ -110,14 +110,23 @@ pub(crate) fn compile_hlsl(
     Ok(bytes.to_vec())
 }
 
-/// Narrow Naga-to-DXBC errors. Resource binding remapping is not implemented.
+/// Narrow Naga-to-DXBC errors. Only explicit uniform mappings are supported.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) enum NagaCompileError {
     UnsupportedBindings,
+    InvalidUniformMapping,
     StageMismatch,
     Translation(String),
     Compilation(ShaderCompileError),
+}
+
+/// A WebGPU uniform binding mapped to a D3D11 constant-buffer slot.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UniformBinding {
+    pub(crate) binding: naga::ResourceBinding,
+    pub(crate) slot: u32,
 }
 
 /// Translate a validated, resource-free Naga entry point and compile it to DXBC.
@@ -132,6 +141,20 @@ pub(crate) fn compile_resource_free_naga(
     entry: &str,
     profile: ShaderProfile,
 ) -> Result<Vec<u8>, NagaCompileError> {
+    compile_naga_with_uniforms(module, info, stage, entry, profile, &[])
+}
+
+/// Translate with an explicit, collision-free mapping for uniform buffers.
+/// Texture, sampler, storage, and immediate bindings remain unsupported.
+#[allow(dead_code)]
+pub(crate) fn compile_naga_with_uniforms(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+    uniforms: &[UniformBinding],
+) -> Result<Vec<u8>, NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
@@ -141,17 +164,43 @@ pub(crate) fn compile_resource_free_naga(
     if expected != stage {
         return Err(NagaCompileError::StageMismatch);
     }
-    if module
-        .global_variables
-        .iter()
-        .any(|(_, global)| global.binding.is_some())
-    {
-        return Err(NagaCompileError::UnsupportedBindings);
-    }
-    let options = hlsl::Options {
+    let mut options = hlsl::Options {
         shader_model: hlsl::ShaderModel::V5_0,
+        fake_missing_bindings: false,
         ..Default::default()
     };
+    for (index, mapping) in uniforms.iter().enumerate() {
+        if mapping.slot >= windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT
+            || uniforms[..index].iter().any(|other| other.slot == mapping.slot || other.binding == mapping.binding)
+        {
+            return Err(NagaCompileError::InvalidUniformMapping);
+        }
+        let exists = module.global_variables.iter().any(|(_, global)| {
+            global.binding == Some(mapping.binding) && global.space == naga::AddressSpace::Uniform
+        });
+        if !exists {
+            return Err(NagaCompileError::InvalidUniformMapping);
+        }
+        options.binding_map.insert(
+            mapping.binding,
+            hlsl::BindTarget {
+                register: mapping.slot,
+                ..Default::default()
+            },
+        );
+    }
+    for (_, global) in module.global_variables.iter() {
+        if global.space == naga::AddressSpace::Immediate {
+            return Err(NagaCompileError::UnsupportedBindings);
+        }
+        if let Some(binding) = global.binding {
+            if global.space != naga::AddressSpace::Uniform
+                || !options.binding_map.contains_key(&binding)
+            {
+                return Err(NagaCompileError::UnsupportedBindings);
+            }
+        }
+    }
     let pipeline = hlsl::PipelineOptions {
         entry_point: Some((stage, entry.into())),
     };
@@ -259,31 +308,41 @@ mod tests {
             valid::{Capabilities, ValidationFlags, Validator},
         };
         let wgsl = r#"
+            @group(0) @binding(0) var<uniform> color: vec4<f32>;
             @vertex fn vertex_main(@location(0) p: vec2<f32>) -> @builtin(position) vec4<f32> {
                 return vec4<f32>(p, 0.5, 1.0);
             }
             @fragment fn fragment_main() -> @location(0) vec4<f32> {
-                return vec4<f32>(0.25, 0.5, 0.75, 1.0);
+                return color;
             }
         "#;
         let module = naga::front::wgsl::parse_str(wgsl).expect("parse WGSL");
         let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .expect("validate WGSL");
-        let vs_code = compile_resource_free_naga(
+        let uniforms = [UniformBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+        }];
+        let vs_code = compile_naga_with_uniforms(
             &module,
             &info,
             ShaderStage::Vertex,
             "vertex_main",
             ShaderProfile::VertexLevel9_1,
+            &uniforms,
         )
         .expect("compile WGSL vertex shader");
-        let ps_code = compile_resource_free_naga(
+        let ps_code = compile_naga_with_uniforms(
             &module,
             &info,
             ShaderStage::Fragment,
             "fragment_main",
             ShaderProfile::PixelLevel9_1,
+            &uniforms,
         )
         .expect("compile WGSL fragment shader");
         let raw = device.raw_device();
@@ -292,11 +351,23 @@ mod tests {
         let mut ps = None;
         let mut layout = None;
         let mut vertices = None;
+        let mut uniform = None;
         let mut color = None;
         let mut view = None;
         let mut rasterizer = None;
         let mut staging = None;
         let vertex_data: [f32; 6] = [-1., -1., -1., 3., 3., -1.];
+        let uniform_data: [f32; 4] = [0.25, 0.5, 0.75, 1.];
+        let uniform_desc = D3D11_BUFFER_DESC {
+            ByteWidth: size_of_val(&uniform_data) as u32,
+            Usage: D3D11_USAGE_IMMUTABLE,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            ..Default::default()
+        };
+        let uniform_init = D3D11_SUBRESOURCE_DATA {
+            pSysMem: uniform_data.as_ptr().cast(),
+            ..Default::default()
+        };
         let vertex_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of_val(&vertex_data) as u32,
             Usage: D3D11_USAGE_IMMUTABLE,
@@ -347,6 +418,7 @@ mod tests {
             raw.CreatePixelShader(&ps_code, None::<&ID3D11ClassLinkage>, Some(&mut ps))?;
             raw.CreateInputLayout(&layout_desc, &vs_code, Some(&mut layout))?;
             raw.CreateBuffer(&vertex_desc, Some(&vertex_init), Some(&mut vertices))?;
+            raw.CreateBuffer(&uniform_desc, Some(&uniform_init), Some(&mut uniform))?;
             raw.CreateTexture2D(&color_desc, None, Some(&mut color))?;
             let color = color.expect("D3D returned color target");
             raw.CreateRenderTargetView(&color, None, Some(&mut view))?;
@@ -372,6 +444,7 @@ mod tests {
             context.IASetVertexBuffers(0, 1, Some(&vertices), Some(&stride), Some(&offset));
             context.VSSetShader(vs.as_ref(), None);
             context.PSSetShader(ps.as_ref(), None);
+            context.PSSetConstantBuffers(0, Some(&[uniform]));
             context.Draw(3, 0);
             context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
             context.CopyResource(&staging, &color);
@@ -469,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn naga_path_explicitly_rejects_bound_resources() {
+    fn naga_uniform_bindings_require_explicit_valid_mappings() {
         use naga::{
             ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
@@ -489,6 +562,155 @@ mod tests {
                 ShaderStage::Fragment,
                 "main",
                 ShaderProfile::Pixel5_0
+            ),
+            Err(NagaCompileError::UnsupportedBindings)
+        ));
+        let mapping = UniformBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+        };
+        for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::Pixel5_0] {
+            assert!(
+                compile_naga_with_uniforms(
+                    &module,
+                    &info,
+                    ShaderStage::Fragment,
+                    "main",
+                    profile,
+                    &[mapping]
+                )
+                .expect("compile mapped uniform")
+                .starts_with(b"DXBC")
+            );
+        }
+        assert!(matches!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &[mapping, mapping]
+            ),
+            Err(NagaCompileError::InvalidUniformMapping)
+        ));
+        let invalid = UniformBinding {
+            slot: 14,
+            ..mapping
+        };
+        assert!(matches!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &[invalid]
+            ),
+            Err(NagaCompileError::InvalidUniformMapping)
+        ));
+        let absent = UniformBinding {
+            binding: naga::ResourceBinding {
+                group: 1,
+                binding: 0,
+            },
+            ..mapping
+        };
+        assert!(matches!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &[absent]
+            ),
+            Err(NagaCompileError::InvalidUniformMapping)
+        ));
+    }
+
+    #[test]
+    fn naga_uniforms_from_different_groups_cannot_share_a_slot() {
+        use naga::{
+            ShaderStage,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            @group(0) @binding(0) var<uniform> a: vec4<f32>;
+            @group(1) @binding(3) var<uniform> b: vec4<f32>;
+            @fragment fn main() -> @location(0) vec4<f32> { return a + b; }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let a = UniformBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+        };
+        let b = UniformBinding {
+            binding: naga::ResourceBinding {
+                group: 1,
+                binding: 3,
+            },
+            slot: 0,
+        };
+        assert!(matches!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &[a, b]
+            ),
+            Err(NagaCompileError::InvalidUniformMapping)
+        ));
+        let b = UniformBinding { slot: 1, ..b };
+        assert!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &[a, b]
+            )
+            .expect("compile distinct uniform slots")
+            .starts_with(b"DXBC")
+        );
+    }
+
+    #[test]
+    fn naga_path_rejects_texture_bindings() {
+        use naga::{
+            ShaderStage,
+            valid::{Capabilities, ValidationFlags, Validator},
+        };
+        let wgsl = r#"
+            @group(0) @binding(1) var tex: texture_2d<f32>;
+            @fragment fn main() -> @location(0) vec4<f32> {
+                return textureLoad(tex, vec2<i32>(0, 0), 0);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        assert!(matches!(
+            compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &[]
             ),
             Err(NagaCompileError::UnsupportedBindings)
         ));
