@@ -13,7 +13,10 @@ textured test requests unchecked shader runtime behavior. The UWP host calls it
 from the UI thread.
 
 The UWP host writes its result to `LocalState/wgpu-dx11-surface-probe.txt`.
-It also handles resize and releases the backbuffer before resizing.
+After the rendered triangle and its readback pass, the probe shows a solid
+green status screen; the screen itself is not the triangle. A render or resize
+failure is logged before the application exits. The host also handles resize
+and releases the backbuffer before resizing.
 
 For x64, compile the static library with a UWP-capable Rust standard library:
 

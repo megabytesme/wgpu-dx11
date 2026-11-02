@@ -87,7 +87,7 @@ impl Probe {
                 .map_err(|e| Error::new(E_FAIL, format!("HAL surface cycle: {e}")))?;
             let valid = pixel[0] == 0 && pixel[1] == 255 && pixel[2] == 0 && pixel[3] == 255;
             if !valid {
-                return Err(Error::from_hresult(E_FAIL));
+                return Err(Error::new(E_FAIL, format!("unexpected triangle BGRA pixel {pixel:?}")));
             }
             self.swapchain = Some(CoreWindowSwapchain::new(
                 &self._hal_surface,
@@ -95,7 +95,7 @@ impl Probe {
                 640,
                 480,
             )?);
-            let message = format!("PASS: HAL textured WGSL triangle via mapped upload/Surface/encoder/queue/present, discard, reconfigure and FL{} BGRA readback {pixel:?}\n", self.feature_label);
+            let message = format!("PASS: HAL textured WGSL triangle via mapped upload/Surface/encoder/queue/present, discard, reconfigure and FL{} BGRA readback {pixel:?}. The green screen indicates this completed.\n", self.feature_label);
             wgpu_dx11_probe_report(message.as_ptr(), message.len());
             self.checked = true;
         }
@@ -104,7 +104,9 @@ impl Probe {
             .as_ref()
             .ok_or_else(|| Error::from_hresult(E_FAIL))?
             .acquire()?;
-        frame.clear([0.125, 0.5, 0.875, 1.0])?;
+        // This solid status color appears only after the actual rendered-triangle
+        // readback and the rest of the diagnostic cycle have passed.
+        frame.clear([0.0, 0.75, 0.0, 1.0])?;
         frame.present(1)?;
         Ok(())
     }
@@ -134,19 +136,33 @@ pub unsafe extern "C" fn wgpu_dx11_probe_create(window: *mut c_void) -> *mut c_v
 /// `probe` must be null or a live probe pointer on its owning thread.
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_dx11_probe_render(probe: *mut c_void) -> bool {
-    probe
-        .cast::<Probe>()
-        .as_mut()
-        .is_some_and(|probe| probe.render().is_ok())
+    let Some(probe) = probe.cast::<Probe>().as_mut() else {
+        return false;
+    };
+    match probe.render() {
+        Ok(()) => true,
+        Err(error) => {
+            let message = format!("FAIL: D3D11 render or diagnostic cycle: {error}\n");
+            wgpu_dx11_probe_report(message.as_ptr(), message.len());
+            false
+        }
+    }
 }
 /// # Safety
 /// `probe` must be null or a live probe pointer on its owning thread.
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_dx11_probe_resize(probe: *mut c_void) -> bool {
-    probe
-        .cast::<Probe>()
-        .as_mut()
-        .is_some_and(|probe| probe.resize().is_ok())
+    let Some(probe) = probe.cast::<Probe>().as_mut() else {
+        return false;
+    };
+    match probe.resize() {
+        Ok(()) => true,
+        Err(error) => {
+            let message = format!("FAIL: D3D11 resize: {error}\n");
+            wgpu_dx11_probe_report(message.as_ptr(), message.len());
+            false
+        }
+    }
 }
 /// # Safety
 /// `probe` must be null or an unreleased probe pointer on its owning thread.
