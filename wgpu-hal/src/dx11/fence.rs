@@ -57,7 +57,21 @@ impl NativeDevice {
         fence: &NativeFence,
         value: u64,
     ) -> Result<()> {
-        commands.validate_device(self)?;
+        self.submit_copy_batches_signaled(&[commands], fence, value)
+    }
+
+    /// Submit copy command buffers in order and signal one completion event.
+    /// Validation completes before any GPU command is submitted.
+    #[allow(dead_code)]
+    pub(crate) fn submit_copy_batches_signaled(
+        &self,
+        commands: &[&CopyCommandBuffer],
+        fence: &NativeFence,
+        value: u64,
+    ) -> Result<()> {
+        for command in commands {
+            command.validate_device(self)?;
+        }
         self.validate_fence(fence)?;
         let desc = D3D11_QUERY_DESC {
             Query: D3D11_QUERY_EVENT,
@@ -75,7 +89,9 @@ impl NativeDevice {
             .try_reserve(1)
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         let context = self.immediate_context();
-        commands.replay(&context);
+        for command in commands {
+            command.replay(&context);
+        }
         unsafe {
             context.End(&query);
             // Ensure progress even when there is no swap-chain presentation.
@@ -168,6 +184,52 @@ mod tests {
     use crate::dx11::{FeatureLevel, enumerate_native_adapters};
     use alloc::vec;
     use std::time::Duration;
+
+    #[test]
+    fn batched_copy_submission_is_ordered_and_validates_before_work() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        let input = device.create_byte_buffer(16)?;
+        let middle = device.create_byte_buffer(16)?;
+        let output = device.create_byte_buffer(16)?;
+        device.write_byte_buffer(&input, 0, &[0x37; 16])?;
+        device.write_byte_buffer(&middle, 0, &[0; 16])?;
+        device.write_byte_buffer(&output, 0, &[0; 16])?;
+        let region = crate::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: core::num::NonZeroU64::new(16).unwrap(),
+        };
+        let mut first = device.create_copy_encoder();
+        first.copy_buffer(&input, &middle, &region)?;
+        let first = first.finish();
+        let mut second = device.create_copy_encoder();
+        second.copy_buffer(&middle, &output, &region)?;
+        let second = second.finish();
+        let fence = device.create_native_fence();
+        let other = adapter.open_device(&[FeatureLevel::L9_1])?;
+        let foreign = other.create_copy_encoder().finish();
+        assert!(
+            device
+                .submit_copy_batches_signaled(&[&first, &foreign], &fence, 1)
+                .is_err()
+        );
+        assert!(
+            device
+                .wait_native_fence(&fence, 1, Some(Duration::ZERO))
+                .is_err()
+        );
+        assert_eq!(device.read_byte_buffer(&middle, 0, 16)?, vec![0; 16]);
+        device.submit_copy_batches_signaled(&[&first, &second], &fence, 1)?;
+        assert!(device.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        assert_eq!(device.read_byte_buffer(&output, 0, 16)?, vec![0x37; 16]);
+        device.submit_copy_batches_signaled(&[], &fence, 2)?;
+        assert!(device.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+        Ok(())
+    }
 
     #[test]
     fn event_fence_tracks_real_gpu_copy_completion() -> Result<()> {
