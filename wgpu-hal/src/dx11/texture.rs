@@ -10,9 +10,10 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
-                ID3D11Device, ID3D11ShaderResourceView, ID3D11Texture2D,
-                D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                ID3D11Device, ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
+                D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ,
+                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_TEXTURE2D_DESC,
+                D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
         },
@@ -36,6 +37,24 @@ pub(crate) struct NativeTextureView {
     raw: ID3D11ShaderResourceView,
     owner: ID3D11Device,
     texture: ID3D11Texture2D,
+}
+
+/// An RGBA8 render target and the texture whose lifetime it retains.
+#[allow(dead_code)]
+pub(crate) struct NativeRenderTarget {
+    texture: NativeTexture,
+    view: ID3D11RenderTargetView,
+}
+
+#[allow(dead_code)]
+impl NativeRenderTarget {
+    pub(crate) fn texture(&self) -> &NativeTexture {
+        &self.texture
+    }
+
+    pub(crate) fn raw_view(&self) -> &ID3D11RenderTargetView {
+        &self.view
+    }
 }
 
 fn invalid() -> Error {
@@ -73,6 +92,17 @@ impl NativeDevice {
         mip_levels: u32,
         layers: u32,
     ) -> Result<NativeTexture> {
+        self.create_rgba_texture_inner(width, height, mip_levels, layers, false)
+    }
+
+    fn create_rgba_texture_inner(
+        &self,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+        layers: u32,
+        render_target: bool,
+    ) -> Result<NativeTexture> {
         if width == 0
             || height == 0
             || width > 16384
@@ -95,7 +125,12 @@ impl NativeDevice {
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            BindFlags: (D3D11_BIND_SHADER_RESOURCE.0
+                | if render_target {
+                    D3D11_BIND_RENDER_TARGET.0
+                } else {
+                    0
+                }) as u32,
             ..Default::default()
         };
         let mut raw = None;
@@ -111,6 +146,40 @@ impl NativeDevice {
             mip_levels,
             layers,
         })
+    }
+
+    /// Create a single-layer, single-mip RGBA8 texture with a render-target view.
+    #[allow(dead_code)]
+    pub(crate) fn create_rgba_render_target(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> Result<NativeRenderTarget> {
+        let texture = self.create_rgba_texture_inner(width, height, 1, 1, true)?;
+        let mut view = None;
+        unsafe {
+            self.raw_device()
+                .CreateRenderTargetView(&texture.raw, None, Some(&mut view))?;
+        }
+        Ok(NativeRenderTarget {
+            texture,
+            view: view.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+        })
+    }
+
+    /// Clear a render target belonging to this device through its guarded context.
+    #[allow(dead_code)]
+    pub(crate) fn clear_rgba_render_target(
+        &self,
+        target: &NativeRenderTarget,
+        color: [f32; 4],
+    ) -> Result<()> {
+        self.check_texture_owner(&target.texture)?;
+        let context = self.immediate_context();
+        unsafe {
+            context.ClearRenderTargetView(&target.view, &color);
+        }
+        Ok(())
     }
 
     /// Create a full-resource shader view on a texture belonging to this device.
@@ -252,6 +321,26 @@ mod tests {
         let other = adapter.open_device(&[FeatureLevel::L11_0])?;
         assert!(other.create_texture_view(&texture).is_err());
         assert!(other.read_rgba_texture(&texture, 0, 0).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rgba_render_target_clear_round_trips_on_level_9_1() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        let target = device.create_rgba_render_target(8, 4)?;
+        device.clear_rgba_render_target(&target, [0.125, 0.5, 0.875, 1.0])?;
+        let pixels = device.read_rgba_texture(target.texture(), 0, 0)?;
+        assert!(pixels.chunks_exact(4).all(|p| p[0].abs_diff(32) <= 1
+            && p[1].abs_diff(128) <= 1
+            && p[2].abs_diff(223) <= 1
+            && p[3] == 255));
+        let other = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert!(other.clear_rgba_render_target(&target, [0.0; 4]).is_err());
+        assert!(device.create_rgba_render_target(0, 4).is_err());
         Ok(())
     }
 }
