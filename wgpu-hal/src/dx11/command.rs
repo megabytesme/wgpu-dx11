@@ -62,6 +62,7 @@ pub(super) enum NativeCommand {
         stride: u32,
     },
     SetViewport(D3D11_VIEWPORT),
+    SetScissor(windows::Win32::Foundation::RECT),
     Draw {
         first: u32,
         count: u32,
@@ -152,6 +153,12 @@ impl CommandBuffer {
                             MinDepth: 0.,
                             MaxDepth: 1.,
                         }]));
+                        context.RSSetScissorRects(Some(&[windows::Win32::Foundation::RECT {
+                            left: 0,
+                            top: 0,
+                            right: *width as i32,
+                            bottom: *height as i32,
+                        }]));
                         if let Some(color) = clear {
                             context.ClearRenderTargetView(target, color);
                         }
@@ -194,6 +201,9 @@ impl CommandBuffer {
                     }
                     NativeCommand::SetViewport(viewport) => {
                         context.RSSetViewports(Some(core::slice::from_ref(viewport)))
+                    }
+                    NativeCommand::SetScissor(rect) => {
+                        context.RSSetScissorRects(Some(core::slice::from_ref(rect)))
                     }
                     NativeCommand::Draw { first, count } => context.Draw(*count, *first),
                     NativeCommand::EndRender => context.ClearState(),

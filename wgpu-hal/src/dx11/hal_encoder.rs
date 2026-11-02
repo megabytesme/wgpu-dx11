@@ -435,6 +435,8 @@ impl crate::CommandEncoder for CommandEncoder {
             || color.target.usage != wgt::TextureUses::COLOR_TARGET
             || desc.extent.width == 0
             || desc.extent.height == 0
+            || desc.extent.width > i32::MAX as u32
+            || desc.extent.height > i32::MAX as u32
             || desc.extent.depth_or_array_layers != 1
         {
             self.reject();
@@ -583,9 +585,26 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        if rect.x != 0 || rect.y != 0 || [rect.w, rect.h] != render.extent {
+        let Some(right) = rect.x.checked_add(rect.w) else {
             self.reject();
+            return;
+        };
+        let Some(bottom) = rect.y.checked_add(rect.h) else {
+            self.reject();
+            return;
+        };
+        if right > render.extent[0] || bottom > render.extent[1] {
+            self.reject();
+            return;
         }
+        self.record(NativeCommand::SetScissor(
+            windows::Win32::Foundation::RECT {
+                left: rect.x as i32,
+                top: rect.y as i32,
+                right: right as i32,
+                bottom: bottom as i32,
+            },
+        ));
     }
 
     unsafe fn set_stencil_reference(&mut self, value: u32) {
@@ -1070,8 +1089,8 @@ mod tests {
             crate::CommandEncoder::set_scissor_rect(
                 &mut encoder,
                 &Rect {
-                    x: 0,
-                    y: 0,
+                    x: 7,
+                    y: 7,
                     w: 4,
                     h: 4,
                 },
@@ -1377,6 +1396,16 @@ mod textured_tests {
     #[test]
     fn hal_encoder_applies_hud_vignette() -> windows::core::Result<()> {
         sampled_triangle(true, true, false, true, false, 2, None)
+    }
+
+    #[test]
+    fn hal_encoder_clips_to_scissor() -> windows::core::Result<()> {
+        sampled_triangle(true, true, false, true, false, 3, None)
+    }
+
+    #[test]
+    fn hal_encoder_accepts_empty_scissor() -> windows::core::Result<()> {
+        sampled_triangle(true, true, false, true, false, 4, None)
     }
 
     #[test]
@@ -1985,6 +2014,21 @@ mod textured_tests {
                 .unwrap()
         };
         unsafe {
+            if effect == 3 {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_scissor_rect(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 7,
+                        y: 7,
+                        w: 2,
+                        h: 2,
+                    },
+                );
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            }
             if multi {
                 crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
                 crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
@@ -2024,6 +2068,17 @@ mod textured_tests {
             }
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            if effect == 3 || effect == 4 {
+                crate::CommandEncoder::set_scissor_rect(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 2,
+                        y: 2,
+                        w: if effect == 3 { 4 } else { 0 },
+                        h: 4,
+                    },
+                );
+            }
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
             crate::CommandEncoder::set_vertex_buffer(
                 &mut encoder,
@@ -2049,6 +2104,8 @@ mod textured_tests {
             assert_eq!(actual, &[0, 255, 255, 255]);
         } else if effect == 2 {
             assert_eq!(actual, &[0, 0, 0, 255]);
+        } else if effect == 4 {
+            assert_eq!(actual, &[0, 0, 255, 255]);
         } else if invert {
             assert_eq!(
                 actual,
@@ -2061,6 +2118,9 @@ mod textured_tests {
             );
         } else {
             assert_eq!(actual, &[0, 255, 0, 255]);
+        }
+        if effect == 3 {
+            assert_eq!(&pixels[..4], &[0, 0, 255, 255]);
         }
         unsafe {
             crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
