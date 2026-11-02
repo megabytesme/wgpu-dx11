@@ -7,6 +7,59 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 #[derive(Debug)]
 pub struct Instance;
 
+#[cfg(feature = "dx11-internal-core-probe")]
+impl Instance {
+    /// Temporary internal experiment. These limits are placeholders and must
+    /// never be advertised or used for arbitrary applications.
+    pub unsafe fn open_internal_core_probe(
+        &self,
+    ) -> windows::core::Result<Option<(crate::ExposedAdapter<super::Api>, crate::OpenDevice<super::Api>)>> {
+        use alloc::sync::Arc;
+        let Some(adapter) = super::enumerate_native_adapters()?.into_iter().find(|a| !a.identity().software) else {
+            return Ok(None);
+        };
+        let device = Arc::new(adapter.open_device(&[super::FeatureLevel::L9_1])?);
+        let mut limits = wgt::Limits::downlevel_webgl2_defaults();
+        limits.max_texture_dimension_2d = 2048;
+        limits.max_vertex_buffers = 1;
+        limits.max_sampled_textures_per_shader_stage = 2;
+        limits.max_samplers_per_shader_stage = 2;
+        limits.max_uniform_buffers_per_shader_stage = 1;
+        limits.max_storage_buffers_per_shader_stage = 0;
+        limits.max_storage_textures_per_shader_stage = 0;
+        let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+        info.name = adapter.identity().name.clone();
+        let alignment = wgt::BufferSize::new(4).unwrap();
+        Ok(Some((crate::ExposedAdapter {
+            adapter: super::Adapter::Probe,
+            info,
+            features: wgt::Features::empty(),
+            capabilities: crate::Capabilities {
+                limits,
+                alignments: crate::Alignments {
+                    buffer_copy_offset: alignment,
+                    buffer_copy_pitch: alignment,
+                    uniform_bounds_check_alignment: alignment,
+                    raw_tlas_instance_size: 0,
+                    ray_tracing_scratch_buffer_alignment: 0,
+                    ray_tracing_pipeline_group_data_size: 0,
+                    ray_tracing_pipeline_group_data_alignment: 0,
+                    ray_tracing_pipeline_data_offset_alignment: 0,
+                },
+                downlevel: wgt::DownlevelCapabilities {
+                    flags: wgt::DownlevelFlags::empty(),
+                    limits: wgt::DownlevelLimits::default(),
+                    shader_model: wgt::ShaderModel::Sm2,
+                },
+                cooperative_matrix_properties: Vec::new(),
+            },
+        }, crate::OpenDevice {
+            device: super::Device::new(device.clone()),
+            queue: super::Queue::new(device),
+        })))
+    }
+}
+
 crate::impl_dyn_resource!(Instance);
 
 impl crate::Instance for Instance {

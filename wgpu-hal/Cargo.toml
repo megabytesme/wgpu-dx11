@@ -147,6 +147,9 @@ dx11 = [
     "windows/Win32_Graphics_Dxgi_Common",
 ]
 
+# Internal experiment only: never exposes adapters through normal enumeration.
+dx11-internal-core-probe = ["dx11"]
+
 ## Enables the DX12 backend when targeting Windows.
 dx12 = [
     "dep:arrayvec",

@@ -32,6 +32,8 @@ impl Device {
 }
 
 pub(super) fn device_error(error: windows::core::Error) -> DeviceError {
+    #[cfg(feature = "dx11-internal-core-probe")]
+    eprintln!("DX11 PROBE HAL error: {error:?}");
     use windows::Win32::{
         Foundation::E_OUTOFMEMORY,
         Graphics::Dxgi::{
