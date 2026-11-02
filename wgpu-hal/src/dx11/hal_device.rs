@@ -70,9 +70,12 @@ impl crate::Device for Device {
             | wgt::BufferUses::UNIFORM
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
-        if !supported.contains(desc.usage) || desc.memory_flags.contains(MemoryFlags::TRANSIENT) {
+        if !supported.contains(desc.usage) {
             return Err(DeviceError::Unexpected);
         }
+        // TRANSIENT and PREFER_COHERENT are allocation preferences. Our
+        // mapped buffers always use the same explicitly synchronized shadow,
+        // including short-lived staging allocations.
         self.native
             .create_buffer_with_usage(desc.size, desc.usage)
             .map_err(device_error)
@@ -438,6 +441,124 @@ mod tests {
     use alloc::vec;
 
     #[test]
+    fn transient_staging_initializes_device_buffers_through_queue() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let device = Device::new(native.clone());
+        let queue = Queue::new(native.clone());
+        let dynamic: &dyn DynDevice = &device;
+        let staging = unsafe {
+            dynamic
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 64,
+                    usage: wgt::BufferUses::MAP_WRITE | wgt::BufferUses::COPY_SRC,
+                    memory_flags: MemoryFlags::TRANSIENT | MemoryFlags::PREFER_COHERENT,
+                })
+                .unwrap()
+        };
+        let output = unsafe {
+            dynamic
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 64,
+                    usage: wgt::BufferUses::COPY_DST | wgt::BufferUses::UNIFORM,
+                    memory_flags: MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let zero = unsafe {
+            dynamic
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 512 << 10,
+                    usage: wgt::BufferUses::COPY_DST | wgt::BufferUses::COPY_SRC,
+                    memory_flags: MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let output_native = output
+            .as_any()
+            .downcast_ref::<super::super::buffer::NativeBuffer>()
+            .unwrap();
+        let zero_native = zero
+            .as_any()
+            .downcast_ref::<super::super::buffer::NativeBuffer>()
+            .unwrap();
+        native.write_byte_buffer(zero_native, 0, &[0x5a; 16])?;
+        native.write_byte_buffer(zero_native, (512 << 10) - 16, &[0x5a; 16])?;
+        let mapping = unsafe { dynamic.map_buffer(staging.as_ref(), 0..64).unwrap() };
+        assert!(!mapping.is_coherent);
+        let expected: Vec<u8> = (0..64).collect();
+        unsafe {
+            core::ptr::copy_nonoverlapping(expected.as_ptr(), mapping.ptr.as_ptr(), expected.len());
+            dynamic.flush_mapped_ranges(staging.as_ref(), &[0..64]);
+            dynamic.unmap_buffer(staging.as_ref());
+        }
+        let descriptor: CommandEncoderDescriptor<dyn DynQueue> = CommandEncoderDescriptor {
+            label: None,
+            queue: &queue,
+        };
+        let mut encoder = unsafe { dynamic.create_command_encoder(&descriptor).unwrap() };
+        let region = BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: NonZeroU64::new(64).unwrap(),
+        };
+        unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.transition_buffers(&[BufferBarrier {
+                buffer: zero.as_ref(),
+                usage: StateTransition {
+                    from: wgt::BufferUses::empty(),
+                    to: wgt::BufferUses::COPY_DST,
+                },
+            }]);
+            encoder.clear_buffer(zero.as_ref(), 0..(512 << 10));
+            encoder.transition_buffers(&[BufferBarrier {
+                buffer: zero.as_ref(),
+                usage: StateTransition {
+                    from: wgt::BufferUses::COPY_DST,
+                    to: wgt::BufferUses::COPY_SRC,
+                },
+            }]);
+            encoder.copy_buffer_to_buffer(
+                staging.as_ref(),
+                output.as_ref(),
+                core::slice::from_ref(&region),
+            );
+        }
+        let commands = unsafe { encoder.end_encoding().unwrap() };
+        let fence = unsafe { dynamic.create_fence().unwrap() };
+        let batch: [&dyn DynCommandBuffer; 1] = [commands.as_ref()];
+        unsafe {
+            DynQueue::submit(&queue, &batch, &[], (fence.as_ref(), 1)).unwrap();
+        }
+        assert!(unsafe {
+            dynamic
+                .wait(fence.as_ref(), 1, Some(Duration::from_secs(5)))
+                .unwrap()
+        });
+        assert_eq!(native.read_byte_buffer(output_native, 0, 64)?, expected);
+        assert_eq!(native.read_byte_buffer(zero_native, 0, 16)?, vec![0; 16]);
+        assert_eq!(
+            native.read_byte_buffer(zero_native, (512 << 10) - 16, 16)?,
+            vec![0; 16]
+        );
+        unsafe {
+            encoder.reset_all(vec![commands]);
+            dynamic.destroy_fence(fence);
+            dynamic.destroy_buffer(staging);
+            dynamic.destroy_buffer(output);
+            dynamic.destroy_buffer(zero);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn mapped_shadow_remains_valid_across_gpu_copies() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
@@ -682,12 +803,6 @@ mod tests {
         native.write_byte_buffer(output_native, 0, &[0; 16])?;
         let mut unsupported = desc.clone();
         unsupported.usage = wgt::BufferUses::INDEX;
-        assert!(matches!(
-            unsafe { dynamic.create_buffer(&unsupported) },
-            Err(DeviceError::Unexpected)
-        ));
-        unsupported.usage = wgt::BufferUses::COPY_DST;
-        unsupported.memory_flags = MemoryFlags::TRANSIENT;
         assert!(matches!(
             unsafe { dynamic.create_buffer(&unsupported) },
             Err(DeviceError::Unexpected)
