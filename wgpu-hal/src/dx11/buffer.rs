@@ -18,11 +18,17 @@ use windows::{
 
 /// An uninitialized D3D11 byte buffer tied to the creating native device.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct NativeBuffer {
     raw: ID3D11Buffer,
     owner: ID3D11Device,
     size: u32,
 }
+
+// This is an actual dynamically downcastable HAL resource. Its broader
+// wgpu buffer usage and mapping semantics are not implemented yet.
+crate::impl_dyn_resource!(NativeBuffer);
+impl crate::DynBuffer for NativeBuffer {}
 
 impl NativeDevice {
     /// Allocate a copy-only byte buffer. Its initial contents are unspecified.
@@ -156,6 +162,8 @@ mod tests {
         assert!(device.create_byte_buffer(0).is_err());
         assert!(device.create_byte_buffer(u64::from(u32::MAX) + 1).is_err());
         let buffer = device.create_byte_buffer(16)?;
+        let dynamic: &dyn crate::DynBuffer = &buffer;
+        assert!(dynamic.as_any().is::<NativeBuffer>());
         let original: Vec<u8> = (0..16).collect();
         device.write_byte_buffer(&buffer, 0, &original)?;
         device.write_byte_buffer(&buffer, 4, &[99, 100])?;
