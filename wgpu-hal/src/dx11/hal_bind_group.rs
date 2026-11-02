@@ -29,6 +29,9 @@ crate::impl_dyn_resource!(BindGroup);
 impl crate::DynBindGroup for BindGroup {}
 
 impl BindGroupLayout {
+    pub(super) fn belongs_to(&self, owner: &Arc<NativeDevice>) -> bool {
+        Arc::ptr_eq(&self.owner, owner)
+    }
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         desc: &crate::BindGroupLayoutDescriptor,

@@ -1,7 +1,7 @@
 //! Owned Naga shader modules for the private D3D11 HAL.
 use super::{
     device::NativeDevice,
-    shader::{compile_resource_free_naga, ShaderProfile},
+    shader::{compile_naga_with_bindings, ShaderBinding, ShaderProfile},
 };
 use alloc::{format, sync::Arc, vec::Vec};
 
@@ -120,13 +120,22 @@ impl ShaderModule {
         Arc::ptr_eq(&self.owner, device)
     }
 
-    /// Compile only resource-free vertex/fragment stages, with no requested
+    /// Compile restricted vertex/fragment stages, with no requested
     /// instrumentation. Pipeline creation must reject other requirements.
     #[allow(dead_code)]
     pub(super) fn compile(
         &self,
         stage: naga::ShaderStage,
         entry: &str,
+    ) -> Result<Vec<u8>, crate::PipelineError> {
+        self.compile_with_bindings(stage, entry, &[])
+    }
+
+    pub(super) fn compile_with_bindings(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+        bindings: &[ShaderBinding],
     ) -> Result<Vec<u8>, crate::PipelineError> {
         let stages = match stage {
             naga::ShaderStage::Vertex => wgt::ShaderStages::VERTEX,
@@ -150,12 +159,25 @@ impl ShaderModule {
             naga::ShaderStage::Fragment => ShaderProfile::PixelLevel9_1,
             _ => unreachable!(),
         };
-        compile_resource_free_naga(
+        // A stage's module may omit bindings declared in its pipeline layout.
+        let present: Vec<_> = bindings
+            .iter()
+            .copied()
+            .filter(|binding| {
+                self.shader
+                    .module
+                    .global_variables
+                    .iter()
+                    .any(|(_, global)| global.binding == Some(binding.binding))
+            })
+            .collect();
+        compile_naga_with_bindings(
             &self.shader.module,
             &self.shader.info,
             stage,
             entry,
             profile,
+            &present,
         )
         .map_err(|error| {
             crate::PipelineError::Linkage(
