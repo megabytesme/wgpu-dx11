@@ -67,7 +67,7 @@ mod tests {
                 .create_shader_module(
                     &crate::ShaderModuleDescriptor {
                         label: None,
-                        runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
                     },
                     crate::ShaderInput::Naga(crate::NagaShader {
                         module: Cow::Owned(module),

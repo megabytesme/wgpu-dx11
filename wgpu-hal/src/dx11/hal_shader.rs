@@ -86,7 +86,48 @@ mod tests {
             .downcast_ref::<ShaderModule>()
             .unwrap()
             .compile(naga::ShaderStage::Vertex, "vs")
-            .is_err());
+            .is_ok());
+        let resource_module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return textureLoad(t, vec2i(0, 0), 0); }").unwrap();
+        let resource_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&resource_module)
+        .unwrap();
+        let checked_resource = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(resource_module),
+                info: resource_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::checked(),
+        );
+        assert!(
+            matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 resource bindings are not implemented")
+        );
+        // FL9 cannot compile Naga's integer guards; report a pipeline error
+        // rather than bypassing them.
+        let integer_module = naga::front::wgsl::parse_str("@fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f { let z = i32(p.x) - i32(p.x); let value = 7 / z; return vec4f(f32(value) / 7.0, 0.0, 0.0, 1.0); }").unwrap();
+        let integer_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&integer_module)
+        .unwrap();
+        let checked_integer = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(integer_module),
+                info: integer_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::checked(),
+        );
+        assert!(matches!(
+            checked_integer.compile(naga::ShaderStage::Fragment, "fs"),
+            Err(crate::PipelineError::Linkage(_, _))
+        ));
         assert!(unsafe {
             DynDevice::create_shader_module(&device, &desc, ShaderInput::Hlsl { shader: "" })
         }
@@ -120,8 +161,8 @@ impl ShaderModule {
         Arc::ptr_eq(&self.owner, device)
     }
 
-    /// Compile restricted vertex/fragment stages, with no requested
-    /// instrumentation. Pipeline creation must reject other requirements.
+    /// Compile restricted vertex/fragment stages, using Naga's checked
+    /// indexing, bounded loops, and unconditional HLSL integer guards.
     #[allow(dead_code)]
     pub(super) fn compile(
         &self,
@@ -142,16 +183,26 @@ impl ShaderModule {
             naga::ShaderStage::Fragment => wgt::ShaderStages::FRAGMENT,
             _ => return Err(crate::PipelineError::EntryPoint(stage)),
         };
-        if self.checks.bounds_checks
+        let requests_checks = self.checks.bounds_checks
             || self.checks.force_loop_bounding
             || self.checks.ray_query_initialization_tracking
             || self.checks.task_shader_dispatch_tracking
             || self.checks.mesh_shader_primitive_indices_clamp
-            || self.checks.int_div_checks
+            || self.checks.int_div_checks;
+        // Sampled-resource robustness needs a separate FL9 audit; keep those
+        // shaders fail-closed when checks are requested. The resource-free
+        // path uses Naga's explicit checks and accepts checked shaders.
+        if requests_checks
+            && self
+                .shader
+                .module
+                .global_variables
+                .iter()
+                .any(|(_, global)| global.binding.is_some())
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "shader runtime checks are not implemented".into(),
+                "checked D3D11 resource bindings are not implemented".into(),
             ));
         }
         let profile = match stage {

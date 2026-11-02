@@ -241,6 +241,10 @@ pub(crate) fn compile_naga_with_bindings(
         shader_model: hlsl::ShaderModel::V5_0,
         fake_missing_bindings: false,
         direct_sampler_bindings: true,
+        // Keep these guarantees explicit even if Naga's defaults change.
+        restrict_indexing: true,
+        force_loop_bounding: true,
+        ray_query_initialization_tracking: true,
         ..Default::default()
     };
     for (index, mapping) in bindings.iter().enumerate() {
