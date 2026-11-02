@@ -64,6 +64,19 @@ impl NativeBufferCopy {
 }
 
 impl NativeDevice {
+    pub(super) fn texture_copy_source(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        length: usize,
+    ) -> Result<ID3D11Buffer> {
+        if !buffer.usage.contains(wgt::BufferUses::COPY_SRC) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.checked_buffer_range(buffer, offset, length)?;
+        Ok(buffer.raw.clone())
+    }
+
     /// Allocate a copy-only byte buffer. Its initial contents are unspecified.
     #[allow(dead_code)]
     pub(crate) fn create_byte_buffer(&self, size: u64) -> Result<NativeBuffer> {

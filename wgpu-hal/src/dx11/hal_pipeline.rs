@@ -432,6 +432,17 @@ crate::impl_dyn_resource!(RenderPipeline);
 impl crate::DynRenderPipeline for RenderPipeline {}
 
 impl PipelineLayout {
+    #[allow(dead_code)] // Used by render-pass bind-group validation.
+    pub(super) fn uses_texture_group_for(
+        &self,
+        owner: &Arc<NativeDevice>,
+    ) -> Result<bool, crate::DeviceError> {
+        if !Arc::ptr_eq(owner, &self.owner) {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        Ok(self.uses_texture_group)
+    }
+
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         desc: &crate::PipelineLayoutDescriptor<super::hal_bind_group::BindGroupLayout>,
