@@ -4,6 +4,7 @@
 //! In particular, a D3D feature level alone does not establish WebGPU support.
 mod buffer;
 mod device;
+mod texture;
 
 pub use device::{
     AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice, enumerate_native_adapters,
