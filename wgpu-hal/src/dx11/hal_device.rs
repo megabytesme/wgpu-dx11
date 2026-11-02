@@ -67,10 +67,16 @@ impl crate::Device for Device {
         let supported = wgt::BufferUses::COPY_SRC
             | wgt::BufferUses::COPY_DST
             | wgt::BufferUses::VERTEX
+            | wgt::BufferUses::INDEX
             | wgt::BufferUses::UNIFORM
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
-        if !supported.contains(desc.usage) {
+        if !supported.contains(desc.usage)
+            || (self.native.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw()
+                && desc
+                    .usage
+                    .contains(wgt::BufferUses::INDEX | wgt::BufferUses::VERTEX))
+        {
             return Err(DeviceError::Unexpected);
         }
         // TRANSIENT and PREFER_COHERENT are allocation preferences. Our
@@ -802,7 +808,7 @@ mod tests {
         native.write_byte_buffer(source_native, 0, &[0x6d; 16])?;
         native.write_byte_buffer(output_native, 0, &[0; 16])?;
         let mut unsupported = desc.clone();
-        unsupported.usage = wgt::BufferUses::INDEX;
+        unsupported.usage = wgt::BufferUses::STORAGE_READ_ONLY;
         assert!(matches!(
             unsafe { dynamic.create_buffer(&unsupported) },
             Err(DeviceError::Unexpected)
@@ -812,6 +818,72 @@ mod tests {
             Err(DeviceError::Unexpected)
         ));
         let other = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let index = unsafe {
+            dynamic
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 16,
+                    usage: wgt::BufferUses::INDEX
+                        | wgt::BufferUses::COPY_DST
+                        | wgt::BufferUses::COPY_SRC,
+                    memory_flags: MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let index_native = index
+            .as_any()
+            .downcast_ref::<super::super::buffer::NativeBuffer>()
+            .unwrap();
+        let (raw_index, length) =
+            native.index_buffer(index_native, 2, None, wgt::IndexFormat::Uint16)?;
+        assert_eq!(length, 14);
+        let mut native_desc = windows::Win32::Graphics::Direct3D11::D3D11_BUFFER_DESC::default();
+        unsafe { raw_index.GetDesc(&mut native_desc) };
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
+        };
+        assert_ne!(native_desc.BindFlags & D3D11_BIND_INDEX_BUFFER.0 as u32, 0);
+        assert_eq!(native_desc.BindFlags & D3D11_BIND_VERTEX_BUFFER.0 as u32, 0);
+        let mut combined_desc = desc.clone();
+        combined_desc.usage |= wgt::BufferUses::INDEX | wgt::BufferUses::VERTEX;
+        assert!(unsafe { dynamic.create_buffer(&combined_desc) }.is_err());
+        assert!(native
+            .index_buffer(index_native, 0, None, wgt::IndexFormat::Uint32)
+            .is_err());
+        assert!(native.vertex_buffer(index_native, 0, None).is_err());
+        assert!(native
+            .index_buffer(index_native, 2, None, wgt::IndexFormat::Uint32)
+            .is_err());
+        assert!(native
+            .index_buffer(
+                index_native,
+                0,
+                NonZeroU64::new(3),
+                wgt::IndexFormat::Uint16
+            )
+            .is_err());
+        assert!(native
+            .index_buffer(index_native, 16, None, wgt::IndexFormat::Uint16)
+            .is_err());
+        assert!(native
+            .index_buffer(source_native, 0, None, wgt::IndexFormat::Uint16)
+            .is_err());
+        assert!(other
+            .index_buffer(index_native, 0, None, wgt::IndexFormat::Uint16)
+            .is_err());
+        native.copy_byte_buffer(
+            source_native,
+            index_native,
+            &BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size: NonZeroU64::new(16).unwrap(),
+            },
+        )?;
+        assert_eq!(
+            native.read_byte_buffer(index_native, 0, 16)?,
+            vec![0x6d; 16]
+        );
         let other_queue = Queue::new(other);
         let bad_desc: CommandEncoderDescriptor<dyn DynQueue> = CommandEncoderDescriptor {
             label: None,
@@ -863,6 +935,7 @@ mod tests {
             dynamic.destroy_fence(fence);
             dynamic.destroy_buffer(source);
             dynamic.destroy_buffer(output);
+            dynamic.destroy_buffer(index);
         }
         Ok(())
     }
