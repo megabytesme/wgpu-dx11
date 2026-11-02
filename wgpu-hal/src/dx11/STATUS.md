@@ -25,12 +25,15 @@ not evidence of full WebGPU conformance.
   replay and preserve draw order. The staging readback can stall the CPU.
 - The real Horizon HUD and crosshair shaders have passed FL9_1 GPU readback;
   the HUD path has also passed an isolated x64 UWP surface diagnostic.
+- A local, deliberately unsafe core bootstrap experiment with placeholder
+  capabilities created a wgpu device, copied mapped buffers, and rendered an
+  indexed triangle on FL9_1 with pixel readback. It is not an adapter or a
+  capability-conformance test.
 
 ## Before a public adapter
 
-- Exercise actual wgpu-core device creation and its late initialization; the
-  matching private HAL startup operations have GPU tests but core integration
-  has not yet been demonstrated.
+- Build a reproducible, tightly scoped core-integration test without
+  presenting placeholder capabilities as a usable adapter.
 - Implement or honestly gate the general binding layouts, shader inputs,
   texture formats/dimensions/mips/arrays, sampler modes, render states and
   buffer usages required by valid wgpu applications. Several restrictions,
