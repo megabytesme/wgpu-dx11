@@ -64,12 +64,13 @@ impl crate::Device for Device {
         &self,
         desc: &BufferDescriptor,
     ) -> Result<<Self::A as Api>::Buffer, DeviceError> {
-        let supported = wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST;
+        let supported =
+            wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST | wgt::BufferUses::VERTEX;
         if !supported.contains(desc.usage) || desc.memory_flags.contains(MemoryFlags::TRANSIENT) {
             return Err(DeviceError::Unexpected);
         }
         self.native
-            .create_byte_buffer(desc.size)
+            .create_buffer_with_usage(desc.size, desc.usage)
             .map_err(device_error)
     }
 
@@ -471,6 +472,23 @@ mod tests {
             .as_any()
             .downcast_ref::<super::super::texture::NativeTextureView>()
             .unwrap();
+        let (_, format, dimensions) = native.render_target_view(native_view)?;
+        assert_eq!(
+            (format, dimensions),
+            (wgt::TextureFormat::Rgba8Unorm, [4, 4])
+        );
+        let mut sampled_desc = view_desc.clone();
+        sampled_desc.usage = wgt::TextureUses::RESOURCE;
+        let sampled = unsafe {
+            dynamic
+                .create_texture_view(texture.as_ref(), &sampled_desc)
+                .unwrap()
+        };
+        let sampled_native = sampled
+            .as_any()
+            .downcast_ref::<super::super::texture::NativeTextureView>()
+            .unwrap();
+        assert!(native.render_target_view(sampled_native).is_err());
         assert!(native_view.shader_resource().is_some());
         unsafe {
             native
@@ -501,12 +519,14 @@ mod tests {
             Err(DeviceError::Unexpected)
         ));
         let other = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?));
+        assert!(other.native().render_target_view(native_view).is_err());
         assert!(matches!(
             unsafe { DynDevice::create_texture_view(&other, texture.as_ref(), &view_desc) },
             Err(DeviceError::Unexpected)
         ));
         unsafe {
             dynamic.destroy_texture(color_texture);
+            dynamic.destroy_texture_view(sampled);
             dynamic.destroy_texture_view(view);
             dynamic.destroy_texture(texture);
         }
@@ -539,10 +559,11 @@ mod tests {
             .as_any()
             .downcast_ref::<super::super::buffer::NativeBuffer>()
             .unwrap();
+        assert!(native.vertex_buffer(source_native, 0, None).is_err());
         native.write_byte_buffer(source_native, 0, &[0x6d; 16])?;
         native.write_byte_buffer(output_native, 0, &[0; 16])?;
         let mut unsupported = desc.clone();
-        unsupported.usage = wgt::BufferUses::VERTEX;
+        unsupported.usage = wgt::BufferUses::INDEX;
         assert!(matches!(
             unsafe { dynamic.create_buffer(&unsupported) },
             Err(DeviceError::Unexpected)

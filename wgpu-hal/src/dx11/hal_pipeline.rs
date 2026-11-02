@@ -22,7 +22,7 @@ crate::impl_dyn_resource!(PipelineLayout);
 impl crate::DynPipelineLayout for PipelineLayout {}
 
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[allow(dead_code)] // The render encoder consumes these state objects.
 pub struct RenderPipeline {
     pub(super) owner: Arc<NativeDevice>,
@@ -39,12 +39,10 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use alloc::borrow::Cow;
+    use core::num::NonZeroU64;
     use windows::Win32::Graphics::{
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-        Direct3D11::{
-            ID3D11DepthStencilView, D3D11_BIND_VERTEX_BUFFER, D3D11_BUFFER_DESC,
-            D3D11_SUBRESOURCE_DATA, D3D11_USAGE_IMMUTABLE, D3D11_VIEWPORT,
-        },
+        Direct3D11::{ID3D11DepthStencilView, D3D11_VIEWPORT},
     };
 
     #[test]
@@ -127,21 +125,33 @@ mod tests {
         assert_eq!(pipeline.target_format, wgt::TextureFormat::Rgba8Unorm);
         let target = native.create_rgba_render_target(8, 8)?;
         let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
-        let buffer_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of_val(&vertices) as u32,
-            Usage: D3D11_USAGE_IMMUTABLE,
-            BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
-            ..Default::default()
+        let buffer = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: size_of_val(&vertices) as u64,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
         };
-        let initial = D3D11_SUBRESOURCE_DATA {
-            pSysMem: vertices.as_ptr().cast(),
-            ..Default::default()
-        };
-        let mut buffer = None;
+        let bytes: alloc::vec::Vec<u8> = vertices
+            .iter()
+            .flat_map(|value| value.to_ne_bytes())
+            .collect();
+        native.write_byte_buffer(&buffer, 0, &bytes)?;
+        assert!(native.vertex_buffer(&buffer, 1, None).is_err());
+        assert!(native
+            .vertex_buffer(&buffer, 0, NonZeroU64::new(25))
+            .is_err());
+        assert!(native.vertex_buffer(&buffer, 24, None).is_err());
+        let other = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert!(other.vertex_buffer(&buffer, 0, None).is_err());
+        let (raw, actual) = native.vertex_buffer(&buffer, 0, None)?;
+        assert_eq!(actual, 24);
+        assert_eq!(native.vertex_buffer(&buffer, 8, None)?.1, 16);
+        let raw_buffer = Some(raw);
         unsafe {
-            native
-                .raw_device()
-                .CreateBuffer(&buffer_desc, Some(&initial), Some(&mut buffer))?;
             let context = native.immediate_context();
             context.ClearRenderTargetView(target.raw_view(), &[0., 0., 0., 1.]);
             context.OMSetRenderTargets(
@@ -159,7 +169,7 @@ mod tests {
             context.RSSetState(Some(&pipeline.rasterizer));
             context.IASetInputLayout(Some(&pipeline.input));
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            context.IASetVertexBuffers(0, 1, Some(&buffer), Some(&8), Some(&0));
+            context.IASetVertexBuffers(0, 1, Some(&raw_buffer), Some(&8), Some(&0));
             context.VSSetShader(Some(&pipeline.vertex), None);
             context.PSSetShader(Some(&pipeline.fragment), None);
             context.Draw(3, 0);
@@ -168,6 +178,7 @@ mod tests {
         let pixels = native.read_rgba_texture(target.texture(), 0, 0)?;
         assert_eq!(&pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &[255, 0, 0, 255]);
         unsafe {
+            device.destroy_buffer(buffer);
             device.destroy_render_pipeline(pipeline);
             device.destroy_pipeline_layout(layout);
             device.destroy_shader_module(shader);

@@ -4,16 +4,17 @@
 //! resource initialization and WebGPU usage/limit validation remain future work.
 use super::device::NativeDevice;
 use alloc::{vec, vec::Vec};
+use core::num::NonZeroU64;
 use windows::{
+    core::{Error, Interface, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::Direct3D11::{
-            D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ,
-            D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, ID3D11Buffer,
-            ID3D11Device,
+            ID3D11Buffer, ID3D11Device, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC,
+            D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_USAGE_DEFAULT,
+            D3D11_USAGE_STAGING,
         },
     },
-    core::{Error, Interface, Result},
 };
 
 /// An uninitialized D3D11 byte buffer tied to the creating native device.
@@ -24,6 +25,7 @@ pub struct NativeBuffer {
     raw: ID3D11Buffer,
     owner: ID3D11Device,
     size: u32,
+    usage: wgt::BufferUses,
 }
 
 // This is an actual dynamically downcastable HAL resource. Its broader
@@ -65,6 +67,14 @@ impl NativeDevice {
     /// Allocate a copy-only byte buffer. Its initial contents are unspecified.
     #[allow(dead_code)]
     pub(crate) fn create_byte_buffer(&self, size: u64) -> Result<NativeBuffer> {
+        self.create_buffer_with_usage(size, wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST)
+    }
+
+    pub(super) fn create_buffer_with_usage(
+        &self,
+        size: u64,
+        usage: wgt::BufferUses,
+    ) -> Result<NativeBuffer> {
         let size = u32::try_from(size).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
         if size == 0 {
             return Err(Error::from_hresult(E_INVALIDARG));
@@ -72,6 +82,11 @@ impl NativeDevice {
         let desc = D3D11_BUFFER_DESC {
             ByteWidth: size,
             Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: if usage.contains(wgt::BufferUses::VERTEX) {
+                D3D11_BIND_VERTEX_BUFFER.0 as u32
+            } else {
+                0
+            },
             ..Default::default()
         };
         let mut raw = None;
@@ -83,7 +98,31 @@ impl NativeDevice {
             raw: raw.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             owner: self.raw_device().clone(),
             size,
+            usage,
         })
+    }
+
+    /// Validate a HAL vertex binding and retain the native buffer for recording.
+    #[allow(dead_code)] // Used by the forthcoming render encoder.
+    pub(super) fn vertex_buffer(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        size: Option<NonZeroU64>,
+    ) -> Result<(ID3D11Buffer, u64)> {
+        let remaining = u64::from(buffer.size)
+            .checked_sub(offset)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let length = size.map_or(remaining, NonZeroU64::get);
+        if !buffer.usage.contains(wgt::BufferUses::VERTEX)
+            || !offset.is_multiple_of(4)
+            || length == 0
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let len = usize::try_from(length).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        self.checked_buffer_range(buffer, offset, len)?;
+        Ok((buffer.raw.clone(), length))
     }
 
     /// Upload a checked byte range through the serialized immediate context.
@@ -230,7 +269,7 @@ mod tests {
     extern crate std;
 
     use super::*;
-    use crate::dx11::{FeatureLevel, enumerate_native_adapters};
+    use crate::dx11::{enumerate_native_adapters, FeatureLevel};
 
     #[test]
     fn native_buffers_round_trip_and_reject_invalid_access() -> Result<()> {
@@ -270,7 +309,7 @@ mod tests {
         let region = crate::BufferCopy {
             src_offset: 0,
             dst_offset: 4,
-            size: core::num::NonZeroU64::new(8).unwrap(),
+            size: NonZeroU64::new(8).unwrap(),
         };
         device.copy_byte_buffer(&buffer, &destination, &region)?;
         assert_eq!(
@@ -282,25 +321,19 @@ mod tests {
             src_offset: 1,
             ..region
         };
-        assert!(
-            device
-                .copy_byte_buffer(&buffer, &destination, &misaligned)
-                .is_err()
-        );
+        assert!(device
+            .copy_byte_buffer(&buffer, &destination, &misaligned)
+            .is_err());
         let outside = crate::BufferCopy {
             dst_offset: 12,
             ..region
         };
-        assert!(
-            device
-                .copy_byte_buffer(&buffer, &destination, &outside)
-                .is_err()
-        );
-        assert!(
-            other
-                .copy_byte_buffer(&buffer, &destination, &region)
-                .is_err()
-        );
+        assert!(device
+            .copy_byte_buffer(&buffer, &destination, &outside)
+            .is_err());
+        assert!(other
+            .copy_byte_buffer(&buffer, &destination, &region)
+            .is_err());
         Ok(())
     }
 }

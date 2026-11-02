@@ -157,6 +157,34 @@ fn subresource_layout(
 }
 
 impl NativeDevice {
+    /// Validate and retain a color attachment view for render command recording.
+    #[allow(dead_code)] // Used by the forthcoming render encoder.
+    pub(super) fn render_target_view(
+        &self,
+        view: &NativeTextureView,
+    ) -> Result<(ID3D11RenderTargetView, wgt::TextureFormat, [u32; 2])> {
+        if view.owner.as_raw() != self.raw_device().as_raw() {
+            return Err(invalid());
+        }
+        let render_target = view.render_target.as_ref().ok_or_else(invalid)?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { view.texture.GetDesc(&mut desc) };
+        let format = match desc.Format {
+            DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
+            DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
+            _ => return Err(invalid()),
+        };
+        if desc.Width == 0
+            || desc.Height == 0
+            || desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || desc.SampleDesc.Count != 1
+        {
+            return Err(invalid());
+        }
+        Ok((render_target.clone(), format, [desc.Width, desc.Height]))
+    }
+
     /// Allocate an uninitialized 2D RGBA8 texture, with explicit mips and layers.
     #[allow(dead_code)]
     pub(crate) fn create_rgba_texture(
