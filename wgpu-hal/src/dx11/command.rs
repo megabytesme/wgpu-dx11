@@ -1,6 +1,6 @@
 //! Recorded copy commands and a restricted FL9_1 render path.
 use super::{
-    buffer::{NativeBuffer, NativeBufferCopy},
+    buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
     hal_transfer::{BufferToTexture, TextureToBuffer},
 };
@@ -31,6 +31,7 @@ pub(crate) struct CopyEncoder<'a> {
 #[derive(Debug)]
 pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
+    ClearBuffer(NativeBufferClear),
     BufferToTexture(BufferToTexture),
     TextureToBuffer(TextureToBuffer),
     #[cfg(test)]
@@ -93,6 +94,32 @@ impl CommandBuffer {
             unsafe {
                 match command {
                     NativeCommand::Copy(copy) => copy.execute(context),
+                    NativeCommand::ClearBuffer(clear) => {
+                        // A fixed static chunk avoids allocating proportional to buffer size.
+                        static ZEROES: [u8; 4096] = [0; 4096];
+                        let mut start = clear.start;
+                        while start < clear.end {
+                            let end = clear.end.min(start.saturating_add(ZEROES.len() as u32));
+                            let region = windows::Win32::Graphics::Direct3D11::D3D11_BOX {
+                                left: start,
+                                right: end,
+                                top: 0,
+                                bottom: 1,
+                                front: 0,
+                                back: 1,
+                            };
+                            context.UpdateSubresource(
+                                &clear.buffer,
+                                0,
+                                Some(&region),
+                                ZEROES.as_ptr().cast(),
+                                0,
+                                0,
+                            );
+                            start = end;
+                        }
+                    }
+
                     NativeCommand::BufferToTexture(copy) => copy.execute(context)?,
                     NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
                     #[cfg(test)]

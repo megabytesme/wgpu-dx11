@@ -125,7 +125,21 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn clear_buffer(&mut self, buffer: &<Self::A as Api>::Buffer, range: MemoryRange) {
-        self.reject()
+        if self.render.is_some() || self.recording.is_none() {
+            self.reject();
+            return;
+        }
+        if self.failure.is_some() {
+            return;
+        }
+        let clear = match self.device.prepare_buffer_clear(buffer, range) {
+            Ok(clear) => clear,
+            Err(error) => {
+                self.failure = Some(super::hal_device::device_error(error));
+                return;
+            }
+        };
+        self.record(NativeCommand::ClearBuffer(clear));
     }
 
     unsafe fn copy_buffer_to_buffer<T>(
@@ -950,6 +964,63 @@ mod tests {
     }
 
     #[test]
+    fn hal_encoder_clears_only_requested_buffer_range_after_submit() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let device = dx11::Device::new(native.clone());
+        let queue = Queue::new(native.clone());
+        // A VERTEX-only buffer still needs internal initialization to work.
+        let buffer = unsafe {
+            Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 12_288,
+                    usage: wgt::BufferUses::VERTEX,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&buffer, 0, &vec![0x5a; 12_288])?;
+        let mut encoder = unsafe {
+            Device::create_command_encoder(
+                &device,
+                &CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                },
+            )
+            .unwrap()
+        };
+        let commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::clear_buffer(&mut encoder, &buffer, 4..8196);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        assert_eq!(
+            native.read_byte_buffer(&buffer, 0, 12_288)?,
+            vec![0x5a; 12_288]
+        );
+        let fence = native.create_native_fence();
+        unsafe {
+            crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        let bytes = native.read_byte_buffer(&buffer, 0, 12_288)?;
+        assert!(bytes[..4].iter().all(|&b| b == 0x5a));
+        assert!(bytes[4..8196].iter().all(|&b| b == 0));
+        assert!(bytes[8196..].iter().all(|&b| b == 0x5a));
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn hal_encoder_submits_padded_buffer_to_texture_copy() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
@@ -1126,7 +1197,10 @@ mod tests {
         unsafe {
             encoder.reset_all(vec![commands]);
             encoder.begin_encoding(None).unwrap();
-            encoder.clear_buffer(&output, 0..16);
+            encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
             assert!(matches!(
                 encoder.end_encoding(),
                 Err(DeviceError::Unexpected)
