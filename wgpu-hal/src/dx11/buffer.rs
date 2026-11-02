@@ -1,10 +1,11 @@
 //! Checked native byte-buffer transfers for the experimental D3D11 backend.
 //!
-//! These operations are not yet a wgpu buffer implementation. In particular,
-//! resource initialization and WebGPU usage/limit validation remain future work.
+//! The private HAL supports restricted buffer usage and CPU-shadow mappings.
+//! Resource initialization and WebGPU usage/limit validation remain future work.
 use super::device::NativeDevice;
-use alloc::{vec, vec::Vec};
+use alloc::{boxed::Box, vec, vec::Vec};
 use core::num::NonZeroU64;
+use parking_lot::Mutex;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -26,10 +27,17 @@ pub struct NativeBuffer {
     owner: ID3D11Device,
     size: u32,
     usage: wgt::BufferUses,
+    mapping: Mutex<Option<ShadowMapping>>,
 }
 
-// This is an actual dynamically downcastable HAL resource. Its broader
-// wgpu buffer usage and mapping semantics are not implemented yet.
+#[derive(Debug)]
+struct ShadowMapping {
+    range: crate::MemoryRange,
+    // Eight-byte alignment meets the HAL/WebGPU mapping alignment contract.
+    words: Box<[u64]>,
+}
+
+// This is dynamically downcastable; broader wgpu buffer usages remain unsupported.
 crate::impl_dyn_resource!(NativeBuffer);
 impl crate::DynBuffer for NativeBuffer {}
 
@@ -125,7 +133,117 @@ impl NativeDevice {
             owner: self.raw_device().clone(),
             size,
             usage,
+            mapping: Mutex::new(None),
         })
+    }
+
+    /// Keep CPU memory stable while the D3D buffer remains available to the GPU.
+    /// Flush and invalidate explicitly synchronize overlapping mapped ranges.
+    pub(super) fn map_buffer_shadow(
+        &self,
+        buffer: &NativeBuffer,
+        range: crate::MemoryRange,
+    ) -> core::result::Result<crate::BufferMapping, crate::DeviceError> {
+        if !buffer
+            .usage
+            .intersects(wgt::BufferUses::MAP_READ | wgt::BufferUses::MAP_WRITE)
+            || range.start >= range.end
+            || range.end > u64::from(buffer.size)
+            || self.raw_device().as_raw() != buffer.owner.as_raw()
+        {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        let length =
+            usize::try_from(range.end - range.start).map_err(|_| crate::DeviceError::Unexpected)?;
+        let count = length
+            .checked_add(7)
+            .ok_or(crate::DeviceError::Unexpected)?
+            / 8;
+        let mut words = Vec::<u64>::new();
+        words
+            .try_reserve_exact(count)
+            .map_err(|_| crate::DeviceError::OutOfMemory)?;
+        words.resize(count, 0);
+        let mut words = words.into_boxed_slice();
+        let ptr = core::ptr::NonNull::new(words.as_mut_ptr().cast::<u8>())
+            .ok_or(crate::DeviceError::Unexpected)?;
+        let mut guard = buffer.mapping.lock();
+        if guard.is_some() {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        *guard = Some(ShadowMapping { range, words });
+        Ok(crate::BufferMapping {
+            ptr,
+            is_coherent: false,
+        })
+    }
+
+    pub(super) fn unmap_buffer_shadow(&self, buffer: &NativeBuffer) -> Result<()> {
+        if self.raw_device().as_raw() != buffer.owner.as_raw()
+            || buffer.mapping.lock().take().is_none()
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        Ok(())
+    }
+
+    pub(super) fn sync_buffer_shadow<I>(
+        &self,
+        buffer: &NativeBuffer,
+        ranges: I,
+        upload: bool,
+    ) -> Result<()>
+    where
+        I: Iterator<Item = crate::MemoryRange>,
+    {
+        if self.raw_device().as_raw() != buffer.owner.as_raw() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let mut guard = buffer.mapping.lock();
+        let shadow = guard
+            .as_mut()
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        for range in ranges {
+            if range.start > range.end || range.end > u64::from(buffer.size) {
+                return Err(Error::from_hresult(E_INVALIDARG));
+            }
+            let start = range.start.max(shadow.range.start);
+            let end = range.end.min(shadow.range.end);
+            if start >= end {
+                continue;
+            }
+            let offset = usize::try_from(start - shadow.range.start)
+                .map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+            let length =
+                usize::try_from(end - start).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+            let pointer = unsafe { shadow.words.as_mut_ptr().cast::<u8>().add(offset) };
+            if upload {
+                let area = D3D11_BOX {
+                    left: start as u32,
+                    right: end as u32,
+                    top: 0,
+                    bottom: 1,
+                    front: 0,
+                    back: 1,
+                };
+                unsafe {
+                    self.immediate_context().UpdateSubresource(
+                        &buffer.raw,
+                        0,
+                        Some(&area),
+                        pointer.cast(),
+                        0,
+                        0,
+                    );
+                }
+            } else {
+                let bytes = self.read_byte_buffer(buffer, start, length)?;
+                unsafe {
+                    core::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer, length);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Validate a HAL vertex binding and retain the native buffer for recording.

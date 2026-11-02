@@ -64,8 +64,11 @@ impl crate::Device for Device {
         &self,
         desc: &BufferDescriptor,
     ) -> Result<<Self::A as Api>::Buffer, DeviceError> {
-        let supported =
-            wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST | wgt::BufferUses::VERTEX;
+        let supported = wgt::BufferUses::COPY_SRC
+            | wgt::BufferUses::COPY_DST
+            | wgt::BufferUses::VERTEX
+            | wgt::BufferUses::MAP_READ
+            | wgt::BufferUses::MAP_WRITE;
         if !supported.contains(desc.usage) || desc.memory_flags.contains(MemoryFlags::TRANSIENT) {
             return Err(DeviceError::Unexpected);
         }
@@ -85,25 +88,31 @@ impl crate::Device for Device {
         buffer: &<Self::A as Api>::Buffer,
         range: MemoryRange,
     ) -> Result<BufferMapping, DeviceError> {
-        Err(DeviceError::Unexpected)
+        self.native.map_buffer_shadow(buffer, range)
     }
 
     unsafe fn unmap_buffer(&self, buffer: &<Self::A as Api>::Buffer) {
-        panic!("D3D11 HAL operation is not implemented")
+        self.native
+            .unmap_buffer_shadow(buffer)
+            .expect("invalid D3D11 buffer unmap")
     }
 
     unsafe fn flush_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
     where
         I: Iterator<Item = MemoryRange>,
     {
-        panic!("D3D11 HAL operation is not implemented")
+        self.native
+            .sync_buffer_shadow(buffer, ranges, true)
+            .expect("D3D11 mapped buffer flush failed")
     }
 
     unsafe fn invalidate_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
     where
         I: Iterator<Item = MemoryRange>,
     {
-        panic!("D3D11 HAL operation is not implemented")
+        self.native
+            .sync_buffer_shadow(buffer, ranges, false)
+            .expect("D3D11 mapped buffer invalidate failed")
     }
 
     unsafe fn create_texture(
@@ -426,6 +435,114 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, FeatureLevel, Queue};
     use crate::{DynCommandBuffer, DynDevice, DynQueue};
     use alloc::vec;
+
+    #[test]
+    fn mapped_shadow_remains_valid_across_gpu_copies() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let device = Device::new(native.clone());
+        let dynamic: &dyn DynDevice = &device;
+        let source = unsafe {
+            dynamic
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 32,
+                    usage: wgt::BufferUses::MAP_WRITE
+                        | wgt::BufferUses::COPY_SRC
+                        | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let dest = unsafe {
+            dynamic
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 32,
+                    usage: wgt::BufferUses::MAP_READ
+                        | wgt::BufferUses::COPY_SRC
+                        | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let src = source
+            .as_any()
+            .downcast_ref::<super::super::buffer::NativeBuffer>()
+            .unwrap();
+        let dst = dest
+            .as_any()
+            .downcast_ref::<super::super::buffer::NativeBuffer>()
+            .unwrap();
+        native.write_byte_buffer(src, 0, &[0x11; 32])?;
+        native.write_byte_buffer(dst, 0, &[0x22; 32])?;
+        assert!(unsafe { dynamic.map_buffer(source.as_ref(), 8..8) }.is_err());
+        assert!(unsafe { dynamic.map_buffer(source.as_ref(), 8..40) }.is_err());
+        let other = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?));
+        assert!(unsafe { DynDevice::map_buffer(&other, source.as_ref(), 8..24) }.is_err());
+        let src_map = unsafe { dynamic.map_buffer(source.as_ref(), 8..24).unwrap() };
+        let dst_map = unsafe { dynamic.map_buffer(dest.as_ref(), 8..24).unwrap() };
+        assert!(!src_map.is_coherent && !dst_map.is_coherent);
+        assert_eq!(src_map.ptr.as_ptr() as usize % 8, 0);
+        assert!(unsafe { dynamic.map_buffer(source.as_ref(), 8..24) }.is_err());
+        let region = BufferCopy {
+            src_offset: 8,
+            dst_offset: 8,
+            size: NonZeroU64::new(16).unwrap(),
+        };
+        unsafe {
+            core::ptr::write_bytes(src_map.ptr.as_ptr(), 0x7a, 16);
+            dynamic.flush_mapped_ranges(source.as_ref(), &[12..20]);
+        }
+        native.copy_byte_buffer(src, dst, &region)?;
+        unsafe {
+            dynamic.invalidate_mapped_ranges(dest.as_ref(), &[8..24]);
+        }
+        let first = unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) };
+        assert_eq!(
+            first,
+            &[
+                0x11, 0x11, 0x11, 0x11, 0x7a, 0x7a, 0x7a, 0x7a, 0x7a, 0x7a, 0x7a, 0x7a, 0x11, 0x11,
+                0x11, 0x11
+            ]
+        );
+        unsafe {
+            core::ptr::write_bytes(src_map.ptr.as_ptr().add(4), 0x33, 8);
+            dynamic.flush_mapped_ranges(source.as_ref(), &[12..20]);
+        }
+        native.copy_byte_buffer(src, dst, &region)?;
+        unsafe {
+            dynamic.invalidate_mapped_ranges(dest.as_ref(), &[12..20]);
+        }
+        let second = unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) };
+        assert_eq!(&second[4..12], &[0x33; 8]);
+        assert_eq!(&second[..4], &[0x11; 4]);
+        assert_eq!(&second[12..], &[0x11; 4]);
+        unsafe {
+            core::ptr::write_bytes(src_map.ptr.as_ptr(), 0xab, 16);
+            dynamic.flush_mapped_ranges(source.as_ref(), &[0..32]);
+        }
+        native.copy_byte_buffer(src, dst, &region)?;
+        unsafe {
+            dynamic.invalidate_mapped_ranges(dest.as_ref(), &[0..32]);
+        }
+        assert_eq!(
+            unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) },
+            &[0xab; 16]
+        );
+        assert_eq!(native.read_byte_buffer(dst, 0, 8)?, vec![0x22; 8]);
+        assert_eq!(native.read_byte_buffer(dst, 24, 8)?, vec![0x22; 8]);
+        unsafe {
+            dynamic.unmap_buffer(source.as_ref());
+            dynamic.unmap_buffer(dest.as_ref());
+            dynamic.destroy_buffer(source);
+            dynamic.destroy_buffer(dest);
+        }
+        Ok(())
+    }
 
     #[test]
     fn private_device_creates_restricted_texture_views() -> windows::core::Result<()> {
