@@ -260,10 +260,10 @@ impl BindGroup {
                 let mut views = alloc::vec::Vec::new();
                 for index in 0..2 {
                     let sampler = desc.samplers[index];
-                    let native_sampler = sampler.raw_for(owner)?;
-                    let (texture, dimensions) = owner
+                    let (texture, dimensions, mip_levels) = owner
                         .sampled_view(desc.textures[index].view)
                         .map_err(super::hal_device::device_error)?;
+                    let native_sampler = sampler.raw_for(owner, mip_levels)?;
                     if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
                         && sampler.wraps()
                         && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
@@ -306,10 +306,10 @@ impl BindGroup {
                     .prepare_uniform_binding(binding.buffer, binding.offset, length)
                     .map_err(super::hal_device::device_error)?;
                 let sampler = desc.samplers[0];
-                let native_sampler = sampler.raw_for(owner)?;
-                let (texture, dimensions) = owner
+                let (texture, dimensions, mip_levels) = owner
                     .sampled_view(desc.textures[0].view)
                     .map_err(super::hal_device::device_error)?;
+                let native_sampler = sampler.raw_for(owner, mip_levels)?;
                 if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
                     && sampler.wraps()
                     && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
@@ -362,10 +362,10 @@ impl BindGroup {
                     return Err(crate::DeviceError::Unexpected);
                 }
                 let sampler = desc.samplers[0];
-                let native_sampler = sampler.raw_for(owner)?;
-                let (texture, dimensions) = owner
+                let (texture, dimensions, mip_levels) = owner
                     .sampled_view(desc.textures[0].view)
                     .map_err(super::hal_device::device_error)?;
+                let native_sampler = sampler.raw_for(owner, mip_levels)?;
                 if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
                     && sampler.wraps()
                     && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())

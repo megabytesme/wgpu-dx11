@@ -197,7 +197,7 @@ impl NativeDevice {
     pub(super) fn sampled_view(
         &self,
         view: &NativeTextureView,
-    ) -> Result<(ID3D11ShaderResourceView, [u32; 2])> {
+    ) -> Result<(ID3D11ShaderResourceView, [u32; 2], u32)> {
         if view.owner.as_raw() != self.raw_device().as_raw() {
             return Err(invalid());
         }
@@ -213,7 +213,7 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
-        Ok((resource.clone(), [desc.Width, desc.Height]))
+        Ok((resource.clone(), [desc.Width, desc.Height], desc.MipLevels))
     }
 
     /// Validate and retain a color attachment view for render command recording.

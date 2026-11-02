@@ -9,6 +9,7 @@ pub struct Sampler {
     owner: Arc<NativeDevice>,
     raw: ID3D11SamplerState,
     wraps: bool,
+    single_mip_only: bool,
 }
 crate::impl_dyn_resource!(Sampler);
 impl crate::DynSampler for Sampler {}
@@ -36,10 +37,15 @@ impl Sampler {
         {
             return Err(crate::DeviceError::Unexpected);
         }
-        // D3D11 feature levels 9_1 and 9_2 require an integral minimum LOD
-        // and FLT_MAX for the maximum. Do not silently weaken a HAL clamp.
-        if owner.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw()
-            && (desc.lod_clamp.start.fract() != 0.0 || desc.lod_clamp.end != f32::MAX)
+        // 9_1/9_2 require FLT_MAX as MaxLOD. With a single-mip view, a
+        // positive upper bound >= 1 selects the same mip and min/mag filter
+        // as FLT_MAX. Retain this restriction for bind-group validation.
+        let level_9_1_or_2 =
+            owner.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw();
+        let single_mip_only = level_9_1_or_2 && desc.lod_clamp.end != f32::MAX;
+        if level_9_1_or_2
+            && (desc.lod_clamp.start.fract() != 0.0
+                || (single_mip_only && (desc.lod_clamp.start != 0.0 || desc.lod_clamp.end < 1.0)))
         {
             return Err(crate::DeviceError::Unexpected);
         }
@@ -61,7 +67,11 @@ impl Sampler {
             MaxAnisotropy: 1,
             ComparisonFunc: D3D11_COMPARISON_NEVER,
             MinLOD: desc.lod_clamp.start,
-            MaxLOD: desc.lod_clamp.end,
+            MaxLOD: if single_mip_only {
+                f32::MAX
+            } else {
+                desc.lod_clamp.end
+            },
             ..Default::default()
         };
         let mut raw = None;
@@ -74,6 +84,7 @@ impl Sampler {
         Ok(Self {
             owner,
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
+            single_mip_only,
             wraps: desc
                 .address_modes
                 .iter()
@@ -85,8 +96,9 @@ impl Sampler {
     pub(super) fn raw_for(
         &self,
         owner: &Arc<NativeDevice>,
+        mip_levels: u32,
     ) -> Result<ID3D11SamplerState, crate::DeviceError> {
-        if !Arc::ptr_eq(&self.owner, owner) {
+        if !Arc::ptr_eq(&self.owner, owner) || (self.single_mip_only && mip_levels != 1) {
             return Err(crate::DeviceError::Unexpected);
         }
         Ok(self.raw.clone())
@@ -177,8 +189,8 @@ mod tests {
                     .create_sampler(&desc)
                     .unwrap_or_else(|error| panic!("sampler {desc:?}: {error:?}"))
             };
-            let raw = sampler.raw_for(&owner).unwrap();
-            assert!(sampler.raw_for(&other).is_err());
+            let raw = sampler.raw_for(&owner, 1).unwrap();
+            assert!(sampler.raw_for(&other, 1).is_err());
             let mut actual = D3D11_SAMPLER_DESC::default();
             unsafe { raw.GetDesc(&mut actual) };
             assert_eq!(actual.Filter, expected);
@@ -198,7 +210,18 @@ mod tests {
         desc.anisotropy_clamp = 2;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
         desc.anisotropy_clamp = 1;
-        desc.lod_clamp.end = 4.0;
+        desc.lod_clamp.end = 32.0;
+        let default_lod = unsafe { device.create_sampler(&desc).unwrap() };
+        let raw = default_lod.raw_for(&owner, 1).unwrap();
+        let mut actual = D3D11_SAMPLER_DESC::default();
+        unsafe { raw.GetDesc(&mut actual) };
+        assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
+        assert!(default_lod.raw_for(&owner, 2).is_err());
+        assert!(default_lod.raw_for(&other, 1).is_err());
+        unsafe { device.destroy_sampler(default_lod) };
+        desc.lod_clamp.end = 0.5;
+        assert!(unsafe { device.create_sampler(&desc) }.is_err());
+        desc.lod_clamp = 1.0..4.0;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
         desc.lod_clamp.end = f32::MAX;
         desc.lod_clamp.start = 0.5;
