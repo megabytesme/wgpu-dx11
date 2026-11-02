@@ -14,6 +14,7 @@ pub fn validate_capabilities(ctx: TestingContext) {
     );
     let max_caps = match ctx.adapter.get_info().backend {
         wgpu::Backend::Vulkan => naga::back::spv::supported_capabilities(),
+        wgpu::Backend::Dx11 => unreachable!("DX11 does not expose adapters"),
         // TODO: when mesh shaders land, change this
         wgpu::Backend::Dx12 => naga::back::hlsl::supported_capabilities() | Caps::MESH_SHADER,
         wgpu::Backend::Metal => naga::back::msl::supported_capabilities() | Caps::MESH_SHADER,

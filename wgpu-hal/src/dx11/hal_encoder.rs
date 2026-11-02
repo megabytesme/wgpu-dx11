@@ -922,14 +922,51 @@ mod tests {
     use core::{num::NonZeroU64, time::Duration};
 
     #[test]
-    fn hal_encoder_submits_real_level_9_triangle() -> windows::core::Result<()> {
+    fn fl9_1_hardware_indexed_triangle() {
+        let result = std::panic::catch_unwind(|| -> windows::core::Result<bool> {
+            let adapters = enumerate_native_adapters()?;
+            for adapter in &adapters {
+                let id = adapter.identity();
+                std::println!(
+                    "DXGI adapter: {} vendor={:#06x} device={:#06x} software={}",
+                    id.name,
+                    id.vendor_id,
+                    id.device_id,
+                    id.software
+                );
+            }
+            let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+                return Ok(false);
+            };
+            std::println!(
+                "Selected hardware: {}; requested feature level: 9_1",
+                adapter.identity().name
+            );
+            let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+            std::println!("Actual feature level: {:?}", native.feature_level());
+            assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+            indexed_triangle(native)?;
+            Ok(true)
+        });
+        match result {
+            Ok(Ok(true)) => std::println!("PASS: executed=1 passed=1 failed=0 skipped=0"),
+            Ok(Ok(false)) => std::println!(
+                "SKIP: no hardware DXGI adapter; executed=0 passed=0 failed=0 skipped=1"
+            ),
+            Ok(Err(error)) => {
+                std::println!("FAIL: {error:?}; executed=1 passed=0 failed=1 skipped=0");
+                panic!("FL9_1 hardware test failed: {error:?}");
+            }
+            Err(panic) => {
+                std::println!("FAIL: executed=1 passed=0 failed=1 skipped=0");
+                std::panic::resume_unwind(panic);
+            }
+        }
+    }
+
+    fn indexed_triangle(native: Arc<NativeDevice>) -> windows::core::Result<()> {
         use crate::dx11::Device;
         use alloc::borrow::Cow;
-        let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
-            return Ok(());
-        };
-        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(native.clone());
         let queue = Queue::new(native.clone());
         let module = naga::front::wgsl::parse_str("@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }").unwrap();
@@ -1081,8 +1118,35 @@ mod tests {
             )
             .unwrap()
         };
-        let bytes: Vec<u8> = vertices.iter().flat_map(|x| x.to_ne_bytes()).collect();
-        native.write_byte_buffer(&buffer, 0, &bytes)?;
+        let mut bytes: Vec<u8> = vertices.iter().flat_map(|x| x.to_ne_bytes()).collect();
+        bytes.extend_from_slice(&[0, 0, 1, 0, 2, 0, 0, 0]);
+        let upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 32,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&upload, 0, &bytes)?;
+        native.write_byte_buffer(&buffer, 0, &[0; 24])?;
+        let index = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 8,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&index, 0, &[0; 8])?;
         unsafe {
             native
                 .immediate_context()
@@ -1123,6 +1187,30 @@ mod tests {
             )
             .unwrap()
         };
+        let upload_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &upload,
+                &buffer,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: NonZeroU64::new(24).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &upload,
+                &index,
+                core::iter::once(BufferCopy {
+                    src_offset: 24,
+                    dst_offset: 0,
+                    size: NonZeroU64::new(8).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
         let commands = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
@@ -1132,25 +1220,40 @@ mod tests {
                 0,
                 BufferBinding::new_unchecked(&buffer, 0, None),
             );
-            // Empty layouts require no binding; explicitly binding an empty group
-            // is also valid and must not change rendered output.
-            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&index, 0, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 0, 3, 0, 0, 1);
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &empty_group, &[]);
-            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 0, 3, 0, 0, 1);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
         };
         let before = native.read_rgba_texture(&texture, 0, 0)?;
-        assert_eq!(&before[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &[0, 0, 255, 255]);
+        assert_eq!(before.len(), 8 * 8 * 4);
+        assert!(before
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 0, 255, 255]));
         let fence = native.create_native_fence();
         unsafe {
-            crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)).unwrap();
+            crate::Queue::submit(&queue, &[&upload_commands, &commands], &[], (&fence, 1)).unwrap();
         }
         assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
         let pixels = native.read_rgba_texture(&texture, 0, 0)?;
-        assert_eq!(&pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &[255, 0, 0, 255]);
+        assert_eq!(pixels.len(), 8 * 8 * 4);
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [255, 0, 0, 255]),
+            "unexpected pixels: {pixels:?}"
+        );
+        std::println!(
+            "Readback: 64/64 pixels RGBA [255, 0, 0, 255]; before submission: 64/64 blue"
+        );
         unsafe {
-            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+            crate::CommandEncoder::reset_all(&mut encoder, [upload_commands, commands].into_iter());
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             let unsupported = RenderPassDescriptor {
                 label: None,
@@ -1180,6 +1283,18 @@ mod tests {
                 crate::CommandEncoder::end_encoding(&mut encoder),
                 Err(DeviceError::Unexpected)
             ));
+            drop(encoder);
+            crate::Device::destroy_fence(&device, fence);
+            crate::Device::destroy_buffer(&device, index);
+            crate::Device::destroy_buffer(&device, buffer);
+            crate::Device::destroy_buffer(&device, upload);
+            crate::Device::destroy_texture_view(&device, view);
+            crate::Device::destroy_texture(&device, texture);
+            crate::Device::destroy_render_pipeline(&device, pipeline);
+            crate::Device::destroy_pipeline_layout(&device, layout);
+            crate::Device::destroy_bind_group(&device, empty_group);
+            crate::Device::destroy_bind_group_layout(&device, empty_layout);
+            crate::Device::destroy_shader_module(&device, shader);
         }
         Ok(())
     }
