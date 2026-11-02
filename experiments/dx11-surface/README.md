@@ -30,6 +30,12 @@ library and `-Z build-std=std,panic_abort`. The host's strict import audit
 also requires a UWP-compatible `parking_lot_core` implementation: the default
 Windows implementation may retain the desktop-only `GetModuleHandleA` import.
 Horizon supplies such an override externally; it is not part of this fork.
+To test Horizon's actual HUD shader, set `HORIZON_HUD_SHADER` to the absolute
+path of its `hud.wgsl` and build the probe with `--features horizon-hud`. This
+embeds that shader in the diagnostic at build time; it is not included in the
+fork. The diagnostic uses Horizon's HUD vertex and uniform layouts, two texture
+bindings, and alpha blending. Include Horizon's license when distributing such
+a probe. The result remains a graphics diagnostic rather than a working game.
 In a Visual Studio UWP developer
 shell using the Windows 10 SDK 15063, set `DX11_PROBE_LIB` to the resulting
 `wgpu_dx11_surface_probe.lib` and `UWP_STRICT_LINK_PS1` to an import-auditing

@@ -6,6 +6,9 @@ publish = false
 
 [workspace]
 
+[features]
+horizon-hud = []
+
 [lib]
 crate-type = ["staticlib"]
 

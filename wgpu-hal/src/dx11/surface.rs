@@ -8,14 +8,14 @@ use alloc::{format, sync::Arc};
 use core::{borrow::Borrow, ffi::c_void, time::Duration};
 use parking_lot::Mutex;
 use windows::{
-    UI::Core::ICoreWindow,
+    core::{AgileReference, IUnknown, Interface},
     Win32::{
         Foundation::E_OUTOFMEMORY,
         Graphics::Dxgi::{
             DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
         },
     },
-    core::{AgileReference, IUnknown, Interface},
+    UI::Core::ICoreWindow,
 };
 
 #[derive(Debug)]
@@ -120,6 +120,29 @@ impl Surface {
         native: Arc<NativeDevice>,
         shader_input: crate::NagaShader,
     ) -> Result<[u8; 4], crate::SurfaceError> {
+        unsafe { self.diagnostic_cycle_inner(native, shader_input, false) }
+    }
+
+    /// Exercise Horizon's HUD-shaped pipeline through the private HAL surface.
+    ///
+    /// # Safety
+    /// The surface must be unconfigured, have no acquired textures or derived
+    /// views, and have no outstanding GPU work.
+    #[doc(hidden)]
+    pub unsafe fn diagnostic_hud_cycle(
+        &self,
+        native: Arc<NativeDevice>,
+        shader_input: crate::NagaShader,
+    ) -> Result<[u8; 4], crate::SurfaceError> {
+        unsafe { self.diagnostic_cycle_inner(native, shader_input, true) }
+    }
+
+    unsafe fn diagnostic_cycle_inner(
+        &self,
+        native: Arc<NativeDevice>,
+        shader_input: crate::NagaShader,
+        hud: bool,
+    ) -> Result<[u8; 4], crate::SurfaceError> {
         use crate::{DynDevice, DynQueue, DynSurface};
         let device = super::Device::new(native.clone());
         let native_queue = super::Queue::new(native.clone());
@@ -211,9 +234,24 @@ impl Surface {
             )
         }
         .map_err(|_| crate::SurfaceError::Other("shader module failed"))?;
-        let group_entries = [
-            wgt::BindGroupLayoutEntry {
+        let mut group_entries = alloc::vec::Vec::new();
+        if hud {
+            group_entries.push(wgt::BindGroupLayoutEntry {
                 binding: 0,
+                visibility: wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Buffer {
+                    ty: wgt::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+        }
+        let pair_count = if hud { 2 } else { 1 };
+        for index in 0..pair_count {
+            let binding = u32::from(hud) + index * 2;
+            group_entries.push(wgt::BindGroupLayoutEntry {
+                binding,
                 visibility: wgt::ShaderStages::FRAGMENT,
                 ty: wgt::BindingType::Texture {
                     sample_type: wgt::TextureSampleType::Float { filterable: true },
@@ -221,14 +259,14 @@ impl Surface {
                     multisampled: false,
                 },
                 count: None,
-            },
-            wgt::BindGroupLayoutEntry {
-                binding: 1,
+            });
+            group_entries.push(wgt::BindGroupLayoutEntry {
+                binding: binding + 1,
                 visibility: wgt::ShaderStages::FRAGMENT,
                 ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
                 count: None,
-            },
-        ];
+            });
+        }
         let group_layout = unsafe {
             crate::Device::create_bind_group_layout(
                 &device,
@@ -252,13 +290,37 @@ impl Surface {
             )
         }
         .map_err(crate::SurfaceError::Device)?;
-        let attributes = [wgt::VertexAttribute {
+        let mut attributes = alloc::vec![wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
             offset: 0,
             shader_location: 0,
         }];
+        if hud {
+            attributes.extend([
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32x2,
+                    offset: 8,
+                    shader_location: 1,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Unorm8x4,
+                    offset: 16,
+                    shader_location: 2,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32,
+                    offset: 20,
+                    shader_location: 3,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32x2,
+                    offset: 24,
+                    shader_location: 4,
+                },
+            ]);
+        }
         let buffers = [Some(crate::VertexBufferLayout {
-            array_stride: 8,
+            array_stride: if hud { 32 } else { 8 },
             step_mode: wgt::VertexStepMode::Vertex,
             attributes: &attributes,
         })];
@@ -269,7 +331,11 @@ impl Surface {
             constants: &constants,
             zero_initialize_workgroup_memory: false,
         };
-        let targets = [Some(wgt::TextureFormat::Bgra8Unorm.into())];
+        let mut target: wgt::ColorTargetState = wgt::TextureFormat::Bgra8Unorm.into();
+        if hud {
+            target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
+        }
+        let targets = [Some(target)];
         let pipeline = unsafe {
             crate::Device::create_render_pipeline(
                 &device,
@@ -278,12 +344,12 @@ impl Surface {
                     layout: &layout,
                     vertex_processor: crate::VertexProcessor::Standard {
                         vertex_buffers: &buffers,
-                        vertex_stage: stage("vs"),
+                        vertex_stage: stage(if hud { "vs_main" } else { "vs" }),
                     },
                     primitive: wgt::PrimitiveState::default(),
                     depth_stencil: None,
                     multisample: wgt::MultisampleState::default(),
-                    fragment_stage: Some(stage("fs")),
+                    fragment_stage: Some(stage(if hud { "fs_main" } else { "fs" })),
                     color_targets: &targets,
                     multiview_mask: None,
                     cache: None,
@@ -343,30 +409,70 @@ impl Surface {
             )
         }
         .map_err(crate::SurfaceError::Device)?;
-        let texture_bindings = [crate::TextureBinding {
-            view: &sampled_view,
-            usage: wgt::TextureUses::RESOURCE,
-        }];
-        let sampler_bindings = [&sampler];
-        let entries = [
-            crate::BindGroupEntry {
+        let uniform = if hud {
+            let buffer = unsafe {
+                crate::Device::create_buffer(
+                    &device,
+                    &crate::BufferDescriptor {
+                        label: None,
+                        size: 64,
+                        usage: wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+                        memory_flags: crate::MemoryFlags::empty(),
+                    },
+                )
+            }
+            .map_err(crate::SurfaceError::Device)?;
+            let mut bytes = alloc::vec![0u8; 64];
+            for (index, value) in [640f32, 480.0, 1.0, 0.0].iter().enumerate() {
+                bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
+            }
+            native
+                .write_byte_buffer(&buffer, 0, &bytes)
+                .map_err(surface_error)?;
+            Some(buffer)
+        } else {
+            None
+        };
+        let buffer_bindings: alloc::vec::Vec<_> = uniform
+            .as_ref()
+            .map(|buffer| crate::BufferBinding::new_unchecked(buffer, 0, None))
+            .into_iter()
+            .collect();
+        let texture_bindings: alloc::vec::Vec<_> = (0..pair_count)
+            .map(|_| crate::TextureBinding {
+                view: &sampled_view,
+                usage: wgt::TextureUses::RESOURCE,
+            })
+            .collect();
+        let sampler_bindings: alloc::vec::Vec<_> = (0..pair_count).map(|_| &sampler).collect();
+        let mut entries = alloc::vec::Vec::new();
+        if hud {
+            entries.push(crate::BindGroupEntry {
                 binding: 0,
                 resource_index: 0,
                 count: 1,
-            },
-            crate::BindGroupEntry {
-                binding: 1,
-                resource_index: 0,
+            });
+        }
+        for index in 0..pair_count {
+            let binding = u32::from(hud) + index * 2;
+            entries.push(crate::BindGroupEntry {
+                binding,
+                resource_index: index,
                 count: 1,
-            },
-        ];
+            });
+            entries.push(crate::BindGroupEntry {
+                binding: binding + 1,
+                resource_index: index,
+                count: 1,
+            });
+        }
         let group = unsafe {
             crate::Device::create_bind_group(
                 &device,
                 &crate::BindGroupDescriptor {
                     label: None,
                     layout: &group_layout,
-                    buffers: &[],
+                    buffers: &buffer_bindings,
                     samplers: &sampler_bindings,
                     textures: &texture_bindings,
                     entries: &entries,
@@ -425,8 +531,21 @@ impl Surface {
                 depth: 1,
             },
         };
-        let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
-        let bytes: alloc::vec::Vec<u8> = vertices.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        let mut bytes = alloc::vec::Vec::new();
+        let vertices = if hud {
+            [0f32, 480., 1280., 480., 0., -480.]
+        } else {
+            [-1f32, -1., 3., -1., -1., 3.]
+        };
+        for position in vertices.chunks_exact(2) {
+            bytes.extend(position.iter().flat_map(|value| value.to_ne_bytes()));
+            if hud {
+                bytes.extend([0.5f32, 0.5].iter().flat_map(|value| value.to_ne_bytes()));
+                bytes.extend_from_slice(&[255, 255, 255, 255]);
+                bytes.extend_from_slice(&0.5f32.to_ne_bytes());
+                bytes.extend([0.5f32, 0.5].iter().flat_map(|value| value.to_ne_bytes()));
+            }
+        }
         let vertex = unsafe {
             crate::Device::create_buffer(
                 &device,
