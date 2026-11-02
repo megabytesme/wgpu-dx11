@@ -498,15 +498,34 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
                 unreachable!()
             };
-            let Some(entry) = module
+            let Some(entry_index) = module
                 .entry_points
                 .iter()
-                .find(|entry| entry.stage == ShaderStage::Fragment && entry.name == *entry_name)
+                .position(|entry| entry.stage == ShaderStage::Fragment && entry.name == *entry_name)
             else {
                 return Err(Error::Custom(
                     "FL9 texel-load proof entry point not found".into(),
                 ));
             };
+            let entry = &module.entry_points[entry_index];
+            // A signed FL9 conversion represents the validated dimensions exactly,
+            // but it does not preserve arbitrary unsigned arithmetic. Limit uses to
+            // one immediate conversion to f32; the host supplies dimensions <= 2048.
+            let entry_info = module_info.get_entry_point(entry_index);
+            for (query_handle, expression) in entry.function.expressions.iter() {
+                if matches!(expression, crate::Expression::ImageQuery { .. })
+                    && (entry_info[query_handle].ref_count != 1
+                        || !entry.function.expressions.iter().any(|(cast_handle, expr)| {
+                            entry_info[cast_handle].ref_count > 0 && matches!(expr, crate::Expression::As {
+                                expr, kind: ScalarKind::Float, convert: Some(4)
+                            } if *expr == query_handle)
+                        }))
+                {
+                    return Err(Error::Custom(
+                        "FL9 texture dimensions require a single direct f32 conversion".into(),
+                    ));
+                }
+            }
             let inputs_supported = match *entry.function.arguments.as_slice() {
                 [] => true,
                 [ref arg] => {
@@ -4398,6 +4417,20 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 write!(self.out, ")")?;
             }
             Expression::ImageQuery { image, query } => {
+                if let Some(binding) = self.options.fl9_texel_load_proof {
+                    let Expression::GlobalVariable(handle) = func_ctx.expressions[image] else {
+                        return Err(Error::Custom(
+                            "FL9 texture dimensions require a direct global texture".into(),
+                        ));
+                    };
+                    if module.global_variables[handle].binding != Some(binding)
+                        || !matches!(query, crate::ImageQuery::Size { level: None })
+                    {
+                        return Err(Error::Custom("unsupported FL9 texture query".into()));
+                    }
+                    write!(self.out, "int2(naga_fl9_load_size.xy)")?;
+                    return Ok(());
+                }
                 // use wrapped image query function
                 if let TypeInner::Image {
                     dim,

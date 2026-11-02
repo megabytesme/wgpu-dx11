@@ -1913,6 +1913,10 @@ impl<W: Write> super::Writer<'_, W> {
                     }
                 }
                 crate::Expression::ImageQuery { image, query } => {
+                    if self.options.fl9_texel_load_proof.is_some() {
+                        // The proof path handles or rejects queries while writing expressions.
+                        continue;
+                    }
                     let wiq = match *func_ctx.resolve_type(image, &module.types) {
                         crate::TypeInner::Image {
                             dim,

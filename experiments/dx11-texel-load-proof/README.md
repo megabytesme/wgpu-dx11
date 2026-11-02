@@ -16,7 +16,10 @@ The proof accepts only the selected fragment entry point, an optional single
 location-0 `vec2<f32>` input, one directly referenced bound 2D texture, and
 straight-line code. Other bound resources, arrays, helper functions, control
 flow, explicit texel-load sample/array indices and non-fragment entry points
-are rejected. The host is responsible for validating the view, dimensions,
+are rejected. The option also supports `textureDimensions` without a mip argument
+when its sole use is an immediate conversion to `vec2<f32>`; unsigned arithmetic,
+other texture queries, and mip-specific dimension queries are rejected. The
+caller must constrain dimensions to at most 2048 on each axis. The host is responsible for validating the view, dimensions,
 sampler and reserved slots before opting in. It is not enabled in the DX11 HAL.
 
 From the wgpu repository root, on a Windows machine with an FL9_1 D3D11 device:
@@ -26,4 +29,5 @@ cargo +stable test -p wgpu-hal --lib --no-default-features --features dx11 dx11:
 ```
 
 The GPU test compares different texels, varying coordinates, invalid mip and
-coordinate bounds, and a non-power-of-two texture against expected pixels.
+coordinate bounds, and a non-power-of-two texture against expected pixels. It
+also checks converted dimensions for 2×2, 3×5 and 2048×1 textures.

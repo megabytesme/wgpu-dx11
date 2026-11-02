@@ -14,7 +14,17 @@ use windows::{
 };
 
 fn lower_load(coordinate: &str, mip: &str) -> Result<Vec<u8>, String> {
-    let wgsl = if coordinate == "__varying__" {
+    let wgsl = if coordinate == "__dims__"
+        || coordinate == "__npot_dims__"
+        || coordinate == "__wide_dims__"
+    {
+        let divisor = match coordinate {
+            "__dims__" => "2.0, 2.0",
+            "__npot_dims__" => "3.0, 5.0",
+            _ => "2048.0, 1.0",
+        };
+        format!("@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f {{ return vec4f(vec2f(textureDimensions(image)) / vec2f({divisor}), 0.0, 1.0); }}")
+    } else if coordinate == "__varying__" {
         "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(0) pos: vec2f) -> @location(0) vec4f { return vec4f(pos, 0.0, 1.0); }".into()
     } else {
         format!("@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(0) pos: vec2f) -> @location(0) vec4f {{ return textureLoad(image, {coordinate}, {mip}); }}")
@@ -100,6 +110,12 @@ fn naga_fl9_texel_proof_rejects_unsupported_resources_and_control_flow() {
     assert!(lower_source(branch).is_err());
     let helper = "@group(0) @binding(0) var image: texture_2d<f32>; fn fetch() -> vec4f { return textureLoad(image, vec2i(0), 0); } @fragment fn fs() -> @location(0) vec4f { return fetch(); }";
     assert!(lower_source(helper).is_err());
+    let levels = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(f32(textureNumLevels(image))); }";
+    assert!(lower_source(levels).is_err());
+    let explicit_level = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, 1)), 0.0, 1.0); }";
+    assert!(lower_source(explicit_level).is_err());
+    let unsigned_math = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image) - vec2u(3)), 0.0, 1.0); }";
+    assert!(lower_source(unsigned_math).is_err());
     let position = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f { return textureLoad(image, vec2i(p.xy), 0); }";
     assert!(lower_source(position).is_err());
     let varying = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(1) p: vec2f) -> @location(0) vec4f { return textureLoad(image, vec2i(p), 0); }";
@@ -270,6 +286,9 @@ fn naga_fl9_texel_load_matches_single_mip_bounds() -> windows::core::Result<()> 
         ("vec2i(1, 1)", "0", [128, 160, 192, 255]),
         ("__plain__", "0", [255, 255, 0, 255]),
         ("__varying__", "0", [255, 255, 0, 255]),
+        ("__dims__", "0", [255, 255, 0, 255]),
+        ("__npot_dims__", "0", [255, 255, 0, 255]),
+        ("__wide_dims__", "0", [255, 255, 0, 255]),
         ("vec2i(pos)", "0", [128, 160, 192, 255]),
         ("vec2i(-1, 0)", "0", [0, 0, 0, 0]),
         ("vec2i(0, -1)", "0", [0, 0, 0, 0]),
@@ -328,8 +347,10 @@ fn naga_fl9_texel_load_matches_single_mip_bounds() -> windows::core::Result<()> 
             context.IASetVertexBuffers(0, 1, Some(&vb), Some(&8), Some(&0));
             context.VSSetShader(vs.as_ref(), None);
             context.PSSetShader(ps.as_ref(), None);
-            let is_npot = coord == "__npot__" || coord == "__npot_oob__";
-            let is_wide = coord == "__wide__" || coord == "__wide_oob__";
+            let is_npot =
+                coord == "__npot__" || coord == "__npot_oob__" || coord == "__npot_dims__";
+            let is_wide =
+                coord == "__wide__" || coord == "__wide_oob__" || coord == "__wide_dims__";
             let selected_view = if is_npot {
                 &npot_resource
             } else if is_wide {
