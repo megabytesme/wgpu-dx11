@@ -30,7 +30,10 @@ pub struct CommandEncoder {
 struct RenderState {
     format: wgt::TextureFormat,
     extent: [u32; 2],
+    target: windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView,
     pipeline: bool,
+    requires_texture_group: bool,
+    texture_group: bool,
     vertex_bytes: Option<u64>,
 }
 
@@ -207,7 +210,34 @@ impl crate::CommandEncoder for CommandEncoder {
         group: &<Self::A as Api>::BindGroup,
         dynamic_offsets: &[wgt::DynamicOffset],
     ) {
-        self.reject()
+        use windows::core::Interface;
+        let Some(render) = self.render.as_mut() else {
+            self.reject();
+            return;
+        };
+        if index != 0
+            || !dynamic_offsets.is_empty()
+            || !layout.uses_texture_group_for(&self.device).unwrap_or(false)
+            || !Arc::ptr_eq(&group.owner, &self.device)
+        {
+            self.reject();
+            return;
+        }
+        let (Ok(sampled), Ok(target)) = (unsafe { group.texture.GetResource() }, unsafe {
+            render.target.GetResource()
+        }) else {
+            self.reject();
+            return;
+        };
+        if sampled.as_raw() == target.as_raw() {
+            self.reject();
+            return;
+        }
+        render.texture_group = true;
+        self.record(NativeCommand::SetTextureGroup {
+            texture: group.texture.clone(),
+            sampler: group.sampler.clone(),
+        });
     }
 
     unsafe fn set_immediates(
@@ -304,7 +334,10 @@ impl crate::CommandEncoder for CommandEncoder {
         self.render = Some(RenderState {
             format,
             extent,
+            target: target.clone(),
             pipeline: false,
+            requires_texture_group: false,
+            texture_group: false,
             vertex_bytes: None,
         });
         self.record(NativeCommand::BeginRender {
@@ -337,6 +370,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         render.pipeline = true;
+        render.requires_texture_group = pipeline.uses_texture_group;
         self.record(NativeCommand::SetPipeline {
             vertex: pipeline.vertex.clone(),
             fragment: pipeline.fragment.clone(),
@@ -451,7 +485,12 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         let end = u64::from(first_vertex) + u64::from(vertex_count);
-        if !render.pipeline || first_instance != 0 || instance_count != 1 || end > bytes / 8 {
+        if !render.pipeline
+            || (render.requires_texture_group && !render.texture_group)
+            || first_instance != 0
+            || instance_count != 1
+            || end > bytes / 8
+        {
             self.reject();
             return;
         }
@@ -914,6 +953,352 @@ mod tests {
                 encoder.end_encoding(),
                 Err(DeviceError::Unexpected)
             ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod textured_tests {
+    use crate::Device as _;
+    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
+    use alloc::{borrow::Cow, sync::Arc};
+
+    #[test]
+    fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let device = Device::new(native.clone());
+        let module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }").unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let shader = unsafe {
+            device
+                .create_shader_module(
+                    &crate::ShaderModuleDescriptor {
+                        label: None,
+                        runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                    },
+                    crate::ShaderInput::Naga(crate::NagaShader {
+                        module: Cow::Owned(module),
+                        info,
+                        debug_source: None,
+                    }),
+                )
+                .unwrap()
+        };
+        let entries = [
+            wgt::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgt::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ];
+        let group_layout = unsafe {
+            device
+                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &entries,
+                })
+                .unwrap()
+        };
+        let layout = unsafe {
+            device
+                .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                    label: None,
+                    flags: crate::PipelineLayoutFlags::empty(),
+                    bind_group_layouts: &[Some(&group_layout)],
+                    immediate_size: 0,
+                })
+                .unwrap()
+        };
+        let attributes = [wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }];
+        let buffers = [Some(crate::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: &attributes,
+        })];
+        let constants = naga::back::PipelineConstants::default();
+        let stage = |entry_point| crate::ProgrammableStage {
+            module: &shader,
+            entry_point,
+            constants: &constants,
+            zero_initialize_workgroup_memory: false,
+        };
+        let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+        let desc = crate::RenderPipelineDescriptor {
+            label: None,
+            layout: &layout,
+            vertex_processor: crate::VertexProcessor::Standard {
+                vertex_buffers: &buffers,
+                vertex_stage: stage("vs"),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment_stage: Some(stage("fs")),
+            color_targets: &targets,
+            multiview_mask: None,
+            cache: None,
+        };
+        let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+        assert!(pipeline.uses_texture_group);
+        let texture_desc = crate::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+            memory_flags: crate::MemoryFlags::empty(),
+            view_formats: alloc::vec![],
+        };
+        let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
+        let mut texels = alloc::vec![0; 64];
+        for pixel in texels.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[0, 255, 0, 255]);
+        }
+        native.write_rgba_texture(&texture, 0, 0, &texels)?;
+        let view = unsafe {
+            device
+                .create_texture_view(
+                    &texture,
+                    &crate::TextureViewDescriptor {
+                        label: None,
+                        format: wgt::TextureFormat::Rgba8Unorm,
+                        dimension: wgt::TextureViewDimension::D2,
+                        usage: wgt::TextureUses::RESOURCE,
+                        range: wgt::ImageSubresourceRange::default(),
+                    },
+                )
+                .unwrap()
+        };
+        let sampler = unsafe {
+            device
+                .create_sampler(&crate::SamplerDescriptor {
+                    label: None,
+                    address_modes: [wgt::AddressMode::ClampToEdge; 3],
+                    mag_filter: wgt::FilterMode::Nearest,
+                    min_filter: wgt::FilterMode::Nearest,
+                    mipmap_filter: wgt::MipmapFilterMode::Nearest,
+                    lod_clamp: 0.0..f32::MAX,
+                    compare: None,
+                    anisotropy_clamp: 1,
+                    border_color: None,
+                })
+                .unwrap()
+        };
+        let texture_bindings = [crate::TextureBinding {
+            view: &view,
+            usage: wgt::TextureUses::RESOURCE,
+        }];
+        let sampler_bindings = [&sampler];
+        let group_entries = [
+            crate::BindGroupEntry {
+                binding: 0,
+                resource_index: 0,
+                count: 1,
+            },
+            crate::BindGroupEntry {
+                binding: 1,
+                resource_index: 0,
+                count: 1,
+            },
+        ];
+        let group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    samplers: &sampler_bindings,
+                    textures: &texture_bindings,
+                    entries: &group_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
+        let buffer = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: size_of_val(&vertices) as u64,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let bytes: alloc::vec::Vec<u8> = vertices.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        native.write_byte_buffer(&buffer, 0, &bytes)?;
+        let extent = wgt::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        };
+        let target = unsafe {
+            device
+                .create_texture(&crate::TextureDescriptor {
+                    label: None,
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE,
+                    memory_flags: crate::MemoryFlags::empty(),
+                    view_formats: alloc::vec![],
+                })
+                .unwrap()
+        };
+        let target_view = unsafe {
+            device
+                .create_texture_view(
+                    &target,
+                    &crate::TextureViewDescriptor {
+                        label: None,
+                        format: wgt::TextureFormat::Rgba8Unorm,
+                        dimension: wgt::TextureViewDimension::D2,
+                        usage: wgt::TextureUses::COLOR_TARGET,
+                        range: wgt::ImageSubresourceRange::default(),
+                    },
+                )
+                .unwrap()
+        };
+        let sampled_target = unsafe {
+            device
+                .create_texture_view(
+                    &target,
+                    &crate::TextureViewDescriptor {
+                        label: None,
+                        format: wgt::TextureFormat::Rgba8Unorm,
+                        dimension: wgt::TextureViewDimension::D2,
+                        usage: wgt::TextureUses::RESOURCE,
+                        range: wgt::ImageSubresourceRange::default(),
+                    },
+                )
+                .unwrap()
+        };
+        let alias_textures = [crate::TextureBinding {
+            view: &sampled_target,
+            usage: wgt::TextureUses::RESOURCE,
+        }];
+        let alias_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    samplers: &sampler_bindings,
+                    textures: &alias_textures,
+                    entries: &group_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        let color = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &target_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color {
+                r: 0.,
+                g: 0.,
+                b: 0.,
+                a: 1.,
+            },
+        })];
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &color,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let queue = crate::dx11::Queue::new(native.clone());
+        let fence = native.create_native_fence();
+        let mut encoder = unsafe {
+            device
+                .create_command_encoder(&crate::CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                })
+                .unwrap()
+        };
+        unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &alias_group, &[]);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+        }
+        let command = unsafe { crate::CommandEncoder::end_encoding(&mut encoder).unwrap() };
+        unsafe {
+            crate::Queue::submit(&queue, &[&command], &[], (&fence, 1)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        assert_eq!(&pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4], &[0, 255, 0, 255]);
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
         }
         Ok(())
     }

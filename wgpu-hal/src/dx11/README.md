@@ -40,3 +40,8 @@ A restricted FL 9_1 render path records one unblended triangle-list pass with
 one Float32x2 vertex stream. A strict UWP diagnostic compiles resource-free WGSL,
 records it through the HAL encoder, submits it, checks a backbuffer pixel and
 presents. It does not provide general shaders, render passes, or WebGPU.
+
+The same restricted encoder can bind one validated fragment-stage 2D float
+texture and sampler. On feature level 9, non-power-of-two textures reject
+repeat/mirror addressing; unsupported layouts and texture/attachment aliasing
+are rejected rather than silently rendered incorrectly.

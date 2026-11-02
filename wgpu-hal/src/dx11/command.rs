@@ -12,7 +12,8 @@ use windows::{
             Direct3D11::{
                 D3D11_VIEWPORT, ID3D11Buffer, ID3D11DepthStencilView, ID3D11Device,
                 ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11VertexShader,
+                ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
+                ID3D11VertexShader,
             },
         },
     },
@@ -40,6 +41,10 @@ pub(super) enum NativeCommand {
         fragment: ID3D11PixelShader,
         input: ID3D11InputLayout,
         rasterizer: ID3D11RasterizerState,
+    },
+    SetTextureGroup {
+        texture: ID3D11ShaderResourceView,
+        sampler: ID3D11SamplerState,
     },
     SetVertex {
         buffer: ID3D11Buffer,
@@ -119,6 +124,10 @@ impl CommandBuffer {
                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
+                    }
+                    NativeCommand::SetTextureGroup { texture, sampler } => {
+                        context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
+                        context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
                     }
                     NativeCommand::SetVertex { buffer, offset } => {
                         context.IASetVertexBuffers(
