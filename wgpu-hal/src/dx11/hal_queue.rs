@@ -17,6 +17,11 @@ impl Queue {
     pub(super) fn new(device: Arc<NativeDevice>) -> Self {
         Self { device }
     }
+
+    #[allow(dead_code)]
+    pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
+        Arc::ptr_eq(&self.device, device)
+    }
 }
 
 fn device_error(error: windows::core::Error) -> crate::DeviceError {
@@ -132,6 +137,9 @@ mod tests {
         let b = b.finish();
         let fence = device.create_native_fence();
         let queue = Queue::new(device.clone());
+        assert!(queue.belongs_to(&device));
+        let other = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert!(!queue.belongs_to(&other));
         let queue: &dyn DynQueue = &queue;
         let commands: [&dyn DynCommandBuffer; 2] = [&a, &b];
         unsafe {
