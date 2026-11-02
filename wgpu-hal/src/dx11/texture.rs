@@ -88,6 +88,18 @@ pub struct NativeTextureView {
     texture: ID3D11Texture2D,
 }
 
+impl NativeTextureView {
+    #[allow(dead_code)] // Used when recording shader bindings.
+    pub(super) fn shader_resource(&self) -> Option<&ID3D11ShaderResourceView> {
+        self.resource.as_ref()
+    }
+
+    #[allow(dead_code)] // Used when recording render-pass attachments.
+    pub(super) fn render_target(&self) -> Option<&ID3D11RenderTargetView> {
+        self.render_target.as_ref()
+    }
+}
+
 crate::impl_dyn_resource!(NativeTexture, NativeTextureView);
 impl crate::DynTexture for NativeTexture {}
 impl crate::DynTextureView for NativeTextureView {}

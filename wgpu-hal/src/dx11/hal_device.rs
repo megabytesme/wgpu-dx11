@@ -454,6 +454,24 @@ mod tests {
                 .create_texture_view(texture.as_ref(), &view_desc)
                 .unwrap()
         };
+        let native_texture = texture
+            .as_any()
+            .downcast_ref::<super::super::texture::NativeTexture>()
+            .unwrap();
+        let native_view = view
+            .as_any()
+            .downcast_ref::<super::super::texture::NativeTextureView>()
+            .unwrap();
+        assert!(native_view.shader_resource().is_some());
+        unsafe {
+            native
+                .immediate_context()
+                .ClearRenderTargetView(native_view.render_target().unwrap(), &[1.0, 0.0, 0.0, 1.0]);
+        }
+        assert!(native
+            .read_rgba_texture(native_texture, 0, 0)?
+            .chunks_exact(4)
+            .all(|pixel| pixel == [255, 0, 0, 255]));
         let mut bad_view = view_desc.clone();
         bad_view.format = wgt::TextureFormat::Bgra8Unorm;
         assert!(matches!(
