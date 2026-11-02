@@ -109,7 +109,36 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
-        Err(DeviceError::Unexpected)
+        let supported = wgt::TextureUses::COPY_SRC
+            | wgt::TextureUses::COPY_DST
+            | wgt::TextureUses::RESOURCE
+            | wgt::TextureUses::COLOR_TARGET;
+        if desc.dimension != wgt::TextureDimension::D2
+            || desc.format != wgt::TextureFormat::Rgba8Unorm
+            || desc.size.depth_or_array_layers != 1
+            || desc.mip_level_count != 1
+            || desc.sample_count != 1
+            || !supported.contains(desc.usage)
+            || desc.memory_flags.contains(MemoryFlags::TRANSIENT)
+            || desc
+                .view_formats
+                .iter()
+                .any(|format| *format != desc.format)
+        {
+            return Err(DeviceError::Unexpected);
+        }
+        let mut texture = self
+            .native
+            .create_rgba_texture_inner(
+                desc.size.width,
+                desc.size.height,
+                1,
+                1,
+                desc.usage.contains(wgt::TextureUses::COLOR_TARGET),
+            )
+            .map_err(device_error)?;
+        texture.set_usage(desc.usage);
+        Ok(texture)
     }
 
     unsafe fn destroy_texture(&self, texture: <Self::A as Api>::Texture) {
@@ -123,11 +152,42 @@ impl crate::Device for Device {
         texture: &<Self::A as Api>::Texture,
         desc: &TextureViewDescriptor,
     ) -> Result<<Self::A as Api>::TextureView, DeviceError> {
-        Err(DeviceError::Unexpected)
+        use windows::Win32::Graphics::{
+            Direct3D11::{D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE},
+            Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM},
+        };
+        let native = self.native.texture_desc(texture).map_err(device_error)?;
+        let format = match native.Format {
+            DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
+            DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
+            _ => return Err(DeviceError::Unexpected),
+        };
+        let supported = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
+        let resource = desc.usage.contains(wgt::TextureUses::RESOURCE);
+        let target = desc.usage.contains(wgt::TextureUses::COLOR_TARGET);
+        if desc.format != format
+            || desc.dimension != wgt::TextureViewDimension::D2
+            || !supported.contains(desc.usage)
+            || !texture.supports_usage(desc.usage)
+            || desc.usage.is_empty()
+            || !desc
+                .range
+                .is_full_resource(format, native.MipLevels, native.ArraySize)
+            || native.MipLevels != 1
+            || native.ArraySize != 1
+            || native.SampleDesc.Count != 1
+            || (resource && native.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 == 0)
+            || (target && native.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0)
+        {
+            return Err(DeviceError::Unexpected);
+        }
+        self.native
+            .create_full_hal_view(texture, resource, target)
+            .map_err(device_error)
     }
 
     unsafe fn destroy_texture_view(&self, view: <Self::A as Api>::TextureView) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(view)
     }
 
     unsafe fn create_sampler(
@@ -356,6 +416,75 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, FeatureLevel, Queue};
     use crate::{DynCommandBuffer, DynDevice, DynQueue};
     use alloc::vec;
+
+    #[test]
+    fn private_device_creates_restricted_texture_views() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let device = Device::new(native.clone());
+        let dynamic: &dyn DynDevice = &device;
+        let desc = TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+            memory_flags: MemoryFlags::empty(),
+            view_formats: vec![],
+        };
+        let texture = unsafe { dynamic.create_texture(&desc).unwrap() };
+        let view_desc = TextureViewDescriptor {
+            label: None,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            dimension: wgt::TextureViewDimension::D2,
+            usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+            range: wgt::ImageSubresourceRange::default(),
+        };
+        let view = unsafe {
+            dynamic
+                .create_texture_view(texture.as_ref(), &view_desc)
+                .unwrap()
+        };
+        let mut bad_view = view_desc.clone();
+        bad_view.format = wgt::TextureFormat::Bgra8Unorm;
+        assert!(matches!(
+            unsafe { dynamic.create_texture_view(texture.as_ref(), &bad_view) },
+            Err(DeviceError::Unexpected)
+        ));
+        let mut bad_desc = desc.clone();
+        bad_desc.mip_level_count = 2;
+        assert!(matches!(
+            unsafe { dynamic.create_texture(&bad_desc) },
+            Err(DeviceError::Unexpected)
+        ));
+        let mut color_only = desc.clone();
+        color_only.usage = wgt::TextureUses::COLOR_TARGET;
+        let color_texture = unsafe { dynamic.create_texture(&color_only).unwrap() };
+        assert!(matches!(
+            unsafe { dynamic.create_texture_view(color_texture.as_ref(), &view_desc) },
+            Err(DeviceError::Unexpected)
+        ));
+        let other = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?));
+        assert!(matches!(
+            unsafe { DynDevice::create_texture_view(&other, texture.as_ref(), &view_desc) },
+            Err(DeviceError::Unexpected)
+        ));
+        unsafe {
+            dynamic.destroy_texture(color_texture);
+            dynamic.destroy_texture_view(view);
+            dynamic.destroy_texture(texture);
+        }
+        Ok(())
+    }
 
     #[test]
     fn private_device_creates_copy_buffers_and_submits_through_hal() -> windows::core::Result<()> {

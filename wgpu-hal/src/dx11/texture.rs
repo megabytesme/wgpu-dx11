@@ -33,6 +33,7 @@ pub struct NativeTexture {
     height: u32,
     mip_levels: u32,
     layers: u32,
+    usage: wgt::TextureUses,
 }
 
 impl NativeTexture {
@@ -63,15 +64,26 @@ impl NativeTexture {
             height: desc.Height,
             mip_levels: 1,
             layers: 1,
+            usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::PRESENT,
         })
+    }
+
+    pub(super) fn set_usage(&mut self, usage: wgt::TextureUses) {
+        self.usage = usage;
+    }
+
+    pub(super) fn supports_usage(&self, usage: wgt::TextureUses) -> bool {
+        self.usage.contains(usage)
     }
 }
 
 /// A shader-resource view, retaining the owning device and texture.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct NativeTextureView {
-    raw: ID3D11ShaderResourceView,
+#[doc(hidden)]
+pub struct NativeTextureView {
+    resource: Option<ID3D11ShaderResourceView>,
+    render_target: Option<ID3D11RenderTargetView>,
     owner: ID3D11Device,
     texture: ID3D11Texture2D,
 }
@@ -145,7 +157,7 @@ impl NativeDevice {
         self.create_rgba_texture_inner(width, height, mip_levels, layers, false)
     }
 
-    fn create_rgba_texture_inner(
+    pub(super) fn create_rgba_texture_inner(
         &self,
         width: u32,
         height: u32,
@@ -195,6 +207,14 @@ impl NativeDevice {
             height,
             mip_levels,
             layers,
+            usage: wgt::TextureUses::COPY_SRC
+                | wgt::TextureUses::COPY_DST
+                | wgt::TextureUses::RESOURCE
+                | if render_target {
+                    wgt::TextureUses::COLOR_TARGET
+                } else {
+                    wgt::TextureUses::empty()
+                },
         })
     }
 
@@ -242,10 +262,51 @@ impl NativeDevice {
                 .CreateShaderResourceView(&texture.raw, None, Some(&mut view))?;
         }
         Ok(NativeTextureView {
-            raw: view.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            resource: Some(view.ok_or_else(|| Error::from_hresult(E_FAIL))?),
+            render_target: None,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
         })
+    }
+
+    pub(super) fn create_full_hal_view(
+        &self,
+        texture: &NativeTexture,
+        resource: bool,
+        render_target: bool,
+    ) -> Result<NativeTextureView> {
+        self.check_texture_owner(texture)?;
+        let mut shader = None;
+        let mut target = None;
+        unsafe {
+            if resource {
+                self.raw_device().CreateShaderResourceView(
+                    &texture.raw,
+                    None,
+                    Some(&mut shader),
+                )?;
+            }
+            if render_target {
+                self.raw_device()
+                    .CreateRenderTargetView(&texture.raw, None, Some(&mut target))?;
+            }
+        }
+        if (resource && shader.is_none()) || (render_target && target.is_none()) {
+            return Err(Error::from_hresult(E_FAIL));
+        }
+        Ok(NativeTextureView {
+            resource: shader,
+            render_target: target,
+            owner: self.raw_device().clone(),
+            texture: texture.raw.clone(),
+        })
+    }
+
+    pub(super) fn texture_desc(&self, texture: &NativeTexture) -> Result<D3D11_TEXTURE2D_DESC> {
+        self.check_texture_owner(texture)?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { texture.raw.GetDesc(&mut desc) };
+        Ok(desc)
     }
 
     /// Upload one complete tightly-packed mip/layer under the context lock.

@@ -53,7 +53,7 @@ impl crate::Api for Api {
     type Buffer = super::buffer::NativeBuffer;
     type Texture = super::texture::NativeTexture;
     type SurfaceTexture = Unavailable;
-    type TextureView = Unavailable;
+    type TextureView = super::texture::NativeTextureView;
     type Sampler = Unavailable;
     type QuerySet = Unavailable;
     type Fence = super::fence::NativeFence;
