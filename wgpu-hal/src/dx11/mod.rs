@@ -11,6 +11,7 @@ mod fence;
 mod hal_bind_group;
 mod hal_device;
 mod hal_encoder;
+mod hal_index;
 mod hal_pipeline;
 mod hal_queue;
 mod hal_sampler;
