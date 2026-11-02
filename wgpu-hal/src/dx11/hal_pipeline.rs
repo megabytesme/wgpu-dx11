@@ -6,8 +6,9 @@ use windows::{
     Win32::Graphics::{
         Direct3D11::{
             ID3D11BlendState, ID3D11ClassLinkage, ID3D11InputLayout, ID3D11PixelShader,
-            ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
+            ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC,
+            D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
+            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
             D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE, D3D11_FILL_SOLID,
             D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
             D3D11_RENDER_TARGET_BLEND_DESC,
@@ -16,6 +17,19 @@ use windows::{
             DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
             DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
         },
+    },
+};
+
+pub(super) const CROSSHAIR_BLEND: wgt::BlendState = wgt::BlendState {
+    color: wgt::BlendComponent {
+        src_factor: wgt::BlendFactor::OneMinusDst,
+        dst_factor: wgt::BlendFactor::OneMinusSrc,
+        operation: wgt::BlendOperation::Add,
+    },
+    alpha: wgt::BlendComponent {
+        src_factor: wgt::BlendFactor::One,
+        dst_factor: wgt::BlendFactor::Zero,
+        operation: wgt::BlendOperation::Add,
     },
 };
 
@@ -525,7 +539,9 @@ impl RenderPipeline {
                 wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
             )
             || target.blend.is_some_and(|blend| {
-                blend != wgt::BlendState::ALPHA_BLENDING && blend != wgt::BlendState::REPLACE
+                blend != wgt::BlendState::ALPHA_BLENDING
+                    && blend != wgt::BlendState::REPLACE
+                    && blend != CROSSHAIR_BLEND
             })
             || target.write_mask != wgt::ColorWrites::ALL
         {
@@ -702,7 +718,9 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
                 .map_err(failure)?;
-            if target.blend == Some(wgt::BlendState::ALPHA_BLENDING) {
+            if target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
+                || target.blend == Some(CROSSHAIR_BLEND)
+            {
                 let mut desc = D3D11_BLEND_DESC::default();
                 desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
                     BlendEnable: true.into(),
@@ -714,6 +732,11 @@ impl RenderPipeline {
                     BlendOpAlpha: D3D11_BLEND_OP_ADD,
                     RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
                 };
+                if target.blend == Some(CROSSHAIR_BLEND) {
+                    desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;
+                    desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
+                    desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+                }
                 owner
                     .raw_device()
                     .CreateBlendState(&desc, Some(&mut blend))

@@ -37,7 +37,7 @@ queue path, including HAL texture views
 and fence ownership checks. Adapter enumeration remains empty.
 
 A restricted FL 9_1 render path records a triangle-list pass with replace or
-standard alpha blending and
+standard alpha or crosshair inversion blending and
 one interleaved vertex stream. Its supported attributes are Float32 vectors and
 Unorm8x4, with validated stride and draw bounds. A strict UWP diagnostic
 compiles resource-free WGSL,
@@ -71,5 +71,7 @@ cargo test -p wgpu-hal --lib --no-default-features --features dx11 real_horizon_
 ```
 
 It tests an unchecked FL9_1 shader, the real HUD vertex/uniform layouts, two
-textures, alpha blending and pixel readback. It does not expose a wgpu adapter
+textures, alpha blending and pixel readback. Replace the test name with
+`real_horizon_crosshair_gpu_readback` to check the actual crosshair entry and
+its inversion blend. These tests do not expose a wgpu adapter
 or demonstrate a full game.

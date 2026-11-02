@@ -1298,27 +1298,32 @@ mod textured_tests {
 
     #[test]
     fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(false, false, false, false, None)
+        sampled_triangle(false, false, false, false, false, None)
     }
 
     #[test]
     fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, false, false, false, None)
+        sampled_triangle(true, false, false, false, false, None)
     }
 
     #[test]
     fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, false, None)
+        sampled_triangle(true, true, false, false, false, None)
     }
 
     #[test]
     fn hal_encoder_blends_translucent_ui_on_level_9() -> windows::core::Result<()> {
-        sampled_triangle(true, true, true, false, None)
+        sampled_triangle(true, true, true, false, false, None)
     }
 
     #[test]
     fn hal_encoder_samples_two_textures_with_hud_layout() -> windows::core::Result<()> {
-        sampled_triangle(true, true, false, true, None)
+        sampled_triangle(true, true, false, true, false, None)
+    }
+
+    #[test]
+    fn hal_encoder_inverts_crosshair_against_destination() -> windows::core::Result<()> {
+        sampled_triangle(true, true, false, true, true, None)
     }
 
     #[test]
@@ -1326,7 +1331,15 @@ mod textured_tests {
     fn real_horizon_hud_gpu_readback() -> windows::core::Result<()> {
         let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
         let source = std::fs::read_to_string(path).expect("read Horizon HUD shader");
-        sampled_triangle(true, true, true, true, Some(&source))
+        sampled_triangle(true, true, true, true, false, Some(&source))
+    }
+
+    #[test]
+    #[ignore = "requires HORIZON_HUD_SHADER pointing to Horizon's hud.wgsl"]
+    fn real_horizon_crosshair_gpu_readback() -> windows::core::Result<()> {
+        let path = std::env::var_os("HORIZON_HUD_SHADER").expect("set HORIZON_HUD_SHADER");
+        let source = std::fs::read_to_string(path).expect("read Horizon HUD shader");
+        sampled_triangle(true, true, false, true, true, Some(&source))
     }
 
     fn sampled_triangle(
@@ -1334,6 +1347,7 @@ mod textured_tests {
         multi: bool,
         alpha: bool,
         two: bool,
+        invert: bool,
         horizon_shader: Option<&str>,
     ) -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
@@ -1520,6 +1534,8 @@ mod textured_tests {
         let mut target_state: wgt::ColorTargetState = wgt::TextureFormat::Rgba8Unorm.into();
         if alpha {
             target_state.blend = Some(wgt::BlendState::ALPHA_BLENDING);
+        } else if invert {
+            target_state.blend = Some(super::super::hal_pipeline::CROSSHAIR_BLEND);
         }
         let targets = [Some(target_state)];
         let desc = crate::RenderPipelineDescriptor {
@@ -1537,7 +1553,11 @@ mod textured_tests {
             depth_stencil: None,
             multisample: wgt::MultisampleState::default(),
             fragment_stage: Some(stage(if horizon_shader.is_some() {
-                "fs_main"
+                if invert {
+                    "fs_crosshair"
+                } else {
+                    "fs_main"
+                }
             } else {
                 "fs"
             })),
@@ -1869,7 +1889,7 @@ mod textured_tests {
             clear_value: wgt::Color {
                 r: 0.,
                 g: 0.,
-                b: if alpha { 1. } else { 0. },
+                b: if alpha || invert { 1. } else { 0. },
                 a: 1.,
             },
         })];
@@ -1954,6 +1974,16 @@ mod textured_tests {
             assert_eq!(actual[0], 0);
             assert!((127..=128).contains(&actual[1]) && (127..=128).contains(&actual[2]));
             assert_eq!(actual[3], 255);
+        } else if invert {
+            assert_eq!(
+                actual,
+                &[
+                    0,
+                    255,
+                    255,
+                    if horizon_shader.is_some() { 128 } else { 255 }
+                ]
+            );
         } else {
             assert_eq!(actual, &[0, 255, 0, 255]);
         }
