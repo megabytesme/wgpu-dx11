@@ -136,9 +136,9 @@ impl NativeDevice {
         region: &crate::BufferCopy,
     ) -> Result<NativeBufferCopy> {
         let size = region.size.get();
-        if region.src_offset % wgt::COPY_BUFFER_ALIGNMENT != 0
-            || region.dst_offset % wgt::COPY_BUFFER_ALIGNMENT != 0
-            || size % wgt::COPY_BUFFER_ALIGNMENT != 0
+        if !region.src_offset.is_multiple_of(wgt::COPY_BUFFER_ALIGNMENT)
+            || !region.dst_offset.is_multiple_of(wgt::COPY_BUFFER_ALIGNMENT)
+            || !size.is_multiple_of(wgt::COPY_BUFFER_ALIGNMENT)
             || source.raw.as_raw() == destination.raw.as_raw()
         {
             return Err(Error::from_hresult(E_INVALIDARG));
