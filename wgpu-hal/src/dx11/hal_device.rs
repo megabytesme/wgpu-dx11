@@ -226,11 +226,11 @@ impl crate::Device for Device {
         &self,
         desc: &PipelineLayoutDescriptor<<Self::A as Api>::BindGroupLayout>,
     ) -> Result<<Self::A as Api>::PipelineLayout, DeviceError> {
-        Err(DeviceError::Unexpected)
+        super::hal_pipeline::PipelineLayout::new(self.native.clone(), desc)
     }
 
     unsafe fn destroy_pipeline_layout(&self, pipeline_layout: <Self::A as Api>::PipelineLayout) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(pipeline_layout)
     }
 
     unsafe fn create_bind_group(
@@ -279,11 +279,11 @@ impl crate::Device for Device {
             <Self::A as Api>::PipelineCache,
         >,
     ) -> Result<<Self::A as Api>::RenderPipeline, PipelineError> {
-        Err(DeviceError::Unexpected.into())
+        super::hal_pipeline::RenderPipeline::new(&self.native, desc)
     }
 
     unsafe fn destroy_render_pipeline(&self, pipeline: <Self::A as Api>::RenderPipeline) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(pipeline)
     }
 
     unsafe fn create_compute_pipeline(

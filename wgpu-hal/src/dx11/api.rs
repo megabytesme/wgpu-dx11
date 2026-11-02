@@ -59,9 +59,9 @@ impl crate::Api for Api {
     type Fence = super::fence::NativeFence;
     type BindGroupLayout = Unavailable;
     type BindGroup = Unavailable;
-    type PipelineLayout = Unavailable;
+    type PipelineLayout = super::hal_pipeline::PipelineLayout;
     type ShaderModule = super::hal_shader::ShaderModule;
-    type RenderPipeline = Unavailable;
+    type RenderPipeline = super::hal_pipeline::RenderPipeline;
     type ComputePipeline = Unavailable;
     type RayTracingPipeline = Unavailable;
     type PipelineCache = Unavailable;
