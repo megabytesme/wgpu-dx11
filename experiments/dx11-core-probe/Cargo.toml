@@ -1,0 +1,9 @@
+[package]
+name = "dx11-core-bootstrap-probe"
+version = "0.0.0"
+edition = "2021"
+[workspace]
+[dependencies]
+pollster = "0.4"
+wgpu = { path = "../../wgpu", default-features = false, features = ["std", "dx11", "wgsl"] }
+wgpu-hal = { path = "../../wgpu-hal", default-features = false, features = ["dx11-internal-core-probe"] }
