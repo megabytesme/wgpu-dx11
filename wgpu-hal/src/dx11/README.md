@@ -50,3 +50,8 @@ are rejected rather than silently rendered incorrectly.
 Restricted RGBA8 buffer-to-texture and texture-to-buffer copies are recorded
 and replayed in queue order. They use staging and synchronous CPU mapping on
 D3D11, so these paths may stall; unsupported subresources and layouts fail.
+
+A private uniform-range prototype stages an ordinary logical buffer range and
+updates a separate constant buffer in full before binding. This avoids D3D11's
+partial constant-buffer update restriction but may stall; uniform bind groups
+and checked uniform shader behavior are not yet implemented.

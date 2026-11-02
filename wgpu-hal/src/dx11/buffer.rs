@@ -277,6 +277,26 @@ impl NativeDevice {
         Ok(())
     }
 
+    /// Validate a fixed uniform range and retain its ordinary GPU buffer.
+    pub(super) fn uniform_source(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        length: u64,
+    ) -> Result<ID3D11Buffer> {
+        if !buffer.usage.contains(wgt::BufferUses::UNIFORM)
+            || !offset.is_multiple_of(4)
+            || length == 0
+            || !length.is_multiple_of(16)
+            || length > 65536
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let length = usize::try_from(length).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        self.checked_buffer_range(buffer, offset, length)?;
+        Ok(buffer.raw.clone())
+    }
+
     /// Validate a HAL vertex binding and retain the native buffer for recording.
     #[allow(dead_code)] // Used by the forthcoming render encoder.
     pub(super) fn vertex_buffer(

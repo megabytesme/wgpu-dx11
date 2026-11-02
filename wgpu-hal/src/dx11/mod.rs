@@ -16,6 +16,7 @@ mod hal_queue;
 mod hal_sampler;
 mod hal_shader;
 mod hal_transfer;
+mod hal_uniform;
 mod instance;
 mod shader;
 mod surface;

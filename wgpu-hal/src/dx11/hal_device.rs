@@ -67,6 +67,7 @@ impl crate::Device for Device {
         let supported = wgt::BufferUses::COPY_SRC
             | wgt::BufferUses::COPY_DST
             | wgt::BufferUses::VERTEX
+            | wgt::BufferUses::UNIFORM
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
         if !supported.contains(desc.usage) || desc.memory_flags.contains(MemoryFlags::TRANSIENT) {
