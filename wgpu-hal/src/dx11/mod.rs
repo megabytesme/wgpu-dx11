@@ -8,6 +8,7 @@ mod buffer;
 mod command;
 mod device;
 mod fence;
+mod hal_bind_group;
 mod hal_device;
 mod hal_encoder;
 mod hal_pipeline;

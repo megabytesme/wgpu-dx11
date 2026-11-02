@@ -57,8 +57,8 @@ impl crate::Api for Api {
     type Sampler = super::hal_sampler::Sampler;
     type QuerySet = Unavailable;
     type Fence = super::fence::NativeFence;
-    type BindGroupLayout = Unavailable;
-    type BindGroup = Unavailable;
+    type BindGroupLayout = super::hal_bind_group::BindGroupLayout;
+    type BindGroup = super::hal_bind_group::BindGroup;
     type PipelineLayout = super::hal_pipeline::PipelineLayout;
     type ShaderModule = super::hal_shader::ShaderModule;
     type RenderPipeline = super::hal_pipeline::RenderPipeline;

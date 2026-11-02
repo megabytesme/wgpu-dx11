@@ -216,11 +216,11 @@ impl crate::Device for Device {
         &self,
         desc: &BindGroupLayoutDescriptor,
     ) -> Result<<Self::A as Api>::BindGroupLayout, DeviceError> {
-        Err(DeviceError::Unexpected)
+        super::hal_bind_group::BindGroupLayout::new(self.native.clone(), desc)
     }
 
     unsafe fn destroy_bind_group_layout(&self, bg_layout: <Self::A as Api>::BindGroupLayout) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(bg_layout)
     }
 
     unsafe fn create_pipeline_layout(
@@ -244,11 +244,11 @@ impl crate::Device for Device {
             <Self::A as Api>::AccelerationStructure,
         >,
     ) -> Result<<Self::A as Api>::BindGroup, DeviceError> {
-        Err(DeviceError::Unexpected)
+        super::hal_bind_group::BindGroup::new(&self.native, desc)
     }
 
     unsafe fn destroy_bind_group(&self, group: <Self::A as Api>::BindGroup) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(group)
     }
 
     unsafe fn create_shader_module(

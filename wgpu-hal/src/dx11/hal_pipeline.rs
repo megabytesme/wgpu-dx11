@@ -192,7 +192,7 @@ impl crate::DynRenderPipeline for RenderPipeline {}
 impl PipelineLayout {
     pub(super) fn new(
         owner: Arc<NativeDevice>,
-        desc: &crate::PipelineLayoutDescriptor<Unavailable>,
+        desc: &crate::PipelineLayoutDescriptor<super::hal_bind_group::BindGroupLayout>,
     ) -> Result<Self, crate::DeviceError> {
         if !desc.bind_group_layouts.is_empty() || desc.immediate_size != 0 || !desc.flags.is_empty()
         {

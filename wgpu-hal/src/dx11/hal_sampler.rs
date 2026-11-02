@@ -8,6 +8,7 @@ use windows::Win32::Graphics::Direct3D11::*;
 pub struct Sampler {
     owner: Arc<NativeDevice>,
     raw: ID3D11SamplerState,
+    wraps: bool,
 }
 crate::impl_dyn_resource!(Sampler);
 impl crate::DynSampler for Sampler {}
@@ -73,6 +74,10 @@ impl Sampler {
         Ok(Self {
             owner,
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
+            wraps: desc
+                .address_modes
+                .iter()
+                .any(|mode| *mode != wgt::AddressMode::ClampToEdge),
         })
     }
 
@@ -85,6 +90,10 @@ impl Sampler {
             return Err(crate::DeviceError::Unexpected);
         }
         Ok(self.raw.clone())
+    }
+
+    pub(super) fn wraps(&self) -> bool {
+        self.wraps
     }
 }
 
