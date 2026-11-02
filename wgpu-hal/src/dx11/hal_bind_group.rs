@@ -1,29 +1,45 @@
-//! Restricted sampled texture/sampler groups for the private D3D11 HAL.
+//! Restricted uniform or sampled texture/sampler groups for the private D3D11 HAL.
 use super::{
     api::Unavailable,
     buffer::NativeBuffer,
     device::{FeatureLevel, NativeDevice},
     hal_sampler::Sampler,
+    hal_uniform::UniformBinding,
     texture::NativeTextureView,
 };
 use alloc::sync::Arc;
 use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResourceView};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum GroupKind {
+    TextureSampler,
+    Uniform { minimum: u64 },
+}
+
 #[doc(hidden)]
 #[derive(Clone, Debug)]
 pub struct BindGroupLayout {
     owner: Arc<NativeDevice>,
+    pub(super) kind: GroupKind,
 }
 crate::impl_dyn_resource!(BindGroupLayout);
 impl crate::DynBindGroupLayout for BindGroupLayout {}
 
+#[derive(Clone, Debug)]
+pub(super) enum GroupResources {
+    TextureSampler {
+        texture: ID3D11ShaderResourceView,
+        sampler: ID3D11SamplerState,
+    },
+    Uniform(Arc<UniformBinding>),
+}
+
 #[doc(hidden)]
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // The render encoder consumes these retained views.
 pub struct BindGroup {
     pub(super) owner: Arc<NativeDevice>,
-    pub(super) texture: ID3D11ShaderResourceView,
-    pub(super) sampler: ID3D11SamplerState,
+    pub(super) kind: GroupKind,
+    pub(super) resources: GroupResources,
 }
 crate::impl_dyn_resource!(BindGroup);
 impl crate::DynBindGroup for BindGroup {}
@@ -36,32 +52,56 @@ impl BindGroupLayout {
         owner: Arc<NativeDevice>,
         desc: &crate::BindGroupLayoutDescriptor,
     ) -> Result<Self, crate::DeviceError> {
-        let [texture, sampler] = desc.entries else {
-            return Err(crate::DeviceError::Unexpected);
-        };
-        if !desc.flags.is_empty()
-            || texture.binding != 0
-            || sampler.binding != 1
-            || texture.visibility != wgt::ShaderStages::FRAGMENT
-            || sampler.visibility != wgt::ShaderStages::FRAGMENT
-            || texture.count.is_some()
-            || sampler.count.is_some()
-            || !matches!(
-                texture.ty,
-                wgt::BindingType::Texture {
-                    sample_type: wgt::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgt::TextureViewDimension::D2,
-                    multisampled: false
-                }
-            )
-            || !matches!(
-                sampler.ty,
-                wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
-            )
-        {
+        if !desc.flags.is_empty() {
             return Err(crate::DeviceError::Unexpected);
         }
-        Ok(Self { owner })
+        let kind = match desc.entries {
+            [uniform]
+                if uniform.binding == 0
+                    && uniform.count.is_none()
+                    && uniform.visibility
+                        == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT) =>
+            {
+                match uniform.ty {
+                    wgt::BindingType::Buffer {
+                        ty: wgt::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size,
+                    } => {
+                        let minimum = min_binding_size.map_or(0, |v| v.get());
+                        if minimum == 0 || minimum > 65536 {
+                            return Err(crate::DeviceError::Unexpected);
+                        }
+                        GroupKind::Uniform { minimum }
+                    }
+                    _ => return Err(crate::DeviceError::Unexpected),
+                }
+            }
+            [texture, sampler]
+                if texture.binding == 0
+                    && sampler.binding == 1
+                    && texture.visibility == wgt::ShaderStages::FRAGMENT
+                    && sampler.visibility == wgt::ShaderStages::FRAGMENT
+                    && texture.count.is_none()
+                    && sampler.count.is_none()
+                    && matches!(
+                        texture.ty,
+                        wgt::BindingType::Texture {
+                            sample_type: wgt::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgt::TextureViewDimension::D2,
+                            multisampled: false
+                        }
+                    )
+                    && matches!(
+                        sampler.ty,
+                        wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
+                    ) =>
+            {
+                GroupKind::TextureSampler
+            }
+            _ => return Err(crate::DeviceError::Unexpected),
+        };
+        Ok(Self { owner, kind })
     }
 }
 
@@ -76,38 +116,72 @@ impl BindGroup {
             Unavailable,
         >,
     ) -> Result<Self, crate::DeviceError> {
-        if !Arc::ptr_eq(owner, &desc.layout.owner)
-            || !desc.buffers.is_empty()
+        if !desc.layout.belongs_to(owner)
             || !desc.acceleration_structures.is_empty()
             || !desc.external_textures.is_empty()
-            || desc.textures.len() != 1
-            || desc.samplers.len() != 1
-            || desc.entries.len() != 2
-            || desc.entries[0].binding != 0
-            || desc.entries[0].resource_index != 0
-            || desc.entries[0].count != 1
-            || desc.entries[1].binding != 1
-            || desc.entries[1].resource_index != 0
-            || desc.entries[1].count != 1
-            || desc.textures[0].usage != wgt::TextureUses::RESOURCE
         {
             return Err(crate::DeviceError::Unexpected);
         }
-        let sampler = desc.samplers[0];
-        let native_sampler = sampler.raw_for(owner)?;
-        let (texture, dimensions) = owner
-            .sampled_view(desc.textures[0].view)
-            .map_err(super::hal_device::device_error)?;
-        if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
-            && sampler.wraps()
-            && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
-        {
-            return Err(crate::DeviceError::Unexpected);
-        }
+        let resources = match desc.layout.kind {
+            GroupKind::Uniform { minimum } => {
+                if desc.buffers.len() != 1
+                    || !desc.textures.is_empty()
+                    || !desc.samplers.is_empty()
+                    || desc.entries.len() != 1
+                    || desc.entries[0].binding != 0
+                    || desc.entries[0].resource_index != 0
+                    || desc.entries[0].count != 1
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let binding = &desc.buffers[0];
+                let length = owner
+                    .uniform_binding_length(binding.buffer, binding.offset, binding.size)
+                    .map_err(super::hal_device::device_error)?;
+                if length < minimum {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let uniform = owner
+                    .prepare_uniform_binding(binding.buffer, binding.offset, length)
+                    .map_err(super::hal_device::device_error)?;
+                GroupResources::Uniform(Arc::new(uniform))
+            }
+            GroupKind::TextureSampler => {
+                if !desc.buffers.is_empty()
+                    || desc.textures.len() != 1
+                    || desc.samplers.len() != 1
+                    || desc.entries.len() != 2
+                    || desc.entries[0].binding != 0
+                    || desc.entries[0].resource_index != 0
+                    || desc.entries[0].count != 1
+                    || desc.entries[1].binding != 1
+                    || desc.entries[1].resource_index != 0
+                    || desc.entries[1].count != 1
+                    || desc.textures[0].usage != wgt::TextureUses::RESOURCE
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                let sampler = desc.samplers[0];
+                let native_sampler = sampler.raw_for(owner)?;
+                let (texture, dimensions) = owner
+                    .sampled_view(desc.textures[0].view)
+                    .map_err(super::hal_device::device_error)?;
+                if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
+                    && sampler.wraps()
+                    && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                GroupResources::TextureSampler {
+                    texture,
+                    sampler: native_sampler,
+                }
+            }
+        };
         Ok(Self {
             owner: owner.clone(),
-            texture,
-            sampler: native_sampler,
+            kind: desc.layout.kind,
+            resources,
         })
     }
 }
@@ -115,8 +189,8 @@ impl BindGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
+    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
 
     #[test]
@@ -244,7 +318,10 @@ mod tests {
             device.destroy_texture(tex);
         }
         let mut native_desc = D3D11_SAMPLER_DESC::default();
-        unsafe { group.sampler.GetDesc(&mut native_desc) };
+        let GroupResources::TextureSampler { sampler, .. } = &group.resources else {
+            panic!("texture group expected")
+        };
+        unsafe { sampler.GetDesc(&mut native_desc) };
         assert_eq!(
             native_desc.AddressU,
             windows::Win32::Graphics::Direct3D11::D3D11_TEXTURE_ADDRESS_CLAMP

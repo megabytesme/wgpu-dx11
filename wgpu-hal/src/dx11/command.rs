@@ -3,8 +3,9 @@ use super::{
     buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
     hal_transfer::{BufferToTexture, TextureToBuffer},
+    hal_uniform::UniformBinding,
 };
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use windows::{
     Win32::{
         Foundation::E_INVALIDARG,
@@ -48,6 +49,7 @@ pub(super) enum NativeCommand {
         input: ID3D11InputLayout,
         rasterizer: ID3D11RasterizerState,
     },
+    SetUniformGroup(Arc<UniformBinding>),
     SetTextureGroup {
         texture: ID3D11ShaderResourceView,
         sampler: ID3D11SamplerState,
@@ -163,6 +165,7 @@ impl CommandBuffer {
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
                     }
+                    NativeCommand::SetUniformGroup(uniform) => uniform.execute(context)?,
                     NativeCommand::SetTextureGroup { texture, sampler } => {
                         context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
                         context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));

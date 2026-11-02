@@ -277,6 +277,20 @@ impl NativeDevice {
         Ok(())
     }
 
+    pub(super) fn uniform_binding_length(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        size: Option<NonZeroU64>,
+    ) -> Result<u64> {
+        let remaining = u64::from(buffer.size)
+            .checked_sub(offset)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let length = size.map_or(remaining, NonZeroU64::get);
+        self.uniform_source(buffer, offset, length)?;
+        Ok(length)
+    }
+
     /// Validate a fixed uniform range and retain its ordinary GPU buffer.
     pub(super) fn uniform_source(
         &self,

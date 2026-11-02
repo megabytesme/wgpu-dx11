@@ -194,6 +194,36 @@ impl ShaderModule {
         self.compile_with_bindings(stage, entry, &[])
     }
 
+    /// Statically laid-out size of uniform group 0 binding 0, if present.
+    pub(super) fn required_uniform_size(&self) -> Result<Option<u64>, crate::PipelineError> {
+        let mut layouter = naga::proc::Layouter::default();
+        layouter
+            .update(self.shader.module.to_ctx())
+            .map_err(|error| {
+                crate::PipelineError::Linkage(
+                    wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+                    format!("D3D11 uniform layout failed: {error}"),
+                )
+            })?;
+        for (_, global) in self.shader.module.global_variables.iter() {
+            if global.binding
+                == Some(naga::ResourceBinding {
+                    group: 0,
+                    binding: 0,
+                })
+            {
+                if global.space != naga::AddressSpace::Uniform {
+                    return Err(crate::PipelineError::Linkage(
+                        wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+                        "D3D11 binding is not a uniform buffer".into(),
+                    ));
+                }
+                return Ok(Some(u64::from(layouter[global.ty].size)));
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) fn compile_with_bindings(
         &self,
         stage: naga::ShaderStage,

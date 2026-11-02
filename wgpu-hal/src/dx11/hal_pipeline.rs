@@ -2,22 +2,22 @@
 use super::{api::Unavailable, device::NativeDevice, hal_shader::ShaderModule};
 use alloc::{string::ToString, sync::Arc};
 use windows::{
-    core::PCSTR,
     Win32::Graphics::{
         Direct3D11::{
-            ID3D11ClassLinkage, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
-            ID3D11VertexShader, D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+            D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
+            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, ID3D11ClassLinkage,
+            ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader,
         },
         Dxgi::Common::DXGI_FORMAT_R32G32_FLOAT,
     },
+    core::PCSTR,
 };
 
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct PipelineLayout {
     owner: Arc<NativeDevice>,
-    uses_texture_group: bool,
+    group: Option<super::hal_bind_group::GroupKind>,
 }
 crate::impl_dyn_resource!(PipelineLayout);
 impl crate::DynPipelineLayout for PipelineLayout {}
@@ -32,19 +32,19 @@ pub struct RenderPipeline {
     pub(super) input: ID3D11InputLayout,
     pub(super) rasterizer: ID3D11RasterizerState,
     pub(super) target_format: wgt::TextureFormat,
-    pub(super) uses_texture_group: bool,
+    pub(super) group: Option<super::hal_bind_group::GroupKind>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
+    use crate::dx11::{Device, FeatureLevel, enumerate_native_adapters};
     use alloc::borrow::Cow;
     use core::num::NonZeroU64;
     use windows::Win32::Graphics::{
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-        Direct3D11::{ID3D11DepthStencilView, D3D11_VIEWPORT},
+        Direct3D11::{D3D11_VIEWPORT, ID3D11DepthStencilView},
     };
 
     #[test]
@@ -143,9 +143,11 @@ mod tests {
             .collect();
         native.write_byte_buffer(&buffer, 0, &bytes)?;
         assert!(native.vertex_buffer(&buffer, 1, None).is_err());
-        assert!(native
-            .vertex_buffer(&buffer, 0, NonZeroU64::new(25))
-            .is_err());
+        assert!(
+            native
+                .vertex_buffer(&buffer, 0, NonZeroU64::new(25))
+                .is_err()
+        );
         assert!(native.vertex_buffer(&buffer, 24, None).is_err());
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.vertex_buffer(&buffer, 0, None).is_err());
@@ -289,7 +291,10 @@ mod tests {
             cache: None,
         };
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
-        assert!(pipeline.uses_texture_group);
+        assert!(matches!(
+            pipeline.group,
+            Some(super::super::hal_bind_group::GroupKind::TextureSampler)
+        ));
         let texture_desc = crate::TextureDescriptor {
             label: None,
             size: wgt::Extent3d {
@@ -408,8 +413,13 @@ mod tests {
             context.IASetVertexBuffers(0, 1, Some(&raw_buffer), Some(&8), Some(&0));
             context.VSSetShader(Some(&pipeline.vertex), None);
             context.PSSetShader(Some(&pipeline.fragment), None);
-            context.PSSetShaderResources(0, Some(&[Some(group.texture.clone())]));
-            context.PSSetSamplers(0, Some(&[Some(group.sampler.clone())]));
+            let super::super::hal_bind_group::GroupResources::TextureSampler { texture, sampler } =
+                &group.resources
+            else {
+                panic!("texture group expected")
+            };
+            context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
+            context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
             context.Draw(3, 0);
             context.ClearState();
         }
@@ -433,33 +443,29 @@ crate::impl_dyn_resource!(RenderPipeline);
 impl crate::DynRenderPipeline for RenderPipeline {}
 
 impl PipelineLayout {
-    #[allow(dead_code)] // Used by render-pass bind-group validation.
-    pub(super) fn uses_texture_group_for(
+    pub(super) fn group_for(
         &self,
         owner: &Arc<NativeDevice>,
-    ) -> Result<bool, crate::DeviceError> {
+    ) -> Result<Option<super::hal_bind_group::GroupKind>, crate::DeviceError> {
         if !Arc::ptr_eq(owner, &self.owner) {
             return Err(crate::DeviceError::Unexpected);
         }
-        Ok(self.uses_texture_group)
+        Ok(self.group)
     }
 
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         desc: &crate::PipelineLayoutDescriptor<super::hal_bind_group::BindGroupLayout>,
     ) -> Result<Self, crate::DeviceError> {
-        let uses_texture_group = match desc.bind_group_layouts {
-            [] => false,
-            [Some(layout)] if layout.belongs_to(&owner) => true,
+        let group = match desc.bind_group_layouts {
+            [] => None,
+            [Some(layout)] if layout.belongs_to(&owner) => Some(layout.kind),
             _ => return Err(crate::DeviceError::Unexpected),
         };
         if desc.immediate_size != 0 || !desc.flags.is_empty() {
             return Err(crate::DeviceError::Unexpected);
         }
-        Ok(Self {
-            owner,
-            uses_texture_group,
-        })
+        Ok(Self { owner, group })
     }
 }
 
@@ -517,6 +523,16 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
+        if let Some(super::hal_bind_group::GroupKind::Uniform { minimum }) = desc.layout.group {
+            for module in [vertex_stage.module, fragment.module] {
+                if module
+                    .required_uniform_size()?
+                    .is_some_and(|required| required > minimum)
+                {
+                    return Err(invalid());
+                }
+            }
+        }
         use super::shader::{ShaderBinding, ShaderBindingKind};
         let bindings = [
             ShaderBinding {
@@ -536,10 +552,18 @@ impl RenderPipeline {
                 kind: ShaderBindingKind::Sampler,
             },
         ];
-        let bindings: &[_] = if desc.layout.uses_texture_group {
-            &bindings
-        } else {
-            &[]
+        let uniform_binding = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        let bindings: &[_] = match desc.layout.group {
+            Some(super::hal_bind_group::GroupKind::TextureSampler) => &bindings,
+            Some(super::hal_bind_group::GroupKind::Uniform { .. }) => &uniform_binding,
+            None => &[],
         };
         let vertex_code = vertex_stage.module.compile_with_bindings(
             naga::ShaderStage::Vertex,
@@ -602,7 +626,7 @@ impl RenderPipeline {
             input: input.ok_or_else(invalid)?,
             rasterizer: rasterizer.ok_or_else(invalid)?,
             target_format: target.format,
-            uses_texture_group: desc.layout.uses_texture_group,
+            group: desc.layout.group,
         })
     }
 }

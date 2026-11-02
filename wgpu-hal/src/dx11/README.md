@@ -52,6 +52,7 @@ and replayed in queue order. They use staging and synchronous CPU mapping on
 D3D11, so these paths may stall; unsupported subresources and layouts fail.
 
 A private uniform-range prototype stages an ordinary logical buffer range and
-updates a separate constant buffer in full before binding. This avoids D3D11's
-partial constant-buffer update restriction but may stall; uniform bind groups
-and checked uniform shader behavior are not yet implemented.
+updates a separate constant buffer in full before binding. A single fixed
+uniform group is supported with explicit minimum binding size and validated
+shader layout; dynamic offsets and checked uniform shaders remain unsupported.
+The staging path may stall and avoids D3D11's partial-update restriction.
