@@ -147,6 +147,15 @@ mod tests {
             })
         }
         .is_err());
+        assert!(unsafe {
+            device.create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[None, None],
+                immediate_size: 0,
+            })
+        }
+        .is_ok());
         let attributes = [wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
             offset: 0,
@@ -316,11 +325,20 @@ mod tests {
                 .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
                     label: None,
                     flags: crate::PipelineLayoutFlags::empty(),
-                    bind_group_layouts: &[Some(&group_layout)],
+                    bind_group_layouts: &[Some(&group_layout), None],
                     immediate_size: 0,
                 })
                 .unwrap()
         };
+        assert!(unsafe {
+            device.create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[None, Some(&group_layout)],
+                immediate_size: 0,
+            })
+        }
+        .is_err());
         let attributes = [wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
             offset: 0,
@@ -528,8 +546,12 @@ impl PipelineLayout {
         desc: &crate::PipelineLayoutDescriptor<super::hal_bind_group::BindGroupLayout>,
     ) -> Result<Self, crate::DeviceError> {
         let group = match desc.bind_group_layouts {
-            [] => None,
-            [Some(layout)] if layout.belongs_to(&owner) => Some(layout.kind),
+            layouts if layouts.iter().all(Option::is_none) => None,
+            [Some(layout), rest @ ..]
+                if layout.belongs_to(&owner) && rest.iter().all(Option::is_none) =>
+            {
+                Some(layout.kind)
+            }
             _ => return Err(crate::DeviceError::Unexpected),
         };
         // Core supplies these D3D12-specific root-constant flags on every
