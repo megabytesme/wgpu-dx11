@@ -15,6 +15,9 @@ adapter/device handles are owned and the immediate context is mutex-protected;
 these are experimental building blocks and are not wgpu HAL types. Internal
 copy-only buffers support checked byte writes and blocking staging readback;
 they are initially uninitialized and do not implement WebGPU buffer semantics.
+An internal in-memory FXC compiler can produce DXBC for selected FL 9_1 and
+shader-model 5 profiles. It accepts HLSL directly; WGSL lowering and validating
+shader features against the selected device remain unimplemented.
 
 This is diagnostic scaffolding only. There is no `wgpu-hal` DX11 `Api`, no
 wgpu DX11 adapter, surface, shader implementation, command submission, or

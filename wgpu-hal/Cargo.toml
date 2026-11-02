@@ -140,6 +140,7 @@ dx11 = [
     "windows/Win32_Foundation",
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D11",
+    "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Dxgi",
     "windows/Win32_Graphics_Dxgi_Common",
 ]
