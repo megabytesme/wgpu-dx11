@@ -1,14 +1,28 @@
-//! Experimental D3D11 diagnostics.
+//! Experimental fail-closed D3D11 HAL and native diagnostics.
 //!
-//! This module probes native hardware but is not a wgpu HAL implementation.
-//! In particular, a D3D feature level alone does not establish WebGPU support.
+//! The HAL exposes no adapters until its device implementation is complete.
+//! A D3D feature level alone does not establish WebGPU support.
+mod adapter;
+mod api;
 mod buffer;
 mod command;
 mod device;
 mod fence;
+mod hal_device;
+mod hal_encoder;
+mod hal_queue;
+mod instance;
 mod shader;
+mod surface;
 mod texture;
 
+pub use adapter::Adapter;
+pub use api::{Api, Unavailable};
+pub use hal_device::Device;
+pub use hal_encoder::CommandEncoder;
+pub use hal_queue::Queue;
+pub use instance::Instance;
+pub use surface::Surface;
 pub use device::{
     AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice, enumerate_native_adapters,
 };

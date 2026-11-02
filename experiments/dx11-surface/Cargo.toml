@@ -10,6 +10,8 @@ publish = false
 crate-type = ["staticlib"]
 
 [dependencies]
+raw-window-handle = "0.6.2"
+wgpu-hal = { path = "../../wgpu-hal", default-features = false, features = ["dx11"] }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",

@@ -1,4 +1,8 @@
-use std::{ffi::c_void, marker::PhantomData, rc::Rc};
+use raw_window_handle::{
+    RawDisplayHandle, RawWindowHandle, WinRtWindowHandle, WindowsDisplayHandle,
+};
+use std::{ffi::c_void, marker::PhantomData, ptr::NonNull, rc::Rc};
+use wgpu_hal::Instance as _;
 use windows::{
     core::{Error, IUnknown, Interface, Result},
     Win32::{
@@ -20,6 +24,7 @@ extern "C" {
 }
 
 struct Probe {
+    _hal_surface: wgpu_hal::dx11::Surface,
     device: ID3D11Device,
     context: ID3D11DeviceContext,
     swap_chain: IDXGISwapChain1,
@@ -30,6 +35,20 @@ struct Probe {
 
 impl Probe {
     unsafe fn new(raw_window: *mut c_void) -> Result<Self> {
+        let raw = NonNull::new(raw_window).ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let hal_instance = wgpu_hal::dx11::Instance;
+        let hal_surface = hal_instance
+            .create_surface(
+                RawDisplayHandle::Windows(WindowsDisplayHandle::new()),
+                RawWindowHandle::WinRt(WinRtWindowHandle::new(raw)),
+            )
+            .map_err(|_| Error::from_hresult(E_FAIL))?;
+        if !hal_instance
+            .enumerate_adapters(Some(&hal_surface))
+            .is_empty()
+        {
+            return Err(Error::from_hresult(E_FAIL));
+        }
         let window = IUnknown::from_raw_borrowed(&raw_window)
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
         let mut device = None;
@@ -89,6 +108,7 @@ impl Probe {
         device.CreateShaderResourceView(&array, None, Some(&mut view))?;
         view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         Ok(Self {
+            _hal_surface: hal_surface,
             device,
             context,
             swap_chain,
@@ -141,7 +161,7 @@ impl Probe {
                 && pixel[2].abs_diff(32) <= 2
                 && pixel[3] == 255;
             let message = format!(
-                "{}: FL11_0, CoreWindow swap chain, texture array, BGRA readback {pixel:?}\n",
+                "{}: HAL CoreWindow ownership, no adapters, FL11_0 swap chain, texture array, BGRA readback {pixel:?}\n",
                 if valid { "PASS" } else { "FAIL" }
             );
             wgpu_dx11_probe_report(message.as_ptr(), message.len());

@@ -3,8 +3,10 @@
 This standalone probe checks the platform primitives needed by a potential
 Direct3D 11 backend. It requests feature level 11_0, creates a four-layer
 texture and view, creates a CoreWindow swap chain, and verifies a cleared
-backbuffer through CPU readback before presentation. It is not a wgpu HAL
-implementation. The Rust owner is deliberately bound to the UI thread.
+backbuffer through CPU readback before presentation. It also creates a
+fail-closed HAL surface from the same CoreWindow and checks that its instance
+exposes no adapters. The native D3D11 proof is not a wgpu render pipeline. Its
+Rust owner is deliberately bound to the UI thread.
 
 The UWP host writes its result to `LocalState/wgpu-dx11-surface-probe.txt`.
 It also handles resize and releases the backbuffer before resizing.

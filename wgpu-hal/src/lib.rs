@@ -269,6 +269,8 @@ pub mod vulkan;
 
 pub mod auxil;
 pub mod api {
+    #[cfg(all(windows, feature = "dx11"))]
+    pub use super::dx11::Api as Dx11;
     #[cfg(dx12)]
     pub use super::dx12::Api as Dx12;
     #[cfg(gles)]
