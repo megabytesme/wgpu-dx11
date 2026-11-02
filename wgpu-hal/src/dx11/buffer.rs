@@ -82,6 +82,52 @@ impl NativeDevice {
         Ok(())
     }
 
+    /// Submit a checked copy using wgpu-hal's buffer-copy region.
+    ///
+    /// This submits directly on the immediate context; it is not yet a wgpu
+    /// command encoder or a queue implementation.
+    #[allow(dead_code)]
+    pub(crate) fn copy_byte_buffer(
+        &self,
+        source: &NativeBuffer,
+        destination: &NativeBuffer,
+        region: &crate::BufferCopy,
+    ) -> Result<()> {
+        let size = region.size.get();
+        if region.src_offset % wgt::COPY_BUFFER_ALIGNMENT != 0
+            || region.dst_offset % wgt::COPY_BUFFER_ALIGNMENT != 0
+            || size % wgt::COPY_BUFFER_ALIGNMENT != 0
+            || source.raw.as_raw() == destination.raw.as_raw()
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let len = usize::try_from(size).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        let (src_start, src_end) = self.checked_buffer_range(source, region.src_offset, len)?;
+        let (dst_start, _) = self.checked_buffer_range(destination, region.dst_offset, len)?;
+        let area = D3D11_BOX {
+            left: src_start,
+            right: src_end,
+            top: 0,
+            bottom: 1,
+            front: 0,
+            back: 1,
+        };
+        let context = self.immediate_context();
+        unsafe {
+            context.CopySubresourceRegion(
+                &destination.raw,
+                0,
+                dst_start,
+                0,
+                0,
+                &source.raw,
+                0,
+                Some(&area),
+            );
+        }
+        Ok(())
+    }
+
     /// Blocking diagnostic readback through a staging buffer.
     #[allow(dead_code)]
     pub(crate) fn read_byte_buffer(
@@ -184,6 +230,42 @@ mod tests {
         assert_eq!(
             device.read_byte_buffer(&buffer, 0, 16)?,
             [vec![0xaa; 8], vec![0xbb; 8]].concat()
+        );
+        let destination = device.create_byte_buffer(16)?;
+        device.write_byte_buffer(&destination, 0, &[0; 16])?;
+        let region = crate::BufferCopy {
+            src_offset: 0,
+            dst_offset: 4,
+            size: core::num::NonZeroU64::new(8).unwrap(),
+        };
+        device.copy_byte_buffer(&buffer, &destination, &region)?;
+        assert_eq!(
+            device.read_byte_buffer(&destination, 0, 16)?,
+            [vec![0; 4], vec![0xaa; 8], vec![0; 4]].concat()
+        );
+        assert!(device.copy_byte_buffer(&buffer, &buffer, &region).is_err());
+        let misaligned = crate::BufferCopy {
+            src_offset: 1,
+            ..region
+        };
+        assert!(
+            device
+                .copy_byte_buffer(&buffer, &destination, &misaligned)
+                .is_err()
+        );
+        let outside = crate::BufferCopy {
+            dst_offset: 12,
+            ..region
+        };
+        assert!(
+            device
+                .copy_byte_buffer(&buffer, &destination, &outside)
+                .is_err()
+        );
+        assert!(
+            other
+                .copy_byte_buffer(&buffer, &destination, &region)
+                .is_err()
         );
         Ok(())
     }
