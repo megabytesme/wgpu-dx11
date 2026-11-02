@@ -43,14 +43,14 @@ impl crate::Api for Api {
     type Device = Device;
     type Queue = Queue;
     type CommandEncoder = CommandEncoder;
-    type CommandBuffer = Unavailable;
+    type CommandBuffer = super::command::CopyCommandBuffer;
     type Buffer = Unavailable;
     type Texture = Unavailable;
     type SurfaceTexture = Unavailable;
     type TextureView = Unavailable;
     type Sampler = Unavailable;
     type QuerySet = Unavailable;
-    type Fence = Unavailable;
+    type Fence = super::fence::NativeFence;
     type BindGroupLayout = Unavailable;
     type BindGroup = Unavailable;
     type PipelineLayout = Unavailable;

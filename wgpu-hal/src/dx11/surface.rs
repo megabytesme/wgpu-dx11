@@ -49,7 +49,7 @@ impl crate::Surface for Surface {
     unsafe fn acquire_texture(
         &self,
         _: Option<Duration>,
-        _: &super::Unavailable,
+        _: &super::fence::NativeFence,
     ) -> Result<crate::AcquiredSurfaceTexture<Self::A>, crate::SurfaceError> {
         Err(crate::SurfaceError::Other(
             "D3D11 surface acquisition is not implemented",

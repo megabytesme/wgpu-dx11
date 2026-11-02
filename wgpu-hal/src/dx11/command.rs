@@ -22,7 +22,8 @@ pub(crate) struct CopyEncoder<'a> {
 /// Owned commands retain their D3D11 resources until the command buffer drops.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct CopyCommandBuffer {
+#[doc(hidden)]
+pub struct CopyCommandBuffer {
     owner: ID3D11Device,
     copies: Vec<NativeBufferCopy>,
 }

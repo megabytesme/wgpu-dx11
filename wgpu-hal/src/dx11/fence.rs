@@ -29,7 +29,8 @@ struct FenceState {
 /// A D3D11 event-query timeline. This is not yet a complete HAL queue fence.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct NativeFence {
+#[doc(hidden)]
+pub struct NativeFence {
     owner: ID3D11Device,
     state: Mutex<FenceState>,
 }
