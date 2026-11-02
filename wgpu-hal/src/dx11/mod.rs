@@ -25,6 +25,7 @@ mod swapchain;
 mod texture;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/fl9_texel_load.rs"]
 mod fl9_texel_proof;
 
 pub use adapter::Adapter;
