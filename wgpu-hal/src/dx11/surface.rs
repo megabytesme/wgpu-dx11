@@ -123,13 +123,13 @@ impl Surface {
         unsafe { self.diagnostic_cycle_inner(native, shader_input, false) }
     }
 
-    /// Exercise Horizon's HUD-shaped pipeline through the private HAL surface.
+    /// Exercise a two-texture overlay pipeline through the private HAL surface.
     ///
     /// # Safety
     /// The surface must be unconfigured, have no acquired textures or derived
     /// views, and have no outstanding GPU work.
     #[doc(hidden)]
-    pub unsafe fn diagnostic_hud_cycle(
+    pub unsafe fn diagnostic_overlay_cycle(
         &self,
         native: Arc<NativeDevice>,
         shader_input: crate::NagaShader,
@@ -141,7 +141,7 @@ impl Surface {
         &self,
         native: Arc<NativeDevice>,
         shader_input: crate::NagaShader,
-        hud: bool,
+        overlay: bool,
     ) -> Result<[u8; 4], crate::SurfaceError> {
         use crate::{DynDevice, DynQueue, DynSurface};
         let device = super::Device::new(native.clone());
@@ -228,7 +228,7 @@ impl Surface {
                 &device,
                 &crate::ShaderModuleDescriptor {
                     label: None,
-                    runtime_checks: if hud {
+                    runtime_checks: if overlay {
                         wgt::ShaderRuntimeChecks::checked()
                     } else {
                         wgt::ShaderRuntimeChecks::unchecked()
@@ -239,7 +239,7 @@ impl Surface {
         }
         .map_err(|_| crate::SurfaceError::Other("shader module failed"))?;
         let mut group_entries = alloc::vec::Vec::new();
-        if hud {
+        if overlay {
             group_entries.push(wgt::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
@@ -251,9 +251,9 @@ impl Surface {
                 count: None,
             });
         }
-        let pair_count = if hud { 2 } else { 1 };
+        let pair_count = if overlay { 2 } else { 1 };
         for index in 0..pair_count {
-            let binding = u32::from(hud) + index * 2;
+            let binding = u32::from(overlay) + index * 2;
             group_entries.push(wgt::BindGroupLayoutEntry {
                 binding,
                 visibility: wgt::ShaderStages::FRAGMENT,
@@ -299,7 +299,7 @@ impl Surface {
             offset: 0,
             shader_location: 0,
         }];
-        if hud {
+        if overlay {
             attributes.extend([
                 wgt::VertexAttribute {
                     format: wgt::VertexFormat::Float32x2,
@@ -324,7 +324,7 @@ impl Surface {
             ]);
         }
         let buffers = [Some(crate::VertexBufferLayout {
-            array_stride: if hud { 32 } else { 8 },
+            array_stride: if overlay { 32 } else { 8 },
             step_mode: wgt::VertexStepMode::Vertex,
             attributes: &attributes,
         })];
@@ -336,7 +336,7 @@ impl Surface {
             zero_initialize_workgroup_memory: false,
         };
         let mut target: wgt::ColorTargetState = wgt::TextureFormat::Bgra8Unorm.into();
-        if hud {
+        if overlay {
             target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
         }
         let targets = [Some(target)];
@@ -348,12 +348,12 @@ impl Surface {
                     layout: &layout,
                     vertex_processor: crate::VertexProcessor::Standard {
                         vertex_buffers: &buffers,
-                        vertex_stage: stage(if hud { "vs_main" } else { "vs" }),
+                        vertex_stage: stage(if overlay { "vs_main" } else { "vs" }),
                     },
                     primitive: wgt::PrimitiveState::default(),
                     depth_stencil: None,
                     multisample: wgt::MultisampleState::default(),
-                    fragment_stage: Some(stage(if hud { "fs_main" } else { "fs" })),
+                    fragment_stage: Some(stage(if overlay { "fs_main" } else { "fs" })),
                     color_targets: &targets,
                     multiview_mask: None,
                     cache: None,
@@ -413,7 +413,7 @@ impl Surface {
             )
         }
         .map_err(crate::SurfaceError::Device)?;
-        let uniform = if hud {
+        let uniform = if overlay {
             let buffer = unsafe {
                 crate::Device::create_buffer(
                     &device,
@@ -450,7 +450,7 @@ impl Surface {
             .collect();
         let sampler_bindings: alloc::vec::Vec<_> = (0..pair_count).map(|_| &sampler).collect();
         let mut entries = alloc::vec::Vec::new();
-        if hud {
+        if overlay {
             entries.push(crate::BindGroupEntry {
                 binding: 0,
                 resource_index: 0,
@@ -458,7 +458,7 @@ impl Surface {
             });
         }
         for index in 0..pair_count {
-            let binding = u32::from(hud) + index * 2;
+            let binding = u32::from(overlay) + index * 2;
             entries.push(crate::BindGroupEntry {
                 binding,
                 resource_index: index,
@@ -536,14 +536,14 @@ impl Surface {
             },
         };
         let mut bytes = alloc::vec::Vec::new();
-        let vertices = if hud {
+        let vertices = if overlay {
             [0f32, 480., 1280., 480., 0., -480.]
         } else {
             [-1f32, -1., 3., -1., -1., 3.]
         };
         for position in vertices.chunks_exact(2) {
             bytes.extend(position.iter().flat_map(|value| value.to_ne_bytes()));
-            if hud {
+            if overlay {
                 bytes.extend([0.5f32, 0.5].iter().flat_map(|value| value.to_ne_bytes()));
                 bytes.extend_from_slice(&[255, 255, 255, 255]);
                 bytes.extend_from_slice(&0.5f32.to_ne_bytes());

@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [features]
-horizon-hud = []
+complex-overlay = []
 
 [lib]
 crate-type = ["staticlib"]

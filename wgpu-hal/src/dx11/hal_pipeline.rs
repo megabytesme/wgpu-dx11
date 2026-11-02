@@ -20,7 +20,7 @@ use windows::{
     },
 };
 
-pub(super) const CROSSHAIR_BLEND: wgt::BlendState = wgt::BlendState {
+pub(super) const INVERT_BLEND: wgt::BlendState = wgt::BlendState {
     color: wgt::BlendComponent {
         src_factor: wgt::BlendFactor::OneMinusDst,
         dst_factor: wgt::BlendFactor::OneMinusSrc,
@@ -616,7 +616,7 @@ impl RenderPipeline {
             || target.blend.is_some_and(|blend| {
                 blend != wgt::BlendState::ALPHA_BLENDING
                     && blend != wgt::BlendState::REPLACE
-                    && blend != CROSSHAIR_BLEND
+                    && blend != INVERT_BLEND
                     && blend != ADDITIVE_BLEND
                     && blend != VIGNETTE_BLEND
             })
@@ -797,7 +797,7 @@ impl RenderPipeline {
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
                 .map_err(failure)?;
             if target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
-                || target.blend == Some(CROSSHAIR_BLEND)
+                || target.blend == Some(INVERT_BLEND)
                 || target.blend == Some(ADDITIVE_BLEND)
                 || target.blend == Some(VIGNETTE_BLEND)
             {
@@ -812,7 +812,7 @@ impl RenderPipeline {
                     BlendOpAlpha: D3D11_BLEND_OP_ADD,
                     RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
                 };
-                if target.blend == Some(CROSSHAIR_BLEND) {
+                if target.blend == Some(INVERT_BLEND) {
                     desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;
                     desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
                     desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;

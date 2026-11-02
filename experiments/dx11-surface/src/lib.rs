@@ -69,11 +69,11 @@ impl Probe {
 
     unsafe fn render(&mut self) -> Result<()> {
         if !self.checked {
-            #[cfg(not(feature = "horizon-hud"))]
+            #[cfg(not(feature = "complex-overlay"))]
             let module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }").map_err(|_| Error::from_hresult(E_FAIL))?;
-            #[cfg(feature = "horizon-hud")]
-            let module = naga::front::wgsl::parse_str(include_str!(env!("HORIZON_HUD_SHADER")))
-                .map_err(|error| Error::new(E_FAIL, format!("Horizon HUD WGSL: {error}")))?;
+            #[cfg(feature = "complex-overlay")]
+            let module = naga::front::wgsl::parse_str(include_str!("../../../wgpu-hal/tests/dx11/fixtures/two_texture_overlay.wgsl"))
+                .map_err(|error| Error::new(E_FAIL, format!("two-texture overlay WGSL: {error}")))?;
             let info = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
                 naga::valid::Capabilities::empty(),
@@ -85,16 +85,16 @@ impl Probe {
                 info,
                 debug_source: None,
             };
-            #[cfg(not(feature = "horizon-hud"))]
+            #[cfg(not(feature = "complex-overlay"))]
             let pixel = self
                 ._hal_surface
                 .diagnostic_cycle(self.device.clone(), shader)
                 .map_err(|e| Error::new(E_FAIL, format!("HAL surface cycle: {e}")))?;
-            #[cfg(feature = "horizon-hud")]
+            #[cfg(feature = "complex-overlay")]
             let pixel = self
                 ._hal_surface
-                .diagnostic_hud_cycle(self.device.clone(), shader)
-                .map_err(|e| Error::new(E_FAIL, format!("Horizon HUD HAL surface cycle: {e}")))?;
+                .diagnostic_overlay_cycle(self.device.clone(), shader)
+                .map_err(|e| Error::new(E_FAIL, format!("two-texture overlay HAL surface cycle: {e}")))?;
             let valid = pixel[0] == 0 && pixel[1] == 255 && pixel[2] == 0 && pixel[3] == 255;
             if !valid {
                 return Err(Error::new(
@@ -106,8 +106,8 @@ impl Probe {
                 CoreWindowSwapchain::new(&self._hal_surface, self.device.clone(), 0, 0)?;
             let [width, height] = swapchain.size()?;
             self.swapchain = Some(swapchain);
-            let shader_label = if cfg!(feature = "horizon-hud") {
-                "Horizon HUD WGSL"
+            let shader_label = if cfg!(feature = "complex-overlay") {
+                "two-texture overlay WGSL"
             } else {
                 "textured WGSL"
             };
