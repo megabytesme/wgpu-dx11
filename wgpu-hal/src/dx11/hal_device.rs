@@ -24,6 +24,11 @@ impl Device {
     pub(super) fn new(native: Arc<super::device::NativeDevice>) -> Self {
         Self { native }
     }
+
+    #[allow(dead_code)]
+    pub(super) fn native(&self) -> &Arc<super::device::NativeDevice> {
+        &self.native
+    }
 }
 
 fn device_error(error: windows::core::Error) -> DeviceError {
@@ -108,12 +113,10 @@ impl crate::Device for Device {
     }
 
     unsafe fn destroy_texture(&self, texture: <Self::A as Api>::Texture) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(texture)
     }
 
-    unsafe fn add_raw_texture(&self, texture: &<Self::A as Api>::Texture) {
-        panic!("D3D11 HAL operation is not implemented")
-    }
+    unsafe fn add_raw_texture(&self, _texture: &<Self::A as Api>::Texture) {}
 
     unsafe fn create_texture_view(
         &self,

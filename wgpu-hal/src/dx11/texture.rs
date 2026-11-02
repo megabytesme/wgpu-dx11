@@ -5,31 +5,66 @@
 use super::device::NativeDevice;
 use alloc::{vec, vec::Vec};
 use windows::{
+    core::{Error, Interface, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
+                ID3D11Device, ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
                 D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX,
-                D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, ID3D11Device,
-                ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
+                D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
+            Dxgi::Common::{
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
+            },
         },
     },
-    core::{Error, Interface, Result},
 };
 
 /// An uninitialized RGBA8 2D texture or array owned by one native device.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct NativeTexture {
+#[doc(hidden)]
+pub struct NativeTexture {
     raw: ID3D11Texture2D,
     owner: ID3D11Device,
     width: u32,
     height: u32,
     mip_levels: u32,
     layers: u32,
+}
+
+impl NativeTexture {
+    /// Wrap a single-sample CoreWindow swapchain backbuffer from this device.
+    #[allow(dead_code)] // Used by the forthcoming surface acquisition path.
+    pub(super) fn from_core_window_backbuffer(
+        device: &NativeDevice,
+        raw: ID3D11Texture2D,
+    ) -> Result<Self> {
+        let owner = unsafe { raw.GetDevice()? };
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { raw.GetDesc(&mut desc) };
+        if owner.as_raw() != device.raw_device().as_raw()
+            || desc.Width == 0
+            || desc.Height == 0
+            || desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM
+            || desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || desc.SampleDesc.Count != 1
+            || desc.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0
+        {
+            return Err(invalid());
+        }
+        Ok(Self {
+            raw,
+            owner,
+            width: desc.Width,
+            height: desc.Height,
+            mip_levels: 1,
+            layers: 1,
+        })
+    }
 }
 
 /// A shader-resource view, retaining the owning device and texture.
@@ -365,7 +400,44 @@ impl NativeDevice {
 mod tests {
     extern crate std;
     use super::*;
-    use crate::dx11::{FeatureLevel, enumerate_native_adapters};
+    use crate::dx11::{enumerate_native_adapters, FeatureLevel};
+
+    #[test]
+    fn wraps_only_owned_bgra_render_target_backbuffers() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        let other = adapter.open_device(&[FeatureLevel::L9_1])?;
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: 4,
+            Height: 4,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
+            ..Default::default()
+        };
+        let mut raw = None;
+        unsafe {
+            device
+                .raw_device()
+                .CreateTexture2D(&desc, None, Some(&mut raw))?
+        };
+        let raw = raw.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        assert!(NativeTexture::from_core_window_backbuffer(&other, raw.clone()).is_err());
+        let wrapped = NativeTexture::from_core_window_backbuffer(&device, raw)?;
+        assert_eq!((wrapped.width, wrapped.height), (4, 4));
+        let rgba = device.create_rgba_texture(4, 4, 1, 1)?;
+        assert!(NativeTexture::from_core_window_backbuffer(&device, rgba.raw.clone()).is_err());
+        Ok(())
+    }
 
     #[test]
     fn texture_subresources_round_trip_and_reject_invalid_access() -> Result<()> {

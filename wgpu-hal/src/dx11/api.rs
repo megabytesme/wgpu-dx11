@@ -35,6 +35,12 @@ impl core::borrow::Borrow<dyn crate::DynTexture> for Unavailable {
     }
 }
 
+impl core::borrow::Borrow<super::texture::NativeTexture> for Unavailable {
+    fn borrow(&self) -> &super::texture::NativeTexture {
+        match *self {}
+    }
+}
+
 impl crate::Api for Api {
     const VARIANT: wgt::Backend = wgt::Backend::Dx11;
     type Instance = Instance;
@@ -45,7 +51,7 @@ impl crate::Api for Api {
     type CommandEncoder = CommandEncoder;
     type CommandBuffer = super::command::CopyCommandBuffer;
     type Buffer = super::buffer::NativeBuffer;
-    type Texture = Unavailable;
+    type Texture = super::texture::NativeTexture;
     type SurfaceTexture = Unavailable;
     type TextureView = Unavailable;
     type Sampler = Unavailable;
