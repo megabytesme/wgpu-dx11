@@ -22,6 +22,7 @@ use windows::{
 
 /// An uninitialized RGBA8 2D texture or array owned by one native device.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct NativeTexture {
     raw: ID3D11Texture2D,
     owner: ID3D11Device,
@@ -33,11 +34,16 @@ pub(crate) struct NativeTexture {
 
 /// A shader-resource view, retaining the owning device and texture.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct NativeTextureView {
     raw: ID3D11ShaderResourceView,
     owner: ID3D11Device,
     texture: ID3D11Texture2D,
 }
+
+crate::impl_dyn_resource!(NativeTexture, NativeTextureView);
+impl crate::DynTexture for NativeTexture {}
+impl crate::DynTextureView for NativeTextureView {}
 
 /// An RGBA8 render target and the texture whose lifetime it retains.
 #[allow(dead_code)]
@@ -308,7 +314,11 @@ mod tests {
         assert!(device.create_rgba_texture(0, 4, 1, 1).is_err());
         assert!(device.create_rgba_texture(4, 4, 4, 1).is_err());
         let texture = device.create_rgba_texture(8, 4, 3, 2)?;
-        let _view = device.create_texture_view(&texture)?;
+        let mut view = device.create_texture_view(&texture)?;
+        let dynamic_texture: &dyn crate::DynTexture = &texture;
+        assert!(dynamic_texture.as_any().is::<NativeTexture>());
+        let dynamic_view: &mut dyn crate::DynTextureView = &mut view;
+        assert!(dynamic_view.as_any_mut().is::<NativeTextureView>());
         let base = vec![31; 8 * 4 * 4];
         let mip = vec![93; 4 * 2 * 4];
         device.write_rgba_texture(&texture, 0, 0, &base)?;
