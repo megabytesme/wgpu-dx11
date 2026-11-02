@@ -59,7 +59,9 @@ updates a separate constant buffer in full before binding. A single fixed
 uniform group is supported with validated shader layout, either alone or
 together with one or two 2D textures and samplers. When no minimum binding size is
 provided, each draw checks the bound range against the shader's required size;
-dynamic offsets and checked uniform shaders remain unsupported.
+dynamic offsets remain unsupported. Checked uniform shaders reject dynamic
+indexing in reachable functions; other checked buffer/storage bindings remain
+unsupported.
 The staging path may stall and avoids D3D11's partial-update restriction.
 
 An optional hardware regression exercises Horizon's actual HUD shader without
@@ -70,7 +72,7 @@ copying it into this repository. Point `HORIZON_HUD_SHADER` to Horizon's
 cargo test -p wgpu-hal --lib --no-default-features --features dx11 real_horizon_hud_gpu_readback -- --ignored
 ```
 
-It tests an unchecked FL9_1 shader, the real HUD vertex/uniform layouts, two
+It tests a checked FL9_1 shader, the real HUD vertex/uniform layouts, two
 textures, alpha blending and pixel readback. Replace the test name with
 `real_horizon_crosshair_gpu_readback` to check the actual crosshair entry and
 its inversion blend. These tests do not expose a wgpu adapter

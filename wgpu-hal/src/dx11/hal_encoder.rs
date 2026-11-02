@@ -1379,7 +1379,11 @@ mod textured_tests {
                 .create_shader_module(
                     &crate::ShaderModuleDescriptor {
                         label: None,
-                        runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                        runtime_checks: if horizon_shader.is_some() {
+                            wgt::ShaderRuntimeChecks::checked()
+                        } else {
+                            wgt::ShaderRuntimeChecks::unchecked()
+                        },
                     },
                     crate::ShaderInput::Naga(crate::NagaShader {
                         module: Cow::Owned(module),

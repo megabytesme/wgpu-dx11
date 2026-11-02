@@ -9,7 +9,8 @@ uploads a sampled texture from a persistent CPU-shadow mapping through the
 HAL buffer-to-texture copy, records a textured triangle through the HAL render
 encoder, and checks GPU readback and presentation, plus discard and resize. The HAL instance exposes no
 adapters; this internal HAL proof is not a usable public wgpu backend. The
-textured test requests unchecked shader runtime behavior. The UWP host calls it
+textured test requests unchecked shader runtime behavior; the optional Horizon
+HUD path requests checked behavior. The UWP host calls it
 from the UI thread.
 
 The UWP host writes its result to `LocalState/wgpu-dx11-surface-probe.txt`.

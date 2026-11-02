@@ -228,7 +228,11 @@ impl Surface {
                 &device,
                 &crate::ShaderModuleDescriptor {
                     label: None,
-                    runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                    runtime_checks: if hud {
+                        wgt::ShaderRuntimeChecks::checked()
+                    } else {
+                        wgt::ShaderRuntimeChecks::unchecked()
+                    },
                 },
                 crate::ShaderInput::Naga(shader_input),
             )

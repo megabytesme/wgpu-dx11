@@ -125,8 +125,57 @@ mod tests {
             },
             wgt::ShaderRuntimeChecks::checked(),
         );
+        let uniform_mapping = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 2,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        assert!(checked_uniform
+            .compile_with_bindings(naga::ShaderStage::Fragment, "fs", &uniform_mapping)
+            .is_ok());
+        let indexed = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> colors: array<vec4f, 2>; fn pick(i: u32) -> vec4f { return colors[i]; } @fragment fn safe() -> @location(0) vec4f { return colors[0]; } @fragment fn dynamic(@builtin(position) p: vec4f) -> @location(0) vec4f { return pick(u32(p.x)); }").unwrap();
+        let indexed_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&indexed)
+        .unwrap();
+        let checked_indexed = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(indexed),
+                info: indexed_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::checked(),
+        );
+        assert!(checked_indexed
+            .compile_with_bindings(naga::ShaderStage::Fragment, "safe", &uniform_mapping)
+            .is_ok());
         assert!(
-            matches!(checked_uniform.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 buffer and storage bindings are not implemented")
+            matches!(checked_indexed.compile_with_bindings(naga::ShaderStage::Fragment, "dynamic", &uniform_mapping), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 dynamic indexing with uniforms is not implemented")
+        );
+        let storage = naga::front::wgsl::parse_str("@group(0) @binding(0) var<storage, read> data: array<vec4f>; @fragment fn fs() -> @location(0) vec4f { return data[0]; }").unwrap();
+        let storage_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&storage)
+        .unwrap();
+        let checked_storage = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(storage),
+                info: storage_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::checked(),
+        );
+        assert!(
+            matches!(checked_storage.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 buffer and storage bindings are not implemented")
         );
         // FL9 cannot compile Naga's integer guards; report a pipeline error
         // rather than bypassing them.
@@ -164,6 +213,55 @@ mod tests {
 
 crate::impl_dyn_resource!(ShaderModule);
 impl crate::DynShaderModule for ShaderModule {}
+
+// Initially permit checked uniform shaders only when every reachable function
+// uses constant indexing. This conservative restriction covers uniform
+// arrays passed through helpers as well as direct global accesses.
+fn has_dynamic_access(module: &naga::Module, function: &naga::Function) -> bool {
+    fn block_has_dynamic_access(
+        module: &naga::Module,
+        block: &naga::Block,
+        visited: &mut Vec<naga::Handle<naga::Function>>,
+    ) -> bool {
+        block.iter().any(|statement| match statement {
+            naga::Statement::Block(block) => block_has_dynamic_access(module, block, visited),
+            naga::Statement::If { accept, reject, .. } => {
+                block_has_dynamic_access(module, accept, visited)
+                    || block_has_dynamic_access(module, reject, visited)
+            }
+            naga::Statement::Switch { cases, .. } => cases
+                .iter()
+                .any(|case| block_has_dynamic_access(module, &case.body, visited)),
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => {
+                block_has_dynamic_access(module, body, visited)
+                    || block_has_dynamic_access(module, continuing, visited)
+            }
+            naga::Statement::Call { function, .. } => {
+                if visited.contains(function) {
+                    false
+                } else {
+                    visited.push(*function);
+                    function_has_dynamic_access(module, &module.functions[*function], visited)
+                }
+            }
+            _ => false,
+        })
+    }
+    fn function_has_dynamic_access(
+        module: &naga::Module,
+        function: &naga::Function,
+        visited: &mut Vec<naga::Handle<naga::Function>>,
+    ) -> bool {
+        function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::Access { .. }))
+            || block_has_dynamic_access(module, &function.body, visited)
+    }
+    function_has_dynamic_access(module, function, &mut Vec::new())
+}
 
 impl ShaderModule {
     pub(super) fn new(
@@ -241,23 +339,56 @@ impl ShaderModule {
             || self.checks.task_shader_dispatch_tracking
             || self.checks.mesh_shader_primitive_indices_clamp
             || self.checks.int_div_checks;
+        let entry_index = self
+            .shader
+            .module
+            .entry_points
+            .iter()
+            .position(|candidate| candidate.stage == stage && candidate.name == entry)
+            .ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let entry_info = self.shader.info.get_entry_point(entry_index);
         if requests_checks
             && self
                 .shader
                 .module
                 .global_variables
                 .iter()
-                .any(|(_, global)| {
-                    global.binding.is_some()
+                .any(|(handle, global)| {
+                    !entry_info[handle].is_empty()
+                        && global.binding.is_some()
                         && !matches!(
                             shader_binding_kind(&self.shader.module, global),
-                            Some(ShaderBindingKind::Texture2dFloat | ShaderBindingKind::Sampler)
+                            Some(
+                                ShaderBindingKind::Uniform
+                                    | ShaderBindingKind::Texture2dFloat
+                                    | ShaderBindingKind::Sampler
+                            )
                         )
                 })
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
                 "checked D3D11 buffer and storage bindings are not implemented".into(),
+            ));
+        }
+        let uses_uniform = self
+            .shader
+            .module
+            .global_variables
+            .iter()
+            .any(|(handle, global)| {
+                !entry_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
+            });
+        if requests_checks
+            && uses_uniform
+            && has_dynamic_access(
+                &self.shader.module,
+                &self.shader.module.entry_points[entry_index].function,
+            )
+        {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "checked D3D11 dynamic indexing with uniforms is not implemented".into(),
             ));
         }
         // Sampled views are checked single-mip RGBA8 2D resources and sampler
