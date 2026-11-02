@@ -12,6 +12,7 @@ mod hal_device;
 mod hal_encoder;
 mod hal_pipeline;
 mod hal_queue;
+mod hal_sampler;
 mod hal_shader;
 mod instance;
 mod shader;

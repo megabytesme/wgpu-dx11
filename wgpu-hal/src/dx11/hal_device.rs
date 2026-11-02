@@ -31,7 +31,7 @@ impl Device {
     }
 }
 
-fn device_error(error: windows::core::Error) -> DeviceError {
+pub(super) fn device_error(error: windows::core::Error) -> DeviceError {
     use windows::Win32::{
         Foundation::E_OUTOFMEMORY,
         Graphics::Dxgi::{
@@ -195,11 +195,11 @@ impl crate::Device for Device {
         &self,
         desc: &SamplerDescriptor,
     ) -> Result<<Self::A as Api>::Sampler, DeviceError> {
-        Err(DeviceError::Unexpected)
+        super::hal_sampler::Sampler::new(self.native.clone(), desc)
     }
 
     unsafe fn destroy_sampler(&self, sampler: <Self::A as Api>::Sampler) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(sampler)
     }
 
     unsafe fn create_command_encoder(

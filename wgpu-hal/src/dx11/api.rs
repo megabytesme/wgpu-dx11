@@ -54,7 +54,7 @@ impl crate::Api for Api {
     type Texture = super::texture::NativeTexture;
     type SurfaceTexture = super::surface::SurfaceTexture;
     type TextureView = super::texture::NativeTextureView;
-    type Sampler = Unavailable;
+    type Sampler = super::hal_sampler::Sampler;
     type QuerySet = Unavailable;
     type Fence = super::fence::NativeFence;
     type BindGroupLayout = Unavailable;
