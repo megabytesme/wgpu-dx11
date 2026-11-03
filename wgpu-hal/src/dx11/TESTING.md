@@ -414,8 +414,8 @@ min/mag filters, minification and magnification, comparing ranges `0..0`,
 `0.5..0.5` and `1..4` with an unrestricted reference, using both nearest and
 linear mipmap filtering. The controlled core fixture also matched all 64 pixels for a nearest
 sampler with `0.5..0.5`. Mixed-filter and anisotropic ranges that cannot be
-faithfully translated remain rejected. A future mipmapped path must enforce the
-actual-view mip restriction; explicit-LOD sampling and historical FL9_1 drivers
+faithfully translated remain rejected. Mipmapped sampling checks the actual view
+against the sampler translation; explicit-LOD sampling and historical FL9_1 drivers
 remain unverified.
 
 With strict hardware mode, the following filter passed two cases: a CPU
@@ -491,6 +491,29 @@ These tests do not exercise sampled or attachment mip views. FL9 shader-resource
 views must include the smallest resource mip; NPOT mip chains, self-copies and
 general mip sampling remain unsupported. Historical FL9 GPU behavior is
 unverified.
+
+### Sampled POT mip chains
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampled_mip -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The strict private test executed 46 GPU cases without skips on the RTX 3090 Ti
+at requested and actual FL9_1. RGBA8 and BGRA8 readbacks cover selected mip
+levels, nearest and linear mip filtering, fractional LOD and used versus unused
+sampler relationships. For each format, a same-pass pipeline and bind-group
+transition retained sampled textures, views, groups and samplers after the caller
+destroyed them before submission, and readback matched 32 green and 32 blue
+pixels. The controlled core fixture sampled the blue mip of a
+2x1 texture and verified all 64 output pixels. Supported chains have one layer,
+POT dimensions, exact `COPY_SRC | COPY_DST | RESOURCE` usage, a full-chain SRV
+and positive format support. A sampler whose minimum LOD was normalized requires
+a single mip; when a finite maximum was raised, a used multi-mip view requires
+the original maximum to reach the last mip and anisotropy 1. Multi-mip attachment
+views, partial or non-suffix sampled views and NPOT mip chains remain unsupported;
+historical FL9 GPU behavior is unverified.
 
 ### FL9_1 uniform bindings
 

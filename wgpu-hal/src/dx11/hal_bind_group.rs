@@ -392,18 +392,17 @@ impl BindGroup {
             let (view, size, mip_levels) = owner
                 .sampled_view(binding.view)
                 .map_err(super::hal_device::device_error)?;
-            if mip_levels != 1 {
-                return Err(crate::DeviceError::Unexpected);
-            }
             views.push(view);
             dimensions.push((size, mip_levels));
         }
         let mut native_samplers = alloc::vec::Vec::new();
         let mut samplers_wrap = alloc::vec::Vec::new();
+        let mut samplers_lod = alloc::vec::Vec::new();
         for index in sampler_indices {
             let sampler = desc.samplers[index];
-            native_samplers.push(sampler.raw_for(owner, 1)?);
+            native_samplers.push(sampler.raw_for(owner)?);
             samplers_wrap.push(sampler.wraps());
+            samplers_lod.push(sampler.lod());
         }
         let sampling = super::sampling::SamplingResources {
             textures: dimensions
@@ -411,6 +410,7 @@ impl BindGroup {
                 .map(|(size, mip_levels)| super::sampling::TextureInfo { size, mip_levels })
                 .collect(),
             samplers_wrap,
+            samplers_lod,
         };
         let resources = GroupResources {
             uniforms: native_uniforms,

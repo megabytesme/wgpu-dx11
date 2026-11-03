@@ -1036,3 +1036,22 @@ Clippy then had the existing ten warnings, and ordinary core enumeration stayed
 empty. Sampling/rendering mips, NPOT mips, same-resource copies and historical
 drivers remain unverified or unsupported; FL9 SRVs must include the smallest
 mip, blocking arbitrary core-valid sampled views.
+Checkpoint: `352c415eb`.
+
+POT RGBA8/BGRA8 mip chains can now be sampled through full-chain D2 views
+when texture usage is exactly COPY_SRC|COPY_DST|RESOURCE. Per-sampler LOD
+translation metadata is checked against actual texture mip count only for
+selected shader sampling pairs; a rewritten minimum remains one-mip-only, and
+a raised maximum requires coverage of the last mip and non-anisotropic
+filtering for multi-mip views. Strict `sampled_mip` passed 46 RTX FL9_1 GPU
+executions with no format skips, including four selected levels, nearest/linear
+mip filtering, fractional blending, used/unused pair validation and same-pass
+transitions with resources destroyed before submission. The core fixture
+sampled mip1 blue and checked all 64 pixels; the unsafe public-wgpu fixture's
+existing indexed textured-depth scene still matched 32 red/32 green. The full
+strict suite passed 244 cases with two filtered before the final test-only
+lifetime addition; its updated targeted test passed. Three prior shader GPU
+cases remain internally skipped. HAL Clippy passed with ten existing warnings,
+and ordinary core D3D11 enumeration remained empty. Independent source and
+GPU-test reviews found no concrete defect. Non-full sampled views, attachment
+mips, NPOT chains, certain LOD/aniso pairs and historical drivers remain gaps.

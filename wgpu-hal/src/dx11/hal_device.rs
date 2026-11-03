@@ -187,7 +187,7 @@ impl crate::Device for Device {
             || desc.mip_level_count == 0
             || (desc.mip_level_count > 1
                 && (depth
-                    || desc.usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST)
+                    || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || !desc.size.width.is_power_of_two()
                     || !desc.size.height.is_power_of_two()))
             || desc.sample_count != 1
@@ -347,10 +347,10 @@ impl crate::Device for Device {
             || (if desc.usage.is_empty() {
                 !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
             } else {
-                native.MipLevels != 1
-                    || !desc
-                        .range
-                        .is_full_resource(format, native.MipLevels, native.ArraySize)
+                !desc
+                    .range
+                    .is_full_resource(format, native.MipLevels, native.ArraySize)
+                    || (native.MipLevels > 1 && desc.usage != wgt::TextureUses::RESOURCE)
             })
             || native.ArraySize != 1
             || native.SampleDesc.Count != 1
@@ -694,7 +694,7 @@ mod tests {
         invalid.mip_level_count = 5;
         assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
         invalid = desc.clone();
-        invalid.usage |= wgt::TextureUses::RESOURCE;
+        invalid.usage |= wgt::TextureUses::COLOR_TARGET;
         assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
         invalid = desc.clone();
         invalid.usage = wgt::TextureUses::COPY_DST;
@@ -724,7 +724,43 @@ mod tests {
         assert!(view.shader_resource().is_none());
         assert!(view.render_target().is_none());
         assert!(native.sampled_view(&view).is_err());
+        let mut sampled_desc = desc.clone();
+        sampled_desc.usage |= wgt::TextureUses::RESOURCE;
+        let sampled = unsafe { crate::Device::create_texture(&device, &sampled_desc) }.unwrap();
+        for mip in 0..4 {
+            assert!(native
+                .read_rgba_texture(&sampled, mip, 0)?
+                .iter()
+                .all(|&byte| byte == 0));
+            assert_eq!(native.texture_copy_texture_source(&sampled, mip)?.2, mip);
+            assert_eq!(native.texture_copy_destination(&sampled, mip)?.2, mip);
+        }
+        let full_sampled = TextureViewDescriptor {
+            usage: wgt::TextureUses::RESOURCE,
+            range: wgt::ImageSubresourceRange::default(),
+            ..view_desc.clone()
+        };
+        let sampled_view =
+            unsafe { crate::Device::create_texture_view(&device, &sampled, &full_sampled) }
+                .unwrap();
+        let (_, size, mips) = native.sampled_view(&sampled_view)?;
+        assert_eq!((size, mips), ([8, 4], 4));
+        let mut partial_sampled = full_sampled.clone();
+        partial_sampled.range.base_mip_level = 1;
+        partial_sampled.range.mip_level_count = Some(3);
+        assert!(
+            unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
+                .is_err()
+        );
+        partial_sampled = full_sampled;
+        partial_sampled.usage = wgt::TextureUses::COLOR_TARGET;
+        assert!(
+            unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
+                .is_err()
+        );
         unsafe {
+            crate::Device::destroy_texture(&device, sampled);
+            crate::Device::destroy_texture_view(&device, sampled_view);
             crate::Device::destroy_texture(&device, texture);
             crate::Device::destroy_texture_view(&device, view);
         }

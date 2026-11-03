@@ -20,16 +20,41 @@ pub(super) struct TextureInfo {
     pub mip_levels: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SamplerLod {
+    Unchanged,
+    SingleMip,
+    RaisedMaximum { original: f32, anisotropic: bool },
+}
+
+impl SamplerLod {
+    pub(super) fn compatible(self, mip_levels: u32) -> bool {
+        if mip_levels == 0 {
+            return false;
+        }
+        match self {
+            Self::Unchanged => true,
+            Self::SingleMip => mip_levels == 1,
+            Self::RaisedMaximum {
+                original,
+                anisotropic,
+            } => mip_levels == 1 || (!anisotropic && original >= (mip_levels - 1) as f32),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct SamplingResources {
     pub textures: Vec<TextureInfo>,
     pub samplers_wrap: Vec<bool>,
+    pub samplers_lod: Vec<SamplerLod>,
 }
 
 impl SamplingResources {
     pub(super) fn append(&mut self, other: &Self) {
         self.textures.extend_from_slice(&other.textures);
         self.samplers_wrap.extend_from_slice(&other.samplers_wrap);
+        self.samplers_lod.extend_from_slice(&other.samplers_lod);
     }
 }
 
@@ -98,15 +123,19 @@ pub(super) fn compatible(
     full_npot: Query<bool>,
 ) -> bool {
     pairs.iter().all(|pair| {
-        let (Some(texture), Some(&wraps)) = (
+        let (Some(texture), Some(&wraps), Some(&lod)) = (
             resources.textures.get(pair.texture_slot),
             resources.samplers_wrap.get(pair.sampler_slot),
+            resources.samplers_lod.get(pair.sampler_slot),
         ) else {
             return false;
         };
-        texture.mip_levels == 1
-            && texture.size[0] != 0
+        texture.size[0] != 0
             && texture.size[1] != 0
+            && texture.mip_levels <= texture.size[0].max(texture.size[1]).ilog2() + 1
+            && lod.compatible(texture.mip_levels)
+            && (texture.mip_levels == 1
+                || (texture.size[0].is_power_of_two() && texture.size[1].is_power_of_two()))
             && (level.as_raw() >= FeatureLevel::L10_0.as_raw()
                 || matches!(full_npot, Query::Value(true))
                 || !wraps
@@ -174,6 +203,7 @@ mod tests {
                 }
             ],
             samplers_wrap: alloc::vec![true, false],
+            samplers_lod: alloc::vec![SamplerLod::Unchanged; 2],
         }
     }
 
@@ -235,6 +265,7 @@ mod tests {
                     mip_levels: 1
                 }],
                 samplers_wrap: alloc::vec![],
+                samplers_lod: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![TextureInfo {
@@ -242,14 +273,17 @@ mod tests {
                     mip_levels: 1
                 }],
                 samplers_wrap: alloc::vec![],
+                samplers_lod: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![true],
+                samplers_lod: alloc::vec![SamplerLod::Unchanged],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![false],
+                samplers_lod: alloc::vec![SamplerLod::Unchanged],
             },
         ] {
             combined.append(&group);
@@ -390,6 +424,103 @@ mod tests {
         assert!(!compatible(
             &multiple,
             &changed,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+    }
+
+    #[test]
+    fn mip_lod_validation_uses_only_selected_sampling_pairs() {
+        let (module, info, bindings) = fixture();
+        let get = |entry| {
+            relationships(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+                &bindings,
+            )
+            .unwrap()
+        };
+        let mut actual = resources();
+        actual.textures[0].mip_levels = 4;
+        actual.samplers_lod[0] = SamplerLod::RaisedMaximum {
+            original: 3.0,
+            anisotropic: false,
+        };
+        actual.samplers_lod[1] = SamplerLod::SingleMip;
+        assert!(compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        assert!(!compatible(
+            &get("uses_shared"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+        assert!(compatible(
+            &get("invalid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+        actual.samplers_lod[0] = SamplerLod::RaisedMaximum {
+            original: 2.0,
+            anisotropic: false,
+        };
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        actual.samplers_lod[0] = SamplerLod::RaisedMaximum {
+            original: 32.0,
+            anisotropic: true,
+        };
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        actual.samplers_lod[0] = SamplerLod::Unchanged;
+        assert!(compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        actual.textures[0].mip_levels = 5;
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+        actual.textures[0].mip_levels = 0;
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+        actual.textures[0].mip_levels = 2;
+        actual.textures[0].size = [3, 8];
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+        actual.textures[0].size = [4, 8];
+        actual.samplers_lod.clear();
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
             FeatureLevel::L9_1,
             Query::Value(true)
         ));

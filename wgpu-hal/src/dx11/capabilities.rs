@@ -92,7 +92,7 @@ pub(super) struct DriverCapabilities {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BackendCapabilities {
-    pub sampled_texture_mip_levels: u32,
+    pub pot_full_chain_sampled_mips: bool,
     pub pot_copy_only_mip_chains: bool,
     pub rgba8_single_mip_transfers: bool,
     pub bgra8_single_mip_transfers: bool,
@@ -133,7 +133,7 @@ pub(super) struct BackendCapabilities {
 
 impl BackendCapabilities {
     pub const CURRENT: Self = Self {
-        sampled_texture_mip_levels: 1,
+        pot_full_chain_sampled_mips: true,
         pot_copy_only_mip_chains: true,
         rgba8_single_mip_transfers: true,
         bgra8_single_mip_transfers: true,
@@ -186,6 +186,11 @@ pub(super) enum TextureRejection {
     UnsupportedShape,
     DriverQueryUnavailable,
     DriverFormatUnsupported,
+}
+
+pub(super) fn supported_mip_texture_usage(usage: wgt::TextureUses) -> bool {
+    let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+    usage == copy || usage == (copy | wgt::TextureUses::RESOURCE)
 }
 
 pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
@@ -269,14 +274,22 @@ impl Capabilities {
             return Err(UnsupportedShape);
         }
         if mips > 1 {
-            if !self.backend.pot_copy_only_mip_chains
-                || !extent[0].is_power_of_two()
+            if !extent[0].is_power_of_two()
                 || !extent[1].is_power_of_two()
                 || mips > extent[0].max(extent[1]).ilog2() + 1
             {
                 return Err(UnsupportedShape);
             }
-            if usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST) {
+            let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+            if usage == copy {
+                if !self.backend.pot_copy_only_mip_chains {
+                    return Err(UnsupportedShape);
+                }
+            } else if usage == (copy | wgt::TextureUses::RESOURCE) {
+                if !self.backend.pot_full_chain_sampled_mips {
+                    return Err(UnsupportedShape);
+                }
+            } else {
                 return Err(UnsupportedUsage);
             }
         }
@@ -426,10 +439,34 @@ mod tests {
         let check = |caps: &Capabilities, format, usage, size, layers, mips, samples| {
             caps.check_private_texture_2d(format, usage, size, layers, mips, samples)
         };
-        assert_eq!(caps.backend.sampled_texture_mip_levels, 1);
+        assert!(caps.backend.pot_full_chain_sampled_mips);
         assert!(caps.backend.pot_copy_only_mip_chains);
         for format in [rgba, bgra] {
             assert_eq!(check(&caps, format, copy, [8, 4], 1, 4, 1), Ok(()));
+            assert_eq!(
+                check(
+                    &caps,
+                    format,
+                    copy | wgt::TextureUses::RESOURCE,
+                    [8, 4],
+                    1,
+                    4,
+                    1
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                check(
+                    &caps,
+                    format,
+                    copy | wgt::TextureUses::RESOURCE,
+                    [8, 3],
+                    1,
+                    2,
+                    1
+                ),
+                Err(UnsupportedShape)
+            );
             assert_eq!(check(&caps, format, copy, [1, 8], 1, 4, 1), Ok(()));
             assert_eq!(
                 check(&caps, format, copy, [8, 4], 1, 5, 1),
@@ -462,8 +499,9 @@ mod tests {
             for usage in [
                 wgt::TextureUses::COPY_SRC,
                 wgt::TextureUses::COPY_DST,
-                copy | wgt::TextureUses::RESOURCE,
+                wgt::TextureUses::RESOURCE,
                 copy | wgt::TextureUses::COLOR_TARGET,
+                copy | wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
             ] {
                 assert_eq!(
                     check(&caps, format, usage, [8, 4], 1, 2, 1),
@@ -478,15 +516,66 @@ mod tests {
             Err(UnsupportedShape)
         );
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 1, 1), Ok(()));
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                copy | wgt::TextureUses::RESOURCE,
+                [8, 4],
+                1,
+                4,
+                1
+            ),
+            Ok(())
+        );
+        restricted = caps;
+        restricted.backend.pot_full_chain_sampled_mips = false;
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                copy | wgt::TextureUses::RESOURCE,
+                [8, 4],
+                1,
+                4,
+                1
+            ),
+            Err(UnsupportedShape)
+        );
+        assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 4, 1), Ok(()));
         restricted = caps;
         restricted.driver.rgba8 = Query::Unavailable(-1);
         assert_eq!(
             check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
             Err(DriverQueryUnavailable)
         );
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                copy | wgt::TextureUses::RESOURCE,
+                [8, 4],
+                1,
+                2,
+                1
+            ),
+            Err(DriverQueryUnavailable)
+        );
         restricted.driver.rgba8 = Query::Value(!(D3D11_FORMAT_SUPPORT_MIP.0 as u32));
         assert_eq!(
             check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                copy | wgt::TextureUses::RESOURCE,
+                [8, 4],
+                1,
+                2,
+                1
+            ),
             Err(DriverFormatUnsupported)
         );
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 1, 1), Ok(()));

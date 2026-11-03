@@ -11,7 +11,7 @@ pub struct Sampler {
     owner: Arc<NativeDevice>,
     raw: ID3D11SamplerState,
     wraps: bool,
-    single_mip_only: bool,
+    lod: super::sampling::SamplerLod,
 }
 crate::impl_dyn_resource!(Sampler);
 impl crate::DynSampler for Sampler {}
@@ -49,7 +49,7 @@ fn translate_sampler(
         && (desc.lod_clamp.start.fract() != 0.0
             || (desc.lod_clamp.start > 0.0
                 && (desc.min_filter != desc.mag_filter || desc.anisotropy_clamp > 1))
-            || (finite_max && (desc.lod_clamp.start != 0.0 || desc.lod_clamp.end < 1.0)));
+            || (finite_max && desc.lod_clamp.end < 1.0));
     // With one mip and equal isotropic filters, LOD cannot change the sample.
     let normalize_lod =
         native_lod_rejected && desc.min_filter == desc.mag_filter && desc.anisotropy_clamp == 1;
@@ -109,12 +109,29 @@ fn requires_power_of_two(address_modes: &[wgt::AddressMode; 3]) -> bool {
         .any(|mode| *mode != wgt::AddressMode::ClampToEdge)
 }
 
+fn sampler_lod(
+    desc: &crate::SamplerDescriptor,
+    native: &D3D11_SAMPLER_DESC,
+) -> super::sampling::SamplerLod {
+    if native.MinLOD != desc.lod_clamp.start {
+        super::sampling::SamplerLod::SingleMip
+    } else if native.MaxLOD != desc.lod_clamp.end {
+        super::sampling::SamplerLod::RaisedMaximum {
+            original: desc.lod_clamp.end,
+            anisotropic: desc.anisotropy_clamp > 1,
+        }
+    } else {
+        super::sampling::SamplerLod::Unchanged
+    }
+}
+
 impl Sampler {
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         desc: &crate::SamplerDescriptor,
     ) -> Result<Self, crate::DeviceError> {
-        let (native, single_mip_only) = translate_sampler(desc, owner.feature_level())?;
+        let (native, _) = translate_sampler(desc, owner.feature_level())?;
+        let lod = sampler_lod(desc, &native);
         let mut raw = None;
         unsafe {
             owner
@@ -125,7 +142,7 @@ impl Sampler {
         Ok(Self {
             owner,
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
-            single_mip_only,
+            lod,
             wraps: requires_power_of_two(&desc.address_modes),
         })
     }
@@ -134,9 +151,8 @@ impl Sampler {
     pub(super) fn raw_for(
         &self,
         owner: &Arc<NativeDevice>,
-        mip_levels: u32,
     ) -> Result<ID3D11SamplerState, crate::DeviceError> {
-        if !Arc::ptr_eq(&self.owner, owner) || (self.single_mip_only && mip_levels != 1) {
+        if !Arc::ptr_eq(&self.owner, owner) {
             return Err(crate::DeviceError::Unexpected);
         }
         Ok(self.raw.clone())
@@ -144,6 +160,10 @@ impl Sampler {
 
     pub(super) fn wraps(&self) -> bool {
         self.wraps
+    }
+
+    pub(super) fn lod(&self) -> super::sampling::SamplerLod {
+        self.lod
     }
 }
 
@@ -313,13 +333,16 @@ mod tests {
                 desc.min_filter = filter;
                 desc.mag_filter = filter;
                 desc.mipmap_filter = mip_filter;
-                for range in [0.0..0.0, 0.0..0.5, 0.5..0.5, 0.5..f32::MAX, 1.0..4.0] {
+                for range in [0.0..0.0, 0.0..0.5, 0.5..0.5, 0.5..f32::MAX] {
                     desc.lod_clamp = range;
                     let (native, single_mip_only) =
                         translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
                     assert!(single_mip_only);
                     assert_eq!((native.MinLOD, native.MaxLOD), (0.0, f32::MAX));
                 }
+                desc.lod_clamp = 1.0..4.0;
+                let (native, _) = translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
+                assert_eq!((native.MinLOD, native.MaxLOD), (1.0, f32::MAX));
             }
         }
         desc.lod_clamp = 0.5..0.5;
@@ -338,10 +361,46 @@ mod tests {
     }
 
     #[test]
+    fn translated_lod_retains_pair_specific_mip_restrictions() {
+        let mut desc = descriptor();
+        let classify = |desc: &crate::SamplerDescriptor| {
+            let (native, _) = translate_sampler(desc, FeatureLevel::L9_1).unwrap();
+            let lod = sampler_lod(desc, &native);
+            (native, lod)
+        };
+        desc.lod_clamp = 0.0..2.0;
+        let (_, lod) = classify(&desc);
+        assert!(lod.compatible(1));
+        assert!(lod.compatible(3));
+        assert!(!lod.compatible(4));
+        assert!(!lod.compatible(0));
+        desc.lod_clamp = 1.0..4.0;
+        let (native, lod) = classify(&desc);
+        assert_eq!(native.MinLOD, 1.0);
+        assert!(lod.compatible(5));
+        assert!(!lod.compatible(6));
+        desc.lod_clamp = 0.5..4.0;
+        let (_, lod) = classify(&desc);
+        assert!(lod.compatible(1));
+        assert!(!lod.compatible(2));
+        desc.lod_clamp = 0.0..32.0;
+        desc.anisotropy_clamp = 2;
+        desc.min_filter = wgt::FilterMode::Linear;
+        desc.mag_filter = wgt::FilterMode::Linear;
+        desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
+        let (_, lod) = classify(&desc);
+        assert!(lod.compatible(1));
+        assert!(!lod.compatible(2));
+        desc.lod_clamp.end = f32::MAX;
+        let (_, lod) = classify(&desc);
+        assert!(lod.compatible(2));
+    }
+
+    #[test]
     fn sampler_npot_modes_follow_used_pair_and_optional_capability() {
         use super::super::{
             capabilities::Query,
-            sampling::{compatible, SamplingPair, SamplingResources, TextureInfo},
+            sampling::{compatible, SamplerLod, SamplingPair, SamplingResources, TextureInfo},
         };
         let pair = SamplingPair {
             texture: naga::ResourceBinding {
@@ -366,6 +425,7 @@ mod tests {
                             mip_levels: 1
                         }],
                         samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
+                        samplers_lod: alloc::vec![SamplerLod::Unchanged],
                     };
                     assert!(!compatible(
                         &[pair],
@@ -515,8 +575,8 @@ mod tests {
                     .create_sampler(&desc)
                     .unwrap_or_else(|error| panic!("sampler {desc:?}: {error:?}"))
             };
-            let raw = sampler.raw_for(&owner, 1).unwrap();
-            assert!(sampler.raw_for(&other, 1).is_err());
+            let raw = sampler.raw_for(&owner).unwrap();
+            assert!(sampler.raw_for(&other).is_err());
             let mut actual = D3D11_SAMPLER_DESC::default();
             unsafe { raw.GetDesc(&mut actual) };
             assert_eq!(actual.Filter, expected);
@@ -539,12 +599,12 @@ mod tests {
         desc.anisotropy_clamp = 1;
         desc.lod_clamp.end = 32.0;
         let default_lod = unsafe { device.create_sampler(&desc).unwrap() };
-        let raw = default_lod.raw_for(&owner, 1).unwrap();
+        let raw = default_lod.raw_for(&owner).unwrap();
         let mut actual = D3D11_SAMPLER_DESC::default();
         unsafe { raw.GetDesc(&mut actual) };
         assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
-        assert!(default_lod.raw_for(&owner, 2).is_err());
-        assert!(default_lod.raw_for(&other, 1).is_err());
+        assert!(default_lod.lod().compatible(2));
+        assert!(default_lod.raw_for(&other).is_err());
         unsafe { device.destroy_sampler(default_lod) };
         desc.lod_clamp.end = 0.5;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
@@ -556,11 +616,11 @@ mod tests {
         desc.min_filter = Linear;
         desc.lod_clamp = 0.5..0.5;
         let normalized = unsafe { device.create_sampler(&desc).unwrap() };
-        let raw = normalized.raw_for(&owner, 1).unwrap();
+        let raw = normalized.raw_for(&owner).unwrap();
         let mut actual = D3D11_SAMPLER_DESC::default();
         unsafe { raw.GetDesc(&mut actual) };
         assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
-        assert!(normalized.raw_for(&owner, 2).is_err());
+        assert!(!normalized.lod().compatible(2));
         unsafe { device.destroy_sampler(normalized) };
         desc.lod_clamp.start = 0.0;
         desc.compare = Some(wgt::CompareFunction::Less);

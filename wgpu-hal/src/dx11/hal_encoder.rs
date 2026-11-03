@@ -156,6 +156,7 @@ impl RenderState {
                 || bound.resources.samplers.len() != expected.samplers.iter().flatten().count()
                 || bound.resources.sampling.textures.len() != bound.resources.textures.len()
                 || bound.resources.sampling.samplers_wrap.len() != bound.resources.samplers.len()
+                || bound.resources.sampling.samplers_lod.len() != bound.resources.samplers.len()
                 || bound.ranges.len() != bound.resources.uniforms.len()
             {
                 return false;
@@ -3852,6 +3853,10 @@ mod biased_sampling_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/mip_transfers.rs"]
 mod mip_transfer_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/sampled_mips.rs"]
+mod sampled_mip_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]

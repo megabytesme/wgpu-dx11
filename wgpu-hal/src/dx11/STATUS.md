@@ -15,13 +15,14 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   surface concurrency remain unverified.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
-- Single-mip RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
+- RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
   up to 2. On 9_1/9_2, equal min/mag filters with anisotropy 1 allow
   otherwise-unrepresentable LOD ranges to be normalized for single-mip views;
-  other translated finite maximum LODs also require single-mip views. Nearest and
-  linear mipmap filters have patterned GPU coverage; explicit-LOD sampling and
+  other translated finite maximum LODs are checked against each used view's mip
+  count. Nearest and linear mipmap filters have patterned GPU coverage;
+  explicit-LOD sampling and
   historical driver behavior remain unverified. Reachable texture sample bias
   is rejected for the current FL9_1 shader profiles, including on higher-level
   devices, because the tested compiler emitted an unclamped legacy instruction
@@ -33,8 +34,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   the device reports the required format bits. Strict RTX FL9_1 tests exercised
   four levels, partial uploads, cross-resource copies, readback, metadata views
   and resource retention; a core fixture checked all 43 mip-chain pixels.
-  Sampled or attachment mip views, NPOT mip chains and self-copies remain
-  unsupported. FL9 sampled views must include the smallest resource mip, and
+- Sampled POT mip chains require exact `COPY_SRC | COPY_DST | RESOURCE` usage,
+  a positively queried format and a full-chain view. Selected shader pairs are
+  checked against actual mip counts and sampler LOD translation. RGBA8 and BGRA8
+  GPU readbacks and a controlled core render passed; same-pass transitions
+  retained sampled resources after caller destruction before submission. Partial sampled views,
+  multi-mip attachments, NPOT mip chains and self-copies remain unsupported.
+  FL9 sampled views must include the smallest resource mip, and
   historical GPU behavior is unverified.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with

@@ -355,6 +355,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     ] {
         render_triangle(&global, device, queue, case);
     }
+    if rgba_mips {
+        render_triangle(&global, device, queue, VertexCase::SampledMips);
+    }
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -766,6 +769,7 @@ fn copy_only_texture_view(
 enum VertexCase {
     Baseline,
     FractionalSamplerLod,
+    SampledMips,
     Overlapping,
     NoopStencil,
     Snorm,
@@ -789,6 +793,7 @@ fn render_triangle(
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
+    let sampled_mips = case == VertexCase::SampledMips;
     let uniform_size = match case {
         VertexCase::Uniform4 => Some(4),
         VertexCase::Uniform5 => Some(5),
@@ -848,11 +853,17 @@ fn render_triangle(
         &wgt::TextureDescriptor {
             label: None,
             size: sample_extent,
-            mip_level_count: 1,
+            mip_level_count: if sampled_mips { 2 } else { 1 },
             sample_count: 1,
             dimension: wgt::TextureDimension::D2,
             format: wgt::TextureFormat::Rgba8Unorm,
-            usage: wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+            usage: wgt::TextureUsages::TEXTURE_BINDING
+                | wgt::TextureUsages::COPY_DST
+                | if sampled_mips {
+                    wgt::TextureUsages::COPY_SRC
+                } else {
+                    wgt::TextureUsages::empty()
+                },
             view_formats: Vec::new(),
         },
         None,
@@ -876,6 +887,30 @@ fn render_triangle(
             &sample_extent,
         )
         .expect("sampled texture upload");
+    if sampled_mips {
+        global
+            .queue_write_texture(
+                queue,
+                &wgt::TexelCopyTextureInfo {
+                    texture: sampled,
+                    mip_level: 1,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &[0, 0, 255, 255],
+                &wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: None,
+                    rows_per_image: None,
+                },
+                &wgt::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .expect("sampled mip upload");
+    }
     let (sample_view, error) =
         global.texture_create_view(sampled, &resource::TextureViewDescriptor::default(), None);
     assert!(error.is_none(), "sampled texture view: {error:?}");
@@ -996,7 +1031,9 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
+    let source = if sampled_mips {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: f32; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
     } else if case == VertexCase::Uniform12 {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: vec3f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * (tint.x * tint.y * tint.z); }"
@@ -1337,7 +1374,9 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if !zero_stride && x < 4 {
+                if sampled_mips {
+                    &[0, 0, 255, 255]
+                } else if !zero_stride && x < 4 {
                     &[255, 0, 0, 255]
                 } else {
                     &[0, 255, 0, 255]

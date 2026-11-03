@@ -256,7 +256,7 @@ impl NativeDevice {
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
             || (desc.MipLevels > 1
-                && texture.usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST))
+                && !super::capabilities::supported_mip_texture_usage(texture.usage))
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
@@ -280,7 +280,7 @@ impl NativeDevice {
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
             || (desc.MipLevels > 1
-                && texture.usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST))
+                && !super::capabilities::supported_mip_texture_usage(texture.usage))
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
@@ -307,7 +307,10 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
-            || desc.MipLevels != 1
+            || (desc.MipLevels > 1
+                && (view.usage != wgt::TextureUses::RESOURCE
+                    || !desc.Width.is_power_of_two()
+                    || !desc.Height.is_power_of_two()))
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
