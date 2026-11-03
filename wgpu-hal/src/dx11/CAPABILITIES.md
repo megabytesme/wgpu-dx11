@@ -74,6 +74,14 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL rejects compute pipeline creation and storage usages. Other APIs may require CPU or graphics emulation. | Rejection tests; feature/limit gating alone is insufficient until core can safely create and validate a downlevel device without compute and all associated paths are audited. No compute/storage feature is exposed. |
 | Presentation | FL9 hardware can support display through platform/format-specific paths. Private backend has a restricted WinRT CoreWindow BGRA8 FIFO path; no general window-system support. | Prior UWP surface diagnostic; format support and actual surface capabilities must be queried. CoreWindow ownership, resize, device loss, synchronization, compositing and non-WinRT platforms need coverage before any surface is advertised. |
 
+For FL9_1/9_2, default buffers have exactly one native vertex or index bind:
+copy-only, mapped and uniform-source buffers use an internal vertex bind, while
+index buffers use an index bind. This does not add a logical wgpu usage. Staging
+buffers retain zero bind flags because D3D11 staging and CPU-read resources
+cannot be pipeline-bound; Microsoft's 10Level9 table does not explicitly state
+that exception. A modern forced-FL9_1 device passed copy/readback tests; legacy
+runtime behavior remains unverified.
+
 ## FL9_1 private texture transfers
 
 The private D24S8 subset is separate from the RGBA8 transfer matrix: it is a

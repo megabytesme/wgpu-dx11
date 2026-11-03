@@ -8,9 +8,10 @@ checkpointed as `26739b52d1ae042a6499b578521eb3250f1d9c21` (generalized static
 uniform bindings). No public D3D11 adapter is exposed.
 
 The verified tree has a restricted private renderer with sampled textures,
-static group-0 uniforms, RGBA8 transfers, indexed draws and event-query fences.
-It lacks depth/stencil, HWND presentation, a usable public adapter and numerous
-operations required by core. See CAPABILITIES.md for the detailed matrix.
+static group-0 uniforms, RGBA8 transfers, indexed draws, restricted D24S8
+depth attachments and event-query fences. It lacks general depth/stencil,
+HWND presentation, a usable public adapter and numerous operations required by
+core. See CAPABILITIES.md for the detailed matrix.
 
 ## Latest validation
 
@@ -39,14 +40,16 @@ operations required by core. See CAPABILITIES.md for the detailed matrix.
   examples include empty compute passes, several legal viewports, blend
   constants and combined index/vertex usages. Some mapping errors use
   `expect` and need a device-loss-safe contract audit.
-- The FL9_1 device documentation says default buffers require exactly one
-  vertex/index/constant bind flag. The current copy-only and uniform-source
-  default buffers use no bind flag; RTX accepts them, but historical-driver
-  portability is unresolved. Staging buffers have separate no-bind rules.
-- A private depth increment should query native support, retain depth views,
-  initialize both D24S8 aspects, validate matching attachment format/extent,
-  and reject unverified comparison or two-sided stencil configurations. Core can
-  generate depth-only initialization passes, which remain a public gate.
+- The FL9_1 device documentation says buffers require exactly one
+  vertex/index/constant bind flag. The implementation now gives default
+  copy-only and uniform-source buffers an internal vertex bind; logical usages
+  remain unchanged. Staging buffers retain zero flags because the general D3D11
+  staging/CPU-read contract prohibits pipeline binds. The level-9 table does
+  not explicitly spell out the staging exception; legacy runtime behavior
+  remains unverified.
+- The private D24S8 path queries native support, retains depth views, initializes
+  both aspects and supports depth-only clear passes. Depth-only drawing,
+  read-only/aspect views and stencil testing remain public integration gates.
 - Pixel FXC compilation accepts 32 referenced float4 constants and rejects 33
   in the tested profile. The vertex budget and near-limit GPU execution remain
   unverified; sparse high indices do not measure live constant pressure.
@@ -61,7 +64,7 @@ stride, not dynamic indexing or every uniform layout. The 126-test private
 suite and targeted Clippy passed; the test and mission plan were checkpointed
 as `19e82da409dd0ceec12eb9e9dca8934900b5ff11`.
 
-The current work adds a contained D24S8 attachment path with zero initialization,
+The D24S8 attachment path has zero initialization,
 depth-only clears, Always/LessEqual depth tests and optional writes. Strict
 forced-FL9_1 RTX 3090 Ti rendering samples a texture and validates all 64 pixels
 in each of ten passes, including both depth orders, independent stencil clear,
@@ -71,6 +74,13 @@ identified and prompted rejection of non-ignored stencil faces even with zero
 masks. The D3D11 build, strict 127-test private suite, core zero-adapter test
 and targeted Clippy passed. Ten pre-existing Clippy warnings remain. The DX12
 `wgpu_gpu::buffer::map_offset` hardware regression passed on the NVIDIA
-adapter. The depth checkpoint is pending.
+adapter. It was checkpointed as
+`424dfaa2f46e757e9d3a0dad9c50b9f110a18592`.
 
-Next advance the core compatibility and presentation gates in FL9_1_PLAN.md.
+The default-buffer bind-flag portability fix passed its synthetic allocation
+test and strict FL9_1 hardware copy/readback (16/16 bytes); the private suite
+passed 129 tests, and the core zero-adapter and targeted Clippy checks passed.
+The existing DX12 GPU test binary also passed `wgpu_gpu::buffer::map_offset`
+on the NVIDIA adapter after generating its temporary GPU configuration.
+Next fix core's `UNRESTRICTED_INDEX_BUFFER` creation check and advance the
+remaining core compatibility and presentation gates in FL9_1_PLAN.md.

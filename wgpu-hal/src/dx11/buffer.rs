@@ -2,7 +2,7 @@
 //!
 //! The private HAL supports restricted buffer usage and CPU-shadow mappings.
 //! Resource initialization and WebGPU usage/limit validation remain future work.
-use super::device::NativeDevice;
+use super::device::{FeatureLevel, NativeDevice};
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::num::NonZeroU64;
 use parking_lot::Mutex;
@@ -35,6 +35,30 @@ struct ShadowMapping {
     range: crate::MemoryRange,
     // Eight-byte alignment meets the HAL/WebGPU mapping alignment contract.
     words: Box<[u64]>,
+}
+
+fn native_buffer_bind_flags(level: FeatureLevel, usage: wgt::BufferUses) -> Result<u32> {
+    let vertex = usage.contains(wgt::BufferUses::VERTEX);
+    let index = usage.contains(wgt::BufferUses::INDEX);
+    if level.as_raw() <= FeatureLevel::L9_2.as_raw() {
+        if vertex && index {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        return Ok(if index {
+            D3D11_BIND_INDEX_BUFFER.0 as u32
+        } else {
+            D3D11_BIND_VERTEX_BUFFER.0 as u32
+        });
+    }
+    Ok((if vertex {
+        D3D11_BIND_VERTEX_BUFFER.0 as u32
+    } else {
+        0
+    }) | if index {
+        D3D11_BIND_INDEX_BUFFER.0 as u32
+    } else {
+        0
+    })
 }
 
 // This is dynamically downcastable; broader wgpu buffer usages remain unsupported.
@@ -147,15 +171,7 @@ impl NativeDevice {
         let desc = D3D11_BUFFER_DESC {
             ByteWidth: size,
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: (if usage.contains(wgt::BufferUses::VERTEX) {
-                D3D11_BIND_VERTEX_BUFFER.0 as u32
-            } else {
-                0
-            }) | (if usage.contains(wgt::BufferUses::INDEX) {
-                D3D11_BIND_INDEX_BUFFER.0 as u32
-            } else {
-                0
-            }),
+            BindFlags: native_buffer_bind_flags(self.feature_level(), usage)?,
             ..Default::default()
         };
         let mut raw = None;
@@ -349,11 +365,7 @@ impl NativeDevice {
     ) -> Result<(ID3D11Buffer, u64)> {
         let alignment = match format {
             wgt::IndexFormat::Uint16 => 2,
-            wgt::IndexFormat::Uint32
-                if self.feature_level() != super::device::FeatureLevel::L9_1 =>
-            {
-                4
-            }
+            wgt::IndexFormat::Uint32 if self.feature_level() != FeatureLevel::L9_1 => 4,
             wgt::IndexFormat::Uint32 => return Err(Error::from_hresult(E_INVALIDARG)),
         };
         let remaining = u64::from(buffer.size)
@@ -517,6 +529,87 @@ mod tests {
 
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
+
+    #[test]
+    fn level9_default_buffer_bind_flags_are_portable() {
+        for level in [FeatureLevel::L9_1, FeatureLevel::L9_2] {
+            for usage in [
+                wgt::BufferUses::COPY_SRC,
+                wgt::BufferUses::COPY_DST | wgt::BufferUses::MAP_READ,
+                wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+                wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+            ] {
+                assert_eq!(
+                    native_buffer_bind_flags(level, usage).unwrap(),
+                    D3D11_BIND_VERTEX_BUFFER.0 as u32
+                );
+            }
+            assert_eq!(
+                native_buffer_bind_flags(level, wgt::BufferUses::INDEX | wgt::BufferUses::UNIFORM)
+                    .unwrap(),
+                D3D11_BIND_INDEX_BUFFER.0 as u32
+            );
+            assert!(native_buffer_bind_flags(
+                level,
+                wgt::BufferUses::INDEX | wgt::BufferUses::VERTEX
+            )
+            .is_err());
+        }
+        assert_eq!(
+            native_buffer_bind_flags(FeatureLevel::L11_0, wgt::BufferUses::COPY_SRC).unwrap(),
+            0
+        );
+        assert_eq!(
+            native_buffer_bind_flags(
+                FeatureLevel::L11_0,
+                wgt::BufferUses::INDEX | wgt::BufferUses::VERTEX
+            )
+            .unwrap(),
+            (D3D11_BIND_INDEX_BUFFER.0 | D3D11_BIND_VERTEX_BUFFER.0) as u32
+        );
+    }
+
+    #[test]
+    fn fl91_default_copy_and_uniform_buffers_use_one_native_bind() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|e| panic!("{e}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        let source = device
+            .create_buffer_with_usage(16, wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST)?;
+        let destination = device.create_buffer_with_usage(
+            16,
+            wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST | wgt::BufferUses::COPY_SRC,
+        )?;
+        for buffer in [&source, &destination] {
+            let mut desc = D3D11_BUFFER_DESC::default();
+            unsafe {
+                buffer.raw.GetDesc(&mut desc);
+            }
+            assert_eq!(desc.BindFlags, D3D11_BIND_VERTEX_BUFFER.0 as u32);
+        }
+        assert!(device.vertex_buffer(&source, 0, None).is_err());
+        let expected: Vec<u8> = (0..16).collect();
+        device.write_byte_buffer(&source, 0, &expected)?;
+        device.copy_byte_buffer(
+            &source,
+            &destination,
+            &crate::BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size: NonZeroU64::new(16).unwrap(),
+            },
+        )?;
+        assert_eq!(device.read_byte_buffer(&destination, 0, 16)?, expected);
+        std::println!("FL9_1 hardware {:?}: copy/uniform default buffers use one native vertex bind; 16/16 bytes match", adapter.identity());
+        Ok(())
+    }
 
     #[test]
     fn prepare_initialization_clear_checks_range_and_retains_buffer() -> Result<()> {

@@ -274,3 +274,14 @@ orders, verifies initial zero depth, checks independent depth-only and
 stencil-only clears, and checks an Always/no-write pipeline. Ten 8x8 readbacks
 are compared in full. It also checks attachment extent and pipeline mismatch
 rejection. Stencil tests and read-only/aspect views are not implemented.
+
+### FL9_1 default buffer bind flags
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 level9_default_buffer_bind_flags -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_default_copy_and_uniform_buffers -- --nocapture --test-threads=1
+```
+
+The first test is synthetic. The second checks native descriptors and a
+copy/readback on a hardware device explicitly created at FL9_1.
