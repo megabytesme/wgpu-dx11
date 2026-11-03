@@ -1545,7 +1545,48 @@ window-message waits, so it is not treated as a fix. References:
 [Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present).
 No safe backend-only change was identified; keep public surface exposure gated.
 
-Next: implement and strictly test a bounded, meaningful D24S8 stencil subset
-through native state/reference updates and render-pass transitions. This is
-independent of the HWND scheduling blocker and advances the private FL9_1
-contract; it does not unblock public adapter exposure.
+## One-sided FL9_1 stencil operations
+
+The private D24S8 pipeline now maps stencil comparisons, operations, eight-bit
+read/write masks and dynamic references to D3D11 state. Reference changes are
+recorded, replayed against the selected depth-stencil state and reset at render
+pass boundaries. Microsoft documents that FL9_1 does not support two-sided
+stencil, so active pipeline states must use identical front and back faces;
+asymmetric states reject at pipeline creation. The internal model records the
+FL9_1 two-sided restriction and private stencil implementation without setting
+the broad public depth-stencil capability.
+
+Depth `Never` with active stencil is emulated using the documented FL9_1
+Always-depth guarantee: the stencil pass operation becomes the requested
+depth-fail operation, while color and depth writes are disabled. A strict GPU
+test proved the write indirectly with a following Equal stencil test. The other
+case still validates and suppresses draws when stencil is inert. The HAL cannot
+read stencil storage directly. State translation maps all comparison and
+operation enums, but physical evidence on the RTX covers Replace/Equal only;
+historical hardware and all other active state combinations remain unverified.
+
+Validation on the NVIDIA RTX 3090 Ti (vendor 0x10de/4318, device
+0x2203/8707, driver 32.0.16.2101), with software adapters prohibited, requested
+and selected FL9_1:
+
+- Focused `stencil` filter: 3 passed (2 CPU-only mapping/classifier tests and
+  one real-device test). Readback verified left 32 blue/right 32 black pixels
+  after Replace/Equal/reference transitions, and 64 blue pixels after the
+  Never-depth-fail stencil write.
+- Complete strict D3D11 HAL module suite: 287 passed, 0 failed, 0 ignored,
+  2 filtered. The focused filter passed again after the final `Copy` cleanup in
+  the test.
+- Core `requesting_dx11_does_not_expose_a_stub_adapter`: 1 passed.
+- Targeted HAL Clippy passed with ten existing warnings; changed Rust files pass
+  `rustfmt --edition 2021 --check`, and `git diff --check` passes.
+- A targeted DX12 HAL test build and a one-job DX12 `cargo check` both stopped
+  when rustc could not map standard-library metadata because Windows returned
+  OS error 1455 (paging file too small). This is an environment failure; DX12
+  regression is not verified by this increment. No public D3D11 adapter or
+  historical FL9_1 device was enabled or tested.
+
+Next: test this one-sided stencil subset through the unsafe, non-enumerated core
+fixture, then continue the outstanding core/HAL contract audit. This does not
+unblock ordinary public adapter exposure or the unresolved HWND presentation
+reentrancy gate.
+Checkpoint: `ae40c514a` (`dx11: support one-sided FL9_1 stencil operations`).

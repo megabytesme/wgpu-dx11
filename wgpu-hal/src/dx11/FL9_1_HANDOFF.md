@@ -378,3 +378,4 @@ Next, cover one-sided stencil through the unsafe core fixture while preserving
 empty ordinary D3D11 enumeration. Then continue core/HAL contract auditing. Do
 not expose a public adapter or surface: DXGI message-pump reentrancy remains an
 unresolved presentation blocker.
+Code checkpoint: `ae40c514a` (`dx11: support one-sided FL9_1 stencil operations`).
