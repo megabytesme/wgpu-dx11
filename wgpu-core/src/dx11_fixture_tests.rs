@@ -233,7 +233,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
     if rgba_mips {
-        copy_only_mip_chain(&global, device, queue);
+        copy_only_mip_chain(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
         render_mip_chain(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
     } else {
         assert!(
@@ -246,6 +246,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
     }
     if bgra_mips {
+        copy_only_mip_chain(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
         render_mip_chain(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
     } else {
         assert!(!required, "strict mode requires BGRA8 mip support");
@@ -680,7 +681,12 @@ fn render_mip_chain(
     std::println!("PASS: {format:?} rendered mip views and initialization: 43 pixels matched; render-only mip pass submitted");
 }
 
-fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crate::id::QueueId) {
+fn copy_only_mip_chain(
+    global: &Global,
+    device: crate::id::DeviceId,
+    queue: crate::id::QueueId,
+    format: wgt::TextureFormat,
+) {
     let (texture, error) = global.device_create_texture(
         device,
         &wgt::TextureDescriptor {
@@ -693,7 +699,7 @@ fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crat
             mip_level_count: 4,
             sample_count: 1,
             dimension: wgt::TextureDimension::D2,
-            format: wgt::TextureFormat::Rgba8Unorm,
+            format,
             usage: wgt::TextureUsages::COPY_SRC | wgt::TextureUsages::COPY_DST,
             view_formats: Vec::new(),
         },
@@ -787,6 +793,41 @@ fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crat
             },
         )
         .unwrap();
+    let region = wgt::Extent3d {
+        width: 2,
+        height: 1,
+        depth_or_array_layers: 1,
+    };
+    let mip0_region = wgt::TexelCopyTextureInfo {
+        texture,
+        mip_level: 0,
+        origin: wgt::Origin3d { x: 3, y: 2, z: 0 },
+        aspect: wgt::TextureAspect::All,
+    };
+    global
+        .command_encoder_copy_texture_to_texture(
+            encoder,
+            &wgt::TexelCopyTextureInfo {
+                origin: wgt::Origin3d { x: 1, y: 0, z: 0 },
+                ..mip1
+            },
+            &mip0_region,
+            &region,
+        )
+        .unwrap();
+    global
+        .command_encoder_copy_texture_to_texture(
+            encoder,
+            &mip0_region,
+            &wgt::TexelCopyTextureInfo {
+                texture,
+                mip_level: 2,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &region,
+        )
+        .unwrap();
     for (mip, width, height, offset) in [
         (0, 8, 4, 0),
         (1, 4, 2, 1024),
@@ -865,6 +906,12 @@ fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crat
                     &pattern[y * 256..y * 256 + width * 4],
                     "mip {mip} row {y}"
                 );
+            } else if mip == 0 && y == 2 {
+                let mut expected = [0u8; 32];
+                expected[12..20].copy_from_slice(&pattern[4..12]);
+                assert_eq!(row, &expected, "mip {mip} row {y}");
+            } else if mip == 2 {
+                assert_eq!(row, &pattern[4..12], "mip {mip} row {y}");
             } else {
                 assert!(
                     row.iter().all(|&byte| byte == 0),
@@ -873,9 +920,48 @@ fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crat
             }
         }
     }
+    std::println!("PASS: core {format:?} same-texture mip copies and untouched texels");
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
+    let (invalid_encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "same-mip negative encoder: {error:?}");
+    global
+        .command_encoder_copy_texture_to_texture(
+            invalid_encoder,
+            &wgt::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &mip0_region,
+            &region,
+        )
+        .unwrap();
+    let (invalid_command, error) = global.command_encoder_finish(
+        invalid_encoder,
+        &wgt::CommandBufferDescriptor::default(),
+        None,
+    );
+    assert!(
+        matches!(
+            error,
+            Some((
+                _,
+                crate::command::CommandEncoderError::Transfer(
+                    crate::command::TransferError::InvalidCopyWithinSameTexture { .. }
+                )
+            ))
+        ),
+        "same-mip copies must be rejected by core: {error:?}"
+    );
+    global.command_buffer_drop(invalid_command);
+    global.command_encoder_drop(invalid_encoder);
     global.buffer_drop(upload);
     global.buffer_drop(readback);
     global.texture_drop(texture);

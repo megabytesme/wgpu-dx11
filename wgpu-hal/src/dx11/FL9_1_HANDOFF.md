@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 269 tests; older
+operations are safe. The latest completed strict suite passed 271 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -114,6 +114,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `3de27b02b7659b028db3606e0e3047e07f9e75b8` | Reject unsafe FL9 integer shader semantics |
 | `4cba5bf6fb21ac23699fe1b012808d0852c6f0e9` | Point draws with vertex streams |
 | `8c2be917a31a0e124007b77989e2365a83fc376a` | Ordered indexed point emulation |
+| `064d68dc2d98573b28730de5ba5e5f9c3aa6f83f` | Restricted constant D24S8 depth bias |
 
 ## What is and is not usable
 

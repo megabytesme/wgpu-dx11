@@ -39,6 +39,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   the device reports the required format bits. Strict RTX FL9_1 tests exercised
   four levels, partial uploads, cross-resource copies, readback, metadata views
   and resource retention; a core fixture checked all 43 mip-chain pixels.
+- Copies between distinct mips of one supported texture use native DEFAULT to
+  DEFAULT `CopySubresourceRegion` with an explicit source box. Strict RTX tests
+  checked partial copies in both directions with full padded readback for RGBA8
+  and BGRA8; render-to-copy-to-clone-sample cases each produced 64 blue pixels.
+  Core checked all mip texels for both formats and rejected a same-mip copy.
+  The earlier strict baseline rejected a valid distinct-mip copy. Copies within
+  one subresource remain unsupported; historical drivers remain unverified.
 - Sampled POT mip chains support `COPY_DST | RESOURCE` with optional `COPY_SRC`,
   or `RESOURCE | COLOR_TARGET` with optional copy usages,
   and a positively queried format. Suffix views including the resource's last
@@ -55,7 +62,7 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   strict clone-backed GPU cases passed across both formats, including a recorded
   upload followed by an indexed draw in the same submission; the controlled core
   fixture checked 64 yellow pixels after a source update. The clone incurs
-  per-draw copies and storage. NPOT mip chains and self-copies remain
+  per-draw copies and storage. NPOT mip chains and same-subresource copies remain
   unsupported. Native FL9 sampled views must include the smallest resource mip;
   historical GPU behavior is unverified.
 - POT RGBA8 and BGRA8 color-attachment mip chains support an individual

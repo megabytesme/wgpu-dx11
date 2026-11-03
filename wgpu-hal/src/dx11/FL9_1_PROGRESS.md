@@ -1332,6 +1332,24 @@ passed, and the targeted DX12 HAL library tests passed 2/2. Historical FL9 bias 
 is not established: Microsoft documents 32-bit bias arithmetic for FL10+.
 No pristine failing GPU baseline was captured before implementation; the prior
 code rejected all non-default depth bias, and the earlier full suite passed.
+Checkpoint: `064d68dc2d98573b28730de5ba5e5f9c3aa6f83f`.
 
 Next: allow and verify copies between different mip subresources of the same
 texture. Core permits them but the private HAL currently rejects all self-copy.
+
+Same-texture copies between different mip subresources now pass the existing
+checked GPU copy path; identical canonical COM resources with the same native
+subresource remain rejected. Before the change, the strict GPU test failed at
+command encoding. Afterward, RGBA8 and BGRA8 passed partial copies in both
+directions with complete padded readback, and each passed a render, same-texture
+copy and clone-sampling sequence producing 64 blue pixels. The core fixture
+verified every mip texel for both formats and rejected same-mip copies. The
+private strict suite passed 271 tests, two filtered; six dynamic-index GPU cases
+remain skipped. Clippy passed with ten pre-existing warnings, and the core
+zero-adapter isolation test passed. An independent
+review found no concrete ownership, identity or copy-contract defect. The
+native source and destination are DEFAULT textures and use an explicit box;
+historical FL9 drivers remain unverified.
+
+Next: investigate valid mipmapped COPY_DST-only texture creation, which core
+permits but the current private usage matrix rejects.

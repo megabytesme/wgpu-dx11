@@ -143,7 +143,10 @@ impl NativeDevice {
             self.texture_copy_texture_source(source, region.src_base.mip_level)?;
         let (destination, dst_size, destination_subresource) =
             self.texture_copy_destination(destination, region.dst_base.mip_level)?;
-        if source.as_raw() == destination.as_raw() {
+        if source_subresource == destination_subresource
+            && source.cast::<windows::core::IUnknown>()?.as_raw()
+                == destination.cast::<windows::core::IUnknown>()?.as_raw()
+        {
             return Err(invalid());
         }
         let source_box = texture_box(&region.src_base, &region.size, src_size)?;

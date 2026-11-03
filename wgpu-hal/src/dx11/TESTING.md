@@ -548,7 +548,7 @@ and fail in strict mode; the core fixture propagates query errors as failures in
 either mode.
 
 These tests do not exercise sampled or attachment mip views. Native FL9 shader-resource
-views must include the smallest resource mip; NPOT mip chains, self-copies and
+views must include the smallest resource mip; NPOT mip chains, same-subresource copies and
 general mip sampling remain unsupported. Historical FL9 GPU behavior is
 unverified.
 
@@ -652,6 +652,26 @@ view to render and then sample a nonfinal mip in separate passes, checking 64
 pixels for each format. Same-pass clone-backed views of the attachment resource
 are supported when their mip ranges are disjoint; historical driver behavior
 remains unverified.
+
+### Same-texture distinct-mip copies
+
+With strict hardware mode enabled:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_same_texture_disjoint_mip_copies -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_render_copy_same_texture_mip_then_sample_clone -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested and selected FL9_1, RGBA8 and BGRA8 partial
+copies between two mips passed in both directions with full padded readback,
+including untouched texels. The separate render, same-texture copy and
+clone-backed sample case produced 64 blue pixels for each format after the
+source resources were destroyed by the caller before submission. The controlled
+core fixture checked all mip texels for both formats and rejected a same-mip
+copy. The pre-change strict baseline rejected a valid distinct-mip copy. Native
+copies use an explicit source box between DEFAULT resources. Same-subresource
+copies remain rejected; historical FL9 drivers remain unverified and public
+D3D11 adapter enumeration remains disabled.
 
 ### Same-resource disjoint native mip views
 

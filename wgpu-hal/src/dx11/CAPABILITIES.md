@@ -171,8 +171,17 @@ and [10Level9 rasterizer restrictions](https://learn.microsoft.com/en-us/windows
 | Transfer | Implementation and restrictions | Coverage |
 | --- | --- | --- |
 | Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. | Offset and padded full/partial uploads, GPU-written source and ordered submissions. |
-| Texture to texture | Native GPU `CopySubresourceRegion` between distinct, identically formatted RGBA8 or BGRA8 textures, including selected supported mip subresources, with an explicit checked source box. Self-copy and cross-format copies are rejected. | Full and partial copies, different overall dimensions, cross-resource mip copies, zero-preserving destination and render-to-copy-to-sample. |
+| Texture to texture | Native GPU `CopySubresourceRegion` between compatible RGBA8 or BGRA8 textures, including different mips of one texture, with an explicit checked source box and DEFAULT source and destination resources. Copies within the same subresource and cross-format copies are rejected. | Full and partial copies, different overall dimensions, cross-resource and same-resource mip copies, zero-preserving destination and render-to-copy-to-sample. |
 | Texture to buffer | A region is copied to a retained CPU-readable staging texture and mapped; each mapped row is written into the destination GPU buffer at the requested pitch and offset. | Full and partial source regions, nonzero buffer offsets, row padding and complete image comparison. |
+
+The strict FL9_1 RTX test checked partial same-texture copies between distinct
+mips in both directions for RGBA8 and BGRA8, including all affected and
+untouched texels and padded readback bytes. Two more GPU cases rendered into a
+mip, copied to another mip of that texture and sampled its clone-backed view;
+each checked 64 blue pixels. Controlled core tests checked all mip texels for
+both formats and rejected a same-mip copy. Before the change, the strict
+baseline rejected a valid distinct-mip copy. Historical FL9 hardware remains
+unverified, and this does not enable public adapter enumeration.
 
 HAL texture creation eagerly uploads zeroes before returning, including for
 partial-write targets and each mip of a supported chain. Allocation and uploads
@@ -324,8 +333,8 @@ reserved for viewport remapping and the disabled texel-load proof also reserves
 `b13`. The same slot is used for a uniform in both
 stages, and visibility is checked per stage. Layout identity and the same register map are
 used by shader translation and command recording. Bind groups retain the native
-views and samplers; recording rejects overlapping render-target feedback and
-same-resource clone-backed sampled views. Each draw binds
+views and samplers; recording rejects overlapping render-target feedback, while
+supported disjoint native and clone-backed views can be used. Each draw binds
 resources using the active pipeline's plan, and changing the layout passed to
 `set_bind_group` invalidates groups at and after the first unequal prefix.
 Render-pass boundaries clear context state.
