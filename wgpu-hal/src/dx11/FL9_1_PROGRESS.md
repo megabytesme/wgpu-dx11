@@ -177,3 +177,21 @@ The test resets its recorded command before resize; live command-buffer RTV
 references, concurrent Present/context access, message-pump locking and whether
 queue idle covers pending presentation remain public-presentation blockers.
 Windows 7 flip-swapchain support is not claimed.
+The initial private HWND surface was checkpointed as `bf56c17b9`.
+
+The retained-command-buffer resize concern was reproduced on the same RTX:
+`ResizeBuffers` failed with the completed buffer still holding the backbuffer
+RTV. Surface-backed render commands now keep a weak per-view reference. Queue
+submission validates and temporarily retains all referenced surface views
+before replay; ordinary offscreen render targets retain their previous strong
+ownership. After GPU completion and view destruction, the hidden HWND test
+resizes and recreates the swapchain while the old command buffer remains alive,
+then records a new HAL clear and reads back green BGRA [0,255,0,255]. The old
+buffer is reset only afterward. A destroyed surface view fails the submission
+preflight check; resubmitting a command with destroyed resources is outside the
+HAL contract. The strict 136-test private suite and zero-adapter core test
+passed, and targeted Clippy passed with ten existing HAL warnings. At that
+point an experimental Naga viewport transform was also in the working tree and
+introduced three separate Clippy warnings; it was not used by the DX11 shader
+path and is not part of the surface ownership fix. Visible presentation and
+concurrent Present/context synchronization remain unverified.

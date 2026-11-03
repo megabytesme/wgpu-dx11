@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 use super::{
-    command::{CommandBuffer, DepthAttachment, NativeCommand},
+    command::{CommandBuffer, DepthAttachment, NativeCommand, RenderTarget},
     device::NativeDevice,
     Api as Dx11Api,
 };
@@ -579,6 +579,12 @@ impl crate::CommandEncoder for CommandEncoder {
             vertex: None,
             vertex_layout: None,
             index: None,
+        });
+        let target = target.map(|target| {
+            match color.and_then(|color| color.target.view.recorded_surface_target()) {
+                Some(weak) => RenderTarget::Surface(weak),
+                None => RenderTarget::Owned(target),
+            }
         });
         self.record(NativeCommand::BeginRender {
             target,

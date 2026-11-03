@@ -6,11 +6,14 @@ use super::{
     hal_transfer::{BufferToTexture, TextureToBuffer, TextureToTexture},
     hal_uniform::UniformBinding,
 };
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::E_INVALIDARG,
+        Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
             Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             Direct3D11::{
@@ -38,6 +41,24 @@ pub(super) struct DepthAttachment {
 }
 
 #[derive(Debug)]
+pub(super) enum RenderTarget {
+    Owned(ID3D11RenderTargetView),
+    Surface(Weak<ID3D11RenderTargetView>),
+}
+
+impl RenderTarget {
+    fn resolve(&self) -> Result<ID3D11RenderTargetView> {
+        match self {
+            Self::Owned(target) => Ok(target.clone()),
+            Self::Surface(target) => target
+                .upgrade()
+                .map(|target| (*target).clone())
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG)),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
@@ -47,7 +68,7 @@ pub(super) enum NativeCommand {
     #[cfg(test)]
     InjectedFailure,
     BeginRender {
-        target: Option<ID3D11RenderTargetView>,
+        target: Option<RenderTarget>,
         clear: Option<[f32; 4]>,
         depth: Option<DepthAttachment>,
         width: u32,
@@ -121,6 +142,28 @@ impl CommandBuffer {
         Ok(())
     }
 
+    pub(super) fn retain_surface_targets(
+        &self,
+        retained: &mut Vec<Arc<ID3D11RenderTargetView>>,
+    ) -> Result<()> {
+        for command in &self.commands {
+            if let NativeCommand::BeginRender {
+                target: Some(RenderTarget::Surface(target)),
+                ..
+            } = command
+            {
+                let target = target
+                    .upgrade()
+                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                retained
+                    .try_reserve(1)
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                retained.push(target);
+            }
+        }
+        Ok(())
+    }
+
     /// The caller must hold the owning device's immediate-context mutex.
     pub(super) fn replay(&self, context: &ID3D11DeviceContext) -> Result<()> {
         for command in &self.commands {
@@ -167,8 +210,9 @@ impl CommandBuffer {
                         width,
                         height,
                     } => {
+                        let target = target.as_ref().map(RenderTarget::resolve).transpose()?;
                         context.ClearState();
-                        if let Some(target) = target {
+                        if let Some(target) = &target {
                             context.OMSetRenderTargets(
                                 Some(&[Some(target.clone())]),
                                 depth.as_ref().map(|attachment| &attachment.view),
@@ -195,7 +239,7 @@ impl CommandBuffer {
                             right: *width as i32,
                             bottom: *height as i32,
                         }]));
-                        if let (Some(target), Some(color)) = (target, clear) {
+                        if let (Some(target), Some(color)) = (&target, clear) {
                             context.ClearRenderTargetView(target, color);
                         }
                         if let Some(attachment) = depth {
@@ -306,6 +350,8 @@ impl NativeDevice {
     #[allow(dead_code)]
     pub(crate) fn submit_copy_commands(&self, command_buffer: &CommandBuffer) -> Result<()> {
         command_buffer.validate_device(self)?;
+        let mut retained = Vec::new();
+        command_buffer.retain_surface_targets(&mut retained)?;
         let context = self.immediate_context();
         command_buffer.replay(&context)
     }

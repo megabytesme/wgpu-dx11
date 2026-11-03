@@ -1,16 +1,16 @@
 //! GPU-completion events for the restricted HAL queue.
 use super::{command::CommandBuffer, device::NativeDevice};
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, vec::Vec};
 use parking_lot::Mutex;
 use windows::{
+    core::{Error, Interface, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY, S_FALSE, S_OK},
         Graphics::Direct3D11::{
-            D3D11_ASYNC_GETDATA_DONOTFLUSH, D3D11_QUERY_DESC, D3D11_QUERY_EVENT,
-            ID3D11Asynchronous, ID3D11Device, ID3D11DeviceContext,
+            ID3D11Asynchronous, ID3D11Device, ID3D11DeviceContext, D3D11_ASYNC_GETDATA_DONOTFLUSH,
+            D3D11_QUERY_DESC, D3D11_QUERY_EVENT,
         },
     },
-    core::{Error, Interface, Result},
 };
 
 #[derive(Debug)]
@@ -70,8 +70,10 @@ impl NativeDevice {
         fence: &NativeFence,
         value: u64,
     ) -> Result<()> {
+        let mut retained = Vec::new();
         for command in commands {
             command.validate_device(self)?;
+            command.retain_surface_targets(&mut retained)?;
         }
         self.validate_fence(fence)?;
         let desc = D3D11_QUERY_DESC {
@@ -195,7 +197,7 @@ impl NativeDevice {
 mod tests {
     extern crate std;
     use super::*;
-    use crate::dx11::{FeatureLevel, enumerate_native_adapters};
+    use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
     use std::time::Duration;
 
@@ -226,16 +228,12 @@ mod tests {
         let fence = device.create_native_fence();
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         let foreign = other.create_copy_encoder().finish();
-        assert!(
-            device
-                .submit_copy_batches_signaled(&[&first, &foreign], &fence, 1)
-                .is_err()
-        );
-        assert!(
-            device
-                .wait_native_fence(&fence, 1, Some(Duration::ZERO))
-                .is_err()
-        );
+        assert!(device
+            .submit_copy_batches_signaled(&[&first, &foreign], &fence, 1)
+            .is_err());
+        assert!(device
+            .wait_native_fence(&fence, 1, Some(Duration::ZERO))
+            .is_err());
         assert_eq!(device.read_byte_buffer(&middle, 0, 16)?, vec![0; 16]);
         device.submit_copy_batches_signaled(&[&first, &second], &fence, 1)?;
         assert!(device.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
@@ -275,11 +273,9 @@ mod tests {
         assert!(dynamic.as_any().is::<NativeFence>());
         assert_eq!(device.poll_native_fence(&fence)?, 0);
         assert!(device.wait_native_fence(&fence, 0, Some(Duration::ZERO))?);
-        assert!(
-            device
-                .wait_native_fence(&fence, 1, Some(Duration::ZERO))
-                .is_err()
-        );
+        assert!(device
+            .wait_native_fence(&fence, 1, Some(Duration::ZERO))
+            .is_err());
         // A zero signal still submits work, even though the timeline remains at zero.
         device.submit_copy_commands_signaled(&commands, &fence, 0)?;
         assert_eq!(
@@ -305,11 +301,9 @@ mod tests {
         );
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.poll_native_fence(&fence).is_err());
-        assert!(
-            other
-                .submit_copy_commands_signaled(&commands, &fence, 4)
-                .is_err()
-        );
+        assert!(other
+            .submit_copy_commands_signaled(&commands, &fence, 4)
+            .is_err());
         Ok(())
     }
 }

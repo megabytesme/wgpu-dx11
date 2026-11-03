@@ -3,7 +3,7 @@
 //! This is not yet a wgpu texture implementation: usage validation, format
 //! coverage, and WebGPU's initialization guarantees are not implemented.
 use super::device::{FeatureLevel, NativeDevice};
-use alloc::{vec, vec::Vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -86,6 +86,7 @@ impl NativeTexture {
 pub struct NativeTextureView {
     resource: Option<ID3D11ShaderResourceView>,
     render_target: Option<ID3D11RenderTargetView>,
+    surface_target: Option<Arc<ID3D11RenderTargetView>>,
     depth_stencil: Option<ID3D11DepthStencilView>,
     usage: wgt::TextureUses,
     owner: ID3D11Device,
@@ -101,6 +102,12 @@ impl NativeTextureView {
     #[allow(dead_code)] // Used when recording render-pass attachments.
     pub(super) fn render_target(&self) -> Option<&ID3D11RenderTargetView> {
         self.render_target.as_ref()
+    }
+
+    pub(super) fn recorded_surface_target(
+        &self,
+    ) -> Option<alloc::sync::Weak<ID3D11RenderTargetView>> {
+        self.surface_target.as_ref().map(Arc::downgrade)
     }
 }
 
@@ -441,6 +448,7 @@ impl NativeDevice {
         Ok(NativeTextureView {
             resource: Some(view.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             render_target: None,
+            surface_target: None,
             depth_stencil: None,
             usage: wgt::TextureUses::RESOURCE,
             owner: self.raw_device().clone(),
@@ -483,9 +491,15 @@ impl NativeDevice {
         {
             return Err(Error::from_hresult(E_FAIL));
         }
+        let surface_target = if texture.supports_usage(wgt::TextureUses::PRESENT) {
+            target.as_ref().map(|target| Arc::new(target.clone()))
+        } else {
+            None
+        };
         Ok(NativeTextureView {
             resource: shader,
             render_target: target,
+            surface_target,
             depth_stencil: depth,
             usage,
             owner: self.raw_device().clone(),

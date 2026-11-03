@@ -13,6 +13,6 @@ FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
 current implementation and validation matrix.
 
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
-Attachment discard support was checkpointed as `721469cfe`. Do not infer full FL9_1 or
+Private HWND support was checkpointed as `bf56c17b9`. Do not infer full FL9_1 or
 historical-device compatibility from modern GPU tests. Keep public adapter
 enumeration gated until core-valid operations are safe.

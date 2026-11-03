@@ -150,10 +150,15 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
     let pixel = acquired.texture.frame.as_ref().unwrap().readback()?;
     assert_eq!(pixel, [0, 0, 255, 255]);
+    assert!(command
+        .retain_surface_targets(&mut alloc::vec::Vec::new())
+        .is_ok());
     unsafe {
         device.destroy_texture_view(view);
-        encoder.reset_all(core::iter::once(command));
     }
+    assert!(command
+        .retain_surface_targets(&mut alloc::vec::Vec::new())
+        .is_err());
     let present = unsafe { queue.present(&surface, acquired.texture) };
     assert!(
         present.is_ok() || matches!(present, Err(crate::SurfaceError::Occluded)),
@@ -168,6 +173,7 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
     unsafe {
         surface.configure(&device, &config).unwrap();
     }
+    std::println!("Resize with completed command buffer retained: PASS");
     let resized = unsafe { surface.acquire_texture(None, &fence).unwrap() };
     let size = surface
         .configured
@@ -177,7 +183,58 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
         .swapchain
         .size()?;
     assert_eq!(size, [24, 16]);
+    let resized_view = unsafe {
+        device
+            .create_texture_view(
+                resized.texture.borrow(),
+                &crate::TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Bgra8Unorm,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage: wgt::TextureUses::COLOR_TARGET,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+            .unwrap()
+    };
+    let resized_color = [Some(crate::ColorAttachment {
+        target: crate::Attachment {
+            view: &resized_view,
+            usage: wgt::TextureUses::COLOR_TARGET,
+        },
+        depth_slice: None,
+        resolve_target: None,
+        ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+        clear_value: wgt::Color::GREEN,
+    })];
+    let resized_pass = crate::RenderPassDescriptor {
+        label: None,
+        extent: config.extent,
+        sample_count: 1,
+        color_attachments: &resized_color,
+        depth_stencil_attachment: None,
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let resized_command = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&resized_pass).unwrap();
+        encoder.end_render_pass();
+        encoder.end_encoding().unwrap()
+    };
     unsafe {
+        queue
+            .submit(&[&resized_command], &[&resized.texture], (&fence, 2))
+            .unwrap();
+    }
+    assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+    assert_eq!(
+        resized.texture.frame.as_ref().unwrap().readback()?,
+        [0, 255, 0, 255]
+    );
+    unsafe {
+        device.destroy_texture_view(resized_view);
         surface.discard_texture(resized.texture);
         surface.unconfigure(&device);
         surface.configure(&device, &config).unwrap();
@@ -185,6 +242,7 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
         surface.discard_texture(recreated.texture);
         queue.wait_for_idle().unwrap();
         surface.unconfigure(&device);
+        encoder.reset_all([command, resized_command].into_iter());
     }
     std::println!("PASS: hidden HWND acquire, HAL clear/readback, present and resize; visibility not verified");
     Ok(())
