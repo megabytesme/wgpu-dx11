@@ -80,6 +80,8 @@ pub struct RenderPipeline {
     pub(super) blend: Option<ID3D11BlendState>,
     pub(super) target_format: wgt::TextureFormat,
     pub(super) group: Option<super::hal_bind_group::GroupKind>,
+    pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
+    pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_size: u64,
     pub(super) vertex_stride: u32,
     pub(super) vertex_extent: u32,
@@ -635,6 +637,21 @@ impl RenderPipeline {
             .layout
             .group
             .map_or_else(alloc::vec::Vec::new, |group| group.shader_bindings());
+        let mut sampling_pairs = vertex_stage.module.sampling_relationships(
+            naga::ShaderStage::Vertex,
+            vertex_stage.entry_point,
+            &bindings,
+        )?;
+        sampling_pairs.extend(fragment.module.sampling_relationships(
+            naga::ShaderStage::Fragment,
+            fragment.entry_point,
+            &bindings,
+        )?);
+        let full_npot = if sampling_pairs.is_empty() {
+            super::capabilities::Query::Unavailable(0)
+        } else {
+            super::capabilities::query_full_npot(owner)
+        };
         let vertex_code = vertex_stage.module.compile_with_bindings(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
@@ -762,6 +779,8 @@ impl RenderPipeline {
             blend,
             target_format: target.format,
             group: desc.layout.group,
+            sampling_pairs: Arc::new(sampling_pairs),
+            full_npot,
             required_uniform_size,
             vertex_stride: buffer.array_stride as u32,
             vertex_extent,

@@ -21,6 +21,7 @@ mod hal_shader;
 mod hal_transfer;
 mod hal_uniform;
 mod instance;
+mod sampling;
 mod shader;
 mod surface;
 mod swapchain;

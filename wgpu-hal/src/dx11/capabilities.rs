@@ -134,20 +134,25 @@ pub(super) enum TextureRejection {
     DriverFormatUnsupported,
 }
 
-impl Capabilities {
-    pub fn query(device: &NativeDevice) -> Self {
-        let raw = device.raw_device();
-        let format =
-            |value: DXGI_FORMAT| Query::from_result(unsafe { raw.CheckFormatSupport(value) });
-        let mut options = D3D11_FEATURE_DATA_D3D9_OPTIONS::default();
-        let full_npot = unsafe {
-            raw.CheckFeatureSupport(
+pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
+    let mut options = D3D11_FEATURE_DATA_D3D9_OPTIONS::default();
+    Query::from_result(
+        unsafe {
+            device.raw_device().CheckFeatureSupport(
                 D3D11_FEATURE_D3D9_OPTIONS,
                 core::ptr::from_mut(&mut options).cast(),
                 size_of_val(&options) as u32,
             )
         }
-        .map(|()| options.FullNonPow2TextureSupport.as_bool());
+        .map(|()| options.FullNonPow2TextureSupport.as_bool()),
+    )
+}
+
+impl Capabilities {
+    pub fn query(device: &NativeDevice) -> Self {
+        let raw = device.raw_device();
+        let format =
+            |value: DXGI_FORMAT| Query::from_result(unsafe { raw.CheckFormatSupport(value) });
         let mut shadow = D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT::default();
         let comparison_shadow = unsafe {
             raw.CheckFeatureSupport(
@@ -170,7 +175,7 @@ impl Capabilities {
                 rgba8_samples_4: Query::from_result(unsafe {
                     raw.CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4)
                 }),
-                full_npot: Query::from_result(full_npot),
+                full_npot: query_full_npot(device),
                 comparison_shadow: Query::from_result(comparison_shadow),
             },
             backend: BackendCapabilities::CURRENT,

@@ -322,6 +322,30 @@ impl ShaderModule {
         Ok(None)
     }
 
+    pub(super) fn sampling_relationships(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+        bindings: &[ShaderBinding],
+    ) -> Result<Vec<super::sampling::SamplingPair>, crate::PipelineError> {
+        super::sampling::relationships(
+            &self.shader.module,
+            &self.shader.info,
+            stage,
+            entry,
+            bindings,
+        )
+        .map_err(|_| {
+            crate::PipelineError::Linkage(
+                match stage {
+                    naga::ShaderStage::Vertex => wgt::ShaderStages::VERTEX,
+                    _ => wgt::ShaderStages::FRAGMENT,
+                },
+                "unsupported D3D11 sampling relationship or missing binding".into(),
+            )
+        })
+    }
+
     pub(super) fn compile_with_bindings(
         &self,
         stage: naga::ShaderStage,
@@ -392,7 +416,7 @@ impl ShaderModule {
             ));
         }
         // Sampled views are checked single-mip RGBA8 2D resources and sampler
-        // address modes are validated with the view at bind-group creation.
+        // address modes are checked against used pairs before drawing.
         // Keep explicit texel loads fail-closed until their FL9 bounds behavior
         // is independently tested; scan helpers as well as entry points.
         let has_texture_load = |function: &naga::Function| {

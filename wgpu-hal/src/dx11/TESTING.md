@@ -199,3 +199,18 @@ textures with a shared sampler or eight samplers, and sixteen distinct sampler
 relationships. Each reads back GPU output. The `level9_fxc`
 unit test separately checks the FXC boundary of sixteen distinct sampled
 texture/sampler relationships versus seventeen; it is not a hardware test.
+
+### Shader-aware NPOT compatibility
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampling_relationships -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 shader_pairs_ -- --nocapture --test-threads=1
+```
+
+The first command uses synthetic capabilities and validated WGSL entry-point
+analysis. The second executes FL9_1 GPU readback; three cases inject a restrictive
+capability into the private test pipeline while leaving the driver unchanged.
+They also reject invalid draw, indexed draw and pipeline/bind-group transitions
+before submission. The unrestricted NPOT/wrap case requires a positive device
+query, and fails in strict mode if that prerequisite is missing.

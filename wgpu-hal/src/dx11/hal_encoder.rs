@@ -34,11 +34,25 @@ struct RenderState {
     pipeline: bool,
     required_group: Option<super::hal_bind_group::GroupKind>,
     bound_group: Option<super::hal_bind_group::GroupKind>,
+    sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
+    sampling_resources: Option<super::sampling::SamplingResources>,
+    full_npot: super::capabilities::Query<bool>,
     bound_uniform_size: u64,
     required_uniform_size: u64,
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
+}
+
+impl RenderState {
+    fn sampling_compatible(&self, level: super::device::FeatureLevel) -> bool {
+        if self.sampling_pairs.is_empty() {
+            return true;
+        }
+        self.sampling_resources.as_ref().is_some_and(|resources| {
+            super::sampling::compatible(&self.sampling_pairs, resources, level, self.full_npot)
+        })
+    }
 }
 
 impl CommandEncoder {
@@ -302,6 +316,7 @@ impl crate::CommandEncoder for CommandEncoder {
             .as_ref()
             .map_or(0, |uniform| uniform.len());
         render.bound_group = Some(group.kind);
+        render.sampling_resources = Some(group.resources.sampling.clone());
         if let Some(uniform) = &group.resources.uniform {
             self.record(NativeCommand::SetUniformGroup(uniform.clone()));
         }
@@ -419,6 +434,9 @@ impl crate::CommandEncoder for CommandEncoder {
             pipeline: false,
             required_group: None,
             bound_group: None,
+            sampling_pairs: Arc::new(Vec::new()),
+            sampling_resources: None,
+            full_npot: super::capabilities::Query::Unavailable(0),
             bound_uniform_size: 0,
             required_uniform_size: 0,
             vertex: None,
@@ -458,6 +476,8 @@ impl crate::CommandEncoder for CommandEncoder {
         render.required_group = pipeline
             .group
             .filter(|group| *group != super::hal_bind_group::GroupKind::EMPTY);
+        render.sampling_pairs = pipeline.sampling_pairs.clone();
+        render.full_npot = pipeline.full_npot;
         render.required_uniform_size = pipeline.required_uniform_size;
         render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
         self.record(NativeCommand::SetPipeline {
@@ -621,6 +641,7 @@ impl crate::CommandEncoder for CommandEncoder {
         if !render.pipeline
             || (render.required_group.is_some() && render.required_group != render.bound_group)
             || render.bound_uniform_size < render.required_uniform_size
+            || !render.sampling_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
             || required.is_none_or(|required| required > *bytes)
@@ -679,6 +700,7 @@ impl crate::CommandEncoder for CommandEncoder {
         if !render.pipeline
             || (render.required_group.is_some() && render.required_group != render.bound_group)
             || render.bound_uniform_size < render.required_uniform_size
+            || !render.sampling_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
             || base_vertex != 0

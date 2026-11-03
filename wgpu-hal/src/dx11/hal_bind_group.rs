@@ -1,11 +1,7 @@
 //! Restricted uniform or sampled texture/sampler groups for the private D3D11 HAL.
 use super::{
-    api::Unavailable,
-    buffer::NativeBuffer,
-    device::{FeatureLevel, NativeDevice},
-    hal_sampler::Sampler,
-    hal_uniform::UniformBinding,
-    texture::NativeTextureView,
+    api::Unavailable, buffer::NativeBuffer, device::NativeDevice, hal_sampler::Sampler,
+    hal_uniform::UniformBinding, texture::NativeTextureView,
 };
 use alloc::sync::Arc;
 use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResourceView};
@@ -146,6 +142,7 @@ pub(super) struct GroupResources {
     pub uniform: Option<Arc<UniformBinding>>,
     pub textures: alloc::vec::Vec<ID3D11ShaderResourceView>,
     pub samplers: alloc::vec::Vec<ID3D11SamplerState>,
+    pub sampling: super::sampling::SamplingResources,
 }
 
 #[doc(hidden)]
@@ -279,28 +276,31 @@ impl BindGroup {
             let (view, size, mip_levels) = owner
                 .sampled_view(binding.view)
                 .map_err(super::hal_device::device_error)?;
+            if mip_levels != 1 {
+                return Err(crate::DeviceError::Unexpected);
+            }
             views.push(view);
             dimensions.push((size, mip_levels));
         }
         let mut native_samplers = alloc::vec::Vec::new();
+        let mut samplers_wrap = alloc::vec::Vec::new();
         for index in sampler_indices {
             let sampler = desc.samplers[index];
-            let mut native = None;
-            for &(size, mip_levels) in &dimensions {
-                if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
-                    && sampler.wraps()
-                    && (!size[0].is_power_of_two() || !size[1].is_power_of_two())
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                native = Some(sampler.raw_for(owner, mip_levels)?);
-            }
-            native_samplers.push(native.ok_or(crate::DeviceError::Unexpected)?);
+            native_samplers.push(sampler.raw_for(owner, 1)?);
+            samplers_wrap.push(sampler.wraps());
         }
+        let sampling = super::sampling::SamplingResources {
+            textures: dimensions
+                .into_iter()
+                .map(|(size, mip_levels)| super::sampling::TextureInfo { size, mip_levels })
+                .collect(),
+            samplers_wrap,
+        };
         let resources = GroupResources {
             uniform,
             textures: views,
             samplers: native_samplers,
+            sampling,
         };
         Ok(Self {
             owner: owner.clone(),
@@ -636,7 +636,8 @@ mod tests {
             samplers: &repeat_samplers,
             ..group_desc
         };
-        assert!(unsafe { device.create_bind_group(&repeat_desc) }.is_err());
+        let npot_repeat_group = unsafe { device.create_bind_group(&repeat_desc).unwrap() };
+        assert!(npot_repeat_group.resources.sampling.samplers_wrap[0]);
         tex_desc.size.width = 4;
         tex_desc.size.height = 4;
         let pot = unsafe { device.create_texture(&tex_desc).unwrap() };
@@ -665,6 +666,7 @@ mod tests {
         unsafe {
             device.destroy_bind_group(group);
             device.destroy_bind_group(pot_group);
+            device.destroy_bind_group(npot_repeat_group);
             device.destroy_texture_view(pot_view);
             device.destroy_texture(pot);
             device.destroy_sampler(repeat);
