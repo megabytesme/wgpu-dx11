@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 222 tests; older
+operations are safe. The latest combined strict suite passed 224 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -145,7 +145,7 @@ cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --feature
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
-The strict private suite most recently passed 222 tests with two filtered;
+The strict private suite most recently passed 224 tests with two filtered;
 some older tests can skip internally. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,
@@ -232,3 +232,7 @@ evidence. The GPU tests cannot yet directly read back stencil bits.
 Snorm16x2/x4 vertex inputs passed strict private FL9_1 readback, and Snorm16x2
 UV passed the controlled core fixture. Four-byte private vertex alignment and
 other unsupported formats remain restrictions; SNORM texture support is not implied.
+
+Zero-stride vertex streams work through direct, strip and indexed windows/gathers
+in the tested subset. Negative effective indexed vertices with only zero-stride
+streams remain a specification caveat; current supported triangles are degenerate.

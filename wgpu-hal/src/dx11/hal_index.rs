@@ -97,10 +97,9 @@ impl IndexBinding {
         if vertices.is_empty()
             || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
                 !offset.is_multiple_of(4)
-                    || *stride == 0
                     || !stride.is_multiple_of(4)
                     || *extent == 0
-                    || *extent > *stride
+                    || (*stride != 0 && *extent > *stride)
                     || !extent.is_multiple_of(4)
             })
             || !self.contains_range(first, count)
@@ -195,7 +194,7 @@ impl IndexBinding {
                     count: u32,
                 },
                 Gather {
-                    streams: Vec<(ID3D11Buffer, [D3D11_BOX; 3])>,
+                    streams: Vec<Option<(ID3D11Buffer, [D3D11_BOX; 3])>>,
                 },
             }
             let device = context.GetDevice()?;
@@ -206,12 +205,7 @@ impl IndexBinding {
             for segment in plan {
                 match segment {
                     U32Segment::Window(window) => {
-                        let first_vertex = &vertices[0];
-                        let relative = window
-                            .vertex_offset
-                            .checked_sub(first_vertex.2)
-                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-                        let minimum = u64::from(relative / first_vertex.4);
+                        let minimum = window.minimum;
                         let mut offsets = Vec::new();
                         offsets
                             .try_reserve_exact(vertices.len())
@@ -244,21 +238,16 @@ impl IndexBinding {
                             count: window.count,
                         });
                     }
-                    U32Segment::Gather(first_sources) => {
-                        let first_vertex = &vertices[0];
-                        let mut indices = [0u64; 3];
-                        for (index, source) in indices.iter_mut().zip(first_sources) {
-                            let relative = source
-                                .left
-                                .checked_sub(first_vertex.2)
-                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-                            *index = u64::from(relative / first_vertex.4);
-                        }
+                    U32Segment::Gather { indices, .. } => {
                         let mut streams = Vec::new();
                         streams
                             .try_reserve_exact(vertices.len())
                             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
                         for (_, _, offset, length, stride, extent) in vertices {
+                            if *stride == 0 {
+                                streams.push(None);
+                                continue;
+                            }
                             let mut sources = [D3D11_BOX::default(); 3];
                             for (source, &index) in sources.iter_mut().zip(&indices) {
                                 let left = rebased_vertex_offset(
@@ -299,10 +288,10 @@ impl IndexBinding {
                             };
                             let mut buffer = None;
                             device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
-                            streams.push((
+                            streams.push(Some((
                                 buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
                                 sources,
-                            ));
+                            )));
                         }
                         prepared.push(Segment::Gather { streams });
                     }
@@ -310,9 +299,12 @@ impl IndexBinding {
             }
             for segment in &prepared {
                 if let Segment::Gather { streams } = segment {
-                    for ((_, source_buffer, _, _, stride, _), (buffer, sources)) in
+                    for ((_, source_buffer, _, _, stride, _), stream) in
                         vertices.iter().zip(streams)
                     {
+                        let Some((buffer, sources)) = stream else {
+                            continue;
+                        };
                         for (index, source) in sources.iter().enumerate() {
                             context.CopySubresourceRegion(
                                 buffer,
@@ -347,13 +339,19 @@ impl IndexBinding {
                     context.DrawIndexed(*count, 0, 0);
                 }
                 Segment::Gather { streams } => {
-                    for ((slot, _, _, _, stride, _), (buffer, _)) in vertices.iter().zip(streams) {
+                    for ((slot, vertex, offset, _, stride, _), stream) in
+                        vertices.iter().zip(streams)
+                    {
+                        let (buffer, offset) = match stream {
+                            Some((buffer, _)) => (buffer, &0),
+                            None => (vertex, offset),
+                        };
                         context.IASetVertexBuffers(
                             *slot,
                             1,
                             Some(&Some(buffer.clone())),
                             Some(stride),
-                            Some(&0),
+                            Some(offset),
                         );
                     }
                     context.Draw(3, 0);
@@ -457,9 +455,10 @@ impl IndexBinding {
                         .checked_mul(3)
                         .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                     let mut zeroes = Vec::<u8>::new();
-                    if plan
-                        .iter()
-                        .any(|segment| matches!(segment, U32Segment::Gather(_)))
+                    if stride != 0
+                        && plan
+                            .iter()
+                            .any(|segment| matches!(segment, U32Segment::Gather { .. }))
                     {
                         zeroes
                             .try_reserve_exact(scratch_size as usize)
@@ -487,7 +486,10 @@ impl IndexBinding {
                                     count: window.count,
                                 });
                             }
-                            U32Segment::Gather(sources) => {
+                            U32Segment::Gather { .. } if stride == 0 => {
+                                windows.push(PreparedU32Segment::Constant);
+                            }
+                            U32Segment::Gather { sources, .. } => {
                                 let desc = D3D11_BUFFER_DESC {
                                     ByteWidth: scratch_size,
                                     Usage: D3D11_USAGE_DEFAULT,
@@ -545,6 +547,16 @@ impl IndexBinding {
                                 Some(&Some(buffer.clone())),
                                 Some(&stride),
                                 Some(&0),
+                            );
+                            context.Draw(3, 0);
+                        }
+                        PreparedU32Segment::Constant => {
+                            context.IASetVertexBuffers(
+                                0,
+                                1,
+                                Some(&Some(vertex.clone())),
+                                Some(&stride),
+                                Some(&vertex_offset),
                             );
                             context.Draw(3, 0);
                         }
@@ -690,6 +702,7 @@ enum U32Decision {
 #[derive(Debug)]
 struct U32Window {
     vertex_offset: u32,
+    minimum: u64,
     count: u32,
     data: Vec<u8>,
 }
@@ -697,7 +710,10 @@ struct U32Window {
 #[derive(Debug)]
 enum U32Segment {
     Window(U32Window),
-    Gather([D3D11_BOX; 3]),
+    Gather {
+        sources: [D3D11_BOX; 3],
+        indices: [u64; 3],
+    },
 }
 
 #[derive(Debug)]
@@ -711,6 +727,7 @@ enum PreparedU32Segment {
         buffer: ID3D11Buffer,
         sources: [D3D11_BOX; 3],
     },
+    Constant,
 }
 
 fn plan_u32_windows(
@@ -725,11 +742,10 @@ fn plan_u32_windows(
     let (_, stride, extent) = vertex_layout;
     if max_vertices == 0
         || !max_vertices.is_multiple_of(3)
-        || stride == 0
         || !stride.is_multiple_of(4)
         || extent == 0
         || !extent.is_multiple_of(4)
-        || extent > stride
+        || (stride != 0 && extent > stride)
     {
         return Err(Error::from_hresult(E_INVALIDARG));
     }
@@ -768,7 +784,10 @@ fn plan_u32_windows(
             windows
                 .try_reserve(1)
                 .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-            windows.push(U32Segment::Gather(sources));
+            windows.push(U32Segment::Gather {
+                sources,
+                indices: triangle,
+            });
             start += 3;
             continue;
         }
@@ -818,6 +837,7 @@ fn plan_u32_windows(
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         windows.push(U32Segment::Window(U32Window {
             vertex_offset: offset,
+            minimum,
             count: (end - start) as u32,
             data,
         }));
@@ -887,6 +907,56 @@ mod tests {
     }
 
     #[test]
+    fn zero_stride_index_windows_preserve_constant_source() {
+        let layout = (8, 0, 8);
+        assert!(multi_u32_index_in_bounds(u32::MAX, 0, [layout].into_iter()));
+        assert!(!multi_u32_index_in_bounds(0, -1, [layout].into_iter()));
+        assert!(!multi_u32_index_in_bounds(0, 0, [(7, 0, 8)].into_iter()));
+        let advancing = (65536 * 12, 12, 12);
+        assert!(multi_u32_index_in_bounds(
+            65535,
+            0,
+            [layout, advancing].into_iter()
+        ));
+        assert!(multi_u32_index_in_bounds(
+            65535,
+            0,
+            [advancing, layout].into_iter()
+        ));
+        assert!(!multi_u32_index_in_bounds(
+            65536,
+            0,
+            [layout, advancing].into_iter()
+        ));
+        assert_eq!(rebased_vertex_offset(65535, 8, layout), Some(8));
+        let window_indices = [65535u32, 65536, 65537];
+        let window = plan_u32_windows(|i| window_indices[i], 3, 0, 65534, 8, layout, 196605)
+            .unwrap()
+            .unwrap();
+        let U32Segment::Window(window) = &window[0] else {
+            panic!("expected window")
+        };
+        assert_eq!((window.minimum, window.vertex_offset), (65535, 8));
+        assert_eq!(window.data, [0, 0, 1, 0, 2, 0, 0, 0]);
+        let wide_indices = [0u32, 1, 65535];
+        let wide = plan_u32_windows(|i| wide_indices[i], 3, 0, 65534, 8, layout, 196605)
+            .unwrap()
+            .unwrap();
+        let U32Segment::Gather { sources, indices } = &wide[0] else {
+            panic!("expected gather")
+        };
+        assert_eq!(*indices, [0, 1, 65535]);
+        assert!(sources
+            .iter()
+            .all(|source| (source.left, source.right) == (8, 16)));
+        assert!(
+            plan_u32_windows(|i| wide_indices[i], 3, -1, 65534, 8, layout, 196605)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn u16_rewrites_only_when_native_indices_exceed_fl9_limits() {
         let layout = (70000 * 8, 8, 8);
         let plan = |indices: &[u16], base, offset, layout| {
@@ -926,7 +996,7 @@ mod tests {
         else {
             panic!("expected gathered u16")
         };
-        assert!(matches!(segments[0], U32Segment::Gather(_)));
+        assert!(matches!(segments[0], U32Segment::Gather { .. }));
         assert!(plan(&[65535, 0, 1], -1, 8, layout).unwrap().is_none());
         assert!(plan(&[0, 1, 2, 0, 1, 65535], 0, 8, (100 * 8, 8, 8))
             .unwrap()
@@ -981,7 +1051,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(matches!(mixed[0], U32Segment::Window(_)));
-        let U32Segment::Gather(boxes) = &mixed[1] else {
+        let U32Segment::Gather { sources: boxes, .. } = &mixed[1] else {
             panic!("expected gather")
         };
         assert_eq!(
@@ -1017,7 +1087,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        let U32Segment::Gather(boxes) = &short[0] else {
+        let U32Segment::Gather { sources: boxes, .. } = &short[0] else {
             panic!("expected gather")
         };
         assert_eq!(

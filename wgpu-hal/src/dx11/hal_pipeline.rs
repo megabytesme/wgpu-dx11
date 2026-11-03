@@ -1915,8 +1915,7 @@ impl RenderPipeline {
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
             || vertex_buffers.iter().flatten().any(|buffer| {
-                buffer.array_stride == 0
-                    || buffer.array_stride > 2048
+                buffer.array_stride > 2048
                     || buffer.array_stride % 4 != 0
                     || buffer.step_mode != wgt::VertexStepMode::Vertex
                     || buffer.attributes.is_empty()
@@ -2126,7 +2125,12 @@ impl RenderPipeline {
                 let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
                 let end = offset.checked_add(size).ok_or_else(invalid)?;
                 if offset % 4 != 0
-                    || u64::from(end) > layout.array_stride
+                    || u64::from(end)
+                        > if layout.array_stride == 0 {
+                            2048
+                        } else {
+                            layout.array_stride
+                        }
                     || attribute.shader_location >= 16
                     || locations & (1 << attribute.shader_location) != 0
                 {

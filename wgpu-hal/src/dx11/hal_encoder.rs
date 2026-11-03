@@ -3725,6 +3725,10 @@ mod triangle_strip_tests;
 mod multi_vertex_stream_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/zero_stride.rs"]
+mod zero_stride_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 

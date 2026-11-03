@@ -913,3 +913,20 @@ previously documented internal shader skips; HAL Clippy passed with ten
 existing warnings and ordinary core D3D11 enumeration remained empty. The
 private four-byte alignment remains; no SNORM texture or historical-device
 support is inferred.
+Checkpoint: `cca55a8f0`.
+
+Zero-stride vertex streams now retain a constant bound record for direct and
+strip draws and through indexed windows/gathers. The strict `zero_stride` filter
+passed one CPU and one RTX FL9_1 GPU test: five full-image executions cover
+mixed streams in slots 0/15, direct, strip, u16 and u32 window/gather paths,
+updates, transitions and an undersized binding rejection. The all-zero-stream
+triangle only establishes degenerate completion. The controlled core fixture
+first hit its synthetic vertex-stage buffer limit of one; after raising that
+test-only limit to two, it passed with 64 green pixels from constant UV data.
+The complete strict suite passed 224 cases, two filtered, with the prior three
+internal shader skips; HAL Clippy passed with ten existing warnings and core
+ordinary enumeration stayed empty. Independent review found no concrete memory
+or ordering defect. A negative effective indexed vertex with only zero-stride
+streams is conservatively discarded even though its constant addresses may be
+in bounds; its observable effect is unresolved beyond the current degenerate,
+side-effect-free triangle subset. Historical hardware remains unverified.

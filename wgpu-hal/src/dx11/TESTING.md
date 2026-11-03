@@ -50,6 +50,23 @@ Microsoft lists both IA formats as required at FL9_1, but historical devices
 have not been tested here. The private backend still requires four-byte
 attribute alignment and does not thereby support SNORM texture formats.
 
+With strict hardware mode enabled, run the zero-stride tests with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 zero_stride -- --nocapture --test-threads=1
+```
+
+The filter passed one CPU case and one physical RTX 3090 Ti case at requested
+and selected FL9_1. The GPU case checked five full-image executions with the
+constant stream first or last, covering direct and strip draws, Uint16 and
+Uint32 indexed windows and gather, a constant-resource update, and rejection of
+a 19-byte range where the attribute needs 20 bytes. An all-zero-stream triangle
+only established degenerate draw completion. The controlled core fixture used a
+synthetic per-stage buffer limit of two and checked 64 green pixels. The correct
+handling of a negative base-adjusted index when all streams have zero stride is
+still an open specification question; there is no visible proof from the current
+triangle-only shader subset. Historical FL9_1 drivers remain unverified.
+
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 
 ```powershell

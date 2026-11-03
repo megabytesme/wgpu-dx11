@@ -1,4 +1,4 @@
-use alloc::{borrow::Cow, boxed::Box, sync::Arc, vec::Vec};
+use alloc::{borrow::Cow, boxed::Box, sync::Arc, vec, vec::Vec};
 use core::{num::NonZeroU64, time::Duration};
 
 use crate::{device::HostMap, global::Global, resource::BufferMapOperation};
@@ -41,14 +41,14 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_texture_dimension_3d: 0,
         max_texture_array_layers: 1,
         max_bind_groups: 1,
-        max_bind_groups_plus_vertex_buffers: 2,
+        max_bind_groups_plus_vertex_buffers: 3,
         max_bindings_per_bind_group: 64,
         max_dynamic_uniform_buffers_per_pipeline_layout: 0,
         max_sampled_textures_per_shader_stage: 1,
         max_samplers_per_shader_stage: 1,
         max_uniform_buffers_per_shader_stage: 0,
         max_uniform_buffer_binding_size: 0,
-        max_vertex_buffers: 1,
+        max_vertex_buffers: 2,
         max_vertex_attributes: 2,
         max_vertex_buffer_array_stride: 20,
         max_inter_stage_shader_variables: 1,
@@ -56,7 +56,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_color_attachment_bytes_per_sample: 8,
         max_buffer_size: 512 << 10,
         max_non_sampler_bindings: 1,
-        max_buffers_and_acceleration_structures_per_shader_stage: 1,
+        max_buffers_and_acceleration_structures_per_shader_stage: 2,
         ..wgt::Limits::downlevel_webgl2_defaults()
     };
     assert!(unsafe {
@@ -324,10 +324,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(actual, expected.as_slice());
     std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
-    render_triangle(&global, device, queue, false, false, false);
-    render_triangle(&global, device, queue, true, false, false);
-    render_triangle(&global, device, queue, false, true, false);
-    render_triangle(&global, device, queue, false, false, true);
+    render_triangle(&global, device, queue, false, false, false, false);
+    render_triangle(&global, device, queue, true, false, false, false);
+    render_triangle(&global, device, queue, false, true, false, false);
+    render_triangle(&global, device, queue, false, false, true, false);
+    render_triangle(&global, device, queue, false, false, false, true);
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -360,6 +361,7 @@ fn render_triangle(
     overlapping: bool,
     noop_stencil: bool,
     snorm: bool,
+    zero_stride: bool,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let extent = wgt::Extent3d {
@@ -547,15 +549,36 @@ fn render_triangle(
             } else {
                 wgt::VertexFormat::Float32x2
             },
-            offset: if overlapping { 4 } else { 12 },
+            offset: if zero_stride {
+                0
+            } else if overlapping {
+                4
+            } else {
+                12
+            },
             shader_location: 1,
         },
     ];
-    let buffers = [Some(pipeline::VertexBufferLayout {
-        array_stride: 20,
-        step_mode: wgt::VertexStepMode::Vertex,
-        attributes: Cow::Borrowed(&attrs),
-    })];
+    let buffers = if zero_stride {
+        vec![
+            Some(pipeline::VertexBufferLayout {
+                array_stride: 20,
+                step_mode: wgt::VertexStepMode::Vertex,
+                attributes: Cow::Borrowed(&attrs[..1]),
+            }),
+            Some(pipeline::VertexBufferLayout {
+                array_stride: 0,
+                step_mode: wgt::VertexStepMode::Vertex,
+                attributes: Cow::Borrowed(&attrs[1..]),
+            }),
+        ]
+    } else {
+        vec![Some(pipeline::VertexBufferLayout {
+            array_stride: 20,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: Cow::Borrowed(&attrs),
+        })]
+    };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
     let stage = |entry: &'static str| pipeline::ProgrammableStageDescriptor {
         module: shader,
@@ -639,6 +662,27 @@ fn render_triangle(
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
+    let constant_vertices = if zero_stride {
+        let (buffer, error) = global.device_create_buffer(
+            device,
+            &wgt::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage: wgt::BufferUsages::VERTEX | wgt::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(error.is_none(), "zero-stride buffer: {error:?}");
+        let data: Vec<_> = [0.0f32, 0.75, 0.5, 0.0]
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
+        Some(buffer)
+    } else {
+        None
+    };
     let (readback, error) = global.device_create_buffer(
         device,
         &wgt::BufferDescriptor {
@@ -705,6 +749,11 @@ fn render_triangle(
     global
         .render_pass_set_vertex_buffer(&mut pass, 0, Some(vertices), 0, None)
         .unwrap();
+    if let Some(buffer) = constant_vertices {
+        global
+            .render_pass_set_vertex_buffer(&mut pass, 1, Some(buffer), 4, None)
+            .unwrap();
+    }
     global
         .render_pass_set_bind_group(&mut pass, 0, Some(group), &[])
         .unwrap();
@@ -775,7 +824,7 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if x < 4 {
+                if !zero_stride && x < 4 {
                     &[255, 0, 0, 255]
                 } else {
                     &[0, 255, 0, 255]
@@ -785,7 +834,7 @@ fn render_triangle(
         }
     }
     std::println!(
-        "PASS: core textured depth test (overlapping={overlapping}, noop_stencil={noop_stencil}, snorm={snorm}): 32 red left pixels, 32 green right pixels"
+        "PASS: core textured depth test (overlapping={overlapping}, noop_stencil={noop_stencil}, snorm={snorm}, zero_stride={zero_stride}): 64 pixels matched"
     );
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);
@@ -803,5 +852,8 @@ fn render_triangle(
     global.texture_view_drop(view);
     global.texture_drop(target);
     global.buffer_drop(vertices);
+    if let Some(buffer) = constant_vertices {
+        global.buffer_drop(buffer);
+    }
     global.buffer_drop(readback);
 }

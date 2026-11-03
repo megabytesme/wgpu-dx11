@@ -47,6 +47,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - The private vertex-input subset includes `Snorm16x2` and `Snorm16x4`, with
   driver-checked input-assembler support and four-byte attribute alignment.
   This does not add signed-normalized texture formats.
+- Zero-stride vertex streams repeat a constant attribute element in direct,
+  nonindexed strip and indexed triangle-list paths, including mixed streams and
+  window or gather translation. A bound range must contain the full attribute
+  extent. Historical FL9_1 devices and the negative-effective-index semantics
+  when every stream has zero stride remain unverified.
 - FL9_1 rejects alpha, inversion and vignette blending when both RGB and alpha
   are written because separate alpha is not guaranteed. RGB-only and alpha-only
   cases use coupled factors; a test-only opt-in retains nonportable diagnostics.
