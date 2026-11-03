@@ -292,15 +292,35 @@ fn blend_target_desc(
     if enabled
         && !matches!(
             blend,
-            Some(wgt::BlendState::ALPHA_BLENDING | INVERT_BLEND | ADDITIVE_BLEND | VIGNETTE_BLEND)
+            Some(
+                wgt::BlendState::ALPHA_BLENDING
+                    | wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING
+                    | INVERT_BLEND
+                    | ADDITIVE_BLEND
+                    | VIGNETTE_BLEND
+            )
         )
     {
         return None;
     }
-    if enabled && rgb && alpha && !separate_alpha && blend != Some(ADDITIVE_BLEND) {
+    if enabled
+        && rgb
+        && alpha
+        && !separate_alpha
+        && blend != Some(ADDITIVE_BLEND)
+        && blend != Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING)
+    {
         return None;
     }
-    let (mut src, mut dst, mut src_alpha, mut dst_alpha) = match blend.filter(|_| enabled) {
+    let (mut src, mut dst, mut src_alpha, mut dst_alpha) = match blend
+        .filter(|value| enabled || *value == wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING)
+    {
+        Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING) => (
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_INV_SRC_ALPHA,
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_INV_SRC_ALPHA,
+        ),
         Some(wgt::BlendState::ALPHA_BLENDING) => (
             D3D11_BLEND_SRC_ALPHA,
             D3D11_BLEND_INV_SRC_ALPHA,
@@ -572,6 +592,39 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn premultiplied_alpha_blend_uses_coupled_factors_for_every_mask() {
+        use super::*;
+        for bits in 0..16 {
+            let mask = wgt::ColorWrites::from_bits_retain(bits);
+            for separate_alpha in [false, true] {
+                let desc = blend_target_desc(
+                    Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    mask,
+                    separate_alpha,
+                )
+                .unwrap();
+                assert_eq!(desc.BlendEnable.as_bool(), bits != 0);
+                assert_eq!(desc.RenderTargetWriteMask, color_write_mask(mask).unwrap());
+                assert_eq!(desc.SrcBlend, D3D11_BLEND_ONE);
+                assert_eq!(desc.DestBlend, D3D11_BLEND_INV_SRC_ALPHA);
+                assert_eq!(desc.SrcBlendAlpha, D3D11_BLEND_ONE);
+                assert_eq!(desc.DestBlendAlpha, D3D11_BLEND_INV_SRC_ALPHA);
+                assert_eq!(desc.BlendOp, D3D11_BLEND_OP_ADD);
+                assert_eq!(desc.BlendOpAlpha, D3D11_BLEND_OP_ADD);
+            }
+        }
+        let mut other = wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING;
+        other.alpha.dst_factor = wgt::BlendFactor::One;
+        assert!(blend_target_desc(Some(other), wgt::ColorWrites::ALL, false).is_none());
+        assert!(blend_target_desc(
+            Some(wgt::BlendState::ALPHA_BLENDING),
+            wgt::ColorWrites::ALL,
+            false
+        )
+        .is_none());
     }
 
     #[test]
@@ -2084,6 +2137,7 @@ impl RenderPipeline {
             || target.is_some_and(|target| {
                 target.blend.is_some_and(|blend| {
                     blend != wgt::BlendState::ALPHA_BLENDING
+                        && blend != wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING
                         && blend != wgt::BlendState::REPLACE
                         && blend != INVERT_BLEND
                         && blend != ADDITIVE_BLEND

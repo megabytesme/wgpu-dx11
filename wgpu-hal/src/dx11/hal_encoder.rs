@@ -4062,6 +4062,10 @@ mod depth_never_tests;
 mod depth_bias_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/premultiplied_blend.rs"]
+mod premultiplied_blend_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/point_vertex.rs"]
 mod point_vertex_tests;
 

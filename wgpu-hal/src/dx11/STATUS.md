@@ -146,7 +146,7 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
   vertex- or instance-rate streams, winding and face
   culling, bounds-checked scissors, per-channel color write masks,
-  restricted replace/alpha/crosshair/additive/vignette blending, and splitting
+  restricted replace/straight-alpha/premultiplied-alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Runtime integer-based vector indexing is rejected in both
   shader modes; proven static literal indices remain supported. Stores through aggregates
   containing two-row matrices are conservatively rejected in both shader modes.
@@ -158,7 +158,15 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   window or gather translation. A bound range must contain the full attribute
   extent. Historical FL9_1 devices and the negative-effective-index semantics
   when every stream has zero stride remain unverified.
-- FL9_1 rejects alpha, inversion and vignette blending when both RGB and alpha
+- Exact premultiplied-alpha blending uses coupled `ONE` / `INV_SRC_ALPHA` add
+  factors for RGB and alpha, including all color-write masks. Strict FL9_1
+  tests checked six full images on linear RGBA8/BGRA8, including transitions;
+  the controlled core fixture checked 64 pixels with a one-unit rounding
+  tolerance. The unsafe fixture reports blendability only on a positive driver
+  format query and cannot represent the restricted blend-state subset.
+  sRGB formats and normal public adapter exposure remain unsupported. Historical
+  FL9_1 driver behavior remains unverified.
+- FL9_1 rejects straight alpha, inversion and vignette blending when both RGB and alpha
   are written because separate alpha is not guaranteed. RGB-only and alpha-only
   cases use coupled factors; a test-only opt-in retains nonportable diagnostics.
 - Nonindexed point-list draws support the restricted vertex- and instance-rate

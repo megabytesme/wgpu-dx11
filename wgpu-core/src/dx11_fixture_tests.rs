@@ -100,7 +100,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         return;
     }
     assert_eq!(
-        rgba_caps,
+        rgba_caps & !hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND,
         hal::TextureFormatCapabilities::COLOR_ATTACHMENT
             | hal::TextureFormatCapabilities::COPY_SRC
             | hal::TextureFormatCapabilities::COPY_DST
@@ -113,7 +113,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     if bgra_caps.is_empty() {
         std::println!("SKIP: BGRA8 fixture capabilities unavailable");
     } else {
-        assert_eq!(bgra_caps, rgba_caps);
+        assert_eq!(
+            bgra_caps & !hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND,
+            rgba_caps & !hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
+        );
     }
     let bgra_mips = if bgra_caps.is_empty() {
         false
@@ -381,6 +384,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Uniform20,
     ] {
         render_triangle(&global, device, queue, case);
+    }
+    if rgba_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND) {
+        render_triangle(&global, device, queue, VertexCase::PremultipliedBlend);
+    } else {
+        assert!(!required, "strict mode requires RGBA8 blend support");
+        std::println!("SKIP: RGBA8 blend support unavailable");
     }
     if rgba_mips {
         render_triangle(&global, device, queue, VertexCase::SampledMips);
@@ -1316,6 +1325,7 @@ fn copy_only_texture_view(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum VertexCase {
     Baseline,
+    PremultipliedBlend,
     NonFiltering,
     UnfilterableFloat,
     VertexVisibleBindings,
@@ -1352,6 +1362,7 @@ fn render_triangle(
     case: VertexCase,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
+    let premultiplied_blend = case == VertexCase::PremultipliedBlend;
     let non_filtering = matches!(
         case,
         VertexCase::NonFiltering | VertexCase::UnfilterableFloat
@@ -1578,6 +1589,8 @@ fn render_triangle(
                     &[
                         255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
                     ]
+                } else if premultiplied_blend {
+                    &[128, 0, 0, 128, 0, 128, 0, 128]
                 } else {
                     &[255, 0, 0, 255, 0, 255, 0, 255]
                 },
@@ -1981,11 +1994,14 @@ fn render_triangle(
             attributes: Cow::Borrowed(&attrs),
         })]
     };
-    let targets = [Some(
+    let mut targets: [Option<wgt::ColorTargetState>; 1] = [Some(
         disjoint_format
             .unwrap_or(wgt::TextureFormat::Rgba8Unorm)
             .into(),
     )];
+    if premultiplied_blend {
+        targets[0].as_mut().unwrap().blend = Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+    }
     let stage = |entry: &'static str| pipeline::ProgrammableStageDescriptor {
         module: shader,
         entry_point: Some(Cow::Borrowed(entry)),
@@ -2272,7 +2288,16 @@ fn render_triangle(
         view,
         depth_slice: None,
         resolve_target: None,
-        load_op: wgt::LoadOp::Clear(wgt::Color::BLUE),
+        load_op: wgt::LoadOp::Clear(if premultiplied_blend {
+            wgt::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.5,
+                a: 0.5,
+            }
+        } else {
+            wgt::Color::BLUE
+        }),
         store_op: wgt::StoreOp::Store,
     })];
     let (mut pass, error) = global.command_encoder_begin_render_pass(
@@ -2424,6 +2449,21 @@ fn render_triangle(
     for y in 0..8 {
         for x in 0..8 {
             let offset = y * 256 + x * 4;
+            if premultiplied_blend {
+                let expected = if x < 4 {
+                    [128u8, 0, 64, 192]
+                } else {
+                    [0u8, 128, 64, 192]
+                };
+                for (actual, expected) in pixels[offset..offset + 4].iter().zip(expected) {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "pixel ({x}, {y}): {:?}",
+                        &pixels[offset..offset + 4]
+                    );
+                }
+                continue;
+            }
             assert_eq!(
                 &pixels[offset..offset + 4],
                 if point_input {

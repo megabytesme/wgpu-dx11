@@ -1431,3 +1431,23 @@ The full private suite passed 284 tests, two filtered; six dynamic-index GPU
 cases remain skipped. Clippy passed with ten existing test warnings and core's
 zero-adapter isolation test passed. Independent review found no concrete
 visibility, slot or shader-guard defect. No vertex sampling is advertised.
+Checkpoint: `4f3f608c229fd6e5b7bc309db5ac975bfd790c7e`.
+
+Exact premultiplied-alpha blending now uses coupled ONE/INV_SRC_ALPHA add
+factors for color and alpha on supported linear RGBA8 and BGRA8 targets. The
+strict baseline rejected the pipeline before implementation. Six strict FL9_1
+RTX full-image cases passed, including opaque transitions; a controlled core
+render matched 64 pixels with one-byte rounding tolerance. Its first attempt
+found the unsafe fixture did not expose queried blendability; the fixture now
+reports it only on a positive format query and explicitly remains restricted.
+An observed core pixel was [128, 0, 63, 191]. A later full-suite run found
+three stale tests expecting this blend to be rejected; they now check an
+unsupported neighboring blend state. The full private suite passed 286 tests,
+two filtered; six dynamic-index GPU cases remain skipped. The focused test
+passed again after adding its missing format prerequisite. The fixture's
+synthetic query test, core zero-adapter test, and Clippy passed; Clippy retained
+ten existing test warnings. The initial test launch hit Windows paging-file
+exhaustion before PowerShell started; retrying with two Cargo jobs succeeded.
+Independent review found no concrete factor or capability isolation defect.
+Full-channel straight-alpha and general separate-alpha remain unsupported;
+historical FL9 execution and sRGB blending are unverified.

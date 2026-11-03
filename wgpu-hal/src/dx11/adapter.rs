@@ -3,6 +3,13 @@
 #[cfg(feature = "dx11-test-fixture")]
 use alloc::sync::Arc;
 
+#[cfg(feature = "dx11-test-fixture")]
+fn fixture_format_blendable(query: super::capabilities::Query<u32>) -> bool {
+    use super::capabilities::Query;
+    use windows::Win32::Graphics::Direct3D11::D3D11_FORMAT_SUPPORT_BLENDABLE;
+    matches!(query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
+}
+
 #[derive(Debug)]
 enum AdapterInner {
     #[cfg(feature = "dx11-test-fixture")]
@@ -56,6 +63,8 @@ impl Adapter {
     /// `native` must be a hardware device created for `instance`, and the
     /// caller must limit every operation to the private HAL's supported subset.
     /// This fixture does not establish a general wgpu adapter contract.
+    /// Its format blend flag cannot express the backend's restricted blend states;
+    /// callers must separately limit pipelines to implemented blend configurations.
     pub unsafe fn new_test_fixture(
         _instance: &super::Instance,
         native: Arc<super::NativeDevice>,
@@ -138,11 +147,20 @@ impl crate::Adapter for Adapter {
                     )
                     .is_ok();
                 if supported {
-                    crate::TextureFormatCapabilities::COLOR_ATTACHMENT
+                    let mut result = crate::TextureFormatCapabilities::COLOR_ATTACHMENT
                         | crate::TextureFormatCapabilities::COPY_SRC
                         | crate::TextureFormatCapabilities::COPY_DST
                         | crate::TextureFormatCapabilities::SAMPLED
-                        | crate::TextureFormatCapabilities::SAMPLED_LINEAR
+                        | crate::TextureFormatCapabilities::SAMPLED_LINEAR;
+                    let blendable = match format {
+                        wgt::TextureFormat::Rgba8Unorm => caps.driver.rgba8,
+                        wgt::TextureFormat::Bgra8Unorm => caps.driver.bgra8,
+                        _ => return crate::TextureFormatCapabilities::empty(),
+                    };
+                    if fixture_format_blendable(blendable) {
+                        result |= crate::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND;
+                    }
+                    result
                 } else {
                     crate::TextureFormatCapabilities::empty()
                 }
@@ -163,5 +181,21 @@ impl crate::Adapter for Adapter {
     }
     fn get_ordered_texture_usages(&self) -> wgt::TextureUses {
         wgt::TextureUses::empty()
+    }
+}
+
+#[cfg(all(test, feature = "dx11-test-fixture"))]
+mod tests {
+    use super::super::capabilities::Query;
+    use super::fixture_format_blendable;
+    use windows::Win32::Graphics::Direct3D11::D3D11_FORMAT_SUPPORT_BLENDABLE;
+
+    #[test]
+    fn fixture_blendability_requires_positive_format_query() {
+        let flag = D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32;
+        assert!(fixture_format_blendable(Query::Value(flag)));
+        assert!(fixture_format_blendable(Query::Value(u32::MAX)));
+        assert!(!fixture_format_blendable(Query::Value(0)));
+        assert!(!fixture_format_blendable(Query::Unavailable(-1)));
     }
 }

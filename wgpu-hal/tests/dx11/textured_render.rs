@@ -921,7 +921,9 @@ fn sampled_triangle_variant(
     });
     if alpha {
         let mut unsupported: wgt::ColorTargetState = wgt::TextureFormat::Rgba8Unorm.into();
-        unsupported.blend = Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+        let mut unsupported_blend = wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING;
+        unsupported_blend.alpha.dst_factor = wgt::BlendFactor::One;
+        unsupported.blend = Some(unsupported_blend);
         let targets = [Some(unsupported)];
         let unsupported_desc = crate::RenderPipelineDescriptor {
             color_targets: &targets,

@@ -251,6 +251,16 @@ nonindexed point pipelines, including a single interior point and transitions
 between point and triangle pipelines. CPU tests verify point batching at the
 65,535-primitive boundary. Indexed point emulation is covered separately above.
 It also checks masked alpha, inversion and vignette blends against readback.
+`fl91_premultiplied_blend_full_channels_and_transition` checked six complete
+images at forced FL9_1: premultiplied blending and two opaque transitions for
+each of linear RGBA8 and BGRA8. The exact supported premultiplied state uses
+coupled `ONE` / `INV_SRC_ALPHA` add factors for both color and alpha, across all
+write masks. A controlled core fixture checked 64 premultiplied-blend pixels
+with a one-unit per-channel rounding tolerance; an observed left pixel was
+`[128, 0, 63, 191]`. Its unsafe adapter fixture reports blendability only after
+a positive driver format query, and cannot express the backend's restricted
+blend-state subset. These tests do not establish behavior on historical FL9_1
+drivers, enable sRGB formats or enable normal public adapter enumeration.
 FL9_1 does not guarantee separate alpha blending: the production path rejects
 those modes with both RGB and alpha writes. Some older full-channel blend tests
 explicitly opt into a test-only RTX diagnostic and do not establish portability;
