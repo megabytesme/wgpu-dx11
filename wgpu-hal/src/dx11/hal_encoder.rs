@@ -775,7 +775,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         if !Arc::ptr_eq(&pipeline.owner, &self.device)
-            || Some(pipeline.target_format) != render.format
+            || pipeline.target_format != render.format
             || pipeline.depth_format != render.depth_format
         {
             self.reject();

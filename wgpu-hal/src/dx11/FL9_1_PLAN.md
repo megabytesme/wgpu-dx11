@@ -25,7 +25,8 @@ below is met. This plan does not claim WebGPU conformance.
    coverage. Audit mapping/device-loss panics. Empty compute
    passes and unused blend constants are handled; compute dispatch remains
    unavailable. The downlevel combined-index usage rule has been corrected.
-   Handle depth-only initialization passes and read-only depth hazards.
+   Depth-only clears and restricted draws work privately; handle read-only
+   depth hazards and audit the remaining general render-pass combinations.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

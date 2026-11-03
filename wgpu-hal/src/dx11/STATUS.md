@@ -20,8 +20,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   clamp/repeat/mirror samplers with anisotropy
   up to 2. On 9_1/9_2, translated finite maximum LODs require single-mip views.
 - A restricted D24S8 attachment path provides zero initialization, independent
-  depth/stencil clears, depth-only clear passes and Always/LessEqual depth tests
-  with optional writes. Stencil tests, read-only/aspect views and copies remain
+  depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
+  optional writes. Stencil tests, read-only/aspect views and copies remain
   unsupported. Textured depth ordering is verified through GPU readback.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws

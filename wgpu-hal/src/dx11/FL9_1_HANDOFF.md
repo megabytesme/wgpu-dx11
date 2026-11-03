@@ -9,6 +9,8 @@ presentation and surface lifetime/concurrency still require verification.
 A private D24S8 attachment path is implemented and its textured
 depth/readback test has passed on forced FL9_1; stencil tests, read-only passes,
 aspect-specific views and general render-pass operations remain incomplete.
+Depth-only drawing without a fragment stage also passed a private GPU prepass
+test; its trivial pixel-shader fallback has not been tested on historical GPUs.
 See FL9_1_PLAN.md for completion gates,
 FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
 current implementation and validation matrix.

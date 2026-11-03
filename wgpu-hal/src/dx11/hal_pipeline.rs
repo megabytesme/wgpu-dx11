@@ -61,6 +61,14 @@ fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::De
     }
 }
 
+fn depth_only_shader_error(error: super::shader::ShaderCompileError) -> crate::PipelineError {
+    if error.code == windows::Win32::Foundation::E_OUTOFMEMORY.0 {
+        crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
+    } else {
+        crate::PipelineError::Linkage(wgt::ShaderStages::FRAGMENT, error.message)
+    }
+}
+
 pub(super) const INVERT_BLEND: wgt::BlendState = wgt::BlendState {
     color: wgt::BlendComponent {
         src_factor: wgt::BlendFactor::OneMinusDst,
@@ -122,7 +130,7 @@ pub struct RenderPipeline {
     pub(super) blend: Option<ID3D11BlendState>,
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
     pub(super) depth_format: Option<wgt::TextureFormat>,
-    pub(super) target_format: wgt::TextureFormat,
+    pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) full_npot: super::capabilities::Query<bool>,
@@ -180,6 +188,18 @@ mod tests {
             viewport_shader_fatal_error(&windows::core::Error::from_hresult(E_FAIL)),
             Some(crate::DeviceError::Unexpected)
         );
+    }
+
+    #[test]
+    fn depth_only_shader_error_preserves_out_of_memory() {
+        let error = super::super::shader::ShaderCompileError {
+            code: windows::Win32::Foundation::E_OUTOFMEMORY.0,
+            message: "out of memory".into(),
+        };
+        assert!(matches!(
+            depth_only_shader_error(error),
+            crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
+        ));
     }
     use crate::Device as _;
     use alloc::borrow::Cow;
@@ -285,7 +305,7 @@ mod tests {
         desc.multisample.count = 4;
         assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
         assert!(Arc::ptr_eq(&pipeline.owner, &native));
-        assert_eq!(pipeline.target_format, wgt::TextureFormat::Rgba8Unorm);
+        assert_eq!(pipeline.target_format, Some(wgt::TextureFormat::Rgba8Unorm));
         let target = native.create_rgba_render_target(8, 8)?;
         let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
         let buffer = unsafe {
@@ -675,20 +695,25 @@ impl RenderPipeline {
         else {
             return Err(invalid());
         };
-        let Some(fragment) = &desc.fragment_stage else {
-            return Err(invalid());
-        };
+        let fragment = desc.fragment_stage.as_ref();
         let [Some(buffer)] = *vertex_buffers else {
             return Err(invalid());
         };
-        let [Some(target)] = desc.color_targets else {
-            return Err(invalid());
+        let target = match desc.color_targets {
+            [Some(target)] => Some(target),
+            [] | [None] => None,
+            _ => return Err(invalid()),
         };
+        if fragment.is_some() != target.is_some()
+            || (target.is_none() && desc.depth_stencil.is_none())
+        {
+            return Err(invalid());
+        }
         if !Arc::ptr_eq(owner, &desc.layout.owner)
             || !vertex_stage.module.belongs_to(owner)
-            || !fragment.module.belongs_to(owner)
+            || fragment.is_some_and(|stage| !stage.module.belongs_to(owner))
             || !vertex_stage.constants.is_empty()
-            || !fragment.constants.is_empty()
+            || fragment.is_some_and(|stage| !stage.constants.is_empty())
             || (wgt::PrimitiveState {
                 front_face: wgt::FrontFace::default(),
                 cull_mode: None,
@@ -703,18 +728,22 @@ impl RenderPipeline {
             || buffer.step_mode != wgt::VertexStepMode::Vertex
             || buffer.attributes.is_empty()
             || buffer.attributes.len() > 16
-            || !matches!(
-                target.format,
-                wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
-            )
-            || target.blend.is_some_and(|blend| {
-                blend != wgt::BlendState::ALPHA_BLENDING
-                    && blend != wgt::BlendState::REPLACE
-                    && blend != INVERT_BLEND
-                    && blend != ADDITIVE_BLEND
-                    && blend != VIGNETTE_BLEND
+            || target.is_some_and(|target| {
+                !matches!(
+                    target.format,
+                    wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                )
             })
-            || color_write_mask(target.write_mask).is_none()
+            || target.is_some_and(|target| {
+                target.blend.is_some_and(|blend| {
+                    blend != wgt::BlendState::ALPHA_BLENDING
+                        && blend != wgt::BlendState::REPLACE
+                        && blend != INVERT_BLEND
+                        && blend != ADDITIVE_BLEND
+                        && blend != VIGNETTE_BLEND
+                })
+            })
+            || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
         {
             return Err(invalid());
         }
@@ -755,20 +784,20 @@ impl RenderPipeline {
             None
         };
         let mut required_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
-        for (stage, module, entry, visibility) in [
-            (
-                naga::ShaderStage::Vertex,
-                vertex_stage.module,
-                vertex_stage.entry_point,
-                wgt::ShaderStages::VERTEX,
-            ),
+        for (stage, module, entry, visibility) in core::iter::once((
+            naga::ShaderStage::Vertex,
+            vertex_stage.module,
+            vertex_stage.entry_point,
+            wgt::ShaderStages::VERTEX,
+        ))
+        .chain(fragment.map(|fragment| {
             (
                 naga::ShaderStage::Fragment,
                 fragment.module,
                 fragment.entry_point,
                 wgt::ShaderStages::FRAGMENT,
-            ),
-        ] {
+            )
+        })) {
             for (binding, size) in module.required_uniform_sizes(stage, entry)? {
                 let group_index = binding.group as usize;
                 let group = desc
@@ -815,11 +844,13 @@ impl RenderPipeline {
             vertex_stage.entry_point,
             &vertex_bindings,
         )?;
-        sampling_pairs.extend(fragment.module.sampling_relationships(
-            naga::ShaderStage::Fragment,
-            fragment.entry_point,
-            &fragment_bindings,
-        )?);
+        if let Some(fragment) = fragment {
+            sampling_pairs.extend(fragment.module.sampling_relationships(
+                naga::ShaderStage::Fragment,
+                fragment.entry_point,
+                &fragment_bindings,
+            )?);
+        }
         let full_npot = if sampling_pairs.is_empty() {
             super::capabilities::Query::Unavailable(0)
         } else {
@@ -846,11 +877,20 @@ impl RenderPipeline {
                 None
             }
         };
-        let pixel_code = fragment.module.compile_with_bindings(
-            naga::ShaderStage::Fragment,
-            fragment.entry_point,
-            &fragment_bindings,
-        )?;
+        let pixel_code = if let Some(fragment) = fragment {
+            fragment.module.compile_with_bindings(
+                naga::ShaderStage::Fragment,
+                fragment.entry_point,
+                &fragment_bindings,
+            )?
+        } else {
+            super::shader::compile_hlsl(
+                "float4 main() : SV_Target { return float4(0, 0, 0, 0); }",
+                "main",
+                super::shader::ShaderProfile::PixelLevel9_1,
+            )
+            .map_err(depth_only_shader_error)?
+        };
         let mut input_desc = alloc::vec::Vec::with_capacity(buffer.attributes.len());
         let mut vertex_extent = 0u32;
         let mut locations = 0u32;
@@ -948,55 +988,57 @@ impl RenderPipeline {
                     return Err(invalid());
                 }
             }
-            let blend_enabled = target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
-                || target.blend == Some(INVERT_BLEND)
-                || target.blend == Some(ADDITIVE_BLEND)
-                || target.blend == Some(VIGNETTE_BLEND);
-            if blend_enabled || target.write_mask != wgt::ColorWrites::ALL {
-                let mut desc = D3D11_BLEND_DESC::default();
-                desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
-                    BlendEnable: blend_enabled.into(),
-                    SrcBlend: if blend_enabled {
-                        D3D11_BLEND_SRC_ALPHA
-                    } else {
-                        D3D11_BLEND_ONE
-                    },
-                    DestBlend: if blend_enabled {
-                        D3D11_BLEND_INV_SRC_ALPHA
-                    } else {
-                        D3D11_BLEND_ZERO
-                    },
-                    BlendOp: D3D11_BLEND_OP_ADD,
-                    SrcBlendAlpha: D3D11_BLEND_ONE,
-                    DestBlendAlpha: if blend_enabled {
-                        D3D11_BLEND_INV_SRC_ALPHA
-                    } else {
-                        D3D11_BLEND_ZERO
-                    },
-                    BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                    RenderTargetWriteMask: color_write_mask(target.write_mask)
-                        .ok_or_else(invalid)?,
-                };
-                if target.blend == Some(INVERT_BLEND) {
-                    desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;
-                    desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
-                    desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-                } else if target.blend == Some(ADDITIVE_BLEND) {
-                    desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-                    desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
-                    desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
-                } else if target.blend == Some(VIGNETTE_BLEND) {
-                    desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
-                    desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
-                    desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
-                    desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
-                }
-                owner
-                    .raw_device()
-                    .CreateBlendState(&desc, Some(&mut blend))
-                    .map_err(failure)?;
-                if blend.is_none() {
-                    return Err(invalid());
+            if let Some(target) = target {
+                let blend_enabled = target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
+                    || target.blend == Some(INVERT_BLEND)
+                    || target.blend == Some(ADDITIVE_BLEND)
+                    || target.blend == Some(VIGNETTE_BLEND);
+                if blend_enabled || target.write_mask != wgt::ColorWrites::ALL {
+                    let mut desc = D3D11_BLEND_DESC::default();
+                    desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
+                        BlendEnable: blend_enabled.into(),
+                        SrcBlend: if blend_enabled {
+                            D3D11_BLEND_SRC_ALPHA
+                        } else {
+                            D3D11_BLEND_ONE
+                        },
+                        DestBlend: if blend_enabled {
+                            D3D11_BLEND_INV_SRC_ALPHA
+                        } else {
+                            D3D11_BLEND_ZERO
+                        },
+                        BlendOp: D3D11_BLEND_OP_ADD,
+                        SrcBlendAlpha: D3D11_BLEND_ONE,
+                        DestBlendAlpha: if blend_enabled {
+                            D3D11_BLEND_INV_SRC_ALPHA
+                        } else {
+                            D3D11_BLEND_ZERO
+                        },
+                        BlendOpAlpha: D3D11_BLEND_OP_ADD,
+                        RenderTargetWriteMask: color_write_mask(target.write_mask)
+                            .ok_or_else(invalid)?,
+                    };
+                    if target.blend == Some(INVERT_BLEND) {
+                        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;
+                        desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
+                        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+                    } else if target.blend == Some(ADDITIVE_BLEND) {
+                        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+                        desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+                        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+                    } else if target.blend == Some(VIGNETTE_BLEND) {
+                        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
+                        desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
+                        desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+                        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+                    }
+                    owner
+                        .raw_device()
+                        .CreateBlendState(&desc, Some(&mut blend))
+                        .map_err(failure)?;
+                    if blend.is_none() {
+                        return Err(invalid());
+                    }
                 }
             }
         }
@@ -1010,7 +1052,7 @@ impl RenderPipeline {
             blend,
             depth_state,
             depth_format: desc.depth_stencil.as_ref().map(|state| state.format),
-            target_format: target.format,
+            target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),
             full_npot,

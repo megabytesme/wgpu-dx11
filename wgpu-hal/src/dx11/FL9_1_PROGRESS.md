@@ -472,3 +472,16 @@ FL9_1 compiler with X4555. An unrelated selected entry and the shader-model-5
 control compile. A separate installed FXC executable produced the same
 diagnostic. Future translation must explicitly preserve or reject this semantic
 rather than relying on a compiler's current behavior.
+
+The private pipeline now accepts a depth-only pass with no fragment stage,
+using a trivial pixel shader with no render target. The installed FXC rejects
+an entirely outputless pixel shader. The strict FL9_1 GPU test wrote depth on
+the left half, then read back 32 black occluded and 32 green visible pixels
+from a later color pass. The first run revealed that the new pass disturbed an
+existing test's baseline; restoring the prior color and 0.75 depth baseline
+made that test pass. An independent review found no state or lifetime issue and
+prompted correct out-of-memory classification for the fallback compiler. Its
+synthetic error test passed. The full private suite passed 170 tests before
+that small error-path adjustment; the focused GPU and synthetic tests passed
+afterward. Fixture rendering and targeted HAL Clippy passed. Historical FL9_1
+driver behavior and fragment shaders without color targets remain unverified.

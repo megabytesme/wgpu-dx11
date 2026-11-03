@@ -318,7 +318,38 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         Some(super::super::hal_pipeline::ADDITIVE_BLEND),
     )
     .unwrap();
-    let pipeline = make_pipeline(depth, wgt::ColorWrites::ALL, None).unwrap();
+    let pipeline = make_pipeline(depth.clone(), wgt::ColorWrites::ALL, None).unwrap();
+    let depth_only_layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let mut depth_only_desc = crate::RenderPipelineDescriptor {
+        label: None,
+        layout: &depth_only_layout,
+        vertex_processor: crate::VertexProcessor::Standard {
+            vertex_buffers: &vertex_layout,
+            vertex_stage: stage("vs"),
+        },
+        primitive: wgt::PrimitiveState::default(),
+        depth_stencil: Some(depth.clone()),
+        multisample: wgt::MultisampleState::default(),
+        fragment_stage: None,
+        color_targets: &[],
+        multiview_mask: None,
+        cache: None,
+    };
+    let depth_only_pipeline = unsafe { device.create_render_pipeline(&depth_only_desc).unwrap() };
+    depth_only_desc.depth_stencil = None;
+    assert!(unsafe { device.create_render_pipeline(&depth_only_desc) }.is_err());
+    depth_only_desc.depth_stencil = Some(depth);
+    depth_only_desc.fragment_stage = Some(stage("fs"));
+    assert!(unsafe { device.create_render_pipeline(&depth_only_desc) }.is_err());
     let tinted_pipeline = unsafe {
         device
             .create_render_pipeline(&crate::RenderPipelineDescriptor {
@@ -865,6 +896,11 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         encoder.begin_encoding(None).unwrap();
         encoder.begin_render_pass(&valid_depth).unwrap();
+        encoder.set_render_pipeline(&depth_only_pipeline);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&valid_depth).unwrap();
         encoder.set_render_pipeline(&cross_pipeline);
         encoder.set_bind_group(&cross_layout, 0, &wrap_group, &[]);
         encoder.set_bind_group(&cross_layout, 1, &tint_group, &[]);
@@ -876,6 +912,15 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         encoder.begin_encoding(None).unwrap();
         encoder.begin_render_pass(&valid_depth).unwrap();
         encoder.set_bind_group(&cross_layout, 3, &late_group, &[]);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        let depth_only_pass = crate::RenderPassDescriptor {
+            color_attachments: &[],
+            ..valid_depth
+        };
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&depth_only_pass).unwrap();
+        encoder.set_render_pipeline(&pipeline);
         encoder.end_render_pass();
         assert!(encoder.end_encoding().is_err());
         device.destroy_bind_group(alias_group);
@@ -993,8 +1038,52 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                 encoder.begin_render_pass(&discarded_depth).unwrap();
                 encoder.end_render_pass();
             }
+            if pass_index == 6 {
+                let restore_color = [Some(crate::ColorAttachment {
+                    target: crate::Attachment {
+                        view: &color_view,
+                        usage: wgt::TextureUses::COLOR_TARGET,
+                    },
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                    clear_value: wgt::Color {
+                        r: 0.0,
+                        g: 192.0 / 255.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                })];
+                let restore = crate::RenderPassDescriptor {
+                    color_attachments: &restore_color,
+                    depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                        target: crate::Attachment {
+                            view: &depth_view,
+                            usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                        },
+                        depth_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                        stencil_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+                        clear_value: (0.75, 0),
+                    }),
+                    timestamp_writes: None,
+                    ..pass
+                };
+                encoder.begin_render_pass(&restore).unwrap();
+                encoder.end_render_pass();
+            }
             encoder.begin_render_pass(&pass).unwrap();
             encoder.set_blend_constants(&[0.2, 0.3, 0.4, 0.5]);
+            if pass_index == 4 {
+                encoder.set_render_pipeline(&depth_only_pipeline);
+                encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                encoder.set_scissor_rect(&crate::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                });
+                encoder.draw(0, 3, 0, 1);
+            }
             if pass_index != 4 && pass_index != 6 {
                 encoder.set_render_pipeline(if pass_index == 8 {
                     &no_write_pipeline
@@ -1288,6 +1377,18 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                 assert_eq!(pixel, expected, "viewport depth pass pixel {i}");
             }
             std::println!("FL9_1 viewport depth pass: 32 red and 32 black pixels");
+            continue;
+        }
+        if index == 5 {
+            for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+                let expected = if i % 8 < 4 {
+                    [0, 0, 0, 255]
+                } else {
+                    [0, 192, 0, 255]
+                };
+                assert_eq!(pixel, expected, "depth-only prepass pixel {i}");
+            }
+            std::println!("FL9_1 depth-only prepass: 32 occluded and 32 green pixels");
             continue;
         }
         let expected = match index {
