@@ -19,9 +19,10 @@ use windows::{
                 D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
-                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
-                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM,
+                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -191,17 +192,63 @@ pub(crate) struct TextureWrite {
     pub(crate) row_pitch: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct TextureBlockLayout {
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) bytes: u32,
+}
+
+impl TextureBlockLayout {
+    pub(super) fn width_blocks(self, width: u32) -> u32 {
+        width.div_ceil(self.width)
+    }
+
+    pub(super) fn height_blocks(self, height: u32) -> u32 {
+        height.div_ceil(self.height)
+    }
+
+    pub(super) fn row_bytes(self, width: u32) -> Result<u32> {
+        self.width_blocks(width)
+            .checked_mul(self.bytes)
+            .ok_or_else(invalid)
+    }
+
+    pub(super) fn byte_len(self, width: u32, height: u32) -> Result<usize> {
+        (self.row_bytes(width)? as usize)
+            .checked_mul(self.height_blocks(height) as usize)
+            .ok_or_else(invalid)
+    }
+}
+
 fn invalid() -> Error {
     Error::from_hresult(E_INVALIDARG)
 }
 
-fn texel_bytes(format: DXGI_FORMAT) -> Result<u32> {
+pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLayout> {
     match format {
-        DXGI_FORMAT_R8_UNORM => Ok(1),
-        DXGI_FORMAT_R8G8_SNORM => Ok(2),
+        DXGI_FORMAT_R8_UNORM => Ok(TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes: 1,
+        }),
+        DXGI_FORMAT_R8G8_SNORM => Ok(TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes: 2,
+        }),
         DXGI_FORMAT_R8G8B8A8_SNORM | DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM => {
-            Ok(4)
+            Ok(TextureBlockLayout {
+                width: 1,
+                height: 1,
+                bytes: 4,
+            })
         }
+        DXGI_FORMAT_BC1_UNORM => Ok(TextureBlockLayout {
+            width: 4,
+            height: 4,
+            bytes: 8,
+        }),
         _ => Err(invalid()),
     }
 }
@@ -218,11 +265,8 @@ fn subresource_layout(
     let height = (texture.height >> mip).max(1);
     let mut desc = D3D11_TEXTURE2D_DESC::default();
     unsafe { texture.raw.GetDesc(&mut desc) };
-    let texel_bytes = texel_bytes(desc.Format)?;
-    let row_bytes = width.checked_mul(texel_bytes).ok_or_else(invalid)?;
-    let bytes = (row_bytes as usize)
-        .checked_mul(height as usize)
-        .ok_or_else(invalid)?;
+    let layout = format_block_layout(desc.Format)?;
+    let bytes = layout.byte_len(width, height)?;
     let index = layer
         .checked_mul(texture.mip_levels)
         .and_then(|v| v.checked_add(mip))
@@ -343,6 +387,7 @@ impl NativeDevice {
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
+                    | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
             )
@@ -375,6 +420,7 @@ impl NativeDevice {
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
+                    | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
             )
@@ -398,7 +444,10 @@ impl NativeDevice {
         }
         let filterable = if matches!(
             desc.Format,
-            DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+            DXGI_FORMAT_R8_UNORM
+                | DXGI_FORMAT_R8G8_SNORM
+                | DXGI_FORMAT_R8G8B8A8_SNORM
+                | DXGI_FORMAT_BC1_UNORM
         ) {
             unsafe { self.raw_device().CheckFormatSupport(desc.Format) }
                 .is_ok_and(|support| support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0)
@@ -520,6 +569,25 @@ impl NativeDevice {
         render_target: bool,
         format: DXGI_FORMAT,
     ) -> Result<NativeTexture> {
+        let rgba_bgra = matches!(
+            format,
+            DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+        );
+        let uncompressed_sampled = matches!(
+            format,
+            DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+        ) && !render_target
+            && layers == 1
+            && mip_levels == 1;
+        let bc1_sampled = format == DXGI_FORMAT_BC1_UNORM
+            && !render_target
+            && layers == 1
+            && mip_levels == 1
+            && width >= 4
+            && height >= 4
+            && width.is_multiple_of(4)
+            && height.is_multiple_of(4);
+
         if width == 0
             || height == 0
             || width > 16384
@@ -528,15 +596,7 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !(matches!(
-                format,
-                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
-            ) || (matches!(
-                format,
-                DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
-            ) && !render_target
-                && layers == 1
-                && mip_levels == 1))
+            || !(rgba_bgra || uncompressed_sampled || bc1_sampled)
         {
             return Err(invalid());
         }
@@ -573,7 +633,10 @@ impl NativeDevice {
             layers,
             usage: if matches!(
                 format,
-                DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+                DXGI_FORMAT_R8_UNORM
+                    | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R8G8B8A8_SNORM
+                    | DXGI_FORMAT_BC1_UNORM
             ) {
                 wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {
@@ -799,7 +862,13 @@ impl NativeDevice {
         layer: u32,
         bytes: &[u8],
     ) -> Result<()> {
-        if texel_bytes(self.texture_desc(texture)?.Format)? != 4 {
+        if format_block_layout(self.texture_desc(texture)?.Format)?
+            != (TextureBlockLayout {
+                width: 1,
+                height: 1,
+                bytes: 4,
+            })
+        {
             return Err(invalid());
         }
         let (width, height, _, _) = subresource_layout(texture, mip, layer)?;
@@ -830,8 +899,8 @@ impl NativeDevice {
         if bytes.len() != expected {
             return Err(invalid());
         }
-        let bytes_per_pixel = texel_bytes(self.texture_desc(texture)?.Format)?;
-        let row_pitch = width.checked_mul(bytes_per_pixel).ok_or_else(invalid)?;
+        let block = format_block_layout(self.texture_desc(texture)?.Format)?;
+        let row_pitch = block.row_bytes(width)?;
         self.write_texture_region(
             texture,
             TextureWrite {
@@ -852,7 +921,13 @@ impl NativeDevice {
         write: TextureWrite,
         bytes: &[u8],
     ) -> Result<()> {
-        if texel_bytes(self.texture_desc(texture)?.Format)? != 4 {
+        if format_block_layout(self.texture_desc(texture)?.Format)?
+            != (TextureBlockLayout {
+                width: 1,
+                height: 1,
+                bytes: 4,
+            })
+        {
             return Err(invalid());
         }
         self.write_texture_region(texture, write, bytes)
@@ -882,13 +957,21 @@ impl NativeDevice {
         if extent.contains(&0) {
             return Ok(());
         }
-        let bytes_per_pixel = texel_bytes(self.texture_desc(texture)?.Format)?;
-        let row_bytes = extent[0].checked_mul(bytes_per_pixel).ok_or_else(invalid)?;
-        if row_pitch < row_bytes {
+        let block = format_block_layout(self.texture_desc(texture)?.Format)?;
+        if !origin[0].is_multiple_of(block.width)
+            || !origin[1].is_multiple_of(block.height)
+            || !extent[0].is_multiple_of(block.width)
+            || !extent[1].is_multiple_of(block.height)
+        {
+            return Err(invalid());
+        }
+        let row_bytes = block.row_bytes(extent[0])?;
+        let block_rows = block.height_blocks(extent[1]);
+        if row_pitch < row_bytes || !row_pitch.is_multiple_of(block.bytes) {
             return Err(invalid());
         }
         let required = (row_pitch as usize)
-            .checked_mul((extent[1] - 1) as usize)
+            .checked_mul((block_rows - 1) as usize)
             .and_then(|v| v.checked_add(row_bytes as usize))
             .ok_or_else(invalid)?;
         if bytes.len() < required {

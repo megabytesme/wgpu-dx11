@@ -1,5 +1,9 @@
 //! Checked, retained FL9 transfers between buffers and color textures.
-use super::{buffer::NativeBuffer, device::NativeDevice, texture::NativeTexture};
+use super::{
+    buffer::NativeBuffer,
+    device::NativeDevice,
+    texture::{format_block_layout, NativeTexture, TextureBlockLayout},
+};
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -23,31 +27,51 @@ fn copy_layout(
     layout: &wgt::TexelCopyBufferLayout,
     width: u32,
     height: u32,
-    bytes_per_texel: u32,
+    block: TextureBlockLayout,
 ) -> Result<(u32, u32, u32, u32)> {
     if width == 0
         || height == 0
-        || bytes_per_texel == 0
-        || !layout.offset.is_multiple_of(u64::from(bytes_per_texel))
+        || block.width == 0
+        || block.height == 0
+        || block.bytes == 0
+        || !layout.offset.is_multiple_of(u64::from(block.bytes))
     {
         return Err(invalid());
     }
-    let row_bytes = width.checked_mul(bytes_per_texel).ok_or_else(invalid)?;
+    let row_bytes = block
+        .width_blocks(width)
+        .checked_mul(block.bytes)
+        .ok_or_else(invalid)?;
+    let rows = block.height_blocks(height);
     let pitch = match layout.bytes_per_row {
-        Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(bytes_per_texel) => pitch,
-        None if height == 1 => row_bytes,
+        Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(block.bytes) => pitch,
+        None if rows == 1 => row_bytes,
         _ => return Err(invalid()),
     };
-    if layout.rows_per_image.is_some_and(|rows| rows < height) {
+    if layout
+        .rows_per_image
+        .is_some_and(|image_rows| image_rows < rows)
+    {
         return Err(invalid());
     }
-    let total = (height - 1)
+    let total = (rows - 1)
         .checked_mul(pitch)
         .and_then(|n| n.checked_add(row_bytes))
         .ok_or_else(invalid)?;
     let offset = u32::try_from(layout.offset).map_err(|_| invalid())?;
     offset.checked_add(total).ok_or_else(invalid)?;
     Ok((offset, pitch, row_bytes, total))
+}
+
+fn block_aligned_box(
+    base: &crate::TextureCopyBase,
+    size: &crate::CopyExtent,
+    block: TextureBlockLayout,
+) -> bool {
+    base.origin.x.is_multiple_of(block.width)
+        && base.origin.y.is_multiple_of(block.height)
+        && size.width.is_multiple_of(block.width)
+        && size.height.is_multiple_of(block.height)
 }
 
 fn texture_box(
@@ -180,7 +204,16 @@ impl NativeDevice {
         let (source, dimensions, source_subresource) =
             self.texture_copy_texture_source(texture, base.mip_level)?;
         let source_box = texture_box(base, size, dimensions)?;
-        let (offset, pitch, row_bytes, total) = copy_layout(layout, size.width, size.height, 4)?;
+        let (offset, pitch, row_bytes, total) = copy_layout(
+            layout,
+            size.width,
+            size.height,
+            TextureBlockLayout {
+                width: 1,
+                height: 1,
+                bytes: 4,
+            },
+        )?;
         let native_destination =
             self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_TEXTURE2D_DESC {
@@ -229,16 +262,12 @@ impl NativeDevice {
             self.texture_copy_destination(texture, base.mip_level)?;
         let destination_box = texture_box(base, size, dimensions)?;
         let format = self.texture_desc(texture)?.Format;
-        let bytes_per_texel = match format {
-            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM => 1,
-            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8_SNORM => 2,
-            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_SNORM
-            | windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM
-            | windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM => 4,
-            _ => return Err(invalid()),
-        };
+        let block = format_block_layout(format)?;
+        if !block_aligned_box(base, size, block) {
+            return Err(invalid());
+        }
         let (offset, pitch, _row_bytes, total) =
-            copy_layout(layout, size.width, size.height, bytes_per_texel)?;
+            copy_layout(layout, size.width, size.height, block)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
         let native_source = self.texture_copy_source(source, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_BUFFER_DESC {
@@ -359,6 +388,14 @@ mod tests {
     use crate::Device as _;
     use alloc::{sync::Arc, vec};
 
+    fn linear(bytes: u32) -> TextureBlockLayout {
+        TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes,
+        }
+    }
+
     #[test]
     fn transfer_layout_checks_offsets_rows_and_overflow() {
         let layout = wgt::TexelCopyBufferLayout {
@@ -366,35 +403,110 @@ mod tests {
             bytes_per_row: Some(24),
             rows_per_image: Some(3),
         };
-        assert_eq!(copy_layout(&layout, 4, 3, 4).unwrap(), (8, 24, 16, 64));
+        assert_eq!(
+            copy_layout(&layout, 4, 3, linear(4)).unwrap(),
+            (8, 24, 16, 64)
+        );
         let mut invalid = layout;
         invalid.offset = 3;
-        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
+        assert!(copy_layout(&invalid, 4, 3, linear(4)).is_err());
         invalid = layout;
         invalid.bytes_per_row = Some(12);
-        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
+        assert!(copy_layout(&invalid, 4, 3, linear(4)).is_err());
         invalid = layout;
         invalid.rows_per_image = Some(2);
-        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
+        assert!(copy_layout(&invalid, 4, 3, linear(4)).is_err());
         invalid = layout;
         invalid.offset = u32::MAX as u64 - 3;
-        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
+        assert!(copy_layout(&invalid, 4, 3, linear(4)).is_err());
         invalid = layout;
         invalid.bytes_per_row = Some(u32::MAX - 3);
-        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
+        assert!(copy_layout(&invalid, 4, 3, linear(4)).is_err());
         invalid = layout;
         invalid.bytes_per_row = None;
-        assert_eq!(copy_layout(&invalid, 4, 1, 4).unwrap(), (8, 16, 16, 16));
-        assert_eq!(copy_layout(&layout, 5, 3, 1).unwrap(), (8, 24, 5, 53));
+        assert_eq!(
+            copy_layout(&invalid, 4, 1, linear(4)).unwrap(),
+            (8, 16, 16, 16)
+        );
+        assert_eq!(
+            copy_layout(&layout, 5, 3, linear(1)).unwrap(),
+            (8, 24, 5, 53)
+        );
         let byte_aligned = wgt::TexelCopyBufferLayout {
             offset: 1,
             bytes_per_row: Some(7),
             rows_per_image: Some(4),
         };
-        assert_eq!(copy_layout(&byte_aligned, 5, 4, 1).unwrap(), (1, 7, 5, 26));
-        assert!(copy_layout(&byte_aligned, 5, 4, 4).is_err());
-        assert!(copy_layout(&invalid, u32::MAX, 1, 4).is_err());
-        assert!(copy_layout(&layout, 0, 1, 4).is_err());
+        assert_eq!(
+            copy_layout(&byte_aligned, 5, 4, linear(1)).unwrap(),
+            (1, 7, 5, 26)
+        );
+        assert!(copy_layout(&byte_aligned, 5, 4, linear(4)).is_err());
+        assert!(copy_layout(&invalid, u32::MAX, 1, linear(4)).is_err());
+        assert!(copy_layout(&layout, 0, 1, linear(4)).is_err());
+    }
+
+    #[test]
+    fn bc1_transfer_layout_uses_padded_block_rows_and_checked_offsets() {
+        let bc1 = TextureBlockLayout {
+            width: 4,
+            height: 4,
+            bytes: 8,
+        };
+        let padded = wgt::TexelCopyBufferLayout {
+            offset: 16,
+            bytes_per_row: Some(24),
+            rows_per_image: Some(2),
+        };
+        assert_eq!(copy_layout(&padded, 8, 8, bc1).unwrap(), (16, 24, 16, 40));
+        let one_block_row = wgt::TexelCopyBufferLayout {
+            offset: 8,
+            bytes_per_row: None,
+            rows_per_image: None,
+        };
+        assert_eq!(
+            copy_layout(&one_block_row, 4, 4, bc1).unwrap(),
+            (8, 8, 8, 8)
+        );
+        let mut invalid = padded;
+        invalid.offset = 4;
+        assert!(copy_layout(&invalid, 8, 8, bc1).is_err());
+        invalid = padded;
+        invalid.bytes_per_row = Some(20);
+        assert!(copy_layout(&invalid, 8, 8, bc1).is_err());
+        invalid = padded;
+        invalid.rows_per_image = Some(1);
+        assert!(copy_layout(&invalid, 8, 8, bc1).is_err());
+        invalid = padded;
+        invalid.bytes_per_row = Some(u32::MAX - 3);
+        assert!(copy_layout(&invalid, 8, 8, bc1).is_err());
+        assert!(copy_layout(&padded, u32::MAX, 8, bc1).is_err());
+    }
+
+    #[test]
+    fn compressed_upload_boxes_require_complete_aligned_blocks() {
+        let bc1 = TextureBlockLayout {
+            width: 4,
+            height: 4,
+            bytes: 8,
+        };
+        let mut base = crate::TextureCopyBase {
+            mip_level: 0,
+            array_layer: 0,
+            origin: wgt::Origin3d { x: 4, y: 4, z: 0 },
+            aspect: crate::FormatAspects::COLOR,
+        };
+        let mut size = crate::CopyExtent {
+            width: 4,
+            height: 4,
+            depth: 1,
+        };
+        assert!(block_aligned_box(&base, &size, bc1));
+        size.width = 2;
+        assert!(!block_aligned_box(&base, &size, bc1));
+        size.width = 4;
+        base.origin.y = 2;
+        assert!(!block_aligned_box(&base, &size, bc1));
     }
 
     #[test]

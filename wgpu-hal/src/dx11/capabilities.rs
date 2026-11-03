@@ -10,8 +10,9 @@ use windows::Win32::Graphics::{
         D3D11_FORMAT_SUPPORT_TEXTURE2D,
     },
     Dxgi::Common::{
-        DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-        DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
+        DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM,
+        DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R8G8_SNORM,
     },
 };
 
@@ -30,6 +31,7 @@ pub(super) struct HardwareGuarantees {
     pub r8_unorm_sampled_texture: bool,
     pub rg8_snorm_sampled_texture: bool,
     pub rgba8_snorm_sampled_texture: bool,
+    pub bc1_unorm_sampled_texture: bool,
 }
 
 impl HardwareGuarantees {
@@ -57,6 +59,7 @@ impl HardwareGuarantees {
             r8_unorm_sampled_texture: true,
             rg8_snorm_sampled_texture: true,
             rgba8_snorm_sampled_texture: true,
+            bc1_unorm_sampled_texture: true,
         }
     }
 
@@ -120,6 +123,7 @@ pub(super) struct DriverCapabilities {
     pub r8_unorm: Query<u32>,
     pub rg8_snorm: Query<u32>,
     pub rgba8_snorm: Query<u32>,
+    pub bc1_unorm: Query<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,6 +137,7 @@ pub(super) struct BackendCapabilities {
     pub r8_unorm_sampled_upload: bool,
     pub rg8_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
+    pub bc1_sampled_upload: bool,
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
     pub sample_count: u32,
@@ -186,6 +191,7 @@ impl BackendCapabilities {
         r8_unorm_sampled_upload: true,
         rg8_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
+        bc1_sampled_upload: true,
         texture_zero_initialized: true,
         texture_array_layers: 1,
         sample_count: 1,
@@ -303,6 +309,7 @@ impl Capabilities {
                 r8_unorm: format(windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM),
                 rg8_snorm: format(DXGI_FORMAT_R8G8_SNORM),
                 rgba8_snorm: format(DXGI_FORMAT_R8G8B8A8_SNORM),
+                bc1_unorm: format(DXGI_FORMAT_BC1_UNORM),
             },
             backend: BackendCapabilities::CURRENT,
         }
@@ -324,6 +331,7 @@ impl Capabilities {
             wgt::TextureFormat::R8Unorm => (self.driver.r8_unorm, true),
             wgt::TextureFormat::Rg8Snorm => (self.driver.rg8_snorm, true),
             wgt::TextureFormat::Rgba8Snorm => (self.driver.rgba8_snorm, true),
+            wgt::TextureFormat::Bc1RgbaUnorm => (self.driver.bc1_unorm, true),
             _ => return Err(UnsupportedFormat),
         };
         let allowed = wgt::TextureUses::COPY_SRC
@@ -337,6 +345,8 @@ impl Capabilities {
             || format == wgt::TextureFormat::Rg8Snorm && !self.hardware.rg8_snorm_sampled_texture
             || format == wgt::TextureFormat::Rgba8Snorm
                 && !self.hardware.rgba8_snorm_sampled_texture
+            || format == wgt::TextureFormat::Bc1RgbaUnorm
+                && !self.hardware.bc1_unorm_sampled_texture
         {
             return Err(UnsupportedFormat);
         }
@@ -347,6 +357,7 @@ impl Capabilities {
                     && !self.backend.rg8_snorm_sampled_upload)
                 || (format == wgt::TextureFormat::Rgba8Snorm
                     && !self.backend.rgba8_snorm_sampled_upload)
+                || (format == wgt::TextureFormat::Bc1RgbaUnorm && !self.backend.bc1_sampled_upload)
                 || (usage != wgt::TextureUses::RESOURCE
                     && usage != wgt::TextureUses::COPY_DST
                     && usage != (wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST)))
@@ -364,6 +375,14 @@ impl Capabilities {
             || layers != self.backend.texture_array_layers
             || mips == 0
             || samples != self.backend.sample_count
+        {
+            return Err(UnsupportedShape);
+        }
+        if format == wgt::TextureFormat::Bc1RgbaUnorm
+            && (extent[0] < 4
+                || extent[1] < 4
+                || !extent[0].is_multiple_of(4)
+                || !extent[1].is_multiple_of(4))
         {
             return Err(UnsupportedShape);
         }
@@ -452,6 +471,7 @@ mod tests {
                 r8_unorm: Query::Value(u32::MAX),
                 rg8_snorm: Query::Value(u32::MAX),
                 rgba8_snorm: Query::Value(u32::MAX),
+                bc1_unorm: Query::Value(u32::MAX),
             },
             backend: BackendCapabilities::CURRENT,
         }
@@ -479,6 +499,7 @@ mod tests {
             assert!(caps.hardware.r8_unorm_sampled_texture);
             assert!(caps.hardware.rg8_snorm_sampled_texture);
             assert!(caps.hardware.rgba8_snorm_sampled_texture);
+            assert!(caps.hardware.bc1_unorm_sampled_texture);
             assert_eq!(
                 caps.hardware.max_triangle_vertices_per_draw(),
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
@@ -526,6 +547,7 @@ mod tests {
         assert!(fl9.backend.r8_unorm_sampled_upload);
         assert!(fl9.backend.rg8_snorm_sampled_upload);
         assert!(fl9.backend.rgba8_snorm_sampled_upload);
+        assert!(fl9.backend.bc1_sampled_upload);
         assert!(!fl9.backend.two_sided_stencil);
         assert!(fl9.backend.single_mip_equal_filter_lod_normalization);
         assert!(fl9.backend.sparse_texture_sampler_bindings);
@@ -1225,6 +1247,78 @@ mod tests {
         queried.backend.rgba8_snorm_sampled_upload = false;
         assert_eq!(
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Err(UnsupportedUsage)
+        );
+    }
+
+    #[test]
+    fn bc1_is_limited_to_queried_block_aligned_sampled_uploads() {
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        };
+        use TextureRejection::*;
+
+        let format = wgt::TextureFormat::Bc1RgbaUnorm;
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let caps = model(FeatureLevel::L9_1);
+        assert!(caps.hardware.bc1_unorm_sampled_texture);
+        assert!(caps.backend.bc1_sampled_upload);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Ok(())
+        );
+        for invalid_usage in [
+            wgt::TextureUses::COPY_SRC,
+            wgt::TextureUses::COLOR_TARGET,
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+        ] {
+            assert_eq!(
+                caps.check_private_texture_2d(format, invalid_usage, [8, 8], 1, 1, 1),
+                Err(UnsupportedUsage)
+            );
+        }
+        for (extent, layers, mips, samples) in [
+            ([6, 8], 1, 1, 1),
+            ([8, 2], 1, 1, 1),
+            ([2, 2], 1, 1, 1),
+            ([8, 8], 1, 2, 1),
+            ([8, 8], 2, 1, 1),
+            ([8, 8], 1, 1, 4),
+        ] {
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, extent, layers, mips, samples),
+                Err(UnsupportedShape)
+            );
+        }
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        let mut query = caps;
+        query.driver.bc1_unorm = Query::Value(required);
+        assert_eq!(
+            query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Ok(())
+        );
+        query.driver.bc1_unorm = Query::Unavailable(-1);
+        assert_eq!(
+            query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Err(DriverQueryUnavailable)
+        );
+        query.driver.bc1_unorm =
+            Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
+        assert_eq!(
+            query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Err(DriverFormatUnsupported)
+        );
+        query = caps;
+        query.hardware.bc1_unorm_sampled_texture = false;
+        assert_eq!(
+            query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Err(UnsupportedFormat)
+        );
+        query = caps;
+        query.backend.bc1_sampled_upload = false;
+        assert_eq!(
+            query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
             Err(UnsupportedUsage)
         );
     }

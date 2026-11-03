@@ -45,6 +45,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   forced-FL9_1 test verifies padded signed four-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
   Render-target, copy-source, readback and mip-chain uses remain unsupported.
+- BC1_UNORM has a queried one-mip, one-layer sampled/upload subset. Texture
+  dimensions and upload regions must align to 4×4 blocks; rows are measured in
+  eight-byte blocks. A strict forced-FL9_1 test uploads a padded 8×8 pattern,
+  replaces one block through a second upload, then validates all 256 rendered
+  pixels. Copy-source, readback, render-target, mip-chain and sRGB view uses
+  remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.

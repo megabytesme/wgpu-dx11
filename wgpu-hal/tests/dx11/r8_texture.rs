@@ -9,10 +9,21 @@ struct SampledTexture<'a> {
     format: wgt::TextureFormat,
     native_format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
     format_name: &'a str,
-    bytes_per_texel: usize,
+    extent: [u32; 2],
+    block_dimensions: [u32; 2],
+    bytes_per_block: usize,
     row_pitch: usize,
     source_offset: usize,
+    patch: Option<TexturePatch<'a>>,
     fragment_body: &'a str,
+}
+
+struct TexturePatch<'a> {
+    origin: [u32; 2],
+    extent: [u32; 2],
+    bytes: &'a [u8],
+    row_pitch: usize,
+    source_offset: usize,
 }
 
 fn sample_upload(
@@ -24,9 +35,12 @@ fn sample_upload(
         format,
         native_format,
         format_name,
-        bytes_per_texel,
+        extent,
+        block_dimensions,
+        bytes_per_block,
         row_pitch,
         source_offset,
+        patch,
         fragment_body,
     } = texture;
     use windows::Win32::Graphics::Direct3D11::{
@@ -54,6 +68,26 @@ fn sample_upload(
 
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
+    if block_dimensions != [1, 1] {
+        assert!(unsafe {
+            device.create_texture(&crate::TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 6,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format,
+                usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+                memory_flags: crate::MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+        }
+        .is_err());
+    }
     for usage in [
         wgt::TextureUses::COPY_SRC,
         wgt::TextureUses::COLOR_TARGET,
@@ -63,8 +97,8 @@ fn sample_upload(
             device.create_texture(&crate::TextureDescriptor {
                 label: None,
                 size: wgt::Extent3d {
-                    width: 5,
-                    height: 4,
+                    width: extent[0],
+                    height: extent[1],
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -189,8 +223,8 @@ fn sample_upload(
             .create_texture(&crate::TextureDescriptor {
                 label: None,
                 size: wgt::Extent3d {
-                    width: 5,
-                    height: 4,
+                    width: extent[0],
+                    height: extent[1],
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -306,12 +340,14 @@ fn sample_upload(
     ];
     let vertex_bytes: vec::Vec<_> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
     native.write_byte_buffer(&vertex_buffer, 0, &vertex_bytes)?;
-    let row_bytes = 5 * bytes_per_texel;
-    assert_eq!(texels.len(), row_bytes * 4);
+    let block_columns = extent[0].div_ceil(block_dimensions[0]) as usize;
+    let block_rows = extent[1].div_ceil(block_dimensions[1]) as usize;
+    let row_bytes = block_columns * bytes_per_block;
+    assert_eq!(texels.len(), row_bytes * block_rows);
     assert!(row_pitch >= row_bytes);
-    let source_size = source_offset + row_pitch * 3 + row_bytes;
+    let source_size = source_offset + row_pitch * (block_rows - 1) + row_bytes;
     let mut upload = vec![0xcd; source_size];
-    for row in 0..4 {
+    for row in 0..block_rows {
         let source = row * row_bytes;
         let destination = source_offset + row * row_pitch;
         upload[destination..destination + row_bytes]
@@ -328,9 +364,64 @@ fn sample_upload(
             .unwrap()
     };
     native.write_byte_buffer(&upload_buffer, 0, &upload)?;
+    let patch_upload = if let Some(patch) = &patch {
+        assert!(patch.origin[0].is_multiple_of(block_dimensions[0]));
+        assert!(patch.origin[1].is_multiple_of(block_dimensions[1]));
+        assert!(patch.extent[0].is_multiple_of(block_dimensions[0]));
+        assert!(patch.extent[1].is_multiple_of(block_dimensions[1]));
+        let patch_blocks = patch.extent[0].div_ceil(block_dimensions[0]) as usize;
+        let patch_rows = patch.extent[1].div_ceil(block_dimensions[1]) as usize;
+        let patch_row_bytes = patch_blocks * bytes_per_block;
+        assert_eq!(patch.bytes.len(), patch_row_bytes * patch_rows);
+        assert!(patch.row_pitch >= patch_row_bytes);
+        let mut bytes =
+            vec![0xcd; patch.source_offset + patch.row_pitch * (patch_rows - 1) + patch_row_bytes];
+        for row in 0..patch_rows {
+            let source = row * patch_row_bytes;
+            let destination = patch.source_offset + row * patch.row_pitch;
+            bytes[destination..destination + patch_row_bytes]
+                .copy_from_slice(&patch.bytes[source..source + patch_row_bytes]);
+        }
+        let buffer = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: bytes.len() as u64,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&buffer, 0, &bytes)?;
+        let region = crate::BufferTextureCopy {
+            buffer_layout: wgt::TexelCopyBufferLayout {
+                offset: patch.source_offset as u64,
+                bytes_per_row: Some(patch.row_pitch as u32),
+                rows_per_image: Some(patch_rows as u32),
+            },
+            texture_base: crate::TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d {
+                    x: patch.origin[0],
+                    y: patch.origin[1],
+                    z: 0,
+                },
+                aspect: crate::FormatAspects::COLOR,
+            },
+            size: crate::CopyExtent {
+                width: patch.extent[0],
+                height: patch.extent[1],
+                depth: 1,
+            },
+        };
+        Some((buffer, region))
+    } else {
+        None
+    };
     let target_extent = wgt::Extent3d {
-        width: 10,
-        height: 8,
+        width: extent[0] * 2,
+        height: extent[1] * 2,
         depth_or_array_layers: 1,
     };
     let target = unsafe {
@@ -386,7 +477,7 @@ fn sample_upload(
         buffer_layout: wgt::TexelCopyBufferLayout {
             offset: source_offset as u64,
             bytes_per_row: Some(row_pitch as u32),
-            rows_per_image: Some(4),
+            rows_per_image: Some(block_rows as u32),
         },
         texture_base: crate::TextureCopyBase {
             mip_level: 0,
@@ -395,8 +486,8 @@ fn sample_upload(
             aspect: crate::FormatAspects::COLOR,
         },
         size: crate::CopyExtent {
-            width: 5,
-            height: 4,
+            width: extent[0],
+            height: extent[1],
             depth: 1,
         },
     };
@@ -411,6 +502,9 @@ fn sample_upload(
     let command = unsafe {
         encoder.begin_encoding(None).unwrap();
         encoder.copy_buffer_to_texture(&upload_buffer, &texture, [upload_region].into_iter());
+        if let Some((buffer, region)) = &patch_upload {
+            encoder.copy_buffer_to_texture(buffer, &texture, [region.clone()].into_iter());
+        }
         encoder.begin_render_pass(&pass).unwrap();
         encoder.set_render_pipeline(&pipeline);
         encoder.set_bind_group(&layout, 0, &group, &[]);
@@ -425,16 +519,19 @@ fn sample_upload(
     unsafe {
         device.destroy_bind_group(group);
         device.destroy_buffer(upload_buffer);
+        if let Some((buffer, _)) = patch_upload {
+            device.destroy_buffer(buffer);
+        }
         device.destroy_buffer(vertex_buffer);
     }
     let fence = native.create_native_fence();
     unsafe { queue.submit(&[&command], &[], (&fence, 1)).unwrap() };
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
-    for y in 0..8 {
-        for x in 0..10 {
+    for y in 0..target_extent.height {
+        for x in 0..target_extent.width {
             let expected = expected_pixel(x / 2, y / 2);
-            let start = (y as usize * 10 + x as usize) * 4;
+            let start = (y as usize * target_extent.width as usize + x as usize) * 4;
             let actual = &pixels[start..start + 4];
             assert!(
                 actual
@@ -445,7 +542,11 @@ fn sample_upload(
             );
         }
     }
-    std::println!("PASS: padded offset {format_name} upload sampled; 80/80 output pixels matched");
+    std::println!(
+        "PASS: padded offset {format_name} upload sampled; {}/{} output pixels matched",
+        target_extent.width * target_extent.height,
+        target_extent.width * target_extent.height
+    );
     unsafe {
         encoder.reset_all([command].into_iter());
         device.destroy_render_pipeline(pipeline);
@@ -477,9 +578,12 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
             format: wgt::TextureFormat::R8Unorm,
             native_format: DXGI_FORMAT_R8_UNORM,
             format_name: "R8_UNORM",
-            bytes_per_texel: 1,
+            extent: [5, 4],
+            block_dimensions: [1, 1],
+            bytes_per_block: 1,
             row_pitch: 7,
             source_offset: 1,
+            patch: None,
             fragment_body:
                 "return vec4f(textureSample(image, image_sampler, input.uv).r, 0.0, 0.0, 1.0);",
         },
@@ -509,9 +613,12 @@ fn fl91_rg8_snorm_padded_upload_samples_both_signed_channels() -> windows::core:
             format: wgt::TextureFormat::Rg8Snorm,
             native_format: DXGI_FORMAT_R8G8_SNORM,
             format_name: "R8G8_SNORM",
-            bytes_per_texel: 2,
+            extent: [5, 4],
+            block_dimensions: [1, 1],
+            bytes_per_block: 2,
             row_pitch: 12,
             source_offset: 2,
+            patch: None,
             fragment_body: "let rg = textureSample(image, image_sampler, input.uv).rg; return vec4f(rg * 0.5 + vec2f(0.5), 0.0, 1.0);",
         },
         &texels,
@@ -555,9 +662,12 @@ fn fl91_rgba8_snorm_padded_upload_samples_all_signed_channels() -> windows::core
             format: wgt::TextureFormat::Rgba8Snorm,
             native_format: DXGI_FORMAT_R8G8B8A8_SNORM,
             format_name: "R8G8B8A8_SNORM",
-            bytes_per_texel: 4,
+            extent: [5, 4],
+            block_dimensions: [1, 1],
+            bytes_per_block: 4,
             row_pitch: 24,
             source_offset: 4,
+            patch: None,
             fragment_body: "let rgba = textureSample(image, image_sampler, input.uv); return rgba * 0.5 + vec4f(0.5);",
         },
         &texels,
@@ -570,6 +680,59 @@ fn fl91_rgba8_snorm_padded_upload_samples_all_signed_channels() -> windows::core
                 unorm_from_snorm(row[offset + 2]),
                 unorm_from_snorm(row[offset + 3]),
             ]
+        },
+    )
+}
+
+#[test]
+fn fl91_bc1_unorm_padded_block_upload_samples_into_rgba() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_BC1_UNORM;
+
+    fn solid_block(color: u16) -> [u8; 8] {
+        let [low, high] = color.to_le_bytes();
+        [low, high, low, high, 0, 0, 0, 0]
+    }
+
+    let colors = [
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+        [255, 255, 255, 255],
+    ];
+    let blocks = [
+        solid_block(0xf800),
+        solid_block(0x07e0),
+        solid_block(0x001f),
+        solid_block(0xffff),
+    ];
+    let texels: vec::Vec<_> = blocks.into_iter().flatten().collect();
+    let replacement = solid_block(0x07ff);
+    sample_upload(
+        SampledTexture {
+            format: wgt::TextureFormat::Bc1RgbaUnorm,
+            native_format: DXGI_FORMAT_BC1_UNORM,
+            format_name: "BC1_UNORM",
+            extent: [8, 8],
+            block_dimensions: [4, 4],
+            bytes_per_block: 8,
+            row_pitch: 24,
+            source_offset: 8,
+            patch: Some(TexturePatch {
+                origin: [4, 0],
+                extent: [4, 4],
+                bytes: &replacement,
+                row_pitch: 16,
+                source_offset: 8,
+            }),
+            fragment_body: "return textureSample(image, image_sampler, input.uv);",
+        },
+        &texels,
+        |x, y| {
+            if x >= 4 && y < 4 {
+                [0, 255, 255, 255]
+            } else {
+                colors[(y as usize / 4) * 2 + x as usize / 4]
+            }
         },
     )
 }

@@ -186,6 +186,7 @@ impl crate::Device for Device {
             wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Snorm
                 | wgt::TextureFormat::Rgba8Snorm
+                | wgt::TextureFormat::Bc1RgbaUnorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
@@ -222,6 +223,11 @@ impl crate::Device for Device {
             || desc.size.height
                 > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
                     .texture_2d_dimension
+            || (desc.format == wgt::TextureFormat::Bc1RgbaUnorm
+                && (desc.size.width < 4
+                    || desc.size.height < 4
+                    || !desc.size.width.is_multiple_of(4)
+                    || !desc.size.height.is_multiple_of(4)))
             || desc.usage.is_empty()
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, depth)
@@ -261,8 +267,8 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
@@ -271,6 +277,7 @@ impl crate::Device for Device {
             wgt::TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM,
             wgt::TextureFormat::Rg8Snorm => DXGI_FORMAT_R8G8_SNORM,
             wgt::TextureFormat::Rgba8Snorm => DXGI_FORMAT_R8G8B8A8_SNORM,
+            wgt::TextureFormat::Bc1RgbaUnorm => DXGI_FORMAT_BC1_UNORM,
             _ => return Err(DeviceError::Unexpected),
         };
         let support =
@@ -305,13 +312,14 @@ impl crate::Device for Device {
                 format,
             )
             .map_err(device_error)?;
-        let bytes_per_texel = desc
+        let block_bytes = desc
             .format
             .block_copy_size(None)
             .ok_or(DeviceError::Unexpected)? as usize;
-        let byte_count = (desc.size.width as usize)
-            .checked_mul(desc.size.height as usize)
-            .and_then(|v| v.checked_mul(bytes_per_texel))
+        let (block_width, block_height) = desc.format.block_dimensions();
+        let byte_count = (desc.size.width.div_ceil(block_width) as usize)
+            .checked_mul(desc.size.height.div_ceil(block_height) as usize)
+            .and_then(|v| v.checked_mul(block_bytes))
             .ok_or(DeviceError::OutOfMemory)?;
         let mut zeroes = Vec::new();
         zeroes
@@ -322,8 +330,9 @@ impl crate::Device for Device {
             let width = (desc.size.width >> mip).max(1) as usize;
             let height = (desc.size.height >> mip).max(1) as usize;
             let mip_bytes = width
-                .checked_mul(height)
-                .and_then(|v| v.checked_mul(bytes_per_texel))
+                .div_ceil(block_width as usize)
+                .checked_mul(height.div_ceil(block_height as usize))
+                .and_then(|v| v.checked_mul(block_bytes))
                 .ok_or(DeviceError::OutOfMemory)?;
             self.native
                 .write_texture_bytes(&texture, mip, 0, &zeroes[..mip_bytes])
@@ -349,7 +358,7 @@ impl crate::Device for Device {
                 D3D11_BIND_DEPTH_STENCIL, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
                 DXGI_FORMAT_R8_UNORM,
             },
@@ -361,6 +370,7 @@ impl crate::Device for Device {
             DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
             DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
+            DXGI_FORMAT_BC1_UNORM => wgt::TextureFormat::Bc1RgbaUnorm,
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
@@ -370,6 +380,7 @@ impl crate::Device for Device {
             wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Snorm
                 | wgt::TextureFormat::Rgba8Snorm
+                | wgt::TextureFormat::Bc1RgbaUnorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {
