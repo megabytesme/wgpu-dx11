@@ -68,7 +68,7 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | Bind groups / registers | Up to eight private groups may contain uniforms, sampled textures and samplers, with aggregate limits of thirteen uniforms, eight textures and sixteen samplers. Each draw checks only texture/sampler relationships used by the selected shader entry points. | Sparse multi-group, dynamic-offset, pipeline-transition and cross-group sampled-texture GPU tests cover selected configurations; FXC limits distinct sampled relationships and constants. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
 | Vertex / index formats | Native FL9 has wider IA support than the HAL. Private pipelines accept up to sixteen sparse vertex- or instance-rate streams, including zero-stride constant streams, and restricted float, unorm and `Snorm16x2`/`Snorm16x4` formats. FL9_1 requires input-assembler support for both SNORM formats; pipeline creation relies on that guarantee, while the hardware test queries the actual device. Attributes retain four-byte alignment. Multi-slot configurations support triangle and point lists, nonindexed strips and Uint16/Uint32 indexed triangle and point lists with translation when needed. On FL9_1, overlapping elements in a logical stream are assigned to distinct native slots bound to the same buffer. | Indexed and non-indexed readback, sparse-slot, overlap, zero-stride, SNORM vertex and rejected-index tests, plus controlled core renders. Limits and downlevel flags cover only part of the contract; other core-valid vertex formats and layouts need implementation or validation. Overlapping physical reads, stream offsets and maximum strides remain unverified on historical 9_1 drivers. SNORM vertex support does not imply SNORM texture support. |
 | Shader stages / WGSL | FL9_1 uses `vs_4_0_level_9_1` and `ps_4_0_level_9_1`. These profiles restrict shader instructions, registers and flow control; vertex textures, selected vertex entries declaring `vertex_index` or `instance_index`, and fragment entries declaring `primitive_index` are rejected by the private shader path. Checked texture loads reachable from the selected entry point remain unavailable. The pixel profile has 64 arithmetic and 32 texture instructions; the vertex profile has 256 instructions. | Naga/FXC and restricted shader GPU tests, including a sampled shader with an unused texture-load helper. FXC rejects fragment `position`, `front_facing` and `primitive_index` inputs in the tested profile. WGSL validation and feature bits do not represent arbitrary FXC instruction pressure or every translation restriction. Shader creation and pipeline validation need conservative diagnostics or emulation; successful Naga validation is insufficient. |
-| Pipeline / raster / blending | Private graphics pipeline supports triangle lists, nonindexed triangle strips and point lists with configurable front-face winding and front/back culling for triangles, one color target, one sample and a small set of blend states. All RGBA channel write masks are supported for the single target. Exact premultiplied-alpha blending uses coupled `ONE` / `INV_SRC_ALPHA` add factors for both color and alpha on linear RGBA8 and BGRA8. On FL9_1, straight alpha, inversion and vignette blending reject simultaneous RGB and alpha writes; masked-channel cases use coupled factors. Enabled blending requires a positive format query. Out-of-target viewports use a separately compiled vertex position transform when available. A D24S8 attachment supports native Always/LessEqual and emulated Never depth comparisons with optional depth writes and the restricted no-op stencil cases below; signed constant triangle depth bias is supported with selected-entry restrictions; nontrivial stencil, slope and clamp bias remain unsupported. | Textured depth ordering, no-op stencil rendering, both windings and culling, viewport, all 16 channel masks and masked blend readback tests. Strict FL9_1 premultiplied tests checked six full images across RGBA8 and BGRA8; the controlled core fixture checked 64 pixels with a one-unit rounding tolerance. Remapped shaders may exceed FL9 compiler limits even when the original compiles; such draws remain rejected. Full-channel separate-alpha modes remain unavailable by default; RTX-only diagnostic tests explicitly bypass this restriction and are not a portability guarantee. |
+| Pipeline / raster / blending | Private graphics pipeline supports triangle lists, nonindexed triangle strips and point lists with configurable front-face winding and front/back culling for triangles, one color target, one sample and a small set of blend states. All RGBA channel write masks are supported for the single target. Exact premultiplied-alpha blending uses coupled `ONE` / `INV_SRC_ALPHA` add factors for both color and alpha on linear RGBA8 and BGRA8. On FL9_1, straight alpha, inversion and vignette blending reject simultaneous RGB and alpha writes; masked-channel cases use coupled factors. Enabled blending requires a positive format query. Out-of-target viewports use a separately compiled vertex position transform when available. A D24S8 attachment supports native Always/LessEqual depth comparisons and emulated Never; optional depth writes and one-sided stencil comparison/operations are implemented with identical front/back state. FL9_1 rejects asymmetric front/back stencil state. Never with active stencil maps the stencil pass operation to the requested depth-fail operation, forces guaranteed Always depth comparison, and suppresses color/depth writes. Signed constant triangle depth bias is supported with selected-entry restrictions; slope and clamp bias remain unsupported. | Textured depth ordering, stencil Replace/Equal/reference updates including depth-fail emulation, both windings and culling, viewport, all 16 channel masks and masked blend readback tests. Stencil bits are validated indirectly through subsequent stencil comparisons because this HAL has no stencil readback path. Strict FL9_1 premultiplied tests checked six full images across RGBA8 and BGRA8; the controlled core fixture checked 64 pixels with a one-unit rounding tolerance. Remapped shaders may exceed FL9 compiler limits even when the original compiles; such draws remain rejected. Full-channel separate-alpha modes remain unavailable by default; RTX-only diagnostic tests explicitly bypass this restriction and are not a portability guarantee. |
 | Render passes / targets | One color target and an optional D24S8 depth/stencil attachment support load, clear or don't-care and store or discard. Discard retains native contents, which remain undefined to HAL callers. Restricted transient color and depth attachments use ordinary textures without memoryless savings; transient combinations with sampled or copy usage are rejected. Private read-only passes require LOAD and STORE on both aspects and pipelines without depth or stencil writes; depth sampling aliases remain unsupported. Depth-only clears and draws without a fragment stage are supported. No resolve, timestamps, occlusion, multiview or multiple color attachments. | Render/readback tests include a depth-only prepass, read-only depth preservation and transient color/depth attachment passes on the tested FL9_1 device. Aspect-specific depth views, public discard initialization and general pass combinations still need implementation or validation before public exposure. |
 | Draw / instancing | Direct draws are split at per-level primitive limits; restricted instance-rate streams use repeated non-instanced native draws with stride-zero bindings adjusted by `first_instance` and instance number. FL9_1 does not use native per-instance IA classification. Triangle lists, nonindexed triangle strips and point lists are supported with the restricted vertex and instance streams. Point batches rebase their vertex bindings and contain at most 65,535 points. Indexed point draws accept Uint16 and Uint32; instance-only indexed triangle draws and shaders using `instance_index` remain unsupported. Strips use even-parity overlapping batches and rebased vertex bindings; indexed strips remain rejected even if the pipeline declares a strip index format. Index-dependent indexed draws check base-adjusted indices via GPU staging. Native-safe u16 indices use native buffers; other valid u16 and u32 triangle lists use ordered rebased u16 windows or gather GPU vertex bytes for each stream into scratch. Out-of-bounds vertex fetches discard the entire draw. | Strict tests cover restricted instance-rate rendering, repeated draws without instance inputs, translated windows and gathered triangles, strip winding and a split boundary, signed base vertices, whole-draw discard, and point draws with sparse streams and a 65,537-point split. Twelve strict indexed-point images covered reordered, repeated and GPU-updated indices, instance inputs and whole-draw discard; the controlled core fixture checked 64 pixels each for Uint16 and Uint32. General instancing and additional topology configurations still need implementation or validation. Historical point, high-offset and buffer-copy behavior remain unverified. |
 
@@ -125,27 +125,44 @@ runtime behavior remains unverified.
 The private D24S8 subset is separate from the color transfer matrix: it is a
 single-mip, single-layer, single-sample 2D attachment, with driver-queried
 texture and depth-stencil support. Creation clears depth and stencil to zero.
+Microsoft's [10Level9 device restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+specify that FL9_1 does not support two-sided stencil. The private FL9_1 path
+therefore accepts only equivalent front and back face states; asymmetric active
+states fail at pipeline creation.
 Depth and stencil clear/load flags are handled independently, including
 depth-only passes used by core initialization patterns. Depth-only drawing
 uses a trivial pixel shader with no render target because the tested FL9_1 FXC
 profile rejects a pixel shader that writes no target. Historical-driver
 behavior of this fallback is unverified. The private pipeline
 supports native Always and LessEqual depth comparison with optional writes.
-Never is emulated by suppressing validated draws; the native state defensively
-uses Always with depth writes disabled. This is restricted to the current inert
-stencil, read-only shader resource and no-query subset. Future shader side
-effects, writable stencil or query support require revisiting draw suppression.
-Stencil
-states are accepted only if both faces always pass and neither can write: each
-comparison must be Always, or Equal/LessEqual/GreaterEqual with the low eight
-read-mask bits zero; the low eight write-mask bits must be zero or all operations
-on both faces must be Keep. These states are implemented with stencil disabled,
-and reference updates are accepted as no-ops. Real stencil comparisons or
-writes, aspect-specific views, copying and sampling are rejected.
-Future nontrivial stencil support must retain and rebind the reference on native
-depth-stencil state changes. Private read-only passes require LOAD|STORE for both
-aspects and a pipeline without depth writes. They use an ordinary DSV; sampled aliases remain
-prohibited, so this does not establish the public `READ_ONLY_DEPTH_STENCIL` flag.
+Never is emulated by suppressing validated draws when stencil is inert; when
+active stencil must observe the depth-fail branch, a separate Always-based
+state remapping is used below. Draw suppression remains restricted to the
+current side-effect-free, read-only-resource and no-query subset. Future shader
+side effects or query support require revisiting it.
+Stencil state maps all eight WGSL operations and comparison functions to the
+native D3D11 depth-stencil descriptor, with the low eight bits of the masks.
+This describes translation, not evidence that every mapped state works on all
+FL9_1 drivers; the strict hardware test executes Replace and Equal. Only
+identical active front/back states are supported; the general public
+`depth_stencil` capability remains false. The reference is retained in command
+replay, rebound when either the reference or pipeline changes, and reset at each
+render pass. Strict readback verifies Replace writes indirectly by using a later
+Equal comparison, including a wrong-reference rejection and state transitions.
+The DSV itself still cannot be read back through this HAL, so tests do not claim
+direct inspection of stencil storage. Always-passing, non-writing stencil
+states continue to canonicalize to disabled stencil.
+
+Depth comparison Never remains draw suppression only when stencil is inert. If
+active stencil must observe the depth-fail branch, the backend uses the
+guaranteed Always depth comparison, remaps StencilPassOp to the requested
+StencilDepthFailOp, and disables color and depth writes. This avoids depending
+on a depth comparison outside the documented FL9_1 Always/LessEqual minimum.
+The test confirms that the following Equal comparison observes the write.
+Private read-only passes require LOAD|STORE for both aspects and a pipeline
+without depth or stencil writes. They use an ordinary DSV; sampled aliases
+remain prohibited, so this does not establish the public
+`READ_ONLY_DEPTH_STENCIL` flag.
 The broad `depth_stencil` capability remains false. Texture and view descriptors
 may declare READ, WRITE or READ|WRITE, but an actual pass uses one usage.
 Strict GPU tests verify textured depth ordering, initialization, independent

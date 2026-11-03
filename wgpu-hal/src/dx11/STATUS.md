@@ -93,13 +93,16 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   drivers remain unverified, and public adapter enumeration remains disabled.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and native Always/LessEqual depth tests
-  with optional writes. Never uses validated draw suppression with inert stencil,
-  no shader writes and no queries; future side effects require review. Private
-  read-only passes require load/store on both aspects,
-  no depth writes and no sampled alias. Stencil configurations that always
-  pass and cannot write are accepted as no-ops; nontrivial stencil tests or
-  writes, aspect-specific views and depth copies remain unsupported. Textured
-  depth ordering is verified through GPU readback.
+  with optional writes. Equal front/back stencil states map native comparisons,
+  operations and references; asymmetric states are rejected because FL9_1 does
+  not support two-sided stencil. Never with active stencil uses Always plus
+  remapped depth-fail operations and disabled color/depth writes; inert-stencil
+  Never still suppresses validated draws. Replace/Equal writes and reference
+  transitions are indirectly verified through strict GPU readback, including
+  the depth-fail path. Private read-only passes require load/store on both
+  aspects, no depth or stencil writes and no sampled alias. Aspect-specific
+  views and depth copies remain unsupported; broad public depth-stencil
+  capability is still false.
 - D24S8 triangle pipelines accept signed constant depth bias with zero slope
   scale and clamp. Nonzero bias with a selected fragment-depth output and
   nonzero point-list bias are rejected. Five strict FL9_1 RTX images and two

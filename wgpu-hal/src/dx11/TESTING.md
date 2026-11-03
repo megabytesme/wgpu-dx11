@@ -872,8 +872,8 @@ orders, verifies initial zero depth, checks independent depth-only and
 stencil-only clears, and checks an Always/no-write pipeline. Ten 8x8 readbacks
 are compared in full. It also checks attachment extent and pipeline mismatch
 rejection. The private HAL also supports restricted read-only attachment
-passes and no-op stencil configurations; aspect views and nontrivial stencil
-tests remain unavailable.
+passes and the limited one-sided stencil path described below; aspect views and
+asymmetric front/back state remain unavailable.
 Additional passes cover all color write masks, face culling, sampled textures
 and samplers in separate groups, sampler and pipeline transitions, alias
 rejection, and coexistence with a uniform in another group.
@@ -886,27 +886,30 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 
 The strict RTX FL9_1 test passed both Never depth-write variants, each checking
 32 green and 32 blue pixels; two controlled core variants each checked 64
-depth-dependent pixels. Never draws are suppressed after validation, within the
-current inert stencil, read-only shader resource and no-query subset. Native
-state uses Always with depth writes disabled defensively. Native FL9_1 guarantees
-cover Always and LessEqual; other native comparisons remain unsupported here.
-Future shader side effects, writing stencil or queries require reviewing this
-emulation. Historical hardware remains unverified.
+depth-dependent pixels. Inert-stencil Never draws are suppressed after
+validation within the current side-effect-free, read-only-resource and no-query
+subset. Active stencil uses the separate Always-based depth-fail remapping
+documented above. Native FL9_1 depth guarantees cover Always and LessEqual;
+other native depth comparisons remain unsupported. Future shader side effects
+or query support require reviewing draw suppression. Historical hardware
+remains unverified.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 stencil_noop -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 stencil -- --nocapture --test-threads=1
 ```
 
-This filter passed two cases: one synthetic classifier test and one physical
-RTX 3090 Ti test at requested and selected FL9_1. The GPU test compares an
-Equal, zero-read-mask, Keep state with ignored stencil across two passes and
-reference changes using full color readback. The controlled core fixture also
-draws 32 red and 32 green pixels with Equal, `read_mask=0x100`, Replace,
-zero write mask and reference `0xa5`; only the low eight stencil mask bits
-are effective. Actual stencil bits cannot yet be read back, and nontrivial
-masking and writes remain unsupported. These tests do not establish behavior on
-historical FL9_1 hardware.
+This filter passed three tests: two CPU-only mapping/classifier tests and one
+physical RTX 3090 Ti test at requested and selected FL9_1. The GPU test verifies
+one-sided Replace writes followed by Equal comparisons, correct and incorrect
+stencil references, and a Never-depth draw whose depth-fail operation writes
+stencil while color/depth writes remain suppressed. It checks the resulting
+8x8 color target after subsequent stencil tests; the HAL cannot directly read
+stencil storage. It also preserves the previous masked Equal/Keep no-op
+regression and rejects active asymmetric front/back state. Microsoft documents
+the FL9_1 two-sided-stencil restriction in the linked 10Level9 device table in
+`CAPABILITIES.md`. These tests do not establish behavior on historical FL9_1
+hardware.
 
 ### FL9_1 default buffer bind flags
 

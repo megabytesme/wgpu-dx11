@@ -19,7 +19,10 @@ use windows::{
             D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
             D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
             D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
-            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
+            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP,
+            D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR,
+            D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP,
+            D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_SNORM,
@@ -87,6 +90,69 @@ fn depth_comparison(
         wgt::CompareFunction::Never => Some((D3D11_COMPARISON_ALWAYS, true)),
         _ => None,
     }
+}
+
+fn stencil_comparison(compare: wgt::CompareFunction) -> D3D11_COMPARISON_FUNC {
+    match compare {
+        wgt::CompareFunction::Never => windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NEVER,
+        wgt::CompareFunction::Less => windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_LESS,
+        wgt::CompareFunction::Equal => windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_EQUAL,
+        wgt::CompareFunction::LessEqual => D3D11_COMPARISON_LESS_EQUAL,
+        wgt::CompareFunction::Greater => {
+            windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_GREATER
+        }
+        wgt::CompareFunction::NotEqual => {
+            windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NOT_EQUAL
+        }
+        wgt::CompareFunction::GreaterEqual => {
+            windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_GREATER_EQUAL
+        }
+        wgt::CompareFunction::Always => D3D11_COMPARISON_ALWAYS,
+    }
+}
+
+fn stencil_operation(operation: wgt::StencilOperation) -> D3D11_STENCIL_OP {
+    match operation {
+        wgt::StencilOperation::Keep => D3D11_STENCIL_OP_KEEP,
+        wgt::StencilOperation::Zero => D3D11_STENCIL_OP_ZERO,
+        wgt::StencilOperation::Replace => D3D11_STENCIL_OP_REPLACE,
+        wgt::StencilOperation::Invert => D3D11_STENCIL_OP_INVERT,
+        wgt::StencilOperation::IncrementClamp => D3D11_STENCIL_OP_INCR_SAT,
+        wgt::StencilOperation::DecrementClamp => D3D11_STENCIL_OP_DECR_SAT,
+        wgt::StencilOperation::IncrementWrap => D3D11_STENCIL_OP_INCR,
+        wgt::StencilOperation::DecrementWrap => D3D11_STENCIL_OP_DECR,
+    }
+}
+
+fn stencil_face(face: &wgt::StencilFaceState) -> D3D11_DEPTH_STENCILOP_DESC {
+    D3D11_DEPTH_STENCILOP_DESC {
+        StencilFailOp: stencil_operation(face.fail_op),
+        StencilDepthFailOp: stencil_operation(face.depth_fail_op),
+        StencilPassOp: stencil_operation(face.pass_op),
+        StencilFunc: stencil_comparison(face.compare),
+    }
+}
+
+fn stencil_state(
+    stencil: &wgt::StencilState,
+) -> Option<(bool, u8, u8, D3D11_DEPTH_STENCILOP_DESC)> {
+    if stencil_is_noop(stencil) {
+        return Some((
+            false,
+            0xff,
+            0xff,
+            stencil_face(&wgt::StencilFaceState::IGNORE),
+        ));
+    }
+    if stencil.front != stencil.back {
+        return None;
+    }
+    Some((
+        true,
+        stencil.read_mask as u8,
+        stencil.write_mask as u8,
+        stencil_face(&stencil.front),
+    ))
 }
 
 fn constant_depth_bias(
@@ -592,6 +658,93 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fl91_stencil_state_maps_operations_masks_and_rejects_two_sided_state() {
+        use super::*;
+        use wgt::{CompareFunction as C, StencilFaceState, StencilOperation as O, StencilState};
+
+        for (compare, native) in [
+            (
+                C::Never,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NEVER,
+            ),
+            (
+                C::Less,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_LESS,
+            ),
+            (
+                C::Equal,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_EQUAL,
+            ),
+            (C::LessEqual, D3D11_COMPARISON_LESS_EQUAL),
+            (
+                C::Greater,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_GREATER,
+            ),
+            (
+                C::NotEqual,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NOT_EQUAL,
+            ),
+            (
+                C::GreaterEqual,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_GREATER_EQUAL,
+            ),
+            (C::Always, D3D11_COMPARISON_ALWAYS),
+        ] {
+            assert_eq!(stencil_comparison(compare), native);
+        }
+
+        for (operation, native) in [
+            (O::Keep, D3D11_STENCIL_OP_KEEP),
+            (O::Zero, D3D11_STENCIL_OP_ZERO),
+            (O::Replace, D3D11_STENCIL_OP_REPLACE),
+            (O::Invert, D3D11_STENCIL_OP_INVERT),
+            (O::IncrementClamp, D3D11_STENCIL_OP_INCR_SAT),
+            (O::DecrementClamp, D3D11_STENCIL_OP_DECR_SAT),
+            (O::IncrementWrap, D3D11_STENCIL_OP_INCR),
+            (O::DecrementWrap, D3D11_STENCIL_OP_DECR),
+        ] {
+            assert_eq!(stencil_operation(operation), native);
+        }
+
+        let face = StencilFaceState {
+            compare: C::Equal,
+            fail_op: O::Zero,
+            depth_fail_op: O::IncrementWrap,
+            pass_op: O::Replace,
+        };
+        let state = StencilState {
+            front: face,
+            back: face,
+            read_mask: 0x1a5,
+            write_mask: 0x2ff,
+        };
+        let (enabled, read_mask, write_mask, desc) = stencil_state(&state).unwrap();
+        assert!(enabled);
+        assert_eq!(read_mask, 0xa5);
+        assert_eq!(write_mask, 0xff);
+        assert_eq!(
+            desc.StencilFunc,
+            windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_EQUAL
+        );
+        assert_eq!(desc.StencilFailOp, D3D11_STENCIL_OP_ZERO);
+        assert_eq!(desc.StencilDepthFailOp, D3D11_STENCIL_OP_INCR);
+        assert_eq!(desc.StencilPassOp, D3D11_STENCIL_OP_REPLACE);
+
+        let asymmetric = StencilState {
+            front: StencilFaceState {
+                compare: C::Always,
+                pass_op: O::Replace,
+                ..StencilFaceState::IGNORE
+            },
+            back: StencilFaceState::IGNORE,
+            read_mask: 0xff,
+            write_mask: 0xff,
+        };
+        assert!(stencil_state(&asymmetric).is_none());
+        assert!(!stencil_state(&StencilState::default()).unwrap().0);
     }
 
     #[test]
@@ -2148,7 +2301,7 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
-        let blend_desc = target
+        let mut blend_desc = target
             .map(|target| {
                 blend_target_desc(
                     target.blend,
@@ -2175,11 +2328,11 @@ impl RenderPipeline {
         let mut depth_never = false;
         let mut depth_bias = 0;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
-            if state.format != wgt::TextureFormat::Depth24PlusStencil8
-                || !stencil_is_noop(&state.stencil)
-            {
+            if state.format != wgt::TextureFormat::Depth24PlusStencil8 {
                 return Err(invalid());
             }
+            let (stencil_enable, stencil_read_mask, stencil_write_mask, mut face) =
+                stencil_state(&state.stencil).ok_or_else(invalid)?;
             depth_bias =
                 constant_depth_bias(&state.bias, desc.primitive.topology).ok_or_else(invalid)?;
             if depth_bias != 0 {
@@ -2191,27 +2344,34 @@ impl RenderPipeline {
             }
             let (comparison, suppress_draws) =
                 depth_comparison(state.depth_compare).ok_or_else(invalid)?;
-            depth_never = suppress_draws;
-            if depth_never {
+            depth_never = suppress_draws && !stencil_enable;
+            let emulate_never_with_stencil = suppress_draws && stencil_enable;
+            let comparison = if emulate_never_with_stencil {
+                face.StencilPassOp = face.StencilDepthFailOp;
+                if let Some(blend_desc) = blend_desc.as_mut() {
+                    blend_desc.RenderTargetWriteMask = 0;
+                }
+                D3D11_COMPARISON_ALWAYS
+            } else {
+                comparison
+            };
+            if suppress_draws && !stencil_enable {
                 depth_never_read_only_bindings(&desc.layout.bindings);
             }
-            let face = D3D11_DEPTH_STENCILOP_DESC {
-                StencilFailOp: D3D11_STENCIL_OP_KEEP,
-                StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
-                StencilPassOp: D3D11_STENCIL_OP_KEEP,
-                StencilFunc: D3D11_COMPARISON_ALWAYS,
-            };
             Some(D3D11_DEPTH_STENCIL_DESC {
                 DepthEnable: true.into(),
-                DepthWriteMask: if state.depth_write_enabled.unwrap_or(false) && !depth_never {
+                DepthWriteMask: if state.depth_write_enabled.unwrap_or(false)
+                    && !depth_never
+                    && !emulate_never_with_stencil
+                {
                     D3D11_DEPTH_WRITE_MASK_ALL
                 } else {
                     D3D11_DEPTH_WRITE_MASK_ZERO
                 },
                 DepthFunc: comparison,
-                StencilEnable: false.into(),
-                StencilReadMask: 0xff,
-                StencilWriteMask: 0xff,
+                StencilEnable: stencil_enable.into(),
+                StencilReadMask: stencil_read_mask,
+                StencilWriteMask: stencil_write_mask,
                 FrontFace: face,
                 BackFace: face,
             })

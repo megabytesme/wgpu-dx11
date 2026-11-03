@@ -307,10 +307,12 @@ Transient color and D24S8 attachments use ordinary D3D allocations; memoryless
 savings are not claimed. Private GPU rendering and core texture/view creation
 are tested; a core transient render pass and historical hardware remain unverified.
 
-Only provably always-passing, non-writing stencil states are accepted; native
-stencil remains disabled and reference updates are ignored. Nontrivial stencil
-will require native reference state retention/rebinding and portable capability
-evidence. The GPU tests cannot yet directly read back stencil bits.
+The private FL9_1 path now accepts identical front/back stencil states and
+retains/rebinds the reference. Asymmetric active state is rejected because
+Microsoft's 10Level9 restrictions exclude two-sided stencil at 9_1. Strict RTX
+readback indirectly verifies Replace, Equal, changed references and a Never
+depth-fail stencil update; direct stencil readback and historical-device
+validation remain unavailable.
 
 Snorm16x2/x4 vertex inputs passed strict private FL9_1 readback, and Snorm16x2
 UV passed the controlled core fixture. Four-byte private vertex alignment and
@@ -360,3 +362,19 @@ verified 64 blue and 64 zero pixels in separate cases.
 
 Sampler LOD policy is validated against actual selected texture/sampler pairs
 and mip counts; finite max normalization and anisotropy remain restricted.
+
+## Current stencil checkpoint
+
+The private FL9_1 path accepts identical active front/back stencil states,
+retains and rebinds the dynamic reference, and rejects asymmetric active state.
+The strict RTX test indirectly verifies Replace/Equal, changed references and
+an active-stencil Never-depth emulation through color readback. The full strict
+HAL suite passed 287 tests, the core zero-adapter test passed, and Clippy passed
+with ten existing warnings. A DX12 HAL regression build/check hit Windows paging
+file error 1455 while mapping Rust crate metadata; it remains unverified for
+this increment.
+
+Next, cover one-sided stencil through the unsafe core fixture while preserving
+empty ordinary D3D11 enumeration. Then continue core/HAL contract auditing. Do
+not expose a public adapter or surface: DXGI message-pump reentrancy remains an
+unresolved presentation blocker.

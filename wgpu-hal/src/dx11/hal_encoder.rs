@@ -1048,7 +1048,9 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn set_stencil_reference(&mut self, value: u32) {
         if self.render.is_none() {
             self.reject();
+            return;
         }
+        self.record(NativeCommand::SetStencilReference(value));
     }
 
     unsafe fn set_blend_constants(&mut self, color: &[f32; 4]) {

@@ -89,7 +89,7 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let make_pipeline = |stencil: wgt::StencilState, depth_write| unsafe {
+    let make_pipeline_with_depth = |stencil: wgt::StencilState, depth_write, depth_compare| unsafe {
         device.create_render_pipeline(&crate::RenderPipelineDescriptor {
             label: None,
             layout: &layout,
@@ -101,7 +101,7 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
             depth_stencil: Some(wgt::DepthStencilState {
                 format: wgt::TextureFormat::Depth24PlusStencil8,
                 depth_write_enabled: Some(depth_write),
-                depth_compare: Some(wgt::CompareFunction::LessEqual),
+                depth_compare: Some(depth_compare),
                 stencil,
                 bias: wgt::DepthBiasState::default(),
             }),
@@ -111,6 +111,9 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
             multiview_mask: None,
             cache: None,
         })
+    };
+    let make_pipeline = |stencil, depth_write| {
+        make_pipeline_with_depth(stencil, depth_write, wgt::CompareFunction::LessEqual)
     };
     let ignore = make_pipeline(wgt::StencilState::default(), true).unwrap();
     let equal_face = wgt::StencilFaceState {
@@ -125,23 +128,62 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
     };
     let noop = make_pipeline(equal.clone(), true).expect("masked Equal/Keep stencil is a no-op");
     let noop_readonly = make_pipeline(equal.clone(), false).expect("read-only no-op stencil");
-    assert!(make_pipeline(
-        wgt::StencilState {
-            read_mask: 0xff,
-            ..equal.clone()
-        },
-        true
-    )
-    .is_err());
+    assert!(
+        make_pipeline(
+            wgt::StencilState {
+                read_mask: 0xff,
+                ..equal.clone()
+            },
+            true
+        )
+        .is_ok(),
+        "active Equal stencil comparisons are supported"
+    );
     let writing = wgt::StencilFaceState {
         compare: wgt::CompareFunction::Always,
         pass_op: wgt::StencilOperation::Replace,
         ..wgt::StencilFaceState::IGNORE
     };
-    assert!(make_pipeline(
+    let write_pipeline = make_pipeline(
         wgt::StencilState {
             front: writing,
             back: writing,
+            read_mask: 0xff,
+            write_mask: 0xff,
+        },
+        true,
+    )
+    .unwrap();
+    let equal_test = make_pipeline(
+        wgt::StencilState {
+            front: equal_face,
+            back: equal_face,
+            read_mask: 0xff,
+            write_mask: 0xff,
+        },
+        false,
+    )
+    .unwrap();
+    let depth_fail = wgt::StencilFaceState {
+        compare: wgt::CompareFunction::Always,
+        depth_fail_op: wgt::StencilOperation::Replace,
+        ..wgt::StencilFaceState::IGNORE
+    };
+    let depth_never_stencil = make_pipeline_with_depth(
+        wgt::StencilState {
+            front: depth_fail,
+            back: depth_fail,
+            read_mask: 0xff,
+            write_mask: 0xff,
+        },
+        true,
+        wgt::CompareFunction::Never,
+    )
+    .unwrap();
+    assert!(make_pipeline(
+        wgt::StencilState {
+            front: writing,
+            back: wgt::StencilFaceState::IGNORE,
             read_mask: 0xff,
             write_mask: 0xff,
         },
@@ -153,6 +195,7 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
     for (z, color) in [
         (0.25f32, [1.0f32, 0.0, 0.0, 1.0]),
         (0.75, [0.0, 1.0, 0.0, 1.0]),
+        (0.1, [0.0, 0.0, 1.0, 1.0]),
     ] {
         for point in points {
             for value in [
@@ -402,6 +445,100 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
     }
     unsafe {
         encoder.reset_all([verify_depth].into_iter());
+    }
+    let stencil_commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &colors,
+            depth_stencil_attachment: Some(attachment(crate::AttachmentOps::LOAD_CLEAR)),
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        encoder.begin_render_pass(&pass).unwrap();
+        encoder.set_stencil_reference(0xa7);
+        encoder.set_render_pipeline(&write_pipeline);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.set_scissor_rect(&crate::Rect {
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 8,
+        });
+        encoder.draw(0, 3, 0, 1);
+        encoder.set_render_pipeline(&equal_test);
+        encoder.set_stencil_reference(0xa7);
+        encoder.set_scissor_rect(&crate::Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        });
+        encoder.draw(6, 3, 0, 1);
+        encoder.set_stencil_reference(0xa6);
+        encoder.draw(0, 3, 0, 1);
+        encoder.end_render_pass();
+        encoder.end_encoding().unwrap()
+    };
+    unsafe {
+        queue
+            .submit(&[&stencil_commands], &[], (&fence, 5))
+            .unwrap()
+    };
+    assert!(native.wait_native_fence(&fence, 5, Some(Duration::from_secs(5)))?);
+    let pixels = native.read_rgba_texture(&color, 0, 0)?;
+    for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+        let expected = if index % 8 < 4 {
+            [0, 0, 255, 255]
+        } else {
+            [0, 0, 0, 255]
+        };
+        assert_eq!(pixel, expected, "stencil write/reference pixel {index}");
+    }
+    unsafe {
+        encoder.reset_all([stencil_commands].into_iter());
+    }
+    let depth_fail_commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &colors,
+            depth_stencil_attachment: Some(attachment(crate::AttachmentOps::LOAD_CLEAR)),
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        encoder.begin_render_pass(&pass).unwrap();
+        encoder.set_stencil_reference(0x5c);
+        encoder.set_render_pipeline(&depth_never_stencil);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.draw(0, 3, 0, 1);
+        encoder.set_stencil_reference(0x5c);
+        encoder.set_render_pipeline(&equal_test);
+        encoder.draw(6, 3, 0, 1);
+        encoder.set_stencil_reference(0x5d);
+        encoder.set_render_pipeline(&equal_test);
+        encoder.draw(3, 3, 0, 1);
+        encoder.end_render_pass();
+        encoder.end_encoding().unwrap()
+    };
+    unsafe {
+        queue
+            .submit(&[&depth_fail_commands], &[], (&fence, 6))
+            .unwrap()
+    };
+    assert!(native.wait_native_fence(&fence, 6, Some(Duration::from_secs(5)))?);
+    let pixels = native.read_rgba_texture(&color, 0, 0)?;
+    for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+        assert_eq!(pixel, [0, 0, 255, 255], "depth-fail stencil pixel {index}");
+    }
+    unsafe {
+        encoder.reset_all([depth_fail_commands].into_iter());
         device.destroy_buffer(vertex);
         device.destroy_texture_view(depth_view);
         device.destroy_texture_view(color_view);
@@ -409,10 +546,13 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
         device.destroy_texture(color);
         device.destroy_render_pipeline(noop);
         device.destroy_render_pipeline(noop_readonly);
+        device.destroy_render_pipeline(write_pipeline);
+        device.destroy_render_pipeline(equal_test);
+        device.destroy_render_pipeline(depth_never_stencil);
         device.destroy_render_pipeline(ignore);
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
     }
-    std::println!("PASS: FL9_1 masked Equal/Keep matches IGNORE across two passes");
+    std::println!("PASS: FL9_1 stencil reference, Replace, Equal and masked no-op rendering");
     Ok(())
 }

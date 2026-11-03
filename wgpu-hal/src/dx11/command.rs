@@ -166,6 +166,7 @@ pub(super) enum NativeCommand {
         transform: [f32; 4],
     },
     SetScissor(windows::Win32::Foundation::RECT),
+    SetStencilReference(u32),
     Draw {
         first: u32,
         count: u32,
@@ -364,6 +365,8 @@ impl CommandBuffer {
 
     /// The caller must hold the owning device's immediate-context mutex.
     pub(super) fn replay(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        let mut active_depth_state = None;
+        let mut stencil_reference = 0;
         for command in &self.commands {
             unsafe {
                 match command {
@@ -410,6 +413,8 @@ impl CommandBuffer {
                         height,
                     } => {
                         let target = target.as_ref().map(RenderTarget::resolve).transpose()?;
+                        active_depth_state = None;
+                        stencil_reference = 0;
                         context.ClearState();
                         if let Some(target) = &target {
                             context.OMSetRenderTargets(
@@ -423,7 +428,7 @@ impl CommandBuffer {
                             );
                         }
                         context.OMSetBlendState(None, None, u32::MAX);
-                        context.OMSetDepthStencilState(None, 0);
+                        context.OMSetDepthStencilState(None, stencil_reference);
                         let identity: [f32; 4] = [1., 1., 0., 0.];
                         context.UpdateSubresource(
                             viewport_buffer,
@@ -478,9 +483,11 @@ impl CommandBuffer {
                         blend,
                         depth_state,
                     } => {
+                        active_depth_state = depth_state.clone();
                         context.RSSetState(Some(rasterizer));
                         context.OMSetBlendState(blend.as_ref(), None, u32::MAX);
-                        context.OMSetDepthStencilState(depth_state.as_ref(), 0);
+                        context
+                            .OMSetDepthStencilState(active_depth_state.as_ref(), stencil_reference);
                         context.IASetInputLayout(input.as_ref());
                         context.IASetPrimitiveTopology(match topology {
                             wgt::PrimitiveTopology::PointList => D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
@@ -555,6 +562,11 @@ impl CommandBuffer {
                     }
                     NativeCommand::SetScissor(rect) => {
                         context.RSSetScissorRects(Some(core::slice::from_ref(rect)))
+                    }
+                    NativeCommand::SetStencilReference(reference) => {
+                        stencil_reference = *reference;
+                        context
+                            .OMSetDepthStencilState(active_depth_state.as_ref(), stencil_reference);
                     }
                     NativeCommand::Draw {
                         first,

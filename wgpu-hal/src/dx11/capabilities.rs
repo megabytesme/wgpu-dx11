@@ -26,6 +26,7 @@ pub(super) struct HardwareGuarantees {
     pub separate_alpha_blend: bool,
     pub geometry_shader: bool,
     pub compute_shader: bool,
+    pub two_sided_stencil: bool,
 }
 
 impl HardwareGuarantees {
@@ -49,6 +50,7 @@ impl HardwareGuarantees {
             separate_alpha_blend: level != L9_1,
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
+            two_sided_stencil: level != L9_1,
         }
     }
 
@@ -126,6 +128,8 @@ pub(super) struct BackendCapabilities {
     pub storage: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
+    pub d24s8_stencil_operations: bool,
+    pub two_sided_stencil: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
     /// Restricted stream emulation; excludes `instance_index` and instance-only indexed draws.
@@ -169,6 +173,8 @@ impl BackendCapabilities {
         storage: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
+        d24s8_stencil_operations: true,
+        two_sided_stencil: false,
         instancing: false,
         instancing_without_instance_inputs: true,
         restricted_instance_rate_streams: true,
@@ -375,21 +381,22 @@ mod tests {
     #[test]
     fn feature_level_guarantees_are_specific_and_do_not_promote_backend() {
         let expected = [
-            (FeatureLevel::L9_1, 2048, 1, false, false),
-            (FeatureLevel::L9_2, 2048, 1, false, false),
-            (FeatureLevel::L9_3, 4096, 4, false, false),
-            (FeatureLevel::L10_0, 8192, 8, true, false),
-            (FeatureLevel::L10_1, 8192, 8, true, false),
-            (FeatureLevel::L11_0, 16384, 8, true, true),
-            (FeatureLevel::L11_1, 16384, 8, true, true),
+            (FeatureLevel::L9_1, 2048, 1, false, false, false),
+            (FeatureLevel::L9_2, 2048, 1, false, false, true),
+            (FeatureLevel::L9_3, 4096, 4, false, false, true),
+            (FeatureLevel::L10_0, 8192, 8, true, false, true),
+            (FeatureLevel::L10_1, 8192, 8, true, false, true),
+            (FeatureLevel::L11_0, 16384, 8, true, true, true),
+            (FeatureLevel::L11_1, 16384, 8, true, true, true),
         ];
-        for (level, dimension, targets, geometry, compute) in expected {
+        for (level, dimension, targets, geometry, compute, two_sided_stencil) in expected {
             let caps = model(level);
             assert_eq!(caps.hardware.level, level);
             assert_eq!(caps.hardware.texture_2d_dimension, dimension);
             assert_eq!(caps.hardware.render_targets, targets);
             assert_eq!(caps.hardware.geometry_shader, geometry);
             assert_eq!(caps.hardware.compute_shader, compute);
+            assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
             assert_eq!(
                 caps.hardware.max_triangle_vertices_per_draw(),
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
@@ -410,7 +417,10 @@ mod tests {
         assert_eq!(fl9.hardware.max_primitives_per_draw, 65_535);
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
+        assert!(!fl9.hardware.two_sided_stencil);
         assert_eq!(fl9.backend.max_sampler_anisotropy, 2);
+        assert!(fl9.backend.d24s8_stencil_operations);
+        assert!(!fl9.backend.two_sided_stencil);
         assert!(fl9.backend.single_mip_equal_filter_lod_normalization);
         assert!(fl9.backend.sparse_texture_sampler_bindings);
         assert_eq!(
