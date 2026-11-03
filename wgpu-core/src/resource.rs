@@ -2368,6 +2368,8 @@ pub enum CreateQuerySetError {
     TooManyQueries { count: u32, maximum: u32 },
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
+    #[error(transparent)]
+    MissingDownlevelFlags(#[from] MissingDownlevelFlags),
 }
 
 impl WebGpuError for CreateQuerySetError {
@@ -2375,6 +2377,7 @@ impl WebGpuError for CreateQuerySetError {
         match self {
             Self::Device(e) => e.webgpu_error_type(),
             Self::MissingFeatures(e) => e.webgpu_error_type(),
+            Self::MissingDownlevelFlags(e) => e.webgpu_error_type(),
 
             Self::TooManyQueries { .. } | Self::ZeroCount => ErrorType::Validation,
         }

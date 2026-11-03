@@ -42,6 +42,12 @@ Bottom level categories:
 
 ## Unreleased
 
+### Changes
+
+#### Hal
+
+- HAL adapters with occlusion query support must report the new `DownlevelFlags::OCCLUSION_QUERY` flag. Custom adapters and stored flag sets may need updating.
+
 ### Bug Fixes
 
 #### Validation
@@ -49,6 +55,7 @@ Bottom level categories:
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
 - Reject non-finite viewport coordinates and dimensions.
 - Validate pipelines without panicking when inter-stage variable limits are zero or below built-in deductions.
+- Reject occlusion query sets on adapters that do not report query support, without losing the device.
 
 #### naga
 

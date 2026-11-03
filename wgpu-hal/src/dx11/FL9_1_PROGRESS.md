@@ -627,9 +627,39 @@ untouched pixels. Synthetic checks cover missing format support, incompatible
 views and cross-format copies. The strict private suite passed 187 tests, two
 filtered. HAL Clippy passed with ten existing warnings. A read-only independent
 review found no concrete defect; historical GPU behavior is unverified.
+Checkpoint: `86a5ddfb5`.
 
-The next core-validation baseline requested an occlusion query through the
+The core-validation baseline requested an occlusion query through the
 controlled FL9_1 fixture and failed as `Device(Lost)`. FL9_1 does not guarantee
-occlusion queries; a downlevel availability check is in progress to reject the
-request before HAL. GLES already uses conservative query results, a separate
-pre-existing semantics issue that this change must not claim to resolve.
+occlusion queries; a new downlevel availability flag now rejects that request
+before HAL. The strict fixture then continued to GPU upload and textured depth
+readback (64/64 bytes and 32 red/32 green pixels); all 68 fixture-enabled core
+tests passed. A synthetic GLES version/extension test and a compliance test
+passed; core and GLES Clippy passed. Custom HAL adapters and stored flag sets
+must add the new flag for supported queries. GLES already uses conservative
+query results, a separate pre-existing semantics issue this does not resolve.
+
+The existing query GPU tests passed on DX12 (four RTX and four Microsoft Basic
+Render Driver cases), desktop GL (four RTX cases), and Vulkan (four RTX cases).
+DX12 query initialization reported 18 executed and four unsupported cases;
+GL reported nine executed and two unsupported cases. A Noop creation test also
+passed. The first parallel test-harness invocation aborted because isolation
+requires `--test-threads=1`; rerunning serially passed. Vulkan initially failed
+because the loader referenced a missing OBS layer manifest. Setting only the
+test process's `VK_IMPLICIT_LAYER_PATH` to an empty temporary directory allowed
+the Vulkan tests to pass, with a remaining registry lookup warning. This does
+not repair the system's Vulkan configuration. The strict public wgpu fixture
+also passed on the RTX at FL9_1 with 32 red and 32 green pixels.
+The GPU report was generated at ignored `.gpuconfig`; the process-local Vulkan
+layer override used the empty directory `target/codex-empty-vk-layers`.
+
+The query regressions used `cargo test --offline -p wgpu-test --test wgpu-gpu
+-- occlusion_query --nocapture --test-threads=1` with `WGPU_BACKEND` set in
+turn to `dx12`, `gl`, and `vulkan`. The initialization runs used the same
+command with `resolve_query_set_init` as the filter, on DX12 and GL. The
+focused synthetic commands were `cargo test --offline -p wgpu-types --lib
+occlusion_queries_are_required_for_webgpu_compliance` and `cargo test --offline
+-p wgpu-hal --lib --no-default-features --features gles
+conservative_occlusion_query_availability`. The core suite used
+`cargo test --offline -p wgpu-core --lib --no-default-features --features
+dx11-test-fixture,std`; strict hardware mode was enabled for the fixture.

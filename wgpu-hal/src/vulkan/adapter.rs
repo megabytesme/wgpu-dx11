@@ -695,6 +695,7 @@ impl PhysicalDeviceFeatures {
             | Df::VIEW_FORMATS
             | Df::UNRESTRICTED_EXTERNAL_TEXTURE_COPIES
             | Df::NONBLOCKING_QUERY_RESOLVE
+            | Df::OCCLUSION_QUERY
             | Df::SHADER_F16_IN_F32
             | Df::MSL2_1;
 

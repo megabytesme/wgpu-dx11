@@ -13,6 +13,15 @@ use crate::gles::ShaderClearProgram;
 const GL_UNMASKED_VENDOR_WEBGL: u32 = 0x9245;
 const GL_UNMASKED_RENDERER_WEBGL: u32 = 0x9246;
 
+fn supports_conservative_occlusion_query(
+    es_version: Option<(u8, u8)>,
+    desktop_version: Option<(u8, u8)>,
+    desktop_es3_compatibility: bool,
+) -> bool {
+    es_version.is_some_and(|version| version >= (3, 0))
+        || desktop_version.is_some_and(|version| version >= (4, 3) || desktop_es3_compatibility)
+}
+
 impl super::Adapter {
     pub fn get_glsl_version(&self) -> naga::back::glsl::Version {
         self.shared.shading_language_version
@@ -389,6 +398,14 @@ impl super::Adapter {
             | wgt::DownlevelFlags::COMPARISON_SAMPLERS
             | wgt::DownlevelFlags::SHADER_F16_IN_F32
             | wgt::DownlevelFlags::MSL2_1;
+        downlevel_flags.set(
+            wgt::DownlevelFlags::OCCLUSION_QUERY,
+            supports_conservative_occlusion_query(
+                es_ver,
+                full_ver,
+                extensions.contains("GL_ARB_ES3_compatibility"),
+            ),
+        );
         downlevel_flags.set(
             wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
             supports_cube_array,
@@ -1437,7 +1454,22 @@ unsafe impl Send for super::Adapter {}
 
 #[cfg(test)]
 mod tests {
-    use super::super::Adapter;
+    use super::{super::Adapter, supports_conservative_occlusion_query};
+
+    #[test]
+    fn conservative_occlusion_query_availability() {
+        let supported = supports_conservative_occlusion_query;
+        assert!(supported(Some((3, 0)), None, false));
+        assert!(supported(Some((3, 2)), None, false));
+        assert!(!supported(Some((2, 0)), None, false));
+        assert!(!supported(None, Some((3, 3)), false));
+        assert!(!supported(None, Some((4, 2)), false));
+        assert!(supported(None, Some((3, 3)), true));
+        assert!(supported(None, Some((4, 3)), false));
+        assert!(!supported(None, None, true));
+        let webgl2 = Adapter::parse_version("WebGL 2.0 (OpenGL ES 3.0 Chromium)").unwrap();
+        assert!(supported(Some(webgl2), None, false));
+    }
 
     #[test]
     fn test_version_parse() {

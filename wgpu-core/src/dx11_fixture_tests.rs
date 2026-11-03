@@ -148,6 +148,39 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let (device, queue) =
         unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
             .expect("controlled core device initialization");
+    let (query_set, error) = global.device_create_query_set(
+        device,
+        &wgt::QuerySetDescriptor {
+            label: None,
+            ty: wgt::QueryType::Occlusion,
+            count: 1,
+        },
+        None,
+    );
+    global.query_set_drop(query_set);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(crate::resource::CreateQuerySetError::MissingDownlevelFlags(
+                crate::device::MissingDownlevelFlags(flags),
+            )) if *flags == wgt::DownlevelFlags::OCCLUSION_QUERY
+        ),
+        "unsupported occlusion must fail validation, not lose the device: {error:?}"
+    );
+    let (query_set, error) = global.device_create_query_set(
+        device,
+        &wgt::QuerySetDescriptor {
+            label: None,
+            ty: wgt::QueryType::Timestamp,
+            count: 1,
+        },
+        None,
+    );
+    global.query_set_drop(query_set);
+    assert!(matches!(
+        error,
+        Some(crate::resource::CreateQuerySetError::MissingFeatures(_))
+    ));
     let create = |usage| {
         let (id, error) = global.device_create_buffer(
             device,

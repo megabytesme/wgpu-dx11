@@ -9,6 +9,7 @@ pub fn all_tests(vec: &mut Vec<GpuTestInitializer>) {
 static OCCLUSION_QUERY: GpuTestConfiguration = GpuTestConfiguration::new()
     .parameters(
         TestParameters::default()
+            .downlevel_flags(wgpu::DownlevelFlags::OCCLUSION_QUERY)
             .expect_fail(FailureCase::webgl2())
             // Ensure timestamp normalization does not interfere with occlusion query results
             .instance_flags(InstanceFlags::AUTOMATIC_TIMESTAMP_NORMALIZATION),

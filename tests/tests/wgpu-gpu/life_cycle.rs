@@ -15,6 +15,8 @@ pub fn all_tests(vec: &mut Vec<GpuTestInitializer>) {
         EXTERNAL_TEXTURE_DESTROY_BEFORE_SUBMIT,
         QUERY_SET_DESTROY_BEFORE_SUBMIT,
         QUERY_SET_DESTROY_AFTER_SUBMIT,
+        OCCLUSION_QUERY_SET_DESTROY_BEFORE_SUBMIT,
+        OCCLUSION_QUERY_SET_DESTROY_AFTER_SUBMIT,
         REPLACED_BIND_GROUP,
     ]);
 }
@@ -831,10 +833,22 @@ static QUERY_SET_DESTROY_BEFORE_SUBMIT: GpuTestConfiguration = GpuTestConfigurat
             .features(wgpu::Features::TIMESTAMP_QUERY),
     )
     .run_sync(|ctx| {
-        test_query_set_destroy_before_submit(&ctx, QueryType::Occlusion, UsageKind::RenderPass);
         test_query_set_destroy_before_submit(&ctx, QueryType::Timestamp, UsageKind::RenderPass);
         test_query_set_destroy_before_submit(&ctx, QueryType::Timestamp, UsageKind::ComputePass);
     });
+
+#[gpu_test]
+static OCCLUSION_QUERY_SET_DESTROY_BEFORE_SUBMIT: GpuTestConfiguration =
+    GpuTestConfiguration::new()
+        .parameters(
+            TestParameters::default()
+                .test_features_limits()
+                .enable_noop()
+                .downlevel_flags(wgpu::DownlevelFlags::OCCLUSION_QUERY),
+        )
+        .run_sync(|ctx| {
+            test_query_set_destroy_before_submit(&ctx, QueryType::Occlusion, UsageKind::RenderPass);
+        });
 
 fn test_query_set_destroy_after_submit(ctx: &TestingContext, ty: QueryType, usage: UsageKind) {
     let query_set = ctx.device.create_query_set(&wgpu::QuerySetDescriptor {
@@ -922,9 +936,20 @@ static QUERY_SET_DESTROY_AFTER_SUBMIT: GpuTestConfiguration = GpuTestConfigurati
             .features(wgpu::Features::TIMESTAMP_QUERY),
     )
     .run_sync(|ctx| {
-        test_query_set_destroy_after_submit(&ctx, QueryType::Occlusion, UsageKind::RenderPass);
         test_query_set_destroy_after_submit(&ctx, QueryType::Timestamp, UsageKind::RenderPass);
         test_query_set_destroy_after_submit(&ctx, QueryType::Timestamp, UsageKind::ComputePass);
+    });
+
+#[gpu_test]
+static OCCLUSION_QUERY_SET_DESTROY_AFTER_SUBMIT: GpuTestConfiguration = GpuTestConfiguration::new()
+    .parameters(
+        TestParameters::default()
+            .test_features_limits()
+            .enable_noop()
+            .downlevel_flags(wgpu::DownlevelFlags::OCCLUSION_QUERY),
+    )
+    .run_sync(|ctx| {
+        test_query_set_destroy_after_submit(&ctx, QueryType::Occlusion, UsageKind::RenderPass);
     });
 
 fn test_replaced_bind_group(ctx: &TestingContext, usage: UsageKind) {

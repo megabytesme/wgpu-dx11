@@ -49,7 +49,11 @@ fn fs_main() -> @location(0) vec4<f32> {
 
 #[gpu_test]
 static RENDER_PASS_RESOURCE_OWNERSHIP: GpuTestConfiguration = GpuTestConfiguration::new()
-    .parameters(TestParameters::default().test_features_limits())
+    .parameters(
+        TestParameters::default()
+            .test_features_limits()
+            .downlevel_flags(wgpu::DownlevelFlags::OCCLUSION_QUERY),
+    )
     .run_async(render_pass_resource_ownership);
 
 async fn render_pass_resource_ownership(ctx: TestingContext) {
@@ -65,8 +69,12 @@ async fn render_pass_resource_ownership(ctx: TestingContext) {
         color_attachment_view,
         color_attachment_resolve_view,
         depth_stencil_view,
-        occlusion_query_set,
     } = resource_setup(&ctx);
+    let occlusion_query_set = ctx.device.create_query_set(&wgpu::QuerySetDescriptor {
+        label: Some("occ_query_set"),
+        ty: wgpu::QueryType::Occlusion,
+        count: 1,
+    });
 
     let mut encoder = ctx
         .device
@@ -376,7 +384,6 @@ struct ResourceSetup {
     color_attachment_view: wgpu::TextureView,
     color_attachment_resolve_view: wgpu::TextureView,
     depth_stencil_view: wgpu::TextureView,
-    occlusion_query_set: wgpu::QuerySet,
 }
 
 fn resource_setup(ctx: &TestingContext) -> ResourceSetup {
@@ -505,12 +512,6 @@ fn resource_setup(ctx: &TestingContext) -> ResourceSetup {
     });
     let depth_stencil_view = depth_stencil.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let occlusion_query_set = ctx.device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: Some("occ_query_set"),
-        ty: wgpu::QueryType::Occlusion,
-        count: 1,
-    });
-
     let pipeline = ctx
         .device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -567,6 +568,5 @@ fn resource_setup(ctx: &TestingContext) -> ResourceSetup {
         color_attachment_view,
         color_attachment_resolve_view,
         depth_stencil_view,
-        occlusion_query_set,
     }
 }

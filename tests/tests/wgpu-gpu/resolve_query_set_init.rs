@@ -10,7 +10,7 @@ use wgpu_test::{
 
 pub fn all_tests(vec: &mut Vec<GpuTestInitializer>) {
     vec.extend([
-        // Occlusion — no features required.
+        // Occlusion — requires the downlevel capability.
         UNWRITTEN_OCCLUSION_RESOLVES_TO_ZERO,
         USED_EMPTY_OCCLUSION_RESOLVES_TO_ZERO,
         SAME_ENCODER_RESOLVES_CORRECTLY,
@@ -31,7 +31,7 @@ pub fn all_tests(vec: &mut Vec<GpuTestInitializer>) {
 
 #[gpu_test]
 static UNWRITTEN_OCCLUSION_RESOLVES_TO_ZERO: GpuTestConfiguration = GpuTestConfiguration::new()
-    .parameters(TestParameters::default())
+    .parameters(TestParameters::default().downlevel_flags(DownlevelFlags::OCCLUSION_QUERY))
     .run_async(|ctx| async move {
         const COUNT: u32 = 4;
         let (qs, dst, size) = create_resolve_resources(&ctx, QueryType::Occlusion, COUNT);
@@ -54,7 +54,7 @@ static UNWRITTEN_OCCLUSION_RESOLVES_TO_ZERO: GpuTestConfiguration = GpuTestConfi
 /// result is 0) should also resolve to zero.
 #[gpu_test]
 static USED_EMPTY_OCCLUSION_RESOLVES_TO_ZERO: GpuTestConfiguration = GpuTestConfiguration::new()
-    .parameters(TestParameters::default())
+    .parameters(TestParameters::default().downlevel_flags(DownlevelFlags::OCCLUSION_QUERY))
     .run_async(|ctx| async move {
         let view = ctx
             .device
@@ -117,6 +117,7 @@ static USED_EMPTY_OCCLUSION_RESOLVES_TO_ZERO: GpuTestConfiguration = GpuTestConf
 static SAME_ENCODER_RESOLVES_CORRECTLY: GpuTestConfiguration = GpuTestConfiguration::new()
     .parameters(
         TestParameters::default()
+            .downlevel_flags(DownlevelFlags::OCCLUSION_QUERY)
             // See https://github.com/gfx-rs/wgpu/issues/9665.
             .expect_fail(FailureCase::webgl2()),
     )
@@ -155,6 +156,7 @@ static WRITTEN_IN_PRIOR_SUBMIT_RESOLVES_CORRECTLY: GpuTestConfiguration =
     GpuTestConfiguration::new()
         .parameters(
             TestParameters::default()
+                .downlevel_flags(DownlevelFlags::OCCLUSION_QUERY)
                 // See https://github.com/gfx-rs/wgpu/issues/9665.
                 .expect_fail(FailureCase::webgl2()),
         )
@@ -195,6 +197,7 @@ static WRITTEN_IN_PRIOR_SUBMIT_AND_SAME_ENCODER_RESOLVES_CORRECTLY: GpuTestConfi
     GpuTestConfiguration::new()
         .parameters(
             TestParameters::default()
+                .downlevel_flags(DownlevelFlags::OCCLUSION_QUERY)
                 // See https://github.com/gfx-rs/wgpu/issues/9665.
                 .expect_fail(FailureCase::webgl2()),
         )

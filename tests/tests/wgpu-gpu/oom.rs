@@ -140,6 +140,7 @@ static MAPPING_BUFFER_OOM_TEST: GpuTestConfiguration = GpuTestConfiguration::new
 static QUERY_SET_OOM_TEST: GpuTestConfiguration = GpuTestConfiguration::new()
     .parameters(
         TestParameters::default()
+            .downlevel_flags(wgpu::DownlevelFlags::OCCLUSION_QUERY)
             // Vulkan: https://github.com/gfx-rs/wgpu/issues/7817
             .skip(FailureCase::backend(!QUERY_SET_OOM_DETECTION_IMPL))
             // see comment at the top of the file

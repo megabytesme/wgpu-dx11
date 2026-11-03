@@ -5213,7 +5213,9 @@ impl Device {
         self.check_is_valid()?;
 
         match desc.ty {
-            wgt::QueryType::Occlusion => {}
+            wgt::QueryType::Occlusion => {
+                self.require_downlevel_flags(wgt::DownlevelFlags::OCCLUSION_QUERY)?;
+            }
             wgt::QueryType::Timestamp => {
                 self.require_features(wgt::Features::TIMESTAMP_QUERY)?;
             }

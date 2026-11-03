@@ -1234,6 +1234,11 @@ bitflags::bitflags! {
         ///
         /// See <https://www.w3.org/TR/webgpu/#adapter-capability-guarantees>.
         const TEXTURE_COMPRESSION = 1 << 25;
+
+        /// Supports creating and using occlusion query sets.
+        ///
+        /// Custom HAL adapters must report this flag to permit occlusion queries.
+        const OCCLUSION_QUERY = 1 << 26;
     }
 }
 
@@ -1265,6 +1270,15 @@ pub enum ShaderModel {
 mod tests {
     use super::*;
     use alloc::{format, string::String, vec::Vec};
+
+    #[test]
+    fn occlusion_queries_are_required_for_webgpu_compliance() {
+        let mut capabilities = DownlevelCapabilities::default();
+        assert!(capabilities.flags.contains(DownlevelFlags::OCCLUSION_QUERY));
+        assert!(capabilities.is_webgpu_compliant());
+        capabilities.flags.remove(DownlevelFlags::OCCLUSION_QUERY);
+        assert!(!capabilities.is_webgpu_compliant());
+    }
 
     fn side_by_side(left: &str, right: &str) -> String {
         let left_lines: Vec<&str> = left.lines().map(str::trim).collect();

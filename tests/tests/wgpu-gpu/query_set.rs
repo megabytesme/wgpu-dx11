@@ -2,7 +2,26 @@ use wgpu_test::{gpu_test, GpuTestConfiguration, GpuTestInitializer, TestParamete
 
 pub fn all_tests(vec: &mut Vec<GpuTestInitializer>) {
     vec.push(DROP_FAILED_TIMESTAMP_QUERY_SET);
+    vec.push(OCCLUSION_QUERY_SET_AVAILABLE);
 }
+
+#[gpu_test]
+static OCCLUSION_QUERY_SET_AVAILABLE: GpuTestConfiguration = GpuTestConfiguration::new()
+    .parameters(
+        TestParameters::default()
+            .downlevel_flags(wgpu::DownlevelFlags::OCCLUSION_QUERY)
+            .enable_noop(),
+    )
+    .run_sync(|ctx| {
+        let scope = ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let query_set = ctx.device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: None,
+            ty: wgpu::QueryType::Occlusion,
+            count: 1,
+        });
+        drop(query_set);
+        assert!(pollster::block_on(scope.pop()).is_none());
+    });
 
 #[gpu_test]
 static DROP_FAILED_TIMESTAMP_QUERY_SET: GpuTestConfiguration = GpuTestConfiguration::new()

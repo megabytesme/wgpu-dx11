@@ -93,12 +93,15 @@ separate-alpha blending; the default path now rejects modes that require it,
 while masked-channel equivalents remain supported. Native compute and UAV storage are not
 FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
 
-Core permits draw combinations, layouts, resource shapes and baseline query
-operations outside the private subset; the existing downlevel flags alone do
+Core permits draw combinations, layouts and resource shapes outside the private
+subset; the existing downlevel flags alone do
 not make all of them unreachable. A safe public backend needs implementations,
 sound fallbacks or targeted core validation for each such case. The unsafe,
 owner-matched fixture proves buffer and textured indexed depth rendering through
 core and public wgpu calls; it does not make general adapter exposure safe.
+An occlusion-query downlevel flag now rejects unavailable query sets in core
+before they can cause device loss. The D3D11 fixture omits the flag; ordinary
+adapter exposure remains gated.
 The Dx11 unreachable in core's shader path is specifically in unsafe passthrough,
 not normal validated WGSL; its reachability still needs an audit before exposure.
 
