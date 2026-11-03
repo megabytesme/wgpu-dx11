@@ -774,3 +774,26 @@ order. The complete strict private suite passed 208 libtest cases, two filtered,
 with three shader GPU skips as documented; HAL Clippy retained ten existing
 warnings. Independent review found no concrete defect. Large native first
 vertex offsets remain unverified on historical devices.
+Checkpoint: `894aa40c4`.
+
+The next private increment targets sparse multiple vertex-rate streams for
+direct triangle lists. Indexed window/gather and strip rebasing currently
+assume one slot; their multi-slot variants must remain rejected until every
+stream can be validated and translated together.
+The strict `fl91_sparse_vertex_streams_render` baseline selected the RTX at
+requested/actual FL9_1 and failed pipeline creation for position slot 0 plus
+color slot 2, as expected from the existing single-slot restriction.
+The direct-only implementation now supports sparse vertex-rate slots with
+independent range checks and replay bindings. The first GPU run produced green
+127 instead of the test's 128 due to interpolation/UNORM rounding; a 1-LSB
+tolerance for that channel retained the test's discriminating output. The
+expanded strict RTX test then passed, covering distinct and shared buffers,
+slot 15, rejection at 16, transitions, a queued copy with source/destination
+released before submission, and an exact last-attribute range plus one-byte-
+short rejection. Physical overlap across slots and historical drivers remain
+unverified. Indexed and strip multi-slot draws are still rejected.
+The strict private suite passed 209 libtest cases, two filtered, with three
+documented shader GPU skips. HAL Clippy passed with ten existing warnings.
+The controlled core and public wgpu fixtures each passed on the RTX, including
+their 32 red/32 green textured-depth readback. Independent review found no
+concrete slot, bounds, stale-state or lifetime defect.

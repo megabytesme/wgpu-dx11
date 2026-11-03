@@ -42,8 +42,9 @@ struct RenderState {
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
     full_npot: super::capabilities::Query<bool>,
     required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
-    vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
-    vertex_layout: Option<(u32, u32)>,
+    vertices: [Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>;
+        MAX_VERTEX_BUFFERS],
+    vertex_layouts: [Option<(u32, u32)>; MAX_VERTEX_BUFFERS],
     topology: Option<wgt::PrimitiveTopology>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
     viewport_remap: bool,
@@ -748,8 +749,8 @@ impl crate::CommandEncoder for CommandEncoder {
             sampling_pairs: Arc::new(Vec::new()),
             full_npot: super::capabilities::Query::Unavailable(0),
             required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
-            vertex: None,
-            vertex_layout: None,
+            vertices: core::array::from_fn(|_| None),
+            vertex_layouts: [None; MAX_VERTEX_BUFFERS],
             topology: None,
             index: None,
             viewport_remap: false,
@@ -801,7 +802,7 @@ impl crate::CommandEncoder for CommandEncoder {
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.full_npot = pipeline.full_npot;
         render.required_uniform_sizes = pipeline.required_uniform_sizes;
-        render.vertex_layout = pipeline.vertex_layout;
+        render.vertex_layouts = pipeline.vertex_layouts;
         render.topology = Some(pipeline.topology);
         render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
         let vertex = if render.viewport_remap {
@@ -853,7 +854,7 @@ impl crate::CommandEncoder for CommandEncoder {
         index: u32,
         binding: BufferBinding<'a, <Self::A as Api>::Buffer>,
     ) {
-        if index != 0 || self.render.is_none() {
+        if index as usize >= MAX_VERTEX_BUFFERS || self.render.is_none() {
             self.reject();
             return;
         }
@@ -868,7 +869,7 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        self.render.as_mut().unwrap().vertex = Some((buffer, offset, len));
+        self.render.as_mut().unwrap().vertices[index as usize] = Some((buffer, offset, len));
     }
 
     unsafe fn set_viewport(&mut self, rect: &Rect<f32>, depth_range: Range<f32>) {
@@ -963,8 +964,12 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        let vertex = if let Some((stride, extent)) = render.vertex_layout {
-            let Some((buffer, offset, bytes)) = render.vertex.as_ref() else {
+        let mut vertices = Vec::new();
+        for (slot, layout) in render.vertex_layouts.iter().enumerate() {
+            let Some((stride, extent)) = *layout else {
+                continue;
+            };
+            let Some((buffer, offset, bytes)) = render.vertices[slot].as_ref() else {
                 self.reject();
                 return;
             };
@@ -980,10 +985,8 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             }
-            Some((buffer.clone(), *offset, stride))
-        } else {
-            None
-        };
+            vertices.push((slot as u32, buffer.clone(), *offset, stride));
+        }
         let Some(topology) = render.topology else {
             self.reject();
             return;
@@ -1004,10 +1007,14 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         if topology == wgt::PrimitiveTopology::TriangleStrip {
+            if vertices.len() > 1 || vertices.first().is_some_and(|vertex| vertex.0 != 0) {
+                self.reject();
+                return;
+            }
             if vertex_count < 3 {
                 return;
             }
-            let vertex = if let Some((buffer, offset, stride)) = vertex {
+            let vertex = if let Some((_, buffer, offset, stride)) = vertices.pop() {
                 let byte_offset =
                     |index: u32| super::command::strip_vertex_offset(offset, stride, index).ok();
                 let start = byte_offset(first_vertex);
@@ -1043,9 +1050,10 @@ impl crate::CommandEncoder for CommandEncoder {
         for command in binding_commands {
             self.record(command);
         }
-        let zero_input = vertex.is_none();
-        if let Some((buffer, offset, stride)) = vertex {
+        let zero_input = vertices.is_empty();
+        for (slot, buffer, offset, stride) in vertices {
             self.record(NativeCommand::SetVertex {
+                slot,
                 buffer,
                 offset,
                 stride,
@@ -1086,9 +1094,13 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        if render.vertex_layouts.iter().skip(1).any(Option::is_some) {
+            self.reject();
+            return;
+        }
         let (Some((buffer, offset, vertex_bytes)), Some((stride, extent)), Some(index)) = (
-            render.vertex.as_ref(),
-            render.vertex_layout,
+            render.vertices[0].as_ref(),
+            render.vertex_layouts[0],
             render.index.as_ref(),
         ) else {
             self.reject();
@@ -1125,6 +1137,7 @@ impl crate::CommandEncoder for CommandEncoder {
             super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                 .max_triangle_vertices_per_draw();
         self.record(NativeCommand::SetVertex {
+            slot: 0,
             buffer: buffer.clone(),
             offset,
             stride,
@@ -3632,6 +3645,10 @@ mod depth_render_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/triangle_strip.rs"]
 mod triangle_strip_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/multi_vertex_stream.rs"]
+mod multi_vertex_stream_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/uniform_bindings.rs"]

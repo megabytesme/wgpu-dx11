@@ -253,7 +253,7 @@ pub struct RenderPipeline {
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
-    pub(super) vertex_layout: Option<(u32, u32)>,
+    pub(super) vertex_layouts: [Option<(u32, u32)>; crate::MAX_VERTEX_BUFFERS],
     pub(super) topology: wgt::PrimitiveTopology,
 }
 
@@ -1682,17 +1682,11 @@ impl RenderPipeline {
                 .module
                 .validate_primitive_index(fragment.entry_point)?;
         }
-        let buffer = match *vertex_buffers {
-            [Some(buffer)] => Some(buffer),
-            slots
-                if slots.len() <= crate::MAX_VERTEX_BUFFERS
-                    && slots.iter().all(Option::is_none) =>
-            {
-                None
-            }
-            _ => return Err(invalid()),
-        };
-        if buffer.is_none() {
+        if vertex_buffers.len() > crate::MAX_VERTEX_BUFFERS {
+            return Err(invalid());
+        }
+        let has_vertex_input = vertex_buffers.iter().any(Option::is_some);
+        if !has_vertex_input {
             vertex_stage
                 .module
                 .validate_no_vertex_locations(vertex_stage.entry_point)?;
@@ -1702,7 +1696,7 @@ impl RenderPipeline {
             wgt::PrimitiveTopology::TriangleList
                 | wgt::PrimitiveTopology::TriangleStrip
                 | wgt::PrimitiveTopology::PointList
-        ) || (desc.primitive.topology == wgt::PrimitiveTopology::PointList && buffer.is_some())
+        ) || (desc.primitive.topology == wgt::PrimitiveTopology::PointList && has_vertex_input)
             || (desc.primitive.topology != wgt::PrimitiveTopology::TriangleStrip
                 && desc.primitive.strip_index_format.is_some())
         {
@@ -1733,7 +1727,7 @@ impl RenderPipeline {
             || desc.multisample != wgt::MultisampleState::default()
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
-            || buffer.is_some_and(|buffer| {
+            || vertex_buffers.iter().flatten().any(|buffer| {
                 buffer.array_stride == 0
                     || buffer.array_stride > 2048
                     || buffer.array_stride % 4 != 0
@@ -1928,53 +1922,53 @@ impl RenderPipeline {
             )
             .map_err(depth_only_shader_error)?
         };
-        let mut input_desc =
-            alloc::vec::Vec::with_capacity(buffer.map_or(0, |buffer| buffer.attributes.len()));
-        let mut vertex_extent = 0u32;
+        let mut input_desc = alloc::vec::Vec::new();
+        let mut vertex_layouts = [None; crate::MAX_VERTEX_BUFFERS];
         let mut locations = 0u32;
-        let mut vertex_ranges = alloc::vec::Vec::new();
-        for (layout, attribute) in buffer.into_iter().flat_map(|layout| {
-            layout
-                .attributes
-                .iter()
-                .map(move |attribute| (layout, attribute))
-        }) {
-            let (format, size) = match attribute.format {
-                wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
-                wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
-                wgt::VertexFormat::Float32x3 => (DXGI_FORMAT_R32G32B32_FLOAT, 12),
-                wgt::VertexFormat::Float32x4 => (DXGI_FORMAT_R32G32B32A32_FLOAT, 16),
-                wgt::VertexFormat::Unorm8x4 => (DXGI_FORMAT_R8G8B8A8_UNORM, 4),
-                _ => return Err(invalid()),
-            };
-            let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
-            let end = offset.checked_add(size).ok_or_else(invalid)?;
-            if offset % 4 != 0
-                || u64::from(end) > layout.array_stride
-                || attribute.shader_location >= 16
-                || locations & (1 << attribute.shader_location) != 0
-            {
-                return Err(invalid());
+        for (slot, layout) in vertex_buffers.iter().enumerate() {
+            let Some(layout) = layout else { continue };
+            let mut vertex_ranges = alloc::vec::Vec::new();
+            let mut vertex_extent = 0u32;
+            for attribute in layout.attributes {
+                let (format, size) = match attribute.format {
+                    wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
+                    wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
+                    wgt::VertexFormat::Float32x3 => (DXGI_FORMAT_R32G32B32_FLOAT, 12),
+                    wgt::VertexFormat::Float32x4 => (DXGI_FORMAT_R32G32B32A32_FLOAT, 16),
+                    wgt::VertexFormat::Unorm8x4 => (DXGI_FORMAT_R8G8B8A8_UNORM, 4),
+                    _ => return Err(invalid()),
+                };
+                let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
+                let end = offset.checked_add(size).ok_or_else(invalid)?;
+                if offset % 4 != 0
+                    || u64::from(end) > layout.array_stride
+                    || attribute.shader_location >= 16
+                    || locations & (1 << attribute.shader_location) != 0
+                {
+                    return Err(invalid());
+                }
+                if overlapping_vertex_element(owner.feature_level(), &vertex_ranges, (offset, end))
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        wgt::ShaderStages::VERTEX,
+                        "overlapping vertex attributes are unsupported at D3D11 feature level 9_1"
+                            .into(),
+                    ));
+                }
+                vertex_ranges.push((offset, end));
+                locations |= 1 << attribute.shader_location;
+                vertex_extent = vertex_extent.max(end);
+                input_desc.push(D3D11_INPUT_ELEMENT_DESC {
+                    SemanticName: PCSTR(c"LOC".as_ptr().cast()),
+                    SemanticIndex: attribute.shader_location,
+                    Format: format,
+                    InputSlot: slot as u32,
+                    AlignedByteOffset: offset,
+                    InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                    InstanceDataStepRate: 0,
+                });
             }
-            if overlapping_vertex_element(owner.feature_level(), &vertex_ranges, (offset, end)) {
-                return Err(crate::PipelineError::Linkage(
-                    wgt::ShaderStages::VERTEX,
-                    "overlapping vertex attributes are unsupported at D3D11 feature level 9_1"
-                        .into(),
-                ));
-            }
-            vertex_ranges.push((offset, end));
-            locations |= 1 << attribute.shader_location;
-            vertex_extent = vertex_extent.max(end);
-            input_desc.push(D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR(c"LOC".as_ptr().cast()),
-                SemanticIndex: attribute.shader_location,
-                Format: format,
-                InputSlot: 0,
-                AlignedByteOffset: offset,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            });
+            vertex_layouts[slot] = Some((layout.array_stride as u32, vertex_extent));
         }
         let raster_desc = D3D11_RASTERIZER_DESC {
             FillMode: D3D11_FILL_SOLID,
@@ -2023,7 +2017,7 @@ impl RenderPipeline {
                     Some(&mut fragment),
                 )
                 .map_err(failure)?;
-            if buffer.is_some() {
+            if has_vertex_input {
                 owner
                     .raw_device()
                     .CreateInputLayout(&input_desc, &vertex_code, Some(&mut input))
@@ -2078,7 +2072,7 @@ impl RenderPipeline {
             sampling_pairs: Arc::new(sampling_pairs),
             full_npot,
             required_uniform_sizes,
-            vertex_layout: buffer.map(|buffer| (buffer.array_stride as u32, vertex_extent)),
+            vertex_layouts,
             topology: desc.primitive.topology,
         })
     }

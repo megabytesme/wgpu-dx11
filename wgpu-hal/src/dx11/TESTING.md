@@ -11,6 +11,12 @@ expressed by `Limits` alone.
 ### Focused FL9_1 hardware test
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+fl91_sparse_vertex_streams_render -- --nocapture` checks direct sparse streams,
+slot 15 and rejection at 16, range boundaries, pipeline transitions, a queued
+GPU copy and resource retention. It binds one buffer in two slots with distinct
+byte regions; overlapping physical bytes across slots remain unverified.
+
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_direct_triangle_ -- --nocapture --test-threads=1` checks direct triangle
 batch boundaries and order on CPU and validates pixels on both sides of a split
 on physical hardware. Opaque output does not independently prove instance order.

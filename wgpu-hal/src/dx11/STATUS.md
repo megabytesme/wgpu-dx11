@@ -32,7 +32,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   textures and sixteen samplers in total.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
-- Triangle-list and nonindexed triangle-strip passes with zero inputs or one interleaved vertex buffer, winding and face
+- Triangle-list passes with up to sixteen sparse vertex-rate streams, and
+  nonindexed triangle strips with zero inputs or a single slot-0 buffer, winding and face
   culling, bounds-checked scissors, per-channel color write masks,
   restricted replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked shaders allow proven value-vector dynamic reads;
@@ -49,6 +50,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   vertices; indexed draw batching retains its separate limit.
 - FL9_1 input layouts reject overlapping element byte ranges within a stream;
   ordinary core validation does not yet express this restriction.
+- Multi-slot indexed draws and strips remain rejected until every stream can
+  be validated and rebased together; slot-0 indexed/strip paths remain available.
 - Direct and indexed instancing repeat native draws in instance order when the
   shader has no instance-dependent inputs. Nonzero first instance is ignored
   within this subset; general instancing is not advertised.

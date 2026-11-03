@@ -104,6 +104,7 @@ pub(super) enum NativeCommand {
         sampler: ID3D11SamplerState,
     },
     SetVertex {
+        slot: u32,
         buffer: ID3D11Buffer,
         offset: u32,
         stride: u32,
@@ -407,12 +408,13 @@ impl CommandBuffer {
                         context.PSSetSamplers(*slot, Some(&[Some(sampler.clone())]));
                     }
                     NativeCommand::SetVertex {
+                        slot,
                         buffer,
                         offset,
                         stride,
                     } => {
                         context.IASetVertexBuffers(
-                            0,
+                            *slot,
                             1,
                             Some(&Some(buffer.clone())),
                             Some(stride),
