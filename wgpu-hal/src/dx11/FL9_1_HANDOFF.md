@@ -22,7 +22,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 163 tests; older
+operations are safe. The latest combined strict suite passed 165 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -48,6 +48,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `9464c4aef6bd02cb37dfd8aba5adaa0bb697d5ad` | Private swapchain/context serialization |
 | `7a7f249f5bc54cfc67678fc00755b9d8429e7338` | Selected-entry texture-load validation |
 | `4bba5f9c53e1ed70fa8569cc9ed7eeec30f06a0f` | Single-target color write masks |
+| `f8bd5183a770dd7e81568516f6a3e3411a8de7d8` | Triangle face culling and winding |
 
 ## What is and is not usable
 
@@ -105,9 +106,10 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,st
 cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --features dx11
 ```
 
-The strict private suite most recently passed 163 tests with two filtered;
-some older tests can skip internally. After the full run, the stronger
-color-mask transition test was rerun and passed. The focused physical-GPU test
+The strict private suite most recently passed 165 tests with two filtered;
+some older tests can skip internally. After that run the register allocator
+was hardened, and its focused test and a strict dynamic-uniform GPU test
+passed. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,
 three transition regions, zero color writes with depth writes and masked

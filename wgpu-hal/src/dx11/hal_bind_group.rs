@@ -83,6 +83,76 @@ impl GroupKind {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct GroupSlots {
+    pub uniforms: u32,
+    pub textures: u32,
+    pub samplers: u32,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct BindingPlan {
+    groups: alloc::vec::Vec<Option<GroupKind>>,
+    slots: alloc::vec::Vec<GroupSlots>,
+}
+
+impl BindingPlan {
+    pub(super) fn new(groups: &[Option<GroupKind>]) -> Result<Self, crate::DeviceError> {
+        fn dense_count<T>(items: &[Option<T>]) -> Result<u32, crate::DeviceError> {
+            let count = items.iter().take_while(|item| item.is_some()).count();
+            if items[count..].iter().any(Option::is_some) {
+                return Err(crate::DeviceError::Unexpected);
+            }
+            Ok(count as u32)
+        }
+        if groups.len() > crate::MAX_BIND_GROUPS {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        let mut next = GroupSlots::default();
+        let mut slots = alloc::vec::Vec::with_capacity(groups.len());
+        for group in groups {
+            slots.push(next);
+            if let Some(group) = group {
+                next.uniforms += dense_count(&group.uniforms)?;
+                next.textures += dense_count(&group.textures)?;
+                next.samplers += dense_count(&group.samplers)?;
+            }
+            if next.uniforms > MAX_UNIFORMS as u32
+                || next.textures > MAX_TEXTURES as u32
+                || next.samplers > MAX_SAMPLERS as u32
+            {
+                return Err(crate::DeviceError::Unexpected);
+            }
+        }
+        Ok(Self {
+            groups: groups.into(),
+            slots,
+        })
+    }
+
+    pub(super) fn stage_bindings(
+        &self,
+        stage: wgt::ShaderStages,
+    ) -> alloc::vec::Vec<super::shader::ShaderBinding> {
+        use super::shader::ShaderBindingKind;
+        let mut bindings = alloc::vec::Vec::new();
+        for (index, (group, slots)) in self.groups.iter().zip(&self.slots).enumerate() {
+            if let Some(group) = group {
+                bindings.extend(group.stage_bindings(stage).into_iter().map(|mut binding| {
+                    binding.binding.group = index as u32;
+                    binding.slot += match binding.kind {
+                        ShaderBindingKind::Uniform => slots.uniforms,
+                        ShaderBindingKind::Texture2dFloat => slots.textures,
+                        ShaderBindingKind::Sampler => slots.samplers,
+                    };
+                    binding
+                }));
+            }
+        }
+        bindings
+    }
+}
+
 fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> bool {
     entries.len() == expected.len()
         && expected.iter().all(|&(binding, index)| {
@@ -347,6 +417,97 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn pipeline_binding_plan_allocates_across_groups_and_enforces_limits() {
+        use super::super::shader::ShaderBindingKind;
+        let uniform = |binding, visibility| UniformLayout {
+            binding,
+            minimum: 0,
+            visibility,
+            dynamic: false,
+        };
+        let mut first = GroupKind::EMPTY;
+        first.uniforms[0] = Some(uniform(
+            42,
+            wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+        ));
+        first.textures[0] = Some(7);
+        first.samplers[0] = Some(99);
+        let mut second = GroupKind::EMPTY;
+        second.uniforms[0] = Some(uniform(3, wgt::ShaderStages::FRAGMENT));
+        second.uniforms[1] = Some(uniform(42, wgt::ShaderStages::VERTEX));
+        second.textures[0] = Some(7);
+        second.samplers[0] = Some(99);
+        let plan = BindingPlan::new(&[Some(first), None, Some(second)]).unwrap();
+        let mappings = plan.stage_bindings(wgt::ShaderStages::FRAGMENT);
+        let tuples: alloc::vec::Vec<_> = mappings
+            .iter()
+            .map(|item| {
+                (
+                    item.binding.group,
+                    item.binding.binding,
+                    item.slot,
+                    item.kind,
+                )
+            })
+            .collect();
+        assert_eq!(
+            tuples,
+            [
+                (0, 42, 0, ShaderBindingKind::Uniform),
+                (0, 7, 0, ShaderBindingKind::Texture2dFloat),
+                (0, 99, 0, ShaderBindingKind::Sampler),
+                (2, 3, 1, ShaderBindingKind::Uniform),
+                (2, 7, 1, ShaderBindingKind::Texture2dFloat),
+                (2, 99, 1, ShaderBindingKind::Sampler),
+            ]
+        );
+        let vertex = plan.stage_bindings(wgt::ShaderStages::VERTEX);
+        assert!(vertex.iter().any(|item| item.binding.group == 2
+            && item.binding.binding == 42
+            && item.kind == ShaderBindingKind::Uniform
+            && item.slot == 2));
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(42) var<uniform> a: vec4f; @group(2) @binding(42) var<uniform> b: vec4f; @vertex fn main() -> @builtin(position) vec4f { return a + b; }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let uniforms: alloc::vec::Vec<_> = vertex
+            .into_iter()
+            .filter(|binding| binding.kind == ShaderBindingKind::Uniform)
+            .collect();
+        assert!(super::super::shader::compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            super::super::shader::ShaderProfile::VertexLevel9_1,
+            &uniforms,
+        )
+        .is_ok());
+        let mut full = GroupKind::EMPTY;
+        for (index, item) in full.uniforms.iter_mut().enumerate() {
+            *item = Some(uniform(index as u32, wgt::ShaderStages::VERTEX));
+        }
+        assert!(BindingPlan::new(&[Some(full)]).is_ok());
+        assert!(BindingPlan::new(&[Some(full), Some(first)]).is_err());
+        assert!(BindingPlan::new(&[None; crate::MAX_BIND_GROUPS + 1]).is_err());
+        let mut hole = GroupKind::EMPTY;
+        hole.uniforms[1] = first.uniforms[0];
+        assert!(BindingPlan::new(&[Some(hole)]).is_err());
+        let mut full_textures = GroupKind::EMPTY;
+        full_textures.textures.fill(Some(0));
+        assert!(BindingPlan::new(&[Some(full_textures), Some(first)]).is_err());
+        let mut full_samplers = GroupKind::EMPTY;
+        full_samplers.samplers.fill(Some(0));
+        assert!(BindingPlan::new(&[Some(full_samplers), Some(first)]).is_err());
+    }
 
     #[test]
     fn sparse_uniform_allocation_respects_visibility_and_reservation() {

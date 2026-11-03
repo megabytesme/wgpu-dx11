@@ -105,6 +105,7 @@ pub(super) const VIGNETTE_BLEND: wgt::BlendState = wgt::BlendState {
 pub struct PipelineLayout {
     owner: Arc<NativeDevice>,
     group: Option<super::hal_bind_group::GroupKind>,
+    bindings: super::hal_bind_group::BindingPlan,
 }
 crate::impl_dyn_resource!(PipelineLayout);
 impl crate::DynPipelineLayout for PipelineLayout {}
@@ -651,7 +652,17 @@ impl PipelineLayout {
         if desc.immediate_size != 0 || !accepted_flags.contains(desc.flags) {
             return Err(crate::DeviceError::Unexpected);
         }
-        Ok(Self { owner, group })
+        let groups: alloc::vec::Vec<_> = desc
+            .bind_group_layouts
+            .iter()
+            .map(|layout| layout.map(|layout| layout.kind))
+            .collect();
+        let bindings = super::hal_bind_group::BindingPlan::new(&groups)?;
+        Ok(Self {
+            owner,
+            group,
+            bindings,
+        })
     }
 }
 
@@ -790,16 +801,12 @@ impl RenderPipeline {
         }
         let vertex_bindings = desc
             .layout
-            .group
-            .map_or_else(alloc::vec::Vec::new, |group| {
-                group.stage_bindings(wgt::ShaderStages::VERTEX)
-            });
+            .bindings
+            .stage_bindings(wgt::ShaderStages::VERTEX);
         let fragment_bindings = desc
             .layout
-            .group
-            .map_or_else(alloc::vec::Vec::new, |group| {
-                group.stage_bindings(wgt::ShaderStages::FRAGMENT)
-            });
+            .bindings
+            .stage_bindings(wgt::ShaderStages::FRAGMENT);
         let mut sampling_pairs = vertex_stage.module.sampling_relationships(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
