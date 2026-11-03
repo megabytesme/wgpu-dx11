@@ -167,9 +167,10 @@ Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
 sound presentation synchronization design and core/HAL contract coverage while
 continuing verified FL9_1 increments.
-Private Uint32 conversion is restricted to effective indices at most 65534 and
-explicitly rejects selected vertex-index shader inputs. The scratch buffer is
-allocated at replay and index staging can stall; broader translation remains.
+Private Uint32 conversion accepts one effective-index window spanning at most
+65534 and explicitly rejects selected vertex-index shader inputs. It rebases
+the vertex buffer, allocates scratch at replay, and may stall for index staging;
+broader translation and historical-driver high-offset verification remain.
 DXGI may synchronously call a window procedure during presentation. A private
 application can avoid the deadlock only by keeping its UI callback nonblocking
 and queueing graphics work; that cooperation cannot be assumed for arbitrary

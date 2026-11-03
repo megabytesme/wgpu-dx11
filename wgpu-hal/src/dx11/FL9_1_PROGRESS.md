@@ -500,3 +500,14 @@ focused GPU test passed, as did public-fixture rendering and targeted Clippy
 (ten existing HAL warnings). Independent review found no concrete defect.
 General u32 support, vertex-index semantics, instancing and public exposure
 remain incomplete; staging and per-draw allocation incur synchronization cost.
+
+The private u32 path now rebases a single effective-index window with a span
+of at most 65534 to a checked vertex-buffer offset. On forced FL9_1, effective
+indices 65535–65537 rendered correctly from a nonzero binding offset, followed
+by direct and u16 draws that restored their original vertex bindings; all 64
+pixels matched. A valid-fetch window spanning 65535 was rejected, and
+synthetic checks cover bounds, alignment, overflow and OOB precedence. The
+strict private suite passed 173 tests, two filtered; older tests may skip
+internally. Independent review found no concrete defect. High stream offsets
+remain unverified on historical FL9_1 drivers, and multiple windows or a
+single triangle with a wider span remain unsupported.

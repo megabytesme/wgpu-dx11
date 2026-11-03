@@ -43,8 +43,8 @@ offsets and a preceding GPU index upload; all 64 pixels must be red. A late
 out-of-bounds index discards a whole draw; a later GPU index update and draw
 still complete, producing black on the left and red on the right.
 It also checks Uint32 conversion, including raw values 65535–65537 with base
-vertex -3, the effective limit 65534, a valid-fetch 65535 rejection, and a
-GPU rewrite following a discarded draw.
+vertex -3, high effective indices via a rebased vertex offset, a valid-fetch
+window wider than 65534, and a GPU rewrite following a discarded draw.
 
 Read the printed result, not just libtest's final line:
 

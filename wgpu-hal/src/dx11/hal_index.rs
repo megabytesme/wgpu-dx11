@@ -90,9 +90,11 @@ impl IndexBinding {
         first: u32,
         count: u32,
         base_vertex: i32,
-        vertex_layout: (u64, u32, u32),
+        vertex_binding: (&ID3D11Buffer, u32, u64, u32, u32),
         max_vertices: u32,
     ) -> Result<()> {
+        let (vertex, vertex_offset, vertex_bytes, stride, extent) = vertex_binding;
+        let vertex_layout = (vertex_bytes, stride, extent);
         if !self.contains_range(first, count) || max_vertices == 0 {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
@@ -112,6 +114,7 @@ impl IndexBinding {
         } else {
             None
         };
+        let mut rebase = None;
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
             context.CopyResource(&self.staging, &self.buffer);
@@ -138,7 +141,13 @@ impl IndexBinding {
                     self.max_index,
                     vertex_layout,
                 );
-                if decision == IndexDecision::Draw {
+                if let U32Decision::Draw(minimum) = decision {
+                    let Some(offset) = rebased_vertex_offset(minimum, vertex_offset, vertex_layout)
+                    else {
+                        context.Unmap(&self.staging, 0);
+                        return Err(Error::from_hresult(E_INVALIDARG));
+                    };
+                    rebase = Some(offset);
                     let Some(size) = converted_size else {
                         context.Unmap(&self.staging, 0);
                         return Err(Error::from_hresult(E_INVALIDARG));
@@ -149,13 +158,17 @@ impl IndexBinding {
                     }
                     converted_data.resize(size, 0);
                     for index in 0..count as usize {
-                        let effective =
-                            (i64::from(read_u32(index)) + i64::from(base_vertex)) as u16;
+                        let effective = (i64::from(read_u32(index)) + i64::from(base_vertex)
+                            - minimum as i64) as u16;
                         converted_data[index * 2..index * 2 + 2]
                             .copy_from_slice(&effective.to_ne_bytes());
                     }
                 }
-                decision
+                match decision {
+                    U32Decision::Draw(_) => IndexDecision::Draw,
+                    U32Decision::Discard => IndexDecision::Discard,
+                    U32Decision::Unsupported => IndexDecision::Unsupported,
+                }
             } else {
                 let indices = (0..count as usize).map(|index| {
                     core::ptr::read_unaligned(
@@ -194,6 +207,16 @@ impl IndexBinding {
                 None
             };
             let (buffer, offset, mut next, native_base) = if let Some(buffer) = &converted {
+                let Some(offset) = rebase else {
+                    return Err(Error::from_hresult(E_INVALIDARG));
+                };
+                context.IASetVertexBuffers(
+                    0,
+                    1,
+                    Some(&Some(vertex.clone())),
+                    Some(&stride),
+                    Some(&offset),
+                );
                 (buffer, 0, 0, 0)
             } else {
                 (&self.buffer, self.offset, first, base_vertex)
@@ -253,9 +276,11 @@ fn classify_u32_indices(
     base_vertex: i32,
     max_index: u16,
     vertex_layout: (u64, u32, u32),
-) -> IndexDecision {
+) -> U32Decision {
     let (vertex_bytes, stride, extent) = vertex_layout;
-    let mut decision = IndexDecision::Draw;
+    let mut out_of_bounds = false;
+    let mut minimum = u64::MAX;
+    let mut maximum = 0u64;
     for value in indices {
         let effective = i64::from(value) + i64::from(base_vertex);
         let end = u64::try_from(effective).ok().and_then(|index| {
@@ -264,57 +289,108 @@ fn classify_u32_indices(
                 .and_then(|bytes| bytes.checked_add(u64::from(extent)))
         });
         if end.is_none_or(|end| end > vertex_bytes) {
-            decision = IndexDecision::Discard;
-        } else if decision == IndexDecision::Draw && effective > i64::from(max_index) {
-            decision = IndexDecision::Unsupported;
+            out_of_bounds = true;
+        } else {
+            let effective = effective as u64;
+            minimum = minimum.min(effective);
+            maximum = maximum.max(effective);
         }
     }
-    decision
+    if out_of_bounds {
+        U32Decision::Discard
+    } else if minimum == u64::MAX {
+        U32Decision::Draw(0)
+    } else if maximum - minimum > u64::from(max_index) {
+        U32Decision::Unsupported
+    } else {
+        U32Decision::Draw(minimum)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum U32Decision {
+    Draw(u64),
+    Discard,
+    Unsupported,
+}
+
+fn rebased_vertex_offset(minimum: u64, offset: u32, vertex_layout: (u64, u32, u32)) -> Option<u32> {
+    let (vertex_bytes, stride, extent) = vertex_layout;
+    let relative = minimum.checked_mul(u64::from(stride))?;
+    if relative.checked_add(u64::from(extent))? > vertex_bytes {
+        return None;
+    }
+    let result = u64::from(offset)
+        .checked_add(relative)
+        .and_then(|value| u32::try_from(value).ok())?;
+    result.is_multiple_of(4).then_some(result)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_indices, classify_u32_indices, IndexDecision};
+    use super::{
+        classify_indices, classify_u32_indices, rebased_vertex_offset, IndexDecision, U32Decision,
+    };
 
     #[test]
     fn u32_conversion_checks_effective_indices_and_whole_draw() {
         let large = (u64::MAX, 1, 1);
         assert_eq!(
             classify_u32_indices([0, 65534].into_iter(), 0, 65534, large),
-            IndexDecision::Draw
+            U32Decision::Draw(0)
         );
         assert_eq!(
             classify_u32_indices([65535].into_iter(), 0, 65534, large),
-            IndexDecision::Unsupported
+            U32Decision::Draw(65535)
         );
         assert_eq!(
             classify_u32_indices([65535].into_iter(), -1, 65534, large),
-            IndexDecision::Draw
+            U32Decision::Draw(65534)
         );
         assert_eq!(
             classify_u32_indices([u32::MAX].into_iter(), i32::MIN, 65534, large),
-            IndexDecision::Unsupported
+            U32Decision::Draw(2147483647)
         );
         assert_eq!(
             classify_u32_indices([0].into_iter(), i32::MIN, 65534, large),
-            IndexDecision::Discard
+            U32Decision::Discard
         );
         assert_eq!(
             classify_u32_indices([65535, 0].into_iter(), -1, 65534, large),
-            IndexDecision::Discard
+            U32Decision::Discard
         );
         assert_eq!(
             classify_u32_indices([0, 65535].into_iter(), -1, 65534, large),
-            IndexDecision::Discard
+            U32Decision::Discard
         );
         assert_eq!(
             classify_u32_indices([3].into_iter(), 0, 65534, (24, 8, 8)),
-            IndexDecision::Discard
+            U32Decision::Discard
         );
         assert_eq!(
             classify_u32_indices([2].into_iter(), 0, 65534, (24, 8, 8)),
-            IndexDecision::Draw
+            U32Decision::Draw(2)
         );
+        assert_eq!(
+            classify_u32_indices([100000, 165534].into_iter(), 0, 65534, large),
+            U32Decision::Draw(100000)
+        );
+        assert_eq!(
+            classify_u32_indices([100000, 165535].into_iter(), 0, 65534, large),
+            U32Decision::Unsupported
+        );
+        assert_eq!(
+            classify_u32_indices([0, 65535, u32::MAX].into_iter(), 0, 65534, (65536, 1, 1)),
+            U32Decision::Discard
+        );
+        assert_eq!(
+            rebased_vertex_offset(65535, 8, (65540 * 8, 8, 8)),
+            Some(8 + 65535 * 8)
+        );
+        assert_eq!(rebased_vertex_offset(9, 8, (72, 8, 8)), None);
+        assert_eq!(rebased_vertex_offset(u64::MAX, 8, (u64::MAX, 8, 8)), None);
+        assert_eq!(rebased_vertex_offset(1, u32::MAX - 3, (16, 8, 8)), None);
+        assert_eq!(rebased_vertex_offset(0, 2, (16, 8, 8)), None);
     }
 
     #[test]

@@ -116,6 +116,8 @@ pub(super) enum NativeCommand {
     },
     DrawIndexed {
         binding: Arc<IndexBinding>,
+        vertex: ID3D11Buffer,
+        vertex_offset: u32,
         first: u32,
         count: u32,
         base_vertex: i32,
@@ -338,6 +340,8 @@ impl CommandBuffer {
                     NativeCommand::Draw { first, count } => context.Draw(*count, *first),
                     NativeCommand::DrawIndexed {
                         binding,
+                        vertex,
+                        vertex_offset,
                         first,
                         count,
                         base_vertex,
@@ -351,7 +355,7 @@ impl CommandBuffer {
                             *first,
                             *count,
                             *base_vertex,
-                            (*vertex_bytes, *stride, *extent),
+                            (vertex, *vertex_offset, *vertex_bytes, *stride, *extent),
                             *max_vertices,
                         )?;
                     }
