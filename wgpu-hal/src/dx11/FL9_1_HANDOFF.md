@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 184 tests; older
+operations are safe. The latest combined strict suite passed 187 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -68,7 +68,7 @@ adapter enumeration returns zero and the ordinary HAL adapter is uninhabited. A
 nondefault unsafe fixture injects a restricted device into public wgpu and core
 for closed offscreen tests; it is not a general adapter or public example.
 The private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders,
-sampled RGBA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
+sampled RGBA8 and BGRA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
 triangle rendering with front/back culling, D24S8 Always/LessEqual depth
 testing and channel masks.
 This is not a general capability report or WebGPU conformance claim. The
@@ -117,7 +117,7 @@ cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --feature
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
-The strict private suite most recently passed 168 tests with two filtered;
+The strict private suite most recently passed 187 tests with two filtered;
 some older tests can skip internally. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,
@@ -142,6 +142,10 @@ injected fixture. On the forced-FL9_1 RTX, GPU-uploaded Uint32 indexed textured
 depth rendering produced 32 red and 32 green pixels. Ordinary D3D11 enumeration
 remained empty before and after injection. This is a controlled test, not
 general public exposure.
+
+Ordinary BGRA8 textures and transfers are supported in the private subset.
+Native copies require identical formats; upload/readback preserve raw BGRA
+bytes, while shader sampling and render targets use logical RGBA channels.
 
 Core's zero inter-stage limit panic was reproduced in a public Noop test and
 fixed with signed deduction arithmetic. The expanded focused test and the

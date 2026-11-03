@@ -104,8 +104,16 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             | hal::TextureFormatCapabilities::SAMPLED
             | hal::TextureFormatCapabilities::SAMPLED_LINEAR
     );
-    assert!(unsafe {
+    let bgra_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bgra8Unorm)
+    };
+    if bgra_caps.is_empty() {
+        std::println!("SKIP: BGRA8 fixture capabilities unavailable");
+    } else {
+        assert_eq!(bgra_caps, rgba_caps);
+    }
+    assert!(unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba16Float)
     }
     .is_empty());
     let exposed = hal::ExposedAdapter::<hal::dx11::Api> {

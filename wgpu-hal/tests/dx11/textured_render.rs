@@ -9,6 +9,11 @@ fn hal_encoder_records_sampled_triangle_on_level_9() -> windows::core::Result<()
 }
 
 #[test]
+fn fl91_bgra_texture_samples_native_channels() -> windows::core::Result<()> {
+    sampled_triangle(false, false, false, false, false, 25, None)
+}
+
+#[test]
 fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::core::Result<()> {
     sampled_triangle(true, false, false, false, false, 0, None)
 }
@@ -962,7 +967,11 @@ fn sampled_triangle_variant(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgt::TextureDimension::D2,
-        format: wgt::TextureFormat::Rgba8Unorm,
+        format: if effect == 25 {
+            wgt::TextureFormat::Bgra8Unorm
+        } else {
+            wgt::TextureFormat::Rgba8Unorm
+        },
         usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
         memory_flags: crate::MemoryFlags::empty(),
         view_formats: alloc::vec![],
@@ -970,7 +979,9 @@ fn sampled_triangle_variant(
     let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
     let mut texels = alloc::vec![0; 64];
     for pixel in texels.chunks_exact_mut(4) {
-        pixel.copy_from_slice(if count == 8 {
+        pixel.copy_from_slice(if effect == 25 {
+            &[16, 64, 224, 255]
+        } else if count == 8 {
             &[32, 0, 0, 255]
         } else if multi_resource || variant == 3 {
             &[255, 0, 0, 255]
@@ -1169,7 +1180,7 @@ fn sampled_triangle_variant(
                 &texture,
                 &crate::TextureViewDescriptor {
                     label: None,
-                    format: wgt::TextureFormat::Rgba8Unorm,
+                    format: texture_desc.format,
                     dimension: wgt::TextureViewDimension::D2,
                     usage: wgt::TextureUses::RESOURCE,
                     range: wgt::ImageSubresourceRange::default(),
@@ -1205,7 +1216,7 @@ fn sampled_triangle_variant(
                 &second_texture,
                 &crate::TextureViewDescriptor {
                     label: None,
-                    format: wgt::TextureFormat::Rgba8Unorm,
+                    format: second_desc.format,
                     dimension: wgt::TextureViewDimension::D2,
                     usage: wgt::TextureUses::RESOURCE,
                     range: wgt::ImageSubresourceRange::default(),
@@ -2356,6 +2367,13 @@ fn sampled_triangle_variant(
         } else {
             assert_eq!(actual, &[255, 255, 255, 255]);
         }
+    } else if effect == 25 {
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [224, 64, 16, 255]),
+            "BGRA sampling must convert native channels: {pixels:?}"
+        );
     } else if matches!(effect, 23 | 24) {
         assert_eq!(actual[0], 0);
         assert!((127..=128).contains(&actual[1]));

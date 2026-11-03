@@ -1,4 +1,4 @@
-//! Checked, retained FL9 transfers between buffers and RGBA textures.
+//! Checked, retained FL9 transfers between buffers and color textures.
 use super::{buffer::NativeBuffer, device::NativeDevice, texture::NativeTexture};
 use windows::{
     core::{Error, Interface, Result},
@@ -10,7 +10,7 @@ use windows::{
                 D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
+            Dxgi::Common::DXGI_SAMPLE_DESC,
         },
     },
 };
@@ -133,6 +133,9 @@ impl NativeDevice {
         destination: &NativeTexture,
         region: &crate::TextureCopy,
     ) -> Result<TextureToTexture> {
+        if self.texture_desc(source)?.Format != self.texture_desc(destination)?.Format {
+            return Err(invalid());
+        }
         let (source, src_size) = self.texture_copy_texture_source(source)?;
         let (destination, dst_size) = self.texture_copy_destination(destination)?;
         if source.as_raw() == destination.as_raw() {
@@ -169,7 +172,7 @@ impl NativeDevice {
             Height: size.height,
             MipLevels: 1,
             ArraySize: 1,
-            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            Format: self.texture_desc(texture)?.Format,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,

@@ -85,6 +85,7 @@ pub(super) struct DriverCapabilities {
 pub(super) struct BackendCapabilities {
     pub texture_mip_levels: u32,
     pub rgba8_single_mip_transfers: bool,
+    pub bgra8_single_mip_transfers: bool,
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
     pub sample_count: u32,
@@ -120,6 +121,7 @@ impl BackendCapabilities {
     pub const CURRENT: Self = Self {
         texture_mip_levels: 1,
         rgba8_single_mip_transfers: true,
+        bgra8_single_mip_transfers: true,
         texture_zero_initialized: true,
         texture_array_layers: 1,
         sample_count: 1,
@@ -226,9 +228,11 @@ impl Capabilities {
         samples: u32,
     ) -> Result<(), TextureRejection> {
         use TextureRejection::*;
-        if format != wgt::TextureFormat::Rgba8Unorm {
-            return Err(UnsupportedFormat);
-        }
+        let query = match format {
+            wgt::TextureFormat::Rgba8Unorm => self.driver.rgba8,
+            wgt::TextureFormat::Bgra8Unorm => self.driver.bgra8,
+            _ => return Err(UnsupportedFormat),
+        };
         let allowed = wgt::TextureUses::COPY_SRC
             | wgt::TextureUses::COPY_DST
             | wgt::TextureUses::RESOURCE
@@ -246,7 +250,7 @@ impl Capabilities {
         {
             return Err(UnsupportedShape);
         }
-        let Query::Value(bits) = self.driver.rgba8 else {
+        let Query::Value(bits) = query else {
             return Err(DriverQueryUnavailable);
         };
         let required = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
@@ -371,8 +375,51 @@ mod tests {
         let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
         assert_eq!(check(&caps, rgba, usage, 8, 8, 1, 1, 1), Ok(()));
         assert_eq!(
-            check(&caps, wgt::TextureFormat::Bgra8Unorm, usage, 8, 8, 1, 1, 1),
+            check(
+                &caps,
+                wgt::TextureFormat::Bgra8UnormSrgb,
+                usage,
+                8,
+                8,
+                1,
+                1,
+                1
+            ),
             Err(TextureRejection::UnsupportedFormat)
+        );
+        assert_eq!(
+            check(&caps, wgt::TextureFormat::Bgra8Unorm, usage, 8, 8, 1, 1, 1),
+            Ok(())
+        );
+        let mut no_bgra = caps;
+        no_bgra.driver.bgra8 = Query::Unavailable(-1);
+        assert_eq!(
+            check(
+                &no_bgra,
+                wgt::TextureFormat::Bgra8Unorm,
+                usage,
+                8,
+                8,
+                1,
+                1,
+                1
+            ),
+            Err(TextureRejection::DriverQueryUnavailable)
+        );
+        assert_eq!(check(&no_bgra, rgba, usage, 8, 8, 1, 1, 1), Ok(()));
+        no_bgra.driver.bgra8 = Query::Value(0);
+        assert_eq!(
+            check(
+                &no_bgra,
+                wgt::TextureFormat::Bgra8Unorm,
+                usage,
+                8,
+                8,
+                1,
+                1,
+                1
+            ),
+            Err(TextureRejection::DriverFormatUnsupported)
         );
         assert_eq!(
             check(
@@ -421,7 +468,11 @@ mod tests {
             check(&no_target, rgba, wgt::TextureUses::COPY_SRC, 8, 8, 1, 1, 1),
             Err(TextureRejection::DriverFormatUnsupported)
         );
-        assert!(caps.backend.rgba8_single_mip_transfers && caps.backend.texture_zero_initialized);
+        assert!(
+            caps.backend.rgba8_single_mip_transfers
+                && caps.backend.bgra8_single_mip_transfers
+                && caps.backend.texture_zero_initialized
+        );
         let mut optional_unknown = caps;
         optional_unknown.driver.full_npot = Query::Unavailable(-1);
         optional_unknown.driver.comparison_shadow = Query::Unavailable(-1);

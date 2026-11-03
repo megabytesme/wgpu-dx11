@@ -270,6 +270,13 @@ does not establish visual anisotropic quality.
 
 ### FL9_1 texture transfers
 
+With strict hardware mode enabled, `cargo test --offline -p wgpu-hal --lib
+--no-default-features --features dx11 bgra -- --nocapture` checks BGRA raw
+upload/copy/readback, sampling channel order, and render-to-partial-copy with
+offsets, row padding and untouched initialized texels. A wrapped-backbuffer
+unit test also matches this filter. The ordinary BGRA paths still require their
+own positive driver format-support query.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_texture_transfer_chain -- --nocapture --test-threads=1

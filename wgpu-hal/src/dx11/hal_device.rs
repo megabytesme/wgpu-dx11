@@ -139,7 +139,11 @@ impl crate::Device for Device {
                 | wgt::TextureUses::COLOR_TARGET
         };
         if desc.dimension != wgt::TextureDimension::D2
-            || (!depth && desc.format != wgt::TextureFormat::Rgba8Unorm)
+            || (!depth
+                && !matches!(
+                    desc.format,
+                    wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                ))
             || desc.size.depth_or_array_layers != 1
             || desc.mip_level_count != 1
             || desc.sample_count != 1
@@ -190,14 +194,15 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
                 D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
-            Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+            Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM},
         };
-        let support = unsafe {
-            self.native
-                .raw_device()
-                .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)
-        }
-        .map_err(device_error)?;
+        let format = match desc.format {
+            wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
+            wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+            _ => return Err(DeviceError::Unexpected),
+        };
+        let support =
+            unsafe { self.native.raw_device().CheckFormatSupport(format) }.map_err(device_error)?;
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0)
             as u32
             | if desc
@@ -213,13 +218,14 @@ impl crate::Device for Device {
         }
         let mut texture = self
             .native
-            .create_rgba_texture_inner(
+            .create_color_texture_inner(
                 desc.size.width,
                 desc.size.height,
                 1,
                 1,
                 desc.usage
                     .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
+                format,
             )
             .map_err(device_error)?;
         let byte_count = (desc.size.width as usize)

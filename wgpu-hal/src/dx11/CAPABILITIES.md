@@ -45,8 +45,9 @@ format-support masks were RGBA8 `0x312ef3e2`, BGRA8 `0x312ef3e0`, and D24S8
 blend support. The RGBA8 four-sample quality-level count was 1; full NPOT and
 comparison-shadow queries returned true. These optional observations do not
 enable mipmaps, multisampling, comparison samplers, or public exposure.
-The private indexed draw passed 64/64 readback pixels, and private BGRA8 texture
-creation and four-sample RGBA8 texture creation were rejected as expected.
+The private indexed draw passed 64/64 readback pixels. Four-sample RGBA8
+texture creation was rejected as expected. Later strict tests passed ordinary
+BGRA8 sampling, rendering and raw transfer readback on the same GPU.
 This forced level on a modern GPU does not emulate all historical FL9_1
 hardware or establish portability of separate-alpha blending.
 
@@ -61,8 +62,8 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | --- | --- | --- |
 | Device / adapter | Native DXGI hardware discovery and explicitly selected feature levels exist. HAL adapter is uninhabited and enumeration is empty. | Hardware probe and zero-adapter tests. No `Limits`, `Features`, `DownlevelCapabilities`, format capability set, or wgpu device is advertised. A new adapter must be truthful and satisfy every valid operation it permits. |
 | Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; vertex+index is rejected at 9_1/9_2. Storage and indirect usages are absent. | Copy, map, initialization and ownership tests. `UNRESTRICTED_INDEX_BUFFER` and limits can describe some restrictions, but mapping coherency, initialization, complete usage combinations and lifetime validation need an audit. |
-| 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private device creates single-mip, single-layer, single-sample RGBA8 and D24S8 2D textures; BGRA8 is limited to a wrapped swapchain backbuffer. | Transfer, view, clear and draw readback tests. The D24S8 subset is attachment-only; per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
-| Mips, arrays, NPOT / sampling | FL9 conditional NPOT is more restrictive than unconditional support. Private textures have one mip and no arrays; sampled RGBA8 uses checked fragment bindings. | Sampling tests and optional full-NPOT query. `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` covers one restriction but not the NPOT/address-mode pairing; core needs a draw/bind-time texture-sampler compatibility rule or emulation. |
+| 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private device creates single-mip, single-layer, single-sample RGBA8, BGRA8 and D24S8 2D textures. | Transfer, view, clear and draw readback tests. The D24S8 subset is attachment-only; per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
+| Mips, arrays, NPOT / sampling | FL9 conditional NPOT is more restrictive than unconditional support. Private textures have one mip and no arrays; sampled RGBA8 and BGRA8 use checked fragment bindings. | Sampling tests and optional full-NPOT query. `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` covers one restriction but not the NPOT/address-mode pairing; core needs a draw/bind-time texture-sampler compatibility rule or emulation. |
 | Samplers | Independent point/linear min/mag, clamp/wrap/mirror and anisotropy up to 2 are implemented in the private HAL. Border addressing and comparison samplers are rejected; FL9_1 finite maximum LOD translation requires a single-mip view. | Patterned FL9_1 GPU readback covers filter and address modes and sampler switching. Anisotropy 2 creates and samples but visual anisotropic quality is unverified. Public feature/limit representation remains incomplete. |
 | Bind groups / registers | Up to eight private groups may contain uniforms, sampled textures and samplers, with aggregate limits of thirteen uniforms, eight textures and sixteen samplers. Each draw checks only texture/sampler relationships used by the selected shader entry points. | Sparse multi-group, dynamic-offset, pipeline-transition and cross-group sampled-texture GPU tests cover selected configurations; FXC limits distinct sampled relationships and constants. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
 | Vertex / index formats | Native FL9 has wider IA support than the HAL. Private pipelines accept zero vertex inputs or a single interleaved vertex buffer and a restricted float/unorm format set. Indexed draws use u16 or u32 conversion, signed base vertex and replay-time index checks. | Indexed and non-indexed readback and rejected-index tests. Limits and downlevel flags cover only part of this; core currently permits other valid vertex formats, buffer slots and layouts beyond this restricted path. Add emulation or explicit validation. |
@@ -84,7 +85,7 @@ runtime behavior remains unverified.
 
 ## FL9_1 private texture transfers
 
-The private D24S8 subset is separate from the RGBA8 transfer matrix: it is a
+The private D24S8 subset is separate from the color transfer matrix: it is a
 single-mip, single-layer, single-sample 2D attachment, with driver-queried
 texture and depth-stencil support. Creation clears depth and stencil to zero.
 Depth and stencil clear/load flags are handled independently, including
@@ -107,18 +108,20 @@ They remain rejected rather than being substituted with a different comparison.
 | Transfer | Implementation and restrictions | Coverage |
 | --- | --- | --- |
 | Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. | Offset and padded full/partial uploads, GPU-written source and ordered submissions. |
-| Texture to texture | Native GPU `CopySubresourceRegion` between distinct compatible RGBA8 single-subresource textures, with an explicit checked source box. Self-copy is rejected. | Full and partial copies, different overall dimensions, zero-preserving destination and render-to-copy-to-sample. |
+| Texture to texture | Native GPU `CopySubresourceRegion` between distinct, identically formatted RGBA8 or BGRA8 single-subresource textures, with an explicit checked source box. Self-copy and cross-format copies are rejected. | Full and partial copies, different overall dimensions, zero-preserving destination and render-to-copy-to-sample. |
 | Texture to buffer | A region is copied to a retained CPU-readable staging texture and mapped; each mapped row is written into the destination GPU buffer at the requested pitch and offset. | Full and partial source regions, nonzero buffer offsets, row padding and complete image comparison. |
 
 HAL texture creation eagerly uploads zeroes before returning, including for
 partial-write targets. The allocation and upload are proportional to the full
 texture size; staging maps in buffer/texture transfers may stall the CPU. Native
 diagnostic texture constructors remain separate and can create uninitialized
-resources. The private HAL accepts only one-mip, one-layer, one-sample RGBA8
-2D textures and enforces feature-level size limits. For `COPY_SRC`, it requests
+resources. The private color HAL accepts only one-mip, one-layer, one-sample
+RGBA8 or BGRA8 2D textures and enforces feature-level size limits. Raw BGRA8
+uploads and readback retain B,G,R,A byte order; shader sampling and render
+target writes use logical RGBA channels. For `COPY_SRC`, it requests
 an internal render-target bind in addition to the shader-resource bind: FL9
 forbids GPU-to-CPU copying from resources bound only as shader resources. This
-requires RGBA8 render-target support; it does not expose render-target usage to
+requires render-target support for the selected format; it does not expose render-target usage to
 callers that did not request it. The native D3D11 creation call can reject an
 unsupported format/bind combination.
 
@@ -148,8 +151,8 @@ validation or emulation must be resolved before any such capability is exposed.
 
 The nondefault `dx11-test-fixture` feature provides an unsafe, non-enumerated
 adapter solely for a controlled core integration test. Normal `Adapter::open`
-still fails. The fixture reports only driver-queried RGBA8 color-attachment
-and copy-source capabilities, and no surface capabilities. Core's mapping also
+still fails. The fixture reports driver-queried RGBA8 and BGRA8 color and copy
+capabilities and D24S8 attachment capability, and no surface capabilities. Core's mapping also
 permits transient attachments from the color flag, which this HAL does not
 support; its test-only limits and format report are not a general adapter
 contract. The fixture verifies core buffer operations and an offscreen triangle,

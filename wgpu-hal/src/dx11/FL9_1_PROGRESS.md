@@ -612,3 +612,24 @@ strict private suite passed 184 tests, two filtered; older tests may skip
 internally. The public indexed fixture passed with 32 red and 32 green pixels.
 HAL Clippy passed with ten existing warnings. Independent review checked the
 mask/factor combinations and device-error handling without finding a defect.
+Checkpoint: `d01ace12a`.
+
+Ordinary BGRA8 textures are the next resource increment. Before implementation,
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+fl91_bgra_upload_copy_and_readback -- --nocapture` in strict hardware mode
+selected the RTX at FL9_1 and failed at BGRA texture creation (`Unexpected`).
+This baseline establishes missing functionality, not a GPU transfer failure.
+After implementation, the strict BGRA filter passed four tests, including three
+physical-GPU cases: asymmetric upload/copy/readback with padding; sampling raw
+BGRA `[16,64,224,255]` as logical RGBA `[224,64,16,255]`; and rendering then
+copying a partial region between different-sized textures with initialized
+untouched pixels. Synthetic checks cover missing format support, incompatible
+views and cross-format copies. The strict private suite passed 187 tests, two
+filtered. HAL Clippy passed with ten existing warnings. A read-only independent
+review found no concrete defect; historical GPU behavior is unverified.
+
+The next core-validation baseline requested an occlusion query through the
+controlled FL9_1 fixture and failed as `Device(Lost)`. FL9_1 does not guarantee
+occlusion queries; a downlevel availability check is in progress to reject the
+request before HAL. GLES already uses conservative query results, a separate
+pre-existing semantics issue that this change must not claim to resolve.

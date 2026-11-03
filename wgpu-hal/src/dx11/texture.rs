@@ -17,7 +17,7 @@ use windows::{
                 D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
@@ -250,7 +250,10 @@ impl NativeDevice {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.GetDesc(&mut desc) };
         if !texture.usage.contains(wgt::TextureUses::COPY_SRC)
-            || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || !matches!(
+                desc.Format,
+                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+            )
             || desc.MipLevels != 1
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
@@ -268,7 +271,10 @@ impl NativeDevice {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.GetDesc(&mut desc) };
         if !texture.usage.contains(wgt::TextureUses::COPY_DST)
-            || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || !matches!(
+                desc.Format,
+                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+            )
             || desc.MipLevels != 1
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
@@ -291,7 +297,10 @@ impl NativeDevice {
         unsafe { view.texture.GetDesc(&mut desc) };
         if desc.Width == 0
             || desc.Height == 0
-            || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || !matches!(
+                desc.Format,
+                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+            )
             || desc.MipLevels != 1
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
@@ -349,6 +358,25 @@ impl NativeDevice {
         layers: u32,
         render_target: bool,
     ) -> Result<NativeTexture> {
+        self.create_color_texture_inner(
+            width,
+            height,
+            mip_levels,
+            layers,
+            render_target,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+        )
+    }
+
+    pub(super) fn create_color_texture_inner(
+        &self,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+        layers: u32,
+        render_target: bool,
+        format: DXGI_FORMAT,
+    ) -> Result<NativeTexture> {
         if width == 0
             || height == 0
             || width > 16384
@@ -357,6 +385,10 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
+            || !matches!(
+                format,
+                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+            )
         {
             return Err(invalid());
         }
@@ -365,7 +397,7 @@ impl NativeDevice {
             Height: height,
             MipLevels: mip_levels,
             ArraySize: layers,
-            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            Format: format,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,
@@ -616,6 +648,9 @@ impl NativeDevice {
         mip: u32,
         layer: u32,
     ) -> Result<Vec<u8>> {
+        if self.texture_desc(texture)?.Format != DXGI_FORMAT_R8G8B8A8_UNORM {
+            return Err(invalid());
+        }
         self.validate_texture_readback_source(texture)?;
         let (width, height, index, expected) = subresource_layout(texture, mip, layer)?;
         let desc = D3D11_TEXTURE2D_DESC {
