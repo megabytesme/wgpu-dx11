@@ -25,8 +25,10 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 286 tests; older
-tests may skip internally, so use focused strict tests for hardware evidence.
+operations are safe. The latest strict private HAL suite passed 286 tests with
+two filtered, and the current core suite passed 70/70 including two strict
+FL9_1 GPU fixtures. Older HAL tests may skip internally, so use focused strict
+tests for hardware evidence.
 
 ## Verified checkpoints
 
@@ -122,6 +124,8 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `4f3f608c229fd6e5b7bc309db5ac975bfd790c7e` | Combined sampled-resource visibility |
 | `cac502305de4c2569bfc29da73eecdd9a59e92e8` | Premultiplied alpha blending |
 | `ceaf4d603dc4ecbc6449b520f5a9ef546b5cfa64` | Safe D3D11 passthrough shader rejection |
+| `a690866b4a6cdc0981a1ffa448f2c28f0f41b756` | Fallible mapped-range invalidation |
+| `13a4defb9` | Fallible mapped-range flush and core error propagation |
 
 ## What is and is not usable
 

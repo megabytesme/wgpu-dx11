@@ -1486,3 +1486,42 @@ warnings. Metal was not compiled on this Windows host. BLAS invalidation failure
 was reviewed but not exercised on ray-tracing hardware. Flush and unmap failure
 handling remain separate work, as does existing device-lost callback reentrancy
 while core mapping locks may be held. Public adapter exposure remains disabled.
+Checkpoint: `a690866b4a6cdc0981a1ffa448f2c28f0f41b756`.
+
+Mapped-range flush now returns a HAL `DeviceError` across all backends. D3D11
+shadow synchronization and Vulkan's native flush errors propagate; coherent or
+implicitly coherent backends return success. Core mapped-at-creation writes,
+direct writes, unmap staging, queue uploads, texture uploads, indirect draw
+validation and acceleration-structure staging handle errors without enqueueing
+failed staging data. Failed staging allocations are unmapped and destroyed;
+failed direct mappings are unmapped and core map state returns to Idle. Device
+loss callbacks are deferred until snatch/encoder locks are released, and the
+strict D3D11 fixture verified callback reentrancy, resource destruction and
+nested polling after an injected flush OOM. Queue write paths now release locks
+in reverse acquisition order.
+
+On the RTX 3090 Ti (vendor 4318, device 8707), strict mode requested and
+asserted FL9_1. Both focused core hardware fixtures passed: the broader
+render/transfer fixture also exercised injected invalidation failure and a
+second pending map after device loss; the new mapped-write fixture verified
+OOM propagation and shadow cleanup. The full core library suite passed 70/70,
+including zero public D3D11 adapter exposure. The private D3D11 HAL suite
+passed 286 tests with two filtered (six existing dynamic-index hardware cases
+remain skipped). Cross-backend core checks for dx11/dx12/vulkan/gles and
+dx11/replay passed; targeted DX12 HAL tests passed 2/2. Clippy passed with ten
+existing HAL test warnings. Targeted rustfmt checks passed on all 20 changed
+Rust files and `git diff --check` passed. Cross-backend checking without WGSL
+emitted 15 existing unused/unreachable warnings.
+
+`RUSTFLAGS=--cfg wgpu_validate_locks` remains unverified: after fixing the
+queue-write LIFO release exposed by the first run, the full fixture reached an
+existing `DEVICE_COMMAND_INDICES` to `COMMAND_BUFFER_DATA` lock-rank TODO. The
+narrow flush fixture also encountered the ranked-lock checker while dropping
+the fixture's `buffer_as_hal` guard. Metal was not compiled on this Windows
+host. Public adapter exposure remains disabled.
+Checkpoint: `13a4defb9` (`core: propagate mapped buffer flush failures`).
+
+Next: investigate DXGI/window-procedure reentrancy during `Present` and define
+a sound synchronization contract that does not rely on a cooperative caller.
+Keep ordinary D3D11 enumeration disabled until that and the remaining core/HAL
+capability mismatches are resolved.
