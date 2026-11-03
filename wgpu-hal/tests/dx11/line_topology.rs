@@ -24,7 +24,7 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
     let module = naga::front::wgsl::parse_str(
-        "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); } @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); } @fragment fn blue() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); } @fragment fn white() -> @location(0) vec4f { return vec4f(1.0, 1.0, 1.0, 1.0); }",
+        "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); } @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); } @fragment fn blue() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); } @fragment fn white() -> @location(0) vec4f { return vec4f(1.0, 1.0, 1.0, 1.0); } @fragment fn cyan() -> @location(0) vec4f { return vec4f(0.0, 1.0, 1.0, 1.0); } @fragment fn yellow() -> @location(0) vec4f { return vec4f(1.0, 1.0, 0.0, 1.0); }",
     )
     .unwrap();
     let info = naga::valid::Validator::new(
@@ -76,7 +76,7 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let pipeline = |topology, fragment| unsafe {
+    let pipeline = |topology, fragment, strip_index_format| unsafe {
         device.create_render_pipeline(&crate::RenderPipelineDescriptor {
             label: None,
             layout: &layout,
@@ -86,6 +86,7 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
             },
             primitive: wgt::PrimitiveState {
                 topology,
+                strip_index_format,
                 ..Default::default()
             },
             depth_stencil: None,
@@ -96,10 +97,22 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
             cache: None,
         })
     };
-    let line_list = pipeline(wgt::PrimitiveTopology::LineList, "red").unwrap();
-    let line_strip = pipeline(wgt::PrimitiveTopology::LineStrip, "green").unwrap();
-    let indexed_u16_pipeline = pipeline(wgt::PrimitiveTopology::LineList, "blue").unwrap();
-    let indexed_u32_pipeline = pipeline(wgt::PrimitiveTopology::LineList, "white").unwrap();
+    let line_list = pipeline(wgt::PrimitiveTopology::LineList, "red", None).unwrap();
+    let line_strip = pipeline(wgt::PrimitiveTopology::LineStrip, "green", None).unwrap();
+    let indexed_u16_pipeline = pipeline(wgt::PrimitiveTopology::LineList, "blue", None).unwrap();
+    let indexed_u32_pipeline = pipeline(wgt::PrimitiveTopology::LineList, "white", None).unwrap();
+    let indexed_strip_u16_pipeline = pipeline(
+        wgt::PrimitiveTopology::LineStrip,
+        "cyan",
+        Some(wgt::IndexFormat::Uint16),
+    )
+    .unwrap();
+    let indexed_strip_u32_pipeline = pipeline(
+        wgt::PrimitiveTopology::LineStrip,
+        "yellow",
+        Some(wgt::IndexFormat::Uint32),
+    )
+    .unwrap();
     let extent = wgt::Extent3d {
         width: 16,
         height: 16,
@@ -150,6 +163,18 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
         [-0.75, -0.9],
         [0.75, -0.9],
         [0.0, 0.0],
+        [-0.9, -0.7],
+        [-0.5, -0.3],
+        [-0.1, -0.7],
+        [-0.9, 0.7],
+        [-0.5, 0.3],
+        [-0.1, 0.7],
+        [0.1, -0.7],
+        [0.5, -0.3],
+        [0.9, -0.7],
+        [0.1, 0.7],
+        [0.5, 0.3],
+        [0.9, 0.7],
     ];
     let bytes: Vec<u8> = vertices
         .into_iter()
@@ -182,6 +207,21 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
             .unwrap()
     };
     native.write_byte_buffer(&u16_indices, 0, &u16_index_data)?;
+    let strip_u16_index_data: Vec<_> = [999u16, 15, 16, u16::MAX - 1, 17, 18, 19]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect();
+    let strip_u16_indices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: strip_u16_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&strip_u16_indices, 0, &strip_u16_index_data)?;
 
     let mut wide_vertex_data = vec![0u8; 65_537 * 8];
     for (index, position) in [
@@ -206,6 +246,29 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
             .unwrap()
     };
     native.write_byte_buffer(&wide_vertex, 0, &wide_vertex_data)?;
+    let mut gather_vertex_data = vec![0u8; 65_537 * 8];
+    for (index, position) in [
+        (0usize, [0.9f32, -0.3]),
+        (65_535, [0.3, -0.3]),
+        (65_536, [0.3, 0.9]),
+    ] {
+        let start = index * 8;
+        for (component, value) in position.into_iter().enumerate() {
+            gather_vertex_data[start + component * 4..start + component * 4 + 4]
+                .copy_from_slice(&value.to_ne_bytes());
+        }
+    }
+    let gather_vertex = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: gather_vertex_data.len() as u64,
+                usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&gather_vertex, 0, &gather_vertex_data)?;
     let u32_index_data: Vec<_> = [65_535u32, 65_536, 0, 65_536]
         .into_iter()
         .flat_map(u32::to_ne_bytes)
@@ -221,6 +284,36 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
             .unwrap()
     };
     native.write_byte_buffer(&u32_indices, 0, &u32_index_data)?;
+    let strip_u32_index_data: Vec<_> = [999u32, 21, 22, 23, u32::MAX, 24, 25, 26]
+        .into_iter()
+        .flat_map(u32::to_ne_bytes)
+        .collect();
+    let strip_u32_indices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: strip_u32_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&strip_u32_indices, 0, &strip_u32_index_data)?;
+    let wide_strip_index_data: Vec<_> = [0u32, 65_535, 65_536]
+        .into_iter()
+        .flat_map(u32::to_ne_bytes)
+        .collect();
+    let wide_strip_indices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: wide_strip_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&wide_strip_indices, 0, &wide_strip_index_data)?;
     let colors = [Some(crate::ColorAttachment {
         target: crate::Attachment {
             view: &view,
@@ -274,6 +367,19 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
             wgt::IndexFormat::Uint32,
         );
         encoder.draw_indexed(0, 4, 0, 0, 1);
+        encoder.set_render_pipeline(&indexed_strip_u16_pipeline);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&strip_u16_indices, 0, None),
+            wgt::IndexFormat::Uint16,
+        );
+        encoder.draw_indexed(1, 6, 1, 0, 1);
+        encoder.set_render_pipeline(&indexed_strip_u32_pipeline);
+        encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&strip_u32_indices, 0, None),
+            wgt::IndexFormat::Uint32,
+        );
+        encoder.draw_indexed(1, 7, 0, 0, 1);
         encoder.end_render_pass();
         encoder.end_encoding().unwrap()
     };
@@ -297,6 +403,14 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
         .chunks_exact(4)
         .filter(|pixel| *pixel == [255, 255, 255, 255])
         .count();
+    let cyan = pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [0, 255, 255, 255])
+        .count();
+    let yellow = pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [255, 255, 0, 255])
+        .count();
     assert!(red >= 12, "line-list readback had only {red} red pixels");
     assert!(
         green >= 8,
@@ -310,6 +424,14 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
         white >= 8,
         "indexed Uint32 line-list readback had only {white} white pixels"
     );
+    assert!(
+        cyan >= 6,
+        "indexed Uint16 line-strip had only {cyan} cyan pixels"
+    );
+    assert!(
+        yellow >= 6,
+        "indexed Uint32 line-strip had only {yellow} yellow pixels"
+    );
     assert!(pixels.chunks_exact(4).all(|pixel| {
         matches!(
             pixel,
@@ -318,10 +440,61 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
                 | [0, 255, 0, 255]
                 | [0, 0, 255, 255]
                 | [255, 255, 255, 255]
+                | [0, 255, 255, 255]
+                | [255, 255, 0, 255]
         )
     }));
     std::println!(
-        "PASS: FL9_1 nonindexed line topologies and indexed Uint16/Uint32 lists: {red} red, {green} green, {blue} blue and {white} white pixels"
+        "PASS: FL9_1 line topologies: {red} red, {green} green, {blue} blue, {white} white, {cyan} cyan and {yellow} yellow pixels"
+    );
+
+    let mut wide_strip_encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let wide_strip_commands = unsafe {
+        wide_strip_encoder.begin_encoding(None).unwrap();
+        wide_strip_encoder.begin_render_pass(&pass).unwrap();
+        wide_strip_encoder.set_render_pipeline(&indexed_strip_u32_pipeline);
+        wide_strip_encoder.set_vertex_buffer(
+            0,
+            crate::BufferBinding::new_unchecked(&gather_vertex, 0, None),
+        );
+        wide_strip_encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&wide_strip_indices, 0, None),
+            wgt::IndexFormat::Uint32,
+        );
+        wide_strip_encoder.draw_indexed(0, 3, 0, 0, 1);
+        wide_strip_encoder.end_render_pass();
+        wide_strip_encoder.end_encoding().unwrap()
+    };
+    let wide_strip_fence = native.create_native_fence();
+    unsafe {
+        queue
+            .submit(&[&wide_strip_commands], &[], (&wide_strip_fence, 1))
+            .unwrap()
+    };
+    assert!(native.wait_native_fence(&wide_strip_fence, 1, Some(Duration::from_secs(5)))?);
+    let wide_strip_pixels = native.read_rgba_texture(&target, 0, 0)?;
+    let wide_strip_yellow = wide_strip_pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [255, 255, 0, 255])
+        .count();
+    assert!(
+        wide_strip_yellow >= 8,
+        "wide indexed strip gathered only {wide_strip_yellow} yellow pixels"
+    );
+    assert!(wide_strip_pixels
+        .chunks_exact(4)
+        .all(|pixel| matches!(pixel, [0, 0, 0, 255] | [255, 255, 0, 255])));
+    let gathered_edge_pixel = &wide_strip_pixels[(10 * 16 + 12) * 4..(10 * 16 + 13) * 4];
+    assert_eq!(gathered_edge_pixel, [255, 255, 0, 255]);
+    std::println!(
+        "PASS: indexed Uint32 line-strip wide-pair gather and compact continuation: {wide_strip_yellow} yellow pixels"
     );
 
     let bad_index_data = [0u16, 0, u16::MAX, 0]
@@ -409,17 +582,47 @@ fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
         assert!(rejected_encoder.end_encoding().is_err());
     }
     std::println!("PASS: indexed line-strip draw rejected before submission");
+
+    let mut mismatched_encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    unsafe {
+        mismatched_encoder.begin_encoding(None).unwrap();
+        mismatched_encoder.begin_render_pass(&pass).unwrap();
+        mismatched_encoder.set_render_pipeline(&indexed_strip_u16_pipeline);
+        mismatched_encoder
+            .set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        mismatched_encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&u32_indices, 0, None),
+            wgt::IndexFormat::Uint32,
+        );
+        mismatched_encoder.draw_indexed(1, 2, 0, 0, 1);
+        mismatched_encoder.end_render_pass();
+        assert!(mismatched_encoder.end_encoding().is_err());
+    }
+    std::println!("PASS: indexed line-strip format mismatch rejected before submission");
     drop(commands);
     unsafe {
         device.destroy_buffer(indices);
         device.destroy_buffer(vertex);
         device.destroy_buffer(u16_indices);
+        device.destroy_buffer(strip_u16_indices);
         device.destroy_buffer(u32_indices);
+        device.destroy_buffer(strip_u32_indices);
+        device.destroy_buffer(wide_strip_indices);
         device.destroy_buffer(wide_vertex);
+        device.destroy_buffer(gather_vertex);
         device.destroy_render_pipeline(line_strip);
         device.destroy_render_pipeline(line_list);
         device.destroy_render_pipeline(indexed_u16_pipeline);
         device.destroy_render_pipeline(indexed_u32_pipeline);
+        device.destroy_render_pipeline(indexed_strip_u16_pipeline);
+        device.destroy_render_pipeline(indexed_strip_u32_pipeline);
         device.destroy_texture_view(view);
         device.destroy_texture(target);
         device.destroy_pipeline_layout(layout);

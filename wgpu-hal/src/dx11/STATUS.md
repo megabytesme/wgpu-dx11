@@ -189,10 +189,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   pairs while compacting bounded windows, and gathers a wide pair into two
   vertices when needed. It limits native calls to 131,070 indices (65,535
   lines), ignores an incomplete tail and discards the draw on any invalid fetch.
-  Strict RTX readback checked 22 red, 12 green, 24 blue and 14 white pixels;
-  the controlled core fixture checked indexed Uint16 and Uint32 outputs.
-  Indexed LineStrip remains rejected pending cut-marker and batch-connectivity
-  handling.
+  Strict RTX readback checked direct and indexed line topology output in both
+  index formats, restart-separated strips, an indexed wide-edge gather and
+  out-of-range draw discard. The controlled core fixture checked indexed
+  Uint16 and Uint32 LineList and LineStrip output, including markers formed by
+  base-vertex adjustment. Indexed LineStrip emulates restart by splitting
+  CPU-mapped resolved indices because native FL9 strip cuts are unavailable.
 - Nonindexed strips preserve winding through overlapping, rebased batches;
   indexed strips remain unsupported because native strip cuts are not guaranteed.
 - Direct FL9_1 triangle-list batches are conservatively limited to 65,535
@@ -205,8 +207,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   Replay checks GPU-written indices against every stream and discards a whole
   draw on an out-of-bounds fetch. Native-safe Uint16 indices use the original
   buffers; other valid indices use ordered rebased Uint16 windows or gather
-  each stream into scratch buffers for wide triangles. Indexed strips remain
-  unsupported.
+  each stream into scratch buffers for wide triangles. Indexed triangle strips
+  remain unsupported; indexed LineStrip has a separate restart-aware path.
 - Restricted direct, strip and indexed instancing repeats non-instanced native
   draws, binding each instance-rate stream with native stride zero at its
   `first_instance`-adjusted offset. Pipelines using `instance_index` and indexed

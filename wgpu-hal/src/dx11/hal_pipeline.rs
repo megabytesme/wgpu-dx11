@@ -465,6 +465,7 @@ pub struct RenderPipeline {
     pub(super) vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; crate::MAX_VERTEX_BUFFERS],
     pub(super) vertex_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
     pub(super) topology: wgt::PrimitiveTopology,
+    pub(super) strip_index_format: Option<wgt::IndexFormat>,
 }
 
 #[cfg(test)]
@@ -2237,8 +2238,10 @@ impl RenderPipeline {
                 | wgt::PrimitiveTopology::TriangleList
                 | wgt::PrimitiveTopology::TriangleStrip
                 | wgt::PrimitiveTopology::PointList
-        ) || (desc.primitive.topology != wgt::PrimitiveTopology::TriangleStrip
-            && desc.primitive.strip_index_format.is_some())
+        ) || (!matches!(
+            desc.primitive.topology,
+            wgt::PrimitiveTopology::TriangleStrip | wgt::PrimitiveTopology::LineStrip
+        ) && desc.primitive.strip_index_format.is_some())
         {
             return Err(invalid());
         }
@@ -2658,6 +2661,7 @@ impl RenderPipeline {
             vertex_layouts,
             vertex_slots: vertex_slots.logical_slots,
             topology: desc.primitive.topology,
+            strip_index_format: desc.primitive.strip_index_format,
         })
     }
 }

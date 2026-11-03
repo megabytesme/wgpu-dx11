@@ -960,15 +960,21 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 ind
 ```
 
 The GPU test requests and asserts FL9_1, renders direct and indexed line lists
-and a direct line strip, and verifies readback colors. Indexed coverage includes
-Uint16 and Uint32 buffers, a nonzero first index, an incomplete trailing index,
-bounded compaction and a wide pair that requires vertex gathering. A separate
-indexed draw whose effective fetch is out of range leaves the target clear, and
-indexed LineStrip is rejected before submission. CPU tests verify pair-preserving
-line batches, strip endpoint overlap, indexed rebasing and gathering, whole-draw
-discard and the 131,070-index FL9_1 batch boundary. On the RTX 3090 Ti at
-requested and actual FL9_1, readback contained 22 red, 12 green, 24 blue and 14
-white pixels with no unexpected colors.
+and strips, and verifies readback colors. Indexed coverage includes Uint16 and
+Uint32 buffers, nonzero first indices, restart-separated runs, bounded
+compaction, a wide pair/edge that requires vertex gathering, and a mismatched
+strip format rejected before submission. The Uint16 path uses `baseVertex = 1`
+to turn `0xFFFE` into the resolved restart marker; the Uint32 path uses the raw
+marker at base zero. A wide Uint32 strip asserts a specific pixel on the
+gathered edge as well as the compact continuation, so the gathered pair must
+be visible. A separate indexed draw whose effective fetch is out of range
+leaves the target clear. CPU tests verify pair-preserving line batches, strip
+endpoint overlap, resolved-index restart splitting, signed-base rebasing,
+wide-edge gathering, whole-draw discard and the 131,070 LineList / 65,536
+LineStrip index limits. On the RTX 3090 Ti at requested and actual FL9_1, the
+combined readback contained 17 red, 12 green, 24 blue, 14 white, 10 cyan and 14
+yellow pixels. A separate wide Uint32 strip readback contained 15 yellow
+pixels, including the asserted gathered-edge pixel.
 
 The controlled core fixture also creates indexed LineList pipelines and submits
 Uint16 and Uint32 draws while ordinary D3D11 adapter enumeration remains empty:
@@ -978,6 +984,6 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
-Both indexed draws read back eight red pixels. This exercises core command
-recording through the explicitly injected test device; it does not expose a
-normal adapter.
+Both indexed LineList draws and both indexed LineStrip draws read back red
+pixels. This exercises core command recording through the explicitly injected
+test device; it does not expose a normal adapter.

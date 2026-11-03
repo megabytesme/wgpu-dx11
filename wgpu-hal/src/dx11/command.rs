@@ -246,6 +246,16 @@ pub(super) enum NativeCommand {
         instances: u32,
         instance_bindings: InstanceBindings,
     },
+    DrawIndexedLineStrips {
+        binding: Arc<IndexBinding>,
+        vertices: Vec<(u32, ID3D11Buffer, u32, u64, u32, u32)>,
+        first: u32,
+        count: u32,
+        base_vertex: i32,
+        max_indices: u32,
+        instances: u32,
+        instance_bindings: InstanceBindings,
+    },
     EndRender,
 }
 
@@ -860,6 +870,24 @@ impl CommandBuffer {
                         instances,
                         instance_bindings,
                     } => binding.draw_lines(
+                        context,
+                        *first,
+                        *count,
+                        *base_vertex,
+                        vertices,
+                        (*max_indices, *instances),
+                        instance_bindings,
+                    )?,
+                    NativeCommand::DrawIndexedLineStrips {
+                        binding,
+                        vertices,
+                        first,
+                        count,
+                        base_vertex,
+                        max_indices,
+                        instances,
+                        instance_bindings,
+                    } => binding.draw_line_strips(
                         context,
                         *first,
                         *count,

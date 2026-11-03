@@ -26,8 +26,13 @@ below is met. This plan does not claim WebGPU conformance.
    controlled core fixture verifies both through core command recording and
    readback. Indexed Uint16/Uint32 line lists now preserve line pairs through
    compact rebasing and wide-pair gathering, with strict HAL GPU output and a
-   controlled core fixture. Indexed strips need separate primitive-restart
-   and batch-connectivity analysis.
+   controlled core fixture. Indexed LineStrip now splits format-specific
+   restart markers into independent runs, preserves connectivity at native
+   draw limits, rebases bounded windows and gathers wide edges. Restart
+   markers are matched after signed base-vertex resolution, following the
+   current WebGPU index-resolution and primitive-assembly algorithms. Indexed
+   triangle strips, broader instance semantics and indirect draws are still
+   unavailable.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport

@@ -577,6 +577,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::LineStrip,
         VertexCase::LineIndexed(wgt::IndexFormat::Uint16),
         VertexCase::LineIndexed(wgt::IndexFormat::Uint32),
+        VertexCase::LineStripIndexed(wgt::IndexFormat::Uint16),
+        VertexCase::LineStripIndexed(wgt::IndexFormat::Uint32),
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
@@ -1688,6 +1690,7 @@ enum VertexCase {
     LineList,
     LineStrip,
     LineIndexed(wgt::IndexFormat),
+    LineStripIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
     SampledMips,
     SampledMipsBias,
@@ -1740,13 +1743,19 @@ fn render_triangle(
         _ => None,
     };
     let line_index_format = match case {
-        VertexCase::LineIndexed(format) => Some(format),
+        VertexCase::LineIndexed(format) | VertexCase::LineStripIndexed(format) => Some(format),
+        _ => None,
+    };
+    let line_strip_index_format = match case {
+        VertexCase::LineStripIndexed(format) => Some(format),
         _ => None,
     };
     let point_input = case == VertexCase::PointInput || point_index.is_some();
     let line_topology = match case {
         VertexCase::LineList | VertexCase::LineIndexed(_) => Some(wgt::PrimitiveTopology::LineList),
-        VertexCase::LineStrip => Some(wgt::PrimitiveTopology::LineStrip),
+        VertexCase::LineStrip | VertexCase::LineStripIndexed(_) => {
+            Some(wgt::PrimitiveTopology::LineStrip)
+        }
         _ => None,
     };
     let noop_stencil = case == VertexCase::NoopStencil;
@@ -2395,6 +2404,7 @@ fn render_triangle(
             } else {
                 wgt::PrimitiveTopology::TriangleList
             }),
+            strip_index_format: line_strip_index_format,
             ..Default::default()
         },
         depth_stencil: Some(wgt::DepthStencilState {
@@ -2577,7 +2587,12 @@ fn render_triangle(
             0.5,
         ];
     }
-    if line_index_format.is_some() {
+    if line_strip_index_format.is_some() {
+        values = vec![
+            -0.9, -0.5, 0.25, 0.25, 0.5, -0.5, 0.5, 0.25, 0.25, 0.5, -0.1, -0.5, 0.25, 0.25, 0.5,
+            0.1, -0.5, 0.25, 0.25, 0.5, 0.5, 0.5, 0.25, 0.25, 0.5, 0.9, -0.5, 0.25, 0.25, 0.5,
+        ];
+    } else if line_index_format.is_some() {
         values = vec![
             -1., 0., 0.25, 0.25, 0.5, 1., 0., 0.25, 0.25, 0.5, 0., 0.9, 0.25, 0.25, 0.5,
         ];
@@ -2618,23 +2633,36 @@ fn render_triangle(
         .expect("vertex upload");
     let index_format = point_index.or(line_index_format);
     let index_buffer = index_format.map(|format| {
-        let data: Vec<u8> = match (format, line_index_format.is_some()) {
-            (wgt::IndexFormat::Uint16, true) => [999u16, 0, 1, 2]
+        let data: Vec<u8> = match (
+            format,
+            line_index_format.is_some(),
+            line_strip_index_format.is_some(),
+        ) {
+            (wgt::IndexFormat::Uint16, true, true) => [999u16, 0, 1, u16::MAX - 1, 2, 3, 4, 999]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect(),
-            (wgt::IndexFormat::Uint32, true) => [999u32, 0, 1, 2]
+            (wgt::IndexFormat::Uint32, true, true) => [999u32, 0, 1, u32::MAX - 1, 2, 3, 4, 999]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect(),
-            (wgt::IndexFormat::Uint16, false) => [999u16, 999, 999, 2, 3, 999]
+            (wgt::IndexFormat::Uint16, true, false) => [999u16, 0, 1, 2]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect(),
-            (wgt::IndexFormat::Uint32, false) => [999u32, 999, 2, 3]
+            (wgt::IndexFormat::Uint32, true, false) => [999u32, 0, 1, 2]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect(),
+            (wgt::IndexFormat::Uint16, false, false) => [999u16, 999, 999, 2, 3, 999]
+                .into_iter()
+                .flat_map(u16::to_ne_bytes)
+                .collect(),
+            (wgt::IndexFormat::Uint32, false, false) => [999u32, 999, 2, 3]
+                .into_iter()
+                .flat_map(u32::to_ne_bytes)
+                .collect(),
+            _ => unreachable!(),
         };
         let (buffer, error) = global.device_create_buffer(
             device,
@@ -2846,6 +2874,10 @@ fn render_triangle(
         if point_index.is_some() {
             global
                 .render_pass_draw_indexed(&mut pass, 2, 1, 1, -1, 0)
+                .unwrap();
+        } else if line_strip_index_format.is_some() {
+            global
+                .render_pass_draw_indexed(&mut pass, 6, 1, 1, 1, 0)
                 .unwrap();
         } else {
             global
