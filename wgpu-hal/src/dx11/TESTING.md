@@ -709,6 +709,21 @@ rejection, and coexistence with a uniform in another group.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_never_preserves_color_depth_and_validation -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The strict RTX FL9_1 test passed both Never depth-write variants, each checking
+32 green and 32 blue pixels; two controlled core variants each checked 64
+depth-dependent pixels. Never draws are suppressed after validation, within the
+current inert stencil, read-only shader resource and no-query subset. Native
+state uses Always with depth writes disabled defensively. Native FL9_1 guarantees
+cover Always and LessEqual; other native comparisons remain unsupported here.
+Future shader side effects, writing stencil or queries require reviewing this
+emulation. Historical hardware remains unverified.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 stencil_noop -- --nocapture --test-threads=1
 ```
 

@@ -1224,3 +1224,36 @@ review found no concrete defect under the current one-RTV, PS-only restrictions.
 The full strict private suite passed 255 tests with two filtered; three older
 shader cases skip GPU execution internally. HAL Clippy passed with ten existing
 test warnings, and core's ordinary zero-adapter test passed.
+Checkpoint: `3e0fdcb9f9e8330e7cb900a021303d0e6d22c878`.
+
+Next: a validated Never depth comparison can suppress draws only while shaders
+have no observable storage side effects, stencil is inert and queries are
+unavailable. FL9_1 guarantees native Always and LessEqual, not every comparison;
+do not substitute LessEqual for strict comparisons.
+
+Validated Never-depth draws are now suppressed under the current inert-stencil,
+read-only-shader and no-query subset. Strict private and controlled core tests
+passed depth-dependent output for both depth-write settings and direct/indexed
+paths. The full strict suite passed 257 tests with two filtered; three older
+shader tests skip GPU execution internally. HAL Clippy passed with ten existing
+test warnings and core's zero-adapter isolation test passed. Independent review
+found no concrete defect; future side effects or queries require re-audit.
+
+Integer vertex input audit: although R8G8B8A8_UINT is a required FL9_1 IA
+format, an FXC 10.1 `vs_4_0_level_9_1` probe of uint packing plus `asfloat`
+accepted the shader but emitted embedded vs_2_0 float multiply/add instructions
+instead of preserving bit reinterpretation. For bytes [63,128,0,0], the intended
+bits 0x3f800000 represent 1.0f but the legacy listing writes the numeric
+1065353216. The SM4 stream uses integer shifts/adds. This is bytecode evidence,
+not historical-GPU execution. The format remains unsupported; audit currently
+accepted uint uniforms and bitcasts for the same legacy-path hazard before
+expanding integer shader or vertex support.
+
+Follow-up shader audit found this risk is already reachable: FXC accepts an
+FL9 pixel shader comparing a uint uniform to 16777217, but the embedded ps_2_0
+listing converts the uniform to float and uses 16777216 as the comparison
+constant. A float uniform converted to integer before that comparison has the
+same issue. Modern RTX forced-FL9 readback cannot validate this legacy stream.
+Prioritize a selected-entry fail-closed guard for unsafe runtime integer
+operations and bitcasts before public exposure; do not treat earlier RTX
+integer-uniform tests as proof of historical-device correctness.

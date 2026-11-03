@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 255 tests; older
+operations are safe. The latest completed strict suite passed 257 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -109,6 +109,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `9e9c21392b0996c1ea2b6489c11c268c37379206` | Emulate non-suffix sampled mip views |
 | `b431ff5d013dc9050f729b00a92973f961676ff1` | Dual-use FL9_1 mip views |
 | `07eaee830f8600b1b56391089ab3df03a20bcddf` | Disjoint native mip sampling |
+| `3e0fdcb9f9e8330e7cb900a021303d0e6d22c878` | Disjoint clone-backed mip sampling |
 
 ## What is and is not usable
 
@@ -294,7 +295,9 @@ Short uniform ranges are staged with exact GPU source bytes and zero-padded
 native buffers. The unsafe core fixture sets BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
 and passes 4/5/12/20-byte rendering; no public flag is currently exposed.
 Selected integer-uniform tests pass on the RTX, but general integer vertex and
-historical-driver semantics are not established.
+historical-driver semantics are not established. FXC's embedded legacy shader
+can round a runtime integer comparison against 16777217 to 16777216; this is a
+known unresolved shader validation blocker even when the RTX result looks right.
 
 Equal min/mag, anisotropy-1 samplers can normalize finite LOD clamps on the
 one-mip path; pair validation checks the actual sampled view mip count.

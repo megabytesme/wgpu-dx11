@@ -15,11 +15,11 @@ use windows::{
             D3D11_BLEND_INV_SRC_COLOR, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
             D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
             D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
-            D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT, D3D11_CULL_NONE,
-            D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
-            D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_FORMAT_SUPPORT_BLENDABLE,
-            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
+            D3D11_COMPARISON_FUNC, D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT,
+            D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
+            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
+            D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
+            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_SNORM,
@@ -76,6 +76,35 @@ fn stencil_is_noop(stencil: &wgt::StencilState) -> bool {
         && compare_always_passes(&stencil.back)
         && (stencil.write_mask & 0xff == 0
             || (stencil.front.is_read_only() && stencil.back.is_read_only()))
+}
+
+fn depth_comparison(
+    compare: Option<wgt::CompareFunction>,
+) -> Option<(D3D11_COMPARISON_FUNC, bool)> {
+    match compare.unwrap_or(wgt::CompareFunction::Always) {
+        wgt::CompareFunction::Always => Some((D3D11_COMPARISON_ALWAYS, false)),
+        wgt::CompareFunction::LessEqual => Some((D3D11_COMPARISON_LESS_EQUAL, false)),
+        wgt::CompareFunction::Never => Some((D3D11_COMPARISON_ALWAYS, true)),
+        _ => None,
+    }
+}
+
+fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
+    use super::{hal_bind_group::GroupKind, shader::ShaderBindingKind};
+    for group in plan.groups().iter().flatten() {
+        let GroupKind {
+            uniforms: _,
+            textures: _,
+            samplers: _,
+        } = group;
+        for binding in group.shader_bindings() {
+            match binding.kind {
+                ShaderBindingKind::Uniform
+                | ShaderBindingKind::Texture2dFloat
+                | ShaderBindingKind::Sampler => {}
+            }
+        }
+    }
 }
 
 fn overlapping_vertex_element(
@@ -315,6 +344,7 @@ pub struct RenderPipeline {
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
     pub(super) depth_format: Option<wgt::TextureFormat>,
     pub(super) depth_write: bool,
+    pub(super) depth_never: bool,
     pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
@@ -327,6 +357,31 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn depth_comparison_never_is_suppressed_not_native() {
+        use super::{depth_comparison, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS_EQUAL};
+        use wgt::CompareFunction as C;
+        assert_eq!(
+            depth_comparison(None),
+            Some((D3D11_COMPARISON_ALWAYS, false))
+        );
+        assert_eq!(
+            depth_comparison(Some(C::Always)),
+            Some((D3D11_COMPARISON_ALWAYS, false))
+        );
+        assert_eq!(
+            depth_comparison(Some(C::LessEqual)),
+            Some((D3D11_COMPARISON_LESS_EQUAL, false))
+        );
+        assert_eq!(
+            depth_comparison(Some(C::Never)),
+            Some((D3D11_COMPARISON_ALWAYS, true))
+        );
+        for compare in [C::Less, C::Equal, C::Greater, C::NotEqual, C::GreaterEqual] {
+            assert_eq!(depth_comparison(Some(compare)), None);
+        }
+    }
+
     #[test]
     fn vertex_formats_map_signed_normalized_words_without_expanding_other_formats() {
         use super::{vertex_format, DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SNORM};
@@ -1963,6 +2018,7 @@ impl RenderPipeline {
                 }
             }
         }
+        let mut depth_never = false;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if state.format != wgt::TextureFormat::Depth24PlusStencil8
                 || !stencil_is_noop(&state.stencil)
@@ -1970,11 +2026,12 @@ impl RenderPipeline {
             {
                 return Err(invalid());
             }
-            let comparison = match state.depth_compare.unwrap_or(wgt::CompareFunction::Always) {
-                wgt::CompareFunction::Always => D3D11_COMPARISON_ALWAYS,
-                wgt::CompareFunction::LessEqual => D3D11_COMPARISON_LESS_EQUAL,
-                _ => return Err(invalid()),
-            };
+            let (comparison, suppress_draws) =
+                depth_comparison(state.depth_compare).ok_or_else(invalid)?;
+            depth_never = suppress_draws;
+            if depth_never {
+                depth_never_read_only_bindings(&desc.layout.bindings);
+            }
             let face = D3D11_DEPTH_STENCILOP_DESC {
                 StencilFailOp: D3D11_STENCIL_OP_KEEP,
                 StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
@@ -1983,7 +2040,7 @@ impl RenderPipeline {
             };
             Some(D3D11_DEPTH_STENCIL_DESC {
                 DepthEnable: true.into(),
-                DepthWriteMask: if state.depth_write_enabled.unwrap_or(false) {
+                DepthWriteMask: if state.depth_write_enabled.unwrap_or(false) && !depth_never {
                     D3D11_DEPTH_WRITE_MASK_ALL
                 } else {
                     D3D11_DEPTH_WRITE_MASK_ZERO
@@ -2258,6 +2315,7 @@ impl RenderPipeline {
                 .depth_stencil
                 .as_ref()
                 .is_some_and(|state| state.depth_write_enabled.unwrap_or(false)),
+            depth_never,
             target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),

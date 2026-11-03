@@ -359,6 +359,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
+        VertexCase::NeverDepth(false),
+        VertexCase::NeverDepth(true),
         VertexCase::Snorm,
         VertexCase::ZeroStride,
         VertexCase::InstanceRate,
@@ -1071,6 +1073,7 @@ enum VertexCase {
     DisjointCloneMip(wgt::TextureFormat),
     Overlapping,
     NoopStencil,
+    NeverDepth(bool),
     Snorm,
     ZeroStride,
     InstanceRate,
@@ -1089,6 +1092,10 @@ fn render_triangle(
     use crate::{binding_model, command as render, pipeline, resource};
     let overlapping = case == VertexCase::Overlapping;
     let noop_stencil = case == VertexCase::NoopStencil;
+    let never_depth = match case {
+        VertexCase::NeverDepth(write) => Some(write),
+        _ => None,
+    };
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
@@ -1661,64 +1668,76 @@ fn render_triangle(
         constants: Default::default(),
         zero_initialize_workgroup_memory: false,
     };
-    let (pipeline_id, error) = global.device_create_render_pipeline(
-        device,
-        &pipeline::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(layout),
-            vertex: pipeline::VertexState {
-                stage: stage("vs"),
-                buffers: Cow::Borrowed(&buffers),
-            },
-            primitive: wgt::PrimitiveState::default(),
-            depth_stencil: Some(wgt::DepthStencilState {
-                format: wgt::TextureFormat::Depth24PlusStencil8,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgt::CompareFunction::LessEqual),
-                stencil: if noop_stencil {
-                    let face = wgt::StencilFaceState {
-                        compare: wgt::CompareFunction::Equal,
-                        pass_op: wgt::StencilOperation::Replace,
-                        ..wgt::StencilFaceState::IGNORE
-                    };
-                    wgt::StencilState {
-                        front: face,
-                        back: face,
-                        read_mask: 0x100,
-                        write_mask: 0,
-                    }
-                } else {
-                    wgt::StencilState::default()
-                },
-                bias: wgt::DepthBiasState::default(),
-            }),
-            multisample: wgt::MultisampleState::default(),
-            fragment: Some(pipeline::FragmentState {
-                stage: stage("fs"),
-                targets: Cow::Borrowed(&targets),
-            }),
-            multiview_mask: None,
-            cache: None,
+    let mut pipeline_descriptor = pipeline::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(layout),
+        vertex: pipeline::VertexState {
+            stage: stage("vs"),
+            buffers: Cow::Borrowed(&buffers),
         },
-        None,
-    );
+        primitive: wgt::PrimitiveState::default(),
+        depth_stencil: Some(wgt::DepthStencilState {
+            format: wgt::TextureFormat::Depth24PlusStencil8,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgt::CompareFunction::LessEqual),
+            stencil: if noop_stencil {
+                let face = wgt::StencilFaceState {
+                    compare: wgt::CompareFunction::Equal,
+                    pass_op: wgt::StencilOperation::Replace,
+                    ..wgt::StencilFaceState::IGNORE
+                };
+                wgt::StencilState {
+                    front: face,
+                    back: face,
+                    read_mask: 0x100,
+                    write_mask: 0,
+                }
+            } else {
+                wgt::StencilState::default()
+            },
+            bias: wgt::DepthBiasState::default(),
+        }),
+        multisample: wgt::MultisampleState::default(),
+        fragment: Some(pipeline::FragmentState {
+            stage: stage("fs"),
+            targets: Cow::Borrowed(&targets),
+        }),
+        multiview_mask: None,
+        cache: None,
+    };
+    let (pipeline_id, error) =
+        global.device_create_render_pipeline(device, &pipeline_descriptor, None);
     assert!(error.is_none(), "render pipeline creation: {error:?}");
+    let never_pipeline = never_depth.map(|write| {
+        let depth = pipeline_descriptor.depth_stencil.as_mut().unwrap();
+        depth.depth_compare = Some(wgt::CompareFunction::Never);
+        depth.depth_write_enabled = Some(write);
+        let (pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(error.is_none(), "Never pipeline creation: {error:?}");
+        pipeline
+    });
     let (vertices, error) = global.device_create_buffer(
         device,
         &wgt::BufferDescriptor {
             label: None,
-            size: 180,
+            size: if never_depth.is_some() { 240 } else { 180 },
             usage: wgt::BufferUsages::VERTEX | wgt::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         },
         None,
     );
     assert!(error.is_none(), "vertex buffer creation: {error:?}");
-    let values = [
+    let mut values = vec![
         -1f32, -1., 0.25, 0.25, 0.5, 0., -1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, 0., -1.,
         0.25, 0.25, 0.5, 0., 1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, -1., -1., 0.75, 0.75,
         0.5, 3., -1., 0.75, 0.75, 0.5, -1., 3., 0.75, 0.75, 0.5,
     ];
+    if never_depth.is_some() {
+        values.extend_from_slice(&[
+            -1., -1., 0., 0.75, 0.5, 3., -1., 0., 0.75, 0.5, -1., 3., 0., 0.75, 0.5,
+        ]);
+    }
     let bytes: Vec<_> = if snorm {
         let mut bytes = Vec::with_capacity(180);
         for vertex in values.chunks_exact(5) {
@@ -1870,6 +1889,15 @@ fn render_triangle(
     global
         .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
         .unwrap();
+    if let Some(never_pipeline) = never_pipeline {
+        global
+            .render_pass_set_pipeline(&mut pass, never_pipeline)
+            .unwrap();
+        global.render_pass_draw(&mut pass, 3, 1, 9, 0).unwrap();
+        global
+            .render_pass_set_pipeline(&mut pass, pipeline_id)
+            .unwrap();
+    }
     global
         .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
         .unwrap();
@@ -1966,6 +1994,9 @@ fn render_triangle(
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.render_pipeline_drop(pipeline_id);
+    if let Some(never_pipeline) = never_pipeline {
+        global.render_pipeline_drop(never_pipeline);
+    }
     global.pipeline_layout_drop(layout);
     global.shader_module_drop(shader);
     global.bind_group_drop(group);

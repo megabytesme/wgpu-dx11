@@ -79,8 +79,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   warns against simultaneous texture and render-target binding. Historical FL9
   drivers remain unverified, and public adapter enumeration remains disabled.
 - A restricted D24S8 attachment path provides zero initialization, independent
-  depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
-  optional writes. Private read-only passes require load/store on both aspects,
+  depth/stencil clears, depth-only draws and native Always/LessEqual depth tests
+  with optional writes. Never uses validated draw suppression with inert stencil,
+  no shader writes and no queries; future side effects require review. Private
+  read-only passes require load/store on both aspects,
   no depth writes and no sampled alias. Stencil configurations that always
   pass and cannot write are accepted as no-ops; nontrivial stencil tests or
   writes, aspect-specific views and depth copies remain unsupported. Textured

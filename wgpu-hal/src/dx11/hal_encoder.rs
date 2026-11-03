@@ -37,6 +37,9 @@ struct RenderState {
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     target_mip: Option<u32>,
     pipeline: bool,
+    // Draw elision requires inert stencil, read-only shader resources, and no queries.
+    depth_never: bool,
+    depth_never_elision_safe: bool,
     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
     bound_groups: Vec<Option<BoundGroup>>,
@@ -646,6 +649,9 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn end_debug_marker(&mut self) {}
 
     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
+        if let Some(render) = self.render.as_mut() {
+            render.depth_never_elision_safe = false;
+        }
         self.reject()
     }
 
@@ -654,6 +660,9 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
+        if let Some(render) = self.render.as_mut() {
+            render.depth_never_elision_safe = false;
+        }
         self.reject()
     }
 
@@ -820,6 +829,9 @@ impl crate::CommandEncoder for CommandEncoder {
             target: target.clone(),
             target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
+            depth_never: false,
+            depth_never_elision_safe: desc.timestamp_writes.is_none()
+                && desc.occlusion_query_set.is_none(),
             active_plan: None,
             last_layout: None,
             bound_groups: (0..MAX_BIND_GROUPS).map(|_| None).collect(),
@@ -876,6 +888,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         render.pipeline = true;
+        render.depth_never = pipeline.depth_never;
         render.active_plan = Some(pipeline.bindings.clone());
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.full_npot = pipeline.full_npot;
@@ -1130,6 +1143,12 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
             for command in binding_commands {
                 self.record(command);
             }
@@ -1145,6 +1164,24 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        let hardware =
+            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+        let max_vertices = match topology {
+            wgt::PrimitiveTopology::TriangleList => {
+                hardware.max_direct_triangle_vertices_per_draw()
+            }
+            wgt::PrimitiveTopology::PointList => hardware.max_primitives_per_draw,
+            _ => {
+                self.reject();
+                return;
+            }
+        };
+        if render.depth_never {
+            if !render.depth_never_elision_safe {
+                self.reject();
+            }
+            return;
+        }
         for command in binding_commands {
             self.record(command);
         }
@@ -1159,18 +1196,6 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         // Feature level 9 limits the number of primitives per Draw. Split on
         // triangle boundaries so a large HAL draw retains its topology.
-        let hardware =
-            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
-        let max_vertices = match topology {
-            wgt::PrimitiveTopology::TriangleList => {
-                hardware.max_direct_triangle_vertices_per_draw()
-            }
-            wgt::PrimitiveTopology::PointList => hardware.max_primitives_per_draw,
-            _ => {
-                self.reject();
-                return;
-            }
-        };
         self.record(NativeCommand::Draw {
             first: first_vertex,
             count: vertex_count,
@@ -1260,6 +1285,12 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
             let index = index.clone();
             for command in binding_commands {
                 self.record(command);
@@ -1316,6 +1347,12 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        if render.depth_never {
+            if !render.depth_never_elision_safe {
+                self.reject();
+            }
+            return;
+        }
         for command in binding_commands {
             self.record(command);
         }
@@ -3860,6 +3897,10 @@ mod texture_transfer_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/depth_render.rs"]
 mod depth_render_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/depth_never.rs"]
+mod depth_never_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/triangle_strip.rs"]
