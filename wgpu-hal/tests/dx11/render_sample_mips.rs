@@ -389,7 +389,7 @@ fn fl91_render_and_sample_mip_transitions() -> windows::core::Result<()> {
             timestamp_writes: None,
             occlusion_query_set: None,
         };
-        // The conservative hazard check covers the whole resource, even disjoint mips.
+        // The suffix includes the attached last mip.
         unsafe {
             encoder.begin_encoding(None).unwrap();
             encoder.begin_render_pass(&last_pass).unwrap();
@@ -397,7 +397,7 @@ fn fl91_render_and_sample_mip_transitions() -> windows::core::Result<()> {
             encoder.end_render_pass();
             assert!(
                 encoder.end_encoding().is_err(),
-                "different mip views of the same texture must reject feedback"
+                "overlapping mip views of the same texture must reject feedback"
             );
         }
         let mut recorded = Vec::new();

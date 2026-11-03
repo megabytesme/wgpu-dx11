@@ -448,7 +448,7 @@ fn fl91_dual_nonsuffix_mip_render_and_sample() -> windows::core::Result<()> {
             timestamp_writes: None,
             occlusion_query_set: None,
         };
-        // The conservative hazard check covers the whole resource, even disjoint mips.
+        // A view cannot be sampled while its own mip is attached.
         unsafe {
             encoder.begin_encoding(None).unwrap();
             encoder.begin_render_pass(&last_pass).unwrap();
@@ -457,14 +457,6 @@ fn fl91_dual_nonsuffix_mip_render_and_sample() -> windows::core::Result<()> {
             assert!(
                 encoder.end_encoding().is_err(),
                 "same view must reject feedback"
-            );
-            encoder.begin_encoding(None).unwrap();
-            encoder.begin_render_pass(&mip_pass).unwrap();
-            encoder.set_bind_group(&layout, 0, &last_group, &[]);
-            encoder.end_render_pass();
-            assert!(
-                encoder.end_encoding().is_err(),
-                "different mip views of the same texture must reject feedback"
             );
         }
         let mut recorded = Vec::new();

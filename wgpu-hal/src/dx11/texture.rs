@@ -135,9 +135,14 @@ pub(super) struct SampledBinding {
     pub view: ID3D11ShaderResourceView,
     pub original: ID3D11Texture2D,
     pub refresh: Option<Arc<SampledRefresh>>,
+    pub mip_base: u32,
+    pub mip_count: u32,
 }
 
 impl NativeTextureView {
+    pub(super) fn mip_base(&self) -> u32 {
+        self.mip_base
+    }
     #[allow(dead_code)] // Used when recording shader bindings.
     pub(super) fn shader_resource(&self) -> Option<&ID3D11ShaderResourceView> {
         self.resource.as_ref()
@@ -389,6 +394,8 @@ impl NativeDevice {
                 view: resource,
                 original: view.texture.clone(),
                 refresh: view.refresh.clone(),
+                mip_base: view.mip_base,
+                mip_count: view.mip_count,
             },
             size,
             levels,

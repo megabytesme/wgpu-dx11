@@ -190,9 +190,9 @@ mip chains use `COLOR_TARGET` with optional `RESOURCE`, `COPY_SRC` and/or
 `COPY_DST`, excluding `TRANSIENT`; each attachment view selects one mip. A view
 with both sampled and attachment usages can select any single mip: a nonfinal
 mip uses a clone SRV and an original-resource RTV.
-Sampling and attachment use occur in distinct passes: the private HAL rejects
-feedback involving the same underlying texture even for disjoint mips. Sampled
-view metadata and the selected shader relationships drive
+In the same pass, a native suffix SRV may sample the same texture as an RTV
+only when their mip ranges are disjoint. Overlapping ranges and clone-backed
+SRVs of the attachment resource remain rejected. Sampled view metadata and the selected shader relationships drive
 LOD compatibility validation at draw time; no cross-product check rejects an
 unused texture/sampler pair. On the tested RTX FL9_1 device, a same-pass
 pipeline and bind-group transition retained caller-destroyed sampled resources
@@ -221,6 +221,15 @@ views and last-mip dual-use views across passes, not same-pass feedback.
 An additional eight strict GPU cases covered nonfinal dual-use views for both
 formats; the core fixture's default dual-usage view produced 64 matching pixels
 for each format after render-to-sample transitions.
+
+Same-resource disjoint native suffix SRV and RTV use passed six strict GPU cases
+across both formats on the RTX at FL9_1; controlled core cases checked 64 pixels
+per format. [D3D11.3 functional specification §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+permits simultaneously binding disjoint subresources for input and output.
+[D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
+warns against binding a texture as both render target and texture at draw time;
+that API statement does not establish historical FL9 D3D11 driver behavior.
+Historical hardware remains unverified, and ordinary public enumeration is disabled.
 
 HAL transfer commands use explicit regions. No staging-to-default native copy with
 a null source box is used, avoiding the documented 9_x corruption case for
@@ -282,7 +291,8 @@ reserved for viewport remapping and the disabled texel-load proof also reserves
 `b13`. The same slot is used for a uniform in both
 stages, and visibility is checked per stage. Layout identity and the same register map are
 used by shader translation and command recording. Bind groups retain the native
-views and samplers; recording rejects render-target feedback. Each draw binds
+views and samplers; recording rejects overlapping render-target feedback and
+same-resource clone-backed sampled views. Each draw binds
 resources using the active pipeline's plan, and changing the layout passed to
 `set_bind_group` invalidates groups at and after the first unequal prefix.
 Render-pass boundaries clear context state.

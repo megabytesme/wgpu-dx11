@@ -399,6 +399,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             queue,
             VertexCase::RenderSampleMipDefault(wgt::TextureFormat::Rgba8Unorm),
         );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::DisjointMip(wgt::TextureFormat::Rgba8Unorm),
+        );
     }
     if bgra_mips {
         render_triangle(
@@ -418,6 +424,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             device,
             queue,
             VertexCase::RenderSampleMipDefault(wgt::TextureFormat::Bgra8Unorm),
+        );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::DisjointMip(wgt::TextureFormat::Bgra8Unorm),
         );
     }
     global.command_buffer_drop(command);
@@ -1043,6 +1055,7 @@ enum VertexCase {
     SampledMipsNoCopySrcUninitialized,
     RenderSampleMip(wgt::TextureFormat, bool),
     RenderSampleMipDefault(wgt::TextureFormat),
+    DisjointMip(wgt::TextureFormat),
     Overlapping,
     NoopStencil,
     Snorm,
@@ -1066,6 +1079,10 @@ fn render_triangle(
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
+    let disjoint_format = match case {
+        VertexCase::DisjointMip(format) => Some(format),
+        _ => None,
+    };
     let default_non_suffix = matches!(case, VertexCase::RenderSampleMipDefault(_));
     let combined = match case {
         VertexCase::RenderSampleMip(format, dual) => Some((format, dual)),
@@ -1073,8 +1090,10 @@ fn render_triangle(
         _ => None,
     };
     let non_suffix = case == VertexCase::SampledMipNonSuffix;
-    let sampled_mip_suffix =
-        case == VertexCase::SampledMipSuffix || combined.is_some() || non_suffix;
+    let sampled_mip_suffix = case == VertexCase::SampledMipSuffix
+        || combined.is_some()
+        || non_suffix
+        || disjoint_format.is_some();
     let uninitialized_mip = case == VertexCase::SampledMipsNoCopySrcUninitialized;
     let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip || non_suffix;
     let sampled_mips = matches!(case, VertexCase::SampledMips | VertexCase::SampledMipsBias)
@@ -1098,18 +1117,39 @@ fn render_triangle(
         &wgt::TextureDescriptor {
             label: None,
             size: extent,
-            mip_level_count: 1,
+            mip_level_count: if disjoint_format.is_some() { 4 } else { 1 },
             sample_count: 1,
             dimension: wgt::TextureDimension::D2,
-            format: wgt::TextureFormat::Rgba8Unorm,
-            usage: wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::COPY_SRC,
+            format: disjoint_format.unwrap_or(wgt::TextureFormat::Rgba8Unorm),
+            usage: wgt::TextureUsages::RENDER_ATTACHMENT
+                | wgt::TextureUsages::COPY_SRC
+                | if disjoint_format.is_some() {
+                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST
+                } else {
+                    wgt::TextureUsages::empty()
+                },
             view_formats: Vec::new(),
         },
         None,
     );
     assert!(error.is_none(), "texture creation: {error:?}");
-    let (view, error) =
-        global.texture_create_view(target, &resource::TextureViewDescriptor::default(), None);
+    let (view, error) = global.texture_create_view(
+        target,
+        &resource::TextureViewDescriptor {
+            usage: disjoint_format.map(|_| wgt::TextureUsages::RENDER_ATTACHMENT),
+            range: if disjoint_format.is_some() {
+                wgt::ImageSubresourceRange {
+                    base_mip_level: 0,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                }
+            } else {
+                Default::default()
+            },
+            ..Default::default()
+        },
+        None,
+    );
     assert!(error.is_none(), "texture view creation: {error:?}");
     let (depth, error) = global.device_create_texture(
         device,
@@ -1130,42 +1170,85 @@ fn render_triangle(
         global.texture_create_view(depth, &resource::TextureViewDescriptor::default(), None);
     assert!(error.is_none(), "depth view creation: {error:?}");
     let sample_extent = wgt::Extent3d {
-        width: if sampled_mip_suffix { 4 } else { 2 },
-        height: 1,
+        width: if disjoint_format.is_some() {
+            8
+        } else if sampled_mip_suffix {
+            4
+        } else {
+            2
+        },
+        height: if disjoint_format.is_some() { 8 } else { 1 },
         depth_or_array_layers: 1,
     };
-    let (sampled, error) = global.device_create_texture(
-        device,
-        &wgt::TextureDescriptor {
-            label: None,
-            size: sample_extent,
-            mip_level_count: if sampled_mip_suffix {
-                3
-            } else if sampled_mips {
-                2
-            } else {
-                1
+    let (sampled, error) = if disjoint_format.is_some() {
+        (target, None)
+    } else {
+        global.device_create_texture(
+            device,
+            &wgt::TextureDescriptor {
+                label: None,
+                size: sample_extent,
+                mip_level_count: if sampled_mip_suffix {
+                    3
+                } else if sampled_mips {
+                    2
+                } else {
+                    1
+                },
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: combined.map_or(wgt::TextureFormat::Rgba8Unorm, |(format, _)| format),
+                usage: if combined.is_some() {
+                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
+                } else {
+                    wgt::TextureUsages::TEXTURE_BINDING
+                        | wgt::TextureUsages::COPY_DST
+                        | if sampled_mips && !no_copy_src {
+                            wgt::TextureUsages::COPY_SRC
+                        } else {
+                            wgt::TextureUsages::empty()
+                        }
+                },
+                view_formats: Vec::new(),
             },
-            sample_count: 1,
-            dimension: wgt::TextureDimension::D2,
-            format: combined.map_or(wgt::TextureFormat::Rgba8Unorm, |(format, _)| format),
-            usage: if combined.is_some() {
-                wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
-            } else {
-                wgt::TextureUsages::TEXTURE_BINDING
-                    | wgt::TextureUsages::COPY_DST
-                    | if sampled_mips && !no_copy_src {
-                        wgt::TextureUsages::COPY_SRC
-                    } else {
-                        wgt::TextureUsages::empty()
-                    }
-            },
-            view_formats: Vec::new(),
-        },
-        None,
-    );
+            None,
+        )
+    };
     assert!(error.is_none(), "sampled texture creation: {error:?}");
-    if combined.is_none() {
+    if let Some(format) = disjoint_format {
+        for (mip, width, color) in [
+            (1, 4u32, [0u8, 255, 0, 255]),
+            (2, 2, [0, 0, 255, 255]),
+            (3, 1, [255, 255, 0, 255]),
+        ] {
+            let mut bytes = color;
+            if format == wgt::TextureFormat::Bgra8Unorm {
+                bytes.swap(0, 2);
+            }
+            global
+                .queue_write_texture(
+                    queue,
+                    &wgt::TexelCopyTextureInfo {
+                        texture: sampled,
+                        mip_level: mip,
+                        origin: wgt::Origin3d::ZERO,
+                        aspect: wgt::TextureAspect::All,
+                    },
+                    &bytes.repeat((width * width) as usize),
+                    &wgt::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(width * 4),
+                        rows_per_image: Some(width),
+                    },
+                    &wgt::Extent3d {
+                        width,
+                        height: width,
+                        depth_or_array_layers: 1,
+                    },
+                )
+                .expect("preload disjoint sampled mip");
+        }
+    } else if combined.is_none() {
         global
             .queue_write_texture(
                 queue,
@@ -1254,25 +1337,29 @@ fn render_triangle(
                     } else {
                         1
                     },
-                    mip_level_count: Some(
-                        if non_suffix || combined.is_some_and(|(_, dual)| dual) {
-                            1
-                        } else {
-                            2
-                        },
-                    ),
+                    mip_level_count: Some(if disjoint_format.is_some() {
+                        3
+                    } else if non_suffix || combined.is_some_and(|(_, dual)| dual) {
+                        1
+                    } else {
+                        2
+                    }),
                     ..Default::default()
                 }
             } else {
                 Default::default()
             },
-            usage: combined.filter(|_| !default_non_suffix).map(|(_, dual)| {
-                if dual {
-                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
-                } else {
-                    wgt::TextureUsages::TEXTURE_BINDING
-                }
-            }),
+            usage: if disjoint_format.is_some() {
+                Some(wgt::TextureUsages::TEXTURE_BINDING)
+            } else {
+                combined.filter(|_| !default_non_suffix).map(|(_, dual)| {
+                    if dual {
+                        wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
+                    } else {
+                        wgt::TextureUsages::TEXTURE_BINDING
+                    }
+                })
+            },
             ..Default::default()
         },
         None,
@@ -1334,7 +1421,10 @@ fn render_triangle(
             mag_filter: wgt::FilterMode::Nearest,
             min_filter: wgt::FilterMode::Nearest,
             mipmap_filter: wgt::MipmapFilterMode::Nearest,
-            lod_min_clamp: if sampled_mip_suffix && !combined.is_some_and(|(_, dual)| dual) {
+            lod_min_clamp: if sampled_mip_suffix
+                && disjoint_format.is_none()
+                && !combined.is_some_and(|(_, dual)| dual)
+            {
                 1.0
             } else if case == VertexCase::FractionalSamplerLod {
                 0.5
@@ -1530,7 +1620,11 @@ fn render_triangle(
             attributes: Cow::Borrowed(&attrs),
         })]
     };
-    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let targets = [Some(
+        disjoint_format
+            .unwrap_or(wgt::TextureFormat::Rgba8Unorm)
+            .into(),
+    )];
     let stage = |entry: &'static str| pipeline::ProgrammableStageDescriptor {
         module: shader,
         entry_point: Some(Cow::Borrowed(entry)),
@@ -1814,7 +1908,9 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if non_suffix {
+                if disjoint_format.is_some() {
+                    &[0, 255, 0, 255]
+                } else if non_suffix {
                     &[255, 255, 0, 255]
                 } else if uninitialized_mip {
                     &[0, 0, 0, 0]
@@ -1846,7 +1942,9 @@ fn render_triangle(
         }
     }
     global.texture_view_drop(sample_view);
-    global.texture_drop(sampled);
+    if disjoint_format.is_none() {
+        global.texture_drop(sampled);
+    }
     global.texture_view_drop(depth_view);
     global.texture_drop(depth);
     global.texture_view_drop(view);

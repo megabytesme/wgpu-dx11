@@ -1185,3 +1185,22 @@ defect. The full strict suite passed 251 tests with two filtered and three older
 shader cases skipping GPU execution internally. HAL Clippy passed with ten
 existing test warnings; core's zero-adapter test passed. Same-pass whole-resource
 feedback and public enumeration remain gated.
+Checkpoint: `b431ff5d013dc9050f729b00a92973f961676ff1`.
+
+Next investigation: whether FL9 and core permit simultaneous non-overlapping
+mip sampling and attachment use, and whether clone refresh can be ordered
+without reading a resource while its output view is bound. Preserve conservative
+whole-resource rejection until the native and core contracts are established.
+
+D3D11's documented disjoint-subresource contract supports a restricted private
+case: a native suffix SRV may be sampled while a different mip of the same
+texture is attached. The entire sampled view range is checked, not only shader
+accesses; clone-backed same-resource views remain rejected. The first strict
+test passed RGBA but failed BGRA because the test used an RGBA-only diagnostic
+readback. Replacing that with recorded texture-to-buffer readback yielded six
+of six GPU cases across both formats, with no skips. Controlled core fixtures
+also matched 64 pixels per format. Historical FL9 hardware is unverified and
+the public adapter remains disabled. The full strict private suite passed 253
+tests with two filtered; three older shader cases skip GPU execution internally.
+HAL Clippy passed with ten existing test warnings, and the core zero-adapter
+isolation test passed. Independent review found no concrete alias-check bypass.

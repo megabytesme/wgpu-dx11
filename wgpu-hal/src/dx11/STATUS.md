@@ -66,8 +66,14 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   render/sample transitions passed six private GPU cases across both formats and
   four core cases with 64 checked pixels each. An additional eight private GPU
   cases covered nonfinal dual views, and default-view core cases checked 64
-  pixels per format. Whole-resource feedback in the
-  same pass remains rejected, even across disjoint mips.
+  pixels per format. A native suffix SRV may sample disjoint mips of the same
+  texture in the attachment pass. Six strict RTX FL9_1 GPU cases passed across
+  both formats, and controlled core cases checked 64 pixels per format. Overlapping
+  ranges and disjoint clone-backed SRVs of the attachment resource remain
+  rejected. [D3D11.3 §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+  permits disjoint subresource input/output; the [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
+  warns against simultaneous texture and render-target binding. Historical FL9
+  drivers remain unverified, and public adapter enumeration remains disabled.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,

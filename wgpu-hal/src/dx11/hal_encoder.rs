@@ -35,6 +35,7 @@ struct RenderState {
     depth_read_only: bool,
     extent: [u32; 2],
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
+    target_mip: Option<u32>,
     pipeline: bool,
     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
@@ -83,6 +84,14 @@ fn instance_range_fits(
         && u64::from(offset)
             .checked_add(relative)
             .is_some_and(|value| value <= u64::from(u32::MAX))
+}
+
+fn disjoint_native_sample(base: u32, count: u32, target: u32, refresh: bool) -> bool {
+    !refresh
+        && count != 0
+        && base
+            .checked_add(count)
+            .is_some_and(|end| target < base || target >= end)
 }
 
 impl RenderState {
@@ -597,7 +606,16 @@ impl crate::CommandEncoder for CommandEncoder {
                     self.reject();
                     return;
                 };
-                if sampled.as_raw() == target.as_raw() {
+                if sampled.as_raw() == target.as_raw()
+                    && !render.target_mip.is_some_and(|target_mip| {
+                        disjoint_native_sample(
+                            texture.mip_base,
+                            texture.mip_count,
+                            target_mip,
+                            texture.refresh.is_some(),
+                        )
+                    })
+                {
                     self.reject();
                     return;
                 }
@@ -806,6 +824,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 }),
             extent,
             target: target.clone(),
+            target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
             active_plan: None,
             last_layout: None,
@@ -1504,6 +1523,17 @@ mod tests {
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
+
+    #[test]
+    fn sampled_mip_overlap_rejects_clones_and_invalid_ranges() {
+        assert!(disjoint_native_sample(1, 3, 0, false));
+        assert!(!disjoint_native_sample(1, 3, 1, false));
+        assert!(!disjoint_native_sample(1, 3, 3, false));
+        assert!(disjoint_native_sample(1, 3, 4, false));
+        assert!(!disjoint_native_sample(1, 3, 0, true));
+        assert!(!disjoint_native_sample(1, 0, 0, false));
+        assert!(!disjoint_native_sample(u32::MAX, 2, 0, false));
+    }
 
     #[test]
     fn instance_stream_range_checks_last_element_and_native_offset() {
@@ -3893,6 +3923,10 @@ mod nonsuffix_mips;
 #[cfg(test)]
 #[path = "../../tests/dx11/dual_mip_views.rs"]
 mod dual_mip_views;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/disjoint_mips.rs"]
+mod disjoint_mips;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]

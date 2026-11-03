@@ -583,10 +583,9 @@ render/sample state transitions. The controlled core fixture passed four cases
 with 64 checked pixels each: suffix sampled views and last-mip dual-use views
 for both formats. Native sampled suffix views include the resource's last mip;
 non-suffix sampled views use clones. Attachment views and dual-use views select
-one mip. Use in
-distinct passes is supported; same-pass feedback is rejected at whole-resource
-granularity, including when the views select disjoint mips. Historical devices
-and public adapter exposure remain unresolved.
+one mip. Use in distinct passes is supported. Same-pass use is supported only
+for disjoint native suffix SRVs and attachment mips, as tested below. Historical
+devices and public adapter exposure remain unresolved.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -597,8 +596,28 @@ The strict RTX FL9_1 test passed eight GPU cases across RGBA8 and BGRA8. A
 nonfinal dual-use view has an SRV backed by a per-draw clone and an RTV backed
 by the original mip. The controlled core fixture also used a default dual-usage
 view to render and then sample a nonfinal mip in separate passes, checking 64
-pixels for each format. Same-pass feedback remains rejected for the entire
-logical resource; historical driver behavior remains unverified.
+pixels for each format. Same-pass clone-backed views of the attachment resource
+remain rejected even when their mip ranges are disjoint; historical driver
+behavior remains unverified.
+
+### Same-resource disjoint native mip views
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_native_suffix_disjoint_attachment_mips -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+Six strict GPU cases passed on the RTX 3090 Ti at requested and selected FL9_1
+across RGBA8 and BGRA8. Controlled core cases sampled a disjoint suffix while
+rendering to mip 0 of the same texture and verified 64 pixels per format.
+Overlapping full-range SRVs and disjoint clone-backed views are rejected.
+[D3D11.3 §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+permits input and output views of disjoint subresources. The separate
+[D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
+warns against simultaneously binding a texture for sampling and rendering;
+it does not prove D3D11 behavior on historical FL9 drivers. Those drivers remain
+unverified, and normal public D3D11 adapter enumeration remains disabled.
 
 ### FL9_1 uniform bindings
 
