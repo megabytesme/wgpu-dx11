@@ -15,6 +15,7 @@ pub(super) struct UniformLayout {
     pub binding: u32,
     pub minimum: u64,
     pub visibility: wgt::ShaderStages,
+    pub dynamic: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,7 +125,7 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
             }
             wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
+                has_dynamic_offset,
                 min_binding_size,
             } if !entry.visibility.is_empty()
                 && (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
@@ -135,6 +136,7 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
                     binding: entry.binding,
                     minimum: min_binding_size.map_or(0, |v| v.get()),
                     visibility: entry.visibility,
+                    dynamic: has_dynamic_offset,
                 });
             }
             _ => return Err(crate::DeviceError::Unexpected),

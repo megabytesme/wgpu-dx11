@@ -63,11 +63,11 @@ D3D11, so these paths may stall; unsupported subresources and layouts fail.
 
 A private uniform-range prototype stages each ordinary logical buffer range and
 updates a separate constant buffer in full before binding. Group 0 supports up
-to thirteen static uniform slots, including alongside sampled textures and
+to thirteen static or dynamic uniform slots, including alongside sampled textures and
 samplers. Shader-profile constant and instruction limits can be lower than the
 layout slot count. When no minimum binding size is
-provided, each draw checks the bound range against the shader's required size;
-dynamic offsets remain unsupported. Checked uniform shaders reject dynamic
+provided, each draw checks the bound range against the shader's required size.
+Dynamic offsets are checked and captured at binding time. Checked uniform shaders reject dynamic
 indexing in reachable functions; other checked buffer/storage bindings remain
 unsupported.
 The staging path may stall and avoids D3D11's partial-update restriction.

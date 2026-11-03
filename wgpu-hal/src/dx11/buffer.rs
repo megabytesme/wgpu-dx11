@@ -30,6 +30,12 @@ pub struct NativeBuffer {
     mapping: Mutex<Option<ShadowMapping>>,
 }
 
+impl NativeBuffer {
+    pub(super) fn logical_size(&self) -> u32 {
+        self.size
+    }
+}
+
 #[derive(Debug)]
 struct ShadowMapping {
     range: crate::MemoryRange,

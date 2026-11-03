@@ -10,6 +10,12 @@ expressed by `Limits` alone.
 
 ### Focused FL9_1 hardware test
 
+For dynamic uniform offsets, run `cargo test -p wgpu-hal --lib
+--no-default-features --features dx11 dynamic_uniform -- --nocapture` with
+strict hardware mode enabled. These tests cover sampled and indexed draws,
+offset changes, GPU-upload ordering and range rejection; they exercise the
+private four-byte alignment, not a future public device's reported alignment.
+
 The private HWND path can be checked with a hidden desktop window using
 `cargo test -p wgpu-hal --lib --no-default-features --features dx11
 fl91_hidden_hwnd_surface -- --nocapture`. With strict hardware mode enabled,

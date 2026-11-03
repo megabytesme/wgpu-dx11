@@ -233,3 +233,29 @@ viewport suite passed 20 tests and the full strict private suite again passed
 HAL also compiled with the new Naga option disabled. During an earlier DX12
 test build, other Cargo checks overlapped unintentionally; subsequent checks
 were serialized. No memory-commit failure was observed.
+
+Microsoft explicitly prohibits concurrent immediate-context use with most DXGI
+calls. The current private surface does not yet serialize all swapchain calls
+against device context operations. A common context mutex is necessary but
+still needs a lock-order and responsive-message-pump design to avoid deadlocks.
+HAL `wait_for_idle` also promises pending presentation completion, while the
+current event-query wait has only established GPU command completion. These
+are public-presentation blockers, not merely untested performance concerns.
+See <https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-render-multi-thread-intro>
+and <https://learn.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices#multithreading-and-dxgi>.
+The restricted viewport implementation was checkpointed as `ec645e63e`.
+
+Group-0 uniform bindings now support dynamic offsets. The layout retains the
+dynamic bit; offsets are consumed in increasing logical binding order, checked
+against the logical source-buffer size and captured in recorded commands.
+Materialization still reads the GPU buffer at replay, preserving queued copies
+and updates. The private alignment is four bytes; a future public device must
+enforce its reported wgpu alignment. Strict FL9_1 GPU tests cover sparse mixed
+uniforms, two dynamic offsets, preceding GPU copies, sampled textures, indexed
+draws and an update across submissions. The mixed-uniform test read
+[143,207,16,255] and [143,143,16,255]; the textured tests distinguished full,
+half and quarter green. Synthetic tests reject bad counts, alignment, bounds,
+overflow and offsets beyond an implicit-to-end range. The complete private
+suite passed 157 tests; the core zero-adapter test and targeted Clippy passed,
+with ten existing test warnings. Independent review found no source-range or
+lifetime defect. Public adapter exposure and multiple bind groups remain open.

@@ -66,6 +66,15 @@ fn level9_constant_budgets_and_multiple_buffers_compile() {
 
 #[test]
 fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::core::Result<()> {
+    sparse_uniform_ranges(false)
+}
+
+#[test]
+fn fl91_dynamic_uniform_ranges_follow_gpu_upload_and_offset_changes() -> windows::core::Result<()> {
+    sparse_uniform_ranges(true)
+}
+
+fn sparse_uniform_ranges(dynamic_mode: bool) -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -147,6 +156,15 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         min_binding_size: NonZeroU64::new(80),
     };
     entries[5].ty = entries[4].ty;
+    if dynamic_mode {
+        for index in [1, 2] {
+            entries[index].ty = wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: NonZeroU64::new(16),
+            };
+        }
+    }
     let group_layout = unsafe {
         device
             .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -173,14 +191,17 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         has_dynamic_offset: true,
         min_binding_size: NonZeroU64::new(16),
     };
-    assert!(unsafe {
+    let dynamic_layout = unsafe {
         device.create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
             label: None,
             flags: crate::BindGroupLayoutFlags::empty(),
             entries: &dynamic,
         })
     }
-    .is_err());
+    .unwrap();
+    unsafe {
+        device.destroy_bind_group_layout(dynamic_layout);
+    }
     let group_layout2 = unsafe {
         device
             .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -493,6 +514,20 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         encoder.set_bind_group(&layout, 0, &first, &[4]);
         encoder.end_render_pass();
         assert!(encoder.end_encoding().is_err());
+        if dynamic_mode {
+            for offsets in [
+                &[0, 2][..],
+                &[256, 0][..],
+                &[0, u32::MAX][..],
+                &[0, 0, 0][..],
+            ] {
+                encoder.begin_encoding(None).unwrap();
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_bind_group(&layout, 0, &first, offsets);
+                encoder.end_render_pass();
+                assert!(encoder.end_encoding().is_err());
+            }
+        }
     }
     let commands = unsafe {
         encoder.begin_encoding(None).unwrap();
@@ -515,7 +550,7 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
             w: 4,
             h: 8,
         });
-        encoder.set_bind_group(&layout, 0, &first, &[]);
+        encoder.set_bind_group(&layout, 0, &first, if dynamic_mode { &[0, 0] } else { &[] });
         encoder.draw(0, 3, 0, 1);
         encoder.set_scissor_rect(&crate::Rect {
             x: 4,
@@ -523,8 +558,12 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
             w: 4,
             h: 8,
         });
-        encoder.set_render_pipeline(&pipeline2);
-        encoder.set_bind_group(&layout2, 0, &second, &[]);
+        if dynamic_mode {
+            encoder.set_bind_group(&layout, 0, &first, &[0, 16]);
+        } else {
+            encoder.set_render_pipeline(&pipeline2);
+            encoder.set_bind_group(&layout2, 0, &second, &[]);
+        }
         encoder.draw(0, 3, 0, 1);
         encoder.end_render_pass();
         encoder.end_encoding().unwrap()
@@ -569,7 +608,12 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
     }
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
-    for (x, expected) in [(2, [143u8, 207, 16, 255]), (6, [80, 143, 16, 255])] {
+    let right = if dynamic_mode {
+        [143, 143, 16, 255]
+    } else {
+        [80, 143, 16, 255]
+    };
+    for (x, expected) in [(2, [143u8, 207, 16, 255]), (6, right)] {
         let actual = &pixels[(4 * 8 + x) * 4..][..4];
         for (&a, &e) in actual.iter().zip(&expected) {
             assert!(

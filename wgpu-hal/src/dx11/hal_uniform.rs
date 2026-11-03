@@ -26,6 +26,7 @@ pub(super) struct UniformBinding {
     staging: ID3D11Buffer,
     constant: ID3D11Buffer,
     source_box: D3D11_BOX,
+    source_size: u32,
 }
 
 impl NativeDevice {
@@ -75,6 +76,7 @@ impl NativeDevice {
                 front: 0,
                 back: 1,
             },
+            source_size: source.logical_size(),
         })
     }
 }
@@ -82,6 +84,10 @@ impl NativeDevice {
 impl UniformBinding {
     pub(super) fn len(&self) -> u64 {
         u64::from(self.source_box.right - self.source_box.left)
+    }
+
+    pub(super) fn range(&self, dynamic_offset: u32) -> Result<D3D11_BOX> {
+        shifted_range(self.source_box, self.source_size, dynamic_offset)
     }
 
     /// Copy the source range and bind it to the requested stages and slot.
@@ -92,6 +98,7 @@ impl UniformBinding {
         context: &ID3D11DeviceContext,
         slot: u32,
         visibility: wgt::ShaderStages,
+        source_box: &D3D11_BOX,
     ) -> Result<()> {
         unsafe {
             context.CopySubresourceRegion(
@@ -102,7 +109,7 @@ impl UniformBinding {
                 0,
                 &self.source,
                 0,
-                Some(&self.source_box),
+                Some(source_box),
             );
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
@@ -123,12 +130,60 @@ impl UniformBinding {
     }
 }
 
+fn shifted_range(
+    source_box: D3D11_BOX,
+    source_size: u32,
+    dynamic_offset: u32,
+) -> Result<D3D11_BOX> {
+    if !dynamic_offset.is_multiple_of(4) {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    let left = source_box
+        .left
+        .checked_add(dynamic_offset)
+        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+    let right = source_box
+        .right
+        .checked_add(dynamic_offset)
+        .filter(|&end| end <= source_size)
+        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+    Ok(D3D11_BOX {
+        left,
+        right,
+        ..source_box
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use alloc::sync::Arc;
     use windows::Win32::Graphics::Direct3D11::D3D11_MAPPED_SUBRESOURCE;
+
+    #[test]
+    fn dynamic_uniform_ranges_check_alignment_bounds_and_overflow() {
+        let base = D3D11_BOX {
+            left: 16,
+            right: 32,
+            top: 0,
+            bottom: 1,
+            front: 0,
+            back: 1,
+        };
+        let range = shifted_range(base, 64, 32).unwrap();
+        assert_eq!((range.left, range.right), (48, 64));
+        assert!(shifted_range(base, 64, 36).is_err());
+        assert!(shifted_range(base, 64, 2).is_err());
+        assert!(shifted_range(base, 64, u32::MAX - 3).is_err());
+        let to_end = D3D11_BOX {
+            left: 16,
+            right: 64,
+            ..base
+        };
+        assert!(shifted_range(to_end, 64, 0).is_ok());
+        assert!(shifted_range(to_end, 64, 4).is_err());
+    }
 
     #[test]
     fn uniform_binding_materializes_partial_updates_without_partial_constant_writes() -> Result<()>
@@ -195,6 +250,7 @@ mod tests {
                 &context,
                 0,
                 wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+                &binding.range(0)?,
             )?;
             unsafe {
                 use windows::core::Interface;

@@ -13,8 +13,8 @@ FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
 current implementation and validation matrix.
 
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
-Surface-view ownership was checkpointed as `7e045c4ed`. Viewport emulation is
-being verified and retains the compiler-budget limitation recorded in
-FL9_1_PROGRESS.md. Do not infer full FL9_1 or
+Viewport emulation was checkpointed as `ec645e63e` and retains the
+compiler-budget limitation recorded in FL9_1_PROGRESS.md. Dynamic uniform
+offsets are being verified. Do not infer full FL9_1 or
 historical-device compatibility from modern GPU tests. Keep public adapter
 enumeration gated until core-valid operations are safe.

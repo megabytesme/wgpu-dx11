@@ -15,8 +15,9 @@ below is met. This plan does not claim WebGPU conformance.
    both draw orders on forced FL9_1, and independent load/clear/store behavior.
    Validate format support and restrict unsupported native state.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
-   indexed semantics, render state, mips/formats, multiple groups and dynamic
-   uniform offsets. Each feature needs positive GPU and negative tests.
+   indexed semantics, render state, mips/formats and multiple groups. Dynamic
+   uniform offsets have restricted private coverage. Each feature needs positive
+   GPU and negative tests.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport

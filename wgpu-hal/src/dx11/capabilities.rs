@@ -120,7 +120,7 @@ impl BackendCapabilities {
         sampled_textures_per_group: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_per_group: super::hal_bind_group::MAX_SAMPLERS as u32,
         uniform_bindings_per_group: super::hal_bind_group::MAX_UNIFORMS as u32,
-        dynamic_uniform_offsets: false,
+        dynamic_uniform_offsets: true,
         compute: false,
         storage: false,
         depth_stencil: false,
@@ -291,6 +291,7 @@ mod tests {
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(caps.backend.dynamic_uniform_offsets);
             assert!(!caps.public_adapter_supported());
         }
         let fl9 = model(FeatureLevel::L9_1);

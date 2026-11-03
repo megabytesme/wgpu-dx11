@@ -20,7 +20,8 @@ use windows::{
                 ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
                 ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
                 ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11VertexShader, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, D3D11_VIEWPORT,
+                ID3D11VertexShader, D3D11_BOX, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL,
+                D3D11_VIEWPORT,
             },
         },
     },
@@ -88,6 +89,7 @@ pub(super) enum NativeCommand {
         uniform: Arc<UniformBinding>,
         slot: u32,
         visibility: wgt::ShaderStages,
+        source_box: D3D11_BOX,
     },
     SetTexture {
         slot: u32,
@@ -182,7 +184,7 @@ impl CommandBuffer {
                         let mut start = clear.start;
                         while start < clear.end {
                             let end = clear.end.min(start.saturating_add(ZEROES.len() as u32));
-                            let region = windows::Win32::Graphics::Direct3D11::D3D11_BOX {
+                            let region = D3D11_BOX {
                                 left: start,
                                 right: end,
                                 top: 0,
@@ -300,7 +302,8 @@ impl CommandBuffer {
                         uniform,
                         slot,
                         visibility,
-                    } => uniform.execute(context, *slot, *visibility)?,
+                        source_box,
+                    } => uniform.execute(context, *slot, *visibility, source_box)?,
                     NativeCommand::SetTexture { slot, texture } => {
                         context.PSSetShaderResources(*slot, Some(&[Some(texture.clone())]));
                     }

@@ -134,6 +134,16 @@ fn fl91_viewport_one_pixel_intersection() -> windows::core::Result<()> {
 }
 
 #[test]
+fn fl91_dynamic_uniform_with_sampled_texture_changes_between_draws() -> windows::core::Result<()> {
+    sampled_triangle(true, false, false, false, false, 23, None)
+}
+
+#[test]
+fn fl91_dynamic_uniform_with_sampled_texture_indexed() -> windows::core::Result<()> {
+    sampled_triangle(true, false, false, false, false, 24, None)
+}
+
+#[test]
 fn hal_encoder_splits_large_level_9_triangle_draw() -> windows::core::Result<()> {
     sampled_triangle(true, false, false, false, false, 5, None)
 }
@@ -575,7 +585,7 @@ fn sampled_triangle_variant(
             visibility: wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
             ty: wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
+                has_dynamic_offset: matches!(effect, 23 | 24),
                 min_binding_size: if multi {
                     None
                 } else {
@@ -1328,7 +1338,7 @@ fn sampled_triangle_variant(
                 label: None,
                 size: if overlay_shader.is_some() {
                     64
-                } else if variant == 52 {
+                } else if variant == 52 || matches!(effect, 23 | 24) {
                     32
                 } else {
                     16
@@ -1358,12 +1368,15 @@ fn sampled_triangle_variant(
                 .flat_map(|v| v.to_ne_bytes()),
         );
     }
+    if matches!(effect, 23 | 24) {
+        color_bytes.extend([0f32, 0.5, 1., 1.].iter().flat_map(|v| v.to_ne_bytes()));
+    }
     native.write_byte_buffer(&uniform, 0, &color_bytes)?;
     let uniform_bindings = [
         crate::BufferBinding::new_unchecked(
             &uniform,
             0,
-            if variant == 52 {
+            if variant == 52 || matches!(effect, 23 | 24) {
                 core::num::NonZeroU64::new(16)
             } else {
                 None
@@ -1635,22 +1648,23 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     native.write_byte_buffer(&buffer, 0, &bytes)?;
-    let index_buffer = if effect == 6 || effect == 10 || effect == 19 || variant == 20 {
-        let index = unsafe {
-            device
-                .create_buffer(&crate::BufferDescriptor {
-                    label: None,
-                    size: 12,
-                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
-                    memory_flags: crate::MemoryFlags::empty(),
-                })
-                .unwrap()
+    let index_buffer =
+        if effect == 6 || effect == 10 || effect == 19 || effect == 24 || variant == 20 {
+            let index = unsafe {
+                device
+                    .create_buffer(&crate::BufferDescriptor {
+                        label: None,
+                        size: 12,
+                        usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                        memory_flags: crate::MemoryFlags::empty(),
+                    })
+                    .unwrap()
+            };
+            native.write_byte_buffer(&index, 0, &[0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0])?;
+            Some(index)
+        } else {
+            None
         };
-        native.write_byte_buffer(&index, 0, &[0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0])?;
-        Some(index)
-    } else {
-        None
-    };
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -2067,7 +2081,13 @@ fn sampled_triangle_variant(
                 },
             );
         }
-        crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+        crate::CommandEncoder::set_bind_group(
+            &mut encoder,
+            &layout,
+            0,
+            &group,
+            if matches!(effect, 23 | 24) { &[0] } else { &[] },
+        );
         crate::CommandEncoder::set_vertex_buffer(
             &mut encoder,
             0,
@@ -2157,7 +2177,13 @@ fn sampled_triangle_variant(
                 );
             }
         }
-        if variant == 14 || variant == 16 || variant == 21 || variant == 22 || variant == 38 {
+        if variant == 14
+            || variant == 16
+            || variant == 21
+            || variant == 22
+            || variant == 38
+            || matches!(effect, 23 | 24)
+        {
             crate::CommandEncoder::set_scissor_rect(
                 &mut encoder,
                 &crate::Rect {
@@ -2183,6 +2209,23 @@ fn sampled_triangle_variant(
                 0,
                 1,
             );
+        }
+        if matches!(effect, 23 | 24) {
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &crate::Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[16]);
+            if effect == 24 {
+                crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 0, 1);
+            } else {
+                crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            }
         }
         if let Some(group) = transition_group.as_ref() {
             if variant == 14 || variant == 21 {
@@ -2296,6 +2339,11 @@ fn sampled_triangle_variant(
         } else {
             assert_eq!(actual, &[255, 255, 255, 255]);
         }
+    } else if matches!(effect, 23 | 24) {
+        assert_eq!(actual[0], 0);
+        assert!((127..=128).contains(&actual[1]));
+        assert_eq!(&actual[2..], &[0, 255]);
+        assert_eq!(&pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4], &[0, 255, 0, 255]);
     } else if alpha {
         assert_eq!(actual[0], 0);
         assert!((127..=128).contains(&actual[1]) && (127..=128).contains(&actual[2]));
@@ -2356,6 +2404,37 @@ fn sampled_triangle_variant(
             );
         }
     }
+    let mut second_command = None;
+    if effect == 23 {
+        let bytes: alloc::vec::Vec<u8> = [0f32, 0.25, 1., 1.]
+            .iter()
+            .flat_map(|v| v.to_ne_bytes())
+            .collect();
+        native.write_byte_buffer(&uniform, 16, &bytes)?;
+        let next = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[16]);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe {
+            crate::Queue::submit(&queue, &[&next], &[], (&fence, 2)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 2, Some(core::time::Duration::from_secs(5)))?);
+        let updated = native.read_rgba_texture(&target, 0, 0)?;
+        assert!(updated
+            .chunks_exact(4)
+            .all(|pixel| pixel[0] == 0 && (63..=64).contains(&pixel[1]) && pixel[2..] == [0, 255]));
+        second_command = Some(next);
+    }
     if let Some(index) = index_buffer.as_ref() {
         // Recording must not snapshot the data: GPU writes before submission
         // can change the indices. Reject invalid values at replay time.
@@ -2363,7 +2442,13 @@ fn sampled_triangle_variant(
             unsafe {
                 crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
                 crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
-                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+                crate::CommandEncoder::set_bind_group(
+                    &mut encoder,
+                    &layout,
+                    0,
+                    &group,
+                    if effect == 24 { &[0] } else { &[] },
+                );
                 crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
                 crate::CommandEncoder::set_vertex_buffer(
                     &mut encoder,
@@ -2385,7 +2470,10 @@ fn sampled_triangle_variant(
         }
     }
     unsafe {
-        crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(command));
+        crate::CommandEncoder::reset_all(
+            &mut encoder,
+            core::iter::once(command).chain(second_command),
+        );
     }
     Ok(())
 }

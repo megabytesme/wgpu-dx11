@@ -362,12 +362,45 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         if index != 0
-            || !dynamic_offsets.is_empty()
             || !Arc::ptr_eq(&group.owner, &self.device)
             || layout.group_for(&self.device).ok().flatten() != Some(group.kind)
         {
             self.reject();
             return;
+        }
+        if dynamic_offsets.len()
+            != group
+                .kind
+                .uniforms
+                .iter()
+                .flatten()
+                .filter(|uniform| uniform.dynamic)
+                .count()
+        {
+            self.reject();
+            return;
+        }
+        let mut offsets = dynamic_offsets.iter().copied();
+        let mut ranges = Vec::with_capacity(group.resources.uniforms.len());
+        for (slot, uniform) in group.resources.uniforms.iter().enumerate() {
+            let Some(layout) = group.kind.uniforms.get(slot).and_then(|layout| *layout) else {
+                self.reject();
+                return;
+            };
+            let offset = if layout.dynamic {
+                let Some(offset) = offsets.next() else {
+                    self.reject();
+                    return;
+                };
+                offset
+            } else {
+                0
+            };
+            let Ok(range) = uniform.range(offset) else {
+                self.reject();
+                return;
+            };
+            ranges.push(range);
         }
         if let Some(target) = &render.target {
             let Ok(target) = (unsafe { target.GetResource() }) else {
@@ -401,6 +434,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 uniform: uniform.clone(),
                 slot: slot as u32,
                 visibility,
+                source_box: ranges[slot],
             });
         }
         for (slot, texture) in group.resources.textures.iter().enumerate() {
