@@ -59,6 +59,11 @@ verifies that a later native draw restores its vertex binding.
 nonindexed point pipelines, including a single interior point and transitions
 between point and triangle pipelines. CPU tests verify point batching at the
 65,535-primitive boundary; indexed points remain unsupported.
+It also checks masked alpha, inversion and vignette blends against readback.
+FL9_1 does not guarantee separate alpha blending: the production path rejects
+those modes with both RGB and alpha writes. Some older full-channel blend tests
+explicitly opt into a test-only RTX diagnostic and do not establish portability;
+they can fail on hardware that lacks separate alpha support.
 
 Read the printed result, not just libtest's final line:
 

@@ -7,19 +7,20 @@ use windows::{
         Direct3D11::{
             ID3D11BlendState, ID3D11ClassLinkage, ID3D11DepthStencilState, ID3D11InputLayout,
             ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC,
-            D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
-            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
-            D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
+            D3D11_BLEND_INV_DEST_ALPHA, D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA,
+            D3D11_BLEND_INV_SRC_COLOR, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
+            D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
             D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
             D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT, D3D11_CULL_NONE,
             D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
-            D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
-            D3D11_STENCIL_OP_KEEP,
+            D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_FORMAT_SUPPORT_BLENDABLE,
+            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
         },
         Dxgi::Common::{
-            DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
-            DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT,
+            DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
         },
     },
 };
@@ -40,6 +41,18 @@ fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
         }
     }
     Some(native)
+}
+
+fn format_blendable(support: windows::core::Result<u32>) -> Result<bool, crate::DeviceError> {
+    match support {
+        Ok(bits) => Ok(bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0),
+        Err(error) => match viewport_shader_fatal_error(&error) {
+            Some(error @ (crate::DeviceError::OutOfMemory | crate::DeviceError::Lost)) => {
+                Err(error)
+            }
+            _ => Ok(false),
+        },
+    }
 }
 
 fn source_alpha_blend_factor(
@@ -119,6 +132,84 @@ pub(super) const VIGNETTE_BLEND: wgt::BlendState = wgt::BlendState {
     },
 };
 
+fn blend_target_desc(
+    blend: Option<wgt::BlendState>,
+    mask: wgt::ColorWrites,
+    separate_alpha: bool,
+) -> Option<D3D11_RENDER_TARGET_BLEND_DESC> {
+    let mask_bits = color_write_mask(mask)?;
+    let rgb =
+        mask.intersects(wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE);
+    let alpha = mask.contains(wgt::ColorWrites::ALPHA);
+    let enabled = mask_bits != 0 && blend.is_some_and(|value| value != wgt::BlendState::REPLACE);
+    if enabled
+        && !matches!(
+            blend,
+            Some(wgt::BlendState::ALPHA_BLENDING | INVERT_BLEND | ADDITIVE_BLEND | VIGNETTE_BLEND)
+        )
+    {
+        return None;
+    }
+    if enabled && rgb && alpha && !separate_alpha && blend != Some(ADDITIVE_BLEND) {
+        return None;
+    }
+    let (mut src, mut dst, mut src_alpha, mut dst_alpha) = match blend.filter(|_| enabled) {
+        Some(wgt::BlendState::ALPHA_BLENDING) => (
+            D3D11_BLEND_SRC_ALPHA,
+            D3D11_BLEND_INV_SRC_ALPHA,
+            source_alpha_blend_factor(blend, mask),
+            D3D11_BLEND_INV_SRC_ALPHA,
+        ),
+        Some(INVERT_BLEND) => (
+            D3D11_BLEND_INV_DEST_COLOR,
+            D3D11_BLEND_INV_SRC_COLOR,
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_ZERO,
+        ),
+        Some(ADDITIVE_BLEND) => (
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_ONE,
+        ),
+        Some(VIGNETTE_BLEND) => (
+            D3D11_BLEND_ZERO,
+            D3D11_BLEND_INV_SRC_COLOR,
+            D3D11_BLEND_ZERO,
+            D3D11_BLEND_ONE,
+        ),
+        None => (
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_ZERO,
+            D3D11_BLEND_ONE,
+            D3D11_BLEND_ZERO,
+        ),
+        _ => return None,
+    };
+    if enabled && !alpha {
+        (src_alpha, dst_alpha) = match blend {
+            Some(wgt::BlendState::ALPHA_BLENDING) => {
+                (D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA)
+            }
+            Some(INVERT_BLEND) => (D3D11_BLEND_INV_DEST_ALPHA, D3D11_BLEND_INV_SRC_ALPHA),
+            Some(VIGNETTE_BLEND) => (D3D11_BLEND_ZERO, D3D11_BLEND_INV_SRC_ALPHA),
+            _ => (src_alpha, dst_alpha),
+        };
+    } else if enabled && !rgb {
+        (src, dst) = (src_alpha, dst_alpha);
+    }
+    Some(D3D11_RENDER_TARGET_BLEND_DESC {
+        BlendEnable: enabled.into(),
+        SrcBlend: src,
+        DestBlend: dst,
+        BlendOp: D3D11_BLEND_OP_ADD,
+        SrcBlendAlpha: src_alpha,
+        DestBlendAlpha: dst_alpha,
+        BlendOpAlpha: D3D11_BLEND_OP_ADD,
+        RenderTargetWriteMask: mask_bits,
+    })
+}
+
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct PipelineLayout {
@@ -152,6 +243,53 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fl91_blend_masks_require_separate_alpha_only_when_observable() {
+        use super::*;
+        for bits in 0..16 {
+            let mask = wgt::ColorWrites::from_bits_retain(bits);
+            let needs_separate = bits & 7 != 0 && bits & 8 != 0;
+            for blend in [
+                wgt::BlendState::ALPHA_BLENDING,
+                INVERT_BLEND,
+                VIGNETTE_BLEND,
+            ] {
+                assert_eq!(
+                    blend_target_desc(Some(blend), mask, false).is_none(),
+                    needs_separate,
+                    "{blend:?} mask {mask:?}"
+                );
+                assert!(blend_target_desc(Some(blend), mask, true).is_some());
+            }
+            for blend in [None, Some(wgt::BlendState::REPLACE), Some(ADDITIVE_BLEND)] {
+                assert!(blend_target_desc(blend, mask, false).is_some());
+            }
+        }
+        assert!(!format_blendable(Ok(0)).unwrap());
+        assert!(format_blendable(Ok(D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32)).unwrap());
+        assert!(!format_blendable(Err(windows::core::Error::from_hresult(
+            windows::Win32::Foundation::E_FAIL
+        )))
+        .unwrap());
+        assert_eq!(
+            format_blendable(Err(windows::core::Error::from_hresult(
+                windows::Win32::Foundation::E_OUTOFMEMORY
+            ))),
+            Err(crate::DeviceError::OutOfMemory)
+        );
+        for code in [
+            windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED,
+            windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_RESET,
+            windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_HUNG,
+            windows::Win32::Graphics::Dxgi::DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+        ] {
+            assert_eq!(
+                format_blendable(Err(windows::core::Error::from_hresult(code))),
+                Err(crate::DeviceError::Lost)
+            );
+        }
+    }
+
     #[test]
     fn alpha_mask_uses_coupled_blend_only_when_alpha_is_not_written() {
         use super::*;
@@ -324,6 +462,120 @@ mod tests {
             "zero-input vertex shader should not need a vertex buffer: {pipeline:?}"
         );
         let empty_triangle = pipeline.unwrap();
+        let blend_pipeline = |blend, write_mask| {
+            let targets = [Some(wgt::ColorTargetState {
+                format: wgt::TextureFormat::Rgba8Unorm,
+                blend,
+                write_mask,
+            })];
+            unsafe {
+                device.create_render_pipeline(&crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &[],
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                })
+            }
+        };
+        for blend in [
+            wgt::BlendState::ALPHA_BLENDING,
+            INVERT_BLEND,
+            VIGNETTE_BLEND,
+        ] {
+            assert!(
+                blend_pipeline(Some(blend), wgt::ColorWrites::ALL).is_err(),
+                "FL9_1 must reject unguaranteed separate alpha: {blend:?}"
+            );
+        }
+        use windows::Win32::Graphics::Direct3D11::D3D11_BLEND_INV_DEST_ALPHA;
+        let rgb = wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE;
+        for (blend, mask, src, dst, alpha_src, alpha_dst) in [
+            (
+                wgt::BlendState::ALPHA_BLENDING,
+                rgb,
+                D3D11_BLEND_SRC_ALPHA,
+                D3D11_BLEND_INV_SRC_ALPHA,
+                D3D11_BLEND_SRC_ALPHA,
+                D3D11_BLEND_INV_SRC_ALPHA,
+            ),
+            (
+                INVERT_BLEND,
+                rgb,
+                D3D11_BLEND_INV_DEST_COLOR,
+                D3D11_BLEND_INV_SRC_COLOR,
+                D3D11_BLEND_INV_DEST_ALPHA,
+                D3D11_BLEND_INV_SRC_ALPHA,
+            ),
+            (
+                VIGNETTE_BLEND,
+                rgb,
+                D3D11_BLEND_ZERO,
+                D3D11_BLEND_INV_SRC_COLOR,
+                D3D11_BLEND_ZERO,
+                D3D11_BLEND_INV_SRC_ALPHA,
+            ),
+            (
+                wgt::BlendState::ALPHA_BLENDING,
+                wgt::ColorWrites::ALPHA,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_INV_SRC_ALPHA,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_INV_SRC_ALPHA,
+            ),
+            (
+                INVERT_BLEND,
+                wgt::ColorWrites::ALPHA,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_ZERO,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_ZERO,
+            ),
+            (
+                VIGNETTE_BLEND,
+                wgt::ColorWrites::ALPHA,
+                D3D11_BLEND_ZERO,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_ZERO,
+                D3D11_BLEND_ONE,
+            ),
+            (
+                ADDITIVE_BLEND,
+                wgt::ColorWrites::ALL,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_ONE,
+                D3D11_BLEND_ONE,
+            ),
+        ] {
+            let pipeline = blend_pipeline(Some(blend), mask).unwrap();
+            let mut native_desc = D3D11_BLEND_DESC::default();
+            unsafe { pipeline.blend.as_ref().unwrap().GetDesc(&mut native_desc) };
+            let rt = native_desc.RenderTarget[0];
+            assert_eq!(
+                (
+                    rt.SrcBlend,
+                    rt.DestBlend,
+                    rt.SrcBlendAlpha,
+                    rt.DestBlendAlpha
+                ),
+                (src, dst, alpha_src, alpha_dst),
+                "{blend:?} mask {mask:?}"
+            );
+            unsafe { device.destroy_render_pipeline(pipeline) };
+        }
+        for blend in [None, Some(wgt::BlendState::REPLACE), Some(ADDITIVE_BLEND)] {
+            let pipeline = blend_pipeline(blend, wgt::ColorWrites::ALL).unwrap();
+            unsafe { device.destroy_render_pipeline(pipeline) };
+        }
         let all_none = [None, None];
         desc.vertex_processor = crate::VertexProcessor::Standard {
             vertex_buffers: &all_none,
@@ -550,8 +802,146 @@ mod tests {
             );
         }
         std::println!("PASS: zero-input point and 65,536-point batch: one green and 63 blue pixels; zero-input triangle: 64 blue pixels; point/triangle/point transitions: one green and 63 red pixels");
+        let blend_module = naga::front::wgsl::parse_str(
+            "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(-0.125, -0.125, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(0.25, 0.5, 0.75, 0.25); }",
+        ).unwrap();
+        let blend_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&blend_module)
+        .unwrap();
+        let blend_shader = unsafe {
+            device
+                .create_shader_module(
+                    &crate::ShaderModuleDescriptor {
+                        label: None,
+                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                    },
+                    crate::ShaderInput::Naga(crate::NagaShader {
+                        module: Cow::Owned(blend_module),
+                        info: blend_info,
+                        debug_source: None,
+                    }),
+                )
+                .unwrap()
+        };
+        let blend_stage = |entry_point| crate::ProgrammableStage {
+            module: &blend_shader,
+            entry_point,
+            constants: &constants,
+            zero_initialize_workgroup_memory: false,
+        };
+        let blend_color = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color {
+                r: 0.2,
+                g: 0.4,
+                b: 0.6,
+                a: 0.5,
+            },
+        })];
+        let blend_pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &blend_color,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let rgb = wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE;
+        let mut blend_commands = alloc::vec::Vec::new();
+        for (blend, mask, expected) in [
+            (wgt::BlendState::ALPHA_BLENDING, rgb, [54u8, 108, 163, 128]),
+            (
+                wgt::BlendState::ALPHA_BLENDING,
+                wgt::ColorWrites::ALPHA,
+                [51, 102, 153, 160],
+            ),
+            (INVERT_BLEND, rgb, [89, 128, 115, 128]),
+            (INVERT_BLEND, wgt::ColorWrites::ALPHA, [51, 102, 153, 64]),
+            (VIGNETTE_BLEND, rgb, [38, 51, 38, 128]),
+            (VIGNETTE_BLEND, wgt::ColorWrites::ALPHA, [51, 102, 153, 128]),
+        ] {
+            let targets = [Some(wgt::ColorTargetState {
+                format: wgt::TextureFormat::Rgba8Unorm,
+                blend: Some(blend),
+                write_mask: mask,
+            })];
+            let pipeline = unsafe {
+                device
+                    .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                        label: None,
+                        layout: &layout,
+                        vertex_processor: crate::VertexProcessor::Standard {
+                            vertex_buffers: &[],
+                            vertex_stage: blend_stage("vs"),
+                        },
+                        primitive: wgt::PrimitiveState {
+                            topology: wgt::PrimitiveTopology::PointList,
+                            ..Default::default()
+                        },
+                        depth_stencil: None,
+                        multisample: wgt::MultisampleState::default(),
+                        fragment_stage: Some(blend_stage("fs")),
+                        color_targets: &targets,
+                        multiview_mask: None,
+                        cache: None,
+                    })
+                    .unwrap()
+            };
+            let commands = unsafe {
+                encoder.begin_encoding(None).unwrap();
+                encoder.begin_render_pass(&blend_pass).unwrap();
+                encoder.set_render_pipeline(&pipeline);
+                encoder.draw(0, 1, 0, 1);
+                encoder.end_render_pass();
+                encoder.end_encoding().unwrap()
+            };
+            unsafe {
+                device.destroy_render_pipeline(pipeline);
+            }
+            let value = 5 + blend_commands.len() as u64;
+            unsafe {
+                queue.submit(&[&commands], &[], (&fence, value)).unwrap();
+            }
+            assert!(native.wait_native_fence(
+                &fence,
+                value,
+                Some(core::time::Duration::from_secs(5))
+            )?);
+            let pixels = native.read_rgba_texture(&target, 0, 0)?;
+            for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+                let expected = if index == 4 * 8 + 3 {
+                    expected
+                } else {
+                    [51, 102, 153, 128]
+                };
+                assert!(
+                    pixel
+                        .iter()
+                        .zip(expected)
+                        .all(|(&actual, wanted)| actual.abs_diff(wanted) <= 2),
+                    "masked {blend:?} {mask:?} pixel {index}: {pixel:?}, expected {expected:?}"
+                );
+            }
+            blend_commands.push(commands);
+        }
+        std::println!("PASS: RGB-only and alpha-only alpha, inversion and vignette blends");
         unsafe {
-            encoder.reset_all([point, point_boundary, degenerate, transition].into_iter());
+            encoder.reset_all(
+                [point, point_boundary, degenerate, transition]
+                    .into_iter()
+                    .chain(blend_commands),
+            );
             drop(encoder);
             device.destroy_buffer(index);
             device.destroy_buffer(vertices);
@@ -562,6 +952,7 @@ mod tests {
             device.destroy_render_pipeline(all_none_pipeline);
             device.destroy_render_pipeline(empty_triangle);
             device.destroy_pipeline_layout(layout);
+            device.destroy_shader_module(blend_shader);
             device.destroy_shader_module(shader);
         }
         Ok(())
@@ -1203,6 +1594,30 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
+        let blend_desc = target
+            .map(|target| {
+                blend_target_desc(
+                    target.blend,
+                    target.write_mask,
+                    owner.separate_alpha_supported(),
+                )
+                .ok_or_else(invalid)
+            })
+            .transpose()?;
+        if let (Some(target), Some(blend_desc)) = (target, blend_desc) {
+            if blend_desc.BlendEnable.as_bool() {
+                let format = match target.format {
+                    wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
+                    wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+                    _ => return Err(invalid()),
+                };
+                if !format_blendable(unsafe { owner.raw_device().CheckFormatSupport(format) })
+                    .map_err(crate::PipelineError::Device)?
+                {
+                    return Err(invalid());
+                }
+            }
+        }
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if state.format != wgt::TextureFormat::Depth24PlusStencil8
                 || state.stencil.front != wgt::StencilFaceState::IGNORE
@@ -1455,50 +1870,10 @@ impl RenderPipeline {
                     return Err(invalid());
                 }
             }
-            if let Some(target) = target {
-                let blend_enabled = target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
-                    || target.blend == Some(INVERT_BLEND)
-                    || target.blend == Some(ADDITIVE_BLEND)
-                    || target.blend == Some(VIGNETTE_BLEND);
-                if blend_enabled || target.write_mask != wgt::ColorWrites::ALL {
+            if let Some(target_desc) = blend_desc {
+                if target_desc.BlendEnable.as_bool() || target_desc.RenderTargetWriteMask != 0x0f {
                     let mut desc = D3D11_BLEND_DESC::default();
-                    desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
-                        BlendEnable: blend_enabled.into(),
-                        SrcBlend: if blend_enabled {
-                            D3D11_BLEND_SRC_ALPHA
-                        } else {
-                            D3D11_BLEND_ONE
-                        },
-                        DestBlend: if blend_enabled {
-                            D3D11_BLEND_INV_SRC_ALPHA
-                        } else {
-                            D3D11_BLEND_ZERO
-                        },
-                        BlendOp: D3D11_BLEND_OP_ADD,
-                        SrcBlendAlpha: source_alpha_blend_factor(target.blend, target.write_mask),
-                        DestBlendAlpha: if blend_enabled {
-                            D3D11_BLEND_INV_SRC_ALPHA
-                        } else {
-                            D3D11_BLEND_ZERO
-                        },
-                        BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                        RenderTargetWriteMask: color_write_mask(target.write_mask)
-                            .ok_or_else(invalid)?,
-                    };
-                    if target.blend == Some(INVERT_BLEND) {
-                        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;
-                        desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
-                        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-                    } else if target.blend == Some(ADDITIVE_BLEND) {
-                        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-                        desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
-                        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
-                    } else if target.blend == Some(VIGNETTE_BLEND) {
-                        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
-                        desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
-                        desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
-                        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
-                    }
+                    desc.RenderTarget[0] = target_desc;
                     owner
                         .raw_device()
                         .CreateBlendState(&desc, Some(&mut blend))

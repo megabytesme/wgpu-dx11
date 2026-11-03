@@ -425,7 +425,12 @@ fn sampled_triangle_variant(
         return Ok(());
     };
     std::println!("Hardware: {:?}; requested FL9_1", adapter.identity());
-    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    let mut native = adapter.open_device(&[FeatureLevel::L9_1])?;
+    if alpha || invert || effect == 2 {
+        native.enable_diagnostic_separate_alpha();
+        std::println!("Diagnostic only: separate alpha is not guaranteed at FL9_1");
+    }
+    let native = Arc::new(native);
     assert_eq!(native.feature_level(), FeatureLevel::L9_1);
     std::println!("Actual feature level: {:?}", native.feature_level());
     let device = Device::new(native.clone());

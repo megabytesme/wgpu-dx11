@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 182 tests; older
+operations are safe. The latest combined strict suite passed 184 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -89,8 +89,8 @@ viewport emulation can exceed the FXC instruction budget, and the tested FXC
 profile rejects fragment-position and front-facing inputs. Stencil operations,
 read-only depth, depth comparisons other than Always/LessEqual,
 broader formats and mipmaps remain incomplete. FL9_1 does not guarantee
-separate-alpha blending, and the existing private blend modes have not been
-shown portable to historical drivers. Native compute and UAV storage are not
+separate-alpha blending; the default path now rejects modes that require it,
+while masked-channel equivalents remain supported. Native compute and UAV storage are not
 FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
 
 Core permits draw combinations, layouts, resource shapes and baseline query
@@ -167,6 +167,8 @@ continuing verified FL9_1 increments.
 Zero-input pipelines and nonindexed point lists are supported privately; only
 the interior-point case has GPU readback coverage, and indexed points remain
 unavailable.
+Full-channel separate-alpha diagnostics require an explicit test-only opt-in
+and are not evidence of historical-driver support.
 Private Uint32 conversion uses ordered effective-index windows spanning at most
 65534 and explicitly rejects selected vertex-index shader inputs. It rebases
 the vertex buffer, gathers wider triangles with GPU copies, allocates scratch at

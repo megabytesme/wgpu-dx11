@@ -2,21 +2,21 @@
 use alloc::{string::String, vec::Vec};
 use parking_lot::{Mutex, MutexGuard};
 use windows::{
+    core::{Error, Interface, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG, HMODULE},
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL},
             Direct3D11::{
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice,
-                ID3D11Device, ID3D11DeviceContext,
+                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
             },
             Dxgi::{
-                CreateDXGIFactory2, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS,
-                DXGI_ERROR_NOT_FOUND, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1,
+                CreateDXGIFactory2, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1,
+                DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_NOT_FOUND,
             },
         },
     },
-    core::{Error, Interface, Result},
 };
 
 /// A native D3D feature level; this alone does not imply WebGPU support.
@@ -121,6 +121,8 @@ impl NativeAdapter {
             raw: device.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             immediate: Mutex::new(context.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             level,
+            #[cfg(test)]
+            diagnostic_separate_alpha: false,
         })
     }
 }
@@ -131,9 +133,24 @@ pub struct NativeDevice {
     raw: ID3D11Device,
     immediate: Mutex<ID3D11DeviceContext>,
     level: FeatureLevel,
+    #[cfg(test)]
+    diagnostic_separate_alpha: bool,
 }
 
 impl NativeDevice {
+    #[cfg(test)]
+    pub(super) fn enable_diagnostic_separate_alpha(&mut self) {
+        self.diagnostic_separate_alpha = true;
+    }
+
+    pub(super) fn separate_alpha_supported(&self) -> bool {
+        #[cfg(test)]
+        if self.diagnostic_separate_alpha {
+            return true;
+        }
+        super::capabilities::HardwareGuarantees::for_level(self.level).separate_alpha_blend
+    }
+
     /// The feature level selected when creating this native device.
     pub fn feature_level(&self) -> FeatureLevel {
         self.level
@@ -189,11 +206,9 @@ mod tests {
     fn native_feature_levels_are_unique_and_descending() {
         let levels = FeatureLevel::ALL_DESCENDING;
         assert_eq!(levels.len(), 7);
-        assert!(
-            levels
-                .windows(2)
-                .all(|pair| pair[0].as_raw() > pair[1].as_raw())
-        );
+        assert!(levels
+            .windows(2)
+            .all(|pair| pair[0].as_raw() > pair[1].as_raw()));
         assert_eq!(levels.last().unwrap().as_raw(), 0x9100);
     }
 

@@ -32,9 +32,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   Naga/FXC shaders.
 - Triangle-list passes with zero inputs or one interleaved vertex buffer, winding and face
   culling, bounds-checked scissors, per-channel color write masks,
-  replace/alpha/crosshair/additive/vignette blending, and splitting
+  restricted replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
+- FL9_1 rejects alpha, inversion and vignette blending when both RGB and alpha
+  are written because separate alpha is not guaranteed. RGB-only and alpha-only
+  cases use coupled factors; a test-only opt-in retains nonportable diagnostics.
 - Nonindexed point-list draws are supported for zero-input pipelines; indexed
   points and point pipelines with vertex buffers remain unavailable.
 - Direct and indexed instancing repeat native draws in instance order when the
@@ -46,9 +49,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   through GPU vertex-buffer copies. Out-of-bounds vertex fetches discard the
   whole draw. Staging and scratch
   allocation can stall the CPU; this is not a full public draw contract.
-- An original two-texture overlay shader passes checked FL9_1 GPU readback
-  with alpha and inversion blend states; its surface diagnostic also passed
-  a strict x64 UWP FL9_1 run.
+- An original two-texture overlay shader passed RTX diagnostics with alpha and
+  inversion blend states; full-channel separate alpha is not a guaranteed
+  FL9_1 production configuration.
 - A local, deliberately unsafe core bootstrap experiment with placeholder
   capabilities created a wgpu device, copied mapped buffers, and rendered an
   indexed triangle on FL9_1 with pixel readback. It is not an adapter or a

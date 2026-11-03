@@ -600,3 +600,15 @@ pipelines with vertex buffers remain unsupported. The private suite passed 182
 tests before the strengthened point tests; the focused GPU and CPU tests passed
 afterward. The public indexed fixture and HAL Clippy passed, with ten existing
 warnings. Historical point raster and driver behavior remain unverified.
+
+FL9_1 now rejects alpha, inversion and vignette blend modes when both RGB and
+alpha writes require unguaranteed separate-alpha support. Masked RGB-only and
+alpha-only variants use equivalent coupled factors, and enabled blending
+requires a positive format query. The focused strict test first demonstrated
+the missing rejection, then passed on the RTX at forced FL9_1 with complete
+8x8 readback for all three masked blend modes. Full-channel tests retain an
+explicit test-only diagnostic opt-in and do not establish portability. The
+strict private suite passed 184 tests, two filtered; older tests may skip
+internally. The public indexed fixture passed with 32 red and 32 green pixels.
+HAL Clippy passed with ten existing warnings. Independent review checked the
+mask/factor combinations and device-error handling without finding a defect.
