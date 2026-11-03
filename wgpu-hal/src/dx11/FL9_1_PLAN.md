@@ -24,10 +24,10 @@ below is met. This plan does not claim WebGPU conformance.
    GPU and negative tests. Non-indexed line lists and line strips now have a
    bounded private FL9_1 implementation with strict GPU readback and the
    controlled core fixture verifies both through core command recording and
-   readback. Indexed line lists and indexed line-strip semantics remain open;
-   implement and verify indexed line-list rebasing while preserving line pairs.
-   Indexed strips need separate primitive-restart and batch-connectivity
-   analysis.
+   readback. Indexed Uint16/Uint32 line lists now preserve line pairs through
+   compact rebasing and wide-pair gathering, with strict HAL GPU output and a
+   controlled core fixture. Indexed strips need separate primitive-restart
+   and batch-connectivity analysis.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport

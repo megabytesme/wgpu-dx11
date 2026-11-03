@@ -6,7 +6,7 @@ use alloc::{borrow::Cow, sync::Arc, vec, vec::Vec};
 use core::time::Duration;
 
 #[test]
-fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
+fn fl91_line_lists_and_strip_render() -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -24,7 +24,7 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
     let module = naga::front::wgsl::parse_str(
-        "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); } @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }",
+        "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); } @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); } @fragment fn blue() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); } @fragment fn white() -> @location(0) vec4f { return vec4f(1.0, 1.0, 1.0, 1.0); }",
     )
     .unwrap();
     let info = naga::valid::Validator::new(
@@ -98,6 +98,8 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
     };
     let line_list = pipeline(wgt::PrimitiveTopology::LineList, "red").unwrap();
     let line_strip = pipeline(wgt::PrimitiveTopology::LineStrip, "green").unwrap();
+    let indexed_u16_pipeline = pipeline(wgt::PrimitiveTopology::LineList, "blue").unwrap();
+    let indexed_u32_pipeline = pipeline(wgt::PrimitiveTopology::LineList, "white").unwrap();
     let extent = wgt::Extent3d {
         width: 16,
         height: 16,
@@ -143,6 +145,11 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
         [0.0, 0.0],
         [0.0, -0.8],
         [0.0, 0.8],
+        [-0.75, 0.9],
+        [0.75, 0.9],
+        [-0.75, -0.9],
+        [0.75, -0.9],
+        [0.0, 0.0],
     ];
     let bytes: Vec<u8> = vertices
         .into_iter()
@@ -160,6 +167,60 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
             .unwrap()
     };
     native.write_byte_buffer(&vertex, 0, &bytes)?;
+    let u16_index_data: Vec<_> = [0u16, 10, 11, 12, 13, 14]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect();
+    let u16_indices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: u16_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&u16_indices, 0, &u16_index_data)?;
+
+    let mut wide_vertex_data = vec![0u8; 65_537 * 8];
+    for (index, position) in [
+        (0usize, [0.9f32, -0.9]),
+        (65_535, [0.9, -0.9]),
+        (65_536, [0.9, 0.9]),
+    ] {
+        let start = index * 8;
+        for (component, value) in position.into_iter().enumerate() {
+            wide_vertex_data[start + component * 4..start + component * 4 + 4]
+                .copy_from_slice(&value.to_ne_bytes());
+        }
+    }
+    let wide_vertex = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: wide_vertex_data.len() as u64,
+                usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&wide_vertex, 0, &wide_vertex_data)?;
+    let u32_index_data: Vec<_> = [65_535u32, 65_536, 0, 65_536]
+        .into_iter()
+        .flat_map(u32::to_ne_bytes)
+        .collect();
+    let u32_indices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: u32_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&u32_indices, 0, &u32_index_data)?;
     let colors = [Some(crate::ColorAttachment {
         target: crate::Attachment {
             view: &view,
@@ -196,6 +257,23 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
         encoder.draw(2, 5, 0, 1);
         encoder.set_render_pipeline(&line_strip);
         encoder.draw(8, 2, 0, 1);
+        encoder.set_render_pipeline(&indexed_u16_pipeline);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&u16_indices, 0, None),
+            wgt::IndexFormat::Uint16,
+        );
+        encoder.draw_indexed(1, 5, 0, 0, 1);
+        encoder.set_render_pipeline(&indexed_u32_pipeline);
+        encoder.set_vertex_buffer(
+            0,
+            crate::BufferBinding::new_unchecked(&wide_vertex, 0, None),
+        );
+        encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&u32_indices, 0, None),
+            wgt::IndexFormat::Uint32,
+        );
+        encoder.draw_indexed(0, 4, 0, 0, 1);
         encoder.end_render_pass();
         encoder.end_encoding().unwrap()
     };
@@ -211,17 +289,92 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
         .chunks_exact(4)
         .filter(|pixel| *pixel == [0, 255, 0, 255])
         .count();
+    let blue = pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [0, 0, 255, 255])
+        .count();
+    let white = pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [255, 255, 255, 255])
+        .count();
     assert!(red >= 12, "line-list readback had only {red} red pixels");
     assert!(
         green >= 8,
         "line-strip readback had only {green} green pixels"
     );
-    assert!(pixels
-        .chunks_exact(4)
-        .all(|pixel| { matches!(pixel, [0, 0, 0, 255] | [255, 0, 0, 255] | [0, 255, 0, 255]) }));
-    std::println!(
-        "PASS: FL9_1 nonindexed line list and line strip readback: {red} red and {green} green pixels"
+    assert!(
+        blue >= 8,
+        "indexed Uint16 line-list readback had only {blue} blue pixels"
     );
+    assert!(
+        white >= 8,
+        "indexed Uint32 line-list readback had only {white} white pixels"
+    );
+    assert!(pixels.chunks_exact(4).all(|pixel| {
+        matches!(
+            pixel,
+            [0, 0, 0, 255]
+                | [255, 0, 0, 255]
+                | [0, 255, 0, 255]
+                | [0, 0, 255, 255]
+                | [255, 255, 255, 255]
+        )
+    }));
+    std::println!(
+        "PASS: FL9_1 nonindexed line topologies and indexed Uint16/Uint32 lists: {red} red, {green} green, {blue} blue and {white} white pixels"
+    );
+
+    let bad_index_data = [0u16, 0, u16::MAX, 0]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let bad_indices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: bad_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&bad_indices, 0, &bad_index_data)?;
+    let mut invalid_encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let invalid_commands = unsafe {
+        invalid_encoder.begin_encoding(None).unwrap();
+        invalid_encoder.begin_render_pass(&pass).unwrap();
+        invalid_encoder.set_render_pipeline(&line_list);
+        invalid_encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        invalid_encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&bad_indices, 0, None),
+            wgt::IndexFormat::Uint16,
+        );
+        invalid_encoder.draw_indexed(1, 2, 0, 0, 1);
+        invalid_encoder.end_render_pass();
+        invalid_encoder.end_encoding().unwrap()
+    };
+    let invalid_fence = native.create_native_fence();
+    unsafe {
+        queue
+            .submit(&[&invalid_commands], &[], (&invalid_fence, 1))
+            .unwrap()
+    };
+    assert!(native.wait_native_fence(&invalid_fence, 1, Some(Duration::from_secs(5)))?);
+    let invalid_pixels = native.read_rgba_texture(&target, 0, 0)?;
+    assert!(invalid_pixels
+        .chunks_exact(4)
+        .all(|pixel| *pixel == [0, 0, 0, 255]));
+    std::println!("PASS: out-of-range indexed line fetch discarded the whole draw");
+    drop(invalid_commands);
+    unsafe { device.destroy_buffer(bad_indices) };
+
     let indices = unsafe {
         device
             .create_buffer(&crate::BufferDescriptor {
@@ -244,7 +397,7 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
     unsafe {
         rejected_encoder.begin_encoding(None).unwrap();
         rejected_encoder.begin_render_pass(&pass).unwrap();
-        rejected_encoder.set_render_pipeline(&line_list);
+        rejected_encoder.set_render_pipeline(&line_strip);
         rejected_encoder
             .set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
         rejected_encoder.set_index_buffer(
@@ -255,13 +408,18 @@ fn fl91_nonindexed_line_list_and_strip_render() -> windows::core::Result<()> {
         rejected_encoder.end_render_pass();
         assert!(rejected_encoder.end_encoding().is_err());
     }
-    std::println!("PASS: indexed line-list draw rejected before submission");
+    std::println!("PASS: indexed line-strip draw rejected before submission");
     drop(commands);
     unsafe {
         device.destroy_buffer(indices);
         device.destroy_buffer(vertex);
+        device.destroy_buffer(u16_indices);
+        device.destroy_buffer(u32_indices);
+        device.destroy_buffer(wide_vertex);
         device.destroy_render_pipeline(line_strip);
         device.destroy_render_pipeline(line_list);
+        device.destroy_render_pipeline(indexed_u16_pipeline);
+        device.destroy_render_pipeline(indexed_u32_pipeline);
         device.destroy_texture_view(view);
         device.destroy_texture(target);
         device.destroy_pipeline_layout(layout);

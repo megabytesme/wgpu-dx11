@@ -454,9 +454,10 @@ fixture-enabled core library suite passed 70/70 tests and core Clippy passed.
 The previous private HAL line-topology implementation remains checkpointed as
 `3db26eed3` and had passed the strict private suite and targeted hardware tests.
 The fixture change was independently reviewed, with no isolation or correctness
-issue identified. Next implement indexed LineList conversion and batching.
-Indexed strips remain separate pending primitive-restart and connectivity
-analysis.
+issue identified. Indexed LineList was subsequently implemented for Uint16/Uint32
+and verified through both private HAL and the controlled core fixture. See the
+latest checkpoint below. Indexed strips remain separate pending primitive-
+restart and connectivity analysis.
 
 ## Previous checkpoint — non-indexed line topologies
 
@@ -469,3 +470,17 @@ passed 294 tests with two filtered; the targeted core zero-adapter isolation
 test, HAL build and Clippy passed. The working tree is clean after this
 checkpoint. Next validate line topology through the unsafe controlled core
 fixture, then continue toward indexed semantics and the broader public contract.
+
+## Latest checkpoint — indexed FL9_1 LineList
+
+Indexed Uint16 and Uint32 LineList draws preserve pairs through compact
+rebasing, gather wide pairs, ignore an incomplete tail and discard invalid
+fetches before issuing native draws. The RTX 3090 Ti at requested/actual FL9_1
+read back 22 red, 12 green, 24 blue and 14 white pixels. The strict private
+suite passed 297 tests with two filtered; the strict core fixture suite passed
+70/70 and its focused run confirmed eight red pixels for both index formats.
+HAL build and Clippy passed (ten existing HAL warnings), core Clippy passed,
+formatting and diff checks passed. Ordinary adapter enumeration remains empty.
+Checkpoint is being committed; afterward continue with fixed-index restart
+analysis and indexed LineStrip only if safely emulatable. Historical FL9_1
+hardware and public adapter exposure remain unverified.

@@ -1795,3 +1795,38 @@ strict focused command and the complete fixture-enabled core library suite both
 ran with `WGPU_DX11_REQUIRE_HARDWARE=1`; results were respectively 1/1 and
 70/70. Core Clippy passed with no warnings. The fixture continues to check that
 ordinary D3D11 adapter enumeration returns no adapters.
+
+## 2026-11-03 — indexed FL9_1 LineList
+
+The private HAL now records indexed LineList draws and replays GPU-authoritative
+index data through a shared pair-preserving planner. Uint16 and Uint32 indices
+are compacted into ordered Uint16 windows when their effective span is at most
+65,534; a wider line pair is gathered into two-vertex scratch streams. Every
+effective index is checked against every vertex-rate stream before any native
+draw. An invalid fetch discards the whole draw, incomplete final pairs are
+ignored, and native calls are capped at 131,070 indices / 65,535 lines. Indexed
+LineStrip remains rejected.
+
+Strict hardware execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`), explicitly requested and selected at FL9_1. The indexed
+Uint16 case used a nonzero first index and incomplete tail; the Uint32 case
+covered a compact window and a wide-pair gather. Readback contained 22 red,
+12 green, 24 blue and 14 white pixels. A second submission with an
+out-of-bounds fetch left every pixel at the clear value; indexed LineStrip was
+rejected before submission. The focused strict test passed 1/1.
+
+The full strict private suite passed 297 tests, with 0 failures and 2 filtered.
+The strict fixture-enabled core suite passed 70/70 and retained the assertion
+that ordinary D3D11 adapter enumeration is empty. Its focused hardware fixture
+reported 8 red pixels for each indexed format and passed 1/1. HAL build passed;
+HAL Clippy passed with ten existing warnings and core Clippy passed without
+warnings. Rustfmt checks and `git diff --check` passed. The first attempted core
+run lacked the Visual Studio linker environment and did not compile; rerunning
+through `VsDevCmd.bat` passed. This code path maps the index staging buffer and
+may stall; wide pairs also allocate small scratch buffers. Historical FL9_1
+hardware remains untested.
+
+Checkpoint pending: indexed LineList replay and controlled core fixture.
+Next, analyze fixed-index restart semantics and implement indexed LineStrip
+only if it can preserve core draw behavior under FL9_1. Keep ordinary adapter
+enumeration and HWND exposure disabled.

@@ -575,6 +575,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::PointIndexed(wgt::IndexFormat::Uint32),
         VertexCase::LineList,
         VertexCase::LineStrip,
+        VertexCase::LineIndexed(wgt::IndexFormat::Uint16),
+        VertexCase::LineIndexed(wgt::IndexFormat::Uint32),
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
@@ -1685,6 +1687,7 @@ enum VertexCase {
     PointIndexed(wgt::IndexFormat),
     LineList,
     LineStrip,
+    LineIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
     SampledMips,
     SampledMipsBias,
@@ -1736,9 +1739,13 @@ fn render_triangle(
         VertexCase::PointIndexed(format) => Some(format),
         _ => None,
     };
+    let line_index_format = match case {
+        VertexCase::LineIndexed(format) => Some(format),
+        _ => None,
+    };
     let point_input = case == VertexCase::PointInput || point_index.is_some();
     let line_topology = match case {
-        VertexCase::LineList => Some(wgt::PrimitiveTopology::LineList),
+        VertexCase::LineList | VertexCase::LineIndexed(_) => Some(wgt::PrimitiveTopology::LineList),
         VertexCase::LineStrip => Some(wgt::PrimitiveTopology::LineStrip),
         _ => None,
     };
@@ -2570,7 +2577,11 @@ fn render_triangle(
             0.5,
         ];
     }
-    if line_topology == Some(wgt::PrimitiveTopology::LineList) {
+    if line_index_format.is_some() {
+        values = vec![
+            -1., 0., 0.25, 0.25, 0.5, 1., 0., 0.25, 0.25, 0.5, 0., 0.9, 0.25, 0.25, 0.5,
+        ];
+    } else if line_topology == Some(wgt::PrimitiveTopology::LineList) {
         values = vec![-1., 0., 0.25, 0.25, 0.5, 1., 0., 0.25, 0.25, 0.5];
     } else if line_topology == Some(wgt::PrimitiveTopology::LineStrip) {
         values = vec![
@@ -2605,13 +2616,22 @@ fn render_triangle(
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
-    let point_indices = point_index.map(|format| {
-        let data: Vec<u8> = match format {
-            wgt::IndexFormat::Uint16 => [999u16, 999, 999, 2, 3, 999]
+    let index_format = point_index.or(line_index_format);
+    let index_buffer = index_format.map(|format| {
+        let data: Vec<u8> = match (format, line_index_format.is_some()) {
+            (wgt::IndexFormat::Uint16, true) => [999u16, 0, 1, 2]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect(),
-            wgt::IndexFormat::Uint32 => [999u32, 999, 2, 3]
+            (wgt::IndexFormat::Uint32, true) => [999u32, 0, 1, 2]
+                .into_iter()
+                .flat_map(u32::to_ne_bytes)
+                .collect(),
+            (wgt::IndexFormat::Uint16, false) => [999u16, 999, 999, 2, 3, 999]
+                .into_iter()
+                .flat_map(u16::to_ne_bytes)
+                .collect(),
+            (wgt::IndexFormat::Uint32, false) => [999u32, 999, 2, 3]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect(),
@@ -2813,13 +2833,25 @@ fn render_triangle(
         )
         .unwrap();
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
-    if let (Some(format), Some(indices)) = (point_index, point_indices) {
+    if let (Some(format), Some(indices)) = (index_format, index_buffer) {
         global
-            .render_pass_set_index_buffer(&mut pass, indices, format, 4, None)
+            .render_pass_set_index_buffer(
+                &mut pass,
+                indices,
+                format,
+                if line_index_format.is_some() { 0 } else { 4 },
+                None,
+            )
             .unwrap();
-        global
-            .render_pass_draw_indexed(&mut pass, 2, 1, 1, -1, 0)
-            .unwrap();
+        if point_index.is_some() {
+            global
+                .render_pass_draw_indexed(&mut pass, 2, 1, 1, -1, 0)
+                .unwrap();
+        } else {
+            global
+                .render_pass_draw_indexed(&mut pass, 3, 1, 1, 0, 0)
+                .unwrap();
+        }
     } else if point_input {
         global.render_pass_draw(&mut pass, 2, 1, 1, 0).unwrap();
     } else if line_topology.is_some() {
@@ -3045,7 +3077,7 @@ fn render_triangle(
     global.texture_view_drop(view);
     global.texture_drop(target);
     global.buffer_drop(vertices);
-    if let Some(indices) = point_indices {
+    if let Some(indices) = index_buffer {
         global.buffer_drop(indices);
     }
     if let Some(buffer) = auxiliary_vertices {

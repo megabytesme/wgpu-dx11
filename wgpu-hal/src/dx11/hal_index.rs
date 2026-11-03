@@ -166,6 +166,269 @@ impl IndexBinding {
 
     #[expect(
         clippy::too_many_arguments,
+        reason = "Indexed line replay needs stream and instance state"
+    )]
+    pub(super) fn draw_lines(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base: i32,
+        vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+        draw_limits: (u32, u32),
+        instance_bindings: &super::command::InstanceBindings,
+    ) -> Result<()> {
+        let (max_indices, instances) = draw_limits;
+        instance_bindings.validate(instances)?;
+        if vertices.is_empty()
+            || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
+                !offset.is_multiple_of(4)
+                    || !stride.is_multiple_of(4)
+                    || *extent == 0
+                    || (*stride != 0 && *extent > *stride)
+                    || !extent.is_multiple_of(4)
+            })
+            || !self.contains_range(first, count)
+            || max_indices < 2
+            || !max_indices.is_multiple_of(2)
+            || (count != 0 && first.checked_add(count - 1).is_none())
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let complete_count = count & !1;
+        if complete_count == 0 || instances == 0 {
+            return Ok(());
+        }
+
+        let mut layouts = Vec::new();
+        layouts
+            .try_reserve_exact(vertices.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        layouts.extend(vertices.iter().map(|v| (v.3, v.4, v.5)));
+
+        enum Prepared {
+            Window {
+                index: ID3D11Buffer,
+                offsets: Vec<u32>,
+                count: u32,
+            },
+            Gather {
+                streams: Vec<Option<(ID3D11Buffer, [D3D11_BOX; 2])>>,
+            },
+        }
+
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(&self.staging, &self.buffer);
+            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&self.staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let index_size = if self.is_u32() { 4 } else { 2 };
+            let start = self.offset as usize + first as usize * index_size;
+            let read = |index: usize| {
+                let ptr = mapped.pData.cast::<u8>().add(start + index * index_size);
+                if self.is_u32() {
+                    core::ptr::read_unaligned(ptr.cast::<u32>())
+                } else {
+                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
+                }
+            };
+            let plan = plan_indexed_lines(
+                read,
+                complete_count as usize,
+                base,
+                self.max_index,
+                max_indices,
+                &layouts,
+            );
+            context.Unmap(&self.staging, 0);
+            let Some(plan) = plan? else { return Ok(()) };
+            if plan.is_empty() {
+                return Ok(());
+            }
+
+            let device = context.GetDevice()?;
+            let mut prepared = Vec::new();
+            prepared
+                .try_reserve_exact(plan.len())
+                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+            for segment in plan {
+                match segment {
+                    IndexedLineSegment::Window {
+                        minimum,
+                        count,
+                        indices,
+                    } => {
+                        let mut offsets = Vec::new();
+                        offsets
+                            .try_reserve_exact(vertices.len())
+                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                        for (_, _, offset, length, stride, extent) in vertices {
+                            offsets.push(
+                                rebased_vertex_offset(
+                                    minimum,
+                                    *offset,
+                                    (*length, *stride, *extent),
+                                )
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                            );
+                        }
+                        let byte_width = u32::try_from(indices.len())
+                            .map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+                        let desc = D3D11_BUFFER_DESC {
+                            ByteWidth: byte_width,
+                            Usage: D3D11_USAGE_IMMUTABLE,
+                            BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                            ..Default::default()
+                        };
+                        let data = D3D11_SUBRESOURCE_DATA {
+                            pSysMem: indices.as_ptr().cast(),
+                            ..Default::default()
+                        };
+                        let mut index = None;
+                        device.CreateBuffer(&desc, Some(&data), Some(&mut index))?;
+                        prepared.push(Prepared::Window {
+                            index: index.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                            offsets,
+                            count,
+                        });
+                    }
+                    IndexedLineSegment::Gather { indices } => {
+                        let mut streams = Vec::new();
+                        streams
+                            .try_reserve_exact(vertices.len())
+                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                        for (_, _, offset, length, stride, extent) in vertices {
+                            if *stride == 0 {
+                                streams.push(None);
+                                continue;
+                            }
+                            let byte_width = stride
+                                .checked_mul(2)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            let mut zeroes = Vec::new();
+                            zeroes
+                                .try_reserve_exact(byte_width as usize)
+                                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                            zeroes.resize(byte_width as usize, 0u8);
+                            let desc = D3D11_BUFFER_DESC {
+                                ByteWidth: byte_width,
+                                Usage: D3D11_USAGE_DEFAULT,
+                                BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                                ..Default::default()
+                            };
+                            let initial = D3D11_SUBRESOURCE_DATA {
+                                pSysMem: zeroes.as_ptr().cast(),
+                                ..Default::default()
+                            };
+                            let mut buffer = None;
+                            device.CreateBuffer(&desc, Some(&initial), Some(&mut buffer))?;
+                            let source_box = |index| -> Result<D3D11_BOX> {
+                                let left = rebased_vertex_offset(
+                                    index,
+                                    *offset,
+                                    (*length, *stride, *extent),
+                                )
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                let right = left
+                                    .checked_add(*extent)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                Ok(D3D11_BOX {
+                                    left,
+                                    right,
+                                    top: 0,
+                                    bottom: 1,
+                                    front: 0,
+                                    back: 1,
+                                })
+                            };
+                            let sources = [source_box(indices[0])?, source_box(indices[1])?];
+                            streams.push(Some((
+                                buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                                sources,
+                            )));
+                        }
+                        prepared.push(Prepared::Gather { streams });
+                    }
+                }
+            }
+
+            for segment in &prepared {
+                if let Prepared::Gather { streams } = segment {
+                    for ((_, source_buffer, _, _, stride, _), stream) in
+                        vertices.iter().zip(streams)
+                    {
+                        let Some((destination, sources)) = stream else {
+                            continue;
+                        };
+                        for (index, source_box) in sources.iter().enumerate() {
+                            context.CopySubresourceRegion(
+                                destination,
+                                0,
+                                index as u32 * stride,
+                                0,
+                                0,
+                                source_buffer,
+                                0,
+                                Some(source_box),
+                            );
+                        }
+                    }
+                }
+            }
+
+            for instance in 0..instances {
+                instance_bindings.bind(context, instance)?;
+                for segment in &prepared {
+                    match segment {
+                        Prepared::Window {
+                            index,
+                            offsets,
+                            count,
+                        } => {
+                            for ((slot, buffer, _, _, stride, _), offset) in
+                                vertices.iter().zip(offsets)
+                            {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(stride),
+                                    Some(offset),
+                                );
+                            }
+                            context.IASetIndexBuffer(index, DXGI_FORMAT_R16_UINT, 0);
+                            context.DrawIndexed(*count, 0, 0);
+                        }
+                        Prepared::Gather { streams } => {
+                            for ((slot, buffer, offset, _, stride, _), stream) in
+                                vertices.iter().zip(streams)
+                            {
+                                let (buffer, offset) = match stream {
+                                    Some((buffer, _)) => (buffer, &0),
+                                    None => (buffer, offset),
+                                };
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(stride),
+                                    Some(offset),
+                                );
+                            }
+                            context.Draw(2, 0);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
         reason = "Indexed replay needs stream and instance state"
     )]
     pub(super) fn draw_multi(
@@ -739,6 +1002,106 @@ fn multi_u32_index_in_bounds(
     })
 }
 
+#[derive(Debug)]
+enum IndexedLineSegment {
+    Window {
+        minimum: u64,
+        count: u32,
+        indices: Vec<u8>,
+    },
+    Gather {
+        indices: [u64; 2],
+    },
+}
+
+fn plan_indexed_lines(
+    read: impl Fn(usize) -> u32,
+    count: usize,
+    base: i32,
+    max_index: u16,
+    max_indices: u32,
+    layouts: &[(u64, u32, u32)],
+) -> Result<Option<Vec<IndexedLineSegment>>> {
+    if layouts.is_empty()
+        || max_indices < 2
+        || !max_indices.is_multiple_of(2)
+        || layouts.iter().any(|&(length, stride, extent)| {
+            length < u64::from(extent)
+                || !stride.is_multiple_of(4)
+                || extent == 0
+                || !extent.is_multiple_of(4)
+                || (stride != 0 && extent > stride)
+        })
+    {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    let complete = count & !1;
+    if complete == 0 {
+        return Ok(Some(Vec::new()));
+    }
+    if (0..complete).any(|i| !multi_u32_index_in_bounds(read(i), base, layouts.iter().copied())) {
+        return Ok(None);
+    }
+    let effective = |i| (i64::from(read(i)) + i64::from(base)) as u64;
+    let mut segments = Vec::new();
+    let mut start = 0;
+    while start < complete {
+        let pair = [effective(start), effective(start + 1)];
+        let mut minimum = pair[0].min(pair[1]);
+        let mut maximum = pair[0].max(pair[1]);
+        if maximum - minimum > u64::from(max_index) {
+            segments
+                .try_reserve(1)
+                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+            segments.push(IndexedLineSegment::Gather { indices: pair });
+            start += 2;
+            continue;
+        }
+        let mut end = start + 2;
+        while end < complete && end - start < max_indices as usize {
+            let next = [effective(end), effective(end + 1)];
+            let pair_minimum = next[0].min(next[1]);
+            let pair_maximum = next[0].max(next[1]);
+            if pair_maximum - pair_minimum > u64::from(max_index) {
+                break;
+            }
+            let next_minimum = minimum.min(pair_minimum);
+            let next_maximum = maximum.max(pair_maximum);
+            if next_maximum - next_minimum > u64::from(max_index) {
+                break;
+            }
+            minimum = next_minimum;
+            maximum = next_maximum;
+            end += 2;
+        }
+        let count = u32::try_from(end - start).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        let size = (end - start)
+            .checked_mul(2)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let mut indices = Vec::new();
+        indices
+            .try_reserve_exact(size)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        indices.resize(size, 0);
+        for i in start..end {
+            let index = u16::try_from(effective(i) - minimum)
+                .map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+            let offset = (i - start) * 2;
+            indices[offset..offset + 2].copy_from_slice(&index.to_ne_bytes());
+        }
+        segments
+            .try_reserve(1)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        segments.push(IndexedLineSegment::Window {
+            minimum,
+            count,
+            indices,
+        });
+        start = end;
+    }
+    Ok(Some(segments))
+}
+
 fn for_each_window(instances: u32, windows: usize, mut draw: impl FnMut(usize)) {
     for _ in 0..instances {
         for window in 0..windows {
@@ -1019,9 +1382,103 @@ mod tests {
 
     use super::{
         classify_indices, classify_u32_indices, for_each_window, multi_u32_index_in_bounds,
-        plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision, IndexPlan,
-        U32Decision, U32Segment,
+        plan_indexed_lines, plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision,
+        IndexPlan, IndexedLineSegment, U32Decision, U32Segment,
     };
+
+    #[test]
+    fn indexed_line_windows_preserve_pairs_rebase_and_ignore_an_incomplete_tail() {
+        let indices = [70_000, 70_001, 70_002, 70_003, 17];
+        let plan = plan_indexed_lines(
+            |i| indices[i],
+            indices.len(),
+            0,
+            65_534,
+            131_070,
+            &[(70_004 * 8, 8, 8)],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(plan.len(), 1);
+        let IndexedLineSegment::Window {
+            minimum,
+            count,
+            indices,
+        } = &plan[0]
+        else {
+            panic!("expected a rebased line-list window")
+        };
+        assert_eq!(*minimum, 70_000);
+        assert_eq!(*count, 4);
+        assert_eq!(indices, &[0, 0, 1, 0, 2, 0, 3, 0]);
+    }
+
+    #[test]
+    fn indexed_line_plan_gathers_wide_pairs_without_reordering() {
+        let indices = [0, 65_535, 65_536, 65_537];
+        let plan = plan_indexed_lines(
+            |i| indices[i],
+            indices.len(),
+            0,
+            65_534,
+            131_070,
+            &[(65_538 * 8, 8, 8)],
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            &plan[0],
+            IndexedLineSegment::Gather {
+                indices: [0, 65_535]
+            }
+        ));
+        assert!(
+            matches!(
+                &plan[1],
+                IndexedLineSegment::Window {
+                    minimum: 65_536,
+                    count: 2,
+                    indices,
+                } if indices == &[0, 0, 1, 0]
+            ),
+            "{plan:?}"
+        );
+    }
+
+    #[test]
+    fn indexed_line_plans_discard_bad_fetches_and_split_at_primitive_limit() {
+        let invalid = [0, 1, 3, 2];
+        assert!(plan_indexed_lines(
+            |i| invalid[i],
+            invalid.len(),
+            0,
+            65_534,
+            131_070,
+            &[(3 * 8, 8, 8)],
+        )
+        .unwrap()
+        .is_none());
+
+        let indices: Vec<_> = (0..131_072).map(|i| i & 1).collect();
+        let plan = plan_indexed_lines(
+            |i| indices[i],
+            indices.len(),
+            0,
+            65_534,
+            131_070,
+            &[(16, 8, 8)],
+        )
+        .unwrap()
+        .unwrap();
+        let counts: Vec<_> = plan
+            .iter()
+            .map(|segment| match segment {
+                IndexedLineSegment::Window { count, .. } => *count,
+                IndexedLineSegment::Gather { .. } => panic!("narrow lines do not gather"),
+            })
+            .collect();
+        assert_eq!(counts, [131_070, 2]);
+    }
 
     #[test]
     fn indexed_point_runs_preserve_order_and_rebase_every_stream() {

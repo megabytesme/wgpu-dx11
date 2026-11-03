@@ -948,21 +948,36 @@ views; it does not execute a transient render pass through core. Its restricted
 numeric limits and format capabilities do not constitute a safe general adapter
 contract.
 
-### Non-indexed FL9_1 line topologies
+### FL9_1 line topologies
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_nonindexed_line_list_and_strip_render -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_line_lists_and_strip_render -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_line_batch_limits_preserve_complete_primitives -- --nocapture
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 line_list_batches_preserve_pairs_and_instances -- --nocapture
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 line_strip_batches_overlap_one_vertex_across_batches -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 indexed_line -- --nocapture
 ```
 
-The GPU test requests and asserts FL9_1, renders two independent red line-list
-segments and a green line strip with nonzero first vertices, then verifies
-readback colors. The line-list draw includes one incomplete trailing vertex;
-the D3D draw contract discards it. CPU tests verify pair-preserving list batches,
-strip endpoint overlap, instance order and invalid batch limits. Indexed line
-draws remain unsupported, and the GPU test confirms an indexed line-list
-command fails before submission. On the RTX 3090 Ti, readback contained 22 red
-and 12 green pixels with no unexpected colors.
+The GPU test requests and asserts FL9_1, renders direct and indexed line lists
+and a direct line strip, and verifies readback colors. Indexed coverage includes
+Uint16 and Uint32 buffers, a nonzero first index, an incomplete trailing index,
+bounded compaction and a wide pair that requires vertex gathering. A separate
+indexed draw whose effective fetch is out of range leaves the target clear, and
+indexed LineStrip is rejected before submission. CPU tests verify pair-preserving
+line batches, strip endpoint overlap, indexed rebasing and gathering, whole-draw
+discard and the 131,070-index FL9_1 batch boundary. On the RTX 3090 Ti at
+requested and actual FL9_1, readback contained 22 red, 12 green, 24 blue and 14
+white pixels with no unexpected colors.
+
+The controlled core fixture also creates indexed LineList pipelines and submits
+Uint16 and Uint32 draws while ordinary D3D11 adapter enumeration remains empty:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
+```
+
+Both indexed draws read back eight red pixels. This exercises core command
+recording through the explicitly injected test device; it does not expose a
+normal adapter.
