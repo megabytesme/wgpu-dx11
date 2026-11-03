@@ -35,12 +35,11 @@ struct RenderState {
     extent: [u32; 2],
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     pipeline: bool,
-    required_group: Option<super::hal_bind_group::GroupKind>,
-    bound_group: Option<super::hal_bind_group::GroupKind>,
+    active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
+    last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
+    bound_groups: Vec<Option<BoundGroup>>,
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
-    sampling_resources: Option<super::sampling::SamplingResources>,
     full_npot: super::capabilities::Query<bool>,
-    bound_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
@@ -52,14 +51,107 @@ struct RenderState {
     )>,
 }
 
+#[derive(Debug)]
+struct BoundGroup {
+    kind: super::hal_bind_group::GroupKind,
+    resources: super::hal_bind_group::GroupResources,
+    ranges: Vec<windows::Win32::Graphics::Direct3D11::D3D11_BOX>,
+}
+
 impl RenderState {
     fn sampling_compatible(&self, level: super::device::FeatureLevel) -> bool {
         if self.sampling_pairs.is_empty() {
             return true;
         }
-        self.sampling_resources.as_ref().is_some_and(|resources| {
-            super::sampling::compatible(&self.sampling_pairs, resources, level, self.full_npot)
-        })
+        self.bound_groups
+            .first()
+            .and_then(Option::as_ref)
+            .is_some_and(|group| {
+                super::sampling::compatible(
+                    &self.sampling_pairs,
+                    &group.resources.sampling,
+                    level,
+                    self.full_npot,
+                )
+            })
+    }
+
+    fn bindings_compatible(&self) -> bool {
+        let Some(plan) = &self.active_plan else {
+            return false;
+        };
+        for (index, expected) in plan.groups().iter().enumerate() {
+            let Some(expected) = expected else { continue };
+            if *expected == super::hal_bind_group::GroupKind::EMPTY {
+                continue;
+            }
+            let Some(bound) = self.bound_groups.get(index).and_then(Option::as_ref) else {
+                return false;
+            };
+            if bound.kind != *expected {
+                return false;
+            }
+            if bound.resources.uniforms.len() != expected.uniforms.iter().flatten().count()
+                || bound.resources.textures.len() != expected.textures.iter().flatten().count()
+                || bound.resources.samplers.len() != expected.samplers.iter().flatten().count()
+                || bound.ranges.len() != bound.resources.uniforms.len()
+            {
+                return false;
+            }
+            let Some(slots) = plan.slots(index) else {
+                return false;
+            };
+            for (local, uniform) in bound.resources.uniforms.iter().enumerate() {
+                let slot = slots.uniforms as usize + local;
+                if self
+                    .required_uniform_sizes
+                    .get(slot)
+                    .is_none_or(|&size| uniform.len() < size)
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn binding_commands(&self) -> Option<Vec<NativeCommand>> {
+        let mut commands = Vec::new();
+        let plan = self.active_plan.as_ref()?;
+        for (index, expected) in plan.groups().iter().enumerate() {
+            let Some(expected) = expected else { continue };
+            let Some(bound) = self.bound_groups.get(index).and_then(Option::as_ref) else {
+                continue;
+            };
+            if bound.kind != *expected {
+                continue;
+            }
+            let Some(slots) = plan.slots(index) else {
+                continue;
+            };
+            for (local, uniform) in bound.resources.uniforms.iter().enumerate() {
+                let layout = bound.kind.uniforms.get(local).copied().flatten()?;
+                commands.push(NativeCommand::SetUniformGroup {
+                    uniform: uniform.clone(),
+                    slot: slots.uniforms + local as u32,
+                    visibility: layout.visibility,
+                    source_box: *bound.ranges.get(local)?,
+                });
+            }
+            for (local, texture) in bound.resources.textures.iter().enumerate() {
+                commands.push(NativeCommand::SetTexture {
+                    slot: slots.textures + local as u32,
+                    texture: texture.clone(),
+                });
+            }
+            for (local, sampler) in bound.resources.samplers.iter().enumerate() {
+                commands.push(NativeCommand::SetSampler {
+                    slot: slots.samplers + local as u32,
+                    sampler: sampler.clone(),
+                });
+            }
+        }
+        Some(commands)
     }
 }
 
@@ -361,9 +453,13 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        if index != 0
-            || !Arc::ptr_eq(&group.owner, &self.device)
-            || layout.group_for(&self.device).ok().flatten() != Some(group.kind)
+        let Ok(plan) = layout.plan_for(&self.device).cloned() else {
+            self.reject();
+            return;
+        };
+        let index = index as usize;
+        if !Arc::ptr_eq(&group.owner, &self.device)
+            || plan.groups().get(index).copied().flatten() != Some(group.kind)
         {
             self.reject();
             return;
@@ -382,6 +478,8 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         let mut offsets = dynamic_offsets.iter().copied();
         let mut ranges = Vec::with_capacity(group.resources.uniforms.len());
+        let mut resources = group.resources.clone();
+        resources.uniforms.clear();
         for (slot, uniform) in group.resources.uniforms.iter().enumerate() {
             let Some(layout) = group.kind.uniforms.get(slot).and_then(|layout| *layout) else {
                 self.reject();
@@ -401,6 +499,14 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             };
             ranges.push(range);
+            let fork = match self.device.fork_uniform_binding(uniform) {
+                Ok(fork) => Arc::new(fork),
+                Err(error) => {
+                    self.failure = Some(super::hal_device::device_error(error));
+                    return;
+                }
+            };
+            resources.uniforms.push(fork);
         }
         if let Some(target) = &render.target {
             let Ok(target) = (unsafe { target.GetResource() }) else {
@@ -418,37 +524,19 @@ impl crate::CommandEncoder for CommandEncoder {
                 }
             }
         }
-        render.bound_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
-        for (slot, uniform) in group.resources.uniforms.iter().enumerate() {
-            render.bound_uniform_sizes[slot] = uniform.len();
+        let prefix = render
+            .last_layout
+            .as_ref()
+            .map_or(0, |previous| previous.common_prefix(&plan));
+        for binding in &mut render.bound_groups[prefix..] {
+            *binding = None;
         }
-        render.bound_group = Some(group.kind);
-        render.sampling_resources = Some(group.resources.sampling.clone());
-        for (slot, uniform) in group.resources.uniforms.iter().enumerate() {
-            let Some(layout) = group.kind.uniforms.get(slot).and_then(|layout| *layout) else {
-                self.reject();
-                return;
-            };
-            let visibility = layout.visibility;
-            self.record(NativeCommand::SetUniformGroup {
-                uniform: uniform.clone(),
-                slot: slot as u32,
-                visibility,
-                source_box: ranges[slot],
-            });
-        }
-        for (slot, texture) in group.resources.textures.iter().enumerate() {
-            self.record(NativeCommand::SetTexture {
-                slot: slot as u32,
-                texture: texture.clone(),
-            });
-        }
-        for (slot, sampler) in group.resources.samplers.iter().enumerate() {
-            self.record(NativeCommand::SetSampler {
-                slot: slot as u32,
-                sampler: sampler.clone(),
-            });
-        }
+        render.last_layout = Some(plan);
+        render.bound_groups[index] = Some(BoundGroup {
+            kind: group.kind,
+            resources,
+            ranges,
+        });
     }
 
     unsafe fn set_immediates(
@@ -629,12 +717,11 @@ impl crate::CommandEncoder for CommandEncoder {
             extent,
             target: target.clone(),
             pipeline: false,
-            required_group: None,
-            bound_group: None,
+            active_plan: None,
+            last_layout: None,
+            bound_groups: (0..MAX_BIND_GROUPS).map(|_| None).collect(),
             sampling_pairs: Arc::new(Vec::new()),
-            sampling_resources: None,
             full_npot: super::capabilities::Query::Unavailable(0),
-            bound_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
             required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
             vertex: None,
             vertex_layout: None,
@@ -683,9 +770,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         render.pipeline = true;
-        render.required_group = pipeline
-            .group
-            .filter(|group| *group != super::hal_bind_group::GroupKind::EMPTY);
+        render.active_plan = Some(pipeline.bindings.clone());
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.full_npot = pipeline.full_npot;
         render.required_uniform_sizes = pipeline.required_uniform_sizes;
@@ -871,12 +956,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     .vertex_shaders
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
-            || (render.required_group.is_some() && render.required_group != render.bound_group)
-            || render
-                .bound_uniform_sizes
-                .iter()
-                .zip(render.required_uniform_sizes)
-                .any(|(&bound, required)| bound < required)
+            || !render.bindings_compatible()
             || !render.sampling_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
@@ -887,6 +967,13 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         let buffer = buffer.clone();
         let offset = *offset;
+        let Some(binding_commands) = render.binding_commands() else {
+            self.reject();
+            return;
+        };
+        for command in binding_commands {
+            self.record(command);
+        }
         self.record(NativeCommand::SetVertex {
             buffer,
             offset,
@@ -939,12 +1026,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     .vertex_shaders
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
-            || (render.required_group.is_some() && render.required_group != render.bound_group)
-            || render
-                .bound_uniform_sizes
-                .iter()
-                .zip(render.required_uniform_sizes)
-                .any(|(&bound, required)| bound < required)
+            || !render.bindings_compatible()
             || !render.sampling_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
@@ -958,6 +1040,13 @@ impl crate::CommandEncoder for CommandEncoder {
         let offset = *offset;
         let vertex_bytes = *vertex_bytes;
         let index = index.clone();
+        let Some(binding_commands) = render.binding_commands() else {
+            self.reject();
+            return;
+        };
+        for command in binding_commands {
+            self.record(command);
+        }
         let max_vertices =
             super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                 .max_triangle_vertices_per_draw();

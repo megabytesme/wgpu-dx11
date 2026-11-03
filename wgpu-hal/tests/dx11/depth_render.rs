@@ -28,11 +28,13 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         r#"
         @group(0) @binding(7) var image: texture_2d<f32>;
         @group(0) @binding(42) var image_sampler: sampler;
+        @group(1) @binding(33) var<uniform> tint: vec4f;
         struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }
         @vertex fn vs(@location(0) p: vec3f, @location(1) color: vec4f) -> Out {
             return Out(vec4f(p, 1.0), color);
         }
         @fragment fn fs(in: Out) -> @location(0) vec4f { return in.color * textureSample(image, image_sampler, vec2f(0.5)); }
+        @fragment fn fs_tint(in: Out) -> @location(0) vec4f { return in.color * textureSample(image, image_sampler, vec2f(0.5)) * tint; }
     "#,
     )
     .unwrap();
@@ -94,6 +96,44 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             })
             .unwrap()
     };
+    let tint_entries = [wgt::BindGroupLayoutEntry {
+        binding: 33,
+        visibility: wgt::ShaderStages::FRAGMENT,
+        count: None,
+        ty: wgt::BindingType::Buffer {
+            ty: wgt::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: core::num::NonZeroU64::new(16),
+        },
+    }];
+    let tint_layout = unsafe {
+        device
+            .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                label: None,
+                flags: crate::BindGroupLayoutFlags::empty(),
+                entries: &tint_entries,
+            })
+            .unwrap()
+    };
+    let tinted_layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[Some(&group_layout), Some(&tint_layout)],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    assert!(unsafe {
+        device.create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+            label: None,
+            flags: crate::PipelineLayoutFlags::empty(),
+            bind_group_layouts: &[Some(&tint_layout), Some(&group_layout)],
+            immediate_size: 0,
+        })
+    }
+    .is_err());
     let attrs = [
         wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x3,
@@ -202,12 +242,31 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
     )
     .is_err());
     let additive_pipeline = make_pipeline(
-        no_write,
+        no_write.clone(),
         wgt::ColorWrites::RED | wgt::ColorWrites::BLUE,
         Some(super::super::hal_pipeline::ADDITIVE_BLEND),
     )
     .unwrap();
     let pipeline = make_pipeline(depth, wgt::ColorWrites::ALL, None).unwrap();
+    let tinted_pipeline = unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &tinted_layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &vertex_layout,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: Some(no_write),
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs_tint")),
+                color_targets: &[Some(wgt::TextureFormat::Rgba8Unorm.into())],
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -334,6 +393,45 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                 textures: &sampled_bindings,
                 samplers: &sampler_bindings,
                 entries: &group_bindings,
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
+    let tint_buffer = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage: wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    let tint_data: Vec<_> = [0.5f32, 0.5, 0.5, 1.0]
+        .iter()
+        .flat_map(|v| v.to_ne_bytes())
+        .collect();
+    native.write_byte_buffer(&tint_buffer, 0, &tint_data)?;
+    let tint_buffers = [crate::BufferBinding::new_unchecked(
+        &tint_buffer,
+        0,
+        core::num::NonZeroU64::new(16),
+    )];
+    let tint_group_entries = [crate::BindGroupEntry {
+        binding: 33,
+        resource_index: 0,
+        count: 1,
+    }];
+    let tint_group = unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &tint_layout,
+                buffers: &tint_buffers,
+                textures: &[],
+                samplers: &[],
+                entries: &tint_group_entries,
                 acceleration_structures: &[],
                 external_textures: &[],
             })
@@ -634,7 +732,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         commands.push(command);
     }
-    for case in 0..26 {
+    for case in 0..27 {
         let attachments = [Some(crate::ColorAttachment {
             target: crate::Attachment {
                 view: &color_view,
@@ -718,6 +816,11 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                     encoder.draw(0, 3, 0, 1);
                     encoder.draw(9, 3, 0, 1);
                 }
+                26 => {
+                    encoder.set_render_pipeline(&tinted_pipeline);
+                    encoder.set_bind_group(&tinted_layout, 1, &tint_group, &[]);
+                    encoder.draw(6, 3, 0, 1);
+                }
                 _ => unreachable!(),
             }
             encoder.end_render_pass();
@@ -728,6 +831,8 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device.destroy_texture_view(depth_view);
         device.destroy_texture(depth_texture);
         device.destroy_bind_group(group);
+        device.destroy_bind_group(tint_group);
+        device.destroy_buffer(tint_buffer);
         device.destroy_sampler(sampler);
         device.destroy_texture_view(sampled_view);
         device.destroy_texture(sampled_texture);
@@ -754,11 +859,12 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                         21 | 23 => [128, 0, 0, 255],
                         25 if i % 8 < 4 => [128, 0, 0, 255],
                         25 => [0, 0, 255, 0],
+                        26 => [64, 96, 32, 255],
                         _ => unreachable!(),
                     };
                     assert_eq!(pixel, expected, "cull case {bits}, pixel {i}");
                 }
-                std::println!("FL9_1 cull case {bits}: 64/64 pixels matched");
+                std::println!("FL9_1 graphics case {bits}: 64/64 pixels matched");
                 continue;
             }
             if bits == 16 {

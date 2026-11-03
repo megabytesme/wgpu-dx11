@@ -324,18 +324,31 @@ also passed: that built-in is rejected by the FL9_1 pixel profile even though
 rasterizer face culling works. A direct FXC probe produced X4583 and X4568.
 Face culling was checkpointed as `f8bd5183a`.
 
-Multiple bind-group execution remains disabled. A pipeline-wide register-plan
+At the next checkpoint, a pipeline-wide register-plan
 scaffold allocates disjoint compact slots across logical groups and feeds the
 existing group-0 shader path; synthetic tests cover holes, visibility, sparse
-bindings and aggregate register exhaustion. It does not yet permit a second
-group. Safe execution still requires per-group retained state, HAL layout-prefix
-invalidation and draw-time validation. In particular, a single UniformBinding
-currently owns one native constant buffer: reusing it at two indices with
-different dynamic offsets would alias, so each simultaneous logical binding
-needs independent materialization before multi-group draws can be enabled.
+bindings and aggregate register exhaustion. That checkpoint did not yet permit
+a second group. An audit found that reusing one uniform materialization buffer
+at two indices with different dynamic offsets would alias.
 The 165-test strict private suite passed before the final allocator hardening;
 afterward, the allocator test and a forced-FL9_1 dynamic-uniform GPU test
 passed, with readback [143,207,16,255] and [143,143,16,255]. The allocator
 rejects non-dense internal resource arrays and aggregate slot overflow; a
 Naga/FXC test compiled distinct group-0 and group-2 uniforms using the same
 logical binding number. Targeted Clippy passed with ten existing warnings.
+
+Register planning was checkpointed as `f4df16d8b`. The current implementation
+adds uniform-only groups after group 0, preserves layout-prefix invalidation,
+and allocates independent constant-buffer materialization per group binding.
+It rebinds using the active pipeline plan at each draw. Strict GPU tests cover
+the same group at groups 0 and 2 with different dynamic offsets, a queued GPU
+copy, direct and indexed draws, layout-prefix invalidation, pipeline switches
+that move a native register, resource destruction before submit, and texture
+sampling in group 0 with a group-1 uniform. The 64 checked pixels matched in
+each case, including [64,128,0,255], [0,128,191,255] and [64,96,32,255].
+The strict 167-test private suite passed; some older tests may skip internally.
+An independent review found no concrete correctness defect. Dynamic offsets
+here have private four-byte alignment, not a public wgpu limit. Each group bind
+allocates scratch buffers and each draw stages and maps all bound uniforms;
+this is correctness-first and can stall substantially. Sampled bindings remain
+restricted to group 0, and public adapter exposure remains disabled.

@@ -914,8 +914,11 @@ fn sampled_triangle_variant(
         };
         assert!(unsafe { device.create_render_pipeline(&unsupported_desc) }.is_err());
     }
-    assert_eq!(pipeline.group, Some(group_layout.kind));
-    let mapped = pipeline.group.unwrap();
+    assert_eq!(
+        pipeline.bindings.groups().first().copied().flatten(),
+        Some(group_layout.kind)
+    );
+    let mapped = pipeline.bindings.groups()[0].unwrap();
     assert_eq!(
         mapped.uniforms[0].map(|uniform| uniform.minimum),
         combined.then_some(if multi { 0 } else { 16 })

@@ -268,12 +268,17 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 lev
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_uniform_ranges -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_two_uniforms_with_sampled_textures -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_forked_uniform_bindings_keep_dynamic_ranges_independent -- --nocapture --test-threads=1
 ```
 
 The first two are CPU/compiler tests. The hardware tests verify sparse static
 ranges, GPU-upload ordering, vertex/fragment use, padded and nested matrix
 structures, array stride, pipeline and group transitions, and coexistence with
-sampled textures.
+sampled textures. The multi-group test binds one group at two indices with
+different dynamic offsets, switches pipeline register plans, tests layout
+prefix invalidation and checks all pixels after direct and indexed draws.
+The scratch test reads back both distinct GPU constant-buffer snapshots.
 
 ### FL9_1 depth attachments
 
@@ -287,6 +292,8 @@ orders, verifies initial zero depth, checks independent depth-only and
 stencil-only clears, and checks an Always/no-write pipeline. Ten 8x8 readbacks
 are compared in full. It also checks attachment extent and pipeline mismatch
 rejection. Stencil tests and read-only/aspect views are not implemented.
+Additional passes cover all color write masks, face culling and a sampled
+texture in group 0 with a uniform in group 1.
 
 ### FL9_1 default buffer bind flags
 

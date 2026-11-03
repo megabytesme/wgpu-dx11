@@ -104,8 +104,7 @@ pub(super) const VIGNETTE_BLEND: wgt::BlendState = wgt::BlendState {
 #[derive(Debug)]
 pub struct PipelineLayout {
     owner: Arc<NativeDevice>,
-    group: Option<super::hal_bind_group::GroupKind>,
-    bindings: super::hal_bind_group::BindingPlan,
+    bindings: Arc<super::hal_bind_group::BindingPlan>,
 }
 crate::impl_dyn_resource!(PipelineLayout);
 impl crate::DynPipelineLayout for PipelineLayout {}
@@ -124,7 +123,7 @@ pub struct RenderPipeline {
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
     pub(super) depth_format: Option<wgt::TextureFormat>,
     pub(super) target_format: wgt::TextureFormat,
-    pub(super) group: Option<super::hal_bind_group::GroupKind>,
+    pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
@@ -467,7 +466,7 @@ mod tests {
         };
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
         assert!(matches!(
-            pipeline.group,
+            pipeline.bindings.groups().first().copied().flatten(),
             Some(group) if group.textures[0].is_some()
         ));
         let texture_desc = crate::TextureDescriptor {
@@ -621,29 +620,31 @@ crate::impl_dyn_resource!(RenderPipeline);
 impl crate::DynRenderPipeline for RenderPipeline {}
 
 impl PipelineLayout {
-    pub(super) fn group_for(
+    pub(super) fn plan_for(
         &self,
         owner: &Arc<NativeDevice>,
-    ) -> Result<Option<super::hal_bind_group::GroupKind>, crate::DeviceError> {
+    ) -> Result<&Arc<super::hal_bind_group::BindingPlan>, crate::DeviceError> {
         if !Arc::ptr_eq(owner, &self.owner) {
             return Err(crate::DeviceError::Unexpected);
         }
-        Ok(self.group)
+        Ok(&self.bindings)
     }
 
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         desc: &crate::PipelineLayoutDescriptor<super::hal_bind_group::BindGroupLayout>,
     ) -> Result<Self, crate::DeviceError> {
-        let group = match desc.bind_group_layouts {
-            layouts if layouts.iter().all(Option::is_none) => None,
-            [Some(layout), rest @ ..]
-                if layout.belongs_to(&owner) && rest.iter().all(Option::is_none) =>
-            {
-                Some(layout.kind)
+        for (index, layout) in desc.bind_group_layouts.iter().enumerate() {
+            if let Some(layout) = layout {
+                if !layout.belongs_to(&owner)
+                    || (index != 0
+                        && (layout.kind.textures.iter().any(Option::is_some)
+                            || layout.kind.samplers.iter().any(Option::is_some)))
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
             }
-            _ => return Err(crate::DeviceError::Unexpected),
-        };
+        }
         // Core supplies these D3D12-specific root-constant flags on every
         // layout. D3D11 has no such root constants; supported DX11 shaders
         // and draws must still satisfy their own feature restrictions.
@@ -657,12 +658,8 @@ impl PipelineLayout {
             .iter()
             .map(|layout| layout.map(|layout| layout.kind))
             .collect();
-        let bindings = super::hal_bind_group::BindingPlan::new(&groups)?;
-        Ok(Self {
-            owner,
-            group,
-            bindings,
-        })
+        let bindings = Arc::new(super::hal_bind_group::BindingPlan::new(&groups)?);
+        Ok(Self { owner, bindings })
     }
 }
 
@@ -779,16 +776,27 @@ impl RenderPipeline {
             ),
         ] {
             for (binding, size) in module.required_uniform_sizes(stage, entry)? {
-                let group = desc.layout.group.ok_or_else(invalid)?;
+                let group_index = binding.group as usize;
+                let group = desc
+                    .layout
+                    .bindings
+                    .groups()
+                    .get(group_index)
+                    .copied()
+                    .flatten()
+                    .ok_or_else(invalid)?;
+                let slots = desc
+                    .layout
+                    .bindings
+                    .slots(group_index)
+                    .ok_or_else(invalid)?;
                 let (slot, uniform) = group
                     .uniforms
                     .iter()
                     .enumerate()
                     .find_map(|(slot, item)| {
                         item.filter(|u| {
-                            binding.group == 0
-                                && u.binding == binding.binding
-                                && u.visibility.contains(visibility)
+                            u.binding == binding.binding && u.visibility.contains(visibility)
                         })
                         .map(|u| (slot, u))
                     })
@@ -796,6 +804,7 @@ impl RenderPipeline {
                 if uniform.minimum != 0 && size > uniform.minimum {
                     return Err(invalid());
                 }
+                let slot = slot + slots.uniforms as usize;
                 required_uniform_sizes[slot] = required_uniform_sizes[slot].max(size);
             }
         }
@@ -1008,7 +1017,7 @@ impl RenderPipeline {
             depth_state,
             depth_format: desc.depth_stencil.as_ref().map(|state| state.format),
             target_format: target.format,
-            group: desc.layout.group,
+            bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),
             full_npot,
             required_uniform_sizes,

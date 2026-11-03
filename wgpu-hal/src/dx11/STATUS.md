@@ -26,8 +26,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
-- Group-0 layouts with up to eight sampled textures, sixteen samplers and thirteen
-  static or dynamic uniform slots, and shader-aware pair validation; restricted
+- Up to eight uniform groups with thirteen static or dynamic uniform slots in
+  total; group 0 alone supports up to eight sampled textures and sixteen samplers.
+  Shader-aware pair validation and restricted
   Naga/FXC shaders.
 - Triangle-list passes with one interleaved vertex buffer, winding and face
   culling, bounds-checked scissors, per-channel color write masks,

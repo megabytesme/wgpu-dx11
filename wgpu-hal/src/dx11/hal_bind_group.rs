@@ -90,13 +90,29 @@ pub(super) struct GroupSlots {
     pub samplers: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct BindingPlan {
     groups: alloc::vec::Vec<Option<GroupKind>>,
     slots: alloc::vec::Vec<GroupSlots>,
 }
 
 impl BindingPlan {
+    pub(super) fn groups(&self) -> &[Option<GroupKind>] {
+        &self.groups
+    }
+
+    pub(super) fn slots(&self, index: usize) -> Option<GroupSlots> {
+        self.slots.get(index).copied()
+    }
+
+    pub(super) fn common_prefix(&self, other: &Self) -> usize {
+        self.groups
+            .iter()
+            .zip(&other.groups)
+            .take_while(|(left, right)| left == right)
+            .count()
+    }
+
     pub(super) fn new(groups: &[Option<GroupKind>]) -> Result<Self, crate::DeviceError> {
         fn dense_count<T>(items: &[Option<T>]) -> Result<u32, crate::DeviceError> {
             let count = items.iter().take_while(|item| item.is_some()).count();
