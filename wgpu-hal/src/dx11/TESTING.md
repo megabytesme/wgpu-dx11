@@ -525,6 +525,25 @@ verified 12 upload/copy/readback pixels each for RGBA8 and BGRA8 copy-only views
 and rejected incompatible view usages. Neither result establishes historical
 driver behavior or general public adapter support.
 
+### COPY_DST-only POT mip uploads
+
+With strict hardware mode enabled:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_copy_dst_only_mips_upload_and_usage_boundaries -- --nocapture --test-threads=1
+```
+
+For RGBA8 and BGRA8 on the RTX 3090 Ti at requested and selected FL9_1, the
+test uploaded three mip levels and checked an untouched zero-initialized mip.
+After the upload fence, it used an explicit test-only native GPU-to-GPU copy
+into a separate render-target-capable texture for readback. The original
+`COPY_DST`-only texture rejected logical copy-source, readback, sampled-view and
+render-target-view use. A controlled core case submitted three writes, waited
+for completion and verified forbidden view/readback validation; no core
+readback of the upload-only texture is claimed. Historical hardware remains
+unverified and ordinary public adapter enumeration remains disabled.
+
 ### Copy-only POT mip transfers
 
 ```powershell

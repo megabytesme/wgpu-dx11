@@ -39,6 +39,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   the device reports the required format bits. Strict RTX FL9_1 tests exercised
   four levels, partial uploads, cross-resource copies, readback, metadata views
   and resource retention; a core fixture checked all 43 mip-chain pixels.
+- POT RGBA8 and BGRA8 mip chains also accept logical `COPY_DST` alone. Strict
+  RTX tests uploaded three mips and verified an untouched zero mip through a
+  test-only native GPU-to-GPU copy to a separate readable render-target texture.
+  Core submitted three writes, waited for completion and rejected forbidden
+  view/readback uses; it did not read back the upload-only texture. Historical
+  FL9 drivers remain unverified, and public enumeration remains disabled.
 - Copies between distinct mips of one supported texture use native DEFAULT to
   DEFAULT `CopySubresourceRegion` with an explicit source box. Strict RTX tests
   checked partial copies in both directions with full padded readback for RGBA8

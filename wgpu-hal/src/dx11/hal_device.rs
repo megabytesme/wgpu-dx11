@@ -725,7 +725,14 @@ mod tests {
         assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
         invalid = desc.clone();
         invalid.usage = wgt::TextureUses::COPY_DST;
-        assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
+        let upload_only = unsafe { crate::Device::create_texture(&device, &invalid) }.unwrap();
+        for mip in 0..4 {
+            assert_eq!(native.texture_copy_destination(&upload_only, mip)?.2, mip);
+            assert!(native
+                .texture_copy_texture_source(&upload_only, mip)
+                .is_err());
+        }
+        assert!(native.read_rgba_texture(&upload_only, 0, 0).is_err());
         let texture = unsafe { crate::Device::create_texture(&device, &desc) }.unwrap();
         for mip in 0..4 {
             let data = native.read_rgba_texture(&texture, mip, 0)?;
@@ -748,6 +755,23 @@ mod tests {
         };
         let view =
             unsafe { crate::Device::create_texture_view(&device, &texture, &view_desc) }.unwrap();
+        let upload_view =
+            unsafe { crate::Device::create_texture_view(&device, &upload_only, &view_desc) }
+                .unwrap();
+        assert!(upload_view.shader_resource().is_none());
+        assert!(upload_view.render_target().is_none());
+        assert!(native.sampled_view(&upload_view).is_err());
+        let mut invalid_upload_view = view_desc.clone();
+        invalid_upload_view.usage = wgt::TextureUses::RESOURCE;
+        assert!(unsafe {
+            crate::Device::create_texture_view(&device, &upload_only, &invalid_upload_view)
+        }
+        .is_err());
+        invalid_upload_view.usage = wgt::TextureUses::COLOR_TARGET;
+        assert!(unsafe {
+            crate::Device::create_texture_view(&device, &upload_only, &invalid_upload_view)
+        }
+        .is_err());
         assert!(view.shader_resource().is_none());
         assert!(view.render_target().is_none());
         assert!(native.sampled_view(&view).is_err());
@@ -966,6 +990,8 @@ mod tests {
                 crate::Device::destroy_texture_view(&device, attachment_view);
             }
             crate::Device::destroy_texture(&device, upload_sample);
+            crate::Device::destroy_texture(&device, upload_only);
+            crate::Device::destroy_texture_view(&device, upload_view);
             crate::Device::destroy_texture(&device, sampled);
             crate::Device::destroy_texture_view(&device, sampled_view);
             for suffix in suffix_views {

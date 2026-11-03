@@ -234,6 +234,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
     if rgba_mips {
         copy_only_mip_chain(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
+        upload_only_mip_chain(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
         render_mip_chain(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
     } else {
         assert!(
@@ -247,6 +248,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     if bgra_mips {
         copy_only_mip_chain(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
+        upload_only_mip_chain(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
         render_mip_chain(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
     } else {
         assert!(!required, "strict mode requires BGRA8 mip support");
@@ -679,6 +681,166 @@ fn render_mip_chain(
     global.texture_drop(render_only);
     global.buffer_drop(readback);
     std::println!("PASS: {format:?} rendered mip views and initialization: 43 pixels matched; render-only mip pass submitted");
+}
+
+fn upload_only_mip_chain(
+    global: &Global,
+    device: crate::id::DeviceId,
+    queue: crate::id::QueueId,
+    format: wgt::TextureFormat,
+) {
+    let (texture, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 8,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 4,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format,
+            usage: wgt::TextureUsages::COPY_DST,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "upload-only {format:?} mip texture: {error:?}"
+    );
+    let (view, error) = global.texture_create_view(
+        texture,
+        &crate::resource::TextureViewDescriptor::default(),
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "upload-only {format:?} metadata view: {error:?}"
+    );
+    global.texture_view_drop(view);
+    for usage in [
+        wgt::TextureUsages::TEXTURE_BINDING,
+        wgt::TextureUsages::RENDER_ATTACHMENT,
+    ] {
+        let (view, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor {
+                usage: Some(usage),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(crate::resource::CreateTextureViewError::InvalidTextureViewUsage { .. })
+            ),
+            "upload-only {format:?} must reject {usage:?} view: {error:?}"
+        );
+        global.texture_view_drop(view);
+    }
+    for (mip, width, height, color) in [
+        (0, 8, 4, [11u8, 23, 47, 255]),
+        (1, 4, 2, [53, 71, 89, 255]),
+        (3, 1, 1, [97, 107, 127, 255]),
+    ] {
+        global
+            .queue_write_texture(
+                queue,
+                &wgt::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: mip,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &color.repeat((width * height) as usize),
+                &wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 4),
+                    rows_per_image: Some(height),
+                },
+                &wgt::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .expect("upload-only mip queue write");
+    }
+    let submission = global
+        .queue_submit(queue, &[])
+        .expect("upload-only mip submit");
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .expect("upload-only mip completion");
+
+    let (readback, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 256,
+            usage: wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "upload-only negative buffer: {error:?}");
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "upload-only negative encoder: {error:?}");
+    global
+        .command_encoder_copy_texture_to_buffer(
+            encoder,
+            &wgt::TexelCopyTextureInfo {
+                texture,
+                mip_level: 3,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &wgt::TexelCopyBufferInfo {
+                buffer: readback,
+                layout: wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(1),
+                },
+            },
+            &wgt::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        )
+        .expect("recording defers copy usage validation");
+    let (invalid_command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some((_, crate::command::CommandEncoderError::Transfer(
+                crate::command::TransferError::MissingTextureUsage(missing)
+            ))) if missing.actual == wgt::TextureUsages::COPY_DST
+                && missing.expected == wgt::TextureUsages::COPY_SRC
+        ),
+        "upload-only readback must fail with missing COPY_SRC: {error:?}"
+    );
+    global.command_buffer_drop(invalid_command);
+    global.command_encoder_drop(encoder);
+    global.buffer_drop(readback);
+    global.texture_drop(texture);
+    std::println!("PASS: {format:?} upload-only mip creation, three ordered queue writes and completion; no readback claimed");
 }
 
 fn copy_only_mip_chain(

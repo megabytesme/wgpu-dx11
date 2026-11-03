@@ -212,6 +212,17 @@ per format through GPU upload, copy and readback. Multi-mip copy-only textures
 also support checked metadata-only views of selected mip ranges. They do not
 provide native sampled or render-target mip views.
 
+POT RGBA8 and BGRA8 mip chains also support logical `COPY_DST` alone when the
+required format queries succeed. The strict FL9_1 RTX test uploaded three mip
+levels and checked an untouched zero-initialized fourth level. To inspect the
+upload-only texture, the test used an explicit native GPU-to-GPU diagnostic
+copy into a separate render-target-capable texture, then read that texture;
+the original texture still rejects logical copy-source, readback, sampled-view
+and render-target-view use. The controlled core test submitted three writes and
+checked completion and forbidden view/readback validation; it did not read
+back the upload-only texture. Historical drivers remain unverified and ordinary
+public adapter enumeration remains disabled.
+
 Sampled multi-mip textures use `COPY_DST | RESOURCE` with optional `COPY_SRC`,
 or `RESOURCE | COLOR_TARGET` with optional `COPY_SRC` and/or `COPY_DST`.
 Native shader-resource views span a suffix through the resource's last mip.

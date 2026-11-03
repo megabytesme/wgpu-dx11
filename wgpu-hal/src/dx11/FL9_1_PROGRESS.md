@@ -1350,6 +1350,27 @@ zero-adapter isolation test passed. An independent
 review found no concrete ownership, identity or copy-contract defect. The
 native source and destination are DEFAULT textures and use an explicit box;
 historical FL9 drivers remain unverified.
+Checkpoint: `ddb1b7cd9d559af88ee9d16c9d73a69b1101edc0`.
 
 Next: investigate valid mipmapped COPY_DST-only texture creation, which core
 permits but the current private usage matrix rejects.
+
+Exact COPY_DST-only POT mip chains now use the existing copy-mip capability
+gate without exposing source, sampled or attachment usage. The strict baseline
+failed at texture creation before this change. Afterward, both RGBA8 and BGRA8
+passed three uploaded levels and an untouched zero level on the forced-FL9_1
+RTX. A test-only native DEFAULT-to-DEFAULT copy into a separate readable
+texture verified all mip pixels and padding; this does not grant COPY_SRC to
+the original. The controlled core fixture queued three writes, waited for
+completion and checked view and readback usage rejection for both formats; it
+does not claim core readback of the upload-only resource. Its first run exposed
+a test assumption that core transfer validation happens at recording; the test
+now asserts the exact missing-COPY_SRC error at command-buffer finish. The full
+strict suite passed 273 tests with two filtered; six dynamic-index GPU cases
+remain skipped. Clippy passed with ten existing test warnings, and core's
+zero-adapter isolation test passed. An independent
+review found no concrete usage leak or diagnostic copy defect. Historical FL9
+drivers remain unverified.
+
+Next: investigate accepting a non-filtering sampler layout with a nearest
+sampler, which core permits but the current private layout rejects.

@@ -196,7 +196,8 @@ pub(super) fn supported_mip_texture_usage(usage: wgt::TextureUses) -> bool {
     let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
     let upload_sample = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
     let sampled_target = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
-    usage == copy
+    usage == wgt::TextureUses::COPY_DST
+        || usage == copy
         || usage == upload_sample
         || usage == (copy | wgt::TextureUses::RESOURCE)
         || (usage.contains(wgt::TextureUses::COLOR_TARGET)
@@ -292,7 +293,7 @@ impl Capabilities {
                 return Err(UnsupportedShape);
             }
             let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
-            if usage == copy {
+            if usage == copy || usage == wgt::TextureUses::COPY_DST {
                 if !self.backend.pot_copy_only_mip_chains {
                     return Err(UnsupportedShape);
                 }
@@ -459,6 +460,74 @@ mod tests {
     }
 
     #[test]
+    fn upload_only_mips_require_copy_backend_pot_shape_and_driver_support() {
+        use TextureRejection::*;
+        let caps = model(FeatureLevel::L9_1);
+        let usage = wgt::TextureUses::COPY_DST;
+        assert!(supported_mip_texture_usage(usage));
+        assert!(!supported_mip_texture_usage(wgt::TextureUses::COPY_SRC));
+        assert!(!supported_mip_texture_usage(
+            usage | wgt::TextureUses::STORAGE_READ_ONLY
+        ));
+        for format in [
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureFormat::Bgra8Unorm,
+        ] {
+            let check = |caps: &Capabilities, size, layers, mips, samples| {
+                caps.check_private_texture_2d(format, usage, size, layers, mips, samples)
+            };
+            assert_eq!(check(&caps, [8, 4], 1, 4, 1), Ok(()));
+            for (size, layers, mips, samples) in [
+                ([8, 3], 1, 2, 1),
+                ([8, 4], 1, 5, 1),
+                ([8, 4], 2, 2, 1),
+                ([8, 4], 1, 2, 4),
+                ([0, 4], 1, 2, 1),
+            ] {
+                assert_eq!(
+                    check(&caps, size, layers, mips, samples),
+                    Err(UnsupportedShape)
+                );
+            }
+            let mut restricted = caps;
+            restricted.backend.pot_copy_only_mip_chains = false;
+            assert_eq!(check(&restricted, [8, 4], 1, 4, 1), Err(UnsupportedShape));
+            let flags = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+                | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+            let query = if format == wgt::TextureFormat::Rgba8Unorm {
+                &mut restricted.driver.rgba8
+            } else {
+                &mut restricted.driver.bgra8
+            };
+            restricted.backend.pot_copy_only_mip_chains = true;
+            *query = Query::Value(flags);
+            assert_eq!(check(&restricted, [8, 4], 1, 4, 1), Ok(()));
+            let query = if format == wgt::TextureFormat::Rgba8Unorm {
+                &mut restricted.driver.rgba8
+            } else {
+                &mut restricted.driver.bgra8
+            };
+            *query = Query::Unavailable(-1);
+            assert_eq!(
+                check(&restricted, [8, 4], 1, 4, 1),
+                Err(DriverQueryUnavailable)
+            );
+            let query = if format == wgt::TextureFormat::Rgba8Unorm {
+                &mut restricted.driver.rgba8
+            } else {
+                &mut restricted.driver.bgra8
+            };
+            *query = Query::Value(flags & !(D3D11_FORMAT_SUPPORT_MIP.0 as u32));
+            assert_eq!(
+                check(&restricted, [8, 4], 1, 4, 1),
+                Err(DriverFormatUnsupported)
+            );
+        }
+        assert!(!caps.public_adapter_supported());
+    }
+
+    #[test]
     fn copy_only_pot_mips_require_matching_backend_shape_and_driver() {
         use TextureRejection::*;
         let caps = model(FeatureLevel::L9_1);
@@ -503,6 +572,10 @@ mod tests {
                 );
             }
             assert_eq!(check(&caps, format, copy, [8, 4], 1, 4, 1), Ok(()));
+            assert_eq!(
+                check(&caps, format, wgt::TextureUses::COPY_DST, [8, 4], 1, 4, 1),
+                Ok(())
+            );
             assert_eq!(check(&caps, format, upload_sample, [8, 4], 1, 4, 1), Ok(()));
             assert_eq!(
                 check(&caps, format, upload_sample, [8, 3], 1, 2, 1),
@@ -563,7 +636,6 @@ mod tests {
             );
             for usage in [
                 wgt::TextureUses::COPY_SRC,
-                wgt::TextureUses::COPY_DST,
                 wgt::TextureUses::RESOURCE,
                 copy | wgt::TextureUses::RESOURCE
                     | wgt::TextureUses::COLOR_TARGET

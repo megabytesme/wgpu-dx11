@@ -4106,6 +4106,10 @@ mod bias_mip_tests;
 mod mip_transfer_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/mip_copy_dst_only.rs"]
+mod mip_copy_dst_only_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/same_texture_mips.rs"]
 mod same_texture_mips_tests;
 
