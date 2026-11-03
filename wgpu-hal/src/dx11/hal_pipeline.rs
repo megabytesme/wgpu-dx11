@@ -466,6 +466,7 @@ pub struct RenderPipeline {
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
     pub(super) depth_format: Option<wgt::TextureFormat>,
     pub(super) depth_write: bool,
+    pub(super) stencil_write: bool,
     pub(super) depth_never: bool,
     pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
@@ -2327,6 +2328,7 @@ impl RenderPipeline {
         }
         let mut depth_never = false;
         let mut depth_bias = 0;
+        let mut stencil_write = false;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if state.format != wgt::TextureFormat::Depth24PlusStencil8 {
                 return Err(invalid());
@@ -2355,6 +2357,11 @@ impl RenderPipeline {
             } else {
                 comparison
             };
+            stencil_write = stencil_enable
+                && stencil_write_mask != 0
+                && (face.StencilFailOp != D3D11_STENCIL_OP_KEEP
+                    || face.StencilDepthFailOp != D3D11_STENCIL_OP_KEEP
+                    || face.StencilPassOp != D3D11_STENCIL_OP_KEEP);
             if suppress_draws && !stencil_enable {
                 depth_never_read_only_bindings(&desc.layout.bindings);
             }
@@ -2650,6 +2657,7 @@ impl RenderPipeline {
                 .depth_stencil
                 .as_ref()
                 .is_some_and(|state| state.depth_write_enabled.unwrap_or(false)),
+            stencil_write,
             depth_never,
             target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),

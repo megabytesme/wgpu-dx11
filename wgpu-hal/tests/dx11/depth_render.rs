@@ -1642,7 +1642,7 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let make_pipeline = |write| unsafe {
+    let make_pipeline = |write, stencil: &wgt::StencilState| unsafe {
         device
             .create_render_pipeline(&crate::RenderPipelineDescriptor {
                 label: None,
@@ -1656,7 +1656,7 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
                     format: wgt::TextureFormat::Depth24PlusStencil8,
                     depth_write_enabled: Some(write),
                     depth_compare: Some(wgt::CompareFunction::LessEqual),
-                    stencil: wgt::StencilState::default(),
+                    stencil: stencil.clone(),
                     bias: wgt::DepthBiasState::default(),
                 }),
                 multisample: wgt::MultisampleState::default(),
@@ -1667,8 +1667,22 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
             })
             .unwrap()
     };
-    let read_pipeline = make_pipeline(false);
-    let write_pipeline = make_pipeline(true);
+    let read_pipeline = make_pipeline(false, &wgt::StencilState::default());
+    let write_pipeline = make_pipeline(true, &wgt::StencilState::default());
+    let stencil_face = wgt::StencilFaceState {
+        compare: wgt::CompareFunction::Always,
+        pass_op: wgt::StencilOperation::Replace,
+        ..wgt::StencilFaceState::IGNORE
+    };
+    let stencil_write_pipeline = make_pipeline(
+        false,
+        &wgt::StencilState {
+            front: stencil_face,
+            back: stencil_face,
+            read_mask: 0xff,
+            write_mask: 0xff,
+        },
+    );
     let vertices = unsafe {
         device
             .create_buffer(&crate::BufferDescriptor {
@@ -1809,6 +1823,14 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
             encoder.end_encoding().is_err(),
             "write-enabled pipeline on read-only attachment"
         );
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&read_pass).unwrap();
+        encoder.set_render_pipeline(&stencil_write_pipeline);
+        encoder.end_render_pass();
+        assert!(
+            encoder.end_encoding().is_err(),
+            "stencil-writing pipeline on read-only attachment"
+        );
         let load_store = crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE;
         for (usage, depth_ops, stencil_ops) in [
             (
@@ -1901,6 +1923,7 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
         device.destroy_buffer(vertices);
         device.destroy_render_pipeline(read_pipeline);
         device.destroy_render_pipeline(write_pipeline);
+        device.destroy_render_pipeline(stencil_write_pipeline);
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
         queue.submit(&[&write_commands], &[], (&fence, 2)).unwrap();
