@@ -44,10 +44,15 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   suffix-view tests passed on the RTX FL9_1 device, including 64 blue pixels
   through the controlled core fixture. Without `COPY_SRC`, core cases sampled
   an uploaded blue mip and an untouched zero mip, each across 64 pixels; direct
-  readback from that shader-resource-only texture is unavailable. Non-suffix sampled views,
-  multi-mip attachments, NPOT mip chains and self-copies remain unsupported.
+  readback from that shader-resource-only texture is unavailable. Non-suffix
+  sampled views, NPOT mip chains and self-copies remain unsupported.
   FL9 sampled views must include the smallest resource mip, and
   historical GPU behavior is unverified.
+- POT RGBA8 and BGRA8 color-attachment mip chains support an individual
+  single-mip render-target view, with optional copy-source and copy-destination
+  usage. Sampled and transient usage cannot be combined with this path. Strict
+  GPU readback passed for both formats; core checked all 43 pixels per format
+  and submitted a render-only mip pass without direct readback.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,

@@ -62,8 +62,8 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | --- | --- | --- |
 | Device / adapter | Native DXGI hardware discovery and explicitly selected feature levels exist. HAL adapter is uninhabited and enumeration is empty. | Hardware probe and zero-adapter tests. No `Limits`, `Features`, `DownlevelCapabilities`, format capability set, or wgpu device is advertised. A new adapter must be truthful and satisfy every valid operation it permits. |
 | Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; vertex+index is rejected at 9_1/9_2. Storage and indirect usages are absent. | Copy, map, initialization and ownership tests. `UNRESTRICTED_INDEX_BUFFER` and limits can describe some restrictions, but mapping coherency, initialization, complete usage combinations and lifetime validation need an audit. |
-| 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private RGBA8 and BGRA8 2D textures have one layer and sample; restricted copy-only and sampled POT textures can have multiple mips. D24S8 remains single-mip and attachment-only. | Transfer, view, clear and draw readback tests. Per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
-| Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 textures can have mip chains when format support is reported. Sampled chains require exact copy-destination and resource usage, optionally with copy-source, and a suffix view that includes the resource's last mip; attachment views remain single-mip. Arrays and NPOT mip chains remain unavailable. | Strict FL9_1 tests verify per-mip transfers and full-chain and suffix-view sampling on the RTX. Arbitrary non-suffix views need validation or emulation. Public exposure remains blocked. |
+| 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private RGBA8 and BGRA8 2D textures have one layer and sample; restricted copy-only, sampled and color-attachment POT textures can have multiple mips. D24S8 remains single-mip and attachment-only. | Transfer, view, clear and draw readback tests. Per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
+| Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 textures can have mip chains when format support is reported. Sampled chains require copy-destination and resource usage, optionally with copy-source, and a suffix view that includes the resource's last mip. Color-attachment chains have individual single-mip views. Arrays and NPOT mip chains remain unavailable. | Strict FL9_1 tests verify per-mip transfers, attachment rendering and full-chain and suffix-view sampling on the RTX. Arbitrary non-suffix sampled views need validation or emulation. Public exposure remains blocked. |
 | Samplers | Independent point/linear min/mag, clamp/wrap/mirror and anisotropy up to 2 are implemented in the private HAL. Border addressing and comparison samplers are rejected; translated LOD ranges are checked against each used sampled view. | Patterned FL9_1 GPU readback covers filter and address modes, sampled mip levels and sampler switching. Anisotropy 2 creates and samples but visual anisotropic quality is unverified. Public feature/limit representation remains incomplete. |
 | Bind groups / registers | Up to eight private groups may contain uniforms, sampled textures and samplers, with aggregate limits of thirteen uniforms, eight textures and sixteen samplers. Each draw checks only texture/sampler relationships used by the selected shader entry points. | Sparse multi-group, dynamic-offset, pipeline-transition and cross-group sampled-texture GPU tests cover selected configurations; FXC limits distinct sampled relationships and constants. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
 | Vertex / index formats | Native FL9 has wider IA support than the HAL. Private pipelines accept up to sixteen sparse vertex- or instance-rate streams, including zero-stride constant streams, and restricted float, unorm and `Snorm16x2`/`Snorm16x4` formats. FL9_1 requires input-assembler support for both SNORM formats; pipeline creation relies on that guarantee, while the hardware test queries the actual device. Attributes retain four-byte alignment. Multi-slot configurations support direct triangle lists, nonindexed strips and Uint16/Uint32 indexed triangle lists with translation when needed. On FL9_1, overlapping elements in a logical stream are assigned to distinct native slots bound to the same buffer. | Indexed and non-indexed readback, sparse-slot, overlap, zero-stride, SNORM vertex and rejected-index tests, plus controlled core renders. Limits and downlevel flags cover only part of the contract; other core-valid vertex formats and layouts need implementation or validation. Overlapping physical reads, stream offsets and maximum strides remain unverified on historical 9_1 drivers. SNORM vertex support does not imply SNORM texture support. |
@@ -154,10 +154,10 @@ stall the CPU. Native
 diagnostic texture constructors remain separate and can create uninitialized
 resources. The private color HAL accepts one-layer, one-sample RGBA8 or BGRA8
 2D textures and enforces feature-level size limits. Multiple mips require POT
-dimensions, exact `COPY_SRC | COPY_DST`, `COPY_DST | RESOURCE` or
-`COPY_SRC | COPY_DST | RESOURCE` usage and positive per-format
+dimensions, one of the supported copy-only, sampled or color-attachment usage
+combinations and positive per-format
 `D3D11_FORMAT_SUPPORT_MIP`, texture and shader-sample bits; copy-source usage
-also requires render-target support.
+or color-attachment usage also requires render-target support.
 The `check_private_texture_2d` predicate represents this restricted subset,
 not general mip capability. Raw BGRA8
 uploads and readback retain B,G,R,A byte order; shader sampling and render
@@ -179,8 +179,10 @@ provide native sampled or render-target mip views.
 Sampled multi-mip textures use exactly `COPY_DST | RESOURCE` or
 `COPY_SRC | COPY_DST | RESOURCE`, and shader-resource views spanning a suffix
 through the resource's last mip. The former has no copy-source usage and cannot
-be directly read back; its native resource uses only a shader-resource bind. No
-multi-mip attachment view is implemented. Sampled view metadata and the selected shader relationships drive
+be directly read back; its native resource uses only a shader-resource bind.
+Color-attachment mip chains use `COLOR_TARGET` with optional `COPY_SRC` and/or
+`COPY_DST`, excluding `RESOURCE` and `TRANSIENT`; each attachment view selects
+one mip. Sampled view metadata and the selected shader relationships drive
 LOD compatibility validation at draw time; no cross-product check rejects an
 unused texture/sampler pair. On the tested RTX FL9_1 device, a same-pass
 pipeline and bind-group transition retained caller-destroyed sampled resources
@@ -193,6 +195,11 @@ fixture checked all 43 pixels of a four-level chain. FL9 shader-resource views
 must include the smallest resource mip; arbitrary core-valid views would require
 validation or emulation before public exposure. Historical GPU behavior is
 unverified.
+
+Individual-mip color attachment tests passed for RGBA8 and BGRA8 on the RTX
+at FL9_1, including full-chain readback checks. The controlled core fixture
+checked all 43 pixels for each format and submitted a render-only mip pass;
+the latter has no direct pixel readback.
 
 HAL transfer commands use explicit regions. No staging-to-default native copy with
 a null source box is used, avoiding the documented 9_x corruption case for

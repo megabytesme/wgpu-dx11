@@ -1081,3 +1081,21 @@ The full strict suite passed 244 tests with two filtered and three older shader
 hardware cases skipped internally. HAL Clippy passed with ten existing test
 warnings, and the core zero-adapter test passed. An independent review found no
 concrete issue. Public enumeration stays off.
+Checkpoint: `4a4b6eec90c12a8d3ba35629311ab1d58e052284`.
+
+Next: individual FL9 2D render-target mip views. Core creates an internal
+attachment view for each mip, including on render-only textures; native RTV
+descriptors and render-pass extents must select the actual mip. Keep sampled
+and attachment mip usage disjoint and preserve whole-resource alias checks.
+
+Individual POT RGBA8/BGRA8 color mip attachments now use explicit 2D RTV mip
+slices and mip-relative render extents, for COLOR_TARGET with optional copy
+usages. RESOURCE and TRANSIENT combinations remain unavailable. Strict RTX
+FL9_1 private execution passed both formats, verifying all chain pixels, padding,
+selected clears/draws, untouched initialization, invalid views and lifetimes.
+Controlled core execution checked 43/43 pixels for each format and separately
+submitted render-only mip clears. Independent production review found no
+concrete issue. The full strict private suite passed 245 tests, with two filtered
+and three older shader hardware cases skipped internally. HAL Clippy passed
+with ten existing test warnings, and ordinary core adapter enumeration stayed
+empty. Historical devices and public adapter exposure remain unverified.

@@ -19,20 +19,29 @@ pub struct Adapter {
 impl Adapter {
     /// Query the format prerequisites for the controlled copy-only RGBA8 mip test.
     pub fn test_fixture_copy_only_rgba8_mip_supported(&self) -> Result<bool, crate::DeviceError> {
-        use windows::Win32::Graphics::{
-            Direct3D11::{
-                D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
-                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
-            },
-            Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        self.test_fixture_mip_supported(
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        )
+    }
+
+    /// Query the format prerequisites for the controlled BGRA8 mip test.
+    pub fn test_fixture_bgra8_mip_supported(&self) -> Result<bool, crate::DeviceError> {
+        self.test_fixture_mip_supported(
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
+        )
+    }
+
+    fn test_fixture_mip_supported(
+        &self,
+        format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    ) -> Result<bool, crate::DeviceError> {
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+            D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
         };
         let AdapterInner::Fixture(native) = &self.inner;
-        let support = unsafe {
-            native
-                .raw_device()
-                .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)
-        }
-        .map_err(super::hal_device::device_error)?;
+        let support = unsafe { native.raw_device().CheckFormatSupport(format) }
+            .map_err(super::hal_device::device_error)?;
         let required = (D3D11_FORMAT_SUPPORT_MIP.0
             | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
             | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0

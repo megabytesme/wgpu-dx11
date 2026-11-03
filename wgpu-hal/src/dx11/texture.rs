@@ -15,8 +15,10 @@ use windows::{
                 ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_DEPTH_STENCIL,
                 D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CLEAR_DEPTH,
                 D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_MAP_READ, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-                D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC_0,
+                D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_SHADER_RESOURCE_VIEW_DESC,
+                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV,
+                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -353,13 +355,26 @@ impl NativeDevice {
         };
         if desc.Width == 0
             || desc.Height == 0
-            || desc.MipLevels != 1
+            || (desc.MipLevels > 1
+                && (view.usage != wgt::TextureUses::COLOR_TARGET
+                    || !desc.Width.is_power_of_two()
+                    || !desc.Height.is_power_of_two()))
+            || view.mip_count != 1
+            || view.mip_base >= desc.MipLevels
+            || view.mip_base >= u32::BITS
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
         }
-        Ok((render_target.clone(), format, [desc.Width, desc.Height]))
+        Ok((
+            render_target.clone(),
+            format,
+            [
+                (desc.Width >> view.mip_base).max(1),
+                (desc.Height >> view.mip_base).max(1),
+            ],
+        ))
     }
 
     /// Allocate an uninitialized 2D RGBA8 texture, with explicit mips and layers.
@@ -549,8 +564,20 @@ impl NativeDevice {
                 )?;
             }
             if render_target {
-                self.raw_device()
-                    .CreateRenderTargetView(&texture.raw, None, Some(&mut target))?;
+                let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
+                texture.raw.GetDesc(&mut texture_desc);
+                let target_desc = D3D11_RENDER_TARGET_VIEW_DESC {
+                    Format: texture_desc.Format,
+                    ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
+                    Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                        Texture2D: D3D11_TEX2D_RTV { MipSlice: mip_base },
+                    },
+                };
+                self.raw_device().CreateRenderTargetView(
+                    &texture.raw,
+                    Some(&target_desc),
+                    Some(&mut target),
+                )?;
             }
             if depth_stencil {
                 self.raw_device()

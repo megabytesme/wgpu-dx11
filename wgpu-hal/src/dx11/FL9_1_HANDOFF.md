@@ -256,9 +256,10 @@ A future semantics-preserving lowering is needed before accepting it.
 
 POT RGBA8/BGRA8 mip chains support initialization, transfers and sampled
 suffix views including the smallest resource mip. View-relative LOD selection
-passed strict private and controlled core GPU tests. Mip attachment views and
-non-suffix sampled views remain unavailable; arbitrary core-valid views need
-emulation or validation.
+passed strict private and controlled core GPU tests. Separate color-attachment
+chains support individual mip views with optional copy usage; sampled and
+attachment usages cannot coexist on a mip chain. Non-suffix sampled views
+remain unavailable and need emulation or validation.
 
 Sampled mip chains also accept COPY_DST|RESOURCE without COPY_SRC. They use
 shader-resource-only native textures; copy-source use and direct readback stay

@@ -519,9 +519,26 @@ produced 64 transparent-zero pixels. These results check sampling via a separate
 render target; the SRV-only native texture cannot be directly read back.
 A sampler whose minimum LOD was normalized requires
 a single mip; when a finite maximum was raised, a used multi-mip view requires
-the original maximum to reach the last mip and anisotropy 1. Multi-mip attachment
-views, non-suffix sampled views and NPOT mip chains remain unsupported;
+the original maximum to reach the last mip and anisotropy 1. Non-suffix sampled
+views and NPOT mip chains remain unsupported;
 historical FL9 GPU behavior is unverified.
+
+### Individual color-attachment mip views
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_render_to_individual_mips -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The strict private test passed for both RGBA8 and BGRA8 on the RTX 3090 Ti at
+requested and selected FL9_1, checking the full mip chain. The controlled core
+fixture checked all 43 pixels for each format and submitted a render-only mip
+pass, which has no direct readback. This path requires POT dimensions and
+`COLOR_TARGET` with optional `COPY_SRC` and/or `COPY_DST`; `RESOURCE` and
+`TRANSIENT` are not supported in the same chain. Each view selects one mip.
+Historical hardware remains unverified and ordinary public enumeration stays
+disabled.
 
 ### FL9_1 uniform bindings
 

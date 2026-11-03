@@ -115,6 +115,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     } else {
         assert_eq!(bgra_caps, rgba_caps);
     }
+    let bgra_mips = if bgra_caps.is_empty() {
+        false
+    } else {
+        fixture
+            .test_fixture_bgra8_mip_supported()
+            .expect("query BGRA8 mip prerequisites")
+    };
     assert!(unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba16Float)
     }
@@ -227,6 +234,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
     if rgba_mips {
         copy_only_mip_chain(&global, device, queue);
+        render_mip_chain(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
     } else {
         assert!(
             !required,
@@ -236,6 +244,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     if !bgra_caps.is_empty() {
         copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
+    }
+    if bgra_mips {
+        render_mip_chain(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
+    } else {
+        assert!(!required, "strict mode requires BGRA8 mip support");
+        std::println!("SKIP: BGRA8 mip format support unavailable");
     }
     let (query_set, error) = global.device_create_query_set(
         device,
@@ -389,6 +403,210 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.queues.is_empty());
     assert!(hub.devices.is_empty());
     assert!(hub.adapters.is_empty());
+}
+
+fn render_mip_chain(
+    global: &Global,
+    device: crate::id::DeviceId,
+    queue: crate::id::QueueId,
+    format: wgt::TextureFormat,
+) {
+    use crate::{command as render, resource};
+    let create_texture = |usage| {
+        let (texture, error) = global.device_create_texture(
+            device,
+            &wgt::TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 8,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 4,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: Vec::new(),
+            },
+            None,
+        );
+        assert!(error.is_none(), "render mip {format:?} texture: {error:?}");
+        texture
+    };
+    let texture =
+        create_texture(wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::COPY_SRC);
+    let render_only = create_texture(wgt::TextureUsages::RENDER_ATTACHMENT);
+    let view = |texture, mip| {
+        let (view, error) = global.texture_create_view(
+            texture,
+            &resource::TextureViewDescriptor {
+                range: wgt::ImageSubresourceRange {
+                    base_mip_level: mip,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "render mip {format:?} view {mip}: {error:?}"
+        );
+        view
+    };
+    let red_view = view(texture, 1);
+    let green_view = view(texture, 3);
+    let render_only_view = view(render_only, 2);
+    let (readback, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 2048,
+            usage: wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "render mip readback: {error:?}");
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "render mip encoder: {error:?}");
+    for (view, color) in [
+        (red_view, wgt::Color::RED),
+        (green_view, wgt::Color::GREEN),
+        (render_only_view, wgt::Color::BLUE),
+    ] {
+        let attachments = [Some(render::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            load_op: wgt::LoadOp::Clear(color),
+            store_op: wgt::StoreOp::Store,
+        })];
+        let (mut pass, error) = global.command_encoder_begin_render_pass(
+            encoder,
+            &render::RenderPassDescriptor {
+                label: None,
+                color_attachments: Cow::Borrowed(&attachments),
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            },
+        );
+        assert!(error.is_none(), "render mip pass: {error:?}");
+        global.render_pass_end(&mut pass).unwrap();
+    }
+    for (mip, width, height, offset) in [
+        (0, 8, 4, 0),
+        (1, 4, 2, 1024),
+        (2, 2, 1, 1536),
+        (3, 1, 1, 1792),
+    ] {
+        global
+            .command_encoder_copy_texture_to_buffer(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: mip,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyBufferInfo {
+                    buffer: readback,
+                    layout: wgt::TexelCopyBufferLayout {
+                        offset,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(height),
+                    },
+                },
+                &wgt::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .unwrap();
+    }
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(error.is_none(), "render mip command finish: {error:?}");
+    global
+        .queue_submit(queue, &[command])
+        .expect("render mip submit");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            readback,
+            0,
+            Some(2048),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| sender.send(result).unwrap())),
+            },
+        )
+        .unwrap();
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .unwrap();
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap()
+        .unwrap();
+    let (pointer, length) = global
+        .buffer_get_mapped_range(readback, 0, Some(2048))
+        .unwrap();
+    assert_eq!(length, 2048);
+    let pixels = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
+    for (mip, width, height, offset) in [
+        (0, 8usize, 4usize, 0usize),
+        (1, 4, 2, 1024),
+        (2, 2, 1, 1536),
+        (3, 1, 1, 1792),
+    ] {
+        let expected = if mip == 1 {
+            if format == wgt::TextureFormat::Bgra8Unorm {
+                [0, 0, 255, 255]
+            } else {
+                [255, 0, 0, 255]
+            }
+        } else if mip == 3 {
+            [0, 255, 0, 255]
+        } else {
+            [0, 0, 0, 0]
+        };
+        for y in 0..height {
+            for x in 0..width {
+                let start = offset + y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[start..start + 4],
+                    &expected,
+                    "{format:?} mip {mip} ({x}, {y})"
+                );
+            }
+        }
+    }
+    global.buffer_unmap(readback).unwrap();
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.texture_view_drop(red_view);
+    global.texture_view_drop(green_view);
+    global.texture_view_drop(render_only_view);
+    global.texture_drop(texture);
+    global.texture_drop(render_only);
+    global.buffer_drop(readback);
+    std::println!("PASS: {format:?} rendered mip views and initialization: 43 pixels matched; render-only mip pass submitted");
 }
 
 fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crate::id::QueueId) {
