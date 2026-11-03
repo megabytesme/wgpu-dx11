@@ -112,6 +112,7 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
         let GroupKind {
             uniforms: _,
             textures: _,
+            texture_unfilterable_mask: _,
             samplers: _,
             sampler_non_filtering_mask: _,
         } = group;
@@ -122,6 +123,21 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
                 | ShaderBindingKind::Sampler => {}
             }
         }
+    }
+}
+
+fn validate_sampling_pairs(
+    plan: &super::hal_bind_group::BindingPlan,
+    pairs: &[super::sampling::SamplingPair],
+    stage: wgt::ShaderStages,
+) -> Result<(), crate::PipelineError> {
+    if plan.sampling_pairs_compatible(pairs) {
+        Ok(())
+    } else {
+        Err(crate::PipelineError::Linkage(
+            stage,
+            "D3D11 unfilterable texture cannot use a filtering sampler layout".into(),
+        ))
     }
 }
 
@@ -375,6 +391,39 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sampling_pair_validation_reports_the_selected_stage() {
+        use super::super::{
+            hal_bind_group::{BindingPlan, GroupKind},
+            sampling::SamplingPair,
+        };
+        let mut group = GroupKind::EMPTY;
+        group.textures[0] = Some(7);
+        group.texture_unfilterable_mask = 1;
+        group.samplers[0] = Some(42);
+        let plan = BindingPlan::new(&[Some(group)]).unwrap();
+        let pair = SamplingPair {
+            texture: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            sampler: naga::ResourceBinding {
+                group: 0,
+                binding: 42,
+            },
+            texture_slot: 0,
+            sampler_slot: 0,
+            requires_bias_compatible: false,
+        };
+        for stage in [wgt::ShaderStages::VERTEX, wgt::ShaderStages::FRAGMENT] {
+            assert!(matches!(
+                validate_sampling_pairs(&plan, &[pair], stage),
+                Err(crate::PipelineError::Linkage(actual, _)) if actual == stage
+            ));
+            assert!(validate_sampling_pairs(&plan, &[], stage).is_ok());
+        }
+    }
+
     #[test]
     fn constant_depth_bias_accepts_only_unclamped_triangle_states() {
         use super::constant_depth_bias;
@@ -2174,20 +2223,31 @@ impl RenderPipeline {
             vertex_stage.entry_point,
             &vertex_bindings,
         )?;
+        validate_sampling_pairs(
+            &desc.layout.bindings,
+            &sampling_pairs,
+            wgt::ShaderStages::VERTEX,
+        )?;
         if let Some(fragment) = fragment {
-            sampling_pairs.extend(fragment.module.sampling_relationships(
+            let mut fragment_pairs = fragment.module.sampling_relationships(
                 naga::ShaderStage::Fragment,
                 fragment.entry_point,
                 &fragment_bindings,
-            )?);
+            )?;
+            validate_sampling_pairs(
+                &desc.layout.bindings,
+                &fragment_pairs,
+                wgt::ShaderStages::FRAGMENT,
+            )?;
             if fragment
                 .module
                 .uses_sample_bias(naga::ShaderStage::Fragment, fragment.entry_point)?
             {
-                for pair in &mut sampling_pairs {
+                for pair in &mut fragment_pairs {
                     pair.requires_bias_compatible = true;
                 }
             }
+            sampling_pairs.extend(fragment_pairs);
         }
         let full_npot = if sampling_pairs.is_empty() {
             super::capabilities::Query::Unavailable(0)

@@ -1390,7 +1390,28 @@ classification and mip-only linear filtering. The full private suite passed
 passed with ten existing warnings and core's zero-adapter test passed. The first
 test compilation exposed a fixture lifetime error, which was fixed. Independent
 review found no concrete mask, sorting or resource-matching defect.
+Checkpoint: `7404886b4dd14da39c4859b5a33243c31f9ddd36`.
 
 Next: support explicit unfilterable-float texture layouts only with selected
 shader pairs that use NonFiltering sampler layouts. Preserve layout identity;
 actual nearest sampler state alone cannot justify a Filtering layout.
+
+Explicit Float{filterable:false} layouts now retain texture class in binding
+identity. Selected Naga sampling pairs are checked per stage against logical
+texture and sampler layouts, with unresolved or inconsistent slots failing
+closed. A used unfilterable texture with a Filtering sampler layout is rejected
+even if the actual sampler is nearest; unused incompatible pairs remain legal.
+The strict baseline failed at layout creation. Two forced-FL9_1 full images
+passed, including helper-function sampling and pipeline transitions; the bad
+pair returned the exact fragment linkage error. The core fixture matched 64
+pixels and rejected the corresponding invalid pair. CPU tests cover selected
+entries, helpers, cross-group identities, layout masks and malformed mappings.
+The initial CPU fixture used a reserved WGSL identifier and was fixed. The full
+private suite passed 281 tests with two filtered; six dynamic-index GPU cases
+remain skipped. Clippy passed with ten existing test warnings, and core's
+zero-adapter isolation test passed. Independent
+review found no concrete pair-validation bypass. No new texture formats or
+public capability exposure were added.
+
+Next: examine accepting combined vertex/fragment visibility for sampled
+resources used only by the fragment shader, without enabling vertex sampling.

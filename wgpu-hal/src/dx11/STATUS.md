@@ -124,7 +124,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   tests checked two complete images including a layout transition, and a core
   fixture checked 64 pixels and rejected a linear sampler with
   `WrongSamplerFiltering`. The original strict baseline rejected the layout.
-  Comparison samplers and unfilterable texture types remain unsupported;
+  Existing RGBA8/BGRA8 textures can use an unfilterable-float layout binding when
+  each sampling pair used by the selected entry has a NonFiltering sampler.
+  Two strict RTX images and a 64-pixel core case covered this subset; invalid
+  filtering pairs were rejected, while unused incompatible pairs were allowed.
+  No additional unfilterable formats or comparison samplers are supported;
   historical drivers remain unverified and public enumeration stays disabled.
 - Short uniform ranges use a zero-padded native constant buffer and preserve the
   declared byte range, including non-multiples of 16. This stages through a CPU

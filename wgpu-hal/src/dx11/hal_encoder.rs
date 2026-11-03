@@ -4098,6 +4098,10 @@ mod sampler_lod_tests;
 mod nonfiltering_sampler_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/unfilterable_texture.rs"]
+mod unfilterable_texture_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/biased_sampling.rs"]
 mod biased_sampling_tests;
 

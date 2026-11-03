@@ -544,9 +544,30 @@ NonFiltering layout, as were comparison samplers. The controlled core case
 checked 64 pixels and returned `WrongSamplerFiltering` for a linear sampler.
 CPU tests check sampler-class identity, the non-filtering mask, logical binding
 order and the original descriptor's filter class. The initial strict baseline
-rejected the NonFiltering layout. Unfilterable texture types and comparison
-samplers remain unsupported; historical drivers remain unverified, and normal
-public D3D11 adapter enumeration remains disabled.
+rejected the NonFiltering layout. Comparison samplers remain unsupported;
+historical drivers remain unverified, and normal public D3D11 adapter enumeration
+remains disabled.
+
+### Unfilterable-float layout bindings
+
+With strict hardware mode enabled:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_unfilterable_texture_sampling_relationships -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 unfilterable_texture_layouts_and_sampling_pairs_fail_closed -- --nocapture
+```
+
+The strict RTX FL9_1 test checked two complete images using a supported RGBA8
+texture declared as unfilterable float and a NonFiltering sampler. It also
+sampled a second pair through helper functions and switched selected entries;
+an incompatible unused cross-pair was permitted. A selected entry using a
+Filtering sampler layout with the unfilterable binding failed with the exact
+fragment linkage error, even though the actual sampler used nearest filtering.
+The controlled core test checked 64 pixels and rejected its invalid filtering
+pair. CPU tests cover cross-group relationships, helper and entry-point selection,
+and layout identity. The pre-change strict baseline rejected bind-group layout
+creation. This layout support adds no texture formats, and historical hardware
+and ordinary public adapter exposure remain unverified.
 
 ### COPY_DST-only POT mip uploads
 

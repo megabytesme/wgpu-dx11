@@ -360,6 +360,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     for case in [
         VertexCase::Baseline,
         VertexCase::NonFiltering,
+        VertexCase::UnfilterableFloat,
         VertexCase::PointInput,
         VertexCase::PointIndexed(wgt::IndexFormat::Uint16),
         VertexCase::PointIndexed(wgt::IndexFormat::Uint32),
@@ -1315,6 +1316,7 @@ fn copy_only_texture_view(
 enum VertexCase {
     Baseline,
     NonFiltering,
+    UnfilterableFloat,
     PointInput,
     PointIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
@@ -1348,7 +1350,11 @@ fn render_triangle(
     case: VertexCase,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
-    let non_filtering = case == VertexCase::NonFiltering;
+    let non_filtering = matches!(
+        case,
+        VertexCase::NonFiltering | VertexCase::UnfilterableFloat
+    );
+    let unfilterable_float = case == VertexCase::UnfilterableFloat;
     let overlapping = case == VertexCase::Overlapping;
     let point_index = match case {
         VertexCase::PointIndexed(format) => Some(format),
@@ -1750,7 +1756,9 @@ fn render_triangle(
             binding: 7,
             visibility: wgt::ShaderStages::FRAGMENT,
             ty: wgt::BindingType::Texture {
-                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                sample_type: wgt::TextureSampleType::Float {
+                    filterable: !unfilterable_float,
+                },
                 view_dimension: wgt::TextureViewDimension::D2,
                 multisampled: false,
             },
@@ -2021,6 +2029,67 @@ fn render_triangle(
         multiview_mask: None,
         cache: None,
     };
+    if unfilterable_float {
+        let mut invalid_entries = group_entries.clone();
+        invalid_entries
+            .iter_mut()
+            .find(|entry| entry.binding == 42)
+            .unwrap()
+            .ty = wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering);
+        let (invalid_group_layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Borrowed(&invalid_entries),
+            },
+            None,
+        );
+        assert!(error.is_none(), "filtering layout creation: {error:?}");
+        let (invalid_group, error) = global.device_create_bind_group(
+            device,
+            &binding_model::BindGroupDescriptor {
+                label: None,
+                layout: invalid_group_layout,
+                entries: Cow::Borrowed(&group_resources),
+            },
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "nearest sampler in Filtering layout: {error:?}"
+        );
+        let (invalid_layout, error) = global.device_create_pipeline_layout(
+            device,
+            &binding_model::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: Cow::Borrowed(&[Some(invalid_group_layout)]),
+                immediate_size: 0,
+            },
+            None,
+        );
+        assert!(error.is_none(), "filtering pipeline layout: {error:?}");
+        pipeline_descriptor.layout = Some(invalid_layout);
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::Stage {
+                    stage,
+                    error: crate::validation::StageError::Filtering {
+                        error: crate::validation::FilteringError::Float,
+                        ..
+                    },
+                }) if *stage == wgt::ShaderStages::FRAGMENT
+            ),
+            "filtering layout must fail on an unfilterable texture pair: {error:?}"
+        );
+        pipeline_descriptor.layout = Some(layout);
+        global.render_pipeline_drop(invalid_pipeline);
+        global.pipeline_layout_drop(invalid_layout);
+        global.bind_group_drop(invalid_group);
+        global.bind_group_layout_drop(invalid_group_layout);
+    }
     let (pipeline_id, error) =
         global.device_create_render_pipeline(device, &pipeline_descriptor, None);
     assert!(error.is_none(), "render pipeline creation: {error:?}");

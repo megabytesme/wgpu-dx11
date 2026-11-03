@@ -357,8 +357,17 @@ checked two full images across a layout transition. A controlled core test
 checked 64 pixels and rejected a linear sampler with `WrongSamplerFiltering`.
 CPU tests cover binding order, the non-filtering mask and original sampler
 filter class. The pre-change strict baseline rejected the NonFiltering layout.
-This does not add unfilterable texture or comparison-sampler support. Historical
-drivers remain unverified and public adapter enumeration remains disabled.
+The layout can also declare an unfilterable-float binding for the already
+supported RGBA8 and BGRA8 textures. The selected shader entry's actual sampling
+pairs must use a NonFiltering sampler for such a binding; a Filtering sampler
+layout is rejected even when the bound sampler happens to use nearest filters.
+Unused incompatible cross-pairs do not cause rejection. Two strict RTX images
+covered helper-function sampling and a selected-entry transition; a core case
+checked 64 pixels and rejected an invalid filtering pair. CPU tests cover
+cross-group pairs, helper and entry-point selection, and layout identity. The
+pre-change strict baseline rejected the texture layout. This adds no new
+unfilterable formats or comparison samplers. Historical drivers remain unverified
+and public adapter enumeration remains disabled.
 Render-pass boundaries clear context state.
 
 ## Private uniform-buffer contract

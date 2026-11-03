@@ -22,6 +22,7 @@ pub(super) struct UniformLayout {
 pub(super) struct GroupKind {
     pub uniforms: [Option<UniformLayout>; MAX_UNIFORMS],
     pub textures: [Option<u32>; MAX_TEXTURES],
+    pub texture_unfilterable_mask: u8,
     pub samplers: [Option<u32>; MAX_SAMPLERS],
     pub sampler_non_filtering_mask: u16,
 }
@@ -30,6 +31,7 @@ impl GroupKind {
     pub(super) const EMPTY: Self = Self {
         uniforms: [None; MAX_UNIFORMS],
         textures: [None; MAX_TEXTURES],
+        texture_unfilterable_mask: 0,
         samplers: [None; MAX_SAMPLERS],
         sampler_non_filtering_mask: 0,
     };
@@ -132,11 +134,15 @@ impl BindingPlan {
             slots.push(next);
             if let Some(group) = group {
                 let sampler_count = dense_count(&group.samplers)?;
+                let texture_count = dense_count(&group.textures)?;
                 if u32::from(group.sampler_non_filtering_mask) >> sampler_count != 0 {
                     return Err(crate::DeviceError::Unexpected);
                 }
+                if u32::from(group.texture_unfilterable_mask) >> texture_count != 0 {
+                    return Err(crate::DeviceError::Unexpected);
+                }
                 next.uniforms += dense_count(&group.uniforms)?;
-                next.textures += dense_count(&group.textures)?;
+                next.textures += texture_count;
                 next.samplers += sampler_count;
             }
             if next.uniforms > MAX_UNIFORMS as u32
@@ -149,6 +155,53 @@ impl BindingPlan {
         Ok(Self {
             groups: groups.into(),
             slots,
+        })
+    }
+
+    pub(super) fn sampling_pairs_compatible(
+        &self,
+        pairs: &[super::sampling::SamplingPair],
+    ) -> bool {
+        pairs.iter().all(|pair| {
+            let lookup = |binding: naga::ResourceBinding, texture: bool| {
+                let group_index = binding.group as usize;
+                let group = self.groups.get(group_index).copied().flatten()?;
+                let slots = self.slots(group_index)?;
+                let bindings: &[Option<u32>] = if texture {
+                    &group.textures
+                } else {
+                    &group.samplers
+                };
+                let mut matches = bindings
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, value)| **value == Some(binding.binding));
+                let (local, _) = matches.next()?;
+                if matches.next().is_some() {
+                    return None;
+                }
+                let offset = if texture {
+                    slots.textures
+                } else {
+                    slots.samplers
+                } as usize;
+                let flat = offset.checked_add(local)?;
+                let constrained = if texture {
+                    group.texture_unfilterable_mask & (1u8 << local) != 0
+                } else {
+                    group.sampler_non_filtering_mask & (1u16 << local) != 0
+                };
+                Some((flat, constrained))
+            };
+            let Some((texture_slot, unfilterable)) = lookup(pair.texture, true) else {
+                return false;
+            };
+            let Some((sampler_slot, non_filtering)) = lookup(pair.sampler, false) else {
+                return false;
+            };
+            texture_slot == pair.texture_slot
+                && sampler_slot == pair.sampler_slot
+                && (!unfilterable || non_filtering)
         })
     }
 
@@ -210,10 +263,12 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
         }
         match entry.ty {
             wgt::BindingType::Texture {
-                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                sample_type: wgt::TextureSampleType::Float { filterable },
                 view_dimension: wgt::TextureViewDimension::D2,
                 multisampled: false,
-            } if entry.visibility == wgt::ShaderStages::FRAGMENT => textures.push(entry.binding),
+            } if entry.visibility == wgt::ShaderStages::FRAGMENT => {
+                textures.push((entry.binding, !filterable))
+            }
             wgt::BindingType::Sampler(
                 sampler_type @ (wgt::SamplerBindingType::Filtering
                 | wgt::SamplerBindingType::NonFiltering),
@@ -252,8 +307,11 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     for (slot, uniform) in uniforms.into_iter().enumerate() {
         kind.uniforms[slot] = Some(uniform);
     }
-    for (slot, binding) in textures.into_iter().enumerate() {
+    for (slot, (binding, unfilterable)) in textures.into_iter().enumerate() {
         kind.textures[slot] = Some(binding);
+        if unfilterable {
+            kind.texture_unfilterable_mask |= 1u8 << slot;
+        }
     }
     for (slot, (binding, non_filtering)) in samplers.into_iter().enumerate() {
         kind.samplers[slot] = Some(binding);
@@ -457,6 +515,103 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn unfilterable_texture_layouts_and_sampling_pairs_fail_closed() {
+        let texture = |binding, filterable| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let sampler = |binding, ty| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Sampler(ty),
+            count: None,
+        };
+        let first_entries = [
+            sampler(100, wgt::SamplerBindingType::Filtering),
+            texture(42, false),
+            texture(7, true),
+        ];
+        let first = group_kind(&first_entries).unwrap();
+        assert_eq!(&first.textures[..2], &[Some(7), Some(42)]);
+        assert_eq!(first.texture_unfilterable_mask, 0b10);
+        let mut reordered = first_entries;
+        reordered.reverse();
+        assert_eq!(group_kind(&reordered).unwrap(), first);
+        let second = group_kind(&[
+            sampler(88, wgt::SamplerBindingType::Filtering),
+            texture(5, true),
+            sampler(33, wgt::SamplerBindingType::NonFiltering),
+        ])
+        .unwrap();
+        let plan = BindingPlan::new(&[Some(first), Some(second)]).unwrap();
+        let pair = super::super::sampling::SamplingPair {
+            texture: naga::ResourceBinding {
+                group: 0,
+                binding: 42,
+            },
+            sampler: naga::ResourceBinding {
+                group: 1,
+                binding: 33,
+            },
+            texture_slot: 1,
+            sampler_slot: 1,
+            requires_bias_compatible: false,
+        };
+        assert!(plan.sampling_pairs_compatible(&[]));
+        assert!(plan.sampling_pairs_compatible(&[pair]));
+        let incompatible = super::super::sampling::SamplingPair {
+            sampler: naga::ResourceBinding {
+                group: 1,
+                binding: 88,
+            },
+            sampler_slot: 2,
+            ..pair
+        };
+        assert!(!plan.sampling_pairs_compatible(&[incompatible]));
+        let filterable = super::super::sampling::SamplingPair {
+            texture: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            texture_slot: 0,
+            ..incompatible
+        };
+        assert!(plan.sampling_pairs_compatible(&[filterable]));
+        assert!(
+            !plan.sampling_pairs_compatible(&[super::super::sampling::SamplingPair {
+                texture_slot: 0,
+                ..pair
+            }])
+        );
+        assert!(
+            !plan.sampling_pairs_compatible(&[super::super::sampling::SamplingPair {
+                sampler: naga::ResourceBinding {
+                    group: 3,
+                    binding: 33
+                },
+                ..pair
+            }])
+        );
+        let mut changed = first;
+        changed.texture_unfilterable_mask = 0;
+        let changed_plan = BindingPlan::new(&[Some(changed), Some(second)]).unwrap();
+        assert_eq!(plan.common_prefix(&changed_plan), 0);
+        assert_ne!(first, changed);
+        changed.texture_unfilterable_mask = 0b100;
+        assert!(BindingPlan::new(&[Some(changed)]).is_err());
+        changed = first;
+        changed.textures[0] = Some(42);
+        let ambiguous = BindingPlan::new(&[Some(changed), Some(second)]).unwrap();
+        assert!(!ambiguous.sampling_pairs_compatible(&[pair]));
+    }
 
     #[test]
     fn sparse_sampler_filtering_layouts_are_sorted_and_distinct() {

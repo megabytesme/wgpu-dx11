@@ -493,6 +493,73 @@ mod tests {
     }
 
     #[test]
+    fn selected_cross_group_pairs_enforce_declared_filterability() {
+        use super::super::hal_bind_group::{BindingPlan, GroupKind};
+
+        let source = r#"
+            @group(0) @binding(7) var filterable: texture_2d<f32>;
+            @group(1) @binding(7) var unfilterable: texture_2d<f32>;
+            @group(0) @binding(100) var filtering: sampler;
+            @group(1) @binding(100) var nonfiltering: sampler;
+            fn sample_pair(t: texture_2d<f32>, s: sampler) -> vec4f {
+                return textureSample(t, s, vec2f(0.5));
+            }
+            @fragment fn valid() -> @location(0) vec4f {
+                return sample_pair(filterable, filtering) + sample_pair(unfilterable, nonfiltering);
+            }
+            @fragment fn invalid() -> @location(0) vec4f {
+                return sample_pair(unfilterable, filtering);
+            }
+            @fragment fn uses_shared() -> @location(0) vec4f {
+                return sample_pair(filterable, nonfiltering) + sample_pair(unfilterable, nonfiltering);
+            }
+            @fragment fn multiple_valid() -> @location(0) vec4f {
+                return sample_pair(filterable, filtering) + sample_pair(filterable, nonfiltering);
+            }
+            @fragment fn multiple_invalid() -> @location(0) vec4f {
+                return sample_pair(unfilterable, filtering) + sample_pair(unfilterable, nonfiltering);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let mut first = GroupKind::EMPTY;
+        first.textures[0] = Some(7);
+        first.samplers[0] = Some(100);
+        let mut second = first;
+        second.texture_unfilterable_mask = 1;
+        second.sampler_non_filtering_mask = 1;
+        let plan = BindingPlan::new(&[Some(first), Some(second)]).unwrap();
+        let bindings = plan.stage_bindings(wgt::ShaderStages::FRAGMENT);
+        let get = |entry| {
+            relationships(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+                &bindings,
+            )
+            .unwrap()
+        };
+
+        let valid = get("valid");
+        assert_eq!(valid.len(), 2);
+        assert!(plan.sampling_pairs_compatible(&valid));
+        assert!(!plan.sampling_pairs_compatible(&get("invalid")));
+        assert!(plan.sampling_pairs_compatible(&get("uses_shared")));
+        assert!(plan.sampling_pairs_compatible(&get("multiple_valid")));
+        assert!(!plan.sampling_pairs_compatible(&get("multiple_invalid")));
+
+        let mut wrong_slot = valid.clone();
+        wrong_slot[0].texture_slot += 1;
+        assert!(!plan.sampling_pairs_compatible(&wrong_slot));
+        let mut missing = valid;
+        missing[0].sampler.binding = 999;
+        assert!(!plan.sampling_pairs_compatible(&missing));
+    }
+
+    #[test]
     fn mip_lod_validation_uses_only_selected_sampling_pairs() {
         let (module, info, bindings) = fixture();
         let get = |entry| {
