@@ -324,8 +324,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(actual, expected.as_slice());
     std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
-    render_triangle(&global, device, queue, false);
-    render_triangle(&global, device, queue, true);
+    render_triangle(&global, device, queue, false, false);
+    render_triangle(&global, device, queue, true, false);
+    render_triangle(&global, device, queue, false, true);
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -356,6 +357,7 @@ fn render_triangle(
     device: crate::id::DeviceId,
     queue: crate::id::QueueId,
     overlapping: bool,
+    noop_stencil: bool,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let extent = wgt::Extent3d {
@@ -567,7 +569,21 @@ fn render_triangle(
                 format: wgt::TextureFormat::Depth24PlusStencil8,
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgt::CompareFunction::LessEqual),
-                stencil: wgt::StencilState::default(),
+                stencil: if noop_stencil {
+                    let face = wgt::StencilFaceState {
+                        compare: wgt::CompareFunction::Equal,
+                        pass_op: wgt::StencilOperation::Replace,
+                        ..wgt::StencilFaceState::IGNORE
+                    };
+                    wgt::StencilState {
+                        front: face,
+                        back: face,
+                        read_mask: 0x100,
+                        write_mask: 0,
+                    }
+                } else {
+                    wgt::StencilState::default()
+                },
                 bias: wgt::DepthBiasState::default(),
             }),
             multisample: wgt::MultisampleState::default(),
@@ -643,7 +659,11 @@ fn render_triangle(
                     read_only: false,
                 },
                 stencil: render::PassChannel {
-                    load_op: Some(wgt::LoadOp::Clear(Some(0))),
+                    load_op: Some(wgt::LoadOp::Clear(Some(if noop_stencil {
+                        0x3c
+                    } else {
+                        0
+                    }))),
                     store_op: Some(wgt::StoreOp::Store),
                     read_only: false,
                 },
@@ -657,6 +677,11 @@ fn render_triangle(
     global
         .render_pass_set_pipeline(&mut pass, pipeline_id)
         .unwrap();
+    if noop_stencil {
+        global
+            .render_pass_set_stencil_reference(&mut pass, 0xa5)
+            .unwrap();
+    }
     global
         .render_pass_set_vertex_buffer(&mut pass, 0, Some(vertices), 0, None)
         .unwrap();
@@ -740,7 +765,7 @@ fn render_triangle(
         }
     }
     std::println!(
-        "PASS: core textured depth test (overlapping={overlapping}): 32 red left pixels, 32 green right pixels"
+        "PASS: core textured depth test (overlapping={overlapping}, noop_stencil={noop_stencil}): 32 red left pixels, 32 green right pixels"
     );
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);

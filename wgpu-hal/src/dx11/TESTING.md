@@ -409,10 +409,27 @@ The test samples a texture while drawing overlapping geometry in both depth
 orders, verifies initial zero depth, checks independent depth-only and
 stencil-only clears, and checks an Always/no-write pipeline. Ten 8x8 readbacks
 are compared in full. It also checks attachment extent and pipeline mismatch
-rejection. Stencil tests and read-only/aspect views are not implemented.
+rejection. The private HAL also supports restricted read-only attachment
+passes and no-op stencil configurations; aspect views and nontrivial stencil
+tests remain unavailable.
 Additional passes cover all color write masks, face culling, sampled textures
 and samplers in separate groups, sampler and pipeline transitions, alias
 rejection, and coexistence with a uniform in another group.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 stencil_noop -- --nocapture --test-threads=1
+```
+
+This filter passed two cases: one synthetic classifier test and one physical
+RTX 3090 Ti test at requested and selected FL9_1. The GPU test compares an
+Equal, zero-read-mask, Keep state with ignored stencil across two passes and
+reference changes using full color readback. The controlled core fixture also
+draws 32 red and 32 green pixels with Equal, `read_mask=0x100`, Replace,
+zero write mask and reference `0xa5`; only the low eight stencil mask bits
+are effective. Actual stencil bits cannot yet be read back, and nontrivial
+masking and writes remain unsupported. These tests do not establish behavior on
+historical FL9_1 hardware.
 
 ### FL9_1 default buffer bind flags
 

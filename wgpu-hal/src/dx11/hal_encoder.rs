@@ -946,7 +946,9 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn set_stencil_reference(&mut self, value: u32) {
-        self.reject()
+        if self.render.is_none() {
+            self.reject();
+        }
     }
 
     unsafe fn set_blend_constants(&mut self, color: &[f32; 4]) {
@@ -3725,6 +3727,10 @@ mod multi_vertex_stream_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/stencil_noop.rs"]
+mod stencil_noop_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/uniform_bindings.rs"]

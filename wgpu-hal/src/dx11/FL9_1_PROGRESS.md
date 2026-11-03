@@ -883,3 +883,19 @@ historical FL9_1 drivers and remaining vertex formats/strides are unverified.
 The complete strict D3D11 suite passed 218 cases, two filtered, with the three
 previously documented internal shader GPU skips. HAL Clippy passed with ten
 existing warnings; core ordinary D3D11 enumeration remained empty.
+Checkpoint: `53abef8bc`.
+
+A restricted stencil-state classifier accepts only states proven to always pass
+on both faces and never change the eight-bit stencil value; these are implemented
+with native stencil disabled. Reference updates inside passes are ignored for
+this subset. Strict `stencil_noop` passed one CPU classifier test and one RTX
+FL9_1 hardware test comparing IGNORE with masked Equal across two passes,
+reference/pipeline changes and a read-only depth pass; invalid states and an
+outside-pass reference were rejected. Actual stencil bits cannot yet be read.
+The controlled core fixture also produced 32 red/32 green pixels using masked
+Equal, Replace with zero write mask and a nonzero reference. The strict suite
+passed 220 cases with two filtered before the final test-only boundary additions;
+the updated focused test passed. Three historical shader cases still skip GPU
+work. HAL Clippy passed with ten existing warnings and core enumeration stayed
+empty. Independent review found no concrete classifier defect. Future stencil
+support must retain and rebind reference state across pipeline switches.

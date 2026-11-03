@@ -22,9 +22,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,
-  no depth writes and no sampled alias. Stencil tests, aspect-specific views
-  and depth copies remain unsupported. Textured depth ordering is verified
-  through GPU readback.
+  no depth writes and no sampled alias. Stencil configurations that always
+  pass and cannot write are accepted as no-ops; nontrivial stencil tests or
+  writes, aspect-specific views and depth copies remain unsupported. Textured
+  depth ordering is verified through GPU readback.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled

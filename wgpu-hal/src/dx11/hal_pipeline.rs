@@ -47,6 +47,24 @@ fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
     Some(native)
 }
 
+fn stencil_is_noop(stencil: &wgt::StencilState) -> bool {
+    let zero_read_mask = stencil.read_mask & 0xff == 0;
+    let compare_always_passes = |face: &wgt::StencilFaceState| {
+        face.compare == wgt::CompareFunction::Always
+            || (zero_read_mask
+                && matches!(
+                    face.compare,
+                    wgt::CompareFunction::Equal
+                        | wgt::CompareFunction::LessEqual
+                        | wgt::CompareFunction::GreaterEqual
+                ))
+    };
+    compare_always_passes(&stencil.front)
+        && compare_always_passes(&stencil.back)
+        && (stencil.write_mask & 0xff == 0
+            || (stencil.front.is_read_only() && stencil.back.is_read_only()))
+}
+
 fn overlapping_vertex_element(
     level: FeatureLevel,
     ranges: &[(u32, u32)],
@@ -296,6 +314,83 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stencil_noop_classifier_checks_both_faces_and_eight_bit_masks() {
+        use super::stencil_is_noop;
+        use wgt::{CompareFunction as C, StencilFaceState, StencilOperation as O, StencilState};
+
+        for (comparison, zero_mask_passes) in [
+            (C::Never, false),
+            (C::Less, false),
+            (C::Equal, true),
+            (C::LessEqual, true),
+            (C::Greater, false),
+            (C::NotEqual, false),
+            (C::GreaterEqual, true),
+            (C::Always, true),
+        ] {
+            for read_mask in [0, 0x100, 0x01, 0xff, u32::MAX] {
+                let expected =
+                    comparison == C::Always || (read_mask & 0xff == 0 && zero_mask_passes);
+                for change_front in [false, true] {
+                    let mut state = StencilState {
+                        front: StencilFaceState::IGNORE,
+                        back: StencilFaceState::IGNORE,
+                        read_mask,
+                        write_mask: u32::MAX,
+                    };
+                    if change_front {
+                        state.front.compare = comparison;
+                    } else {
+                        state.back.compare = comparison;
+                    }
+                    assert_eq!(
+                        stencil_is_noop(&state),
+                        expected,
+                        "{comparison:?}, mask={read_mask:#x}, front={change_front}"
+                    );
+                }
+            }
+        }
+
+        for operation in [
+            O::Zero,
+            O::Replace,
+            O::Invert,
+            O::IncrementClamp,
+            O::DecrementClamp,
+            O::IncrementWrap,
+            O::DecrementWrap,
+        ] {
+            for field in 0..6 {
+                let mut state = StencilState {
+                    front: StencilFaceState::IGNORE,
+                    back: StencilFaceState::IGNORE,
+                    read_mask: 0xff,
+                    write_mask: 0xff,
+                };
+                let face = if field < 3 {
+                    &mut state.front
+                } else {
+                    &mut state.back
+                };
+                match field % 3 {
+                    0 => face.fail_op = operation,
+                    1 => face.depth_fail_op = operation,
+                    _ => face.pass_op = operation,
+                }
+                assert!(!stencil_is_noop(&state));
+                for write_mask in [0, 0x100] {
+                    state.write_mask = write_mask;
+                    assert!(
+                        stencil_is_noop(&state),
+                        "{operation:?}, field={field}, mask={write_mask:#x}"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn fl91_blend_masks_require_separate_alpha_only_when_observable() {
         use super::*;
@@ -1843,8 +1938,7 @@ impl RenderPipeline {
         }
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if state.format != wgt::TextureFormat::Depth24PlusStencil8
-                || state.stencil.front != wgt::StencilFaceState::IGNORE
-                || state.stencil.back != wgt::StencilFaceState::IGNORE
+                || !stencil_is_noop(&state.stencil)
                 || state.bias != wgt::DepthBiasState::default()
             {
                 return Err(invalid());
