@@ -128,6 +128,29 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
             cache: None,
         })
     };
+    let indexed_strip_pipeline = |format, front_face, cull_mode| unsafe {
+        device.create_render_pipeline(&crate::RenderPipelineDescriptor {
+            label: None,
+            layout: &layout,
+            vertex_processor: crate::VertexProcessor::Standard {
+                vertex_buffers: &buffers,
+                vertex_stage: stage("vs"),
+            },
+            primitive: wgt::PrimitiveState {
+                topology: wgt::PrimitiveTopology::TriangleStrip,
+                strip_index_format: Some(format),
+                front_face,
+                cull_mode: Some(cull_mode),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment_stage: Some(stage("fs")),
+            color_targets: &targets,
+            multiview_mask: None,
+            cache: None,
+        })
+    };
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -178,6 +201,9 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
     ];
     let mut values: Vec<f32> = points.into_iter().flatten().collect();
     values.extend_from_slice(&[1., -1., 1., 1.]);
+    values.extend_from_slice(&[
+        -0.95, -0.8, -0.1, -0.8, -0.95, 0.0, -0.1, 0.0, 0.1, -0.8, 0.95, -0.8, 0.5, 0.0,
+    ]);
     let data: Vec<u8> = values.into_iter().flat_map(f32::to_ne_bytes).collect();
     let vertex = unsafe {
         device
@@ -190,6 +216,48 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
             .unwrap()
     };
     native.write_byte_buffer(&vertex, 0, &data)?;
+    let list_indices: [u16; 10] = [14, 15, 16, 16, 15, 17, 18, 19, 20, 999];
+    let list_data: Vec<u8> = list_indices
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect();
+    let list_buffer = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: list_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&list_buffer, 0, &list_data)?;
+    let strip_u16: [u16; 8] = [14, 15, 16, 17, u16::MAX, 18, 19, 20];
+    let strip_u16_data: Vec<u8> = strip_u16.into_iter().flat_map(u16::to_ne_bytes).collect();
+    let strip_u16_buffer = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: strip_u16_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&strip_u16_buffer, 0, &strip_u16_data)?;
+    let strip_u32: [u32; 8] = [14, 15, 16, 17, u32::MAX, 18, 19, 20];
+    let strip_u32_data: Vec<u8> = strip_u32.into_iter().flat_map(u32::to_ne_bytes).collect();
+    let strip_u32_buffer = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: strip_u32_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&strip_u32_buffer, 0, &strip_u32_data)?;
     let colors = [Some(crate::ColorAttachment {
         target: crate::Attachment {
             view: &view,
@@ -260,6 +328,70 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
                 images[0], images[1],
                 "strip winding differs for {front:?} {cull:?}"
             );
+            let reference_commands = unsafe {
+                encoder.begin_encoding(None).unwrap();
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_render_pipeline(&reference);
+                encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                encoder.set_index_buffer(
+                    crate::BufferBinding::new_unchecked(&list_buffer, 0, None),
+                    wgt::IndexFormat::Uint16,
+                );
+                encoder.draw_indexed(0, 9, 0, 0, 1);
+                encoder.end_render_pass();
+                encoder.end_encoding().unwrap()
+            };
+            fence_value += 1;
+            unsafe {
+                queue
+                    .submit(&[&reference_commands], &[], (&fence, fence_value))
+                    .unwrap()
+            };
+            assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+            let reference_pixels = native.read_rgba_texture(&target, 0, 0)?;
+            unsafe { encoder.reset_all([reference_commands].into_iter()) };
+            for (format, buffer) in [
+                (wgt::IndexFormat::Uint16, &strip_u16_buffer),
+                (wgt::IndexFormat::Uint32, &strip_u32_buffer),
+            ] {
+                let indexed = indexed_strip_pipeline(format, front, cull).unwrap();
+                let commands = unsafe {
+                    encoder.begin_encoding(None).unwrap();
+                    encoder.begin_render_pass(&pass).unwrap();
+                    encoder.set_render_pipeline(&indexed);
+                    encoder.set_vertex_buffer(
+                        0,
+                        crate::BufferBinding::new_unchecked(&vertex, 0, None),
+                    );
+                    encoder.set_index_buffer(
+                        crate::BufferBinding::new_unchecked(buffer, 0, None),
+                        format,
+                    );
+                    encoder.draw_indexed(0, 8, 0, 0, 1);
+                    encoder.end_render_pass();
+                    encoder.end_encoding().unwrap()
+                };
+                fence_value += 1;
+                unsafe {
+                    queue
+                        .submit(&[&commands], &[], (&fence, fence_value))
+                        .unwrap()
+                };
+                assert!(native.wait_native_fence(
+                    &fence,
+                    fence_value,
+                    Some(Duration::from_secs(5))
+                )?);
+                let indexed_pixels = native.read_rgba_texture(&target, 0, 0)?;
+                assert_eq!(
+                    reference_pixels, indexed_pixels,
+                    "indexed {format:?} strip differs from equivalent triangle list for {front:?} {cull:?}"
+                );
+                unsafe {
+                    encoder.reset_all([commands].into_iter());
+                    device.destroy_render_pipeline(indexed);
+                }
+            }
             let red = images[0]
                 .chunks_exact(4)
                 .filter(|pixel| *pixel == [255, 0, 0, 255])
@@ -280,6 +412,9 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
         }
     }
     assert_eq!((visible, culled), (2, 2));
+    std::println!(
+        "PASS: indexed Uint16/Uint32 triangle-strip restart and winding match triangle-list output for both front faces and cull modes"
+    );
     let (front, cull) = visible_mode.unwrap();
     let strip = pipeline(wgt::PrimitiveTopology::TriangleStrip, front, cull).unwrap();
     let green_triangle = unsafe {
@@ -375,6 +510,7 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
         point[4..].copy_from_slice(&(-2.0f32).to_ne_bytes());
     }
     for (index, point) in [
+        (0usize, [0.0f32, 1.0]),
         (65_534usize, [-1.0f32, -1.0f32]),
         (65_535, [1.0, -1.0]),
         (65_536, [-1.0, 1.0]),
@@ -421,6 +557,89 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
             .all(|pixel| pixel == [255, 0, 0, 255]),
         "strip boundary must render both triangles after the split"
     );
+    let wide_indices: [u32; 3] = [0, 65_534, 65_535];
+    let wide_index_data: Vec<u8> = wide_indices
+        .into_iter()
+        .flat_map(u32::to_ne_bytes)
+        .collect();
+    let wide_index_buffer = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: wide_index_data.len() as u64,
+                usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&wide_index_buffer, 0, &wide_index_data)?;
+    let wide_pipeline = indexed_strip_pipeline(
+        wgt::IndexFormat::Uint32,
+        wgt::FrontFace::Ccw,
+        wgt::Face::Back,
+    )
+    .unwrap();
+    let wide_commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&pass).unwrap();
+        encoder.set_render_pipeline(&wide_pipeline);
+        encoder.set_vertex_buffer(
+            0,
+            crate::BufferBinding::new_unchecked(&boundary_buffer, 0, None),
+        );
+        encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&wide_index_buffer, 0, None),
+            wgt::IndexFormat::Uint32,
+        );
+        encoder.draw_indexed(0, 3, 0, 0, 1);
+        encoder.end_render_pass();
+        encoder.end_encoding().unwrap()
+    };
+    fence_value += 1;
+    unsafe {
+        queue
+            .submit(&[&wide_commands], &[], (&fence, fence_value))
+            .unwrap()
+    };
+    assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+    let gathered_pixels = native.read_rgba_texture(&target, 0, 0)?;
+    let gathered_red = gathered_pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [255, 0, 0, 255])
+        .count();
+    assert!(
+        gathered_red >= 20,
+        "wide triangle gather rendered {gathered_red} pixels"
+    );
+    assert!(gathered_pixels
+        .chunks_exact(4)
+        .all(|pixel| matches!(pixel, [0, 0, 255, 255] | [255, 0, 0, 255])));
+    std::println!("PASS: indexed Uint32 wide-triangle gather: {gathered_red} red pixels");
+    unsafe {
+        encoder.reset_all([wide_commands].into_iter());
+        device.destroy_buffer(wide_index_buffer);
+        device.destroy_render_pipeline(wide_pipeline);
+    }
+    let mismatched_pipeline = indexed_strip_pipeline(
+        wgt::IndexFormat::Uint16,
+        wgt::FrontFace::Ccw,
+        wgt::Face::Back,
+    )
+    .unwrap();
+    unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&pass).unwrap();
+        encoder.set_render_pipeline(&mismatched_pipeline);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.set_index_buffer(
+            crate::BufferBinding::new_unchecked(&strip_u32_buffer, 0, None),
+            wgt::IndexFormat::Uint32,
+        );
+        encoder.draw_indexed(0, 8, 0, 0, 1);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        device.destroy_render_pipeline(mismatched_pipeline);
+    }
     let index_buffer = unsafe {
         device
             .create_buffer(&crate::BufferDescriptor {
@@ -512,6 +731,9 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
     std::println!("PASS: FL9_1 strip winding matches triangle-list with nonzero first vertex");
     unsafe {
         device.destroy_buffer(vertex);
+        device.destroy_buffer(list_buffer);
+        device.destroy_buffer(strip_u16_buffer);
+        device.destroy_buffer(strip_u32_buffer);
         device.destroy_texture_view(view);
         device.destroy_texture(target);
         device.destroy_pipeline_layout(layout);

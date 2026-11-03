@@ -256,6 +256,16 @@ pub(super) enum NativeCommand {
         instances: u32,
         instance_bindings: InstanceBindings,
     },
+    DrawIndexedTriangleStrips {
+        binding: Arc<IndexBinding>,
+        vertices: Vec<(u32, ID3D11Buffer, u32, u64, u32, u32)>,
+        first: u32,
+        count: u32,
+        base_vertex: i32,
+        max_vertices: u32,
+        instances: u32,
+        instance_bindings: InstanceBindings,
+    },
     EndRender,
 }
 
@@ -896,6 +906,29 @@ impl CommandBuffer {
                         (*max_indices, *instances),
                         instance_bindings,
                     )?,
+                    NativeCommand::DrawIndexedTriangleStrips {
+                        binding,
+                        vertices,
+                        first,
+                        count,
+                        base_vertex,
+                        max_vertices,
+                        instances,
+                        instance_bindings,
+                    } => {
+                        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        let result = binding.draw_triangle_strips(
+                            context,
+                            *first,
+                            *count,
+                            *base_vertex,
+                            vertices,
+                            (*max_vertices, *instances),
+                            instance_bindings,
+                        );
+                        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+                        result?;
+                    }
                     NativeCommand::EndRender => context.ClearState(),
                 }
             }

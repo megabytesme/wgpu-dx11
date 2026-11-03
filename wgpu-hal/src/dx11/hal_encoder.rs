@@ -1496,6 +1496,87 @@ impl crate::CommandEncoder for CommandEncoder {
             });
             return;
         }
+        if render.topology == Some(wgt::PrimitiveTopology::TriangleStrip) {
+            let Some(index) = render.index.as_ref() else {
+                self.reject();
+                return;
+            };
+            if !render.pipeline
+                || render.strip_index_format != Some(index.format())
+                || (render.viewport_remap
+                    && render
+                        .vertex_shaders
+                        .as_ref()
+                        .is_none_or(|(_, adjusted)| adjusted.is_none()))
+                || !render.resources_compatible(self.device.feature_level())
+                || !index.contains_range(first_index, index_count)
+            {
+                self.reject();
+                return;
+            }
+            let mut vertices = Vec::new();
+            for (physical, logical) in render.vertex_slots.iter().enumerate() {
+                let Some(logical) = *logical else { continue };
+                let Some((stride, extent, mode)) = render.vertex_layouts[logical] else {
+                    self.reject();
+                    return;
+                };
+                let Some((buffer, offset, length)) = render.vertices[logical].as_ref() else {
+                    self.reject();
+                    return;
+                };
+                if mode == wgt::VertexStepMode::Vertex {
+                    vertices.push((
+                        physical as u32,
+                        buffer.clone(),
+                        *offset,
+                        *length,
+                        stride,
+                        extent,
+                    ));
+                }
+            }
+            if index_count == 0 || instance_count == 0 {
+                return;
+            }
+            if vertices.is_empty() {
+                self.reject();
+                return;
+            }
+            let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
+            else {
+                self.reject();
+                return;
+            };
+            let Some(binding_commands) = render.binding_commands() else {
+                self.reject();
+                return;
+            };
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
+            let index = index.clone();
+            for command in binding_commands {
+                self.record(command);
+            }
+            let max_vertices =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                    .max_triangle_vertices_per_draw();
+            self.record(NativeCommand::DrawIndexedTriangleStrips {
+                binding: index,
+                vertices,
+                first: first_index,
+                count: index_count,
+                base_vertex,
+                max_vertices,
+                instances: instance_count,
+                instance_bindings,
+            });
+            return;
+        }
         if render.topology == Some(wgt::PrimitiveTopology::PointList) {
             let Some(index) = render.index.as_ref() else {
                 self.reject();

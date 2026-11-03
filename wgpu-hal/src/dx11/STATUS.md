@@ -195,8 +195,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   Uint16 and Uint32 LineList and LineStrip output, including markers formed by
   base-vertex adjustment. Indexed LineStrip emulates restart by splitting
   CPU-mapped resolved indices because native FL9 strip cuts are unavailable.
-- Nonindexed strips preserve winding through overlapping, rebased batches;
-  indexed strips remain unsupported because native strip cuts are not guaranteed.
+- Nonindexed strips preserve winding through overlapping, rebased batches.
+  Indexed LineStrip splits resolved restart markers into compact line strips;
+  indexed TriangleStrip expands resolved runs into winding-preserving triangle
+  lists and uses bounded Uint16 windows or wide-triangle gathers. Native FL9
+  strip-cut support is not assumed. Strict GPU and controlled-core tests cover
+  both index formats; historical FL9_1 behavior remains unverified.
 - Direct FL9_1 triangle-list batches are conservatively limited to 65,535
   vertices; indexed draw batching retains its separate limit.
 - FL9_1 overlapping vertex attributes within one logical stream are assigned
@@ -207,8 +211,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   Replay checks GPU-written indices against every stream and discards a whole
   draw on an out-of-bounds fetch. Native-safe Uint16 indices use the original
   buffers; other valid indices use ordered rebased Uint16 windows or gather
-  each stream into scratch buffers for wide triangles. Indexed triangle strips
-  remain unsupported; indexed LineStrip has a separate restart-aware path.
+  each stream into scratch buffers for wide triangles. Indexed LineStrip splits
+  resolved restart markers and preserves connectivity through compact windows
+  and wide-edge gathers. Indexed TriangleStrip splits the same resolved markers,
+  expands runs to alternating-winding triangle-list indices, then uses bounded
+  Uint16 windows or gathers wide triangles across every vertex stream. The
+  private and controlled core paths test both index formats; FL9_1 historical
+  hardware remains unverified.
 - Restricted direct, strip and indexed instancing repeats non-instanced native
   draws, binding each instance-rate stream with native stride zero at its
   `first_instance`-adjusted offset. Pipelines using `instance_index` and indexed

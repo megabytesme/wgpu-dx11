@@ -987,3 +987,22 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 Both indexed LineList draws and both indexed LineStrip draws read back red
 pixels. This exercises core command recording through the explicitly injected
 test device; it does not expose a normal adapter.
+
+Indexed TriangleStrip uses the same controlled core fixture. Its Uint16 and
+Uint32 cases select a nonzero first index and signed base vertex that resolves
+an ordinary value to the strip-restart marker. Each run renders 12 red pixels;
+the fixture asserts the complete expected color result while ordinary adapter
+enumeration remains disabled.
+
+The private `fl91_nonindexed_triangle_strip_winding_and_first_vertex` GPU test
+also exercises indexed TriangleStrip. It compares Uint16 and Uint32 restart
+strips against equivalent triangle-list rendering for both front-face values
+and both cull modes. Readback images must match exactly. A separate Uint32
+triangle whose index span exceeds the FL9_1 16-bit window verifies the GPU
+gather path with 32 checked red pixels. Format mismatch and missing declared
+strip-index format are rejected before submission. CPU planner tests cover
+restart splitting after base-vertex resolution, winding reset per run, the
+65,535-triangle FL9_1 native call limit and whole-draw discard on invalid
+vertex fetches. Replay scans GPU-authoritative index bytes through staging,
+which preserves command ordering but can stall the CPU; native strip-cut
+support is not used.

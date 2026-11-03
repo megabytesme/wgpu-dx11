@@ -131,6 +131,7 @@ pub(super) struct BackendCapabilities {
     pub nonindexed_line_strips: bool,
     pub indexed_line_lists: bool,
     pub indexed_line_strips: bool,
+    pub indexed_triangle_strips: bool,
     pub color_attachments: u32,
     pub index_u16: bool,
     pub index_u16_fl9_rewrite: bool,
@@ -180,6 +181,7 @@ impl BackendCapabilities {
         nonindexed_line_strips: true,
         indexed_line_lists: true,
         indexed_line_strips: true,
+        indexed_triangle_strips: true,
         color_attachments: 1,
         index_u16: true,
         index_u16_fl9_rewrite: true,
@@ -460,6 +462,7 @@ mod tests {
         assert!(fl9.backend.nonindexed_line_strips);
         assert!(fl9.backend.indexed_line_lists);
         assert!(fl9.backend.indexed_line_strips);
+        assert!(fl9.backend.indexed_triangle_strips);
         assert!(fl9.backend.index_u16_fl9_rewrite);
         assert!(fl9.backend.index_u32_ordered_fl9_windows);
         assert!(fl9.backend.index_u32_wide_triangle_gather);

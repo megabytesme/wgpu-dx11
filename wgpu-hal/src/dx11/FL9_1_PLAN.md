@@ -31,8 +31,12 @@ below is met. This plan does not claim WebGPU conformance.
    draw limits, rebases bounded windows and gathers wide edges. Restart
    markers are matched after signed base-vertex resolution, following the
    current WebGPU index-resolution and primitive-assembly algorithms. Indexed
-   triangle strips, broader instance semantics and indirect draws are still
-   unavailable.
+   TriangleStrip now splits the resolved markers, expands each run with
+   alternating winding into bounded triangle-list draws, and gathers triangles
+   whose index span exceeds the native FL9_1 window. Strict private readback
+   compares both index formats against equivalent triangle lists across front
+   face and cull settings; the controlled core fixture verifies both formats.
+   Broader instance semantics and indirect draws remain unavailable.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport

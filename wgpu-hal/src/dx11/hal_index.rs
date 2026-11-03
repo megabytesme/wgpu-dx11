@@ -436,6 +436,94 @@ impl IndexBinding {
 
     #[expect(
         clippy::too_many_arguments,
+        reason = "Indexed triangle-strip replay needs stream and instance state"
+    )]
+    pub(super) fn draw_triangle_strips(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base: i32,
+        vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+        draw_limits: (u32, u32),
+        instance_bindings: &super::command::InstanceBindings,
+    ) -> Result<()> {
+        let (max_vertices, instances) = draw_limits;
+        instance_bindings.validate(instances)?;
+        if vertices.is_empty()
+            || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
+                !offset.is_multiple_of(4)
+                    || !stride.is_multiple_of(4)
+                    || *extent == 0
+                    || (*stride != 0 && *extent > *stride)
+                    || !extent.is_multiple_of(4)
+            })
+            || !self.contains_range(first, count)
+            || max_vertices < 3
+            || !max_vertices.is_multiple_of(3)
+            || (count != 0 && first.checked_add(count - 1).is_none())
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        if count == 0 || instances == 0 {
+            return Ok(());
+        }
+
+        let mut layouts = Vec::new();
+        layouts
+            .try_reserve_exact(vertices.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        layouts.extend(vertices.iter().map(|v| (v.3, v.4, v.5)));
+        let restart = match self.format {
+            wgt::IndexFormat::Uint16 => u32::from(u16::MAX),
+            wgt::IndexFormat::Uint32 => u32::MAX,
+        };
+
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(&self.staging, &self.buffer);
+            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&self.staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let index_size = if self.is_u32() { 4 } else { 2 };
+            let start = self.offset as usize + first as usize * index_size;
+            let read = |index: usize| {
+                let ptr = mapped.pData.cast::<u8>().add(start + index * index_size);
+                if self.is_u32() {
+                    core::ptr::read_unaligned(ptr.cast::<u32>())
+                } else {
+                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
+                }
+            };
+            let result = for_each_indexed_triangle_strip_batch(
+                read,
+                count as usize,
+                base,
+                restart,
+                max_vertices,
+                &layouts,
+                |indices| {
+                    draw_indexed_triangle_batch(
+                        context,
+                        vertices,
+                        indices,
+                        self.max_index,
+                        max_vertices,
+                        instances,
+                        instance_bindings,
+                    )
+                },
+            );
+            context.Unmap(&self.staging, 0);
+            result?;
+        }
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
         reason = "Indexed line replay needs stream and instance state"
     )]
     pub(super) fn draw_lines(
@@ -1272,6 +1360,292 @@ fn multi_u32_index_in_bounds(
     })
 }
 
+fn for_each_indexed_triangle_strip_batch(
+    read: impl Fn(usize) -> u32,
+    count: usize,
+    base: i32,
+    restart: u32,
+    max_vertices: u32,
+    layouts: &[(u64, u32, u32)],
+    mut emit: impl FnMut(&[u32]) -> Result<()>,
+) -> Result<bool> {
+    if max_vertices < 3
+        || !max_vertices.is_multiple_of(3)
+        || layouts.is_empty()
+        || layouts.iter().any(|&(length, stride, extent)| {
+            length < u64::from(extent)
+                || !stride.is_multiple_of(4)
+                || extent == 0
+                || !extent.is_multiple_of(4)
+                || (stride != 0 && extent > stride)
+        })
+    {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+
+    let effective = |index: usize| i64::from(read(index)) + i64::from(base);
+    for index in 0..count {
+        let value = effective(index);
+        if value == i64::from(restart) {
+            continue;
+        }
+        if !(0..=i64::from(u32::MAX)).contains(&value)
+            || !multi_u32_index_in_bounds(read(index), base, layouts.iter().copied())
+        {
+            return Ok(false);
+        }
+    }
+
+    let mut batch = Vec::new();
+    batch
+        .try_reserve_exact(max_vertices as usize)
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+    let mut first = 0u32;
+    let mut second = 0u32;
+    let mut strip_length = 0;
+    let mut odd_triangle = false;
+    for index in 0..count {
+        let value = effective(index);
+        if value == i64::from(restart) {
+            strip_length = 0;
+            odd_triangle = false;
+            continue;
+        }
+        let value = value as u32;
+        match strip_length {
+            0 => {
+                first = value;
+                strip_length = 1;
+            }
+            1 => {
+                second = value;
+                strip_length = 2;
+            }
+            _ => {
+                if odd_triangle {
+                    batch.extend_from_slice(&[second, first, value]);
+                } else {
+                    batch.extend_from_slice(&[first, second, value]);
+                }
+                if batch.len() == max_vertices as usize {
+                    emit(&batch)?;
+                    batch.clear();
+                }
+                first = second;
+                second = value;
+                odd_triangle = !odd_triangle;
+            }
+        }
+    }
+    if !batch.is_empty() {
+        emit(&batch)?;
+    }
+    Ok(true)
+}
+
+fn draw_indexed_triangle_batch(
+    context: &ID3D11DeviceContext,
+    vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+    indices: &[u32],
+    max_index: u16,
+    max_vertices: u32,
+    instances: u32,
+    instance_bindings: &super::command::InstanceBindings,
+) -> Result<()> {
+    if vertices.is_empty() || indices.is_empty() || !indices.len().is_multiple_of(3) {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    let first = &vertices[0];
+    let layout = (first.3, first.4, first.5);
+    let Some(segments) = plan_u32_windows(
+        |index| indices[index],
+        indices.len(),
+        0,
+        max_index,
+        first.2,
+        layout,
+        max_vertices,
+    )?
+    else {
+        return Ok(());
+    };
+
+    enum Prepared {
+        Window {
+            index: ID3D11Buffer,
+            offsets: Vec<u32>,
+            count: u32,
+        },
+        Gather {
+            streams: Vec<Option<(ID3D11Buffer, [D3D11_BOX; 3])>>,
+        },
+    }
+
+    let device = unsafe { context.GetDevice()? };
+    let mut prepared = Vec::new();
+    prepared
+        .try_reserve_exact(segments.len())
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+    for segment in segments {
+        match segment {
+            U32Segment::Window(window) => {
+                let mut offsets = Vec::new();
+                offsets
+                    .try_reserve_exact(vertices.len())
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                for (_, _, offset, length, stride, extent) in vertices {
+                    offsets.push(
+                        rebased_vertex_offset(window.minimum, *offset, (*length, *stride, *extent))
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                    );
+                }
+                let byte_width = u32::try_from(window.data.len())
+                    .map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+                let desc = D3D11_BUFFER_DESC {
+                    ByteWidth: byte_width,
+                    Usage: D3D11_USAGE_IMMUTABLE,
+                    BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                    ..Default::default()
+                };
+                let data = D3D11_SUBRESOURCE_DATA {
+                    pSysMem: window.data.as_ptr().cast(),
+                    ..Default::default()
+                };
+                let mut index = None;
+                unsafe { device.CreateBuffer(&desc, Some(&data), Some(&mut index))? };
+                prepared.push(Prepared::Window {
+                    index: index.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                    offsets,
+                    count: window.count,
+                });
+            }
+            U32Segment::Gather { indices, .. } => {
+                let mut streams = Vec::new();
+                streams
+                    .try_reserve_exact(vertices.len())
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                for (_, _, offset, length, stride, extent) in vertices {
+                    if *stride == 0 {
+                        streams.push(None);
+                        continue;
+                    }
+                    let byte_width = stride
+                        .checked_mul(3)
+                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                    let mut zeroes = Vec::new();
+                    zeroes
+                        .try_reserve_exact(byte_width as usize)
+                        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                    zeroes.resize(byte_width as usize, 0u8);
+                    let desc = D3D11_BUFFER_DESC {
+                        ByteWidth: byte_width,
+                        Usage: D3D11_USAGE_DEFAULT,
+                        BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                        ..Default::default()
+                    };
+                    let initial = D3D11_SUBRESOURCE_DATA {
+                        pSysMem: zeroes.as_ptr().cast(),
+                        ..Default::default()
+                    };
+                    let mut buffer = None;
+                    unsafe { device.CreateBuffer(&desc, Some(&initial), Some(&mut buffer))? };
+                    let mut sources = [D3D11_BOX::default(); 3];
+                    for (source, index) in sources.iter_mut().zip(indices) {
+                        let left =
+                            rebased_vertex_offset(index, *offset, (*length, *stride, *extent))
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        let right = left
+                            .checked_add(*extent)
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        *source = D3D11_BOX {
+                            left,
+                            right,
+                            top: 0,
+                            bottom: 1,
+                            front: 0,
+                            back: 1,
+                        };
+                    }
+                    streams.push(Some((
+                        buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                        sources,
+                    )));
+                }
+                prepared.push(Prepared::Gather { streams });
+            }
+        }
+    }
+
+    unsafe {
+        for segment in &prepared {
+            if let Prepared::Gather { streams } = segment {
+                for ((_, source_buffer, _, _, stride, _), stream) in vertices.iter().zip(streams) {
+                    let Some((destination, sources)) = stream else {
+                        continue;
+                    };
+                    for (index, source) in sources.iter().enumerate() {
+                        context.CopySubresourceRegion(
+                            destination,
+                            0,
+                            index as u32 * stride,
+                            0,
+                            0,
+                            source_buffer,
+                            0,
+                            Some(source),
+                        );
+                    }
+                }
+            }
+        }
+        for instance in 0..instances {
+            instance_bindings.bind(context, instance)?;
+            for segment in &prepared {
+                match segment {
+                    Prepared::Window {
+                        index,
+                        offsets,
+                        count,
+                    } => {
+                        for ((slot, buffer, _, _, stride, _), offset) in
+                            vertices.iter().zip(offsets)
+                        {
+                            context.IASetVertexBuffers(
+                                *slot,
+                                1,
+                                Some(&Some(buffer.clone())),
+                                Some(stride),
+                                Some(offset),
+                            );
+                        }
+                        context.IASetIndexBuffer(index, DXGI_FORMAT_R16_UINT, 0);
+                        context.DrawIndexed(*count, 0, 0);
+                    }
+                    Prepared::Gather { streams } => {
+                        for ((slot, buffer, offset, _, stride, _), stream) in
+                            vertices.iter().zip(streams)
+                        {
+                            let (buffer, offset) = match stream {
+                                Some((buffer, _)) => (buffer, &0),
+                                None => (buffer, offset),
+                            };
+                            context.IASetVertexBuffers(
+                                *slot,
+                                1,
+                                Some(&Some(buffer.clone())),
+                                Some(stride),
+                                Some(offset),
+                            );
+                        }
+                        context.Draw(3, 0);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 enum IndexedLineSegment {
     Window {
@@ -1793,10 +2167,10 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::{
-        classify_indices, classify_u32_indices, for_each_window, multi_u32_index_in_bounds,
-        plan_indexed_line_strips, plan_indexed_lines, plan_u16_draw, plan_u32_windows,
-        rebased_vertex_offset, IndexDecision, IndexPlan, IndexedLineSegment, U32Decision,
-        U32Segment,
+        classify_indices, classify_u32_indices, for_each_indexed_triangle_strip_batch,
+        for_each_window, multi_u32_index_in_bounds, plan_indexed_line_strips, plan_indexed_lines,
+        plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision, IndexPlan,
+        IndexedLineSegment, U32Decision, U32Segment,
     };
 
     #[test]
@@ -1971,6 +2345,104 @@ mod tests {
                 }
             ] if indices == &[0, 0, 1, 0]
         ));
+    }
+
+    #[test]
+    fn indexed_triangle_strips_expand_winding_and_reset_after_restart() {
+        let indices = [0, 1, 2, 3, u16::MAX as u32, 4, 5, 6];
+        let mut batches = Vec::new();
+        assert!(for_each_indexed_triangle_strip_batch(
+            |i| indices[i],
+            indices.len(),
+            0,
+            u32::from(u16::MAX),
+            6,
+            &[(7 * 4, 4, 4)],
+            |batch| {
+                batches.push(batch.to_vec());
+                Ok(())
+            },
+        )
+        .unwrap());
+        assert_eq!(batches, [vec![0, 1, 2, 2, 1, 3], vec![4, 5, 6]]);
+    }
+
+    #[test]
+    fn indexed_triangle_strip_restart_uses_base_resolved_indices() {
+        let indices = [0, 1, 2, u16::MAX as u32 - 1, 3, 4, 5];
+        let mut output = Vec::new();
+        assert!(for_each_indexed_triangle_strip_batch(
+            |i| indices[i],
+            indices.len(),
+            1,
+            u32::from(u16::MAX),
+            12,
+            &[(7 * 4, 4, 4)],
+            |batch| {
+                output.extend_from_slice(batch);
+                Ok(())
+            },
+        )
+        .unwrap());
+        assert_eq!(output, [1, 2, 3, 4, 5, 6]);
+
+        let moved_marker = [1, 2, 3, u16::MAX as u32, 4, 5];
+        let mut output = Vec::new();
+        assert!(for_each_indexed_triangle_strip_batch(
+            |i| moved_marker[i],
+            moved_marker.len(),
+            -1,
+            u32::from(u16::MAX),
+            12,
+            &[(u64::from(u16::MAX) * 4, 4, 4)],
+            |batch| {
+                output.extend_from_slice(batch);
+                Ok(())
+            },
+        )
+        .unwrap());
+        assert_eq!(output, [0, 1, 2, 2, 1, 65_534, 2, 65_534, 3, 3, 65_534, 4]);
+    }
+
+    #[test]
+    fn indexed_triangle_strip_batches_obey_fl9_primitive_limit_and_discard_invalid_fetches() {
+        let count = 65_538;
+        let mut batch_lengths = Vec::new();
+        let mut last_batch = Vec::new();
+        assert!(for_each_indexed_triangle_strip_batch(
+            |index| (index & 1) as u32,
+            count,
+            0,
+            u32::MAX,
+            196_605,
+            &[(8, 4, 4)],
+            |batch| {
+                batch_lengths.push(batch.len());
+                last_batch.clear();
+                last_batch.extend_from_slice(batch);
+                Ok(())
+            },
+        )
+        .unwrap());
+        assert_eq!(batch_lengths, [196_605, 3]);
+        assert_eq!(last_batch, [0, 1, 1]);
+
+        let invalid = [0, 1, 2, 9, 3, 4];
+        let mut emitted = false;
+        assert!(!for_each_indexed_triangle_strip_batch(
+            |i| invalid[i],
+            invalid.len(),
+            0,
+            u32::MAX,
+            196_605,
+            &[(8, 4, 4)],
+            |_| {
+                emitted = true;
+                Ok(())
+            },
+        )
+        .unwrap());
+        assert!(!emitted);
     }
 
     #[test]

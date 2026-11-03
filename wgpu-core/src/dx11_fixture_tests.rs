@@ -579,6 +579,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::LineIndexed(wgt::IndexFormat::Uint32),
         VertexCase::LineStripIndexed(wgt::IndexFormat::Uint16),
         VertexCase::LineStripIndexed(wgt::IndexFormat::Uint32),
+        VertexCase::TriangleStripIndexed(wgt::IndexFormat::Uint16),
+        VertexCase::TriangleStripIndexed(wgt::IndexFormat::Uint32),
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
@@ -1691,6 +1693,7 @@ enum VertexCase {
     LineStrip,
     LineIndexed(wgt::IndexFormat),
     LineStripIndexed(wgt::IndexFormat),
+    TriangleStripIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
     SampledMips,
     SampledMipsBias,
@@ -1750,12 +1753,17 @@ fn render_triangle(
         VertexCase::LineStripIndexed(format) => Some(format),
         _ => None,
     };
+    let triangle_strip_index_format = match case {
+        VertexCase::TriangleStripIndexed(format) => Some(format),
+        _ => None,
+    };
     let point_input = case == VertexCase::PointInput || point_index.is_some();
-    let line_topology = match case {
+    let special_topology = match case {
         VertexCase::LineList | VertexCase::LineIndexed(_) => Some(wgt::PrimitiveTopology::LineList),
         VertexCase::LineStrip | VertexCase::LineStripIndexed(_) => {
             Some(wgt::PrimitiveTopology::LineStrip)
         }
+        VertexCase::TriangleStripIndexed(_) => Some(wgt::PrimitiveTopology::TriangleStrip),
         _ => None,
     };
     let noop_stencil = case == VertexCase::NoopStencil;
@@ -2399,12 +2407,12 @@ fn render_triangle(
             buffers: Cow::Borrowed(&buffers),
         },
         primitive: wgt::PrimitiveState {
-            topology: line_topology.unwrap_or(if point_input {
+            topology: special_topology.unwrap_or(if point_input {
                 wgt::PrimitiveTopology::PointList
             } else {
                 wgt::PrimitiveTopology::TriangleList
             }),
-            strip_index_format: line_strip_index_format,
+            strip_index_format: line_strip_index_format.or(triangle_strip_index_format),
             ..Default::default()
         },
         depth_stencil: Some(wgt::DepthStencilState {
@@ -2592,13 +2600,19 @@ fn render_triangle(
             -0.9, -0.5, 0.25, 0.25, 0.5, -0.5, 0.5, 0.25, 0.25, 0.5, -0.1, -0.5, 0.25, 0.25, 0.5,
             0.1, -0.5, 0.25, 0.25, 0.5, 0.5, 0.5, 0.25, 0.25, 0.5, 0.9, -0.5, 0.25, 0.25, 0.5,
         ];
+    } else if triangle_strip_index_format.is_some() {
+        values = vec![
+            0.0, 0.0, 0.25, 0.25, 0.5, -0.95, -0.8, 0.25, 0.25, 0.5, -0.2, -0.8, 0.25, 0.25, 0.5,
+            -0.55, 0.2, 0.25, 0.25, 0.5, 0.2, -0.8, 0.25, 0.25, 0.5, 0.95, -0.8, 0.25, 0.25, 0.5,
+            0.55, 0.2, 0.25, 0.25, 0.5,
+        ];
     } else if line_index_format.is_some() {
         values = vec![
             -1., 0., 0.25, 0.25, 0.5, 1., 0., 0.25, 0.25, 0.5, 0., 0.9, 0.25, 0.25, 0.5,
         ];
-    } else if line_topology == Some(wgt::PrimitiveTopology::LineList) {
+    } else if special_topology == Some(wgt::PrimitiveTopology::LineList) {
         values = vec![-1., 0., 0.25, 0.25, 0.5, 1., 0., 0.25, 0.25, 0.5];
-    } else if line_topology == Some(wgt::PrimitiveTopology::LineStrip) {
+    } else if special_topology == Some(wgt::PrimitiveTopology::LineStrip) {
         values = vec![
             -1., -0.75, 0.25, 0.25, 0.5, 0., 0.75, 0.25, 0.25, 0.5, 1., -0.75, 0.25, 0.25, 0.5,
         ];
@@ -2631,34 +2645,53 @@ fn render_triangle(
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
-    let index_format = point_index.or(line_index_format);
+    let index_format = point_index
+        .or(line_index_format)
+        .or(triangle_strip_index_format);
     let index_buffer = index_format.map(|format| {
         let data: Vec<u8> = match (
             format,
             line_index_format.is_some(),
             line_strip_index_format.is_some(),
+            triangle_strip_index_format.is_some(),
         ) {
-            (wgt::IndexFormat::Uint16, true, true) => [999u16, 0, 1, u16::MAX - 1, 2, 3, 4, 999]
+            (wgt::IndexFormat::Uint16, false, false, true) => {
+                [999u16, 0, 1, 2, u16::MAX - 1, 3, 4, 5, 999, 999]
+                    .into_iter()
+                    .flat_map(u16::to_ne_bytes)
+                    .collect()
+            }
+            (wgt::IndexFormat::Uint32, false, false, true) => {
+                [999u32, 0, 1, 2, u32::MAX - 1, 3, 4, 5, 999, 999]
+                    .into_iter()
+                    .flat_map(u32::to_ne_bytes)
+                    .collect()
+            }
+            (wgt::IndexFormat::Uint16, true, true, false) => {
+                [999u16, 0, 1, u16::MAX - 1, 2, 3, 4, 999]
+                    .into_iter()
+                    .flat_map(u16::to_ne_bytes)
+                    .collect()
+            }
+            (wgt::IndexFormat::Uint32, true, true, false) => {
+                [999u32, 0, 1, u32::MAX - 1, 2, 3, 4, 999]
+                    .into_iter()
+                    .flat_map(u32::to_ne_bytes)
+                    .collect()
+            }
+            (wgt::IndexFormat::Uint16, true, false, false) => [999u16, 0, 1, 2]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect(),
-            (wgt::IndexFormat::Uint32, true, true) => [999u32, 0, 1, u32::MAX - 1, 2, 3, 4, 999]
+            (wgt::IndexFormat::Uint32, true, false, false) => [999u32, 0, 1, 2]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect(),
-            (wgt::IndexFormat::Uint16, true, false) => [999u16, 0, 1, 2]
+            (wgt::IndexFormat::Uint16, false, false, false) => [999u16, 999, 999, 2, 3, 999]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect(),
-            (wgt::IndexFormat::Uint32, true, false) => [999u32, 0, 1, 2]
-                .into_iter()
-                .flat_map(u32::to_ne_bytes)
-                .collect(),
-            (wgt::IndexFormat::Uint16, false, false) => [999u16, 999, 999, 2, 3, 999]
-                .into_iter()
-                .flat_map(u16::to_ne_bytes)
-                .collect(),
-            (wgt::IndexFormat::Uint32, false, false) => [999u32, 999, 2, 3]
+            (wgt::IndexFormat::Uint32, false, false, false) => [999u32, 999, 2, 3]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect(),
@@ -2867,7 +2900,11 @@ fn render_triangle(
                 &mut pass,
                 indices,
                 format,
-                if line_index_format.is_some() { 0 } else { 4 },
+                if line_index_format.is_some() || triangle_strip_index_format.is_some() {
+                    0
+                } else {
+                    4
+                },
                 None,
             )
             .unwrap();
@@ -2879,6 +2916,10 @@ fn render_triangle(
             global
                 .render_pass_draw_indexed(&mut pass, 6, 1, 1, 1, 0)
                 .unwrap();
+        } else if triangle_strip_index_format.is_some() {
+            global
+                .render_pass_draw_indexed(&mut pass, 7, 1, 1, 1, 0)
+                .unwrap();
         } else {
             global
                 .render_pass_draw_indexed(&mut pass, 3, 1, 1, 0, 0)
@@ -2886,8 +2927,8 @@ fn render_triangle(
         }
     } else if point_input {
         global.render_pass_draw(&mut pass, 2, 1, 1, 0).unwrap();
-    } else if line_topology.is_some() {
-        let vertex_count = if line_topology == Some(wgt::PrimitiveTopology::LineList) {
+    } else if special_topology.is_some() {
+        let vertex_count = if special_topology == Some(wgt::PrimitiveTopology::LineList) {
             2
         } else {
             3
@@ -2916,7 +2957,11 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, bias_pipeline)
             .unwrap();
     }
-    if !point_input && !depth_only_prepass && line_topology.is_none() {
+    if !point_input
+        && !depth_only_prepass
+        && special_topology.is_none()
+        && triangle_strip_index_format.is_none()
+    {
         global
             .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
             .unwrap();
@@ -3008,7 +3053,7 @@ fn render_triangle(
                 );
                 continue;
             }
-            if line_topology.is_some() {
+            if special_topology.is_some() {
                 match &pixels[offset..offset + 4] {
                     [0, 0, 255, 255] => {}
                     [255, 0, 0, 255] => line_red_pixels += 1,
@@ -3062,7 +3107,7 @@ fn render_triangle(
             );
         }
     }
-    if line_topology.is_some() {
+    if special_topology.is_some() {
         assert!(
             line_red_pixels >= 4,
             "core {case:?} rendered only {line_red_pixels} sampled pixels"
