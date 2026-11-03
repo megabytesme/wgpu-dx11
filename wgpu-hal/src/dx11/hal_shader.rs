@@ -367,6 +367,28 @@ mod tests {
                 store_direct_matrix(&s.outer.inner.m);
                 return vec4f(s.outer.inner.m[0], 0.0, 1.0);
             }
+            @vertex fn standalone_matrix_store() -> @builtin(position) vec4f {
+                var m: mat2x2f;
+                m[0] = vec2f(0.5, 0.0);
+                return vec4f(m[0], 0.0, 1.0);
+            }
+            @vertex fn standalone_matrix_array_store() -> @builtin(position) vec4f {
+                var m: array<mat2x2f, 2>;
+                m[0][0] = vec2f(0.5, 0.0);
+                return vec4f(m[0][0], 0.0, 1.0);
+            }
+            @vertex fn special_first_call_sites() -> @builtin(position) vec4f {
+                var s: State;
+                forward_vector(&s.m[0]);
+                var ordinary = vec2f(0.0);
+                forward_vector(&ordinary);
+                return vec4f(ordinary + s.m[0], 0.0, 1.0);
+            }
+            @vertex fn standalone_matrix_pointer() -> @builtin(position) vec4f {
+                var m: mat2x2f;
+                store_direct_matrix(&m);
+                return vec4f(m[0], 0.0, 1.0);
+            }
             "#,
         )
         .unwrap();
@@ -400,7 +422,7 @@ mod tests {
     #[test]
     fn matrix_struct_stores_require_correct_lowering_even_unchecked() {
         let (module, info) = matrix_store_module();
-        for index in [2, 3, 5, 6, 7, 8, 11] {
+        for index in [2, 3, 5, 6, 7, 8, 11, 13, 14] {
             let entry = &module.entry_points[index];
             assert!(
                 has_unsafe_matrix_store(
@@ -413,7 +435,7 @@ mod tests {
                 entry.name
             );
         }
-        for index in [9, 10] {
+        for index in [9, 10, 12, 15] {
             let entry = &module.entry_points[index];
             assert!(
                 !has_unsafe_matrix_store(
@@ -455,6 +477,37 @@ mod tests {
                     info.get_entry_point(0),
                 ),
                 count == 1025
+            );
+        }
+    }
+
+    #[test]
+    fn matrix_store_analysis_fails_closed_at_call_depth_limit() {
+        for count in [255, 256] {
+            let mut source = alloc::string::String::new();
+            for index in 0..count {
+                if index + 1 < count {
+                    source.push_str(&format!("fn f{index}() {{ f{}(); }}\n", index + 1));
+                } else {
+                    source.push_str(&format!("fn f{index}() {{}}\n"));
+                }
+            }
+            source.push_str("@vertex fn main() -> @builtin(position) vec4f { f0(); return vec4f(0.0, 0.0, 0.0, 1.0); }");
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            assert_eq!(
+                has_unsafe_matrix_store(
+                    &module,
+                    &info,
+                    &module.entry_points[0].function,
+                    info.get_entry_point(0),
+                ),
+                count == 256,
             );
         }
     }
@@ -687,6 +740,8 @@ mod tests {
                 "static_matrix_store",
                 "helper_matrix_store",
                 "pointer_call_sites",
+                "special_first_call_sites",
+                "standalone_matrix_array_store",
             ] {
                 assert!(matches!(
                     shader.compile(naga::ShaderStage::Vertex, entry),
@@ -694,6 +749,12 @@ mod tests {
                         if stage == wgt::ShaderStages::VERTEX
                             && message == "D3D11 matrix aggregate stores are not implemented safely"
                 ));
+            }
+            for entry in ["standalone_matrix_store", "standalone_matrix_pointer"] {
+                assert!(
+                    shader.compile(naga::ShaderStage::Vertex, entry).is_ok(),
+                    "{entry}"
+                );
             }
             let bindings = [ShaderBinding {
                 binding: naga::ResourceBinding {
