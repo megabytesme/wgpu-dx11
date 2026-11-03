@@ -89,6 +89,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_buffers: u32,
     pub color_attachments: u32,
     pub index_u16: bool,
+    pub max_sampler_anisotropy: u16,
     pub sparse_texture_sampler_bindings: bool,
     pub sampled_textures_per_group: u32,
     pub samplers_per_group: u32,
@@ -107,6 +108,7 @@ impl BackendCapabilities {
         vertex_buffers: 1,
         color_attachments: 1,
         index_u16: true,
+        max_sampler_anisotropy: super::hal_sampler::MAX_ANISOTROPY,
         sparse_texture_sampler_bindings: true,
         sampled_textures_per_group: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_per_group: super::hal_bind_group::MAX_SAMPLERS as u32,
@@ -286,6 +288,7 @@ mod tests {
         assert_eq!(fl9.hardware.max_primitives_per_draw, 65_535);
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
+        assert_eq!(fl9.backend.max_sampler_anisotropy, 2);
         assert!(fl9.backend.sparse_texture_sampler_bindings);
         assert_eq!(
             (

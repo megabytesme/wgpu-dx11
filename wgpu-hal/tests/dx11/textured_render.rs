@@ -150,6 +150,111 @@ fn multi_resource_without_uniform() -> windows::core::Result<()> {
     sampled_triangle_variant(false, true, false, true, false, 0, None, 19)
 }
 
+#[test]
+fn shader_pairs_conditional_npot_mixed_resources() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 20)
+}
+
+#[test]
+fn shader_pairs_conditional_npot_resource_transition() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 21)
+}
+
+#[test]
+fn shader_pairs_conditional_npot_pipeline_transition() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 22)
+}
+
+#[test]
+fn shader_pairs_real_device_npot_capability() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 23)
+}
+
+#[test]
+fn shader_pairs_unrestricted_npot_wrap() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 24)
+}
+
+#[test]
+fn sampler_state_nearest_magnification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 30)
+}
+
+#[test]
+fn sampler_state_linear_magnification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 31)
+}
+
+#[test]
+fn sampler_state_mixed_filters_magnification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 32)
+}
+
+#[test]
+fn sampler_state_mixed_filters_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 33)
+}
+
+#[test]
+fn sampler_state_inverse_mixed_magnification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 34)
+}
+
+#[test]
+fn sampler_state_inverse_mixed_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 35)
+}
+
+#[test]
+fn sampler_state_repeat_addressing() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 36)
+}
+
+#[test]
+fn sampler_state_mirror_addressing() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 37)
+}
+
+#[test]
+fn sampler_state_sampler_transition() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 38)
+}
+
+#[test]
+fn sampler_state_independent_uv() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 39)
+}
+
+#[test]
+fn sampler_state_anisotropy_two() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 42)
+}
+
+#[test]
+fn sampler_state_lod_one_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 44)
+}
+
+#[test]
+fn sampler_state_lod_one_magnification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 45)
+}
+
+#[test]
+fn sampler_state_nearest_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 46)
+}
+
+#[test]
+fn sampler_state_linear_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 47)
+}
+
+#[test]
+fn sampler_state_clamp_edge() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 48)
+}
+
 fn sampled_triangle(
     combined: bool,
     multi: bool,
@@ -182,6 +287,9 @@ fn sampled_triangle_variant(
     overlay_shader: Option<&str>,
     variant: u8,
 ) -> windows::core::Result<()> {
+    let sampler_case =
+        (30..=39).contains(&variant) || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48);
+    let conditional_npot = (20..=24).contains(&variant);
     let sparse = (1..=4).contains(&variant);
     let multi_resource = variant >= 10;
     let count = if variant == 12 || variant == 17 { 8 } else { 3 };
@@ -244,9 +352,35 @@ fn sampled_triangle_variant(
                 index
             ));
         }
-        wgsl.push_str("struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { ");
-        if count == 3 {
-            let samplers = if shared_sampler { [0, 0, 0] } else { [0, 1, 2] };
+        if sampler_case {
+            let (scale, bias) = if matches!(variant, 33 | 35 | 44 | 46 | 47) {
+                ("0.5", "-1.75")
+            } else {
+                ("0.03125", "0.359375")
+            };
+            wgsl.push_str(&alloc::format!("struct Out {{ @builtin(position) pos: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f }}; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out {{ var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; out.uv = vec2f((p.x + 1.0) * 4.0, (1.0 - p.y) * 4.0) * {scale} + vec2f({bias}); return out; }} @fragment fn fs(in: Out) -> @location(0) vec4f {{ "));
+        } else {
+            wgsl.push_str("struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { ");
+        }
+        if sampler_case {
+            let uv = match variant {
+                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 => "in.uv",
+                36 | 37 => "vec2f(1.625, 0.125)",
+                48 => "vec2f(1.125, 0.125)",
+                39 => "vec2f(1.625, 1.625)",
+                _ => "vec2f(0.5)",
+            };
+            wgsl.push_str(&alloc::format!(
+                "return textureSample(t0,s0,{uv}) * color * in.color; }}"
+            ));
+        } else if count == 3 {
+            let samplers = if shared_sampler {
+                [0, 0, 0]
+            } else if variant == 24 {
+                [0, 0, 2]
+            } else {
+                [0, 1, 2]
+            };
             let uv = if variant == 13 || variant == 15 {
                 "vec2f(1.125,0.5)"
             } else {
@@ -263,7 +397,12 @@ fn sampled_triangle_variant(
             } else if variant == 15 {
                 wgsl.push_str("return vec4f(textureSample(t0,s0,vec2f(0.5)).r, textureSample(t1,s1,vec2f(0.5)).g, textureSample(t2,s2,vec2f(1.125,0.5)).b - textureSample(t2,s1,vec2f(1.125,0.5)).b, 1.0) * color * in.color; }");
             } else {
-                wgsl.push_str(&alloc::format!("return vec4f(textureSample(t0,s{},vec2f(0.5)).r, textureSample(t1,s{},vec2f(0.5)).g, textureSample(t2,s{},{uv}).b, 1.0) * color * in.color; }}", samplers[0], samplers[1], samplers[2]));
+                let second_uv = if variant == 24 {
+                    "vec2f(1.1666667,0.5)"
+                } else {
+                    "vec2f(0.5)"
+                };
+                wgsl.push_str(&alloc::format!("return vec4f(textureSample(t0,s{},vec2f(0.5)).r, textureSample(t1,s{},{second_uv}).g, textureSample(t2,s{},{uv}).b, 1.0) * color * in.color; }}", samplers[0], samplers[1], samplers[2]));
             }
         } else {
             wgsl.push_str("var v: f32 = 0.0; ");
@@ -279,7 +418,10 @@ fn sampled_triangle_variant(
         if !combined {
             wgsl = wgsl.replace(" * color * in.color", " * in.color");
         }
-        if variant == 16 {
+        if variant == 20 {
+            wgsl.push_str(" @fragment fn fs_bad(in: Out) -> @location(0) vec4f { return textureSample(t1, s0, vec2f(0.5)) * color * in.color; }");
+        }
+        if variant == 16 || variant == 22 {
             wgsl.push_str(" @fragment fn fs_short(in: Out) -> @location(0) vec4f { return textureSample(t0, s0, vec2f(0.5)) * color * in.color; }");
         }
         wgsl
@@ -543,8 +685,46 @@ fn sampled_triangle_variant(
         multiview_mask: None,
         cache: None,
     };
-    let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
-    let short_group_layout = if variant == 16 {
+    let mut pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+    if conditional_npot {
+        std::println!("Device full NPOT query: {:?}", pipeline.full_npot);
+        if variant == 24 && pipeline.full_npot != super::super::capabilities::Query::Value(true) {
+            if required {
+                panic!("strict hardware test requires a positive unrestricted NPOT query");
+            }
+            std::println!("SKIP: unrestricted NPOT support was not reported");
+            return Ok(());
+        }
+        if variant != 23 && variant != 24 {
+            pipeline.full_npot = super::super::capabilities::Query::Value(false);
+        }
+    }
+    let bad_pipeline = if variant == 20 {
+        let mut bad = unsafe {
+            device
+                .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &buffers,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs_bad")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                })
+                .unwrap()
+        };
+        bad.full_npot = super::super::capabilities::Query::Value(false);
+        Some(bad)
+    } else {
+        None
+    };
+    let short_group_layout = if variant == 16 || variant == 22 {
         let short_entries: alloc::vec::Vec<_> = entries
             .iter()
             .copied()
@@ -665,6 +845,19 @@ fn sampled_triangle_variant(
             &[0, 255, 0, 255]
         });
     }
+    if sampler_case {
+        for y in 0..4 {
+            for x in 0..4 {
+                let color = match (x >= 2, y >= 2) {
+                    (false, false) => [255, 0, 0, 255],
+                    (true, false) => [0, 255, 0, 255],
+                    (false, true) => [0, 0, 255, 255],
+                    (true, true) => [255, 255, 255, 255],
+                };
+                texels[(y * 4 + x) * 4..(y * 4 + x + 1) * 4].copy_from_slice(&color);
+            }
+        }
+    }
     native.write_rgba_texture(&texture, 0, 0, &texels)?;
     let view = unsafe {
         device
@@ -680,15 +873,27 @@ fn sampled_triangle_variant(
             )
             .unwrap()
     };
-    let second_texture = unsafe { device.create_texture(&texture_desc).unwrap() };
-    let second_texels: alloc::vec::Vec<u8> = if count == 8 && multi_resource {
+    let mut second_desc = texture_desc.clone();
+    if conditional_npot {
+        second_desc.size.width = 3;
+        second_desc.size.height = 5;
+    }
+    let second_texture = unsafe { device.create_texture(&second_desc).unwrap() };
+    let mut second_texels: alloc::vec::Vec<u8> = if count == 8 && multi_resource {
         [64u8, 0, 0, 255]
     } else if effect == 2 {
         [0u8, 255, 255, 255]
     } else {
         [0u8, 255, 0, 255]
     }
-    .repeat(16);
+    .repeat(if conditional_npot { 15 } else { 16 });
+    if variant == 24 {
+        for row in 0..5 {
+            for column in 1..3 {
+                second_texels[(row * 3 + column) * 4 + 1] = 0;
+            }
+        }
+    }
     native.write_rgba_texture(&second_texture, 0, 0, &second_texels)?;
     let second_view = unsafe {
         device
@@ -741,22 +946,54 @@ fn sampled_triangle_variant(
             extra_views.push(view);
         }
     }
-    let sampler = unsafe {
-        device
-            .create_sampler(&crate::SamplerDescriptor {
-                label: None,
-                address_modes: [wgt::AddressMode::ClampToEdge; 3],
-                mag_filter: wgt::FilterMode::Nearest,
-                min_filter: wgt::FilterMode::Nearest,
-                mipmap_filter: wgt::MipmapFilterMode::Nearest,
-                lod_clamp: 0.0..if two { 32.0 } else { f32::MAX },
-                compare: None,
-                anisotropy_clamp: 1,
-                border_color: None,
-            })
-            .unwrap()
+    let mut sampler_desc = crate::SamplerDescriptor {
+        label: None,
+        address_modes: [wgt::AddressMode::ClampToEdge; 3],
+        mag_filter: wgt::FilterMode::Nearest,
+        min_filter: wgt::FilterMode::Nearest,
+        mipmap_filter: wgt::MipmapFilterMode::Nearest,
+        lod_clamp: 0.0..if two { 32.0 } else { f32::MAX },
+        compare: None,
+        anisotropy_clamp: 1,
+        border_color: None,
     };
-    let repeat_sampler = if variant == 13 || variant == 15 || variant == 18 {
+    match variant {
+        31 | 42 | 47 => {
+            sampler_desc.min_filter = wgt::FilterMode::Linear;
+            sampler_desc.mag_filter = wgt::FilterMode::Linear;
+        }
+        32 | 33 | 44 | 45 => sampler_desc.mag_filter = wgt::FilterMode::Linear,
+        34 | 35 => sampler_desc.min_filter = wgt::FilterMode::Linear,
+        36 => sampler_desc.address_modes[0] = wgt::AddressMode::Repeat,
+        37 => sampler_desc.address_modes[0] = wgt::AddressMode::MirrorRepeat,
+        39 => {
+            sampler_desc.address_modes[0] = wgt::AddressMode::MirrorRepeat;
+            sampler_desc.address_modes[1] = wgt::AddressMode::Repeat;
+        }
+        _ => {}
+    }
+    if variant == 44 || variant == 45 {
+        sampler_desc.lod_clamp.end = 1.0;
+    }
+    if variant == 42 {
+        sampler_desc.anisotropy_clamp = 2;
+        sampler_desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
+    }
+    let sampler = unsafe { device.create_sampler(&sampler_desc).unwrap() };
+    if variant == 42 {
+        let mut unsupported = sampler_desc.clone();
+        unsupported.anisotropy_clamp = 3;
+        assert!(unsafe { device.create_sampler(&unsupported) }.is_err());
+    }
+    let transition_sampler = if variant == 38 {
+        let mut next = sampler_desc.clone();
+        next.mag_filter = wgt::FilterMode::Linear;
+        next.min_filter = wgt::FilterMode::Linear;
+        Some(unsafe { device.create_sampler(&next).unwrap() })
+    } else {
+        None
+    };
+    let repeat_sampler = if variant == 13 || variant == 15 || variant == 18 || conditional_npot {
         Some(unsafe {
             device
                 .create_sampler(&crate::SamplerDescriptor {
@@ -799,7 +1036,13 @@ fn sampled_triangle_variant(
         sampler_bindings.clear();
         sampler_bindings.resize(sampler_count, &sampler);
         if let Some(repeat) = repeat_sampler.as_ref() {
-            sampler_bindings[if variant == 18 { 15 } else { 2 }] = repeat;
+            sampler_bindings[if conditional_npot {
+                0
+            } else if variant == 18 {
+                15
+            } else {
+                2
+            }] = repeat;
         }
     }
     let uniform = unsafe {
@@ -961,8 +1204,48 @@ fn sampled_triangle_variant(
             })
             .unwrap()
     });
-    let transition_group = if variant == 3 || variant == 14 {
-        let textures = if variant == 14 {
+    let invalid_pair_group = if variant == 20 {
+        let mut samplers = sampler_bindings.clone();
+        samplers[1] = repeat_sampler.as_ref().unwrap();
+        Some(unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: buffer_bindings,
+                    samplers: &samplers,
+                    textures: &texture_bindings,
+                    entries: &group_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        })
+    } else {
+        None
+    };
+    let sampler_transition_group = if let Some(next) = transition_sampler.as_ref() {
+        let mut next_samplers = sampler_bindings.clone();
+        next_samplers[0] = next;
+        Some(unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: buffer_bindings,
+                    samplers: &next_samplers,
+                    textures: &texture_bindings,
+                    entries: &group_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        })
+    } else {
+        None
+    };
+    let transition_group = if variant == 3 || variant == 14 || variant == 21 {
+        let textures = if variant == 14 || variant == 21 {
             alloc::vec![
                 crate::TextureBinding {
                     view: &view,
@@ -1038,7 +1321,7 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     native.write_byte_buffer(&buffer, 0, &bytes)?;
-    let index_buffer = if effect == 6 {
+    let index_buffer = if effect == 6 || variant == 20 {
         let index = unsafe {
             device
                 .create_buffer(&crate::BufferDescriptor {
@@ -1208,6 +1491,55 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     unsafe {
+        if let (Some(invalid_group), Some(bad_pipeline)) = (&invalid_pair_group, &bad_pipeline) {
+            for switch_pipeline in [false, true] {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+                crate::CommandEncoder::set_vertex_buffer(
+                    &mut encoder,
+                    0,
+                    crate::BufferBinding::new_unchecked(&buffer, 0, None),
+                );
+                crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+                if switch_pipeline {
+                    crate::CommandEncoder::set_render_pipeline(&mut encoder, bad_pipeline);
+                } else {
+                    crate::CommandEncoder::set_bind_group(
+                        &mut encoder,
+                        &layout,
+                        0,
+                        invalid_group,
+                        &[],
+                    );
+                }
+                crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            }
+        }
+        if let (Some(invalid_group), Some(index)) = (&invalid_pair_group, &index_buffer) {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                crate::BufferBinding::new_unchecked(index, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 0, 1);
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, invalid_group, &[]);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+        }
         if let Some(index) = index_buffer.as_ref() {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
@@ -1330,7 +1662,7 @@ fn sampled_triangle_variant(
             crate::BufferBinding::new_unchecked(&buffer, 0, None),
         );
         crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
-        if variant == 14 || variant == 16 {
+        if variant == 14 || variant == 16 || variant == 21 || variant == 22 || variant == 38 {
             crate::CommandEncoder::set_scissor_rect(
                 &mut encoder,
                 &crate::Rect {
@@ -1358,7 +1690,7 @@ fn sampled_triangle_variant(
             );
         }
         if let Some(group) = transition_group.as_ref() {
-            if variant == 14 {
+            if variant == 14 || variant == 21 {
                 crate::CommandEncoder::set_scissor_rect(
                     &mut encoder,
                     &crate::Rect {
@@ -1369,6 +1701,19 @@ fn sampled_triangle_variant(
                     },
                 );
             }
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, group, &[]);
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+        }
+        if let Some(group) = sampler_transition_group.as_ref() {
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &crate::Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, group, &[]);
             crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
         }
@@ -1400,16 +1745,37 @@ fn sampled_triangle_variant(
     if variant != 0 {
         std::println!("FL9_1 variant {variant} readback: {actual:?}");
     }
-    if multi_resource {
+    if sampler_case {
+        let expected: [u8; 4] = match variant {
+            30 | 33 | 34 | 44 | 46 => [255, 255, 255, 255],
+            31 | 32 | 35 | 38 | 42 | 45 | 47 => [128, 128, 128, 255],
+            36 | 48 => [0, 255, 0, 255],
+            37 => [255, 0, 0, 255],
+            39 => [0, 0, 255, 255],
+            _ => unreachable!(),
+        };
+        for (&observed, &want) in actual.iter().zip(&expected) {
+            assert!(
+                (i16::from(observed) - i16::from(want)).abs() <= 1,
+                "variant {variant}: {actual:?} expected {expected:?}"
+            );
+        }
+        if variant == 38 {
+            assert_eq!(
+                &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],
+                &[255, 255, 255, 255]
+            );
+        }
+    } else if multi_resource {
         if count == 8 {
             assert_eq!(actual, &[144, 0, 0, 255]);
-        } else if variant == 16 {
+        } else if variant == 16 || variant == 22 {
             assert_eq!(actual, &[255, 0, 0, 255]);
             assert_eq!(
                 &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],
                 &[255, 255, 255, 255]
             );
-        } else if variant == 14 {
+        } else if variant == 14 || variant == 21 {
             assert_eq!(actual, &[255, 255, 0, 255]);
             assert_eq!(
                 &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],

@@ -3,6 +3,8 @@ use super::device::NativeDevice;
 use alloc::sync::Arc;
 use windows::Win32::Graphics::Direct3D11::*;
 
+pub(super) const MAX_ANISOTROPY: u16 = 2;
+
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct Sampler {
@@ -14,42 +16,47 @@ pub struct Sampler {
 crate::impl_dyn_resource!(Sampler);
 impl crate::DynSampler for Sampler {}
 
-impl Sampler {
-    pub(super) fn new(
-        owner: Arc<NativeDevice>,
-        desc: &crate::SamplerDescriptor,
-    ) -> Result<Self, crate::DeviceError> {
-        use wgt::FilterMode::{Linear, Nearest};
-        use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
-        let address = |mode| match mode {
-            wgt::AddressMode::ClampToEdge => Ok(D3D11_TEXTURE_ADDRESS_CLAMP),
-            wgt::AddressMode::Repeat => Ok(D3D11_TEXTURE_ADDRESS_WRAP),
-            wgt::AddressMode::MirrorRepeat => Ok(D3D11_TEXTURE_ADDRESS_MIRROR),
-            _ => Err(crate::DeviceError::Unexpected),
-        };
-        if desc.anisotropy_clamp != 1
-            || desc.compare.is_some()
-            || desc.border_color.is_some()
-            || !desc.lod_clamp.start.is_finite()
-            || !desc.lod_clamp.end.is_finite()
-            || desc.lod_clamp.start < 0.0
-            || desc.lod_clamp.start > desc.lod_clamp.end
-        {
-            return Err(crate::DeviceError::Unexpected);
-        }
-        // 9_1/9_2 require FLT_MAX as MaxLOD. With a single-mip view, a
-        // positive upper bound >= 1 selects the same mip and min/mag filter
-        // as FLT_MAX. Retain this restriction for bind-group validation.
-        let level_9_1_or_2 =
-            owner.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw();
-        let single_mip_only = level_9_1_or_2 && desc.lod_clamp.end != f32::MAX;
-        if level_9_1_or_2
-            && (desc.lod_clamp.start.fract() != 0.0
-                || (single_mip_only && (desc.lod_clamp.start != 0.0 || desc.lod_clamp.end < 1.0)))
-        {
-            return Err(crate::DeviceError::Unexpected);
-        }
-        let filter = match (desc.min_filter, desc.mag_filter, desc.mipmap_filter) {
+fn translate_sampler(
+    desc: &crate::SamplerDescriptor,
+    level: super::device::FeatureLevel,
+) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
+    use wgt::FilterMode::{Linear, Nearest};
+    use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
+    let address = |mode| match mode {
+        wgt::AddressMode::ClampToEdge => Ok(D3D11_TEXTURE_ADDRESS_CLAMP),
+        wgt::AddressMode::Repeat => Ok(D3D11_TEXTURE_ADDRESS_WRAP),
+        wgt::AddressMode::MirrorRepeat => Ok(D3D11_TEXTURE_ADDRESS_MIRROR),
+        wgt::AddressMode::ClampToBorder => Err(crate::DeviceError::Unexpected),
+    };
+    if !(1..=MAX_ANISOTROPY).contains(&desc.anisotropy_clamp)
+        || (desc.anisotropy_clamp > 1
+            && (desc.min_filter != Linear
+                || desc.mag_filter != Linear
+                || desc.mipmap_filter != MipLinear))
+        || desc.compare.is_some()
+        || !desc.lod_clamp.start.is_finite()
+        || !desc.lod_clamp.end.is_finite()
+        || desc.lod_clamp.start < 0.0
+        || desc.lod_clamp.start > desc.lod_clamp.end
+    {
+        return Err(crate::DeviceError::Unexpected);
+    }
+    // Before FL11, min/mag selection can occur before or after LOD clamping.
+    let level_9_1_or_2 = level.as_raw() <= super::device::FeatureLevel::L9_2.as_raw();
+    // Raising a maximum of at least 1 preserves the filter boundary for mip zero.
+    let single_mip_only = level_9_1_or_2 && desc.lod_clamp.end != f32::MAX;
+    if level_9_1_or_2
+        && (desc.lod_clamp.start.fract() != 0.0
+            || (desc.lod_clamp.start > 0.0
+                && (desc.min_filter != desc.mag_filter || desc.anisotropy_clamp > 1))
+            || (single_mip_only && (desc.lod_clamp.start != 0.0 || desc.lod_clamp.end < 1.0)))
+    {
+        return Err(crate::DeviceError::Unexpected);
+    }
+    let filter = if desc.anisotropy_clamp == 2 {
+        D3D11_FILTER_ANISOTROPIC
+    } else {
+        match (desc.min_filter, desc.mag_filter, desc.mipmap_filter) {
             (Nearest, Nearest, MipNearest) => D3D11_FILTER_MIN_MAG_MIP_POINT,
             (Nearest, Nearest, MipLinear) => D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR,
             (Nearest, Linear, MipNearest) => D3D11_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT,
@@ -58,14 +65,24 @@ impl Sampler {
             (Linear, Nearest, MipLinear) => D3D11_FILTER_MIN_LINEAR_MAG_POINT_MIP_LINEAR,
             (Linear, Linear, MipNearest) => D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
             (Linear, Linear, MipLinear) => D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-        };
-        let native = D3D11_SAMPLER_DESC {
+        }
+    };
+    let border = match desc.border_color {
+        None | Some(wgt::SamplerBorderColor::TransparentBlack | wgt::SamplerBorderColor::Zero) => {
+            [0.0; 4]
+        }
+        Some(wgt::SamplerBorderColor::OpaqueBlack) => [0.0, 0.0, 0.0, 1.0],
+        Some(wgt::SamplerBorderColor::OpaqueWhite) => [1.0; 4],
+    };
+    Ok((
+        D3D11_SAMPLER_DESC {
             Filter: filter,
             AddressU: address(desc.address_modes[0])?,
             AddressV: address(desc.address_modes[1])?,
             AddressW: address(desc.address_modes[2])?,
-            MaxAnisotropy: 1,
+            MaxAnisotropy: u32::from(desc.anisotropy_clamp),
             ComparisonFunc: D3D11_COMPARISON_NEVER,
+            BorderColor: border,
             MinLOD: desc.lod_clamp.start,
             MaxLOD: if single_mip_only {
                 f32::MAX
@@ -73,7 +90,23 @@ impl Sampler {
                 desc.lod_clamp.end
             },
             ..Default::default()
-        };
+        },
+        single_mip_only,
+    ))
+}
+
+fn requires_power_of_two(address_modes: &[wgt::AddressMode; 3]) -> bool {
+    address_modes
+        .iter()
+        .any(|mode| *mode != wgt::AddressMode::ClampToEdge)
+}
+
+impl Sampler {
+    pub(super) fn new(
+        owner: Arc<NativeDevice>,
+        desc: &crate::SamplerDescriptor,
+    ) -> Result<Self, crate::DeviceError> {
+        let (native, single_mip_only) = translate_sampler(desc, owner.feature_level())?;
         let mut raw = None;
         unsafe {
             owner
@@ -85,10 +118,7 @@ impl Sampler {
             owner,
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
             single_mip_only,
-            wraps: desc
-                .address_modes
-                .iter()
-                .any(|mode| *mode != wgt::AddressMode::ClampToEdge),
+            wraps: requires_power_of_two(&desc.address_modes),
         })
     }
 
@@ -114,6 +144,267 @@ mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
+
+    fn descriptor() -> crate::SamplerDescriptor<'static> {
+        crate::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Nearest,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_clamp: 0.0..32.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        }
+    }
+
+    #[test]
+    fn sampler_translation_covers_addressing_and_filter_combinations() {
+        use wgt::AddressMode::*;
+        use wgt::FilterMode::{Linear, Nearest};
+        use wgt::MipmapFilterMode::{Linear as ML, Nearest as MN};
+        let mut desc = descriptor();
+        assert!(!requires_power_of_two(&[ClampToEdge; 3]));
+        for mode in [Repeat, MirrorRepeat, ClampToBorder] {
+            for axis in 0..3 {
+                let mut modes = [ClampToEdge; 3];
+                modes[axis] = mode;
+                assert!(requires_power_of_two(&modes));
+            }
+        }
+        for (u, expected_u) in [
+            (ClampToEdge, D3D11_TEXTURE_ADDRESS_CLAMP),
+            (Repeat, D3D11_TEXTURE_ADDRESS_WRAP),
+            (MirrorRepeat, D3D11_TEXTURE_ADDRESS_MIRROR),
+        ] {
+            for (v, expected_v) in [
+                (ClampToEdge, D3D11_TEXTURE_ADDRESS_CLAMP),
+                (Repeat, D3D11_TEXTURE_ADDRESS_WRAP),
+                (MirrorRepeat, D3D11_TEXTURE_ADDRESS_MIRROR),
+            ] {
+                desc.address_modes = [u, v, ClampToEdge];
+                let native = translate_sampler(&desc, FeatureLevel::L9_1).unwrap().0;
+                assert_eq!((native.AddressU, native.AddressV), (expected_u, expected_v));
+            }
+        }
+        desc.address_modes = [Repeat, MirrorRepeat, ClampToEdge];
+        let (native, single) = translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
+        assert!(single);
+        assert_eq!(
+            [native.AddressU, native.AddressV, native.AddressW],
+            [
+                D3D11_TEXTURE_ADDRESS_WRAP,
+                D3D11_TEXTURE_ADDRESS_MIRROR,
+                D3D11_TEXTURE_ADDRESS_CLAMP
+            ]
+        );
+        assert_eq!(native.BorderColor, [0.0; 4]);
+        for (min, mag, mip, filter) in [
+            (Nearest, Nearest, MN, D3D11_FILTER_MIN_MAG_MIP_POINT),
+            (Nearest, Nearest, ML, D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR),
+            (
+                Nearest,
+                Linear,
+                MN,
+                D3D11_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT,
+            ),
+            (Nearest, Linear, ML, D3D11_FILTER_MIN_POINT_MAG_MIP_LINEAR),
+            (Linear, Nearest, MN, D3D11_FILTER_MIN_LINEAR_MAG_MIP_POINT),
+            (
+                Linear,
+                Nearest,
+                ML,
+                D3D11_FILTER_MIN_LINEAR_MAG_POINT_MIP_LINEAR,
+            ),
+            (Linear, Linear, MN, D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT),
+            (Linear, Linear, ML, D3D11_FILTER_MIN_MAG_MIP_LINEAR),
+        ] {
+            desc.min_filter = min;
+            desc.mag_filter = mag;
+            desc.mipmap_filter = mip;
+            assert_eq!(
+                translate_sampler(&desc, FeatureLevel::L9_1)
+                    .unwrap()
+                    .0
+                    .Filter,
+                filter
+            );
+        }
+        desc.address_modes[2] = ClampToBorder;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.address_modes[2] = ClampToEdge;
+        for (border, color) in [
+            (wgt::SamplerBorderColor::TransparentBlack, [0., 0., 0., 0.]),
+            (wgt::SamplerBorderColor::Zero, [0., 0., 0., 0.]),
+            (wgt::SamplerBorderColor::OpaqueBlack, [0., 0., 0., 1.]),
+            (wgt::SamplerBorderColor::OpaqueWhite, [1., 1., 1., 1.]),
+        ] {
+            desc.border_color = Some(border);
+            assert_eq!(
+                translate_sampler(&desc, FeatureLevel::L9_1)
+                    .unwrap()
+                    .0
+                    .BorderColor,
+                color
+            );
+            desc.address_modes[0] = ClampToBorder;
+            assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+            desc.address_modes[0] = Repeat;
+        }
+    }
+
+    #[test]
+    fn sampler_translation_rejects_unrepresentable_fl9_states() {
+        use wgt::FilterMode::Linear;
+        use wgt::MipmapFilterMode::Linear as MipLinear;
+        let mut desc = descriptor();
+        for clamp in [0, 3, 16] {
+            desc.anisotropy_clamp = clamp;
+            assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        }
+        desc.anisotropy_clamp = 2;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.min_filter = Linear;
+        desc.mag_filter = Linear;
+        desc.mipmap_filter = MipLinear;
+        let (native, _) = translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
+        assert_eq!(native.Filter, D3D11_FILTER_ANISOTROPIC);
+        assert_eq!(native.MaxAnisotropy, 2);
+        desc.lod_clamp = 1.0..f32::MAX;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.lod_clamp = 0.0..32.0;
+        desc.compare = Some(wgt::CompareFunction::Less);
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.compare = None;
+        desc.anisotropy_clamp = 1;
+        for range in [
+            0.5..f32::MAX,
+            0.0..0.5,
+            1.0..4.0,
+            -1.0..1.0,
+            2.0..1.0,
+            f32::NAN..2.0,
+        ] {
+            desc.lod_clamp = range;
+            assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        }
+        desc.lod_clamp = 1.0..f32::MAX;
+        desc.mag_filter = wgt::FilterMode::Nearest;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.mag_filter = Linear;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_ok());
+        desc.lod_clamp = 0.0..32.0;
+        let (native, single) = translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
+        assert!(single);
+        assert_eq!((native.MinLOD, native.MaxLOD), (0.0, f32::MAX));
+        desc.lod_clamp = 0.0..f32::MAX;
+        assert!(!translate_sampler(&desc, FeatureLevel::L9_1).unwrap().1);
+    }
+
+    #[test]
+    fn sampler_npot_modes_follow_used_pair_and_optional_capability() {
+        use super::super::{
+            capabilities::Query,
+            sampling::{compatible, SamplingPair, SamplingResources, TextureInfo},
+        };
+        let pair = SamplingPair {
+            texture: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            sampler: naga::ResourceBinding {
+                group: 0,
+                binding: 8,
+            },
+            texture_slot: 0,
+            sampler_slot: 0,
+        };
+        for size in [[3, 4], [4, 3]] {
+            for mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
+                for axis in 0..3 {
+                    let mut modes = [wgt::AddressMode::ClampToEdge; 3];
+                    modes[axis] = mode;
+                    let resources = SamplingResources {
+                        textures: alloc::vec![TextureInfo {
+                            size,
+                            mip_levels: 1
+                        }],
+                        samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
+                    };
+                    assert!(!compatible(
+                        &[pair],
+                        &resources,
+                        FeatureLevel::L9_1,
+                        Query::Value(false)
+                    ));
+                    assert!(!compatible(
+                        &[pair],
+                        &resources,
+                        FeatureLevel::L9_1,
+                        Query::Unavailable(-1)
+                    ));
+                    assert!(compatible(
+                        &[pair],
+                        &resources,
+                        FeatureLevel::L9_1,
+                        Query::Value(true)
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sampler_explicit_lod_is_rejected_by_level9_pixel_profile() {
+        let source = "Texture2D t:register(t0); SamplerState s:register(s0); float4 main(float2 uv:TEXCOORD0):SV_Target { return t.SampleLevel(s, uv, 0.0); }";
+        let error = super::super::shader::compile_hlsl(
+            source,
+            "main",
+            super::super::shader::ShaderProfile::PixelLevel9_1,
+        )
+        .unwrap_err();
+        assert!(error.message.contains("texlod not supported"), "{error:?}");
+    }
+
+    #[test]
+    fn sampler_state_native_border_diagnostic() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let owner = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert_eq!(owner.feature_level(), FeatureLevel::L9_1);
+        let desc = D3D11_SAMPLER_DESC {
+            Filter: D3D11_FILTER_MIN_MAG_MIP_POINT,
+            AddressU: D3D11_TEXTURE_ADDRESS_BORDER,
+            AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+            MaxAnisotropy: 1,
+            ComparisonFunc: D3D11_COMPARISON_NEVER,
+            BorderColor: [0., 0., 0., 1.],
+            MinLOD: 0.,
+            MaxLOD: f32::MAX,
+            ..Default::default()
+        };
+        let mut sampler = None;
+        let result = unsafe {
+            owner
+                .raw_device()
+                .CreateSamplerState(&desc, Some(&mut sampler))
+        };
+        std::println!(
+            "FL9_1 hardware {:?}; native ordinary border sampler: {:?}",
+            adapter.identity(),
+            result
+        );
+        Ok(())
+    }
 
     #[test]
     fn hal_samplers_map_filters_and_reject_unsupported_states() -> windows::core::Result<()> {
@@ -208,6 +499,7 @@ mod tests {
             }
         }
         desc.anisotropy_clamp = 2;
+        desc.min_filter = Nearest;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
         desc.anisotropy_clamp = 1;
         desc.lod_clamp.end = 32.0;
@@ -227,9 +519,9 @@ mod tests {
         desc.lod_clamp.start = 0.5;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
         desc.lod_clamp.start = 0.0;
-        desc.address_modes[0] = wgt::AddressMode::ClampToBorder;
+        desc.compare = Some(wgt::CompareFunction::Less);
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
-        desc.address_modes[0] = wgt::AddressMode::ClampToEdge;
+        desc.compare = None;
         desc.lod_clamp.start = f32::NAN;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
         if let Ok(newer) = adapter.open_device(&[FeatureLevel::L11_0]) {

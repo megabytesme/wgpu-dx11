@@ -214,3 +214,17 @@ capability into the private test pipeline while leaving the driver unchanged.
 They also reject invalid draw, indexed draw and pipeline/bind-group transitions
 before submission. The unrestricted NPOT/wrap case requires a positive device
 query, and fails in strict mode if that prerequisite is missing.
+
+### FL9_1 sampler translation and patterned sampling
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampler_translation -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampler_state_ -- --nocapture --test-threads=1
+```
+
+The first command is CPU-only. The second executes patterned texture readback
+for minification, magnification, mixed filters, addressing and a sampler
+transition. It also runs a native border-creation diagnostic; that diagnostic
+is not a rendered-pixel test. Anisotropy 2 is sampled, but a single-mip image
+does not establish visual anisotropic quality.
