@@ -383,6 +383,24 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         );
         global.texture_drop(texture);
     }
+    let mut multisampled = texture_desc(
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUsages::RENDER_ATTACHMENT,
+    );
+    multisampled.sample_count = 4;
+    let (texture, error) = global.device_create_texture(device, &multisampled, None);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(
+                crate::resource::CreateTextureError::InvalidMultisampledFormat(
+                    wgt::TextureFormat::Rgba8Unorm
+                )
+            )
+        ),
+        "unsupported multisampling must fail core validation: {error:?}"
+    );
+    global.texture_drop(texture);
     let invalid_usage = wgt::TextureUsages::TRANSIENT_ATTACHMENT
         | wgt::TextureUsages::RENDER_ATTACHMENT
         | wgt::TextureUsages::COPY_SRC;
