@@ -1606,9 +1606,10 @@ including its zero-adapter isolation test and both controlled hardware tests.
 The focused fixture also passed independently with `WGPU_DX11_REQUIRE_HARDWARE=1`.
 This verifies core-to-HAL stencil state on this modern GPU restricted to FL9_1;
 historical FL9_1 behavior remains unverified. Rust formatting and
-`git diff --check` passed. Checkpoint commit is pending.
+`git diff --check` passed.
 
 Next: audit core-valid read-only depth/stencil attachment use and the remaining
 private HAL render-pass contract. Keep public adapter and surface exposure
 disabled while presentation reentrancy and truthful full capability reporting
 remain unresolved.
+Checkpoint: `cff2cc29b` (`core: test FL9_1 stencil through controlled fixture`).

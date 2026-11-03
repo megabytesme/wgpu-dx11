@@ -384,7 +384,8 @@ fixture continues to assert that ordinary HAL enumeration is empty. This is
 controlled core/HAL coverage, not public adapter exposure or historical-device
 validation.
 
-Checkpoint commit is pending. Next, audit core-valid read-only depth/stencil
-attachment use and remaining private render-pass contracts. Do not expose a
-public adapter or surface: DXGI message-pump reentrancy and truthful broad
-capability reporting remain unresolved gates.
+Checkpoint commit: `cff2cc29b` (`core: test FL9_1 stencil through controlled
+fixture`). Next, audit core-valid read-only depth/stencil attachment use and
+remaining private render-pass contracts. Do not expose a public adapter or
+surface: DXGI message-pump reentrancy and truthful broad capability reporting
+remain unresolved gates.
