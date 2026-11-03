@@ -1273,3 +1273,21 @@ successfully, the latter producing 32 red/32 green pixels. HAL Clippy passed
 with ten existing test warnings and ordinary core D3D11 enumeration stayed
 empty. Independent review found no concrete bypass within the current subset;
 the guard remains conservative and does not establish general integer support.
+Checkpoint: `3de27b02b7659b028db3606e0e3047e07f9e75b8`.
+
+Next: investigate nonindexed point-list pipelines with supported vertex streams.
+Keep indexed points rejected at FL9_1, verify actual pixel placement and
+first-vertex/stream bounds, and preserve point batching and instance ordering.
+
+Nonindexed point pipelines now support the existing vertex and instance stream
+subset. Vertex streams rebase for each native batch of at most 65,535 points;
+indexed points remain rejected. The strict private test passed three full-image
+RTX FL9_1 executions, including sparse slots, nonzero first vertex, a point to
+triangle transition and 65,537 points across two instances with first_instance
+1. The controlled core fixture matched all 64 pixels. The initial private
+baseline failed at pipeline creation as expected; the first core attempt hit a
+fixture-only inter-stage limit, corrected from 1 to 2 before the passing run.
+The full strict suite passed 261 tests with two filtered; six dynamic-index
+shaders are rejected and their GPU renders skipped. HAL Clippy passed with ten
+existing test warnings and core's zero-adapter test passed. An independent
+review found no concrete issue. Historical drivers are unverified.

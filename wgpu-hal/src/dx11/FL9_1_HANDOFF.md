@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 259 tests; older
+operations are safe. The latest completed strict suite passed 261 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -111,6 +111,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `07eaee830f8600b1b56391089ab3df03a20bcddf` | Disjoint native mip sampling |
 | `3e0fdcb9f9e8330e7cb900a021303d0e6d22c878` | Disjoint clone-backed mip sampling |
 | `8045637708e23b1d4de8c54f1ddde3d54bf0c6c8` | Emulate Never depth comparison |
+| `3de27b02b7659b028db3606e0e3047e07f9e75b8` | Reject unsafe FL9 integer shader semantics |
 
 ## What is and is not usable
 
@@ -246,8 +247,9 @@ Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
 sound presentation synchronization design and core/HAL contract coverage while
 continuing verified FL9_1 increments.
-Zero-input pipelines and nonindexed point lists are supported privately; only
-the interior-point case has GPU readback coverage, and indexed points remain
+Zero-input pipelines and nonindexed point lists with supported vertex and
+instance streams are supported privately. Strict GPU readback covers sparse
+streams, transitions and rebased 65,537-point batches; indexed points remain
 unavailable.
 Full-channel separate-alpha diagnostics require an explicit test-only opt-in
 and are not evidence of historical-driver support.

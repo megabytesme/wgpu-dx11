@@ -1176,6 +1176,36 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             }
         };
+        if topology == wgt::PrimitiveTopology::PointList && !vertices.is_empty() {
+            for (_, _, offset, stride) in &mut vertices {
+                let start = super::command::strip_vertex_offset(*offset, *stride, first_vertex);
+                let last = first_vertex.checked_add(vertex_count - 1).and_then(|last| {
+                    super::command::strip_vertex_offset(*offset, *stride, last).ok()
+                });
+                let (Ok(start), Some(_)) = (start, last) else {
+                    self.reject();
+                    return;
+                };
+                *offset = start;
+            }
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
+            for command in binding_commands {
+                self.record(command);
+            }
+            self.record(NativeCommand::DrawPoints {
+                vertices,
+                count: vertex_count,
+                instances: instance_count,
+                max_points: max_vertices,
+                instance_bindings,
+            });
+            return;
+        }
         if render.depth_never {
             if !render.depth_never_elision_safe {
                 self.reject();
@@ -3901,6 +3931,10 @@ mod depth_render_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/depth_never.rs"]
 mod depth_never_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/point_vertex.rs"]
+mod point_vertex_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/triangle_strip.rs"]

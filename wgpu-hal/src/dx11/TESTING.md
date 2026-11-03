@@ -65,7 +65,7 @@ only established degenerate draw completion. The controlled core fixture used a
 synthetic per-stage buffer limit of two and checked 64 green pixels. The correct
 handling of a negative base-adjusted index when all streams have zero stride is
 still an open specification question; there is no visible proof from the current
-triangle-only shader subset. Historical FL9_1 drivers remain unverified.
+indexed triangle-only subset. Historical FL9_1 drivers remain unverified.
 
 With strict hardware mode enabled, run the instance-stream checks with:
 
@@ -86,6 +86,23 @@ The controlled core fixture's instance-rate case produced 32 red and 32 green
 pixels. Indexed draws containing only instance-rate streams and shaders using
 `instance_index` remain unsupported. These results do not establish general
 instancing or historical FL9_1-driver behavior.
+
+With strict hardware mode enabled, run the point-input execution test with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_point_list_vertex_inputs_and_pipeline_transition -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested and selected FL9_1, the test checked three full
+8×8 images. These cover sparse vertex slots, nonzero binding offsets and first
+vertex, a point-to-triangle pipeline transition, and 65,537 points spanning
+rebased batches with nonzero `first_instance` and an instance-rate stream. An
+out-of-range draw is rejected during encoding. The controlled core `PointInput`
+fixture checked all 64 pixels; its initial fixture buffer limit was adjusted from
+one to two so it could create the intended layout. Before implementation the HAL
+baseline failed because the pipeline rejected point inputs. Indexed point draws
+remain unsupported, and historical FL9_1 behavior has not been verified. Public
+adapter enumeration remains disabled.
 
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 

@@ -123,8 +123,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - FL9_1 rejects alpha, inversion and vignette blending when both RGB and alpha
   are written because separate alpha is not guaranteed. RGB-only and alpha-only
   cases use coupled factors; a test-only opt-in retains nonportable diagnostics.
-- Nonindexed point-list draws are supported for zero-input pipelines; indexed
-  points and point pipelines with vertex buffers remain unavailable.
+- Nonindexed point-list draws support the restricted vertex- and instance-rate
+  streams, including sparse slots, nonzero offsets and `first_instance`. FL9_1
+  point batches rebase vertex bindings and contain at most 65,535 points.
+  Strict RTX tests checked three full images, including 65,537 points across a
+  batch boundary; a controlled core fixture checked 64 pixels. Indexed points
+  remain unavailable, and historical FL9_1 drivers remain unverified.
 - Nonindexed strips preserve winding through overlapping, rebased batches;
   indexed strips remain unsupported because native strip cuts are not guaranteed.
 - Direct FL9_1 triangle-list batches are conservatively limited to 65,535

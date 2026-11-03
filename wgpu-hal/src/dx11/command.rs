@@ -174,6 +174,13 @@ pub(super) enum NativeCommand {
         zero_input: bool,
         instance_bindings: InstanceBindings,
     },
+    DrawPoints {
+        vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        count: u32,
+        instances: u32,
+        max_points: u32,
+        instance_bindings: InstanceBindings,
+    },
     DrawStrip {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
         count: u32,
@@ -242,6 +249,29 @@ fn draw_start_vertex(first: u32, zero_input: bool) -> u32 {
     } else {
         first
     }
+}
+
+fn point_batches(
+    count: u32,
+    max_points: u32,
+    mut draw: impl FnMut(u32, u32) -> Result<()>,
+) -> Result<()> {
+    if max_points == 0 {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    let mut first = 0;
+    let mut remaining = count;
+    while remaining != 0 {
+        let batch = remaining.min(max_points);
+        draw(first, batch)?;
+        remaining -= batch;
+        if remaining != 0 {
+            first = first
+                .checked_add(batch)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn strip_vertex_offset(offset: u32, stride: u32, first: u32) -> Result<u32> {
@@ -533,6 +563,38 @@ impl CommandBuffer {
                             })?;
                         }
                     }
+                    NativeCommand::DrawPoints {
+                        vertices,
+                        count,
+                        instances,
+                        max_points,
+                        instance_bindings,
+                    } => {
+                        instance_bindings.validate(*instances)?;
+                        point_batches(*count, *max_points, |first, _| {
+                            for (_, _, offset, stride) in vertices {
+                                strip_vertex_offset(*offset, *stride, first)?;
+                            }
+                            Ok(())
+                        })?;
+                        for instance in 0..*instances {
+                            instance_bindings.bind(context, instance)?;
+                            point_batches(*count, *max_points, |first, count| {
+                                for (slot, buffer, base, stride) in vertices {
+                                    let offset = strip_vertex_offset(*base, *stride, first)?;
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer.clone())),
+                                        Some(stride),
+                                        Some(&offset),
+                                    );
+                                }
+                                context.Draw(count, 0);
+                                Ok(())
+                            })?;
+                        }
+                    }
                     NativeCommand::DrawStrip {
                         vertices,
                         count,
@@ -669,6 +731,40 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
 
+    #[test]
+    fn point_batches_rebase_streams_and_keep_instance_order() {
+        let mut batches = Vec::new();
+        for instance in 0..2 {
+            point_batches(65_536, 65_535, |first, count| {
+                let position = strip_vertex_offset(16, 12, first)?;
+                let constant = strip_vertex_offset(24, 0, first)?;
+                batches.push((instance, first, count, position, constant));
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert_eq!(
+            batches,
+            [
+                (0, 0, 65_535, 16, 24),
+                (0, 65_535, 1, 786_436, 24),
+                (1, 0, 65_535, 16, 24),
+                (1, 65_535, 1, 786_436, 24),
+            ]
+        );
+        assert!(point_batches(1, 0, |_, _| Ok(())).is_err());
+        assert!(point_batches(2, 1, |first, _| {
+            strip_vertex_offset(u32::MAX, 4, first).map(|_| ())
+        })
+        .is_err());
+        let mut calls = 0;
+        point_batches(0, 65_535, |_, _| {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(calls, 0);
+    }
     #[test]
     fn instance_stream_offsets_use_wide_index_arithmetic() {
         assert_eq!(instance_vertex_offset(8, 4, 1, 2), Some(20));

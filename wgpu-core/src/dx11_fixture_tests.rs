@@ -51,7 +51,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_vertex_buffers: 2,
         max_vertex_attributes: 2,
         max_vertex_buffer_array_stride: 20,
-        max_inter_stage_shader_variables: 1,
+        max_inter_stage_shader_variables: 2,
         max_color_attachments: 1,
         max_color_attachment_bytes_per_sample: 8,
         max_buffer_size: 512 << 10,
@@ -356,6 +356,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::PointInput,
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
@@ -1060,6 +1061,7 @@ fn copy_only_texture_view(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum VertexCase {
     Baseline,
+    PointInput,
     FractionalSamplerLod,
     SampledMips,
     SampledMipsBias,
@@ -1091,6 +1093,7 @@ fn render_triangle(
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let overlapping = case == VertexCase::Overlapping;
+    let point_input = case == VertexCase::PointInput;
     let noop_stencil = case == VertexCase::NoopStencil;
     let never_depth = match case {
         VertexCase::NeverDepth(write) => Some(write),
@@ -1675,7 +1678,14 @@ fn render_triangle(
             stage: stage("vs"),
             buffers: Cow::Borrowed(&buffers),
         },
-        primitive: wgt::PrimitiveState::default(),
+        primitive: wgt::PrimitiveState {
+            topology: if point_input {
+                wgt::PrimitiveTopology::PointList
+            } else {
+                wgt::PrimitiveTopology::TriangleList
+            },
+            ..Default::default()
+        },
         depth_stencil: Some(wgt::DepthStencilState {
             format: wgt::TextureFormat::Depth24PlusStencil8,
             depth_write_enabled: Some(true),
@@ -1733,6 +1743,12 @@ fn render_triangle(
         0.25, 0.25, 0.5, 0., 1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, -1., -1., 0.75, 0.75,
         0.5, 3., -1., 0.75, 0.75, 0.5, -1., 3., 0.75, 0.75, 0.5,
     ];
+    if point_input {
+        values = vec![
+            0.0, 0.0, 0.25, 0.25, 0.5, -0.375, 0.375, 0.25, 0.25, 0.5, 0.375, -0.375, 0.25, 0.75,
+            0.5,
+        ];
+    }
     if never_depth.is_some() {
         values.extend_from_slice(&[
             -1., -1., 0., 0.75, 0.5, 3., -1., 0., 0.75, 0.5, -1., 3., 0., 0.75, 0.5,
@@ -1886,9 +1902,13 @@ fn render_triangle(
         )
         .unwrap();
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
-    global
-        .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
-        .unwrap();
+    if point_input {
+        global.render_pass_draw(&mut pass, 2, 1, 1, 0).unwrap();
+    } else {
+        global
+            .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
+            .unwrap();
+    }
     if let Some(never_pipeline) = never_pipeline {
         global
             .render_pass_set_pipeline(&mut pass, never_pipeline)
@@ -1898,9 +1918,11 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, pipeline_id)
             .unwrap();
     }
-    global
-        .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
-        .unwrap();
+    if !point_input {
+        global
+            .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
+            .unwrap();
+    }
     global.render_pass_end(&mut pass).unwrap();
     drop(pass);
     global
@@ -1966,7 +1988,13 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if disjoint_clone && x >= 4 {
+                if point_input {
+                    match (x, y) {
+                        (2, 2) => &[255, 0, 0, 255],
+                        (5, 5) => &[0, 255, 0, 255],
+                        _ => &[0, 0, 255, 255],
+                    }
+                } else if disjoint_clone && x >= 4 {
                     if disjoint_format == Some(wgt::TextureFormat::Bgra8Unorm) {
                         &[255, 0, 0, 255]
                     } else {

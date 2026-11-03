@@ -1009,13 +1009,15 @@ mod tests {
             vertex_buffers: &wrong_slot,
             vertex_stage: stage("with_input"),
         };
-        assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
+        let point_sparse = unsafe { device.create_render_pipeline(&desc) }.unwrap();
+        unsafe { device.destroy_render_pipeline(point_sparse) };
         let one_buffer = [populated];
         desc.vertex_processor = crate::VertexProcessor::Standard {
             vertex_buffers: &one_buffer,
             vertex_stage: stage("with_input"),
         };
-        assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
+        let point_vertex = unsafe { device.create_render_pipeline(&desc) }.unwrap();
+        unsafe { device.destroy_render_pipeline(point_vertex) };
         desc.primitive.topology = wgt::PrimitiveTopology::TriangleList;
         let triangle = unsafe { device.create_render_pipeline(&desc).unwrap() };
         let extent = wgt::Extent3d {
@@ -1938,9 +1940,8 @@ impl RenderPipeline {
             wgt::PrimitiveTopology::TriangleList
                 | wgt::PrimitiveTopology::TriangleStrip
                 | wgt::PrimitiveTopology::PointList
-        ) || (desc.primitive.topology == wgt::PrimitiveTopology::PointList && has_vertex_input)
-            || (desc.primitive.topology != wgt::PrimitiveTopology::TriangleStrip
-                && desc.primitive.strip_index_format.is_some())
+        ) || (desc.primitive.topology != wgt::PrimitiveTopology::TriangleStrip
+            && desc.primitive.strip_index_format.is_some())
         {
             return Err(invalid());
         }
