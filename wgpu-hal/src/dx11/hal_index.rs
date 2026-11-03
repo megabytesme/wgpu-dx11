@@ -91,14 +91,15 @@ impl IndexBinding {
         count: u32,
         base_vertex: i32,
         vertex_binding: (&ID3D11Buffer, u32, u64, u32, u32),
-        max_vertices: u32,
+        draw_limits: (u32, u32),
     ) -> Result<()> {
         let (vertex, vertex_offset, vertex_bytes, stride, extent) = vertex_binding;
+        let (max_vertices, instances) = draw_limits;
         let vertex_layout = (vertex_bytes, stride, extent);
         if !self.contains_range(first, count) || max_vertices == 0 {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        if count == 0 {
+        if count == 0 || instances == 0 {
             return Ok(());
         }
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
@@ -158,7 +159,8 @@ impl IndexBinding {
                         window.count,
                     ));
                 }
-                for (buffer, offset, count) in &windows {
+                for_each_window(instances, windows.len(), |index| {
+                    let (buffer, offset, count) = &windows[index];
                     context.IASetVertexBuffers(
                         0,
                         1,
@@ -168,7 +170,7 @@ impl IndexBinding {
                     );
                     context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
                     context.DrawIndexed(*count, 0, 0);
-                }
+                });
             } else {
                 let indices = (0..count as usize).map(|index| {
                     core::ptr::read_unaligned(
@@ -188,21 +190,26 @@ impl IndexBinding {
                     IndexDecision::Unsupported => return Err(Error::from_hresult(E_INVALIDARG)),
                 }
                 context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
-                let mut next = first;
-                let mut remaining = count;
-                while remaining != 0 {
-                    let batch = remaining.min(max_vertices);
-                    context.DrawIndexed(batch, next, base_vertex);
-                    remaining -= batch;
-                    if remaining != 0 {
-                        next = next
-                            .checked_add(batch)
-                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-                    }
-                }
+                super::command::draw_batches(
+                    first,
+                    count,
+                    instances,
+                    max_vertices,
+                    |first, count| {
+                        context.DrawIndexed(count, first, base_vertex);
+                    },
+                )?;
             }
         }
         Ok(())
+    }
+}
+
+fn for_each_window(instances: u32, windows: usize, mut draw: impl FnMut(usize)) {
+    for _ in 0..instances {
+        for window in 0..windows {
+            draw(window);
+        }
     }
 }
 
@@ -381,9 +388,20 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::{
-        classify_indices, classify_u32_indices, plan_u32_windows, rebased_vertex_offset,
-        IndexDecision, U32Decision,
+        classify_indices, classify_u32_indices, for_each_window, plan_u32_windows,
+        rebased_vertex_offset, IndexDecision, U32Decision,
     };
+
+    #[test]
+    fn indexed_instance_windows_remain_in_primitive_order() {
+        let mut drawn = Vec::new();
+        for_each_window(2, 3, |window| drawn.push(window));
+        assert_eq!(drawn, [0, 1, 2, 0, 1, 2]);
+        drawn.clear();
+        for_each_window(0, 3, |window| drawn.push(window));
+        for_each_window(2, 0, |window| drawn.push(window));
+        assert!(drawn.is_empty());
+    }
 
     #[test]
     fn u32_windows_preflight_whole_draw_and_preserve_triangle_order() {

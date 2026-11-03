@@ -1034,10 +1034,12 @@ impl crate::CommandEncoder for CommandEncoder {
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || !render.resources_compatible(self.device.feature_level())
             || first_instance != 0
-            || instance_count != 1
             || !index.contains_range(first_index, index_count)
         {
             self.reject();
+            return;
+        }
+        if instance_count == 0 || index_count == 0 {
             return;
         }
         let buffer = buffer.clone();
@@ -1070,6 +1072,7 @@ impl crate::CommandEncoder for CommandEncoder {
             stride,
             extent,
             max_vertices,
+            instances: instance_count,
         });
     }
 
@@ -2010,7 +2013,7 @@ mod tests {
                 BufferBinding::new_unchecked(&u32_indices, 4, None),
                 wgt::IndexFormat::Uint32,
             );
-            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 0, 2);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 1, 2);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
         }
@@ -2225,7 +2228,7 @@ mod tests {
                 BufferBinding::new_unchecked(&u32_indices, 4, None),
                 wgt::IndexFormat::Uint32,
             );
-            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 6, -3, 0, 1);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 6, -3, 0, 2);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             crate::CommandEncoder::copy_buffer_to_buffer(
                 &mut encoder,
@@ -2305,7 +2308,7 @@ mod tests {
                 BufferBinding::new_unchecked(&base_indices, 2, None),
                 wgt::IndexFormat::Uint16,
             );
-            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 6, -3, 0, 1);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 6, -3, 0, 2);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             crate::CommandEncoder::copy_buffer_to_buffer(
                 &mut encoder,
@@ -2584,6 +2587,167 @@ mod tests {
             "late unsupported triangle drew an earlier window: {atomic_pixels:?}"
         );
         std::println!("PASS: late unsupported triangle rejected before any window drew");
+        let mut put_instance_triangle = |first: usize, color: [u8; 4]| {
+            for (i, point) in [[-1f32, -1.], [3., -1.], [-1., 3.]].into_iter().enumerate() {
+                let offset = 8 + (first + i) * 12;
+                vertex_data[offset..offset + 4].copy_from_slice(&point[0].to_ne_bytes());
+                vertex_data[offset + 4..offset + 8].copy_from_slice(&point[1].to_ne_bytes());
+                vertex_data[offset + 8..offset + 12].copy_from_slice(&color);
+            }
+        };
+        put_instance_triangle(0, [255, 0, 0, 128]);
+        put_instance_triangle(3, [0, 0, 255, 128]);
+        put_instance_triangle(65535, [0, 255, 0, 128]);
+        native.write_byte_buffer(&order_vertices, 0, &vertex_data)?;
+        let blend_targets = [Some(wgt::ColorTargetState {
+            format: wgt::TextureFormat::Rgba8Unorm,
+            blend: Some(wgt::BlendState::ALPHA_BLENDING),
+            write_mask: wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE,
+        })];
+        let instance_pipeline = unsafe {
+            crate::Device::create_render_pipeline(
+                &device,
+                &RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: VertexProcessor::Standard {
+                        vertex_buffers: &order_buffers,
+                        vertex_stage: order_stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(order_stage("fs")),
+                    color_targets: &blend_targets,
+                    multiview_mask: None,
+                    cache: None,
+                },
+            )
+            .unwrap()
+        };
+        let mut short_indices = Vec::new();
+        for _ in 0..65535 {
+            for value in [0u16, 1, 2] {
+                short_indices.extend_from_slice(&value.to_ne_bytes());
+            }
+        }
+        for value in [3u16, 4, 5] {
+            short_indices.extend_from_slice(&value.to_ne_bytes());
+        }
+        let short_size = short_indices.len() as u64;
+        let short_buffer = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: short_size,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let short_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: short_size,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&short_upload, 0, &short_indices)?;
+        native.write_byte_buffer(&order_upload, 0, &index_data)?;
+        let mut instance_commands = Vec::new();
+        for (format, source, target, count, size) in [
+            (wgt::IndexFormat::Uint16, &short_upload, &short_buffer, 3, 8),
+            (
+                wgt::IndexFormat::Uint16,
+                &short_upload,
+                &short_buffer,
+                196608,
+                short_size,
+            ),
+            (
+                wgt::IndexFormat::Uint32,
+                &order_upload,
+                &order_indices,
+                9,
+                36,
+            ),
+        ] {
+            for instances in 0..=2 {
+                let commands = unsafe {
+                    crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                    crate::CommandEncoder::copy_buffer_to_buffer(
+                        &mut encoder,
+                        source,
+                        target,
+                        core::iter::once(BufferCopy {
+                            src_offset: 0,
+                            dst_offset: 0,
+                            size: NonZeroU64::new(size).unwrap(),
+                        }),
+                    );
+                    crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                    crate::CommandEncoder::set_render_pipeline(&mut encoder, &instance_pipeline);
+                    crate::CommandEncoder::set_vertex_buffer(
+                        &mut encoder,
+                        0,
+                        BufferBinding::new_unchecked(&order_vertices, 8, None),
+                    );
+                    crate::CommandEncoder::set_index_buffer(
+                        &mut encoder,
+                        BufferBinding::new_unchecked(target, 0, None),
+                        format,
+                    );
+                    crate::CommandEncoder::set_scissor_rect(
+                        &mut encoder,
+                        &Rect {
+                            x: 4,
+                            y: 4,
+                            w: 1,
+                            h: 1,
+                        },
+                    );
+                    crate::CommandEncoder::draw_indexed(&mut encoder, 0, count, 0, 0, instances);
+                    crate::CommandEncoder::end_render_pass(&mut encoder);
+                    crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+                };
+                let value = 11 + instance_commands.len() as u64;
+                unsafe {
+                    crate::Queue::submit(&queue, &[&commands], &[], (&fence, value)).unwrap()
+                };
+                assert!(native.wait_native_fence(&fence, value, Some(Duration::from_secs(5)))?);
+                let pixels = native.read_rgba_texture(&texture, 0, 0)?;
+                let expected: [u8; 4] = match (format, count, instances) {
+                    (_, _, 0) => [0, 0, 0, 255],
+                    (wgt::IndexFormat::Uint16, 3, 1) => [128, 0, 0, 255],
+                    (wgt::IndexFormat::Uint16, 3, _) => [192, 0, 0, 255],
+                    (wgt::IndexFormat::Uint16, _, _) => [127, 0, 128, 255],
+                    (wgt::IndexFormat::Uint32, _, 1) => [32, 64, 128, 255],
+                    (wgt::IndexFormat::Uint32, _, _) => [36, 72, 144, 255],
+                };
+                let pixel = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
+                assert!(
+                    pixel
+                        .iter()
+                        .zip(expected)
+                        .all(|(&actual, expected)| actual.abs_diff(expected) <= 3),
+                    "indexed {format:?}, {instances} instances: {pixel:?}, expected {expected:?}"
+                );
+                instance_commands.push(commands);
+            }
+        }
+        std::println!("PASS: u16 chunk and u32 window indexed instances preserve blend order");
+        unsafe {
+            crate::Device::destroy_buffer(&device, short_buffer);
+            crate::Device::destroy_buffer(&device, short_upload);
+            crate::Device::destroy_render_pipeline(&device, instance_pipeline);
+        }
         unsafe {
             crate::Device::destroy_buffer(&device, order_vertices);
             crate::Device::destroy_buffer(&device, order_indices);
@@ -2608,7 +2772,8 @@ mod tests {
                     order_commands,
                     atomic_commands,
                 ]
-                .into_iter(),
+                .into_iter()
+                .chain(instance_commands),
             );
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             let unsupported = RenderPassDescriptor {

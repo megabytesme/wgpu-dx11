@@ -540,3 +540,14 @@ strict private suite passed 177 tests, with two filtered; older tests can skip
 internally. The public indexed fixture passed with 32 red and 32 green pixels.
 An individual triangle spanning over 65534 effective indices still fails,
 and high stream offsets remain unverified on historical FL9_1 hardware.
+
+Restricted indexed instancing now preflights u16 or u32 indices once and
+replays every chunk or window for each instance in order. Zero instances do
+not stage or draw; selected instance-index inputs and nonzero first instance
+remain rejected. Forced-FL9_1 GPU tests cover u16 chunk order, u32 window order,
+zero/one/two instances and OOB discard. The strict private suite passed 178
+tests, two filtered; older tests may skip internally. An independent review
+identified that a saturating u16 case alone could not prove the second instance
+executed, so an additional small translucent u16 case was added and passed.
+HAL Clippy passed with ten existing warnings after removing a new argument-count
+warning; the focused GPU test passed again after that change.

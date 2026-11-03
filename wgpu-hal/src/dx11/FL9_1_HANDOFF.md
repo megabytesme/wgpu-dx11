@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 177 tests; older
+operations are safe. The latest combined strict suite passed 178 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -94,7 +94,7 @@ shown portable to historical drivers. Native compute and UAV storage are not
 FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
 
 Core also permits draw combinations that this HAL rejects at replay,
-including nonzero first-instance and indexed instancing;
+including nonzero first-instance;
 the existing downlevel flags alone do not make all of them unreachable. Core
 also permits indexed data outside the private path's conservative limits.
 accepts other layouts, resource shapes and baseline query operations outside
@@ -172,9 +172,9 @@ Private Uint32 conversion uses ordered effective-index windows spanning at most
 65534 and explicitly rejects selected vertex-index shader inputs. It rebases
 the vertex buffer, allocates scratch at replay, and may stall for index staging;
 individual wider triangles and historical-driver high-offset verification remain.
-Restricted direct instancing repeats ordered native draws for shaders without
-instance-dependent inputs. Indexed instancing, instance-index shaders and
-nonzero first instance remain unsupported.
+Restricted direct and indexed instancing repeat ordered native draws for
+shaders without instance-dependent inputs. Instance-index shaders and nonzero
+first instance remain unsupported.
 DXGI may synchronously call a window procedure during presentation. A private
 application can avoid the deadlock only by keeping its UI callback nonblocking
 and queueing graphics work; that cooperation cannot be assumed for arbitrary

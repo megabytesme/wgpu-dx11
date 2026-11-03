@@ -127,11 +127,12 @@ pub(super) enum NativeCommand {
         stride: u32,
         extent: u32,
         max_vertices: u32,
+        instances: u32,
     },
     EndRender,
 }
 
-fn draw_batches(
+pub(super) fn draw_batches(
     first: u32,
     count: u32,
     instances: u32,
@@ -390,6 +391,7 @@ impl CommandBuffer {
                         stride,
                         extent,
                         max_vertices,
+                        instances,
                     } => {
                         binding.draw(
                             context,
@@ -397,7 +399,7 @@ impl CommandBuffer {
                             *count,
                             *base_vertex,
                             (vertex, *vertex_offset, *vertex_bytes, *stride, *extent),
-                            *max_vertices,
+                            (*max_vertices, *instances),
                         )?;
                     }
                     NativeCommand::EndRender => context.ClearState(),
