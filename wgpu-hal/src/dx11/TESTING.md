@@ -548,6 +548,25 @@ rejected the NonFiltering layout. Comparison samplers remain unsupported;
 historical drivers remain unverified, and normal public D3D11 adapter enumeration
 remains disabled.
 
+### Sampled-resource visibility
+
+With strict hardware mode enabled:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sampled_vertex_fragment_visibility_and_transition -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampled_visibility_preserves_sparse_slots_and_layout_identity -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 level_9_1_vertex_texture_guards_follow_selected_entry -- --nocapture
+```
+
+The strict RTX FL9_1 test checked two full 8×8 images with fragment sampling and
+a transition between `VERTEX | FRAGMENT` and `FRAGMENT` sampled-resource layouts.
+Actual sampling by the selected vertex entry was rejected before drawing. A
+controlled core case checked 64 pixels. CPU tests cover per-binding stage
+mapping, layout identity and selected-entry guards. The initial strict baseline
+rejected the combined-visibility layout. These results do not establish vertex
+shader resource support or historical-driver behavior; public enumeration remains
+disabled.
+
 ### Unfilterable-float layout bindings
 
 With strict hardware mode enabled:

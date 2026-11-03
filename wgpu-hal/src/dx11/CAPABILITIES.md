@@ -370,6 +370,16 @@ unfilterable formats or comparison samplers. Historical drivers remain unverifie
 and public adapter enumeration remains disabled.
 Render-pass boundaries clear context state.
 
+Sampled texture and sampler entries may declare `FRAGMENT` or
+`VERTEX | FRAGMENT` visibility. Visibility is retained per binding in layout
+identity and stage mappings; combined visibility does not enable vertex-stage
+texture or sampler use. A selected vertex shader that samples a texture is
+rejected before drawing. Two strict FL9_1 RTX images checked fragment sampling
+and a transition between these layouts; a controlled core case checked 64
+pixels. CPU mapping and compiler guards cover stage identity and selected
+vertex entries. The original strict baseline rejected the combined layout.
+Historical FL9 drivers remain unverified, and public enumeration remains empty.
+
 ## Private uniform-buffer contract
 
 The thirteen slots are a private layout allocation limit, not a claim that a

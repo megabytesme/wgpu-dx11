@@ -1666,6 +1666,88 @@ mod tests {
     }
 
     #[test]
+    fn level_9_1_vertex_texture_guards_follow_selected_entry() {
+        use naga::{
+            valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
+        };
+        let wgsl = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            @vertex fn sampled() -> @builtin(position) vec4f {
+                return textureSampleLevel(image, image_sampler, vec2f(0.5), 0.0);
+            }
+            @vertex fn loaded() -> @builtin(position) vec4f {
+                return textureLoad(image, vec2i(0), 0);
+            }
+            @vertex fn dimensions() -> @builtin(position) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            @vertex fn safe() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @fragment fn fragment() -> @location(0) vec4f {
+                return textureSample(image, image_sampler, vec2f(0.5));
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Texture2dFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        for entry in ["sampled", "loaded", "dimensions"] {
+            assert!(matches!(
+                compile_naga_with_bindings(
+                    &module,
+                    &info,
+                    ShaderStage::Vertex,
+                    entry,
+                    ShaderProfile::VertexLevel9_1,
+                    &bindings,
+                ),
+                Err(NagaCompileError::UnsupportedBindings)
+            ));
+        }
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            ShaderStage::Vertex,
+            "safe",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+        )
+        .unwrap()
+        .starts_with(b"DXBC"));
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "fragment",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .unwrap()
+        .starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn naga_path_rejects_texture_bindings() {
         use naga::{
             valid::{Capabilities, ValidationFlags, Validator},

@@ -361,6 +361,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Baseline,
         VertexCase::NonFiltering,
         VertexCase::UnfilterableFloat,
+        VertexCase::VertexVisibleBindings,
         VertexCase::PointInput,
         VertexCase::PointIndexed(wgt::IndexFormat::Uint16),
         VertexCase::PointIndexed(wgt::IndexFormat::Uint32),
@@ -1317,6 +1318,7 @@ enum VertexCase {
     Baseline,
     NonFiltering,
     UnfilterableFloat,
+    VertexVisibleBindings,
     PointInput,
     PointIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
@@ -1355,6 +1357,11 @@ fn render_triangle(
         VertexCase::NonFiltering | VertexCase::UnfilterableFloat
     );
     let unfilterable_float = case == VertexCase::UnfilterableFloat;
+    let sampled_visibility = if case == VertexCase::VertexVisibleBindings {
+        wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
+    } else {
+        wgt::ShaderStages::FRAGMENT
+    };
     let overlapping = case == VertexCase::Overlapping;
     let point_index = match case {
         VertexCase::PointIndexed(format) => Some(format),
@@ -1754,7 +1761,7 @@ fn render_triangle(
     let mut group_entries = vec![
         wgt::BindGroupLayoutEntry {
             binding: 7,
-            visibility: wgt::ShaderStages::FRAGMENT,
+            visibility: sampled_visibility,
             ty: wgt::BindingType::Texture {
                 sample_type: wgt::TextureSampleType::Float {
                     filterable: !unfilterable_float,
@@ -1766,7 +1773,7 @@ fn render_triangle(
         },
         wgt::BindGroupLayoutEntry {
             binding: 42,
-            visibility: wgt::ShaderStages::FRAGMENT,
+            visibility: sampled_visibility,
             ty: wgt::BindingType::Sampler(if non_filtering {
                 wgt::SamplerBindingType::NonFiltering
             } else {

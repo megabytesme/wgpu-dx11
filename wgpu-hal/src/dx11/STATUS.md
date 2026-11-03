@@ -130,6 +130,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   filtering pairs were rejected, while unused incompatible pairs were allowed.
   No additional unfilterable formats or comparison samplers are supported;
   historical drivers remain unverified and public enumeration stays disabled.
+- Sampled texture and sampler bindings accept `FRAGMENT` and
+  `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.
+  Actual vertex-stage sampling remains rejected. Two strict RTX images covered
+  fragment sampling and a layout transition; core checked 64 pixels. CPU tests
+  cover stage mapping and selected-entry compiler guards. The baseline rejected
+  the combined layout; historical FL9 drivers remain unverified.
 - Short uniform ranges use a zero-padded native constant buffer and preserve the
   declared byte range, including non-multiples of 16. This stages through a CPU
   map and can stall; odd-sized GPU copies remain unverified on historical

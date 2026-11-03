@@ -4102,6 +4102,10 @@ mod nonfiltering_sampler_tests;
 mod unfilterable_texture_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/sampled_visibility.rs"]
+mod sampled_visibility_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/biased_sampling.rs"]
 mod biased_sampling_tests;
 

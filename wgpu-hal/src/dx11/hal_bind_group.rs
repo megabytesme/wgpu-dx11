@@ -23,8 +23,10 @@ pub(super) struct GroupKind {
     pub uniforms: [Option<UniformLayout>; MAX_UNIFORMS],
     pub textures: [Option<u32>; MAX_TEXTURES],
     pub texture_unfilterable_mask: u8,
+    pub texture_vertex_visibility_mask: u8,
     pub samplers: [Option<u32>; MAX_SAMPLERS],
     pub sampler_non_filtering_mask: u16,
+    pub sampler_vertex_visibility_mask: u16,
 }
 
 impl GroupKind {
@@ -32,8 +34,10 @@ impl GroupKind {
         uniforms: [None; MAX_UNIFORMS],
         textures: [None; MAX_TEXTURES],
         texture_unfilterable_mask: 0,
+        texture_vertex_visibility_mask: 0,
         samplers: [None; MAX_SAMPLERS],
         sampler_non_filtering_mask: 0,
+        sampler_vertex_visibility_mask: 0,
     };
 
     pub(super) fn shader_bindings(self) -> alloc::vec::Vec<super::shader::ShaderBinding> {
@@ -74,14 +78,28 @@ impl GroupKind {
         self,
         stage: wgt::ShaderStages,
     ) -> alloc::vec::Vec<super::shader::ShaderBinding> {
+        if stage != wgt::ShaderStages::VERTEX && stage != wgt::ShaderStages::FRAGMENT {
+            return alloc::vec::Vec::new();
+        }
         self.shader_bindings()
             .into_iter()
-            .filter(|binding| {
-                binding.kind != super::shader::ShaderBindingKind::Uniform
-                    || self.uniforms.iter().flatten().any(|uniform| {
+            .filter(|binding| match binding.kind {
+                super::shader::ShaderBindingKind::Uniform => {
+                    self.uniforms.iter().flatten().any(|uniform| {
                         uniform.binding == binding.binding.binding
                             && uniform.visibility.contains(stage)
                     })
+                }
+                super::shader::ShaderBindingKind::Texture2dFloat => {
+                    stage == wgt::ShaderStages::FRAGMENT
+                        || (stage == wgt::ShaderStages::VERTEX
+                            && self.texture_vertex_visibility_mask & (1u8 << binding.slot) != 0)
+                }
+                super::shader::ShaderBindingKind::Sampler => {
+                    stage == wgt::ShaderStages::FRAGMENT
+                        || (stage == wgt::ShaderStages::VERTEX
+                            && self.sampler_vertex_visibility_mask & (1u16 << binding.slot) != 0)
+                }
             })
             .collect()
     }
@@ -135,10 +153,17 @@ impl BindingPlan {
             if let Some(group) = group {
                 let sampler_count = dense_count(&group.samplers)?;
                 let texture_count = dense_count(&group.textures)?;
-                if u32::from(group.sampler_non_filtering_mask) >> sampler_count != 0 {
+                if u32::from(
+                    group.sampler_non_filtering_mask | group.sampler_vertex_visibility_mask,
+                ) >> sampler_count
+                    != 0
+                {
                     return Err(crate::DeviceError::Unexpected);
                 }
-                if u32::from(group.texture_unfilterable_mask) >> texture_count != 0 {
+                if u32::from(group.texture_unfilterable_mask | group.texture_vertex_visibility_mask)
+                    >> texture_count
+                    != 0
+                {
                     return Err(crate::DeviceError::Unexpected);
                 }
                 next.uniforms += dense_count(&group.uniforms)?;
@@ -253,6 +278,10 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     let mut samplers = alloc::vec::Vec::new();
     let mut uniforms = alloc::vec::Vec::new();
     let mut kind = GroupKind::EMPTY;
+    let sampled_visibility = |visibility: wgt::ShaderStages| {
+        visibility == wgt::ShaderStages::FRAGMENT
+            || visibility == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
+    };
     for (index, entry) in entries.iter().enumerate() {
         if entry.count.is_some()
             || entries[..index]
@@ -266,15 +295,18 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
                 sample_type: wgt::TextureSampleType::Float { filterable },
                 view_dimension: wgt::TextureViewDimension::D2,
                 multisampled: false,
-            } if entry.visibility == wgt::ShaderStages::FRAGMENT => {
-                textures.push((entry.binding, !filterable))
-            }
+            } if sampled_visibility(entry.visibility) => textures.push((
+                entry.binding,
+                !filterable,
+                entry.visibility.contains(wgt::ShaderStages::VERTEX),
+            )),
             wgt::BindingType::Sampler(
                 sampler_type @ (wgt::SamplerBindingType::Filtering
                 | wgt::SamplerBindingType::NonFiltering),
-            ) if entry.visibility == wgt::ShaderStages::FRAGMENT => samplers.push((
+            ) if sampled_visibility(entry.visibility) => samplers.push((
                 entry.binding,
                 sampler_type == wgt::SamplerBindingType::NonFiltering,
+                entry.visibility.contains(wgt::ShaderStages::VERTEX),
             )),
             wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
@@ -307,16 +339,22 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     for (slot, uniform) in uniforms.into_iter().enumerate() {
         kind.uniforms[slot] = Some(uniform);
     }
-    for (slot, (binding, unfilterable)) in textures.into_iter().enumerate() {
+    for (slot, (binding, unfilterable, vertex)) in textures.into_iter().enumerate() {
         kind.textures[slot] = Some(binding);
         if unfilterable {
             kind.texture_unfilterable_mask |= 1u8 << slot;
         }
+        if vertex {
+            kind.texture_vertex_visibility_mask |= 1u8 << slot;
+        }
     }
-    for (slot, (binding, non_filtering)) in samplers.into_iter().enumerate() {
+    for (slot, (binding, non_filtering, vertex)) in samplers.into_iter().enumerate() {
         kind.samplers[slot] = Some(binding);
         if non_filtering {
             kind.sampler_non_filtering_mask |= 1u16 << slot;
+        }
+        if vertex {
+            kind.sampler_vertex_visibility_mask |= 1u16 << slot;
         }
     }
     Ok(kind)
@@ -515,6 +553,86 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn sampled_visibility_preserves_sparse_slots_and_layout_identity() {
+        let entry = |binding, visibility, ty| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty,
+            count: None,
+        };
+        let texture = wgt::BindingType::Texture {
+            sample_type: wgt::TextureSampleType::Float { filterable: false },
+            view_dimension: wgt::TextureViewDimension::D2,
+            multisampled: false,
+        };
+        let sampler = wgt::BindingType::Sampler(wgt::SamplerBindingType::NonFiltering);
+        let fragment = wgt::ShaderStages::FRAGMENT;
+        let both = wgt::ShaderStages::VERTEX | fragment;
+        let entries = [
+            entry(200, both, sampler),
+            entry(7, fragment, texture),
+            entry(100, fragment, sampler),
+            entry(42, both, texture),
+        ];
+        let group = group_kind(&entries).unwrap();
+        let mut reordered = entries;
+        reordered.reverse();
+        assert_eq!(group_kind(&reordered).unwrap(), group);
+        assert_eq!(group.texture_vertex_visibility_mask, 0b10);
+        assert_eq!(group.sampler_vertex_visibility_mask, 0b10);
+        let next = group_kind(&[entry(3, both, texture), entry(4, both, sampler)]).unwrap();
+        let plan = BindingPlan::new(&[Some(group), Some(next)]).unwrap();
+        let mapped = |stage| {
+            plan.stage_bindings(stage)
+                .into_iter()
+                .map(|binding| (binding.binding.group, binding.binding.binding, binding.slot))
+                .collect::<alloc::vec::Vec<_>>()
+        };
+        assert_eq!(
+            mapped(wgt::ShaderStages::VERTEX),
+            [(0, 42, 1), (0, 200, 1), (1, 3, 2), (1, 4, 2)]
+        );
+        assert_eq!(
+            mapped(fragment),
+            [
+                (0, 7, 0),
+                (0, 42, 1),
+                (0, 100, 0),
+                (0, 200, 1),
+                (1, 3, 2),
+                (1, 4, 2)
+            ]
+        );
+        assert!(mapped(wgt::ShaderStages::COMPUTE).is_empty());
+        assert!(mapped(wgt::ShaderStages::empty()).is_empty());
+        assert!(mapped(both).is_empty());
+        let mut changed = group;
+        changed.texture_vertex_visibility_mask = 0;
+        let different = BindingPlan::new(&[Some(changed), Some(next)]).unwrap();
+        assert_ne!(group, changed);
+        assert_eq!(plan.common_prefix(&different), 0);
+        changed = group;
+        changed.sampler_vertex_visibility_mask = 0;
+        let different = BindingPlan::new(&[Some(changed), Some(next)]).unwrap();
+        assert_eq!(plan.common_prefix(&different), 0);
+        changed = group;
+        changed.texture_vertex_visibility_mask |= 1 << 2;
+        assert!(BindingPlan::new(&[Some(changed)]).is_err());
+        changed = group;
+        changed.sampler_vertex_visibility_mask |= 1 << 2;
+        assert!(BindingPlan::new(&[Some(changed)]).is_err());
+        for visibility in [
+            wgt::ShaderStages::VERTEX,
+            wgt::ShaderStages::COMPUTE,
+            fragment | wgt::ShaderStages::COMPUTE,
+            wgt::ShaderStages::empty(),
+        ] {
+            assert!(group_kind(&[entry(1, visibility, texture)]).is_err());
+            assert!(group_kind(&[entry(1, visibility, sampler)]).is_err());
+        }
+    }
 
     #[test]
     fn unfilterable_texture_layouts_and_sampling_pairs_fail_closed() {

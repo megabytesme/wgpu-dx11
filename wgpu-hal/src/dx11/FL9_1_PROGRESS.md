@@ -1412,6 +1412,22 @@ remain skipped. Clippy passed with ten existing test warnings, and core's
 zero-adapter isolation test passed. Independent
 review found no concrete pair-validation bypass. No new texture formats or
 public capability exposure were added.
+Checkpoint: `4ef1fbdaafd138b5981b5765c6a33a887b54b594`.
 
 Next: examine accepting combined vertex/fragment visibility for sampled
 resources used only by the fragment shader, without enabling vertex sampling.
+
+Sampled texture and sampler entries now accept VERTEX|FRAGMENT visibility as
+well as FRAGMENT. Sorted per-binding visibility masks remain part of layout
+identity; stage maps retain the original compact slots. Actual vertex-stage
+sampled-resource use is still rejected. The pre-change strict baseline failed
+at layout creation. Two strict FL9_1 full-image renders passed, including a
+visibility/layout transition; the selected vertex sampler returned the expected
+vertex linkage error. The core fixture matched all 64 pixels. Compiler tests
+also reject selected vertex sampling, loads and dimension queries while
+accepting unused declarations; their shared guard is mode-independent, but
+the new test does not independently exercise both ShaderModule check modes.
+The full private suite passed 284 tests, two filtered; six dynamic-index GPU
+cases remain skipped. Clippy passed with ten existing test warnings and core's
+zero-adapter isolation test passed. Independent review found no concrete
+visibility, slot or shader-guard defect. No vertex sampling is advertised.
