@@ -42,6 +42,17 @@ fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
     Some(native)
 }
 
+fn source_alpha_blend_factor(
+    blend: Option<wgt::BlendState>,
+    mask: wgt::ColorWrites,
+) -> windows::Win32::Graphics::Direct3D11::D3D11_BLEND {
+    if blend == Some(wgt::BlendState::ALPHA_BLENDING) && !mask.contains(wgt::ColorWrites::ALPHA) {
+        D3D11_BLEND_SRC_ALPHA
+    } else {
+        D3D11_BLEND_ONE
+    }
+}
+
 fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::DeviceError> {
     use windows::Win32::{
         Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
@@ -141,6 +152,27 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn alpha_mask_uses_coupled_blend_only_when_alpha_is_not_written() {
+        use super::*;
+        let blend = Some(wgt::BlendState::ALPHA_BLENDING);
+        assert_eq!(
+            source_alpha_blend_factor(blend, wgt::ColorWrites::RED),
+            D3D11_BLEND_SRC_ALPHA
+        );
+        assert_eq!(
+            source_alpha_blend_factor(blend, wgt::ColorWrites::ALL),
+            D3D11_BLEND_ONE
+        );
+        assert_eq!(
+            source_alpha_blend_factor(Some(ADDITIVE_BLEND), wgt::ColorWrites::RED),
+            D3D11_BLEND_ONE
+        );
+        assert_eq!(
+            source_alpha_blend_factor(None, wgt::ColorWrites::RED),
+            D3D11_BLEND_ONE
+        );
+    }
     use super::*;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
 
@@ -698,6 +730,9 @@ impl RenderPipeline {
         vertex_stage
             .module
             .validate_vertex_index(vertex_stage.entry_point)?;
+        vertex_stage
+            .module
+            .validate_instance_index(vertex_stage.entry_point)?;
         let fragment = desc.fragment_stage.as_ref();
         let [Some(buffer)] = *vertex_buffers else {
             return Err(invalid());
@@ -1011,7 +1046,7 @@ impl RenderPipeline {
                             D3D11_BLEND_ZERO
                         },
                         BlendOp: D3D11_BLEND_OP_ADD,
-                        SrcBlendAlpha: D3D11_BLEND_ONE,
+                        SrcBlendAlpha: source_alpha_blend_factor(target.blend, target.write_mask),
                         DestBlendAlpha: if blend_enabled {
                             D3D11_BLEND_INV_SRC_ALPHA
                         } else {

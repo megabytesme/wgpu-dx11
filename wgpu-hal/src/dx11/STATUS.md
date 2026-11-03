@@ -35,6 +35,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
+- Direct nonindexed instancing repeats native draws in instance order when the
+  shader has no instance-dependent inputs; indexed instancing and nonzero first
+  instance remain unavailable. General instancing is not advertised.
 - Restricted indexed draws support signed base vertices and validate GPU index
   contents at replay. Uint32 values convert to a native 16-bit buffer when
   their effective index span fits FL9_1; out-of-bounds vertex fetches discard

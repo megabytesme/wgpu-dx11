@@ -108,6 +108,7 @@ pub(super) struct BackendCapabilities {
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub instancing: bool,
+    pub nonindexed_instancing_without_instance_inputs: bool,
     pub queries: bool,
 }
 
@@ -138,6 +139,7 @@ impl BackendCapabilities {
         depth_stencil: false,
         d24s8_depth_attachment: true,
         instancing: false,
+        nonindexed_instancing_without_instance_inputs: true,
         queries: false,
     };
 }
@@ -335,6 +337,7 @@ mod tests {
             (8, 16)
         );
         assert!(!fl9.backend.instancing && !fl9.backend.storage && !fl9.backend.queries);
+        assert!(fl9.backend.nonindexed_instancing_without_instance_inputs);
     }
 
     #[test]

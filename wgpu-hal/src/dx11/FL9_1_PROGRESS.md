@@ -511,3 +511,15 @@ strict private suite passed 173 tests, two filtered; older tests may skip
 internally. Independent review found no concrete defect. High stream offsets
 remain unverified on historical FL9_1 drivers, and multiple windows or a
 single triangle with a wider span remain unsupported.
+
+Restricted direct instancing now records one logical draw and replays all
+triangle-aligned native batches for each instance in order. Selected shaders
+declaring `instance_index`, indexed instancing and nonzero first instance are
+rejected; general instancing remains unavailable. Strict FL9_1 GPU readback
+matched zero/one/two-instance outputs and [40,120,0,0] within one unit for an
+overlapping two-instance case across the 65535-primitive boundary. Its RGB-only
+standard-alpha state couples native alpha factors because alpha is masked off;
+alpha-writing separate-blend portability remains unresolved. The strict private
+suite passed 176 tests, two filtered; older tests may skip internally. The
+public fixture still rendered correctly and HAL Clippy passed with ten existing
+warnings. An independent review found no concrete correctness defect.

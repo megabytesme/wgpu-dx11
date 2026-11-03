@@ -970,10 +970,13 @@ impl crate::CommandEncoder for CommandEncoder {
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || !render.resources_compatible(self.device.feature_level())
             || first_instance != 0
-            || instance_count != 1
+            || (vertex_count != 0 && first_vertex.checked_add(vertex_count - 1).is_none())
             || required.is_none_or(|required| required > *bytes)
         {
             self.reject();
+            return;
+        }
+        if vertex_count == 0 || instance_count == 0 {
             return;
         }
         let buffer = buffer.clone();
@@ -995,20 +998,12 @@ impl crate::CommandEncoder for CommandEncoder {
         let max_vertices =
             super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                 .max_triangle_vertices_per_draw();
-        let mut first = first_vertex;
-        let mut remaining = vertex_count;
-        while remaining != 0 {
-            let count = remaining.min(max_vertices);
-            self.record(NativeCommand::Draw { first, count });
-            remaining -= count;
-            if remaining != 0 {
-                let Some(next) = first.checked_add(count) else {
-                    self.reject();
-                    return;
-                };
-                first = next;
-            }
-        }
+        self.record(NativeCommand::Draw {
+            first: first_vertex,
+            count: vertex_count,
+            instances: instance_count,
+            max_vertices,
+        });
     }
 
     unsafe fn draw_indexed(
@@ -1378,8 +1373,12 @@ mod tests {
         let entry_module = naga::front::wgsl::parse_str(
             r#"
             struct Input { @location(0) p: vec2f, @builtin(vertex_index) id: u32 }
+            struct InstanceInput { @location(0) p: vec2f, @builtin(instance_index) id: u32 }
             @vertex fn direct(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, f32(id), 1.0); }
             @vertex fn structured(input: Input) -> @builtin(position) vec4f { return vec4f(input.p, f32(input.id), 1.0); }
+            @vertex fn instance_direct(@location(0) p: vec2f, @builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, f32(id), 1.0); }
+            @vertex fn instance_structured(input: InstanceInput) -> @builtin(position) vec4f { return vec4f(input.p, f32(input.id), 1.0); }
+            @vertex fn instance_unused(@location(0) p: vec2f, @builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
             @vertex fn safe(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
             "#,
         )
@@ -1402,6 +1401,10 @@ mod tests {
         assert!(entry_shader.validate_vertex_index("direct").is_err());
         assert!(entry_shader.validate_vertex_index("structured").is_err());
         assert!(entry_shader.validate_vertex_index("safe").is_ok());
+        for entry in ["instance_direct", "instance_structured", "instance_unused"] {
+            assert!(entry_shader.validate_instance_index(entry).is_err());
+        }
+        assert!(entry_shader.validate_instance_index("safe").is_ok());
         let unsupported = TextureDescriptor {
             label: None,
             size: wgt::Extent3d {
@@ -1524,6 +1527,45 @@ mod tests {
             )
             .unwrap()
         };
+        for entry in [
+            "instance_direct",
+            "instance_structured",
+            "instance_unused",
+            "safe",
+        ] {
+            let result = unsafe {
+                crate::Device::create_render_pipeline(
+                    &device,
+                    &RenderPipelineDescriptor {
+                        label: None,
+                        layout: &layout,
+                        vertex_processor: VertexProcessor::Standard {
+                            vertex_buffers: &buffers,
+                            vertex_stage: ProgrammableStage {
+                                module: &entry_shader,
+                                entry_point: entry,
+                                constants: &constants,
+                                zero_initialize_workgroup_memory: false,
+                            },
+                        },
+                        primitive: wgt::PrimitiveState::default(),
+                        depth_stencil: None,
+                        multisample: wgt::MultisampleState::default(),
+                        fragment_stage: Some(stage("fs")),
+                        color_targets: &targets,
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            };
+            if entry == "safe" {
+                unsafe {
+                    crate::Device::destroy_render_pipeline(&device, result.unwrap());
+                }
+            } else {
+                assert!(result.is_err(), "instance index entry {entry}");
+            }
+        }
         let extent = wgt::Extent3d {
             width: 8,
             height: 8,
@@ -1954,6 +1996,24 @@ mod tests {
             crate::CommandEncoder::end_render_pass(&mut encoder);
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
         };
+        unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&u32_indices, 4, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 0, 2);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+        }
         unsafe { crate::Queue::submit(&queue, &[&u32_commands], &[], (&fence, 3)).unwrap() };
         assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
         let u32_pixels = native.read_rgba_texture(&texture, 0, 0)?;

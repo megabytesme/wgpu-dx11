@@ -318,6 +318,12 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         Some(super::super::hal_pipeline::ADDITIVE_BLEND),
     )
     .unwrap();
+    let instanced_pipeline = make_pipeline(
+        no_write.clone(),
+        wgt::ColorWrites::RED | wgt::ColorWrites::GREEN,
+        Some(wgt::BlendState::ALPHA_BLENDING),
+    )
+    .unwrap();
     let pipeline = make_pipeline(depth.clone(), wgt::ColorWrites::ALL, None).unwrap();
     let depth_only_layout = unsafe {
         device
@@ -773,6 +779,31 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         }
     }
     native.write_byte_buffer(&vertex, 0, &vertex_data)?;
+    let batch_vertices = 65_535 * 3;
+    let instanced_count = batch_vertices + 3;
+    let instanced_vertex = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: u64::from(instanced_count) * 28,
+                usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    let mut instanced_data = vec![0u8; instanced_count as usize * 28];
+    for (start, color) in [
+        (0usize, [1f32, 0., 0., 0.5]),
+        (batch_vertices as usize, [0., 1., 0., 0.5]),
+    ] {
+        for (index, p) in [[-1f32, -1.], [3., -1.], [-1., 3.]].into_iter().enumerate() {
+            for (component, value) in [p[0], p[1], 0.25].into_iter().chain(color).enumerate() {
+                let offset = (start + index) * 28 + component * 4;
+                instanced_data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+            }
+        }
+    }
+    native.write_byte_buffer(&instanced_vertex, 0, &instanced_data)?;
     let mut encoder = unsafe {
         device
             .create_command_encoder(&crate::CommandEncoderDescriptor {
@@ -897,6 +928,14 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         encoder.begin_encoding(None).unwrap();
         encoder.begin_render_pass(&valid_depth).unwrap();
         encoder.set_render_pipeline(&depth_only_pipeline);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&valid_depth).unwrap();
+        encoder.set_render_pipeline(&pipeline);
+        encoder.set_bind_group(&layout, 0, &group, &[]);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.draw(0, 3, 1, 2);
         encoder.end_render_pass();
         assert!(encoder.end_encoding().is_err());
         encoder.begin_encoding(None).unwrap();
@@ -1132,7 +1171,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         commands.push(command);
     }
-    for case in 0..31 {
+    for case in 0..35 {
         let attachments = [Some(crate::ColorAttachment {
             target: crate::Attachment {
                 view: &color_view,
@@ -1144,7 +1183,13 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             clear_value: wgt::Color {
                 r: 0.0,
                 g: 0.0,
-                b: if case == 18 { 64.0 / 255.0 } else { 1.0 },
+                b: if case == 18 {
+                    64.0 / 255.0
+                } else if case >= 31 {
+                    0.0
+                } else {
+                    1.0
+                },
                 a: 0.0,
             },
         })];
@@ -1216,6 +1261,18 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                     encoder.draw(0, 3, 0, 1);
                     encoder.draw(9, 3, 0, 1);
                 }
+                31..=34 => {
+                    encoder.set_render_pipeline(&instanced_pipeline);
+                    encoder.set_vertex_buffer(
+                        0,
+                        crate::BufferBinding::new_unchecked(&instanced_vertex, 0, None),
+                    );
+                    if case == 34 {
+                        encoder.draw(0, instanced_count, 0, 2);
+                    } else {
+                        encoder.draw(0, 3, 0, case as u32 - 31);
+                    }
+                }
                 26 => {
                     encoder.set_render_pipeline(&tinted_pipeline);
                     encoder.set_bind_group(&tinted_layout, 1, &tint_group, &[]);
@@ -1281,6 +1338,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         });
     }
     unsafe {
+        device.destroy_buffer(instanced_vertex);
         device.destroy_texture_view(depth_view);
         device.destroy_texture(depth_texture);
         device.destroy_bind_group(group);
@@ -1314,6 +1372,28 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         let pixels = native.read_rgba_texture(&color, 0, 0)?;
         if index >= 11 {
             let bits = index - 11;
+            if bits >= 31 {
+                let expected: [u8; 4] = match bits {
+                    31 => [0, 0, 0, 0],
+                    32 => [64, 0, 0, 0],
+                    33 => [96, 0, 0, 0],
+                    34 => [40, 120, 0, 0],
+                    _ => unreachable!(),
+                };
+                for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+                    assert!(
+                        pixel
+                            .iter()
+                            .zip(expected)
+                            .all(|(&actual, expected)| actual.abs_diff(expected) <= 1),
+                        "instanced case {bits}, pixel {i}: expected {expected:?}, got {pixel:?}"
+                    );
+                }
+                std::println!(
+                    "FL9_1 instanced case {bits}: 64/64 pixels {expected:?} within one unit"
+                );
+                continue;
+            }
             if bits >= 19 {
                 for (i, pixel) in pixels.chunks_exact(4).enumerate() {
                     let expected = match bits {

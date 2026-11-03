@@ -113,6 +113,8 @@ pub(super) enum NativeCommand {
     Draw {
         first: u32,
         count: u32,
+        instances: u32,
+        max_vertices: u32,
     },
     DrawIndexed {
         binding: Arc<IndexBinding>,
@@ -127,6 +129,36 @@ pub(super) enum NativeCommand {
         max_vertices: u32,
     },
     EndRender,
+}
+
+fn draw_batches(
+    first: u32,
+    count: u32,
+    instances: u32,
+    max_vertices: u32,
+    mut draw: impl FnMut(u32, u32),
+) -> Result<()> {
+    if max_vertices == 0
+        || !max_vertices.is_multiple_of(3)
+        || (count != 0 && first.checked_add(count - 1).is_none())
+    {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    for _ in 0..instances {
+        let mut next = first;
+        let mut remaining = count;
+        while remaining != 0 {
+            let batch = remaining.min(max_vertices);
+            draw(next, batch);
+            remaining -= batch;
+            if remaining != 0 {
+                next = next
+                    .checked_add(batch)
+                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Owned commands retain their D3D11 resources until the command buffer drops.
@@ -337,7 +369,16 @@ impl CommandBuffer {
                     NativeCommand::SetScissor(rect) => {
                         context.RSSetScissorRects(Some(core::slice::from_ref(rect)))
                     }
-                    NativeCommand::Draw { first, count } => context.Draw(*count, *first),
+                    NativeCommand::Draw {
+                        first,
+                        count,
+                        instances,
+                        max_vertices,
+                    } => {
+                        draw_batches(*first, *count, *instances, *max_vertices, |first, count| {
+                            context.Draw(count, first);
+                        })?;
+                    }
                     NativeCommand::DrawIndexed {
                         binding,
                         vertex,
@@ -423,6 +464,28 @@ mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
+
+    #[test]
+    fn draw_batches_keep_instance_order_and_check_boundaries() {
+        let mut batches = Vec::new();
+        draw_batches(5, 9, 2, 6, |first, count| batches.push((first, count))).unwrap();
+        assert_eq!(batches, [(5, 6), (11, 3), (5, 6), (11, 3)]);
+        batches.clear();
+        draw_batches(0, 9, 0, 6, |first, count| batches.push((first, count))).unwrap();
+        draw_batches(u32::MAX, 0, 2, 6, |first, count| {
+            batches.push((first, count))
+        })
+        .unwrap();
+        assert!(batches.is_empty());
+        draw_batches(u32::MAX, 1, 1, 6, |first, count| {
+            batches.push((first, count))
+        })
+        .unwrap();
+        assert_eq!(batches, [(u32::MAX, 1)]);
+        assert!(draw_batches(u32::MAX, 2, 1, 6, |_, _| {}).is_err());
+        assert!(draw_batches(0, 3, 1, 0, |_, _| {}).is_err());
+        assert!(draw_batches(0, 3, 1, 4, |_, _| {}).is_err());
+    }
 
     #[test]
     fn replay_failure_reaches_queue_and_does_not_signal_fence() -> Result<()> {

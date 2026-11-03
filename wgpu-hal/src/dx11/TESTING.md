@@ -46,6 +46,10 @@ It also checks Uint32 conversion, including raw values 65535–65537 with base
 vertex -3, high effective indices via a rebased vertex offset, a valid-fetch
 window wider than 65534, and a GPU rewrite following a discarded draw.
 
+The strict depth-render test also checks zero, one and two direct instances and
+an overlapping blend case across the native primitive-count boundary. The
+expected 64-pixel outputs distinguish instance order from batch order.
+
 Read the printed result, not just libtest's final line:
 
 - `PASS`: the hardware device and all operations completed with the expected pixels.
