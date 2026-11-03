@@ -537,6 +537,26 @@ verified 12 upload/copy/readback pixels each for RGBA8 and BGRA8 copy-only views
 and rejected incompatible view usages. Neither result establishes historical
 driver behavior or general public adapter support.
 
+### R8_UNORM sampled upload
+
+Microsoft lists R8_UNORM (legacy L8) as a required FL9_1 2D shader-sample
+format. The backend checks the selected device's actual
+`TEXTURE2D | SHADER_SAMPLE` bits and supports only single-mip sampled/upload
+textures. Run the synthetic capability checks and strict hardware test with:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_unorm -- --nocapture --test-threads=1
+```
+
+The CPU test covers legal and illegal usages, shape limits and missing or
+insufficient driver-query results. The hardware test requests and asserts
+FL9_1, uploads a 5×4 pattern from byte offset 1 with 7-byte rows, samples it
+into a 10×8 RGBA8 target and compares all 80 pixels. On the RTX 3090 Ti, the
+reported R8_UNORM support mask was `0x0002d3e0` and filtered-sampling support
+was present; the test uses nearest filtering. R8 render targets, copy-source,
+readback, mip chains and linear filtering have no execution coverage.
+
 ### Non-filtering sampler layouts
 
 With strict hardware mode enabled:

@@ -1,7 +1,4 @@
-//! Checked native RGBA8 texture transfers for the experimental D3D11 backend.
-//!
-//! This is not yet a wgpu texture implementation: usage validation, format
-//! coverage, and WebGPU's initialization guarantees are not implemented.
+//! Restricted native D3D11 texture creation, views, sampling and transfers.
 use super::device::{FeatureLevel, NativeDevice};
 use alloc::{sync::Arc, vec, vec::Vec};
 use windows::{
@@ -14,15 +11,16 @@ use windows::{
                 ID3D11DepthStencilView, ID3D11Device, ID3D11RenderTargetView,
                 ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_DEPTH_STENCIL,
                 D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CLEAR_DEPTH,
-                D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC_0,
-                D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_SHADER_RESOURCE_VIEW_DESC,
-                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC,
+                D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RTV_DIMENSION_TEXTURE2D,
+                D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
+                D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
+                D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -137,6 +135,7 @@ pub(super) struct SampledBinding {
     pub refresh: Option<Arc<SampledRefresh>>,
     pub mip_base: u32,
     pub mip_count: u32,
+    pub filterable: bool,
 }
 
 impl NativeTextureView {
@@ -195,6 +194,14 @@ fn invalid() -> Error {
     Error::from_hresult(E_INVALIDARG)
 }
 
+fn texel_bytes(format: DXGI_FORMAT) -> Result<u32> {
+    match format {
+        DXGI_FORMAT_R8_UNORM => Ok(1),
+        DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM => Ok(4),
+        _ => Err(invalid()),
+    }
+}
+
 fn subresource_layout(
     texture: &NativeTexture,
     mip: u32,
@@ -205,7 +212,10 @@ fn subresource_layout(
     }
     let width = (texture.width >> mip).max(1);
     let height = (texture.height >> mip).max(1);
-    let row_bytes = width.checked_mul(4).ok_or_else(invalid)?;
+    let mut desc = D3D11_TEXTURE2D_DESC::default();
+    unsafe { texture.raw.GetDesc(&mut desc) };
+    let texel_bytes = texel_bytes(desc.Format)?;
+    let row_bytes = width.checked_mul(texel_bytes).ok_or_else(invalid)?;
     let bytes = (row_bytes as usize)
         .checked_mul(height as usize)
         .ok_or_else(invalid)?;
@@ -326,7 +336,7 @@ impl NativeDevice {
         if !texture.usage.contains(wgt::TextureUses::COPY_DST)
             || !matches!(
                 desc.Format,
-                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+                DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
@@ -343,7 +353,7 @@ impl NativeDevice {
     pub(super) fn sampled_view(
         &self,
         view: &NativeTextureView,
-    ) -> Result<(ID3D11ShaderResourceView, [u32; 2], u32)> {
+    ) -> Result<(ID3D11ShaderResourceView, [u32; 2], u32, bool)> {
         if view.owner.as_raw() != self.raw_device().as_raw() {
             return Err(invalid());
         }
@@ -354,7 +364,7 @@ impl NativeDevice {
             || desc.Height == 0
             || !matches!(
                 desc.Format,
-                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+                DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
             || (desc.MipLevels > 1
                 && (!(view.usage == wgt::TextureUses::RESOURCE
@@ -374,6 +384,12 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
+        let filterable = if desc.Format == DXGI_FORMAT_R8_UNORM {
+            unsafe { self.raw_device().CheckFormatSupport(desc.Format) }
+                .is_ok_and(|support| support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0)
+        } else {
+            true
+        };
         Ok((
             resource.clone(),
             [
@@ -381,6 +397,7 @@ impl NativeDevice {
                 (desc.Height >> view.mip_base).max(1),
             ],
             view.mip_count,
+            filterable,
         ))
     }
 
@@ -388,7 +405,7 @@ impl NativeDevice {
         &self,
         view: &NativeTextureView,
     ) -> Result<(SampledBinding, [u32; 2], u32)> {
-        let (resource, size, levels) = self.sampled_view(view)?;
+        let (resource, size, levels, filterable) = self.sampled_view(view)?;
         Ok((
             SampledBinding {
                 view: resource,
@@ -396,6 +413,7 @@ impl NativeDevice {
                 refresh: view.refresh.clone(),
                 mip_base: view.mip_base,
                 mip_count: view.mip_count,
+                filterable,
             },
             size,
             levels,
@@ -495,10 +513,13 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !matches!(
+            || !(matches!(
                 format,
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
-            )
+            ) || (format == DXGI_FORMAT_R8_UNORM
+                && !render_target
+                && layers == 1
+                && mip_levels == 1))
         {
             return Err(invalid());
         }
@@ -533,14 +554,18 @@ impl NativeDevice {
             height,
             mip_levels,
             layers,
-            usage: wgt::TextureUses::COPY_SRC
-                | wgt::TextureUses::COPY_DST
-                | wgt::TextureUses::RESOURCE
-                | if render_target {
-                    wgt::TextureUses::COLOR_TARGET
-                } else {
-                    wgt::TextureUses::empty()
-                },
+            usage: if format == DXGI_FORMAT_R8_UNORM {
+                wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
+            } else {
+                wgt::TextureUses::COPY_SRC
+                    | wgt::TextureUses::COPY_DST
+                    | wgt::TextureUses::RESOURCE
+                    | if render_target {
+                        wgt::TextureUses::COLOR_TARGET
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
+            },
         })
     }
 
@@ -754,11 +779,11 @@ impl NativeDevice {
         layer: u32,
         bytes: &[u8],
     ) -> Result<()> {
-        self.check_texture_owner(texture)?;
-        let (width, height, _, expected) = subresource_layout(texture, mip, layer)?;
-        if bytes.len() != expected {
+        if texel_bytes(self.texture_desc(texture)?.Format)? != 4 {
             return Err(invalid());
         }
+        let (width, height, _, _) = subresource_layout(texture, mip, layer)?;
+        let row_pitch = width.checked_mul(4).ok_or_else(invalid)?;
         self.write_rgba_region(
             texture,
             TextureWrite {
@@ -766,7 +791,35 @@ impl NativeDevice {
                 layer,
                 origin: [0, 0],
                 extent: [width, height],
-                row_pitch: width * 4,
+                row_pitch,
+            },
+            bytes,
+        )
+    }
+
+    /// Upload one complete tightly-packed mip/layer of the supported formats.
+    pub(crate) fn write_texture_bytes(
+        &self,
+        texture: &NativeTexture,
+        mip: u32,
+        layer: u32,
+        bytes: &[u8],
+    ) -> Result<()> {
+        self.check_texture_owner(texture)?;
+        let (width, height, _, expected) = subresource_layout(texture, mip, layer)?;
+        if bytes.len() != expected {
+            return Err(invalid());
+        }
+        let bytes_per_pixel = texel_bytes(self.texture_desc(texture)?.Format)?;
+        let row_pitch = width.checked_mul(bytes_per_pixel).ok_or_else(invalid)?;
+        self.write_texture_region(
+            texture,
+            TextureWrite {
+                mip,
+                layer,
+                origin: [0, 0],
+                extent: [width, height],
+                row_pitch,
             },
             bytes,
         )
@@ -774,6 +827,19 @@ impl NativeDevice {
 
     /// Upload a checked rectangle with an explicit source row pitch.
     pub(crate) fn write_rgba_region(
+        &self,
+        texture: &NativeTexture,
+        write: TextureWrite,
+        bytes: &[u8],
+    ) -> Result<()> {
+        if texel_bytes(self.texture_desc(texture)?.Format)? != 4 {
+            return Err(invalid());
+        }
+        self.write_texture_region(texture, write, bytes)
+    }
+
+    /// Upload a checked rectangle using the texture format's texel width.
+    pub(crate) fn write_texture_region(
         &self,
         texture: &NativeTexture,
         write: TextureWrite,
@@ -796,7 +862,8 @@ impl NativeDevice {
         if extent.contains(&0) {
             return Ok(());
         }
-        let row_bytes = extent[0].checked_mul(4).ok_or_else(invalid)?;
+        let bytes_per_pixel = texel_bytes(self.texture_desc(texture)?.Format)?;
+        let row_bytes = extent[0].checked_mul(bytes_per_pixel).ok_or_else(invalid)?;
         if row_pitch < row_bytes {
             return Err(invalid());
         }

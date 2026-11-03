@@ -23,13 +23,18 @@ fn copy_layout(
     layout: &wgt::TexelCopyBufferLayout,
     width: u32,
     height: u32,
+    bytes_per_texel: u32,
 ) -> Result<(u32, u32, u32, u32)> {
-    if width == 0 || height == 0 || !layout.offset.is_multiple_of(4) {
+    if width == 0
+        || height == 0
+        || bytes_per_texel == 0
+        || !layout.offset.is_multiple_of(u64::from(bytes_per_texel))
+    {
         return Err(invalid());
     }
-    let row_bytes = width.checked_mul(4).ok_or_else(invalid)?;
+    let row_bytes = width.checked_mul(bytes_per_texel).ok_or_else(invalid)?;
     let pitch = match layout.bytes_per_row {
-        Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(4) => pitch,
+        Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(bytes_per_texel) => pitch,
         None if height == 1 => row_bytes,
         _ => return Err(invalid()),
     };
@@ -175,7 +180,7 @@ impl NativeDevice {
         let (source, dimensions, source_subresource) =
             self.texture_copy_texture_source(texture, base.mip_level)?;
         let source_box = texture_box(base, size, dimensions)?;
-        let (offset, pitch, row_bytes, total) = copy_layout(layout, size.width, size.height)?;
+        let (offset, pitch, row_bytes, total) = copy_layout(layout, size.width, size.height, 4)?;
         let native_destination =
             self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_TEXTURE2D_DESC {
@@ -223,7 +228,15 @@ impl NativeDevice {
         let (destination, dimensions, destination_subresource) =
             self.texture_copy_destination(texture, base.mip_level)?;
         let destination_box = texture_box(base, size, dimensions)?;
-        let (offset, pitch, _row_bytes, total) = copy_layout(layout, size.width, size.height)?;
+        let format = self.texture_desc(texture)?.Format;
+        let bytes_per_texel = match format {
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM => 1,
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM
+            | windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM => 4,
+            _ => return Err(invalid()),
+        };
+        let (offset, pitch, _row_bytes, total) =
+            copy_layout(layout, size.width, size.height, bytes_per_texel)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
         let native_source = self.texture_copy_source(source, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_BUFFER_DESC {
@@ -351,27 +364,35 @@ mod tests {
             bytes_per_row: Some(24),
             rows_per_image: Some(3),
         };
-        assert_eq!(copy_layout(&layout, 4, 3).unwrap(), (8, 24, 16, 64));
+        assert_eq!(copy_layout(&layout, 4, 3, 4).unwrap(), (8, 24, 16, 64));
         let mut invalid = layout;
         invalid.offset = 3;
-        assert!(copy_layout(&invalid, 4, 3).is_err());
+        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
         invalid = layout;
         invalid.bytes_per_row = Some(12);
-        assert!(copy_layout(&invalid, 4, 3).is_err());
+        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
         invalid = layout;
         invalid.rows_per_image = Some(2);
-        assert!(copy_layout(&invalid, 4, 3).is_err());
+        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
         invalid = layout;
         invalid.offset = u32::MAX as u64 - 3;
-        assert!(copy_layout(&invalid, 4, 3).is_err());
+        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
         invalid = layout;
         invalid.bytes_per_row = Some(u32::MAX - 3);
-        assert!(copy_layout(&invalid, 4, 3).is_err());
+        assert!(copy_layout(&invalid, 4, 3, 4).is_err());
         invalid = layout;
         invalid.bytes_per_row = None;
-        assert_eq!(copy_layout(&invalid, 4, 1).unwrap(), (8, 16, 16, 16));
-        assert!(copy_layout(&invalid, u32::MAX, 1).is_err());
-        assert!(copy_layout(&layout, 0, 1).is_err());
+        assert_eq!(copy_layout(&invalid, 4, 1, 4).unwrap(), (8, 16, 16, 16));
+        assert_eq!(copy_layout(&layout, 5, 3, 1).unwrap(), (8, 24, 5, 53));
+        let byte_aligned = wgt::TexelCopyBufferLayout {
+            offset: 1,
+            bytes_per_row: Some(7),
+            rows_per_image: Some(4),
+        };
+        assert_eq!(copy_layout(&byte_aligned, 5, 4, 1).unwrap(), (1, 7, 5, 26));
+        assert!(copy_layout(&byte_aligned, 5, 4, 4).is_err());
+        assert!(copy_layout(&invalid, u32::MAX, 1, 4).is_err());
+        assert!(copy_layout(&layout, 0, 1, 4).is_err());
     }
 
     #[test]

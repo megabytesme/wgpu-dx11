@@ -495,7 +495,7 @@ impl BindGroup {
         }
         let mut views = alloc::vec::Vec::new();
         let mut dimensions = alloc::vec::Vec::new();
-        for index in texture_indices {
+        for (slot, index) in texture_indices.into_iter().enumerate() {
             let binding = &desc.textures[index];
             if binding.usage != wgt::TextureUses::RESOURCE {
                 return Err(crate::DeviceError::Unexpected);
@@ -503,6 +503,9 @@ impl BindGroup {
             let (view, size, mip_levels) = owner
                 .sampled_binding(binding.view)
                 .map_err(super::hal_device::device_error)?;
+            if !view.filterable && kind.texture_unfilterable_mask & (1u8 << slot) == 0 {
+                return Err(crate::DeviceError::Unexpected);
+            }
             views.push(view);
             dimensions.push((size, mip_levels));
         }

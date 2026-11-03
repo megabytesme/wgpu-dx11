@@ -181,9 +181,12 @@ impl crate::Device for Device {
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
         let depth = desc.format == wgt::TextureFormat::Depth24PlusStencil8;
+        let r8_unorm = desc.format == wgt::TextureFormat::R8Unorm;
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+            } else if r8_unorm {
+                wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::COPY_SRC
                     | wgt::TextureUses::COPY_DST
@@ -192,6 +195,7 @@ impl crate::Device for Device {
             };
         if desc.dimension != wgt::TextureDimension::D2
             || (!depth
+                && !r8_unorm
                 && !matches!(
                     desc.format,
                     wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
@@ -200,6 +204,7 @@ impl crate::Device for Device {
             || desc.mip_level_count == 0
             || (desc.mip_level_count > 1
                 && (depth
+                    || r8_unorm
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || !desc.size.width.is_power_of_two()
                     || !desc.size.height.is_power_of_two()))
@@ -250,11 +255,14 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
-            Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM},
+            Dxgi::Common::{
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
+            },
         };
         let format = match desc.format {
             wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
             wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+            wgt::TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM,
             _ => return Err(DeviceError::Unexpected),
         };
         let support =
@@ -289,9 +297,13 @@ impl crate::Device for Device {
                 format,
             )
             .map_err(device_error)?;
+        let bytes_per_texel = desc
+            .format
+            .block_copy_size(None)
+            .ok_or(DeviceError::Unexpected)? as usize;
         let byte_count = (desc.size.width as usize)
             .checked_mul(desc.size.height as usize)
-            .and_then(|v| v.checked_mul(4))
+            .and_then(|v| v.checked_mul(bytes_per_texel))
             .ok_or(DeviceError::OutOfMemory)?;
         let mut zeroes = Vec::new();
         zeroes
@@ -303,10 +315,10 @@ impl crate::Device for Device {
             let height = (desc.size.height >> mip).max(1) as usize;
             let mip_bytes = width
                 .checked_mul(height)
-                .and_then(|v| v.checked_mul(4))
+                .and_then(|v| v.checked_mul(bytes_per_texel))
                 .ok_or(DeviceError::OutOfMemory)?;
             self.native
-                .write_rgba_texture(&texture, mip, 0, &zeroes[..mip_bytes])
+                .write_texture_bytes(&texture, mip, 0, &zeroes[..mip_bytes])
                 .map_err(device_error)?;
         }
         texture.set_usage(desc.usage);
@@ -330,20 +342,24 @@ impl crate::Device for Device {
             },
             Dxgi::Common::{
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         let native = self.native.texture_desc(texture).map_err(device_error)?;
         let format = match native.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
+            DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
         let is_depth = format == wgt::TextureFormat::Depth24PlusStencil8;
+        let is_r8 = format == wgt::TextureFormat::R8Unorm;
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+            } else if is_r8 {
+                wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET
             };
@@ -848,7 +864,7 @@ mod tests {
         let sampled_view =
             unsafe { crate::Device::create_texture_view(&device, &sampled, &full_sampled) }
                 .unwrap();
-        let (_, size, mips) = native.sampled_view(&sampled_view)?;
+        let (_, size, mips, _) = native.sampled_view(&sampled_view)?;
         assert_eq!((size, mips), ([8, 4], 4));
         let mut suffix_views = Vec::new();
         for (base, count, size, mip_count) in [
@@ -861,7 +877,7 @@ mod tests {
             suffix.range.mip_level_count = count;
             let view =
                 unsafe { crate::Device::create_texture_view(&device, &sampled, &suffix) }.unwrap();
-            let (raw, actual_size, actual_mips) = native.sampled_view(&view)?;
+            let (raw, actual_size, actual_mips, _) = native.sampled_view(&view)?;
             assert_eq!((actual_size, actual_mips), (size, mip_count));
             let mut native_desc =
                 windows::Win32::Graphics::Direct3D11::D3D11_SHADER_RESOURCE_VIEW_DESC::default();
@@ -879,7 +895,7 @@ mod tests {
         let partial =
             unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
                 .unwrap();
-        let (partial_srv, partial_size, partial_levels) = native.sampled_view(&partial)?;
+        let (partial_srv, partial_size, partial_levels, _) = native.sampled_view(&partial)?;
         assert_eq!((partial_size, partial_levels), ([4, 2], 2));
         let mut partial_desc =
             windows::Win32::Graphics::Direct3D11::D3D11_SHADER_RESOURCE_VIEW_DESC::default();

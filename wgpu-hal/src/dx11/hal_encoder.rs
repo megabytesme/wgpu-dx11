@@ -4496,6 +4496,9 @@ mod snorm_vertex_tests;
 mod uniform_binding_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/r8_texture.rs"]
+mod r8_texture_tests;
+#[cfg(test)]
 #[path = "../../tests/dx11/textured_render.rs"]
 mod textured_tests;
 

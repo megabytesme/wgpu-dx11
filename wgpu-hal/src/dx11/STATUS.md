@@ -32,6 +32,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   out-of-range and helper-argument biases remain rejected. Nine strict GPU
   executions checked 64 pixels each, including linear mip blending; direct and
   indexed draws rejected incompatible samplers.
+- R8_UNORM is supported for single-mip, single-layer 2D sampled textures with
+  RESOURCE and/or COPY_DST usage, subject to a positive device format query.
+  A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
+  offset and all 80 sampled output pixels. Render-target, copy-source, readback
+  and mip-chain uses remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.
