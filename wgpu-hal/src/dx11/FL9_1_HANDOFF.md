@@ -191,10 +191,13 @@ aliases and no depth or stencil writes. Keep the public read-only flag off.
 Runtime integer-based vector indexing is now rejected by the conservative
 integer guard in checked and unchecked shaders. Earlier dynamic-index GPU
 results are historical; static literal indexing and float-only controls remain.
-Nonindexed triangle strips use parity-preserving, rebased batches. Indexed strip
-restart is not a guaranteed FL9_x native operation and remains rejected pending
-a separate translation; accepting a strip index format in a private pipeline
-does not make indexed strip draws supported.
+Nonindexed triangle strips use parity-preserving, rebased batches. Indexed
+LineStrip and TriangleStrip do not rely on native FL9_x strip-cut support:
+replay resolves the base vertex, splits fixed-index restart markers, validates
+all non-restart fetches, and translates the runs to bounded native draws.
+TriangleStrip expands each run in winding-preserving triangle-list order,
+using compact Uint16 windows or per-stream gathers for wide triangles. Both
+indexed strip formats are covered by private and controlled-core GPU tests.
 FL9_1 overlapping vertex attributes are partitioned into separate native input
 slots that bind the same logical buffer and preserve its original bounds. Private
 and controlled-core GPU tests passed; historical-driver behavior remains unverified.
@@ -464,9 +467,8 @@ The previous private HAL line-topology implementation remains checkpointed as
 `3db26eed3` and had passed the strict private suite and targeted hardware tests.
 The fixture change was independently reviewed, with no isolation or correctness
 issue identified. Indexed LineList was subsequently implemented for Uint16/Uint32
-and verified through both private HAL and the controlled core fixture. See the
-latest checkpoint below. Indexed strips remain separate pending primitive-
-restart and connectivity analysis.
+and verified through both private HAL and the controlled core fixture. Indexed
+strip support is recorded in the later checkpoints below.
 
 ## Previous checkpoint — non-indexed line topologies
 
@@ -505,5 +507,22 @@ passed 301/301 with two filtered. The controlled core fixture passed 70/70,
 including indexed Uint16/Uint32 LineList and LineStrip while ordinary adapter
 enumeration remained empty. HAL build passed, HAL Clippy completed with ten
 pre-existing warnings, core Clippy passed, targeted DX12 tests passed 2/2, and
-format/diff checks passed. Historical FL9_1 hardware is unverified. Indexed
-triangle strips, public adapter exposure and HWND surface exposure remain open.
+format/diff checks passed. Historical FL9_1 hardware is unverified. Public
+adapter exposure and HWND surface exposure remain open.
+
+## Current implementation — indexed FL9_1 TriangleStrip
+
+Indexed Uint16/Uint32 TriangleStrip restart is emulated at command replay.
+Resolved indices are split into runs, validated against every vertex-rate
+stream, expanded with alternating winding, and sent through compact native
+triangle-list windows or wide-triangle gathers. Strict readback compared both
+formats against equivalent triangle lists for every front-face/cull pairing;
+the wide gather rendered 32 checked red pixels. The controlled core fixture
+rendered both formats with 12 red pixels each while normal adapter enumeration
+remained empty. The complete strict private suite passed 304 tests, the core
+fixture suite passed 70, HAL build and Clippy passed (ten existing Clippy
+warnings), core Clippy passed, and DX12 pipeline descriptor tests passed 2/2.
+See `FL9_1_PROGRESS.md` for commands and format-check caveats. The feature
+is checkpointed as `f1b8c09a7` (`dx11: emulate FL9_1 indexed triangle strips`).
+Broader instancing, indirect draws, public adapter exposure and public HWND
+surface exposure remain open.

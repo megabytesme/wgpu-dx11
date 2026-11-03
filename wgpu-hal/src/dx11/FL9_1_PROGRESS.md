@@ -1897,3 +1897,71 @@ line-strip restart`). The checkpoint records the resolved-index restart rule
 and checked wide-edge GPU output. The persistent handoff/journal update follows
 in a documentation-only commit. Indexed triangle strips, public adapter
 exposure and HWND surface exposure remain unavailable.
+
+## 2026-11-03 — indexed FL9_1 TriangleStrip emulation
+
+The private HAL now accepts indexed TriangleStrip pipelines for Uint16 and
+Uint32 indices when the pipeline's declared `strip_index_format` matches the
+bound index buffer. At replay, GPU-authoritative index bytes are copied to the
+existing staging buffer and scanned after earlier commands. The scan resolves
+`baseVertex + index` before recognizing the format-specific restart marker,
+prevalidates every non-marker fetch against every vertex-rate stream, and
+discards the whole draw if any fetch is invalid. Each run is expanded to
+triangle-list indices with alternating winding; restart resets the run's
+winding parity. Expanded indices are split at the FL9_1 maximum of 65,535
+triangles per native draw and passed through the existing compact Uint16
+window/gather path. Wide triangles gather the selected bytes from every
+vertex-rate stream. Native FL9 strip-cut support is not assumed.
+
+Strict private hardware testing ran on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`) with explicitly requested and selected FL9_1. Indexed Uint16
+and Uint32 strips with restart were compared byte-for-byte against equivalent
+triangle-list images for both front-face settings and both cull modes. A
+separate wide Uint32 triangle requiring gathering read back 32 red pixels.
+Mismatched and missing strip-index formats and invalid vertex fetches are
+rejected before native draw execution. The controlled core fixture executed
+Uint16 and Uint32 indexed TriangleStrip with a restart marker formed by the
+signed base vertex; each produced 12 red pixels, and ordinary D3D11 enumeration
+remained empty.
+
+Deterministic planner tests passed 3/3 for winding/restart reset, base-resolved
+restart values and the primitive-limit/whole-draw-discard boundary. The
+complete strict private D3D11 suite passed 304/304 tests with two filtered;
+the fixture-enabled core library suite passed 70/70, including the zero-adapter
+isolation test. D3D11 HAL build and HAL/core Clippy passed; HAL Clippy reports
+ten pre-existing warnings. Targeted DX12 pipeline descriptor tests passed
+2/2. The changed Rust files pass targeted rustfmt. Workspace/package format
+checks still report pre-existing formatting in the unrelated Naga HLSL writer
+and core instance isolation test; those files were left unchanged. The first
+test invocation lacked `link.exe`; rerunning through Visual Studio's
+`VsDevCmd.bat` succeeded. Staging the index stream can stall the CPU, and
+historical FL9_1 hardware remains untested.
+
+Commands (Rust 1.93.1, MSVC environment; hardware commands used
+`$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`):
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 indexed_triangle_strip -- --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_nonindexed_triangle_strip_winding_and_first_vertex -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 "dx11::" -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --test-threads=1
+cargo build --offline -p wgpu-hal --no-default-features --features dx11
+cargo clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo clippy --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx12 pipeline_desc::tests -- --test-threads=1
+cargo fmt --all -- --check
+cargo fmt --package wgpu-hal --package wgpu-core -- --check
+rustfmt --check --edition 2021 wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/command.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/src/dx11/hal_index.rs wgpu-hal/tests/dx11/triangle_strip.rs
+git diff --check
+```
+
+The workspace format check reports the pre-existing `naga/src/back/hlsl/writer.rs`
+format differences; the package check reports a pre-existing expression layout
+in `wgpu-core/src/instance.rs`. Neither file is part of this increment. The
+targeted rustfmt check for all changed Rust files and `git diff --check` pass.
+
+Implementation checkpoint: `f1b8c09a7` (`dx11: emulate FL9_1 indexed triangle
+strips`). Indexed TriangleStrip is now implemented; continue with the remaining
+topology, resource and public-contract gates. Keep ordinary D3D11 adapter
+enumeration and public HWND surface exposure disabled.
