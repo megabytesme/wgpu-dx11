@@ -12,13 +12,14 @@ deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
 The indexed TriangleStrip checkpoint `f1b8c09a7` and strict core-fixture
-coverage `c46c4a908` are followed by a strict shader-to-GPU test of the final
-statically addressed vertex constant c254, checkpointed as `6cac808c9`. The
-test renders 17 green baseline pixels and 4 red shifted pixels at requested and
-selected FL9_1. Dynamic integer indexing remains rejected. The full strict HAL
-suite passed 305 tests (two filtered); see FL9_1_PROGRESS.md for exact commands
-and the limits of that evidence. Continue from FL9_1_PLAN.md and update the
-progress journal after each verified checkpoint.
+coverage `c46c4a908` are followed by static boundary execution tests for vertex
+c254 and pixel c31. At forced FL9_1 on the RTX 3090 Ti, the test verifies that
+the vertex uniform shifts geometry and the pixel uniform changes color (17
+green and 4 red pixels). Feature checkpoint `0c0ff00ba` follows the original
+c254 checkpoint `6cac808c9`. Dynamic integer indexing remains rejected. The
+full strict HAL suite passed 305 tests (two filtered); see FL9_1_PROGRESS.md
+for exact commands and the limits of that evidence. Continue from
+FL9_1_PLAN.md and update the progress journal after each verified checkpoint.
 
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
 Viewport emulation was checkpointed as `ec645e63e` and retains the
@@ -145,6 +146,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `f1b8c09a7` | dx11: emulate FL9_1 indexed triangle strips |
 | `c46c4a908` | docs: record FL9_1 indexed triangle-strip checkpoint |
 | `6cac808c9` | dx11: verify FL9_1 final vertex constant execution |
+| `0c0ff00ba` | dx11: execute FL9_1 pixel constant boundary |
 
 ## What is and is not usable
 

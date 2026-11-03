@@ -2010,3 +2010,39 @@ constant execution`). Continue the uniform-layout audit and then work the next
 safe render/resource gates in `FL9_1_PLAN.md`. The larger mission remains
 PARTIALLY COMPLETE: this evidence is private-HAL execution on one modern GPU
 forced to FL9_1, not historical-hardware or public-adapter validation.
+
+## Follow-up — execute the pixel constant c31 boundary
+
+The c254 geometry test now also uses a separate fragment-visible uniform array
+and statically reads its final element, pixel c31. The two draws share one
+pipeline and switch bind groups: vertex c254 shifts the second triangle, while
+pixel c31 changes the fragment result from green to red. This verifies separate
+vertex/pixel uniform bindings and their stage-specific execution through the
+existing logical resource map. Readback again found 17 green baseline pixels
+and 4 red shifted pixels.
+
+Strict mode selected the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) at requested and actual FL9_1. The focused test passed
+1/1 (306 filtered). The complete strict private D3D11 suite passed 305/305,
+with two filtered. HAL Clippy passed with the same ten pre-existing warnings;
+the changed Rust file and HAL package pass formatting, and `git diff --check`
+passes. The targeted core isolation and DX12 checks from the preceding c254
+checkpoint were not rerun for this private-HAL test-only extension.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_c254_and_pixel_c31_change_rendered_output -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 "dx11::" -- --test-threads=1
+cargo clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo fmt --package wgpu-hal -- --check
+rustfmt --check --edition 2021 wgpu-hal/tests/dx11/uniform_bindings.rs
+git diff --check
+```
+
+Checkpoint `0c0ff00ba` (`dx11: execute FL9_1 pixel constant boundary`). Static
+near-limit vertex and pixel accesses now both have real forced-FL9_1 rendering
+evidence. Runtime integer indexing remains rejected, and matrices/nested layouts
+remain limited to the existing focused tests. Continue the private contract
+audit and keep public adapter and HWND surface exposure disabled.
