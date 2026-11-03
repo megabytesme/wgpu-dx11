@@ -442,3 +442,15 @@ test passed 1/1. Formatting and `git diff --check` passed. Commit this bounded
 finding, then continue the loss/teardown and public-contract audit without
 enabling ordinary adapter or HWND surface exposure.
 Checkpoint: `f775292a2` (`dx11: verify FL9_1 vertex constant limits`).
+
+## Latest checkpoint — non-indexed line topologies
+
+`3db26eed3` adds private non-indexed LineList and LineStrip pipelines and draw
+replay. Line-list batches preserve vertex pairs; line-strip batches overlap one
+endpoint. Indexed line topologies remain rejected. Strict FL9_1 readback on the
+RTX 3090 Ti verified 22 red and 12 green pixels, and an indexed line-list
+command was rejected before submission. The full strict private HAL suite
+passed 294 tests with two filtered; the targeted core zero-adapter isolation
+test, HAL build and Clippy passed. The working tree is clean after this
+checkpoint. Next validate line topology through the unsafe controlled core
+fixture, then continue toward indexed semantics and the broader public contract.

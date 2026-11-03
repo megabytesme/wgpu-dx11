@@ -1771,6 +1771,7 @@ including the real-device render. `cargo build --offline -p wgpu-hal --no-defaul
 --features dx11` passed; core's `requesting_dx11_does_not_expose_a_stub_adapter`
 passed 1/1. HAL Clippy passed with ten pre-existing warnings. Rustfmt checks
 passed for every changed Rust file, and `git diff --check` passed. This feature
-checkpoint is being committed separately; the exact hash will be recorded in
-the following journal checkpoint. Public adapter and surface exposure remain
-disabled.
+The feature is checkpointed as `3db26eed3` (`dx11: add FL9_1 nonindexed line
+topologies`). Next: exercise these topologies through the controlled wgpu-core
+fixture, then assess indexed line-list support. Public adapter and surface
+exposure remain disabled.
