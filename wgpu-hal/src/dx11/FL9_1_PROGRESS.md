@@ -432,3 +432,15 @@ test limits do not establish a safe general public adapter contract. The
 fixture-enabled core suite passed 68 tests and the feature-off zero-adapter
 test passed. Independent review confirmed the two draws and their readback
 distinguish missing sampling, missing depth testing and missing depth writes.
+
+The private u16 indexed path now accepts signed base vertices. At replay it
+checks every raw and adjusted index and its vertex-binding range from the
+GPU's current buffer contents before issuing that indexed draw. On forced
+FL9_1, positive and negative bases, nonzero vertex/index binding offsets and
+a prior GPU index upload rendered 64/64 expected pixels. A negative effective
+index caused the expected replay error before the draw; prior copy and clear
+commands had already executed. Synthetic tests cover limits and arithmetic.
+The strict private suite passed 169 tests, with two filtered; some older tests
+can skip internally. Targeted HAL Clippy passed with ten existing warnings.
+This conservative path still rejects valid index data above its FL9 limits and
+does not implement public robust-draw behavior or u32 indices.

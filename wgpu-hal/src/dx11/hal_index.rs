@@ -35,8 +35,7 @@ impl NativeDevice {
         size: Option<NonZeroU64>,
         format: wgt::IndexFormat,
     ) -> Result<IndexBinding> {
-        // 32-bit index translation and nonzero base vertices are not yet
-        // implemented; do not bind them natively on feature level 9_1.
+        // 32-bit index translation is not yet implemented.
         if format != wgt::IndexFormat::Uint16 {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
@@ -81,6 +80,7 @@ impl IndexBinding {
         context: &ID3D11DeviceContext,
         first: u32,
         count: u32,
+        base_vertex: i32,
         vertex_layout: (u64, u32, u32),
         max_vertices: u32,
     ) -> Result<()> {
@@ -109,10 +109,12 @@ impl IndexBinding {
                         .add(start + index * 2)
                         .cast::<u16>(),
                 );
-                let end = u64::from(value)
-                    .checked_mul(u64::from(stride))
-                    .and_then(|bytes| bytes.checked_add(u64::from(extent)));
-                if value > self.max_index || end.is_none_or(|bytes| bytes > vertex_bytes) {
+                if !index_fits(
+                    value,
+                    base_vertex,
+                    self.max_index,
+                    (vertex_bytes, stride, extent),
+                ) {
                     valid = false;
                     break;
                 }
@@ -126,7 +128,7 @@ impl IndexBinding {
             let mut remaining = count;
             while remaining != 0 {
                 let batch = remaining.min(max_vertices);
-                context.DrawIndexed(batch, next, 0);
+                context.DrawIndexed(batch, next, base_vertex);
                 remaining -= batch;
                 if remaining != 0 {
                     next = next
@@ -136,5 +138,48 @@ impl IndexBinding {
             }
         }
         Ok(())
+    }
+}
+
+fn index_fits(
+    value: u16,
+    base_vertex: i32,
+    max_index: u16,
+    vertex_layout: (u64, u32, u32),
+) -> bool {
+    let (vertex_bytes, stride, extent) = vertex_layout;
+    let effective = i64::from(value) + i64::from(base_vertex);
+    if value > max_index || effective < 0 || effective > i64::from(max_index) {
+        return false;
+    }
+    (effective as u64)
+        .checked_mul(u64::from(stride))
+        .and_then(|bytes| bytes.checked_add(u64::from(extent)))
+        .is_some_and(|end| end <= vertex_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::index_fits;
+
+    #[test]
+    fn base_vertex_checks_effective_index_and_binding_range() {
+        let layout = (72, 8, 8);
+        for (index, base) in [(0, 3), (2, 3), (6, -3), (8, -3), (0, 0)] {
+            assert!(index_fits(index, base, 65534, layout), "{index} {base}");
+        }
+        for (index, base) in [
+            (0, -1),
+            (0, i32::MIN),
+            (0, i32::MAX),
+            (9, 0),
+            (65535, -65535),
+        ] {
+            assert!(!index_fits(index, base, 65534, layout), "{index} {base}");
+        }
+        assert!(!index_fits(65534, 1, 65534, (u64::MAX, 1, 1)));
+        assert!(index_fits(65534, 0, 65534, (65535, 1, 1)));
+        assert!(!index_fits(2, 3, 65534, (47, 8, 8)));
+        assert!(index_fits(2, 3, 65534, (48, 8, 8)));
     }
 }

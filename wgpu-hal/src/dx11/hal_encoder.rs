@@ -1040,7 +1040,6 @@ impl crate::CommandEncoder for CommandEncoder {
             || !render.resources_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
-            || base_vertex != 0
             || !index.contains_range(first_index, index_count)
         {
             self.reject();
@@ -1069,6 +1068,7 @@ impl crate::CommandEncoder for CommandEncoder {
             binding: index,
             first: first_index,
             count: index_count,
+            base_vertex,
             vertex_bytes,
             stride,
             extent,
@@ -1678,8 +1678,167 @@ mod tests {
         std::println!(
             "Readback: 64/64 pixels RGBA [255, 0, 0, 255]; before submission: 64/64 blue"
         );
+        let base_vertices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 80,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let mut base_vertex_data = vec![0u8; 8];
+        for position in [
+            [0f32, 0.],
+            [0., 0.],
+            [0., 0.],
+            [-1., -1.],
+            [3., -1.],
+            [-1., 3.],
+            [0., 0.],
+            [0., 0.],
+            [0., 0.],
+        ] {
+            for value in position {
+                base_vertex_data.extend_from_slice(&value.to_ne_bytes());
+            }
+        }
+        native.write_byte_buffer(&base_vertices, 0, &base_vertex_data)?;
+        let base_indices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 20,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&base_indices, 0, &[0; 20])?;
+        let base_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 16,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(
+            &base_upload,
+            0,
+            &[0, 0, 1, 0, 2, 0, 6, 0, 7, 0, 8, 0, 0, 0, 0, 0],
+        )?;
+        let base_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &base_upload,
+                &base_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 4,
+                    size: NonZeroU64::new(16).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&base_indices, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 0, 1);
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 4, 3, -3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe { crate::Queue::submit(&queue, &[&base_commands], &[], (&fence, 2)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+        let base_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        assert!(
+            base_pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [255, 0, 0, 255]),
+            "positive/negative base vertex pixels: {base_pixels:?}"
+        );
+        std::println!("Readback: positive and negative base vertices, 64/64 red pixels");
+        let invalid_base = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &base_upload,
+                &base_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 4,
+                    size: NonZeroU64::new(16).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&base_indices, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, -1, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
         unsafe {
-            crate::CommandEncoder::reset_all(&mut encoder, [upload_commands, commands].into_iter());
+            crate::Device::destroy_buffer(&device, base_vertices);
+            crate::Device::destroy_buffer(&device, base_indices);
+            crate::Device::destroy_buffer(&device, base_upload);
+            assert!(crate::Queue::submit(&queue, &[&invalid_base], &[], (&fence, 3)).is_err());
+            native.immediate_context().ClearState();
+        }
+        let invalid_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        assert!(invalid_pixels
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 0, 0, 255]));
+        std::println!("PASS: negative effective index rejected before drawing");
+        unsafe {
+            crate::CommandEncoder::reset_all(
+                &mut encoder,
+                [upload_commands, commands, base_commands, invalid_base].into_iter(),
+            );
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             let unsupported = RenderPassDescriptor {
                 label: None,

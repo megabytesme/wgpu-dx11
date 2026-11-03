@@ -118,6 +118,7 @@ pub(super) enum NativeCommand {
         binding: Arc<IndexBinding>,
         first: u32,
         count: u32,
+        base_vertex: i32,
         vertex_bytes: u64,
         stride: u32,
         extent: u32,
@@ -339,6 +340,7 @@ impl CommandBuffer {
                         binding,
                         first,
                         count,
+                        base_vertex,
                         vertex_bytes,
                         stride,
                         extent,
@@ -348,6 +350,7 @@ impl CommandBuffer {
                             context,
                             *first,
                             *count,
+                            *base_vertex,
                             (*vertex_bytes, *stride, *extent),
                             *max_vertices,
                         )?;

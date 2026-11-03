@@ -88,8 +88,9 @@ shown portable to historical drivers. Native compute and UAV storage are not
 FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
 
 Core also permits direct draw combinations that this HAL rejects at replay,
-including nonzero first-instance, multiple instances and indexed base-vertex;
+including nonzero first-instance and multiple instances;
 the existing downlevel flags alone do not make all of them unreachable. Core
+also permits indexed data outside the private path's conservative limits.
 accepts other layouts, resource shapes and baseline query operations outside
 the private subset. A safe public backend needs implementations, sound
 fallbacks or targeted core validation for each such case. A contained core
@@ -140,6 +141,9 @@ fixture-enabled core suite (68 tests) passed; see the progress log for details.
 The controlled core fixture has also rendered a sampled texture with depth on
 the forced-FL9_1 RTX: readback matched 32 red and 32 green pixels. This is an
 unsafe, feature-gated fixture rather than ordinary public adapter enumeration.
+The private u16 indexed path also passed signed base-vertex GPU tests using
+execution-time index data. Invalid effective indices currently fail replay;
+valid public draws beyond its conservative limits still require emulation.
 
 Known costs include per-group scratch allocation, per-draw staging and mapping
 of uniform ranges, and buffer-texture

@@ -35,8 +35,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
-- Restricted 16-bit, zero-base indexed draws validate GPU index contents at
-  replay and preserve draw order. The staging readback can stall the CPU.
+- Restricted 16-bit indexed draws support signed base vertices and validate GPU
+  index contents at replay. The staging readback can stall the CPU; invalid
+  data causes a replay error, so this is not yet a public robust-draw contract.
 - An original two-texture overlay shader passes checked FL9_1 GPU readback
   with alpha and inversion blend states; its surface diagnostic also passed
   a strict x64 UWP FL9_1 run.
