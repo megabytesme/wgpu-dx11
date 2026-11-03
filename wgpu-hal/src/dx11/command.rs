@@ -14,10 +14,10 @@ use windows::{
         Graphics::{
             Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             Direct3D11::{
-                ID3D11Buffer, ID3D11DepthStencilView, ID3D11Device, ID3D11DeviceContext,
-                ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+                ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
+                ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
                 ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11VertexShader, D3D11_VIEWPORT,
+                ID3D11VertexShader, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, D3D11_VIEWPORT,
             },
         },
     },
@@ -31,6 +31,13 @@ pub(crate) struct CopyEncoder<'a> {
 }
 
 #[derive(Debug)]
+pub(super) struct DepthAttachment {
+    pub view: ID3D11DepthStencilView,
+    pub clear_depth: Option<f32>,
+    pub clear_stencil: Option<u8>,
+}
+
+#[derive(Debug)]
 pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
@@ -40,8 +47,9 @@ pub(super) enum NativeCommand {
     #[cfg(test)]
     InjectedFailure,
     BeginRender {
-        target: ID3D11RenderTargetView,
+        target: Option<ID3D11RenderTargetView>,
         clear: Option<[f32; 4]>,
+        depth: Option<DepthAttachment>,
         width: u32,
         height: u32,
     },
@@ -51,6 +59,7 @@ pub(super) enum NativeCommand {
         input: ID3D11InputLayout,
         rasterizer: ID3D11RasterizerState,
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
+        depth_state: Option<ID3D11DepthStencilState>,
     },
     SetUniformGroup {
         uniform: Arc<UniformBinding>,
@@ -154,14 +163,22 @@ impl CommandBuffer {
                     NativeCommand::BeginRender {
                         target,
                         clear,
+                        depth,
                         width,
                         height,
                     } => {
                         context.ClearState();
-                        context.OMSetRenderTargets(
-                            Some(&[Some(target.clone())]),
-                            None::<&ID3D11DepthStencilView>,
-                        );
+                        if let Some(target) = target {
+                            context.OMSetRenderTargets(
+                                Some(&[Some(target.clone())]),
+                                depth.as_ref().map(|attachment| &attachment.view),
+                            );
+                        } else {
+                            context.OMSetRenderTargets(
+                                None,
+                                depth.as_ref().map(|attachment| &attachment.view),
+                            );
+                        }
                         context.OMSetBlendState(None, None, u32::MAX);
                         context.OMSetDepthStencilState(None, 0);
                         context.RSSetViewports(Some(&[D3D11_VIEWPORT {
@@ -178,8 +195,25 @@ impl CommandBuffer {
                             right: *width as i32,
                             bottom: *height as i32,
                         }]));
-                        if let Some(color) = clear {
+                        if let (Some(target), Some(color)) = (target, clear) {
                             context.ClearRenderTargetView(target, color);
+                        }
+                        if let Some(attachment) = depth {
+                            let mut flags = 0;
+                            if attachment.clear_depth.is_some() {
+                                flags |= D3D11_CLEAR_DEPTH.0;
+                            }
+                            if attachment.clear_stencil.is_some() {
+                                flags |= D3D11_CLEAR_STENCIL.0;
+                            }
+                            if flags != 0 {
+                                context.ClearDepthStencilView(
+                                    &attachment.view,
+                                    flags,
+                                    attachment.clear_depth.unwrap_or(0.0),
+                                    attachment.clear_stencil.unwrap_or(0),
+                                );
+                            }
                         }
                     }
                     NativeCommand::SetPipeline {
@@ -188,9 +222,11 @@ impl CommandBuffer {
                         input,
                         rasterizer,
                         blend,
+                        depth_state,
                     } => {
                         context.RSSetState(Some(rasterizer));
                         context.OMSetBlendState(blend.as_ref(), None, u32::MAX);
+                        context.OMSetDepthStencilState(depth_state.as_ref(), 0);
                         context.IASetInputLayout(Some(input));
                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         context.VSSetShader(Some(vertex), None);

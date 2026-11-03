@@ -10,13 +10,15 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
-                ID3D11Device, ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
-                D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX,
-                D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                ID3D11DepthStencilView, ID3D11Device, ID3D11RenderTargetView,
+                ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_DEPTH_STENCIL,
+                D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CLEAR_DEPTH,
+                D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
+                D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -84,6 +86,8 @@ impl NativeTexture {
 pub struct NativeTextureView {
     resource: Option<ID3D11ShaderResourceView>,
     render_target: Option<ID3D11RenderTargetView>,
+    depth_stencil: Option<ID3D11DepthStencilView>,
+    usage: wgt::TextureUses,
     owner: ID3D11Device,
     texture: ID3D11Texture2D,
 }
@@ -157,6 +161,80 @@ fn subresource_layout(
 }
 
 impl NativeDevice {
+    pub(super) fn create_depth_stencil_texture(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> Result<NativeTexture> {
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_D24_UNORM_S8_UINT,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_DEPTH_STENCIL.0 as u32,
+            ..Default::default()
+        };
+        let mut raw = None;
+        unsafe {
+            self.raw_device()
+                .CreateTexture2D(&desc, None, Some(&mut raw))?;
+        }
+        let raw = raw.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let mut view = None;
+        unsafe {
+            self.raw_device()
+                .CreateDepthStencilView(&raw, None, Some(&mut view))?;
+        }
+        let view = view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let context = self.immediate_context();
+        unsafe {
+            context.ClearDepthStencilView(
+                &view,
+                D3D11_CLEAR_DEPTH.0 | D3D11_CLEAR_STENCIL.0,
+                0.0,
+                0,
+            );
+        }
+        Ok(NativeTexture {
+            raw,
+            owner: self.raw_device().clone(),
+            width,
+            height,
+            mip_levels: 1,
+            layers: 1,
+            usage: wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
+        })
+    }
+
+    pub(super) fn depth_stencil_view(
+        &self,
+        view: &NativeTextureView,
+        usage: wgt::TextureUses,
+    ) -> Result<(ID3D11DepthStencilView, [u32; 2])> {
+        if view.owner.as_raw() != self.raw_device().as_raw() || !view.usage.contains(usage) {
+            return Err(invalid());
+        }
+        let depth = view.depth_stencil.as_ref().ok_or_else(invalid)?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe {
+            view.texture.GetDesc(&mut desc);
+        }
+        if desc.Format != DXGI_FORMAT_D24_UNORM_S8_UINT
+            || desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || desc.SampleDesc.Count != 1
+        {
+            return Err(invalid());
+        }
+        Ok((depth.clone(), [desc.Width, desc.Height]))
+    }
+
     pub(super) fn texture_copy_texture_source(
         &self,
         texture: &NativeTexture,
@@ -363,6 +441,8 @@ impl NativeDevice {
         Ok(NativeTextureView {
             resource: Some(view.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             render_target: None,
+            depth_stencil: None,
+            usage: wgt::TextureUses::RESOURCE,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
         })
@@ -373,10 +453,13 @@ impl NativeDevice {
         texture: &NativeTexture,
         resource: bool,
         render_target: bool,
+        depth_stencil: bool,
+        usage: wgt::TextureUses,
     ) -> Result<NativeTextureView> {
         self.check_texture_owner(texture)?;
         let mut shader = None;
         let mut target = None;
+        let mut depth = None;
         unsafe {
             if resource {
                 self.raw_device().CreateShaderResourceView(
@@ -389,13 +472,22 @@ impl NativeDevice {
                 self.raw_device()
                     .CreateRenderTargetView(&texture.raw, None, Some(&mut target))?;
             }
+            if depth_stencil {
+                self.raw_device()
+                    .CreateDepthStencilView(&texture.raw, None, Some(&mut depth))?;
+            }
         }
-        if (resource && shader.is_none()) || (render_target && target.is_none()) {
+        if (resource && shader.is_none())
+            || (render_target && target.is_none())
+            || (depth_stencil && depth.is_none())
+        {
             return Err(Error::from_hresult(E_FAIL));
         }
         Ok(NativeTextureView {
             resource: shader,
             render_target: target,
+            depth_stencil: depth,
+            usage,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
         })

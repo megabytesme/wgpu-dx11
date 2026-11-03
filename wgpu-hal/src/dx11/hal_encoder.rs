@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 use super::{
-    command::{CommandBuffer, NativeCommand},
+    command::{CommandBuffer, DepthAttachment, NativeCommand},
     device::NativeDevice,
     Api as Dx11Api,
 };
@@ -28,9 +28,10 @@ pub struct CommandEncoder {
 }
 #[derive(Debug)]
 struct RenderState {
-    format: wgt::TextureFormat,
+    format: Option<wgt::TextureFormat>,
+    depth_format: Option<wgt::TextureFormat>,
     extent: [u32; 2],
-    target: windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView,
+    target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     pipeline: bool,
     required_group: Option<super::hal_bind_group::GroupKind>,
     bound_group: Option<super::hal_bind_group::GroupKind>,
@@ -318,18 +319,20 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         }
-        let Ok(target) = (unsafe { render.target.GetResource() }) else {
-            self.reject();
-            return;
-        };
-        for texture in &group.resources.textures {
-            let Ok(sampled) = (unsafe { texture.GetResource() }) else {
+        if let Some(target) = &render.target {
+            let Ok(target) = (unsafe { target.GetResource() }) else {
                 self.reject();
                 return;
             };
-            if sampled.as_raw() == target.as_raw() {
-                self.reject();
-                return;
+            for texture in &group.resources.textures {
+                let Ok(sampled) = (unsafe { texture.GetResource() }) else {
+                    self.reject();
+                    return;
+                };
+                if sampled.as_raw() == target.as_raw() {
+                    self.reject();
+                    return;
+                }
             }
         }
         render.bound_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
@@ -410,33 +413,42 @@ impl crate::CommandEncoder for CommandEncoder {
         &mut self,
         desc: &RenderPassDescriptor<<Self::A as Api>::QuerySet, <Self::A as Api>::TextureView>,
     ) -> Result<(), DeviceError> {
-        let [Some(color)] = desc.color_attachments else {
-            self.reject();
-            return Err(DeviceError::Unexpected);
-        };
-        let clear = match color.ops {
-            ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE => Some([
-                color.clear_value.r as f32,
-                color.clear_value.g as f32,
-                color.clear_value.b as f32,
-                color.clear_value.a as f32,
-            ]),
-            ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
+        let color = match desc.color_attachments {
+            [] | [None] => None,
+            [Some(color)] => Some(color),
             _ => {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
         };
+        let clear = if let Some(color) = color {
+            match color.ops {
+                ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE => Some([
+                    color.clear_value.r as f32,
+                    color.clear_value.g as f32,
+                    color.clear_value.b as f32,
+                    color.clear_value.a as f32,
+                ]),
+                ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
+                _ => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            }
+        } else {
+            None
+        };
         if self.recording.is_none()
             || self.render.is_some()
             || desc.sample_count != 1
-            || desc.depth_stencil_attachment.is_some()
             || desc.multiview_mask.is_some()
             || desc.timestamp_writes.is_some()
             || desc.occlusion_query_set.is_some()
-            || color.depth_slice.is_some()
-            || color.resolve_target.is_some()
-            || color.target.usage != wgt::TextureUses::COLOR_TARGET
+            || color.is_some_and(|color| {
+                color.depth_slice.is_some()
+                    || color.resolve_target.is_some()
+                    || color.target.usage != wgt::TextureUses::COLOR_TARGET
+            })
             || desc.extent.width == 0
             || desc.extent.height == 0
             || desc.extent.width > i32::MAX as u32
@@ -446,19 +458,84 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return Err(DeviceError::Unexpected);
         }
-        let (target, format, extent) = match self.device.render_target_view(color.target.view) {
-            Ok(info) => info,
-            Err(_) => {
+        let extent = [desc.extent.width, desc.extent.height];
+        let (target, format) = if let Some(color) = color {
+            let (target, format, size) = match self.device.render_target_view(color.target.view) {
+                Ok(info) => info,
+                Err(_) => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
+            if size != extent {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
+            (Some(target), Some(format))
+        } else {
+            (None, None)
         };
-        if extent != [desc.extent.width, desc.extent.height] {
+        let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
+            let depth_clear = match attachment.depth_ops {
+                ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE
+                    && attachment.clear_value.0.is_finite()
+                    && (0.0..=1.0).contains(&attachment.clear_value.0) =>
+                {
+                    Some(attachment.clear_value.0)
+                }
+                ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
+                _ => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
+            let stencil_clear = match attachment.stencil_ops {
+                ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE
+                    && attachment.clear_value.1 <= u8::MAX as u32 =>
+                {
+                    Some(attachment.clear_value.1 as u8)
+                }
+                ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
+                _ => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
+            if attachment.target.usage != wgt::TextureUses::DEPTH_STENCIL_WRITE {
+                self.reject();
+                return Err(DeviceError::Unexpected);
+            }
+            let (view, size) = match self
+                .device
+                .depth_stencil_view(attachment.target.view, attachment.target.usage)
+            {
+                Ok(info) => info,
+                Err(_) => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
+            if size != extent {
+                self.reject();
+                return Err(DeviceError::Unexpected);
+            }
+            Some(DepthAttachment {
+                view,
+                clear_depth: depth_clear,
+                clear_stencil: stencil_clear,
+            })
+        } else {
+            None
+        };
+        if target.is_none() && depth.is_none() {
             self.reject();
             return Err(DeviceError::Unexpected);
         }
         self.render = Some(RenderState {
             format,
+            depth_format: depth
+                .as_ref()
+                .map(|_| wgt::TextureFormat::Depth24PlusStencil8),
             extent,
             target: target.clone(),
             pipeline: false,
@@ -476,6 +553,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.record(NativeCommand::BeginRender {
             target,
             clear,
+            depth,
             width: extent[0],
             height: extent[1],
         });
@@ -498,7 +576,10 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        if !Arc::ptr_eq(&pipeline.owner, &self.device) || pipeline.target_format != render.format {
+        if !Arc::ptr_eq(&pipeline.owner, &self.device)
+            || Some(pipeline.target_format) != render.format
+            || pipeline.depth_format != render.depth_format
+        {
             self.reject();
             return;
         }
@@ -516,6 +597,7 @@ impl crate::CommandEncoder for CommandEncoder {
             input: pipeline.input.clone(),
             rasterizer: pipeline.rasterizer.clone(),
             blend: pipeline.blend.clone(),
+            depth_state: pipeline.depth_state.clone(),
         });
     }
 
@@ -1631,6 +1713,10 @@ mod tests {
 #[cfg(test)]
 #[path = "../../tests/dx11/texture_transfers.rs"]
 mod texture_transfer_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/depth_render.rs"]
+mod depth_render_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/uniform_bindings.rs"]

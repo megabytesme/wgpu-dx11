@@ -39,6 +39,10 @@ operations required by core. See CAPABILITIES.md for the detailed matrix.
   examples include empty compute passes, several legal viewports, blend
   constants and combined index/vertex usages. Some mapping errors use
   `expect` and need a device-loss-safe contract audit.
+- The FL9_1 device documentation says default buffers require exactly one
+  vertex/index/constant bind flag. The current copy-only and uniform-source
+  default buffers use no bind flag; RTX accepts them, but historical-driver
+  portability is unresolved. Staging buffers have separate no-bind rules.
 - A private depth increment should query native support, retain depth views,
   initialize both D24S8 aspects, validate matching attachment format/extent,
   and reject unverified comparison or two-sided stencil configurations. Core can
@@ -53,8 +57,20 @@ The checked multi-uniform GPU case has subsequently been extended to a nested
 structure, asymmetric mat3x2 and two-element vec4 array. On the same hardware
 the strict `fl91_sparse_uniform_ranges` test passed with pixels
 [143,207,16,255] and [80,143,16,255]. This verifies the tested offsets and
-stride, not dynamic indexing or every uniform layout.
+stride, not dynamic indexing or every uniform layout. The 126-test private
+suite and targeted Clippy passed; the test and mission plan were checkpointed
+as `19e82da409dd0ceec12eb9e9dca8934900b5ff11`.
 
-Implement and test a contained FL9_1 depth/stencil path without enabling the
-public adapter. Then advance the core compatibility and presentation gates in
-FL9_1_PLAN.md. Keep documentation and independently verified commits current.
+The current work adds a contained D24S8 attachment path with zero initialization,
+depth-only clears, Always/LessEqual depth tests and optional writes. Strict
+forced-FL9_1 RTX 3090 Ti rendering samples a texture and validates all 64 pixels
+in each of ten passes, including both depth orders, independent stencil clear,
+no-write behavior and retained resources. Stencil operations, aspect views,
+read-only usage and broader depth formats remain unsupported. Independent review
+identified and prompted rejection of non-ignored stencil faces even with zero
+masks. The D3D11 build, strict 127-test private suite, core zero-adapter test
+and targeted Clippy passed. Ten pre-existing Clippy warnings remain. The DX12
+`wgpu_gpu::buffer::map_offset` hardware regression passed on the NVIDIA
+adapter. The depth checkpoint is pending.
+
+Next advance the core compatibility and presentation gates in FL9_1_PLAN.md.

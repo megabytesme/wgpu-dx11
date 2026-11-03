@@ -261,3 +261,16 @@ The first two are CPU/compiler tests. The hardware tests verify sparse static
 ranges, GPU-upload ordering, vertex/fragment use, padded and nested matrix
 structures, array stride, pipeline and group transitions, and coexistence with
 sampled textures.
+
+### FL9_1 depth attachments
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_test -- --nocapture --test-threads=1
+```
+
+The test samples a texture while drawing overlapping geometry in both depth
+orders, verifies initial zero depth, checks independent depth-only and
+stencil-only clears, and checks an Always/no-write pipeline. Ten 8x8 readbacks
+are compared in full. It also checks attachment extent and pipeline mismatch
+rejection. Stencil tests and read-only/aspect views are not implemented.

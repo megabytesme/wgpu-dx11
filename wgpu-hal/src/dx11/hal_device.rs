@@ -129,12 +129,17 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
-        let supported = wgt::TextureUses::COPY_SRC
-            | wgt::TextureUses::COPY_DST
-            | wgt::TextureUses::RESOURCE
-            | wgt::TextureUses::COLOR_TARGET;
+        let depth = desc.format == wgt::TextureFormat::Depth24PlusStencil8;
+        let supported = if depth {
+            wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+        } else {
+            wgt::TextureUses::COPY_SRC
+                | wgt::TextureUses::COPY_DST
+                | wgt::TextureUses::RESOURCE
+                | wgt::TextureUses::COLOR_TARGET
+        };
         if desc.dimension != wgt::TextureDimension::D2
-            || desc.format != wgt::TextureFormat::Rgba8Unorm
+            || (!depth && desc.format != wgt::TextureFormat::Rgba8Unorm)
             || desc.size.depth_or_array_layers != 1
             || desc.mip_level_count != 1
             || desc.sample_count != 1
@@ -147,6 +152,7 @@ impl crate::Device for Device {
                 > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
                     .texture_2d_dimension
             || desc.usage.is_empty()
+            || (depth && !desc.usage.contains(wgt::TextureUses::DEPTH_STENCIL_WRITE))
             || !supported.contains(desc.usage)
             || desc.memory_flags.contains(MemoryFlags::TRANSIENT)
             || desc
@@ -155,6 +161,29 @@ impl crate::Device for Device {
                 .any(|format| *format != desc.format)
         {
             return Err(DeviceError::Unexpected);
+        }
+        if depth {
+            use windows::Win32::Graphics::{
+                Direct3D11::{D3D11_FORMAT_SUPPORT_DEPTH_STENCIL, D3D11_FORMAT_SUPPORT_TEXTURE2D},
+                Dxgi::Common::DXGI_FORMAT_D24_UNORM_S8_UINT,
+            };
+            let support = unsafe {
+                self.native
+                    .raw_device()
+                    .CheckFormatSupport(DXGI_FORMAT_D24_UNORM_S8_UINT)
+            }
+            .map_err(device_error)?;
+            let required =
+                (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0) as u32;
+            if support & required != required {
+                return Err(DeviceError::Unexpected);
+            }
+            let mut texture = self
+                .native
+                .create_depth_stencil_texture(desc.size.width, desc.size.height)
+                .map_err(device_error)?;
+            texture.set_usage(desc.usage);
+            return Ok(texture);
         }
         use windows::Win32::Graphics::{
             Direct3D11::{
@@ -221,23 +250,37 @@ impl crate::Device for Device {
         desc: &TextureViewDescriptor,
     ) -> Result<<Self::A as Api>::TextureView, DeviceError> {
         use windows::Win32::Graphics::{
-            Direct3D11::{D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE},
-            Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM},
+            Direct3D11::{
+                D3D11_BIND_DEPTH_STENCIL, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
+            },
+            Dxgi::Common::{
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+                DXGI_FORMAT_R8G8B8A8_UNORM,
+            },
         };
         let native = self.native.texture_desc(texture).map_err(device_error)?;
         let format = match native.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
+            DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
-        let supported = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
+        let supported = if format == wgt::TextureFormat::Depth24PlusStencil8 {
+            wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+        } else {
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET
+        };
         let resource = desc.usage.contains(wgt::TextureUses::RESOURCE);
         let target = desc.usage.contains(wgt::TextureUses::COLOR_TARGET);
+        let depth = desc.usage.intersects(
+            wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
+        );
         if desc.format != format
             || desc.dimension != wgt::TextureViewDimension::D2
             || !supported.contains(desc.usage)
             || !texture.supports_usage(desc.usage)
             || desc.usage.is_empty()
+            || (depth && !desc.usage.contains(wgt::TextureUses::DEPTH_STENCIL_WRITE))
             || !desc
                 .range
                 .is_full_resource(format, native.MipLevels, native.ArraySize)
@@ -246,11 +289,12 @@ impl crate::Device for Device {
             || native.SampleDesc.Count != 1
             || (resource && native.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 == 0)
             || (target && native.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0)
+            || (depth && native.BindFlags & D3D11_BIND_DEPTH_STENCIL.0 as u32 == 0)
         {
             return Err(DeviceError::Unexpected);
         }
         self.native
-            .create_full_hal_view(texture, resource, target)
+            .create_full_hal_view(texture, resource, target, depth, desc.usage)
             .map_err(device_error)
     }
 

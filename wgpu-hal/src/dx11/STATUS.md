@@ -17,6 +17,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
   up to 2. On 9_1/9_2, translated finite maximum LODs require single-mip views.
+- A restricted D24S8 attachment path provides zero initialization, independent
+  depth/stencil clears, depth-only clear passes and Always/LessEqual depth tests
+  with optional writes. Stencil tests, read-only/aspect views and copies remain
+  unsupported. Textured depth ordering is verified through GPU readback.
 - Group-0 layouts with up to eight sampled textures, sixteen samplers and thirteen
   static uniform slots, and shader-aware pair validation; restricted
   Naga/FXC shaders.
@@ -42,7 +46,7 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   texture formats/dimensions/mips/arrays, sampler modes, render states and
   buffer usages required by valid wgpu applications. Several restrictions,
   including specific bind-group shapes, cannot be described by `Limits`.
-- Complete indexed and instanced rendering, depth/stencil paths and other
+- Complete indexed and instanced rendering, remaining depth/stencil paths and other
   operations needed by many applications. On 9_1 the native index format is
   restricted to 16-bit and index values to 65,534; combined vertex/index bindings
   on 9_1/9_2 need emulation. Other index formats, nonzero base vertices and

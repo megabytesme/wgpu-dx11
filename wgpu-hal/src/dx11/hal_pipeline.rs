@@ -5,13 +5,15 @@ use windows::{
     core::PCSTR,
     Win32::Graphics::{
         Direct3D11::{
-            ID3D11BlendState, ID3D11ClassLinkage, ID3D11InputLayout, ID3D11PixelShader,
-            ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC,
+            ID3D11BlendState, ID3D11ClassLinkage, ID3D11DepthStencilState, ID3D11InputLayout,
+            ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC,
             D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
             D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
-            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE, D3D11_FILL_SOLID,
+            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS_EQUAL,
+            D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
+            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
             D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
         },
         Dxgi::Common::{
             DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
@@ -78,6 +80,8 @@ pub struct RenderPipeline {
     pub(super) input: ID3D11InputLayout,
     pub(super) rasterizer: ID3D11RasterizerState,
     pub(super) blend: Option<ID3D11BlendState>,
+    pub(super) depth_state: Option<ID3D11DepthStencilState>,
+    pub(super) depth_format: Option<wgt::TextureFormat>,
     pub(super) target_format: wgt::TextureFormat,
     pub(super) group: Option<super::hal_bind_group::GroupKind>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
@@ -599,7 +603,6 @@ impl RenderPipeline {
             || !fragment.constants.is_empty()
             || desc.primitive != wgt::PrimitiveState::default()
             || desc.multisample != wgt::MultisampleState::default()
-            || desc.depth_stencil.is_some()
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
             || buffer.array_stride == 0
@@ -623,6 +626,42 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
+        let depth_desc = if let Some(state) = &desc.depth_stencil {
+            if state.format != wgt::TextureFormat::Depth24PlusStencil8
+                || state.stencil.front != wgt::StencilFaceState::IGNORE
+                || state.stencil.back != wgt::StencilFaceState::IGNORE
+                || state.bias != wgt::DepthBiasState::default()
+            {
+                return Err(invalid());
+            }
+            let comparison = match state.depth_compare.unwrap_or(wgt::CompareFunction::Always) {
+                wgt::CompareFunction::Always => D3D11_COMPARISON_ALWAYS,
+                wgt::CompareFunction::LessEqual => D3D11_COMPARISON_LESS_EQUAL,
+                _ => return Err(invalid()),
+            };
+            let face = D3D11_DEPTH_STENCILOP_DESC {
+                StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+                StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                StencilFunc: D3D11_COMPARISON_ALWAYS,
+            };
+            Some(D3D11_DEPTH_STENCIL_DESC {
+                DepthEnable: true.into(),
+                DepthWriteMask: if state.depth_write_enabled.unwrap_or(false) {
+                    D3D11_DEPTH_WRITE_MASK_ALL
+                } else {
+                    D3D11_DEPTH_WRITE_MASK_ZERO
+                },
+                DepthFunc: comparison,
+                StencilEnable: false.into(),
+                StencilReadMask: 0xff,
+                StencilWriteMask: 0xff,
+                FrontFace: face,
+                BackFace: face,
+            })
+        } else {
+            None
+        };
         let mut required_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
         for (stage, module, entry, visibility) in [
             (
@@ -736,8 +775,8 @@ impl RenderPipeline {
             ScissorEnable: true.into(),
             ..Default::default()
         };
-        let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend) =
-            (None, None, None, None, None);
+        let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend, mut depth_state) =
+            (None, None, None, None, None, None);
         let failure = |error: windows::core::Error| {
             crate::PipelineError::Linkage(
                 wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
@@ -765,6 +804,15 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
                 .map_err(failure)?;
+            if let Some(depth_desc) = depth_desc {
+                owner
+                    .raw_device()
+                    .CreateDepthStencilState(&depth_desc, Some(&mut depth_state))
+                    .map_err(failure)?;
+                if depth_state.is_none() {
+                    return Err(invalid());
+                }
+            }
             if target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
                 || target.blend == Some(INVERT_BLEND)
                 || target.blend == Some(ADDITIVE_BLEND)
@@ -811,6 +859,8 @@ impl RenderPipeline {
             input: input.ok_or_else(invalid)?,
             rasterizer: rasterizer.ok_or_else(invalid)?,
             blend,
+            depth_state,
+            depth_format: desc.depth_stencil.as_ref().map(|state| state.format),
             target_format: target.format,
             group: desc.layout.group,
             sampling_pairs: Arc::new(sampling_pairs),

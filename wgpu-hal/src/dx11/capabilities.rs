@@ -100,6 +100,7 @@ pub(super) struct BackendCapabilities {
     pub compute: bool,
     pub storage: bool,
     pub depth_stencil: bool,
+    pub d24s8_depth_attachment: bool,
     pub instancing: bool,
     pub queries: bool,
 }
@@ -123,6 +124,7 @@ impl BackendCapabilities {
         compute: false,
         storage: false,
         depth_stencil: false,
+        d24s8_depth_attachment: true,
         instancing: false,
         queries: false,
     };
