@@ -33,11 +33,14 @@ below is met. This plan does not claim WebGPU conformance.
    restrict safely or implement/emulate it. No placeholder capabilities.
 6. Complete HWND surface lifecycle while preserving CoreWindow; the private
    hidden-window path and retained-command-buffer resize are tested, but
-   concurrent presentation requires work. DXGI can synchronously enter a window
-   procedure while the immediate-context lock is held; a callback that uses
-   the same device can deadlock even when it does not reenter the surface.
-   Resolve this without allowing concurrent context/DXGI use or assuming a
-   cooperative window procedure. Build public
+   concurrent presentation requires work. Microsoft documents that DXGI may
+   synchronously send window messages during `Present` and wait for the owning
+   message-pump thread. The current core queue-index lock and HAL immediate-
+   context mutex span `Present`; a callback that reenters wgpu can deadlock.
+   Releasing these locks permits context/DXGI concurrency, which Microsoft
+   documents as invalid. A safe cross-layer scheduling or thread-affinity
+   design is unresolved; do not assume a cooperative window procedure or
+   enable public surface support until it is resolved. Build public
    wgpu offscreen and desktop examples selecting real D3D11 and forcing 9_1.
    Verify an indexed textured depth-tested 3D scene, readback and presentation.
 7. Audit unsupported operations, synchronization, lifetime and device loss;

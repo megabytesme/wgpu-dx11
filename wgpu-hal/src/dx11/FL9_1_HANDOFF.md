@@ -30,6 +30,15 @@ two filtered, and the current core suite passed 70/70 including two strict
 FL9_1 GPU fixtures. Older HAL tests may skip internally, so use focused strict
 tests for hardware evidence.
 
+The current public-surface gate is an unresolved cross-layer reentrancy issue:
+DXGI may synchronously send messages to the HWND's window procedure during
+`Present`; both core's queue-index lock and the HAL immediate-context lock span
+that call. See the latest section of FL9_1_PROGRESS.md and the Microsoft
+threading references there. Do not drop either lock without a replacement
+serialization design. Continue independent private FL9_1 work while keeping
+public D3D11 enumeration disabled; next investigate native stencil operations
+and reference transitions.
+
 ## Verified checkpoints
 
 The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`

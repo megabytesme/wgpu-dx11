@@ -1521,7 +1521,31 @@ the fixture's `buffer_as_hal` guard. Metal was not compiled on this Windows
 host. Public adapter exposure remains disabled.
 Checkpoint: `13a4defb9` (`core: propagate mapped buffer flush failures`).
 
-Next: investigate DXGI/window-procedure reentrancy during `Present` and define
-a sound synchronization contract that does not rely on a cooperative caller.
-Keep ordinary D3D11 enumeration disabled until that and the remaining core/HAL
-capability mismatches are resolved.
+The next planned investigation was DXGI/window-procedure reentrancy during
+`Present`; the outcome is recorded below. Keep ordinary D3D11 enumeration
+disabled until this and the remaining core/HAL capability mismatches are
+resolved.
+
+The presentation audit confirmed the existing open gate. In
+`wgpu-core/src/present.rs`, `Queue::present` holds `device.command_indices`
+while calling HAL; `CoreWindowFrame::present_for_hal` holds
+`NativeDevice::immediate` while calling DXGI. Microsoft documents that DXGI
+may synchronously `SendMessage` to the window procedure and wait for the
+message pump, and that immediate-context calls must be serialized with DXGI
+operations on the same thread. Therefore dropping the HAL mutex alone permits
+invalid concurrent context/DXGI use, while retaining it can block a callback
+that reenters the device. The core queue-index lock creates another reentrancy
+edge. `ID3D11Multithread` protects against calls from other threads but does
+not remove the core lock ordering or make a cross-thread synchronous message
+safe. `DXGI_PRESENT_DO_NOT_WAIT` is not established to avoid synchronous
+window-message waits, so it is not treated as a fix. References:
+[DXGI best practices](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices),
+[D3D11 multithreading](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-render-multi-thread-intro),
+[ID3D11Multithread::Enter](https://learn.microsoft.com/en-us/windows/win32/api/d3d11_4/nf-d3d11_4-id3d11multithread-enter),
+[Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present).
+No safe backend-only change was identified; keep public surface exposure gated.
+
+Next: implement and strictly test a bounded, meaningful D24S8 stencil subset
+through native state/reference updates and render-pass transitions. This is
+independent of the HWND scheduling blocker and advances the private FL9_1
+contract; it does not unblock public adapter exposure.
