@@ -1775,3 +1775,16 @@ The feature is checkpointed as `3db26eed3` (`dx11: add FL9_1 nonindexed line
 topologies`). Next: exercise these topologies through the controlled wgpu-core
 fixture, then assess indexed line-list support. Public adapter and surface
 exposure remain disabled.
+
+The unsafe, feature-gated core fixture now creates LineList and LineStrip
+pipelines through core, records `render_pass_draw`, submits on the injected
+physical device and validates exact red sampled pixels against the blue clear.
+Strict hardware readback produced 8 red pixels for LineList and 12 for
+LineStrip, with all other target pixels unchanged. The fixture still asserts
+ordinary HAL enumeration is empty. The complete strict fixture-enabled core
+library suite passed 70/70 tests, including ordinary adapter isolation; core
+Clippy and formatting checks passed. An independent review found no issue in
+the fixture isolation or result assertions. Checkpoint `e79428c50` records this
+core-to-HAL coverage. Next, implement and test indexed LineList semantics
+without assuming indexed strip restart behavior; public D3D11 exposure remains
+disabled.

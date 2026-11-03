@@ -443,7 +443,20 @@ finding, then continue the loss/teardown and public-contract audit without
 enabling ordinary adapter or HWND surface exposure.
 Checkpoint: `f775292a2` (`dx11: verify FL9_1 vertex constant limits`).
 
-## Latest checkpoint — non-indexed line topologies
+## Latest checkpoint — line topologies through the controlled core fixture
+
+`e79428c50` adds LineList and LineStrip to the unsafe, feature-gated core
+fixture. Core creates the actual pipeline and records nonindexed draw commands;
+the injected HAL device remains unavailable through ordinary enumeration. The
+strict RTX 3090 Ti FL9_1 readback contained 8 sampled red pixels for LineList
+and 12 for LineStrip, with the rest of the target remaining clear blue. The
+fixture-enabled core library suite passed 70/70 tests and core Clippy passed.
+The previous private HAL line-topology implementation remains checkpointed as
+`3db26eed3` and had passed the strict private suite and targeted hardware tests.
+Next assess indexed LineList conversion and batching. Indexed strips remain
+separate pending primitive-restart and connectivity analysis.
+
+## Previous checkpoint — non-indexed line topologies
 
 `3db26eed3` adds private non-indexed LineList and LineStrip pipelines and draw
 replay. Line-list batches preserve vertex pairs; line-strip batches overlap one

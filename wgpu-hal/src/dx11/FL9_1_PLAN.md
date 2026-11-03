@@ -22,10 +22,11 @@ below is met. This plan does not claim WebGPU conformance.
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. Each feature needs positive
    GPU and negative tests. Non-indexed line lists and line strips now have a
-   bounded private FL9_1 implementation with strict GPU readback; indexed line
-   topologies and their index validation/batching remain open. Next, exercise
-   the direct topologies through the unsafe controlled core fixture to verify
-   the core-to-HAL command path without exposing an ordinary adapter.
+   bounded private FL9_1 implementation with strict GPU readback and the
+   controlled core fixture verifies both through core command recording and
+   readback. Indexed line lists and indexed line-strip semantics remain open;
+   assess a correctness-first indexed line-list path next. Indexed strips need
+   separate primitive-restart and batch-connectivity analysis.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport
