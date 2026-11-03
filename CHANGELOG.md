@@ -48,6 +48,7 @@ Bottom level categories:
 
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
 - Reject non-finite viewport coordinates and dimensions.
+- Validate pipelines without panicking when inter-stage variable limits are zero or below built-in deductions.
 
 #### naga
 

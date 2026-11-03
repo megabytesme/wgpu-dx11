@@ -134,6 +134,10 @@ targeted Clippy completed with ten existing warnings. Earlier work also ran
 Naga, core, public Noop validation and targeted DX12 regressions as recorded
 in FL9_1_PROGRESS.md. No public D3D11 example or visual display test ran.
 
+Core's zero inter-stage limit panic was reproduced in a public Noop test and
+fixed with signed deduction arithmetic. The expanded focused test and the
+fixture-enabled core suite (68 tests) passed; see the progress log for details.
+
 Known costs include per-group scratch allocation, per-draw staging and mapping
 of uniform ranges, and buffer-texture
 uploads, and GPU readback for checked indexed draws. They can stall the CPU;

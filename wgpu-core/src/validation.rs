@@ -454,7 +454,7 @@ pub enum StageError {
         "vertex shader output location Location[{location}] ({var}) exceeds the \
         `max_inter_stage_shader_variables` limit ({}, 0-based){}",
         // NOTE: Remember: the limit is 0-based for indices.
-        limit - 1,
+        i64::from(*limit) - 1,
         display_deductions_as_optional_list(deductions, |d| d.for_location())
     )]
     VertexOutputLocationTooLarge {
@@ -477,7 +477,7 @@ pub enum StageError {
         "fragment shader input location Location[{location}] ({var}) exceeds the \
         `max_inter_stage_shader_variables` limit ({}, 0-based){}",
         // NOTE: Remember: the limit is 0-based for indices.
-        limit - 1,
+        i64::from(*limit) - 1,
         // NOTE: WebGPU spec. validation for fragment inputs is expressed in terms of variables
         // (unlike vertex outputs), so we use `MaxFragmentShaderInputDeduction::for_variables` here
         // (and not a non-existent `for_locations`).
@@ -1631,7 +1631,7 @@ impl Interface {
                 compare_function,
             } => {
                 let mut max_vertex_shader_output_variables =
-                    self.limits.max_inter_stage_shader_variables;
+                    i64::from(self.limits.max_inter_stage_shader_variables);
                 let mut max_vertex_shader_output_location = max_vertex_shader_output_variables - 1;
 
                 let point_list_deduction = if topology == wgt::PrimitiveTopology::PointList {
@@ -1657,22 +1657,16 @@ impl Interface {
                     .chain(clip_distance_deductions);
 
                 for deduction in deductions.clone() {
-                    // NOTE: Deductions, in the current version of the spec. we implement, do not
-                    // ever exceed the minimum variables available.
-                    max_vertex_shader_output_variables = max_vertex_shader_output_variables
-                        .checked_sub(deduction.for_variables())
-                        .unwrap();
-                    max_vertex_shader_output_location = max_vertex_shader_output_location
-                        .checked_sub(deduction.for_location())
-                        .unwrap();
+                    max_vertex_shader_output_variables -= i64::from(deduction.for_variables());
+                    max_vertex_shader_output_location -= i64::from(deduction.for_location());
                 }
 
-                let mut num_user_defined_outputs = 0;
+                let mut num_user_defined_outputs = 0u32;
 
                 for output in entry_point.outputs.iter() {
                     match *output {
                         Varying::Local { ref iv, location } => {
-                            if location > max_vertex_shader_output_location {
+                            if i64::from(location) > max_vertex_shader_output_location {
                                 return Err(StageError::VertexOutputLocationTooLarge {
                                     location,
                                     var: iv.clone(),
@@ -1708,7 +1702,7 @@ impl Interface {
                     }
                 }
 
-                if num_user_defined_outputs > max_vertex_shader_output_variables {
+                if i64::from(num_user_defined_outputs) > max_vertex_shader_output_variables {
                     return Err(StageError::TooManyUserDefinedVertexOutputs {
                         num_found: num_user_defined_outputs,
                         limit: self.limits.max_inter_stage_shader_variables,
@@ -1721,7 +1715,7 @@ impl Interface {
                 has_depth_attachment,
             } => {
                 let mut max_fragment_shader_input_variables =
-                    self.limits.max_inter_stage_shader_variables;
+                    i64::from(self.limits.max_inter_stage_shader_variables);
 
                 let deductions = entry_point.inputs.iter().filter_map(|output| match output {
                     Varying::Local { .. } => None,
@@ -1740,14 +1734,10 @@ impl Interface {
                 });
 
                 for deduction in deductions.clone() {
-                    // NOTE: Deductions, in the current version of the spec. we implement, do not
-                    // ever exceed the minimum variables available.
-                    max_fragment_shader_input_variables = max_fragment_shader_input_variables
-                        .checked_sub(deduction.for_variables())
-                        .unwrap();
+                    max_fragment_shader_input_variables -= i64::from(deduction.for_variables());
                 }
 
-                let mut num_user_defined_inputs = 0;
+                let mut num_user_defined_inputs = 0u32;
 
                 for output in entry_point.inputs.iter() {
                     match *output {
@@ -1766,7 +1756,7 @@ impl Interface {
                     };
                 }
 
-                if num_user_defined_inputs > max_fragment_shader_input_variables {
+                if i64::from(num_user_defined_inputs) > max_fragment_shader_input_variables {
                     return Err(StageError::TooManyUserDefinedFragmentInputs {
                         num_found: num_user_defined_inputs,
                         limit: self.limits.max_inter_stage_shader_variables,
@@ -2051,5 +2041,23 @@ impl ShaderStageForValidation {
             Self::Compute => wgt::ShaderStages::COMPUTE,
             Self::Task => wgt::ShaderStages::TASK,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{string::ToString, vec::Vec};
+
+    use super::{InterfaceVar, StageError};
+
+    #[test]
+    fn fragment_location_error_formats_zero_limit() {
+        let error = StageError::FragmentInputLocationTooLarge {
+            location: 0,
+            var: InterfaceVar::vertex_attribute(wgt::VertexFormat::Float32),
+            limit: 0,
+            deductions: Vec::new(),
+        };
+        assert!(error.to_string().contains("-1, 0-based"));
     }
 }

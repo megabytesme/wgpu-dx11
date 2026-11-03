@@ -409,5 +409,14 @@ when a native device requests `max_inter_stage_shader_variables = 0`:
 error-format arithmetic can also underflow. A limit of one was used for this
 fixture because it is supported by the private backend; a separate core fix
 and public Noop regression are still required. An independent audit confirmed
-zero is a valid native limit request. Do not use saturating arithmetic to hide
-negative post-deduction budgets.
+zero is a valid native limit request. The public Noop regression reproduced
+the underflow before the fix. Signed intermediate budgets now preserve negative
+post-deduction values and reject invalid pipelines without panicking; location
+error formatting also handles zero. The public test covers limits zero and one,
+point lists, front-facing and clip-distance deductions, and location errors.
+The full public validation suite passed 91 tests with the expanded regression.
+The fixture-enabled core suite passed 68 tests, including the physical FL9_1 rendering fixture and
+the fragment error-format test. A first core test build caught missing alloc
+imports in the new unit test; these were added and the suite then passed.
+Fixture-enabled core Clippy passed. The public suite reported Vulkan loader
+warnings about an absent OBS layer manifest; these did not fail tests.
