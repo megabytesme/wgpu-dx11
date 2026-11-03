@@ -1170,3 +1170,18 @@ suite preceded those final test-only additions. Each use incurs GPU copies and
 clone memory. The unsafe public-wgpu fixture again passed its indexed textured
 depth check with 32 red and 32 green pixels. Historical drivers and public
 adapter exposure remain unverified.
+Checkpoint: `9e9c21392b0996c1ea2b6489c11c268c37379206`.
+
+Next: use that clone path for a single non-final mip view with both RESOURCE
+and COLOR_TARGET usages, with rendering and sampling in separate passes.
+Keep the original-resource feedback guard and validate fresh copies after render.
+
+Non-final single-mip dual RESOURCE|COLOR_TARGET views now use the original RTV
+and a refreshed clone SRV. The strict RTX FL9_1 test passed eight GPU cases over
+both color formats, including repeated render/sample transitions, early resource
+destruction and feedback rejection. Controlled core default-view cases each
+matched 64 blue pixels for RGBA8 and BGRA8. Independent review found no concrete
+defect. The full strict suite passed 251 tests with two filtered and three older
+shader cases skipping GPU execution internally. HAL Clippy passed with ten
+existing test warnings; core's zero-adapter test passed. Same-pass whole-resource
+feedback and public enumeration remain gated.

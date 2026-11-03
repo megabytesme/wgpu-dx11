@@ -348,19 +348,16 @@ impl crate::Device for Device {
                 || (native.MipLevels > 1 && desc.usage == wgt::TextureUses::RESOURCE)
             {
                 !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
-            } else if native.MipLevels > 1 && desc.usage == wgt::TextureUses::COLOR_TARGET {
+            } else if native.MipLevels > 1
+                && (desc.usage == wgt::TextureUses::COLOR_TARGET
+                    || desc.usage == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET))
+            {
                 !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
                     || desc
                         .range
                         .mip_level_count
                         .unwrap_or(native.MipLevels - desc.range.base_mip_level)
                         != 1
-            } else if native.MipLevels > 1
-                && desc.usage == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET)
-            {
-                !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
-                    || desc.range.base_mip_level.checked_add(1) != Some(native.MipLevels)
-                    || desc.range.mip_level_count.is_some_and(|count| count != 1)
             } else {
                 native.MipLevels != 1
                     || !desc
@@ -635,6 +632,7 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, FeatureLevel, Queue};
     use crate::{DynCommandBuffer, DynDevice, DynQueue};
     use alloc::vec;
+    use windows::core::Interface;
 
     #[test]
     fn metadata_texture_view_ranges_check_bounds_and_aspect() {
@@ -912,6 +910,23 @@ mod tests {
         assert_eq!(native.sampled_view(&combined_view)?.2, 1);
         assert_eq!(native.render_target_view(&combined_view)?.2, [1, 1]);
         combined_view_desc.range.base_mip_level = 1;
+        let combined_nonfinal =
+            unsafe { crate::Device::create_texture_view(&device, &combined, &combined_view_desc) }
+                .unwrap();
+        let (nonfinal_sampled, size, count) = native.sampled_binding(&combined_nonfinal)?;
+        let (target_view, _, target_size) = native.render_target_view(&combined_nonfinal)?;
+        assert_eq!((size, count, target_size), ([4, 2], 1, [4, 2]));
+        let original = nonfinal_sampled
+            .original
+            .cast::<windows::core::IUnknown>()?;
+        let target_resource =
+            unsafe { target_view.GetResource()? }.cast::<windows::core::IUnknown>()?;
+        let shadow_resource =
+            unsafe { nonfinal_sampled.view.GetResource()? }.cast::<windows::core::IUnknown>()?;
+        assert_eq!(original.as_raw(), target_resource.as_raw());
+        assert_ne!(original.as_raw(), shadow_resource.as_raw());
+        assert!(nonfinal_sampled.refresh.is_some());
+        combined_view_desc.range.mip_level_count = None;
         assert!(unsafe {
             crate::Device::create_texture_view(&device, &combined, &combined_view_desc)
         }
@@ -939,7 +954,10 @@ mod tests {
             crate::Device::destroy_texture(&device, combined);
             assert!(native.sampled_view(&combined_view).is_ok());
             assert!(native.render_target_view(&combined_view).is_ok());
+            assert!(native.sampled_view(&combined_nonfinal).is_ok());
+            assert!(native.render_target_view(&combined_nonfinal).is_ok());
             crate::Device::destroy_texture_view(&device, combined_view);
+            crate::Device::destroy_texture_view(&device, combined_nonfinal);
             crate::Device::destroy_texture_view(&device, suffix);
             crate::Device::destroy_texture_view(&device, target);
             crate::Device::destroy_texture(&device, attachment);

@@ -179,7 +179,7 @@ provide native sampled or render-target mip views.
 Sampled multi-mip textures use `COPY_DST | RESOURCE` with optional `COPY_SRC`,
 or `RESOURCE | COLOR_TARGET` with optional `COPY_SRC` and/or `COPY_DST`.
 Native shader-resource views span a suffix through the resource's last mip.
-A supported non-suffix `RESOURCE`-only view uses a separate native texture
+A supported non-suffix sampled view uses a separate native texture
 with the selected mip range; its source mips are copied to the clone at each
 draw before sampling. This GPU work has a per-draw copy and storage cost, but
 does not require logical `COPY_SRC` usage. The original texture is retained and
@@ -188,7 +188,8 @@ texture without `COPY_SRC` cannot be directly read back; a texture with only
 `COPY_DST | RESOURCE` uses only a native shader-resource bind. Color-attachment
 mip chains use `COLOR_TARGET` with optional `RESOURCE`, `COPY_SRC` and/or
 `COPY_DST`, excluding `TRANSIENT`; each attachment view selects one mip. A view
-with both sampled and attachment usages can select only the resource's last mip.
+with both sampled and attachment usages can select any single mip: a nonfinal
+mip uses a clone SRV and an original-resource RTV.
 Sampling and attachment use occur in distinct passes: the private HAL rejects
 feedback involving the same underlying texture even for disjoint mips. Sampled
 view metadata and the selected shader relationships drive
@@ -217,6 +218,9 @@ Combined sampled-and-attachment mip transitions passed six strict GPU cases for
 both formats on the RTX FL9_1 device, and the controlled core fixture checked
 64 output pixels in each of four cases. These cover separate usage-specific
 views and last-mip dual-use views across passes, not same-pass feedback.
+An additional eight strict GPU cases covered nonfinal dual-use views for both
+formats; the core fixture's default dual-usage view produced 64 matching pixels
+for each format after render-to-sample transitions.
 
 HAL transfer commands use explicit regions. No staging-to-default native copy with
 a null source box is used, avoiding the documented 9_x corruption case for

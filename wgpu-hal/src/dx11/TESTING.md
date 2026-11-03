@@ -548,7 +548,7 @@ index buffers were destroyed before submission. A feedback test rejects sampling
 the original texture during its attachment pass. The controlled core fixture checked 64 yellow pixels after a
 source update. The source needs no logical `COPY_SRC` usage.
 
-Non-suffix `RESOURCE` views use a GPU clone refreshed by copying the selected
+Non-suffix sampled views use a GPU clone refreshed by copying the selected
 source mips on each draw; the per-draw copies and additional allocation have a
 performance cost. The original resource is retained for alias checks. Native
 suffix views do not need this clone. Format prerequisites are queried; missing
@@ -582,11 +582,23 @@ The strict RTX FL9_1 run passed six GPU cases across RGBA8 and BGRA8, including
 render/sample state transitions. The controlled core fixture passed four cases
 with 64 checked pixels each: suffix sampled views and last-mip dual-use views
 for both formats. Native sampled suffix views include the resource's last mip;
-non-suffix RESOURCE-only views use clones. Attachment views select one mip, and
-a dual-use view must select the last mip. Use in
+non-suffix sampled views use clones. Attachment views and dual-use views select
+one mip. Use in
 distinct passes is supported; same-pass feedback is rejected at whole-resource
 granularity, including when the views select disjoint mips. Historical devices
 and public adapter exposure remain unresolved.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_dual_nonsuffix_mip_render_and_sample -- --nocapture --test-threads=1
+```
+
+The strict RTX FL9_1 test passed eight GPU cases across RGBA8 and BGRA8. A
+nonfinal dual-use view has an SRV backed by a per-draw clone and an RTV backed
+by the original mip. The controlled core fixture also used a default dual-usage
+view to render and then sample a nonfinal mip in separate passes, checking 64
+pixels for each format. Same-pass feedback remains rejected for the entire
+logical resource; historical driver behavior remains unverified.
 
 ### FL9_1 uniform bindings
 

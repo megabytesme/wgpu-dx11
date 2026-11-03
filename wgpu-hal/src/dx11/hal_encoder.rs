@@ -3891,6 +3891,10 @@ mod render_sample_mips;
 mod nonsuffix_mips;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/dual_mip_views.rs"]
+mod dual_mip_views;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 

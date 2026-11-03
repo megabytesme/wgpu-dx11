@@ -393,6 +393,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             queue,
             VertexCase::RenderSampleMip(wgt::TextureFormat::Rgba8Unorm, true),
         );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::RenderSampleMipDefault(wgt::TextureFormat::Rgba8Unorm),
+        );
     }
     if bgra_mips {
         render_triangle(
@@ -406,6 +412,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             device,
             queue,
             VertexCase::RenderSampleMip(wgt::TextureFormat::Bgra8Unorm, true),
+        );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::RenderSampleMipDefault(wgt::TextureFormat::Bgra8Unorm),
         );
     }
     global.command_buffer_drop(command);
@@ -1030,6 +1042,7 @@ enum VertexCase {
     SampledMipsNoCopySrc,
     SampledMipsNoCopySrcUninitialized,
     RenderSampleMip(wgt::TextureFormat, bool),
+    RenderSampleMipDefault(wgt::TextureFormat),
     Overlapping,
     NoopStencil,
     Snorm,
@@ -1053,8 +1066,10 @@ fn render_triangle(
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
+    let default_non_suffix = matches!(case, VertexCase::RenderSampleMipDefault(_));
     let combined = match case {
         VertexCase::RenderSampleMip(format, dual) => Some((format, dual)),
+        VertexCase::RenderSampleMipDefault(format) => Some((format, true)),
         _ => None,
     };
     let non_suffix = case == VertexCase::SampledMipNonSuffix;
@@ -1233,7 +1248,8 @@ fn render_triangle(
         &resource::TextureViewDescriptor {
             range: if sampled_mip_suffix {
                 wgt::ImageSubresourceRange {
-                    base_mip_level: if combined.is_some_and(|(_, dual)| dual) {
+                    base_mip_level: if combined.is_some_and(|(_, dual)| dual) && !default_non_suffix
+                    {
                         2
                     } else {
                         1
@@ -1250,7 +1266,7 @@ fn render_triangle(
             } else {
                 Default::default()
             },
-            usage: combined.map(|(_, dual)| {
+            usage: combined.filter(|_| !default_non_suffix).map(|(_, dual)| {
                 if dual {
                     wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
                 } else {
@@ -1305,7 +1321,7 @@ fn render_triangle(
             view
         };
         (
-            make_view(1),
+            make_view(if default_non_suffix { 2 } else { 1 }),
             if dual { sample_view } else { make_view(2) },
             dual,
         )

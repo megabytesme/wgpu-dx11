@@ -421,6 +421,7 @@ impl NativeDevice {
                     || !desc.Width.is_power_of_two()
                     || !desc.Height.is_power_of_two()
                     || (view.usage.contains(wgt::TextureUses::RESOURCE)
+                        && view.refresh.is_none()
                         && view.mip_base.checked_add(1) != Some(desc.MipLevels))))
             || view.mip_count != 1
             || view.mip_base >= desc.MipLevels
@@ -615,7 +616,7 @@ impl NativeDevice {
                 let non_suffix = mip_base.checked_add(mip_count) != Some(texture_desc.MipLevels);
                 let mut sampled_texture = texture.raw.clone();
                 if non_suffix {
-                    if render_target
+                    if (render_target && mip_count != 1)
                         || depth_stencil
                         || mip_count == 0
                         || mip_base >= texture_desc.MipLevels

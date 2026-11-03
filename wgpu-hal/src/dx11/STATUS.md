@@ -40,7 +40,7 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Sampled POT mip chains support `COPY_DST | RESOURCE` with optional `COPY_SRC`,
   or `RESOURCE | COLOR_TARGET` with optional copy usages,
   and a positively queried format. Suffix views including the resource's last
-  mip use native SRVs; supported non-suffix `RESOURCE` views use per-draw GPU
+  mip use native SRVs; supported non-suffix sampled views use per-draw GPU
   copies into a clone and retain the original for feedback validation. Selected
   shader pairs are checked against actual mip counts and sampler
   LOD translation. RGBA8 and BGRA8
@@ -58,12 +58,15 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   historical GPU behavior is unverified.
 - POT RGBA8 and BGRA8 color-attachment mip chains support an individual
   single-mip render-target view, with optional sampled, copy-source and
-  copy-destination usage. A dual sampled/attachment view can select only the
-  last mip; transient usage remains unsupported. Strict
+  copy-destination usage. A dual sampled/attachment view can select any single
+  mip; a nonfinal mip uses a clone SRV and original-resource RTV. Transient
+  usage remains unsupported. Strict
   GPU readback passed for both formats; core checked all 43 pixels per format
   and submitted a render-only mip pass without direct readback. Combined
   render/sample transitions passed six private GPU cases across both formats and
-  four core cases with 64 checked pixels each. Whole-resource feedback in the
+  four core cases with 64 checked pixels each. An additional eight private GPU
+  cases covered nonfinal dual views, and default-view core cases checked 64
+  pixels per format. Whole-resource feedback in the
   same pass remains rejected, even across disjoint mips.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
