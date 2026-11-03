@@ -1794,11 +1794,48 @@ mod tests {
             "positive/negative base vertex pixels: {base_pixels:?}"
         );
         std::println!("Readback: positive and negative base vertices, 64/64 red pixels");
-        let invalid_base = unsafe {
+        let out_of_bounds_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 16,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(
+            &out_of_bounds_upload,
+            0,
+            &[6, 0, 7, 0, 8, 0, 6, 0, 7, 0, 0, 0, 0, 0, 0, 0],
+        )?;
+        let load_color = [Some(ColorAttachment {
+            target: Attachment {
+                view: &view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: AttachmentOps::LOAD | AttachmentOps::STORE,
+            clear_value: wgt::Color::BLACK,
+        })];
+        let load_pass = RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &load_color,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let discarded_draw = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::copy_buffer_to_buffer(
                 &mut encoder,
-                &base_upload,
+                &out_of_bounds_upload,
                 &base_indices,
                 core::iter::once(BufferCopy {
                     src_offset: 0,
@@ -1818,7 +1855,40 @@ mod tests {
                 BufferBinding::new_unchecked(&base_indices, 2, None),
                 wgt::IndexFormat::Uint16,
             );
-            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, -1, 0, 1);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 6, -3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &base_upload,
+                &base_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 4,
+                    size: NonZeroU64::new(16).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &load_pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&base_indices, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 0, 1);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
         };
@@ -1826,18 +1896,24 @@ mod tests {
             crate::Device::destroy_buffer(&device, base_vertices);
             crate::Device::destroy_buffer(&device, base_indices);
             crate::Device::destroy_buffer(&device, base_upload);
-            assert!(crate::Queue::submit(&queue, &[&invalid_base], &[], (&fence, 3)).is_err());
-            native.immediate_context().ClearState();
+            crate::Device::destroy_buffer(&device, out_of_bounds_upload);
+            crate::Queue::submit(&queue, &[&discarded_draw], &[], (&fence, 3)).unwrap();
         }
-        let invalid_pixels = native.read_rgba_texture(&texture, 0, 0)?;
-        assert!(invalid_pixels
-            .chunks_exact(4)
-            .all(|pixel| pixel == [0, 0, 0, 255]));
-        std::println!("PASS: negative effective index rejected before drawing");
+        assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
+        let discard_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        for (index, pixel) in discard_pixels.chunks_exact(4).enumerate() {
+            let expected = if index % 8 < 4 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            assert_eq!(pixel, expected, "discarded indexed draw pixel {index}");
+        }
+        std::println!("PASS: late out-of-bounds index discarded whole draw; later GPU upload and draw succeeded");
         unsafe {
             crate::CommandEncoder::reset_all(
                 &mut encoder,
-                [upload_commands, commands, base_commands, invalid_base].into_iter(),
+                [upload_commands, commands, base_commands, discarded_draw].into_iter(),
             );
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             let unsupported = RenderPassDescriptor {

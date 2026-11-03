@@ -445,6 +445,16 @@ can skip internally. Targeted HAL Clippy passed with ten existing warnings.
 This conservative path still rejects valid index data above its FL9 limits and
 does not implement public robust-draw behavior or u32 indices.
 
+The indexed path now discards a whole draw successfully when any vertex fetch
+is outside its bound range, while otherwise-valid indices beyond the native
+limit still fail replay. Synthetic tests cover both classifications and their
+precedence. On forced FL9_1 a late invalid index suppressed an entire draw;
+a later GPU index upload and draw produced the expected black-left, red-right
+image and signaled the fence. Existing out-of-range textured tests also passed.
+The strict private suite passed 169 tests, two filtered; some older tests may
+skip internally. HAL Clippy passed with ten existing warnings. This does not
+yet implement u32 indices or translation of otherwise-valid high indices.
+
 With strict hardware mode, `cargo test --offline -p wgpu --no-default-features
 --features std,dx11-test-fixture --test dx11_fixture -- --nocapture` passed on
 the RTX 3090 Ti at requested and actual FL9_1. The nondefault test injects the

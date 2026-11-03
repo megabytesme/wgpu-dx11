@@ -2448,9 +2448,8 @@ fn sampled_triangle_variant(
         second_command = Some(next);
     }
     if let Some(index) = index_buffer.as_ref() {
-        // Recording must not snapshot the data: GPU writes before submission
-        // can change the indices. Reject invalid values at replay time.
-        for invalid in [3u16, u16::MAX] {
+        // Index contents are checked at execution and out-of-range draws are discarded.
+        for (attempt, invalid) in [3u16, u16::MAX].into_iter().enumerate() {
             unsafe {
                 crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
                 crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
@@ -2474,10 +2473,28 @@ fn sampled_triangle_variant(
                 );
                 crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 0, 1);
                 crate::CommandEncoder::end_render_pass(&mut encoder);
-                let rejected = crate::CommandEncoder::end_encoding(&mut encoder).unwrap();
+                let discarded = crate::CommandEncoder::end_encoding(&mut encoder).unwrap();
                 native.write_byte_buffer(index, 4, &invalid.to_le_bytes())?;
-                assert!(crate::Queue::submit(&queue, &[&rejected], &[], (&fence, 2)).is_err());
-                crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(rejected));
+                let value = attempt as u64 + 2;
+                crate::Queue::submit(&queue, &[&discarded], &[], (&fence, value)).unwrap();
+                assert!(native.wait_native_fence(
+                    &fence,
+                    value,
+                    Some(core::time::Duration::from_secs(5))
+                )?);
+                let pixels = native.read_rgba_texture(&target, 0, 0)?;
+                let clear = [
+                    0,
+                    0,
+                    if alpha || invert || effect != 0 {
+                        255
+                    } else {
+                        0
+                    },
+                    255,
+                ];
+                assert!(pixels.chunks_exact(4).all(|pixel| pixel == clear));
+                crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(discarded));
             }
         }
     }

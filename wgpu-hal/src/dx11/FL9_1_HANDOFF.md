@@ -151,8 +151,8 @@ The controlled core fixture has also rendered a sampled texture with depth on
 the forced-FL9_1 RTX: readback matched 32 red and 32 green pixels. This is an
 unsafe, feature-gated fixture rather than ordinary public adapter enumeration.
 The private u16 indexed path also passed signed base-vertex GPU tests using
-execution-time index data. Invalid effective indices currently fail replay;
-valid public draws beyond its conservative limits still require emulation.
+execution-time index data. Out-of-bounds vertex fetches discard the whole draw;
+valid public draws beyond its conservative native limits still require emulation.
 
 Known costs include per-group scratch allocation, per-draw staging and mapping
 of uniform ranges, and buffer-texture

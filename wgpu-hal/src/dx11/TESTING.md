@@ -39,9 +39,9 @@ for a fence with a five-second timeout, and checks every pixel after readback.
 Resources remain alive until completion and are explicitly destroyed afterwards.
 The shader goes through the existing Naga and D3D11 shader pipeline.
 The same test checks positive and negative base vertices with nonzero binding
-offsets and a preceding GPU index upload; all 64 pixels must be red. A negative
-effective index is rejected before that indexed draw, though earlier commands
-in the submission can already have executed.
+offsets and a preceding GPU index upload; all 64 pixels must be red. A late
+out-of-bounds index discards a whole draw; a later GPU index update and draw
+still complete, producing black on the left and red on the right.
 
 Read the printed result, not just libtest's final line:
 
