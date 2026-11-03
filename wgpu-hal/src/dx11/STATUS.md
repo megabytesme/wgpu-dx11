@@ -127,8 +127,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   streams, including sparse slots, nonzero offsets and `first_instance`. FL9_1
   point batches rebase vertex bindings and contain at most 65,535 points.
   Strict RTX tests checked three full images, including 65,537 points across a
-  batch boundary; a controlled core fixture checked 64 pixels. Indexed points
-  remain unavailable, and historical FL9_1 drivers remain unverified.
+  batch boundary; a controlled core fixture checked 64 pixels. Indexed Uint16
+  and Uint32 points use ordered nonindexed runs; GPU index staging and CPU
+  mapping can stall, and scattered indices can require many draws. When all
+  vertex-rate streams have zero stride, or only instance-rate streams are used,
+  index values do not affect the output and staging is avoided after range
+  validation. Twelve strict RTX images and two 64-pixel core renders covered
+  indexed points. Historical FL9_1 drivers remain unverified.
 - Nonindexed strips preserve winding through overlapping, rebased batches;
   indexed strips remain unsupported because native strip cuts are not guaranteed.
 - Direct FL9_1 triangle-list batches are conservatively limited to 65,535
@@ -146,10 +151,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Restricted direct, strip and indexed instancing repeats non-instanced native
   draws, binding each instance-rate stream with native stride zero at its
   `first_instance`-adjusted offset. Pipelines using `instance_index` and indexed
-  draws with only instance-rate streams remain unsupported; general instancing
-  is not advertised.
-- Restricted indexed draws support signed base vertices and validate GPU index
-  contents at replay. Uint32 triangle lists and Uint16 values beyond native
+  triangle draws with only instance-rate streams remain unsupported; general
+  instancing is not advertised.
+- Restricted index-dependent draws support signed base vertices and validate GPU
+  index contents at replay. Uint32 triangle lists and Uint16 values beyond native
   limits convert to ordered native 16-bit windows, with wide triangles gathered
   through GPU vertex-buffer copies. Out-of-bounds vertex fetches discard the
   whole draw. Staging and scratch

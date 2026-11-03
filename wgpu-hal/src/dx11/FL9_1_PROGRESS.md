@@ -1291,3 +1291,27 @@ The full strict suite passed 261 tests with two filtered; six dynamic-index
 shaders are rejected and their GPU renders skipped. HAL Clippy passed with ten
 existing test warnings and core's zero-adapter test passed. An independent
 review found no concrete issue. Historical drivers are unverified.
+Checkpoint: `4cba5bf6fb21ac23699fe1b012808d0852c6f0e9`.
+
+Next: investigate indexed point-list emulation. Native FL9 indexed point draws
+are forbidden; an ordered GPU-authoritative index readback and prevalidated
+nonindexed runs may preserve point order, with a staging stall and potentially
+many draws. Do not reuse triangle grouping or silently mishandle zero-stride
+and negative effective indices.
+
+Indexed point lists now use ordered, rebased nonindexed runs, with the GPU's
+index contents staged and all stream ranges checked before any native draw.
+The index-independent zero-stride and instance-only case avoids staging after
+validating index-buffer and stream ranges. This relies on the existing ban on
+index builtins, observable shader side effects and queries. A strict RTX FL9_1
+test passed twelve full-image cases, including u16/u32 indices, signed bases,
+repeated and reordered indices, GPU updates, instances and invalid late fetches.
+The core fixture matched 64 pixels for each index format. Before implementation,
+the new test failed on the expected unsupported draw. The first full suite run
+found an old test expecting indexed points to fail; its negative case now checks
+an out-of-range index binding. The strict suite then passed 266 tests, with two
+filtered; six runtime-index shaders reject and skip their GPU renders. HAL
+Clippy passed with ten pre-existing test warnings, and the core isolation test
+passed. The unsafe public-wgpu fixture still rendered 32 red and 32 green pixels.
+Historical drivers are unverified. The implementation can stall for GPU index
+staging and use one native draw per scattered index.

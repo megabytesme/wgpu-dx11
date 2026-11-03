@@ -86,6 +86,86 @@ impl IndexBinding {
 
     #[expect(
         clippy::too_many_arguments,
+        reason = "Indexed point replay needs stream and instance state"
+    )]
+    pub(super) fn draw_points(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base: i32,
+        vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+        draw_limits: (u32, u32),
+        instance_bindings: &super::command::InstanceBindings,
+    ) -> Result<()> {
+        let (max_points, instances) = draw_limits;
+        instance_bindings.validate(instances)?;
+        if vertices.is_empty()
+            || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
+                !offset.is_multiple_of(4)
+                    || !stride.is_multiple_of(4)
+                    || *extent == 0
+                    || (*stride != 0 && *extent > *stride)
+                    || !extent.is_multiple_of(4)
+            })
+            || !self.contains_range(first, count)
+            || max_points == 0
+            || (count != 0 && first.checked_add(count - 1).is_none())
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        if count == 0 || instances == 0 {
+            return Ok(());
+        }
+        let mut layouts = Vec::new();
+        layouts
+            .try_reserve_exact(vertices.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        layouts.extend(vertices.iter().map(|v| (v.2, v.3, v.4, v.5)));
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(&self.staging, &self.buffer);
+            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&self.staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let size = if self.is_u32() { 4 } else { 2 };
+            let start = self.offset as usize + first as usize * size;
+            let read = |i: usize| {
+                let ptr = mapped.pData.cast::<u8>().add(start + i * size);
+                if self.is_u32() {
+                    core::ptr::read_unaligned(ptr.cast::<u32>())
+                } else {
+                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
+                }
+            };
+            let plan = plan_point_runs(read, count as usize, base, max_points, &layouts);
+            context.Unmap(&self.staging, 0);
+            let Some(plan) = plan? else { return Ok(()) };
+            for instance in 0..instances {
+                instance_bindings.bind(context, instance)?;
+                for run in &plan {
+                    for ((slot, buffer, _, _, stride, _), offset) in
+                        vertices.iter().zip(&run.offsets)
+                    {
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(buffer.clone())),
+                            Some(stride),
+                            Some(offset),
+                        );
+                    }
+                    context.Draw(run.count, 0);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
         reason = "Indexed replay needs stream and instance state"
     )]
     pub(super) fn draw_multi(
@@ -578,6 +658,71 @@ impl IndexBinding {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct PointRun {
+    count: u32,
+    offsets: Vec<u32>,
+}
+
+fn plan_point_runs(
+    read: impl Fn(usize) -> u32,
+    count: usize,
+    base: i32,
+    max_points: u32,
+    layouts: &[(u32, u64, u32, u32)],
+) -> Result<Option<Vec<PointRun>>> {
+    if max_points == 0 || layouts.is_empty() {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    for i in 0..count {
+        if !multi_u32_index_in_bounds(
+            read(i),
+            base,
+            layouts
+                .iter()
+                .map(|&(_, length, stride, extent)| (length, stride, extent)),
+        ) {
+            return Ok(None);
+        }
+    }
+    let mut runs = Vec::new();
+    let mut start = 0;
+    while start < count {
+        let first = (i64::from(read(start)) + i64::from(base)) as u64;
+        let mut end = start + 1;
+        while end < count && end - start < max_points as usize {
+            let current = (i64::from(read(end)) + i64::from(base)) as u64;
+            if first.checked_add((end - start) as u64) != Some(current) {
+                break;
+            }
+            end += 1;
+        }
+        let last = first
+            .checked_add((end - start - 1) as u64)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let mut offsets = Vec::new();
+        offsets
+            .try_reserve_exact(layouts.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        for &(offset, length, stride, extent) in layouts {
+            let layout = (length, stride, extent);
+            let first_offset = rebased_vertex_offset(first, offset, layout)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            rebased_vertex_offset(last, offset, layout)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            offsets.push(first_offset);
+        }
+        runs.try_reserve(1)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        runs.push(PointRun {
+            count: (end - start) as u32,
+            offsets,
+        });
+        start = end;
+    }
+    Ok(Some(runs))
+}
+
 fn multi_u32_index_in_bounds(
     value: u32,
     base: i32,
@@ -877,6 +1022,56 @@ mod tests {
         plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision, IndexPlan,
         U32Decision, U32Segment,
     };
+
+    #[test]
+    fn indexed_point_runs_preserve_order_and_rebase_every_stream() {
+        let indices = [7, 8, 8, 3, 100_000, 100_001];
+        let layouts = [
+            (16, 2_000_000, 16, 8),
+            (28, 4_000_000, 32, 16),
+            (8, 4, 0, 4),
+        ];
+        let runs = super::plan_point_runs(|i| indices[i], indices.len(), -3, 65_535, &layouts)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            runs.iter().map(|run| run.count).collect::<Vec<_>>(),
+            [2, 1, 1, 2]
+        );
+        assert_eq!(runs[0].offsets, [80, 156, 8]);
+        assert_eq!(runs[1].offsets, [96, 188, 8]);
+        assert_eq!(runs[2].offsets, [16, 28, 8]);
+        assert_eq!(runs[3].offsets, [1_599_968, 3_199_932, 8]);
+    }
+
+    #[test]
+    fn indexed_point_runs_split_at_native_primitive_limit() {
+        let layouts = [(0, 65_537 * 4, 4, 4)];
+        let runs = super::plan_point_runs(|i| i as u32, 65_537, 0, 65_535, &layouts)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            runs.iter().map(|run| run.count).collect::<Vec<_>>(),
+            [65_535, 2]
+        );
+        assert_eq!(runs[0].offsets, [0]);
+        assert_eq!(runs[1].offsets, [262_140]);
+    }
+
+    #[test]
+    fn indexed_point_runs_discard_full_draw_for_any_invalid_index() {
+        let layouts = [(0, 16, 4, 4), (8, 4, 0, 4)];
+        for (indices, base) in [([0, 1, 4], 0), ([1, 2, 0], -1)] {
+            assert!(
+                super::plan_point_runs(|i| indices[i], indices.len(), base, 65_535, &layouts)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(super::plan_point_runs(|_| 0, 1, 0, 0, &layouts).is_err());
+        assert!(super::plan_point_runs(|_| 0, 1, 0, 1, &[]).is_err());
+        assert!(super::plan_point_runs(|_| 1, 1, 0, 1, &[(u32::MAX - 3, 8, 4, 4)]).is_err());
+    }
 
     #[test]
     fn multi_stream_index_bounds_check_each_range_and_signed_base() {

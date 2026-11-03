@@ -83,8 +83,8 @@ the green gather does not cover it. The expected green pixel therefore
 distinguishes instance-outer ordering from segment-outer ordering, which would
 leave it red.
 The controlled core fixture's instance-rate case produced 32 red and 32 green
-pixels. Indexed draws containing only instance-rate streams and shaders using
-`instance_index` remain unsupported. These results do not establish general
+pixels. Indexed triangle draws containing only instance-rate streams and shaders
+using `instance_index` remain unsupported. These results do not establish general
 instancing or historical FL9_1-driver behavior.
 
 With strict hardware mode enabled, run the point-input execution test with:
@@ -100,9 +100,24 @@ rebased batches with nonzero `first_instance` and an instance-rate stream. An
 out-of-range draw is rejected during encoding. The controlled core `PointInput`
 fixture checked all 64 pixels; its initial fixture buffer limit was adjusted from
 one to two so it could create the intended layout. Before implementation the HAL
-baseline failed because the pipeline rejected point inputs. Indexed point draws
-remain unsupported, and historical FL9_1 behavior has not been verified. Public
-adapter enumeration remains disabled.
+baseline failed because the pipeline rejected point inputs. Historical FL9_1
+behavior has not been verified. Public adapter enumeration remains disabled.
+
+With strict hardware mode enabled, run the indexed-point test and CPU planners:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 indexed_point -- --nocapture --test-threads=1
+```
+
+The strict RTX 3090 Ti test requested and selected FL9_1 and checked 12 complete
+8×8 images. Uint16 and Uint32 cases cover reordered and repeated indices, signed
+base vertices, sparse vertex and instance streams, nonzero `first_instance`, a
+recorded GPU index-buffer update, retained resources and whole-draw discard for
+a late out-of-bounds fetch. Separate zero-stride and instance-only cases cover
+extreme index values and negative effective indices without reading the index
+contents; a short index range is rejected. The controlled core fixture checked
+64 pixels each for Uint16 and Uint32. These cases exercise the private emulation,
+not native indexed points, and do not establish historical-driver behavior.
 
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 
@@ -218,7 +233,7 @@ verifies that a later native draw restores its vertex binding.
 `empty_vertex_input_pipeline_is_accepted` checks zero-input triangle and
 nonindexed point pipelines, including a single interior point and transitions
 between point and triangle pipelines. CPU tests verify point batching at the
-65,535-primitive boundary; indexed points remain unsupported.
+65,535-primitive boundary. Indexed point emulation is covered separately above.
 It also checks masked alpha, inversion and vignette blends against readback.
 FL9_1 does not guarantee separate alpha blending: the production path rejects
 those modes with both RGB and alpha writes. Some older full-channel blend tests

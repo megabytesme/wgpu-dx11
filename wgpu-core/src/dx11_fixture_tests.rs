@@ -357,6 +357,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     for case in [
         VertexCase::Baseline,
         VertexCase::PointInput,
+        VertexCase::PointIndexed(wgt::IndexFormat::Uint16),
+        VertexCase::PointIndexed(wgt::IndexFormat::Uint32),
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
@@ -1062,6 +1064,7 @@ fn copy_only_texture_view(
 enum VertexCase {
     Baseline,
     PointInput,
+    PointIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
     SampledMips,
     SampledMipsBias,
@@ -1093,7 +1096,11 @@ fn render_triangle(
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let overlapping = case == VertexCase::Overlapping;
-    let point_input = case == VertexCase::PointInput;
+    let point_index = match case {
+        VertexCase::PointIndexed(format) => Some(format),
+        _ => None,
+    };
+    let point_input = case == VertexCase::PointInput || point_index.is_some();
     let noop_stencil = case == VertexCase::NoopStencil;
     let never_depth = match case {
         VertexCase::NeverDepth(write) => Some(write),
@@ -1772,6 +1779,33 @@ fn render_triangle(
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
+    let point_indices = point_index.map(|format| {
+        let data: Vec<u8> = match format {
+            wgt::IndexFormat::Uint16 => [999u16, 999, 999, 2, 3, 999]
+                .into_iter()
+                .flat_map(u16::to_ne_bytes)
+                .collect(),
+            wgt::IndexFormat::Uint32 => [999u32, 999, 2, 3]
+                .into_iter()
+                .flat_map(u32::to_ne_bytes)
+                .collect(),
+        };
+        let (buffer, error) = global.device_create_buffer(
+            device,
+            &wgt::BufferDescriptor {
+                label: None,
+                size: data.len() as u64,
+                usage: wgt::BufferUsages::INDEX | wgt::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(error.is_none(), "point index buffer creation: {error:?}");
+        global
+            .queue_write_buffer(queue, buffer, 0, &data)
+            .expect("point index upload");
+        buffer
+    });
     let auxiliary_vertices = if zero_stride || instance_rate {
         let (buffer, error) = global.device_create_buffer(
             device,
@@ -1902,7 +1936,14 @@ fn render_triangle(
         )
         .unwrap();
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
-    if point_input {
+    if let (Some(format), Some(indices)) = (point_index, point_indices) {
+        global
+            .render_pass_set_index_buffer(&mut pass, indices, format, 4, None)
+            .unwrap();
+        global
+            .render_pass_draw_indexed(&mut pass, 2, 1, 1, -1, 0)
+            .unwrap();
+    } else if point_input {
         global.render_pass_draw(&mut pass, 2, 1, 1, 0).unwrap();
     } else {
         global
@@ -2045,6 +2086,9 @@ fn render_triangle(
     global.texture_view_drop(view);
     global.texture_drop(target);
     global.buffer_drop(vertices);
+    if let Some(indices) = point_indices {
+        global.buffer_drop(indices);
+    }
     if let Some(buffer) = auxiliary_vertices {
         global.buffer_drop(buffer);
     }

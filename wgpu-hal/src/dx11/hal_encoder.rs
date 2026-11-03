@@ -96,6 +96,17 @@ fn disjoint_sample(base: u32, count: u32, target: u32) -> bool {
             .is_some_and(|end| target < base || target >= end)
 }
 
+fn constant_point_vertex_ranges(layouts: impl Iterator<Item = (u64, u32, u32)>) -> Option<bool> {
+    let mut fits = true;
+    for (length, stride, extent) in layouts {
+        if stride != 0 {
+            return None;
+        }
+        fits &= u64::from(extent) <= length;
+    }
+    Some(fits)
+}
+
 impl RenderState {
     fn instance_bindings(&self, first: u32, count: u32) -> Option<InstanceBindings> {
         for (slot, layout) in self.vertex_layouts.iter().enumerate() {
@@ -1248,6 +1259,100 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        if render.topology == Some(wgt::PrimitiveTopology::PointList) {
+            let Some(index) = render.index.as_ref() else {
+                self.reject();
+                return;
+            };
+            if !render.pipeline
+                || (render.viewport_remap
+                    && render
+                        .vertex_shaders
+                        .as_ref()
+                        .is_none_or(|(_, adjusted)| adjusted.is_none()))
+                || !render.resources_compatible(self.device.feature_level())
+                || !index.contains_range(first_index, index_count)
+            {
+                self.reject();
+                return;
+            }
+            let mut vertices = Vec::new();
+            for (physical, logical) in render.vertex_slots.iter().enumerate() {
+                let Some(logical) = *logical else { continue };
+                let Some((stride, extent, mode)) = render.vertex_layouts[logical] else {
+                    self.reject();
+                    return;
+                };
+                let Some((buffer, offset, length)) = render.vertices[logical].as_ref() else {
+                    self.reject();
+                    return;
+                };
+                if mode == wgt::VertexStepMode::Vertex {
+                    vertices.push((
+                        physical as u32,
+                        buffer.clone(),
+                        *offset,
+                        *length,
+                        stride,
+                        extent,
+                    ));
+                }
+            }
+            if index_count == 0 || instance_count == 0 {
+                return;
+            }
+            let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
+            else {
+                self.reject();
+                return;
+            };
+            let Some(binding_commands) = render.binding_commands() else {
+                self.reject();
+                return;
+            };
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
+            let constant_ranges =
+                constant_point_vertex_ranges(vertices.iter().map(|v| (v.3, v.4, v.5)));
+            if constant_ranges == Some(false) {
+                return;
+            }
+            let index = index.clone();
+            for command in binding_commands {
+                self.record(command);
+            }
+            let max_points =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                    .max_primitives_per_draw;
+            if constant_ranges == Some(true) {
+                self.record(NativeCommand::DrawPoints {
+                    vertices: vertices
+                        .into_iter()
+                        .map(|(slot, buffer, offset, _, stride, _)| (slot, buffer, offset, stride))
+                        .collect(),
+                    count: index_count,
+                    instances: instance_count,
+                    max_points,
+                    instance_bindings,
+                });
+            } else {
+                self.record(NativeCommand::DrawIndexedPoints {
+                    binding: index,
+                    vertices,
+                    first: first_index,
+                    count: index_count,
+                    base_vertex,
+                    max_points,
+                    instances: instance_count,
+                    instance_bindings,
+                });
+            }
+            return;
+        }
         if render
             .vertex_slots
             .iter()
@@ -1584,6 +1689,26 @@ mod tests {
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
+
+    #[test]
+    fn indexed_points_detect_index_independent_vertex_ranges() {
+        assert_eq!(
+            constant_point_vertex_ranges(core::iter::empty()),
+            Some(true)
+        );
+        assert_eq!(
+            constant_point_vertex_ranges([(16, 0, 16), (4, 0, 4)].into_iter()),
+            Some(true)
+        );
+        assert_eq!(
+            constant_point_vertex_ranges([(15, 0, 16), (4, 0, 4)].into_iter()),
+            Some(false)
+        );
+        assert_eq!(
+            constant_point_vertex_ranges([(16, 0, 16), (16, 4, 4)].into_iter()),
+            None
+        );
+    }
 
     #[test]
     fn sampled_mip_overlap_rejects_invalid_ranges() {
@@ -3935,6 +4060,10 @@ mod depth_never_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/point_vertex.rs"]
 mod point_vertex_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/indexed_points.rs"]
+mod indexed_point_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/triangle_strip.rs"]

@@ -1122,7 +1122,7 @@ mod tests {
                 crate::BufferBinding::new_unchecked(&index, 0, None),
                 wgt::IndexFormat::Uint16,
             );
-            encoder.draw_indexed(0, 1, 0, 0, 1);
+            encoder.draw_indexed(0, 3, 0, 0, 1);
             encoder.end_render_pass();
             assert!(encoder.end_encoding().is_err());
         }
