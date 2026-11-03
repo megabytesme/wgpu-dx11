@@ -1673,3 +1673,23 @@ core fixture, then continue the broader render-pass and device-loss audit.
 Public adapter/surface exposure remains gated by truthful full validation and
 DXGI reentrancy.
 Checkpoint: `8d8877e7a` (`core: reject unsupported FL9_1 multisample textures`).
+
+The controlled core fixture now also performs a depth-only prepass with no
+color attachments, then begins a color pass that LOADs the depth it wrote and
+draws farther geometry. Strict RTX 3090 Ti execution at requested/actual
+FL9_1 read back 32 blue pixels where the prepass depth rejected the farther
+draw and 32 green pixels where depth remained clear. This proves the core
+attachment transitions and HAL replay preserve depth across the two passes;
+it is not general depth/stencil API support. An initial probe used depth Equal
+and was rejected at pipeline creation, as intended by the restricted
+comparison contract; the final test uses supported LessEqual.
+
+The focused core fixture passed in strict hardware mode; the complete
+fixture-enabled core suite passed 70/70, including ordinary zero-adapter
+isolation. Core Clippy passed without warnings. Rust formatting and
+`git diff --check` passed. Checkpoint: `a13699edd` (`core: test FL9_1 depth-only
+render prepass`).
+
+Next: continue auditing device-loss and command submission error paths around
+render passes. Public adapter exposure remains gated; this core fixture is
+unsafe, test-only and still confirms ordinary enumeration is empty.

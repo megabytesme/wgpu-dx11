@@ -411,8 +411,11 @@ enumeration remains empty.
 
 Latest production checkpoint: `5ea3045f9` (read-only stencil guard); latest
 core validation checkpoint: `8d8877e7a` (reject FL9_1 multisample textures).
-The remapped stencil-write regression is checkpointed as `f2e746d83`. Next,
-exercise a depth-only render pass through the unsafe core fixture and continue
-the device-loss/render-pass audit. Keep public adapter and HWND surface
-exposure disabled until capability truthfulness and presentation reentrancy are
-resolved.
+The remapped stencil-write regression is checkpointed as `f2e746d83`. The core
+fixture now also records a colorless D24S8 prepass, then LOADs depth in a color
+pass; strict FL9_1 readback matched 32 blue and 32 green pixels. The complete
+fixture-enabled core suite passed 70/70 and core Clippy passed without
+warnings. Latest checkpoint: `a13699edd` (`core: test FL9_1 depth-only render
+prepass`). Continue the device-loss/render-pass audit. Keep public adapter and
+HWND surface exposure disabled until capability truthfulness and presentation
+reentrancy are resolved.
