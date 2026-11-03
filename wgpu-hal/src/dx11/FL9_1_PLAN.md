@@ -26,8 +26,9 @@ below is met. This plan does not claim WebGPU conformance.
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport
    interpolation, clipping edges and historical-driver precision need more
-   coverage. Centralize and test DXGI device-loss classification; audit the
-   remaining mapping and device-loss panic paths. Empty compute
+   coverage. DXGI device-loss classification is centralized and covered for
+   reset, removal, driver-internal and OOM codes; continue auditing mapping,
+   teardown and remaining device-loss panic paths. Empty compute
    passes and unused blend constants are handled; compute dispatch remains
    unavailable. The downlevel combined-index usage rule has been corrected,
    and unavailable occlusion query sets are rejected by a downlevel flag.

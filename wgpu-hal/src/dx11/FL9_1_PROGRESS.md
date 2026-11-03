@@ -1744,3 +1744,4 @@ passed with the same ten existing warnings. Core's
 `requesting_dx11_does_not_expose_a_stub_adapter` passed 1/1. Rust formatting
 and `git diff --check` passed. The public adapter and HWND surface gates are
 unchanged.
+Checkpoint: `f775292a2` (`dx11: verify FL9_1 vertex constant limits`).

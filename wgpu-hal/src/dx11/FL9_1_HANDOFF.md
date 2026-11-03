@@ -441,3 +441,4 @@ Clippy passed; Clippy retained ten existing warnings. Core's zero-D3D11-adapter
 test passed 1/1. Formatting and `git diff --check` passed. Commit this bounded
 finding, then continue the loss/teardown and public-contract audit without
 enabling ordinary adapter or HWND surface exposure.
+Checkpoint: `f775292a2` (`dx11: verify FL9_1 vertex constant limits`).
