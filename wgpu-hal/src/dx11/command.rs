@@ -556,6 +556,72 @@ mod tests {
     use alloc::vec;
 
     #[test]
+    fn fl91_direct_triangle_batches_limit_unique_vertices() {
+        let hardware =
+            super::super::capabilities::HardwareGuarantees::for_level(FeatureLevel::L9_1);
+        let mut batches = Vec::new();
+        draw_batches(
+            7,
+            65_538,
+            2,
+            hardware.max_direct_triangle_vertices_per_draw(),
+            |first, count| batches.push((first, count)),
+        )
+        .unwrap();
+        assert_eq!(
+            batches,
+            [(7, 65_535), (65_542, 3), (7, 65_535), (65_542, 3)]
+        );
+        assert_eq!(hardware.max_triangle_vertices_per_draw(), 196_605);
+        for level in FeatureLevel::ALL_DESCENDING {
+            if level != FeatureLevel::L9_1 {
+                let hardware = super::super::capabilities::HardwareGuarantees::for_level(level);
+                assert_eq!(
+                    hardware.max_direct_triangle_vertices_per_draw(),
+                    hardware.max_triangle_vertices_per_draw()
+                );
+            }
+        }
+        for (count, expected) in [
+            (0, vec![]),
+            (1, vec![(7, 1)]),
+            (2, vec![(7, 2)]),
+            (65_535, vec![(7, 65_535)]),
+            (65_536, vec![(7, 65_535), (65_542, 1)]),
+            (65_537, vec![(7, 65_535), (65_542, 2)]),
+        ] {
+            batches.clear();
+            draw_batches(
+                7,
+                count,
+                1,
+                hardware.max_direct_triangle_vertices_per_draw(),
+                |first, count| batches.push((first, count)),
+            )
+            .unwrap();
+            assert_eq!(batches, expected);
+        }
+        batches.clear();
+        draw_batches(
+            7,
+            65_538,
+            0,
+            hardware.max_direct_triangle_vertices_per_draw(),
+            |first, count| batches.push((first, count)),
+        )
+        .unwrap();
+        assert!(batches.is_empty());
+        assert!(draw_batches(
+            u32::MAX,
+            2,
+            1,
+            hardware.max_direct_triangle_vertices_per_draw(),
+            |_, _| panic!("overflow must be rejected before drawing"),
+        )
+        .is_err());
+    }
+
+    #[test]
     fn strip_batches_preserve_winding_overlap_and_instances() {
         let mut batches = Vec::new();
         for count in 0..3 {

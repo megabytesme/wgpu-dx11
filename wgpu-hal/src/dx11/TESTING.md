@@ -11,6 +11,11 @@ expressed by `Limits` alone.
 ### Focused FL9_1 hardware test
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+fl91_direct_triangle_ -- --nocapture --test-threads=1` checks direct triangle
+batch boundaries and order on CPU and validates pixels on both sides of a split
+on physical hardware. Opaque output does not independently prove instance order.
+
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 vertex_element_overlap -- --nocapture --test-threads=1` checks the selected-level
 overlap rule synthetically and on a forced-FL9_1 device. It includes overlapping,
 adjacent, disjoint and invalid-range input layouts; it does not establish older

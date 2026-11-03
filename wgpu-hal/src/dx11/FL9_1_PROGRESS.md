@@ -751,6 +751,7 @@ ranges while accepting adjacent and disjoint ranges. The strict production
 test and synthetic checks across seven feature-level identities passed; the
 latter do not claim higher-level execution support. Success on this modern
 driver is not evidence of historical stream-offset or stride support.
+Checkpoint: `3cdbb28f6`.
 
 Additional matrix-guard regressions passed for a bare matrix and matrix-pointer
 helper, matrix arrays, safe/unsafe helper call order, an unselected unsafe
@@ -758,3 +759,18 @@ entry, checked and unchecked compilation, and the combined call-depth boundary.
 The strict private suite passed 206 libtest cases, two filtered; the three
 documented shader cases still skipped GPU execution. HAL Clippy passed with
 ten existing warnings. Independent overlap review found no concrete defect.
+Test checkpoint: `07b95c801`.
+
+The direct triangle-list batching baseline failed a CPU boundary test: a
+65,538-vertex draw was issued as one batch. D3D9 documents a 65,535-unique-
+vertex caveat when MaxPrimitiveCount is 0xffff; whether 10level9 emulates that
+restriction is unresolved. A conservative FL9_1-only direct-draw limit is in
+progress, leaving indexed batching separate.
+The new FL9_1 policy caps direct triangle-list batches at 65,535 vertices;
+CPU tests passed for split points, tails, overflow and instance order, and a
+strict RTX GPU test matched all 64 pixels with visible geometry on each side
+of the split. The opaque GPU output does not independently prove instance
+order. The complete strict private suite passed 208 libtest cases, two filtered,
+with three shader GPU skips as documented; HAL Clippy retained ten existing
+warnings. Independent review found no concrete defect. Large native first
+vertex offsets remain unverified on historical devices.

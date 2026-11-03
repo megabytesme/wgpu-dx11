@@ -54,6 +54,14 @@ impl HardwareGuarantees {
     pub fn max_triangle_vertices_per_draw(self) -> u32 {
         self.max_primitives_per_draw.saturating_mul(3)
     }
+
+    pub fn max_direct_triangle_vertices_per_draw(self) -> u32 {
+        if self.level == FeatureLevel::L9_1 {
+            65_535
+        } else {
+            self.max_triangle_vertices_per_draw()
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

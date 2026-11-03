@@ -45,6 +45,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   points and point pipelines with vertex buffers remain unavailable.
 - Nonindexed strips preserve winding through overlapping, rebased batches;
   indexed strips remain unsupported because native strip cuts are not guaranteed.
+- Direct FL9_1 triangle-list batches are conservatively limited to 65,535
+  vertices; indexed draw batching retains its separate limit.
 - FL9_1 input layouts reject overlapping element byte ranges within a stream;
   ordinary core validation does not yet express this restriction.
 - Direct and indexed instancing repeat native draws in instance order when the

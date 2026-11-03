@@ -1056,7 +1056,9 @@ impl crate::CommandEncoder for CommandEncoder {
         let hardware =
             super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
         let max_vertices = match topology {
-            wgt::PrimitiveTopology::TriangleList => hardware.max_triangle_vertices_per_draw(),
+            wgt::PrimitiveTopology::TriangleList => {
+                hardware.max_direct_triangle_vertices_per_draw()
+            }
             wgt::PrimitiveTopology::PointList => hardware.max_primitives_per_draw,
             _ => {
                 self.reject();

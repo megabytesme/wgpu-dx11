@@ -154,6 +154,11 @@ fn hal_encoder_splits_large_level_9_triangle_draw() -> windows::core::Result<()>
 }
 
 #[test]
+fn fl91_direct_triangle_unique_vertex_batch_boundary() -> windows::core::Result<()> {
+    sampled_triangle(true, false, false, false, false, 26, None)
+}
+
+#[test]
 fn hal_encoder_draws_checked_u16_indices() -> windows::core::Result<()> {
     sampled_triangle(true, false, false, false, false, 6, None)
 }
@@ -1638,16 +1643,32 @@ fn sampled_triangle_variant(
     } else {
         None
     };
-    let vertices: [f32; 6] = if overlay_shader.is_some() {
+    let vertices: [f32; 6] = if effect == 26 {
+        [0., -1., 4., -1., 0., 7.]
+    } else if overlay_shader.is_some() {
         [0., 8., 16., 8., 0., -8.]
     } else {
         [-1., -1., 3., -1., -1., 3.]
     };
     let mut bytes = alloc::vec::Vec::new();
-    if effect == 5 {
-        for _ in 0..(65_535 * 3) {
-            bytes.extend_from_slice(&2.0f32.to_ne_bytes());
-            bytes.extend_from_slice(&2.0f32.to_ne_bytes());
+    if effect == 5 || effect == 26 {
+        let preceding = if effect == 5 { 65_535 * 3 } else { 65_535 + 2 };
+        let left = [
+            [-1.0f32, -1.0],
+            [0.0, -1.0],
+            [-1.0, 1.0],
+            [-1.0, 1.0],
+            [0.0, -1.0],
+            [0.0, 1.0],
+        ];
+        for index in 0..preceding {
+            let point = if effect == 26 && (2..8).contains(&index) {
+                left[index - 2]
+            } else {
+                [2.0, 2.0]
+            };
+            bytes.extend_from_slice(&point[0].to_ne_bytes());
+            bytes.extend_from_slice(&point[1].to_ne_bytes());
         }
     }
     for position in vertices.chunks_exact(2) {
@@ -2232,10 +2253,14 @@ fn sampled_triangle_variant(
         } else {
             crate::CommandEncoder::draw(
                 &mut encoder,
+                if effect == 26 { 2 } else { 0 },
+                match effect {
+                    5 => 65_535 * 3 + 3,
+                    26 => 65_535 + 3,
+                    _ => 3,
+                },
                 0,
-                if effect == 5 { 65_535 * 3 + 3 } else { 3 },
-                0,
-                1,
+                if effect == 26 { 2 } else { 1 },
             );
         }
         if matches!(effect, 23 | 24) {
@@ -2373,6 +2398,13 @@ fn sampled_triangle_variant(
                 .chunks_exact(4)
                 .all(|pixel| pixel == [224, 64, 16, 255]),
             "BGRA sampling must convert native channels: {pixels:?}"
+        );
+    } else if effect == 26 {
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 255, 0, 255]),
+            "direct triangle after FL9_1 unique-vertex batch boundary: {pixels:?}"
         );
     } else if matches!(effect, 23 | 24) {
         assert_eq!(actual[0], 0);
