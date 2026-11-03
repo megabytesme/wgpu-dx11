@@ -140,6 +140,15 @@ pub(super) enum NativeCommand {
         max_vertices: u32,
         instances: u32,
     },
+    DrawIndexedMulti {
+        binding: Arc<IndexBinding>,
+        vertices: Vec<(u32, ID3D11Buffer, u32, u64, u32, u32)>,
+        first: u32,
+        count: u32,
+        base_vertex: i32,
+        max_vertices: u32,
+        instances: u32,
+    },
     EndRender,
 }
 
@@ -491,6 +500,22 @@ impl CommandBuffer {
                             (*max_vertices, *instances),
                         )?;
                     }
+                    NativeCommand::DrawIndexedMulti {
+                        binding,
+                        vertices,
+                        first,
+                        count,
+                        base_vertex,
+                        max_vertices,
+                        instances,
+                    } => binding.draw_multi(
+                        context,
+                        *first,
+                        *count,
+                        *base_vertex,
+                        vertices,
+                        (*max_vertices, *instances),
+                    )?,
                     NativeCommand::EndRender => context.ClearState(),
                 }
             }

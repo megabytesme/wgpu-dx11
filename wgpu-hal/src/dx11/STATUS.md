@@ -50,16 +50,22 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   vertices; indexed draw batching retains its separate limit.
 - FL9_1 input layouts reject overlapping element byte ranges within a stream;
   ordinary core validation does not yet express this restriction.
-- Multi-slot indexed draws remain rejected until every stream can be validated
-  and rebased together; the slot-0 indexed path remains available.
+- Sparse multi-stream indexed triangle lists support native Uint16 indices only
+  when every possible in-bounds index and its base-adjusted value fit the
+  selected feature level's native index limit. The encoder rejects Uint32 and
+  configurations it cannot prove safe before submission; replay checks the
+  actual GPU-written indices against every stream and discards a whole draw on
+  an out-of-bounds fetch. This conservative private restriction is not expressible
+  as a general public wgpu capability.
 - Direct and indexed instancing repeat native draws in instance order when the
   shader has no instance-dependent inputs. Nonzero first instance is ignored
   within this subset; general instancing is not advertised.
 - Restricted indexed draws support signed base vertices and validate GPU index
-  contents at replay. Uint32 triangle lists and Uint16 values beyond native
-  limits convert to ordered native 16-bit windows, with wide triangles gathered
-  through GPU vertex-buffer copies. Out-of-bounds vertex fetches discard the
-  whole draw. Staging and scratch
+  contents at replay. For the slot-0 path, Uint32 triangle lists and Uint16
+  values beyond native limits convert to ordered native 16-bit windows, with
+  wide triangles gathered through GPU vertex-buffer copies. Those translations
+  are not implemented for multi-stream draws. Out-of-bounds vertex fetches
+  discard the whole draw. Staging and scratch
   allocation can stall the CPU; this is not a full public draw contract.
 - An original two-texture overlay shader passed RTX diagnostics with alpha and
   inversion blend states; full-channel separate alpha is not a guaranteed

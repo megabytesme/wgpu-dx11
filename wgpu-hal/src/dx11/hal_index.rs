@@ -84,6 +84,67 @@ impl IndexBinding {
         self.format == wgt::IndexFormat::Uint32
     }
 
+    pub(super) fn multi_native_safe(&self, layouts: &[(u64, u32, u32)], base: i32) -> bool {
+        !self.is_u32() && multi_native_safe(layouts, base, self.max_index)
+    }
+
+    pub(super) fn draw_multi(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base: i32,
+        vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+        draw_limits: (u32, u32),
+    ) -> Result<()> {
+        let (max_vertices, instances) = draw_limits;
+        if self.is_u32()
+            || !self.contains_range(first, count)
+            || max_vertices == 0
+            || !max_vertices.is_multiple_of(3)
+            || (count != 0 && first.checked_add(count - 1).is_none())
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        if count == 0 || instances == 0 {
+            return Ok(());
+        }
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(&self.staging, &self.buffer);
+            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&self.staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let start = self.offset as usize + first as usize * 2;
+            let valid = (0..count as usize).all(|i| {
+                let value = core::ptr::read_unaligned(
+                    mapped.pData.cast::<u8>().add(start + i * 2).cast::<u16>(),
+                );
+                multi_index_in_bounds(value, base, vertices.iter().map(|v| (v.3, v.4, v.5)))
+            });
+            context.Unmap(&self.staging, 0);
+            if !valid {
+                return Ok(());
+            }
+            for (slot, buffer, offset, _, stride, _) in vertices {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(stride),
+                    Some(offset),
+                );
+            }
+            context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
+            super::command::draw_batches(first, count, instances, max_vertices, |first, count| {
+                context.DrawIndexed(count, first, base);
+            })?;
+        }
+        Ok(())
+    }
+
     /// The caller holds the owning device's immediate-context lock.
     pub(super) fn draw(
         &self,
@@ -275,6 +336,44 @@ impl IndexBinding {
         }
         Ok(())
     }
+}
+
+pub(super) fn multi_native_safe(layouts: &[(u64, u32, u32)], base: i32, max_index: u16) -> bool {
+    if layouts.is_empty()
+        || layouts
+            .iter()
+            .any(|&(_, stride, extent)| stride == 0 || extent == 0)
+    {
+        return false;
+    }
+    let mut upper = u64::MAX;
+    for &(length, stride, extent) in layouts {
+        let Some(bytes) = length.checked_sub(u64::from(extent)) else {
+            return true;
+        };
+        upper = upper.min(bytes / u64::from(stride));
+    }
+    let base = i128::from(base);
+    let lower_raw = 0i128.max(-base);
+    let upper_raw = i128::from(u16::MAX).min(i128::from(upper) - base);
+    lower_raw > upper_raw
+        || (upper_raw <= i128::from(max_index) && upper_raw + base <= i128::from(max_index))
+}
+
+fn multi_index_in_bounds(
+    value: u16,
+    base: i32,
+    layouts: impl Iterator<Item = (u64, u32, u32)>,
+) -> bool {
+    let Ok(index) = u64::try_from(i64::from(value) + i64::from(base)) else {
+        return false;
+    };
+    layouts.into_iter().all(|(length, stride, extent)| {
+        index
+            .checked_mul(u64::from(stride))
+            .and_then(|end| end.checked_add(u64::from(extent)))
+            .is_some_and(|end| end <= length)
+    })
 }
 
 fn for_each_window(instances: u32, windows: usize, mut draw: impl FnMut(usize)) {
@@ -548,9 +647,70 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::{
-        classify_indices, classify_u32_indices, for_each_window, plan_u16_draw, plan_u32_windows,
-        rebased_vertex_offset, IndexDecision, IndexPlan, U32Decision, U32Segment,
+        classify_indices, classify_u32_indices, for_each_window, multi_index_in_bounds,
+        multi_native_safe, plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision,
+        IndexPlan, U32Decision, U32Segment,
     };
+
+    #[test]
+    fn multi_stream_native_proof_checks_every_possible_u16_index() {
+        let layout = |upper: u64| (upper * 4 + 4, 4, 4);
+        for (upper, base, expected) in [
+            (65534, 0, true),
+            (65535, 0, false),
+            (65534, -1, false),
+            (65535, 1, false),
+            (0, -65535, false),
+            (0, i32::MIN, true),
+            (65535, i32::MAX, true),
+            (3, 0, true),
+        ] {
+            assert_eq!(
+                multi_native_safe(&[layout(upper)], base, 65534),
+                expected,
+                "upper={upper}, base={base}"
+            );
+        }
+        assert!(multi_native_safe(&[layout(65535), layout(3)], 0, 65534));
+        assert!(multi_native_safe(&[(3, 4, 4), layout(65535)], 0, 65534));
+        assert!(!multi_native_safe(&[], 0, 65534));
+        assert!(!multi_native_safe(&[(8, 0, 4)], 0, 65534));
+        assert!(multi_index_in_bounds(
+            2,
+            -1,
+            [layout(3), layout(1)].into_iter()
+        ));
+        assert!(!multi_index_in_bounds(
+            2,
+            0,
+            [layout(3), layout(1)].into_iter()
+        ));
+        assert!(!multi_index_in_bounds(0, -1, [layout(3)].into_iter()));
+        assert!(![0, 1, 2, 3].into_iter().all(|index| multi_index_in_bounds(
+            index,
+            0,
+            [layout(2), layout(3)].into_iter()
+        )));
+    }
+
+    #[test]
+    fn multi_stream_native_proof_matches_exhaustive_u16_domain() {
+        for base in [i32::MIN, -65535, -1, 0, 1, 65534, i32::MAX] {
+            for upper in [0u64, 1, 65533, 65534, 65535, 65536] {
+                let layouts = [(upper * 4 + 4, 4, 4), (upper * 8 + 8, 8, 8)];
+                let expected = (0..=u16::MAX).all(|raw| {
+                    let effective = i64::from(raw) + i64::from(base);
+                    !multi_index_in_bounds(raw, base, layouts.into_iter())
+                        || (raw <= 65534 && effective <= 65534)
+                });
+                assert_eq!(
+                    multi_native_safe(&layouts, base, 65534),
+                    expected,
+                    "base={base}, upper={upper}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn u16_rewrites_only_when_native_indices_exceed_fl9_limits() {

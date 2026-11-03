@@ -1089,7 +1089,70 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         if render.vertex_layouts.iter().skip(1).any(Option::is_some) {
-            self.reject();
+            let Some(index) = render.index.as_ref() else {
+                self.reject();
+                return;
+            };
+            if !render.pipeline
+                || render.topology != Some(wgt::PrimitiveTopology::TriangleList)
+                || (render.viewport_remap
+                    && render
+                        .vertex_shaders
+                        .as_ref()
+                        .is_none_or(|(_, adjusted)| adjusted.is_none()))
+                || !render.resources_compatible(self.device.feature_level())
+                || !index.contains_range(first_index, index_count)
+            {
+                self.reject();
+                return;
+            }
+            let mut vertices = Vec::new();
+            let mut layouts = Vec::new();
+            for (slot, layout) in render.vertex_layouts.iter().enumerate() {
+                let Some((stride, extent)) = *layout else {
+                    continue;
+                };
+                let Some((buffer, offset, length)) = render.vertices[slot].as_ref() else {
+                    self.reject();
+                    return;
+                };
+                vertices.push((
+                    slot as u32,
+                    buffer.clone(),
+                    *offset,
+                    *length,
+                    stride,
+                    extent,
+                ));
+                layouts.push((*length, stride, extent));
+            }
+            if index_count == 0 || instance_count == 0 {
+                return;
+            }
+            if !index.multi_native_safe(&layouts, base_vertex) {
+                self.reject();
+                return;
+            }
+            let Some(binding_commands) = render.binding_commands() else {
+                self.reject();
+                return;
+            };
+            let index = index.clone();
+            for command in binding_commands {
+                self.record(command);
+            }
+            let max_vertices =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                    .max_triangle_vertices_per_draw();
+            self.record(NativeCommand::DrawIndexedMulti {
+                binding: index,
+                vertices,
+                first: first_index,
+                count: index_count,
+                base_vertex,
+                max_vertices,
+                instances: instance_count,
+            });
             return;
         }
         let (Some((buffer, offset, vertex_bytes)), Some((stride, extent)), Some(index)) = (

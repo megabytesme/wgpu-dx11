@@ -18,6 +18,29 @@ byte regions; overlapping physical bytes across slots remain unverified. The
 strip test also checks per-slot rebasing across a 65,536-vertex split, but its
 opaque, unculled output does not independently establish parity or instance order.
 
+With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_vertex_indexed_render -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti, the test requested and selected FL9_1 and passed readback
+checks for sparse slots 0 and 15, GPU-written Uint16 indices, a nonzero index
+binding offset, positive and negative base vertices, a nonzero first index and
+two additive instances. A later out-of-bounds index discards the complete draw;
+a subsequent valid draw and fence complete. The two-instance result is checked
+separately from a single-instance result. The CPU proof tests run with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 multi_stream_native_proof -- --nocapture
+```
+
+Those synthetic tests compare the encoder's conservative proof with all 65,536
+Uint16 values for representative capacities and signed bases. The multi-stream
+path rejects Uint32 and ranges it cannot prove native-safe before submission;
+its current coverage does not establish historical-driver portability or general
+public indexed-draw support.
+
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_direct_triangle_ -- --nocapture --test-threads=1` checks direct triangle
 batch boundaries and order on CPU and validates pixels on both sides of a split

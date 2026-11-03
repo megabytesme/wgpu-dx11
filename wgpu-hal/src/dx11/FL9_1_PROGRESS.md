@@ -814,8 +814,27 @@ Independent review found no concrete per-slot rebasing or lifetime defect.
 The strict private suite passed 210 libtest cases, two filtered; the three
 documented shader GPU skips remain skips. HAL Clippy passed with ten existing
 warnings, and the controlled core fixture again matched 32 red/32 green pixels.
+Checkpoint: `9a1efde6c`.
 
 Indexed replay errors are not benign public validation: an Unexpected submit
 error loses the core device and does not signal the requested fence. A future
 partial indexed multi-stream path must avoid data-dependent unsupported replay
 errors or remain explicitly private; earlier GPU work is not rolled back.
+A private native-u16 multi-stream subset is accepted only when
+binding sizes and base vertex prove at encoding that every in-range index fits
+native FL9_1 limits. GPU index data still requires a complete replay-time OOB
+scan; general u32 and high-index multi-stream translation remains future work.
+The strict `fl91_sparse_vertex_indexed_render` baseline failed at end_encoding
+on the RTX at requested/actual FL9_1, as expected from the existing restriction.
+
+The focused strict RTX test passed after implementation, checking full-image output,
+nonzero first index, positive and negative base vertices, two additive instances,
+GPU index upload, resource release before submission, and whole-draw OOB discard.
+Two CPU proof tests passed, including exhaustive checks over all 65,536 Uint16
+values for 42 representative configurations. The complete strict private suite
+passed 213 cases, two filtered, with three documented internal shader skips.
+HAL Clippy passed with ten existing warnings. The core hardware fixture passed
+with 64/64 buffer bytes and 32 red/32 green pixels; ordinary core enumeration
+still returned zero D3D11 adapters. Independent review found no concrete issue.
+The native subset stages and maps index data at replay and may stall; the general
+multistream translation and public validation remain blockers.

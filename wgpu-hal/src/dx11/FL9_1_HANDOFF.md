@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 210 tests; older
+operations are safe. The latest combined strict suite passed 213 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -116,9 +116,13 @@ Private input-layout validation now rejects overlapping element byte ranges on
 FL9_1. Core does not yet express that restriction; stream-offset and stride
 behavior remains unverified on historical hardware.
 Private direct triangle lists and nonindexed strips support up to sixteen sparse
-vertex-rate slots. The existing slot-0 indexed path remains available; multi-slot
-and nonzero-slot indexed draws are rejected until all streams can be rebased
-safely. Overlapping physical bytes read through separate slots remain unverified.
+vertex-rate slots. The existing slot-0 indexed path remains available. Multi-slot and nonzero-slot
+indexed triangle lists accept native Uint16 only when an encoding-time proof
+shows all in-range indices fit native limits. Uint32 and ranges requiring
+translation are rejected before replay. GPU index data is scanned at replay;
+any out-of-range fetch discards the entire draw. This private restriction is
+not suitable as public validation. Overlapping physical bytes read through
+separate slots remain unverified.
 Naga's HLSL special handling of matrix stores in structures can omit an index
 clamp or pass a destination by value. The private HAL now rejects stores through
 matrix-containing aggregates in both shader modes with a bounded selected-entry
@@ -142,7 +146,7 @@ cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --feature
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
-The strict private suite most recently passed 210 tests with two filtered;
+The strict private suite most recently passed 213 tests with two filtered;
 some older tests can skip internally. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,

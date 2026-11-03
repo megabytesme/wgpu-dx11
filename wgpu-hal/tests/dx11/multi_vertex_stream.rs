@@ -7,15 +7,20 @@ use core::time::Duration;
 
 #[test]
 fn fl91_sparse_vertex_streams_render() -> windows::core::Result<()> {
-    sparse_vertex_streams(false)
+    sparse_vertex_streams(false, false)
 }
 
 #[test]
 fn fl91_sparse_vertex_strips_render() -> windows::core::Result<()> {
-    sparse_vertex_streams(true)
+    sparse_vertex_streams(true, false)
 }
 
-fn sparse_vertex_streams(strip_test: bool) -> windows::core::Result<()> {
+#[test]
+fn fl91_sparse_vertex_indexed_render() -> windows::core::Result<()> {
+    sparse_vertex_streams(false, true)
+}
+
+fn sparse_vertex_streams(strip_test: bool, indexed_test: bool) -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -257,6 +262,292 @@ fn sparse_vertex_streams(strip_test: bool) -> windows::core::Result<()> {
             })
             .unwrap()
     };
+    if indexed_test {
+        let indices: Vec<u8> = [99u16, 0, 1, 2, 0, 1, 3, 0]
+            .into_iter()
+            .flat_map(u16::to_ne_bytes)
+            .collect();
+        let source = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: indices.len() as u64,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&source, 0, &indices)?;
+        let index = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: indices.len() as u64,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(
+                &source,
+                &index,
+                core::iter::once(crate::BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: core::num::NonZeroU64::new(indices.len() as u64).unwrap(),
+                }),
+            );
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&last_slot);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&position_buffer, 8, None),
+            );
+            encoder.set_vertex_buffer(
+                15,
+                crate::BufferBinding::new_unchecked(&color_buffer, 12, None),
+            );
+            encoder.set_index_buffer(
+                crate::BufferBinding::new_unchecked(&index, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            encoder.draw_indexed(0, 3, 0, 0, 1);
+            encoder.end_render_pass();
+            let commands = encoder
+                .end_encoding()
+                .expect("sparse indexed vertex streams must be supported");
+            device.destroy_buffer(source);
+            device.destroy_buffer(index);
+            commands
+        };
+        let fence = native.create_native_fence();
+        unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        assert_eq!(pixels.len(), 8 * 8 * 4);
+        assert!(
+            pixels.chunks_exact(4).all(|pixel| pixel[0] == 64
+                && (127..=128).contains(&pixel[1])
+                && pixel[2..] == [191, 255]),
+            "{pixels:?}"
+        );
+        unsafe { encoder.reset_all([commands].into_iter()) };
+        let late_source = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: indices.len() as u64,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&late_source, 0, &indices)?;
+        let late_index = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: indices.len() as u64,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let late_commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(
+                &late_source,
+                &late_index,
+                core::iter::once(crate::BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: core::num::NonZeroU64::new(indices.len() as u64).unwrap(),
+                }),
+            );
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&last_slot);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&position_buffer, 8, None),
+            );
+            encoder.set_vertex_buffer(
+                15,
+                crate::BufferBinding::new_unchecked(&color_buffer, 12, None),
+            );
+            encoder.set_index_buffer(
+                crate::BufferBinding::new_unchecked(&late_index, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            encoder.draw_indexed(0, 6, 0, 0, 1);
+            encoder.set_scissor_rect(&crate::Rect {
+                x: 0,
+                y: 0,
+                w: 4,
+                h: 8,
+            });
+            encoder.draw_indexed(0, 3, 0, 0, 1);
+            encoder.end_render_pass();
+            let commands = encoder.end_encoding().unwrap();
+            device.destroy_buffer(late_source);
+            device.destroy_buffer(late_index);
+            commands
+        };
+        unsafe { queue.submit(&[&late_commands], &[], (&fence, 2)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+            if i % 8 < 4 {
+                assert!(
+                    pixel[0] == 64 && (127..=128).contains(&pixel[1]) && pixel[2..] == [191, 255],
+                    "pixel {i}: {pixel:?}"
+                );
+            } else {
+                assert_eq!(pixel, [0, 0, 255, 255], "discarded draw pixel {i}");
+            }
+        }
+        unsafe { encoder.reset_all([late_commands].into_iter()) };
+        let mut expanded_positions = vec![0; 8 + 12];
+        expanded_positions.extend_from_slice(&position_data[8..]);
+        let mut expanded_colors = vec![0; 12 + 20];
+        expanded_colors.extend_from_slice(&color_data[12..]);
+        let expanded_position_buffer = upload(&expanded_positions)?;
+        let expanded_color_buffer = upload(&expanded_colors)?;
+        let base_indices: Vec<u8> = [99u16, 0, 1, 2, 1, 2, 3, 0]
+            .into_iter()
+            .flat_map(u16::to_ne_bytes)
+            .collect();
+        let base_source = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: base_indices.len() as u64,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&base_source, 0, &base_indices)?;
+        let base_index = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: base_indices.len() as u64,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let additive_targets = [Some(wgt::ColorTargetState {
+            format: wgt::TextureFormat::Rgba8Unorm,
+            blend: Some(super::super::hal_pipeline::ADDITIVE_BLEND),
+            write_mask: wgt::ColorWrites::ALL,
+        })];
+        let additive = unsafe {
+            device
+                .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &last_slot_buffers,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &additive_targets,
+                    multiview_mask: None,
+                    cache: None,
+                })
+                .unwrap()
+        };
+        let base_commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(
+                &base_source,
+                &base_index,
+                core::iter::once(crate::BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: core::num::NonZeroU64::new(base_indices.len() as u64).unwrap(),
+                }),
+            );
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&last_slot);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&expanded_position_buffer, 8, None),
+            );
+            encoder.set_vertex_buffer(
+                15,
+                crate::BufferBinding::new_unchecked(&expanded_color_buffer, 12, None),
+            );
+            encoder.set_index_buffer(
+                crate::BufferBinding::new_unchecked(&base_index, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            encoder.draw_indexed(0, 3, 1, 0, 1);
+            encoder.set_render_pipeline(&additive);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&position_buffer, 8, None),
+            );
+            encoder.set_vertex_buffer(
+                15,
+                crate::BufferBinding::new_unchecked(&color_buffer, 12, None),
+            );
+            encoder.set_scissor_rect(&crate::Rect {
+                x: 4,
+                y: 0,
+                w: 4,
+                h: 8,
+            });
+            encoder.draw_indexed(3, 3, -1, 7, 2);
+            encoder.end_render_pass();
+            let commands = encoder.end_encoding().unwrap();
+            device.destroy_buffer(base_source);
+            device.destroy_buffer(base_index);
+            device.destroy_buffer(expanded_position_buffer);
+            device.destroy_buffer(expanded_color_buffer);
+            commands
+        };
+        unsafe { queue.submit(&[&base_commands], &[], (&fence, 3)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+            if i % 8 < 4 {
+                assert!(
+                    pixel[0] == 64 && (127..=128).contains(&pixel[1]) && pixel[2..] == [191, 255],
+                    "positive base pixel {i}: {pixel:?}"
+                );
+            } else {
+                assert!(
+                    (191..=192).contains(&pixel[0]) && pixel[1..] == [255, 255, 255],
+                    "two instances pixel {i}: {pixel:?}"
+                );
+            }
+        }
+        unsafe {
+            encoder.reset_all([base_commands].into_iter());
+            device.destroy_render_pipeline(additive);
+            device.destroy_buffer(shared_buffer);
+            device.destroy_buffer(color_buffer);
+            device.destroy_buffer(position_buffer);
+            device.destroy_texture_view(view);
+            device.destroy_texture(target);
+            device.destroy_render_pipeline(pipeline);
+            device.destroy_render_pipeline(single);
+            device.destroy_render_pipeline(strip);
+            device.destroy_render_pipeline(last_slot);
+            device.destroy_render_pipeline(tail_pipeline);
+            device.destroy_pipeline_layout(layout);
+            device.destroy_shader_module(shader);
+        }
+        std::println!("PASS: sparse FL9_1 indexed streams produced 64 matching pixels");
+        return Ok(());
+    }
     if strip_test {
         let sparse_strip = make_pipeline(
             &last_slot_buffers,
@@ -655,14 +946,14 @@ fn sparse_vertex_streams(strip_test: bool) -> windows::core::Result<()> {
                 let index = device
                     .create_buffer(&crate::BufferDescriptor {
                         label: None,
-                        size: 8,
+                        size: 12,
                         usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
                         memory_flags: crate::MemoryFlags::empty(),
                     })
                     .unwrap();
                 encoder.set_index_buffer(
                     crate::BufferBinding::new_unchecked(&index, 0, None),
-                    wgt::IndexFormat::Uint16,
+                    wgt::IndexFormat::Uint32,
                 );
                 encoder.draw_indexed(0, 3, 0, 0, 1);
                 device.destroy_buffer(index);
