@@ -20,8 +20,8 @@ use windows::{
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
-                DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
+                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -199,7 +199,9 @@ fn texel_bytes(format: DXGI_FORMAT) -> Result<u32> {
     match format {
         DXGI_FORMAT_R8_UNORM => Ok(1),
         DXGI_FORMAT_R8G8_SNORM => Ok(2),
-        DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM => Ok(4),
+        DXGI_FORMAT_R8G8B8A8_SNORM | DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM => {
+            Ok(4)
+        }
         _ => Err(invalid()),
     }
 }
@@ -340,6 +342,7 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
             )
@@ -371,6 +374,7 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
             )
@@ -392,7 +396,10 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
-        let filterable = if matches!(desc.Format, DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM) {
+        let filterable = if matches!(
+            desc.Format,
+            DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+        ) {
             unsafe { self.raw_device().CheckFormatSupport(desc.Format) }
                 .is_ok_and(|support| support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0)
         } else {
@@ -524,8 +531,10 @@ impl NativeDevice {
             || !(matches!(
                 format,
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
-            ) || (matches!(format, DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM)
-                && !render_target
+            ) || (matches!(
+                format,
+                DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+            ) && !render_target
                 && layers == 1
                 && mip_levels == 1))
         {
@@ -562,7 +571,10 @@ impl NativeDevice {
             height,
             mip_levels,
             layers,
-            usage: if matches!(format, DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM) {
+            usage: if matches!(
+                format,
+                DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+            ) {
                 wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::COPY_SRC

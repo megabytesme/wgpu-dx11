@@ -537,30 +537,32 @@ verified 12 upload/copy/readback pixels each for RGBA8 and BGRA8 copy-only views
 and rejected incompatible view usages. Neither result establishes historical
 driver behavior or general public adapter support.
 
-### R8_UNORM and R8G8_SNORM sampled uploads
+### FL9_1-required sampled/upload formats
 
-Microsoft lists R8_UNORM (legacy L8) and R8G8_SNORM (legacy V8U8) as required
-FL9_1 2D shader-sample formats. The backend checks the selected device's actual
-`TEXTURE2D | SHADER_SAMPLE` bits and supports only single-mip sampled/upload
-textures. Run the synthetic capability checks and strict hardware tests with:
+Microsoft lists R8_UNORM (legacy L8), R8G8_SNORM (legacy V8U8) and
+R8G8B8A8_SNORM (legacy Q8W8V8U8) as FL9_1 2D shader-sample formats. The backend
+checks the selected device's actual `TEXTURE2D | SHADER_SAMPLE` bits and
+supports only single-mip sampled/upload textures. Run the synthetic capability
+checks and strict hardware tests with:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_unorm -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rg8_snorm -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rgba8_snorm -- --nocapture --test-threads=1
 ```
 
 The CPU tests cover legal and illegal usages, shape limits and missing or
-insufficient driver-query results. Both hardware tests request and assert
+insufficient driver-query results. All three hardware tests request and assert
 FL9_1, upload padded 5×4 patterns from nonzero source offsets, sample into a
-10×8 RGBA8 target and compare every pixel. R8_UNORM uses byte offset 1 and
-7-byte rows; R8G8_SNORM uses offset 2 and 12-byte rows. The SNORM test remaps
-both signed channels to UNORM and allows one code value for conversion
-rounding. On the RTX 3090 Ti, R8_UNORM returned `0x0002d3e0` and R8G8_SNORM
-returned `0x00021320`; both reported filtered-sampling support, but the tests
-use nearest filtering. Neither format supports render-target, copy-source,
-readback or mip-chain operations in this private subset. R8 linear filtering
-also lacks visual execution coverage.
+10×8 RGBA8 target and compare every pixel. R8_UNORM uses offset 1 and 7-byte
+rows, R8G8_SNORM offset 2 and 12-byte rows, and R8G8B8A8_SNORM offset 4 and
+24-byte rows. SNORM tests remap signed channels to UNORM and allow one code
+value for conversion rounding. On the RTX 3090 Ti, the respective format masks
+were `0x0002d3e0`, `0x00021320` and `0x000213a0`; all reported filtered-sampling
+support, while the tests use nearest filtering. These formats do not support
+render-target, copy-source, readback or mip-chain operations in this private
+subset. R8_UNORM linear filtering lacks visual execution coverage.
 
 ### Non-filtering sampler layouts
 

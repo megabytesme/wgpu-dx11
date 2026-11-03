@@ -183,7 +183,9 @@ impl crate::Device for Device {
         let depth = desc.format == wgt::TextureFormat::Depth24PlusStencil8;
         let sampled_upload = matches!(
             desc.format,
-            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Snorm
+            wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Snorm
+                | wgt::TextureFormat::Rgba8Snorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
@@ -259,8 +261,8 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
-                DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
@@ -268,6 +270,7 @@ impl crate::Device for Device {
             wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
             wgt::TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM,
             wgt::TextureFormat::Rg8Snorm => DXGI_FORMAT_R8G8_SNORM,
+            wgt::TextureFormat::Rgba8Snorm => DXGI_FORMAT_R8G8B8A8_SNORM,
             _ => return Err(DeviceError::Unexpected),
         };
         let support =
@@ -347,7 +350,8 @@ impl crate::Device for Device {
             },
             Dxgi::Common::{
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
+                DXGI_FORMAT_R8_UNORM,
             },
         };
         let native = self.native.texture_desc(texture).map_err(device_error)?;
@@ -356,13 +360,16 @@ impl crate::Device for Device {
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
             DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
             DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
+            DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
         let is_depth = format == wgt::TextureFormat::Depth24PlusStencil8;
         let sampled_upload = matches!(
             format,
-            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Snorm
+            wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Snorm
+                | wgt::TextureFormat::Rgba8Snorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {

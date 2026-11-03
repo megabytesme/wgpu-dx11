@@ -54,6 +54,48 @@ fn sample_upload(
 
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
+    for usage in [
+        wgt::TextureUses::COPY_SRC,
+        wgt::TextureUses::COLOR_TARGET,
+        wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+    ] {
+        assert!(unsafe {
+            device.create_texture(&crate::TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 5,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format,
+                usage,
+                memory_flags: crate::MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+        }
+        .is_err());
+    }
+    assert!(unsafe {
+        device.create_texture(&crate::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format,
+            usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+            memory_flags: crate::MemoryFlags::empty(),
+            view_formats: vec![],
+        })
+    }
+    .is_err());
     let entries = [
         wgt::BindGroupLayoutEntry {
             binding: 7,
@@ -481,6 +523,52 @@ fn fl91_rg8_snorm_padded_upload_samples_both_signed_channels() -> windows::core:
                 unorm_from_snorm(row[offset + 1]),
                 0,
                 255,
+            ]
+        },
+    )
+}
+
+#[test]
+fn fl91_rgba8_snorm_padded_upload_samples_all_signed_channels() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_SNORM;
+
+    let rows = [
+        [
+            -127i8, 127, -64, 64, -64, 64, -127, 127, -32, 32, -16, 16, 0, 0, 127, -127, -100, 50,
+            100, -50,
+        ],
+        [
+            127, -127, 64, -64, 32, -32, 16, -16, 0, 127, -100, 50, -50, 100, 100, -50, 50, -100,
+            0, 0,
+        ],
+        [
+            10, -10, -10, 10, 90, 45, -90, -45, 127, 127, -127, -127, 64, 64, -64, -64, 32, 16,
+            -32, -16,
+        ],
+        [
+            -1, 1, -2, 2, 3, -3, 4, -4, -127, 0, 127, 0, 0, -127, 0, 127, 100, 50, 25, 12,
+        ],
+    ];
+    let texels: vec::Vec<_> = rows.iter().flatten().map(|&value| value as u8).collect();
+    sample_upload(
+        SampledTexture {
+            format: wgt::TextureFormat::Rgba8Snorm,
+            native_format: DXGI_FORMAT_R8G8B8A8_SNORM,
+            format_name: "R8G8B8A8_SNORM",
+            bytes_per_texel: 4,
+            row_pitch: 24,
+            source_offset: 4,
+            fragment_body: "let rgba = textureSample(image, image_sampler, input.uv); return rgba * 0.5 + vec4f(0.5);",
+        },
+        &texels,
+        |x, y| {
+            let row = rows[y as usize];
+            let offset = x as usize * 4;
+            [
+                unorm_from_snorm(row[offset]),
+                unorm_from_snorm(row[offset + 1]),
+                unorm_from_snorm(row[offset + 2]),
+                unorm_from_snorm(row[offset + 3]),
             ]
         },
     )
