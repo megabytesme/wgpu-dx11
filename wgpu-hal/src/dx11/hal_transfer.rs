@@ -231,6 +231,7 @@ impl NativeDevice {
         let format = self.texture_desc(texture)?.Format;
         let bytes_per_texel = match format {
             windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM => 1,
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8_SNORM => 2,
             windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM
             | windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM => 4,
             _ => return Err(invalid()),

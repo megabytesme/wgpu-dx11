@@ -37,6 +37,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
   offset and all 80 sampled output pixels. Render-target, copy-source, readback
   and mip-chain uses remain unsupported.
+- R8G8_SNORM has the same queried one-mip sampled/upload subset. A strict
+  forced-FL9_1 test verifies padded signed two-channel data through GPU
+  sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
+  Render-target, copy-source, readback and mip-chain uses remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.

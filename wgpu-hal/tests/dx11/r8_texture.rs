@@ -5,13 +5,33 @@ use crate::{
 use alloc::{borrow::Cow, sync::Arc, vec};
 use core::time::Duration;
 
-#[test]
-fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> {
+struct SampledTexture<'a> {
+    format: wgt::TextureFormat,
+    native_format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    format_name: &'a str,
+    bytes_per_texel: usize,
+    row_pitch: usize,
+    source_offset: usize,
+    fragment_body: &'a str,
+}
+
+fn sample_upload(
+    texture: SampledTexture<'_>,
+    texels: &[u8],
+    expected_pixel: impl Fn(u32, u32) -> [u8; 4],
+) -> windows::core::Result<()> {
+    let SampledTexture {
+        format,
+        native_format,
+        format_name,
+        bytes_per_texel,
+        row_pitch,
+        source_offset,
+        fragment_body,
+    } = texture;
     use windows::Win32::Graphics::Direct3D11::{
         D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
     };
-    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM;
-
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -22,12 +42,12 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
     };
     let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
     assert_eq!(native.feature_level(), FeatureLevel::L9_1);
-    let format_support = unsafe { native.raw_device().CheckFormatSupport(DXGI_FORMAT_R8_UNORM) }?;
+    let format_support = unsafe { native.raw_device().CheckFormatSupport(native_format) }?;
     let required_support =
         (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
     assert_eq!(format_support & required_support, required_support);
     std::println!(
-        "Hardware: {:?}; requested and actual FL9_1; R8_UNORM support=0x{format_support:08x}; filtered-sampling={}",
+        "Hardware: {:?}; requested and actual FL9_1; {format_name} support=0x{format_support:08x}; filtered-sampling={}",
         adapter.identity(),
         format_support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0
     );
@@ -71,18 +91,20 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
             })
             .unwrap()
     };
-    let shader_source = r#"
+    let shader_source = alloc::format!(
+        r#"
         @group(0) @binding(7) var image: texture_2d<f32>;
         @group(0) @binding(42) var image_sampler: sampler;
-        struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f }
-        @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> Out {
+        struct Out {{ @builtin(position) position: vec4f, @location(0) uv: vec2f }}
+        @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> Out {{
             return Out(vec4f(position, 0.5, 1.0), uv);
-        }
-        @fragment fn fs(input: Out) -> @location(0) vec4f {
-            return vec4f(textureSample(image, image_sampler, input.uv).r, 0.0, 0.0, 1.0);
-        }
-    "#;
-    let module = naga::front::wgsl::parse_str(shader_source).unwrap();
+        }}
+        @fragment fn fs(input: Out) -> @location(0) vec4f {{
+            {fragment_body}
+        }}
+    "#
+    );
+    let module = naga::front::wgsl::parse_str(&shader_source).unwrap();
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::empty(),
@@ -132,7 +154,7 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgt::TextureDimension::D2,
-                format: wgt::TextureFormat::R8Unorm,
+                format,
                 usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
                 memory_flags: crate::MemoryFlags::empty(),
                 view_formats: vec![],
@@ -145,7 +167,7 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
                 &texture,
                 &crate::TextureViewDescriptor {
                     label: None,
-                    format: wgt::TextureFormat::R8Unorm,
+                    format,
                     dimension: wgt::TextureViewDimension::D2,
                     usage: wgt::TextureUses::RESOURCE,
                     range: wgt::ImageSubresourceRange::default(),
@@ -242,15 +264,16 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
     ];
     let vertex_bytes: vec::Vec<_> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
     native.write_byte_buffer(&vertex_buffer, 0, &vertex_bytes)?;
-    let mut upload = [0xcd; 30];
-    let texels = [
-        [0, 32, 64, 96, 128],
-        [160, 192, 224, 255, 17],
-        [10, 70, 130, 190, 250],
-        [3, 63, 123, 183, 243],
-    ];
-    for (row, values) in texels.iter().enumerate() {
-        upload[1 + row * 7..1 + row * 7 + 5].copy_from_slice(values);
+    let row_bytes = 5 * bytes_per_texel;
+    assert_eq!(texels.len(), row_bytes * 4);
+    assert!(row_pitch >= row_bytes);
+    let source_size = source_offset + row_pitch * 3 + row_bytes;
+    let mut upload = vec![0xcd; source_size];
+    for row in 0..4 {
+        let source = row * row_bytes;
+        let destination = source_offset + row * row_pitch;
+        upload[destination..destination + row_bytes]
+            .copy_from_slice(&texels[source..source + row_bytes]);
     }
     let upload_buffer = unsafe {
         device
@@ -319,8 +342,8 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
     };
     let upload_region = crate::BufferTextureCopy {
         buffer_layout: wgt::TexelCopyBufferLayout {
-            offset: 1,
-            bytes_per_row: Some(7),
+            offset: source_offset as u64,
+            bytes_per_row: Some(row_pitch as u32),
             rows_per_image: Some(4),
         },
         texture_base: crate::TextureCopyBase {
@@ -368,12 +391,19 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
     for y in 0..8 {
         for x in 0..10 {
-            let expected = [texels[y / 2][x / 2], 0, 0, 255];
-            let start = (y * 10 + x) * 4;
-            assert_eq!(&pixels[start..start + 4], &expected, "pixel ({x}, {y})");
+            let expected = expected_pixel(x / 2, y / 2);
+            let start = (y as usize * 10 + x as usize) * 4;
+            let actual = &pixels[start..start + 4];
+            assert!(
+                actual
+                    .iter()
+                    .zip(expected)
+                    .all(|(&actual, expected)| actual.abs_diff(expected) <= 1),
+                "pixel ({x}, {y}): expected {expected:?}, got {actual:?}"
+            );
         }
     }
-    std::println!("PASS: padded offset R8_UNORM upload sampled; 80/80 output pixels matched");
+    std::println!("PASS: padded offset {format_name} upload sampled; 80/80 output pixels matched");
     unsafe {
         encoder.reset_all([command].into_iter());
         device.destroy_render_pipeline(pipeline);
@@ -387,4 +417,71 @@ fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> 
         device.destroy_shader_module(shader);
     }
     Ok(())
+}
+
+#[test]
+fn fl91_r8_unorm_padded_upload_samples_into_rgba() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM;
+
+    let rows = [
+        [0, 32, 64, 96, 128],
+        [160, 192, 224, 255, 17],
+        [10, 70, 130, 190, 250],
+        [3, 63, 123, 183, 243],
+    ];
+    let texels: vec::Vec<_> = rows.iter().flatten().copied().collect();
+    sample_upload(
+        SampledTexture {
+            format: wgt::TextureFormat::R8Unorm,
+            native_format: DXGI_FORMAT_R8_UNORM,
+            format_name: "R8_UNORM",
+            bytes_per_texel: 1,
+            row_pitch: 7,
+            source_offset: 1,
+            fragment_body:
+                "return vec4f(textureSample(image, image_sampler, input.uv).r, 0.0, 0.0, 1.0);",
+        },
+        &texels,
+        |x, y| [rows[y as usize][x as usize], 0, 0, 255],
+    )
+}
+
+fn unorm_from_snorm(value: i8) -> u8 {
+    let normalized = (value as f32 / 127.0).max(-1.0);
+    ((normalized * 0.5 + 0.5) * 255.0).round() as u8
+}
+
+#[test]
+fn fl91_rg8_snorm_padded_upload_samples_both_signed_channels() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8_SNORM;
+
+    let rows = [
+        [-127i8, 127, -64, 64, -32, 32, -16, 16, 0, 0],
+        [127, -127, 64, -64, 32, -32, 16, -16, 0, 127],
+        [-100, 50, -50, 100, 100, -50, 50, -100, 0, 0],
+        [10, -10, -10, 10, 90, 45, -90, -45, 127, 127],
+    ];
+    let texels: vec::Vec<_> = rows.iter().flatten().map(|&value| value as u8).collect();
+    sample_upload(
+        SampledTexture {
+            format: wgt::TextureFormat::Rg8Snorm,
+            native_format: DXGI_FORMAT_R8G8_SNORM,
+            format_name: "R8G8_SNORM",
+            bytes_per_texel: 2,
+            row_pitch: 12,
+            source_offset: 2,
+            fragment_body: "let rg = textureSample(image, image_sampler, input.uv).rg; return vec4f(rg * 0.5 + vec2f(0.5), 0.0, 1.0);",
+        },
+        &texels,
+        |x, y| {
+            let row = rows[y as usize];
+            let offset = x as usize * 2;
+            [
+                unorm_from_snorm(row[offset]),
+                unorm_from_snorm(row[offset + 1]),
+                0,
+                255,
+            ]
+        },
+    )
 }

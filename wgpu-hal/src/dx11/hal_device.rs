@@ -181,11 +181,14 @@ impl crate::Device for Device {
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
         let depth = desc.format == wgt::TextureFormat::Depth24PlusStencil8;
-        let r8_unorm = desc.format == wgt::TextureFormat::R8Unorm;
+        let sampled_upload = matches!(
+            desc.format,
+            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Snorm
+        );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
-            } else if r8_unorm {
+            } else if sampled_upload {
                 wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::COPY_SRC
@@ -195,7 +198,7 @@ impl crate::Device for Device {
             };
         if desc.dimension != wgt::TextureDimension::D2
             || (!depth
-                && !r8_unorm
+                && !sampled_upload
                 && !matches!(
                     desc.format,
                     wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
@@ -204,7 +207,7 @@ impl crate::Device for Device {
             || desc.mip_level_count == 0
             || (desc.mip_level_count > 1
                 && (depth
-                    || r8_unorm
+                    || sampled_upload
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || !desc.size.width.is_power_of_two()
                     || !desc.size.height.is_power_of_two()))
@@ -256,13 +259,15 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
+                DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
             wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
             wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
             wgt::TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM,
+            wgt::TextureFormat::Rg8Snorm => DXGI_FORMAT_R8G8_SNORM,
             _ => return Err(DeviceError::Unexpected),
         };
         let support =
@@ -342,7 +347,7 @@ impl crate::Device for Device {
             },
             Dxgi::Common::{
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         let native = self.native.texture_desc(texture).map_err(device_error)?;
@@ -350,15 +355,19 @@ impl crate::Device for Device {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
             DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
+            DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
         let is_depth = format == wgt::TextureFormat::Depth24PlusStencil8;
-        let is_r8 = format == wgt::TextureFormat::R8Unorm;
+        let sampled_upload = matches!(
+            format,
+            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Snorm
+        );
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
-            } else if is_r8 {
+            } else if sampled_upload {
                 wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET
