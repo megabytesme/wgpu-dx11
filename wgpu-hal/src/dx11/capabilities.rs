@@ -1,0 +1,353 @@
+//! Conservative internal capability facts for the experimental D3D11 backend.
+
+use super::device::{FeatureLevel, NativeDevice};
+use windows::Win32::Graphics::{
+    Direct3D11::{
+        D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
+        D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
+        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+    },
+    Dxgi::Common::{
+        DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+    },
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct HardwareGuarantees {
+    pub level: FeatureLevel,
+    pub texture_2d_dimension: u32,
+    pub render_targets: u32,
+    pub max_vertex_index: u32,
+    pub max_primitives_per_draw: u32,
+    pub conditional_npot: bool,
+    pub separate_alpha_blend: bool,
+    pub geometry_shader: bool,
+    pub compute_shader: bool,
+}
+
+impl HardwareGuarantees {
+    pub fn for_level(level: FeatureLevel) -> Self {
+        use FeatureLevel::*;
+        let (texture_2d_dimension, render_targets, max_vertex_index, max_primitives_per_draw) =
+            match level {
+                L9_1 => (2048, 1, 65_534, 65_535),
+                L9_2 => (2048, 1, 1_048_575, 1_048_575),
+                L9_3 => (4096, 4, 1_048_575, 1_048_575),
+                L10_0 | L10_1 => (8192, 8, u32::MAX, u32::MAX),
+                L11_0 | L11_1 => (16384, 8, u32::MAX, u32::MAX),
+            };
+        Self {
+            level,
+            texture_2d_dimension,
+            render_targets,
+            max_vertex_index,
+            max_primitives_per_draw,
+            conditional_npot: level.as_raw() < L10_0.as_raw(),
+            separate_alpha_blend: level != L9_1,
+            geometry_shader: level.as_raw() >= L10_0.as_raw(),
+            compute_shader: level.as_raw() >= L11_0.as_raw(),
+        }
+    }
+
+    pub fn max_triangle_vertices_per_draw(self) -> u32 {
+        self.max_primitives_per_draw.saturating_mul(3)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Query<T> {
+    Value(T),
+    Unavailable(i32),
+}
+
+impl<T> Query<T> {
+    fn from_result(value: windows::core::Result<T>) -> Self {
+        match value {
+            Ok(value) => Self::Value(value),
+            Err(error) => Self::Unavailable(error.code().0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DriverCapabilities {
+    pub rgba8: Query<u32>,
+    pub bgra8: Query<u32>,
+    pub depth24_stencil8: Query<u32>,
+    pub rgba8_samples_4: Query<u32>,
+    pub full_npot: Query<bool>,
+    pub comparison_shadow: Query<bool>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct BackendCapabilities {
+    pub texture_mip_levels: u32,
+    pub texture_array_layers: u32,
+    pub sample_count: u32,
+    pub vertex_buffers: u32,
+    pub color_attachments: u32,
+    pub index_u16: bool,
+    pub compute: bool,
+    pub storage: bool,
+    pub depth_stencil: bool,
+    pub instancing: bool,
+    pub queries: bool,
+}
+
+impl BackendCapabilities {
+    pub const CURRENT: Self = Self {
+        texture_mip_levels: 1,
+        texture_array_layers: 1,
+        sample_count: 1,
+        vertex_buffers: 1,
+        color_attachments: 1,
+        index_u16: true,
+        compute: false,
+        storage: false,
+        depth_stencil: false,
+        instancing: false,
+        queries: false,
+    };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Capabilities {
+    pub hardware: HardwareGuarantees,
+    pub driver: DriverCapabilities,
+    pub backend: BackendCapabilities,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TextureRejection {
+    UnsupportedFormat,
+    UnsupportedUsage,
+    UnsupportedShape,
+    DriverQueryUnavailable,
+    DriverFormatUnsupported,
+}
+
+impl Capabilities {
+    pub fn query(device: &NativeDevice) -> Self {
+        let raw = device.raw_device();
+        let format =
+            |value: DXGI_FORMAT| Query::from_result(unsafe { raw.CheckFormatSupport(value) });
+        let mut options = D3D11_FEATURE_DATA_D3D9_OPTIONS::default();
+        let full_npot = unsafe {
+            raw.CheckFeatureSupport(
+                D3D11_FEATURE_D3D9_OPTIONS,
+                core::ptr::from_mut(&mut options).cast(),
+                size_of_val(&options) as u32,
+            )
+        }
+        .map(|()| options.FullNonPow2TextureSupport.as_bool());
+        let mut shadow = D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT::default();
+        let comparison_shadow = unsafe {
+            raw.CheckFeatureSupport(
+                D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
+                core::ptr::from_mut(&mut shadow).cast(),
+                size_of_val(&shadow) as u32,
+            )
+        }
+        .map(|()| {
+            shadow
+                .SupportsDepthAsTextureWithLessEqualComparisonFilter
+                .as_bool()
+        });
+        Self {
+            hardware: HardwareGuarantees::for_level(device.feature_level()),
+            driver: DriverCapabilities {
+                rgba8: format(DXGI_FORMAT_R8G8B8A8_UNORM),
+                bgra8: format(DXGI_FORMAT_B8G8R8A8_UNORM),
+                depth24_stencil8: format(DXGI_FORMAT_D24_UNORM_S8_UINT),
+                rgba8_samples_4: Query::from_result(unsafe {
+                    raw.CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4)
+                }),
+                full_npot: Query::from_result(full_npot),
+                comparison_shadow: Query::from_result(comparison_shadow),
+            },
+            backend: BackendCapabilities::CURRENT,
+        }
+    }
+
+    pub fn check_private_texture_2d(
+        &self,
+        format: wgt::TextureFormat,
+        usage: wgt::TextureUses,
+        extent: [u32; 2],
+        layers: u32,
+        mips: u32,
+        samples: u32,
+    ) -> Result<(), TextureRejection> {
+        use TextureRejection::*;
+        if format != wgt::TextureFormat::Rgba8Unorm {
+            return Err(UnsupportedFormat);
+        }
+        let allowed = wgt::TextureUses::COPY_SRC
+            | wgt::TextureUses::COPY_DST
+            | wgt::TextureUses::RESOURCE
+            | wgt::TextureUses::COLOR_TARGET;
+        if usage.is_empty() || !allowed.contains(usage) {
+            return Err(UnsupportedUsage);
+        }
+        if extent[0] == 0
+            || extent[1] == 0
+            || extent[0] > self.hardware.texture_2d_dimension
+            || extent[1] > self.hardware.texture_2d_dimension
+            || layers != self.backend.texture_array_layers
+            || mips != self.backend.texture_mip_levels
+            || samples != self.backend.sample_count
+        {
+            return Err(UnsupportedShape);
+        }
+        let Query::Value(bits) = self.driver.rgba8 else {
+            return Err(DriverQueryUnavailable);
+        };
+        let required = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
+            | if usage.contains(wgt::TextureUses::COLOR_TARGET) {
+                D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
+            } else {
+                0
+            };
+        if bits & required != required {
+            return Err(DriverFormatUnsupported);
+        }
+        Ok(())
+    }
+
+    pub fn rgba8_blendable(&self) -> bool {
+        matches!(self.driver.rgba8, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
+    }
+
+    pub fn public_adapter_supported(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(level: FeatureLevel) -> Capabilities {
+        Capabilities {
+            hardware: HardwareGuarantees::for_level(level),
+            driver: DriverCapabilities {
+                rgba8: Query::Value(u32::MAX),
+                bgra8: Query::Value(u32::MAX),
+                depth24_stencil8: Query::Value(u32::MAX),
+                rgba8_samples_4: Query::Value(1),
+                full_npot: Query::Value(true),
+                comparison_shadow: Query::Value(true),
+            },
+            backend: BackendCapabilities::CURRENT,
+        }
+    }
+
+    #[test]
+    fn feature_level_guarantees_are_specific_and_do_not_promote_backend() {
+        let expected = [
+            (FeatureLevel::L9_1, 2048, 1, false, false),
+            (FeatureLevel::L9_2, 2048, 1, false, false),
+            (FeatureLevel::L9_3, 4096, 4, false, false),
+            (FeatureLevel::L10_0, 8192, 8, true, false),
+            (FeatureLevel::L10_1, 8192, 8, true, false),
+            (FeatureLevel::L11_0, 16384, 8, true, true),
+            (FeatureLevel::L11_1, 16384, 8, true, true),
+        ];
+        for (level, dimension, targets, geometry, compute) in expected {
+            let caps = model(level);
+            assert_eq!(caps.hardware.level, level);
+            assert_eq!(caps.hardware.texture_2d_dimension, dimension);
+            assert_eq!(caps.hardware.render_targets, targets);
+            assert_eq!(caps.hardware.geometry_shader, geometry);
+            assert_eq!(caps.hardware.compute_shader, compute);
+            assert_eq!(
+                caps.hardware.max_triangle_vertices_per_draw(),
+                caps.hardware.max_primitives_per_draw.saturating_mul(3)
+            );
+            assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(!caps.public_adapter_supported());
+        }
+        let fl9 = model(FeatureLevel::L9_1);
+        assert_eq!(fl9.hardware.max_vertex_index, 65_534);
+        assert_eq!(fl9.hardware.max_primitives_per_draw, 65_535);
+        assert!(fl9.hardware.conditional_npot);
+        assert!(!fl9.hardware.separate_alpha_blend);
+        assert!(!fl9.backend.instancing && !fl9.backend.storage && !fl9.backend.queries);
+    }
+
+    #[test]
+    fn unsupported_query_preserves_error_instead_of_assuming_support() {
+        let error = windows::core::Error::from_hresult(windows::Win32::Foundation::E_INVALIDARG);
+        assert_eq!(
+            Query::<bool>::from_result(Err(error)),
+            Query::Unavailable(windows::Win32::Foundation::E_INVALIDARG.0)
+        );
+    }
+
+    #[test]
+    fn texture_support_requires_backend_shape_usage_and_driver_support() {
+        let caps = model(FeatureLevel::L9_1);
+        let check = |caps: &Capabilities, format, usage, w, h, layers, mips, samples| {
+            caps.check_private_texture_2d(format, usage, [w, h], layers, mips, samples)
+        };
+        let rgba = wgt::TextureFormat::Rgba8Unorm;
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
+        assert_eq!(check(&caps, rgba, usage, 8, 8, 1, 1, 1), Ok(()));
+        assert_eq!(
+            check(&caps, wgt::TextureFormat::Bgra8Unorm, usage, 8, 8, 1, 1, 1),
+            Err(TextureRejection::UnsupportedFormat)
+        );
+        assert_eq!(
+            check(
+                &caps,
+                rgba,
+                wgt::TextureUses::STORAGE_READ_ONLY,
+                8,
+                8,
+                1,
+                1,
+                1
+            ),
+            Err(TextureRejection::UnsupportedUsage)
+        );
+        for (w, h, layers, mips, samples) in [
+            (0, 8, 1, 1, 1),
+            (2049, 8, 1, 1, 1),
+            (8, 8, 2, 1, 1),
+            (8, 8, 1, 2, 1),
+            (8, 8, 1, 1, 4),
+        ] {
+            assert_eq!(
+                check(&caps, rgba, usage, w, h, layers, mips, samples),
+                Err(TextureRejection::UnsupportedShape)
+            );
+        }
+        let mut no_query = caps;
+        no_query.driver.rgba8 = Query::Unavailable(-1);
+        assert_eq!(
+            check(&no_query, rgba, usage, 8, 8, 1, 1, 1),
+            Err(TextureRejection::DriverQueryUnavailable)
+        );
+        let mut no_target = caps;
+        no_target.driver.rgba8 = Query::Value(
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
+        );
+        assert_eq!(
+            check(&no_target, rgba, usage, 8, 8, 1, 1, 1),
+            Err(TextureRejection::DriverFormatUnsupported)
+        );
+        assert_eq!(
+            check(&no_target, rgba, wgt::TextureUses::RESOURCE, 8, 8, 1, 1, 1),
+            Ok(())
+        );
+        let mut optional_unknown = caps;
+        optional_unknown.driver.full_npot = Query::Unavailable(-1);
+        optional_unknown.driver.comparison_shadow = Query::Unavailable(-1);
+        assert_eq!(check(&optional_unknown, rgba, usage, 8, 8, 1, 1, 1), Ok(()));
+        assert!(!optional_unknown.backend.depth_stencil);
+        assert!(!optional_unknown.public_adapter_supported());
+    }
+}

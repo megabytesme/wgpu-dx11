@@ -679,11 +679,9 @@ impl crate::CommandEncoder for CommandEncoder {
         });
         // Feature level 9 limits the number of primitives per Draw. Split on
         // triangle boundaries so a large HAL draw retains its topology.
-        let max_vertices = match self.device.feature_level() {
-            super::device::FeatureLevel::L9_1 => 65_535 * 3,
-            super::device::FeatureLevel::L9_2 | super::device::FeatureLevel::L9_3 => 1_048_575 * 3,
-            _ => u32::MAX,
-        };
+        let max_vertices =
+            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                .max_triangle_vertices_per_draw();
         let mut first = first_vertex;
         let mut remaining = vertex_count;
         while remaining != 0 {
@@ -735,11 +733,9 @@ impl crate::CommandEncoder for CommandEncoder {
         let offset = *offset;
         let vertex_bytes = *vertex_bytes;
         let index = index.clone();
-        let max_vertices = match self.device.feature_level() {
-            super::device::FeatureLevel::L9_1 => 65_535 * 3,
-            super::device::FeatureLevel::L9_2 | super::device::FeatureLevel::L9_3 => 1_048_575 * 3,
-            _ => u32::MAX,
-        };
+        let max_vertices =
+            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                .max_triangle_vertices_per_draw();
         self.record(NativeCommand::SetVertex {
             buffer,
             offset,
@@ -923,6 +919,7 @@ mod tests {
 
     #[test]
     fn fl9_1_hardware_indexed_triangle() {
+        let gpu_started = core::sync::atomic::AtomicBool::new(false);
         let result = std::panic::catch_unwind(|| -> windows::core::Result<bool> {
             let adapters = enumerate_native_adapters()?;
             for adapter in &adapters {
@@ -935,7 +932,11 @@ mod tests {
                     id.software
                 );
             }
-            let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            let required =
+                std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+            let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+                .unwrap_or_else(|message| panic!("{message}"))
+            else {
                 return Ok(false);
             };
             std::println!(
@@ -945,6 +946,41 @@ mod tests {
             let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
             std::println!("Actual feature level: {:?}", native.feature_level());
             assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+            let caps = super::super::capabilities::Capabilities::query(&native);
+            std::println!("Hardware guarantees: {:?}", caps.hardware);
+            std::println!("Driver queries: {:?}", caps.driver);
+            std::println!("Backend implementation: {:?}", caps.backend);
+            std::println!(
+                "RGBA8 driver blendable: {}; public adapter: {}",
+                caps.rgba8_blendable(),
+                caps.public_adapter_supported()
+            );
+            assert_eq!(caps.hardware.level, FeatureLevel::L9_1);
+            assert_eq!(caps.hardware.texture_2d_dimension, 2048);
+            assert!(!caps.hardware.compute_shader);
+            assert!(!caps.backend.depth_stencil && !caps.backend.compute);
+            assert!(caps
+                .check_private_texture_2d(
+                    wgt::TextureFormat::Rgba8Unorm,
+                    wgt::TextureUses::COLOR_TARGET,
+                    [8, 8],
+                    1,
+                    1,
+                    1
+                )
+                .is_ok());
+            assert!(caps
+                .check_private_texture_2d(
+                    wgt::TextureFormat::Rgba8Unorm,
+                    wgt::TextureUses::COLOR_TARGET,
+                    [8, 8],
+                    1,
+                    1,
+                    4
+                )
+                .is_err());
+            assert!(!caps.public_adapter_supported());
+            gpu_started.store(true, core::sync::atomic::Ordering::Relaxed);
             indexed_triangle(native)?;
             Ok(true)
         });
@@ -954,11 +990,17 @@ mod tests {
                 "SKIP: no hardware DXGI adapter; executed=0 passed=0 failed=0 skipped=1"
             ),
             Ok(Err(error)) => {
-                std::println!("FAIL: {error:?}; executed=1 passed=0 failed=1 skipped=0");
+                std::println!(
+                    "FAIL: {error:?}; executed={} passed=0 failed=1 skipped=0",
+                    u8::from(gpu_started.load(core::sync::atomic::Ordering::Relaxed))
+                );
                 panic!("FL9_1 hardware test failed: {error:?}");
             }
             Err(panic) => {
-                std::println!("FAIL: executed=1 passed=0 failed=1 skipped=0");
+                std::println!(
+                    "FAIL: executed={} passed=0 failed=1 skipped=0",
+                    u8::from(gpu_started.load(core::sync::atomic::Ordering::Relaxed))
+                );
                 std::panic::resume_unwind(panic);
             }
         }
@@ -969,6 +1011,28 @@ mod tests {
         use alloc::borrow::Cow;
         let device = Device::new(native.clone());
         let queue = Queue::new(native.clone());
+        let unsupported = TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Bgra8Unorm,
+            usage: wgt::TextureUses::COLOR_TARGET,
+            memory_flags: MemoryFlags::empty(),
+            view_formats: vec![],
+        };
+        assert!(unsafe { crate::Device::create_texture(&device, &unsupported) }.is_err());
+        let unsupported = TextureDescriptor {
+            format: wgt::TextureFormat::Rgba8Unorm,
+            sample_count: 4,
+            ..unsupported
+        };
+        assert!(unsafe { crate::Device::create_texture(&device, &unsupported) }.is_err());
         let module = naga::front::wgsl::parse_str("@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }").unwrap();
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),

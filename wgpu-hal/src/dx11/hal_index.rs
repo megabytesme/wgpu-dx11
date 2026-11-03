@@ -2,10 +2,7 @@
 //!
 //! GPU index data is copied to staging and checked at replay time, after all
 //! earlier commands. This preserves command ordering but may stall the CPU.
-use super::{
-    buffer::NativeBuffer,
-    device::{FeatureLevel, NativeDevice},
-};
+use super::{buffer::NativeBuffer, device::NativeDevice};
 use core::num::NonZeroU64;
 use windows::{
     core::{Error, Result},
@@ -62,11 +59,9 @@ impl NativeDevice {
             staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             offset: u32::try_from(offset).map_err(|_| Error::from_hresult(E_INVALIDARG))?,
             length,
-            max_index: if self.feature_level() == FeatureLevel::L9_1 {
-                65_534
-            } else {
-                u16::MAX
-            },
+            max_index: super::capabilities::HardwareGuarantees::for_level(self.feature_level())
+                .max_vertex_index
+                .min(u32::from(u16::MAX)) as u16,
         })
     }
 }

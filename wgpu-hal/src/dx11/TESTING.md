@@ -10,7 +10,8 @@ expressed by `Limits` alone.
 
 ### Focused FL9_1 hardware test
 
-From an x64 Visual Studio developer shell, run:
+From an x64 Visual Studio developer shell, require physical hardware with
+`$env:WGPU_DX11_REQUIRE_HARDWARE = "1"` in PowerShell, then run:
 
 ```console
 cargo test -p wgpu-hal --lib --no-default-features --features dx11 dx11::hal_encoder::tests::fl9_1_hardware_indexed_triangle -- --exact --nocapture
@@ -30,7 +31,8 @@ Read the printed result, not just libtest's final line:
 - `PASS`: the hardware device and all operations completed with the expected pixels.
 - `SKIP`: no non-software adapter was enumerated; no GPU test was executed.
   Libtest still reports this case as `ok`, so retain `--nocapture` and inspect
-  the result when collecting evidence.
+  the result when collecting evidence. With `WGPU_DX11_REQUIRE_HARDWARE=1`,
+  absence of a hardware adapter is a failing test instead.
 - `FAIL`: enumeration, device creation, execution, synchronization, or
   validation failed. The test exits unsuccessfully. An enumeration failure is
   reported as a failure because its cause cannot safely be inferred to be a
@@ -38,7 +40,8 @@ Read the printed result, not just libtest's final line:
   also cannot produce a test summary and must be investigated separately.
 
 The test reports the adapter name, PCI IDs, software flag, requested and actual
-feature levels, readback and one-case counts. It does not query driver versions;
+feature levels, feature-level guarantees, targeted driver queries, backend
+implementation status, readback and one-case counts. It does not query driver versions;
 record them separately on Windows, for example:
 
 ```powershell

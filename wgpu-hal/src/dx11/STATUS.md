@@ -4,7 +4,8 @@ The `dx11` backend is experimental. Normal adapter enumeration returns no
 adapters: the current implementation does not meet wgpu's general device
 contract, and its restrictions cannot all be expressed as wgpu limits.
 Feature level 9_1 is a target for restricted compatibility work; it is not
-evidence of full WebGPU conformance.
+evidence of full WebGPU conformance. See [CAPABILITIES.md](CAPABILITIES.md)
+for the internal capability model, FL9_1 inventory and validation gaps.
 
 ## Implemented private HAL paths
 

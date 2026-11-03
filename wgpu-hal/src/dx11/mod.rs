@@ -5,6 +5,8 @@
 mod adapter;
 mod api;
 mod buffer;
+#[allow(dead_code)]
+mod capabilities;
 mod command;
 mod device;
 mod fence;
@@ -83,4 +85,43 @@ pub fn enumerate_adapters() -> Result<Vec<AdapterDiagnostic>> {
         });
     }
     Ok(diagnostics)
+}
+#[cfg(test)]
+pub(super) mod hardware_test {
+    use super::device::NativeAdapter;
+
+    pub fn select_adapter(
+        adapters: &[NativeAdapter],
+        required: bool,
+    ) -> Result<Option<&NativeAdapter>, &'static str> {
+        let candidates = adapters
+            .iter()
+            .map(|adapter| (adapter.identity().software, adapter));
+        match first_hardware(candidates) {
+            Some(adapter) => Ok(Some(adapter)),
+            None => missing_adapter(required).map(|()| None),
+        }
+    }
+
+    fn first_hardware<T>(candidates: impl IntoIterator<Item = (bool, T)>) -> Option<T> {
+        candidates
+            .into_iter()
+            .find_map(|(software, adapter)| (!software).then_some(adapter))
+    }
+
+    fn missing_adapter(required: bool) -> Result<(), &'static str> {
+        if required {
+            Err("strict hardware mode requires a non-software DXGI adapter")
+        } else {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn missing_hardware_is_only_allowed_outside_strict_mode() {
+        assert!(select_adapter(&[], false).unwrap().is_none());
+        assert!(select_adapter(&[], true).is_err());
+        assert_eq!(first_hardware([(true, 1), (true, 2)]), None);
+        assert_eq!(first_hardware([(true, 1), (false, 2)]), Some(2));
+    }
 }
