@@ -2175,3 +2175,49 @@ at the HAL boundary. Public D3D11 adapter enumeration remains disabled.
 Next investigate the required FL9_1 BC1 format and compressed buffer-to-texture
 layout. Establish block row/height calculations and boundary rules with CPU
 tests before attempting native upload and strict sampled-pixel verification.
+
+## Checkpoint — BC1_UNORM sampled upload
+
+Implementation checkpoint: `6c67e22be` (`dx11: add FL9_1 BC1 sampled texture uploads`).
+
+BC1_UNORM is modeled as an FL9_1 required sampled format, but support remains
+conditional on the selected device's `CheckFormatSupport` result. The private
+HAL accepts one-mip, one-layer, 4-aligned sampled/upload textures only. Upload
+layout uses 4x4 blocks of eight bytes; padded block rows, nonzero source
+offsets, and block-aligned partial updates are validated with checked
+arithmetic. Copy-source, render-target, readback, sRGB and mip-chain paths
+remain rejected.
+
+On the RTX 3090 Ti (vendor/device `0x10de:0x2203`, driver `32.0.16.2101`), the
+strict test explicitly requested and selected FL9_1. `BC1_UNORM` support was
+`0x000213a0`, including shader sampling. Four distinguishable 4x4 blocks were
+uploaded into an 8x8 image from source offset 8 with 24-byte block-row pitch;
+a second aligned partial upload replaced one block using offset 8 and 16-byte
+pitch. Sampling and RGBA8 readback matched all 256 expected pixels.
+
+Rust 1.93.1/MSVC verification:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 bc1 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 "dx11::" -- --test-threads=1
+cargo build --offline -p wgpu-hal --no-default-features --features dx11
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx12 pipeline_desc::tests -- --test-threads=1
+cargo clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo fmt --package wgpu-hal -- --check
+rustfmt --check --edition 2021 wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_transfer.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/tests/dx11/r8_texture.rs
+git diff --check
+```
+
+The BC1-filtered run passed 3/3 after formatting, including actual hardware
+render/readback. The full strict private suite passed 315 tests with two
+filtered before the final readability-only refactor of texture-format
+validation. The HAL build passed; the focused core isolation test passed 1/1;
+DX12 pipeline descriptor tests passed 2/2; formatting and diff checks passed.
+Clippy passed with ten existing warnings, unchanged from the prior checkpoint.
+Ordinary public D3D11 enumeration remains empty. Next, extend the controlled
+core fixture to exercise BC1 texture creation, queue upload, binding, rendering
+and readback while preserving empty normal adapter enumeration. If fixture
+capability plumbing cannot model this narrowly without pretending the fixture
+is a general adapter, retain the test-only gate and document the boundary.

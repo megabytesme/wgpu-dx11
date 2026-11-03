@@ -91,11 +91,13 @@ Run only one heavyweight Cargo process at a time with bounded build jobs.
 Record exact commands, hardware results, skips, failures and commit hashes in
 FL9_1_PROGRESS.md. Maintain FL9_1_HANDOFF.md for interruption and final audit.
 
-Latest completed sampled-format increments: R8_UNORM (`268431ec3`), R8G8_SNORM
-(`881640796`) and R8G8B8A8_SNORM (`312dba141`) use queried, single-mip
-sampled/upload paths and strict FL9_1 GPU readback. Next investigate required
-BC1 compressed sampling and block-layout uploads, implementing only the
-single-mip sampled/upload subset first if native and synthetic validation can
-prove the block addressing rules. Continue the public contract and presentation
-audits in parallel with the ordered work above; public adapter exposure remains
-gated.
+Latest sampled-format increments: R8_UNORM (`268431ec3`), R8G8_SNORM
+(`881640796`), R8G8B8A8_SNORM (`312dba141`) and BC1_UNORM (`6c67e22be`)
+use queried, single-mip sampled/upload paths and strict FL9_1 GPU readback.
+BC1 upload uses 4x4 blocks and 8-byte block rows, including padded pitches,
+nonzero source offsets and aligned partial updates. BC1 copy-source, render
+target, readback, sRGB and mip-chain uses remain unsupported. Next audit the
+controlled wgpu-core fixture and determine whether BC1 can be validated through
+core resource creation, queue upload and render recording without exposing an
+ordinary D3D11 adapter. Continue the public contract and presentation audits;
+public adapter exposure remains gated.

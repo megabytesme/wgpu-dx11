@@ -565,7 +565,19 @@ within one UNORM code value. The full strict private suite passed 311 tests
 (two filtered); core zero-adapter isolation, DX12 regression, build, Clippy and
 formatting checks passed. See FL9_1_PROGRESS.md for exact commands.
 
-Next investigate required BC1 compressed texture sampling and upload layout.
-Prove block addressing and partial-region constraints with deterministic CPU
-tests before native support. Keep public adapter and HWND surface exposure
-gated.
+## Latest checkpoint — FL9_1 BC1 sampled uploads
+
+`6c67e22be` adds queried BC1_UNORM sampled/upload textures, restricted to a
+single mip/layer and 4x4-aligned dimensions. Block-row layout supports padded
+pitch, source offsets and aligned partial updates. Copy-source, render-target,
+readback, sRGB and mip chains remain rejected. The RTX 3090 Ti at requested and
+actual FL9_1 reported support mask `0x000213a0`; strict sampled readback
+matched 256/256 pixels. The complete strict private suite passed 315 tests
+before a readability-only validation refactor, and the focused BC1 tests passed
+3/3 after it. The HAL build, core zero-adapter test, DX12 pipeline tests,
+Clippy (ten pre-existing warnings), formatting and diff checks passed.
+
+Next, test whether the unsafe core fixture can cover BC1 creation, queue upload,
+binding, rendering and readback without ordinary D3D11 adapter exposure. The
+fixture must report only the narrow per-format operations it tests. Continue
+keeping regular adapter enumeration disabled.
