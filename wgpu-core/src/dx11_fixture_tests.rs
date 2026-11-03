@@ -161,6 +161,27 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let (device, queue) =
         unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
             .expect("controlled core device initialization");
+    for hlsl in [
+        None,
+        Some(Cow::Borrowed("float4 main() : SV_Target { return 1; }")),
+    ] {
+        let passthrough = crate::pipeline::ShaderModuleDescriptorPassthrough {
+            hlsl,
+            ..Default::default()
+        };
+        let (shader, error) =
+            unsafe { global.device_create_shader_module_passthrough(device, &passthrough, None) };
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(crate::pipeline::CreateShaderModuleError::MissingFeatures(
+                    crate::device::MissingFeatures(features)
+                )) if *features == wgt::Features::PASSTHROUGH_SHADERS
+            ),
+            "passthrough requires an unadvertised feature: {error:?}"
+        );
+        global.shader_module_drop(shader);
+    }
     let texture_desc = |format, usage| wgt::TextureDescriptor {
         label: None,
         size: wgt::Extent3d {

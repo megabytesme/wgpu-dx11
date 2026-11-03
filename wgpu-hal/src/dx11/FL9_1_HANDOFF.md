@@ -120,6 +120,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `7404886b4dd14da39c4859b5a33243c31f9ddd36` | Non-filtering sampler layouts |
 | `4ef1fbdaafd138b5981b5765c6a33a887b54b594` | Unfilterable float layout relationship validation |
 | `4f3f608c229fd6e5b7bc309db5ac975bfd790c7e` | Combined sampled-resource visibility |
+| `cac502305de4c2569bfc29da73eecdd9a59e92e8` | Premultiplied alpha blending |
 
 ## What is and is not usable
 

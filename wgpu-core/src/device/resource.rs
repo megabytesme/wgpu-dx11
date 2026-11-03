@@ -334,6 +334,136 @@ impl Drop for Device {
     }
 }
 
+fn select_passthrough_shader<'a>(
+    backend: wgt::Backend,
+    descriptor: &'a pipeline::ShaderModuleDescriptorPassthrough<'_>,
+) -> Result<hal::ShaderInput<'a>, pipeline::CreateShaderModuleError> {
+    let entry_point_hashmap = || {
+        descriptor
+            .entry_points
+            .iter()
+            .map(|e| (e.name.to_string(), e.workgroup_size))
+            .collect()
+    };
+    Ok(match backend {
+        wgt::Backend::Vulkan => hal::ShaderInput::SpirV(
+            descriptor
+                .spirv
+                .as_ref()
+                .ok_or(pipeline::CreateShaderModuleError::NotCompiledForBackend)?,
+        ),
+        wgt::Backend::Dx12 => {
+            if let Some(dxil) = &descriptor.dxil {
+                hal::ShaderInput::Dxil { shader: dxil }
+            } else if let Some(hlsl) = &descriptor.hlsl {
+                hal::ShaderInput::Hlsl { shader: hlsl }
+            } else {
+                return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend);
+            }
+        }
+        wgt::Backend::Metal => {
+            if let Some(metallib) = &descriptor.metallib {
+                hal::ShaderInput::MetalLib {
+                    file: metallib,
+                    num_workgroups: entry_point_hashmap(),
+                }
+            } else if let Some(msl) = &descriptor.msl {
+                hal::ShaderInput::Msl {
+                    shader: msl,
+                    num_workgroups: entry_point_hashmap(),
+                }
+            } else {
+                return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend);
+            }
+        }
+        wgt::Backend::Gl => hal::ShaderInput::Glsl {
+            shader: descriptor
+                .glsl
+                .as_ref()
+                .ok_or(pipeline::CreateShaderModuleError::NotCompiledForBackend)?,
+        },
+        wgt::Backend::Noop | wgt::Backend::Dx11 => {
+            return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend)
+        }
+        wgt::Backend::BrowserWebGpu => unreachable!(),
+    })
+}
+
+#[cfg(test)]
+mod passthrough_selection_tests {
+    use super::{pipeline, select_passthrough_shader, Cow};
+
+    #[test]
+    fn backend_selection_rejects_dx11_and_preserves_other_paths() {
+        let mut descriptor = pipeline::ShaderModuleDescriptorPassthrough {
+            spirv: Some(Cow::Borrowed(&[1, 2])),
+            dxil: Some(Cow::Borrowed(&[3, 4])),
+            hlsl: Some(Cow::Borrowed("hlsl")),
+            metallib: Some(Cow::Borrowed(&[5, 6])),
+            msl: Some(Cow::Borrowed("msl")),
+            glsl: Some(Cow::Borrowed("glsl")),
+            entry_points: Cow::Owned(alloc::vec![wgt::PassthroughShaderEntryPoint {
+                name: Cow::Borrowed("main"),
+                workgroup_size: (1, 2, 3),
+            }]),
+            ..Default::default()
+        };
+        for backend in [wgt::Backend::Dx11, wgt::Backend::Noop] {
+            assert!(matches!(
+                select_passthrough_shader(backend, &descriptor),
+                Err(pipeline::CreateShaderModuleError::NotCompiledForBackend)
+            ));
+        }
+        assert!(matches!(
+            select_passthrough_shader(wgt::Backend::Vulkan, &descriptor),
+            Ok(hal::ShaderInput::SpirV(&[1, 2]))
+        ));
+        assert!(matches!(
+            select_passthrough_shader(wgt::Backend::Dx12, &descriptor),
+            Ok(hal::ShaderInput::Dxil { shader: &[3, 4] })
+        ));
+        assert!(matches!(
+            select_passthrough_shader(wgt::Backend::Gl, &descriptor),
+            Ok(hal::ShaderInput::Glsl { shader: "glsl" })
+        ));
+        match select_passthrough_shader(wgt::Backend::Metal, &descriptor).unwrap() {
+            hal::ShaderInput::MetalLib {
+                file,
+                num_workgroups,
+            } => {
+                assert_eq!(file, &[5, 6]);
+                assert_eq!(num_workgroups.get("main"), Some(&(1, 2, 3)));
+            }
+            other => panic!("expected MetalLib, got {other:?}"),
+        }
+        descriptor.dxil = None;
+        descriptor.metallib = None;
+        assert!(matches!(
+            select_passthrough_shader(wgt::Backend::Dx12, &descriptor),
+            Ok(hal::ShaderInput::Hlsl { shader: "hlsl" })
+        ));
+        assert!(matches!(
+            select_passthrough_shader(wgt::Backend::Metal, &descriptor),
+            Ok(hal::ShaderInput::Msl { shader: "msl", .. })
+        ));
+        descriptor.hlsl = None;
+        descriptor.msl = None;
+        descriptor.spirv = None;
+        descriptor.glsl = None;
+        for backend in [
+            wgt::Backend::Dx12,
+            wgt::Backend::Metal,
+            wgt::Backend::Vulkan,
+            wgt::Backend::Gl,
+        ] {
+            assert!(matches!(
+                select_passthrough_shader(backend, &descriptor),
+                Err(pipeline::CreateShaderModuleError::NotCompiledForBackend)
+            ));
+        }
+    }
+}
+
 impl Device {
     pub(crate) fn raw(&self) -> &dyn hal::DynDevice {
         self.raw.as_ref()
@@ -2510,57 +2640,7 @@ impl Device {
             return Err(pipeline::CreateShaderModuleError::IncorrectPassthroughEntryPointCount);
         }
 
-        let entry_point_hashmap = || {
-            descriptor
-                .entry_points
-                .iter()
-                .map(|e| (e.name.to_string(), e.workgroup_size))
-                .collect()
-        };
-
-        let hal_shader = match self.backend() {
-            wgt::Backend::Vulkan => hal::ShaderInput::SpirV(
-                descriptor
-                    .spirv
-                    .as_ref()
-                    .ok_or(pipeline::CreateShaderModuleError::NotCompiledForBackend)?,
-            ),
-            wgt::Backend::Dx12 => {
-                if let Some(dxil) = &descriptor.dxil {
-                    hal::ShaderInput::Dxil { shader: dxil }
-                } else if let Some(hlsl) = &descriptor.hlsl {
-                    hal::ShaderInput::Hlsl { shader: hlsl }
-                } else {
-                    return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend);
-                }
-            }
-            wgt::Backend::Metal => {
-                if let Some(metallib) = &descriptor.metallib {
-                    hal::ShaderInput::MetalLib {
-                        file: metallib,
-                        num_workgroups: entry_point_hashmap(),
-                    }
-                } else if let Some(msl) = &descriptor.msl {
-                    hal::ShaderInput::Msl {
-                        shader: msl,
-                        num_workgroups: entry_point_hashmap(),
-                    }
-                } else {
-                    return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend);
-                }
-            }
-            wgt::Backend::Gl => hal::ShaderInput::Glsl {
-                shader: descriptor
-                    .glsl
-                    .as_ref()
-                    .ok_or(pipeline::CreateShaderModuleError::NotCompiledForBackend)?,
-            },
-            wgt::Backend::Noop => {
-                return Err(pipeline::CreateShaderModuleError::NotCompiledForBackend)
-            }
-            wgt::Backend::BrowserWebGpu => unreachable!(),
-            wgt::Backend::Dx11 => unreachable!("DX11 has no wgpu HAL implementation yet"),
-        };
+        let hal_shader = select_passthrough_shader(self.backend(), descriptor)?;
 
         let hal_desc = hal::ShaderModuleDescriptor {
             label: descriptor.label.to_hal(self.instance_flags),

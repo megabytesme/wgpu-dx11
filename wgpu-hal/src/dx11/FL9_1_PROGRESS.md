@@ -1451,3 +1451,19 @@ exhaustion before PowerShell started; retrying with two Cargo jobs succeeded.
 Independent review found no concrete factor or capability isolation defect.
 Full-channel straight-alpha and general separate-alpha remain unsupported;
 historical FL9 execution and sRGB blending are unverified.
+Checkpoint: `cac502305de4c2569bfc29da73eecdd9a59e92e8`.
+
+Core shader-passthrough backend selection now returns NotCompiledForBackend for
+Dx11 instead of reaching an unreachable panic. The feature gate still rejects
+passthrough on the real controlled device; the fixture verified MissingFeatures
+for empty and HLSL descriptors without fabricating unsupported device features.
+A pure selection test verified the Dx11 and Noop errors and existing Vulkan,
+DX12, Metal and GL source selection and precedence. The controlled strict
+FL9_1 core fixture and targeted selection test passed, as did targeted core
+Clippy after fixing a new test-only warning. The same selection test passed
+with the DX12 core feature; that build emitted 15 warnings, primarily unused
+items in the existing timestamp-normalization module. Ordinary adapter exposure remains
+disabled. The public map-error path remains a substantive blocker: fallible
+D3D11 staging/map work is behind a void HAL invalidate interface, so failures
+currently panic. A correct remedy needs error propagation through HAL and core;
+silently swallowing errors or marking a shadow coherent would be unsound.
