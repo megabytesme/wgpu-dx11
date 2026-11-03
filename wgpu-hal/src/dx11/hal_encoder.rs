@@ -939,7 +939,7 @@ impl crate::CommandEncoder for CommandEncoder {
         &mut self,
         first_vertex: u32,
         vertex_count: u32,
-        first_instance: u32,
+        _first_instance: u32,
         instance_count: u32,
     ) {
         let Some(render) = self.render.as_ref() else {
@@ -969,7 +969,6 @@ impl crate::CommandEncoder for CommandEncoder {
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || !render.resources_compatible(self.device.feature_level())
-            || first_instance != 0
             || (vertex_count != 0 && first_vertex.checked_add(vertex_count - 1).is_none())
             || required.is_none_or(|required| required > *bytes)
         {
@@ -1011,7 +1010,7 @@ impl crate::CommandEncoder for CommandEncoder {
         first_index: u32,
         index_count: u32,
         base_vertex: i32,
-        first_instance: u32,
+        _first_instance: u32,
         instance_count: u32,
     ) {
         let Some(render) = self.render.as_ref() else {
@@ -1033,7 +1032,6 @@ impl crate::CommandEncoder for CommandEncoder {
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || !render.resources_compatible(self.device.feature_level())
-            || first_instance != 0
             || !index.contains_range(first_index, index_count)
         {
             self.reject();
@@ -1569,6 +1567,32 @@ mod tests {
                 assert!(result.is_err(), "instance index entry {entry}");
             }
         }
+        let instance_buffers = [Some(VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgt::VertexStepMode::Instance,
+            attributes: &attributes,
+        })];
+        let instance_result = unsafe {
+            crate::Device::create_render_pipeline(
+                &device,
+                &RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: VertexProcessor::Standard {
+                        vertex_buffers: &instance_buffers,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                },
+            )
+        };
+        assert!(instance_result.is_err(), "instance-stepped vertex input");
         let extent = wgt::Extent3d {
             width: 8,
             height: 8,
@@ -2013,7 +2037,7 @@ mod tests {
                 BufferBinding::new_unchecked(&u32_indices, 4, None),
                 wgt::IndexFormat::Uint32,
             );
-            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 1, 2);
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 100, 3, 0, 2);
             crate::CommandEncoder::end_render_pass(&mut encoder);
             assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
         }
@@ -2850,29 +2874,96 @@ mod tests {
             ),
         ] {
             for instances in 0..=2 {
+                for first_instance in [0, 7, u32::MAX] {
+                    let commands = unsafe {
+                        crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                        crate::CommandEncoder::copy_buffer_to_buffer(
+                            &mut encoder,
+                            source,
+                            target,
+                            core::iter::once(BufferCopy {
+                                src_offset: 0,
+                                dst_offset: 0,
+                                size: NonZeroU64::new(size).unwrap(),
+                            }),
+                        );
+                        crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                        crate::CommandEncoder::set_render_pipeline(
+                            &mut encoder,
+                            &instance_pipeline,
+                        );
+                        crate::CommandEncoder::set_vertex_buffer(
+                            &mut encoder,
+                            0,
+                            BufferBinding::new_unchecked(&order_vertices, 8, None),
+                        );
+                        crate::CommandEncoder::set_index_buffer(
+                            &mut encoder,
+                            BufferBinding::new_unchecked(target, 0, None),
+                            format,
+                        );
+                        crate::CommandEncoder::set_scissor_rect(
+                            &mut encoder,
+                            &Rect {
+                                x: 4,
+                                y: 4,
+                                w: 1,
+                                h: 1,
+                            },
+                        );
+                        crate::CommandEncoder::draw_indexed(
+                            &mut encoder,
+                            0,
+                            count,
+                            0,
+                            first_instance,
+                            instances,
+                        );
+                        crate::CommandEncoder::end_render_pass(&mut encoder);
+                        crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+                    };
+                    let value = 11 + instance_commands.len() as u64;
+                    unsafe {
+                        crate::Queue::submit(&queue, &[&commands], &[], (&fence, value)).unwrap()
+                    };
+                    assert!(native.wait_native_fence(
+                        &fence,
+                        value,
+                        Some(Duration::from_secs(5))
+                    )?);
+                    let pixels = native.read_rgba_texture(&texture, 0, 0)?;
+                    let expected: [u8; 4] = match (format, count, instances, gather) {
+                        (_, _, 0, _) => [0, 0, 0, 255],
+                        (wgt::IndexFormat::Uint16, 3, 1, _) => [128, 0, 0, 255],
+                        (wgt::IndexFormat::Uint16, 3, _, _) => [192, 0, 0, 255],
+                        (wgt::IndexFormat::Uint16, _, _, _) => [127, 0, 128, 255],
+                        (wgt::IndexFormat::Uint32, _, 1, false) => [32, 64, 128, 255],
+                        (wgt::IndexFormat::Uint32, _, _, false) => [36, 72, 144, 255],
+                        (wgt::IndexFormat::Uint32, _, 1, true) => [32, 18, 174, 255],
+                        (wgt::IndexFormat::Uint32, _, _, true) => [36, 20, 196, 255],
+                    };
+                    let pixel = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
+                    assert!(
+                    pixel
+                        .iter()
+                        .zip(expected)
+                        .all(|(&actual, expected)| actual.abs_diff(expected) <= 3),
+                    "indexed {format:?}, first instance {first_instance}, {instances} instances: {pixel:?}, expected {expected:?}"
+                );
+                    instance_commands.push(commands);
+                }
+            }
+        }
+        for instances in 0..=2 {
+            for first_instance in [0, 7, u32::MAX] {
                 let commands = unsafe {
                     crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
-                    crate::CommandEncoder::copy_buffer_to_buffer(
-                        &mut encoder,
-                        source,
-                        target,
-                        core::iter::once(BufferCopy {
-                            src_offset: 0,
-                            dst_offset: 0,
-                            size: NonZeroU64::new(size).unwrap(),
-                        }),
-                    );
                     crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
                     crate::CommandEncoder::set_render_pipeline(&mut encoder, &instance_pipeline);
                     crate::CommandEncoder::set_vertex_buffer(
                         &mut encoder,
                         0,
                         BufferBinding::new_unchecked(&order_vertices, 8, None),
-                    );
-                    crate::CommandEncoder::set_index_buffer(
-                        &mut encoder,
-                        BufferBinding::new_unchecked(target, 0, None),
-                        format,
                     );
                     crate::CommandEncoder::set_scissor_rect(
                         &mut encoder,
@@ -2883,7 +2974,7 @@ mod tests {
                             h: 1,
                         },
                     );
-                    crate::CommandEncoder::draw_indexed(&mut encoder, 0, count, 0, 0, instances);
+                    crate::CommandEncoder::draw(&mut encoder, 0, 3, first_instance, instances);
                     crate::CommandEncoder::end_render_pass(&mut encoder);
                     crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
                 };
@@ -2893,28 +2984,172 @@ mod tests {
                 };
                 assert!(native.wait_native_fence(&fence, value, Some(Duration::from_secs(5)))?);
                 let pixels = native.read_rgba_texture(&texture, 0, 0)?;
-                let expected: [u8; 4] = match (format, count, instances, gather) {
-                    (_, _, 0, _) => [0, 0, 0, 255],
-                    (wgt::IndexFormat::Uint16, 3, 1, _) => [128, 0, 0, 255],
-                    (wgt::IndexFormat::Uint16, 3, _, _) => [192, 0, 0, 255],
-                    (wgt::IndexFormat::Uint16, _, _, _) => [127, 0, 128, 255],
-                    (wgt::IndexFormat::Uint32, _, 1, false) => [32, 64, 128, 255],
-                    (wgt::IndexFormat::Uint32, _, _, false) => [36, 72, 144, 255],
-                    (wgt::IndexFormat::Uint32, _, 1, true) => [32, 18, 174, 255],
-                    (wgt::IndexFormat::Uint32, _, _, true) => [36, 20, 196, 255],
+                let expected = match instances {
+                    0 => 0,
+                    1 => 128,
+                    _ => 192,
                 };
                 let pixel = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
                 assert!(
-                    pixel
-                        .iter()
-                        .zip(expected)
-                        .all(|(&actual, expected)| actual.abs_diff(expected) <= 3),
-                    "indexed {format:?}, {instances} instances: {pixel:?}, expected {expected:?}"
+                    pixel[0].abs_diff(expected) <= 3 && pixel[1..] == [0, 0, 255],
+                    "direct first instance {first_instance}, {instances} instances: {pixel:?}"
                 );
                 instance_commands.push(commands);
             }
         }
-        std::println!("PASS: u16 chunk and u32 window indexed instances preserve blend order");
+        std::println!("PASS: direct and indexed first-instance offsets preserve blend order");
+        let mut set_fallback_vertex = |index: usize, point: [f32; 2], color: [u8; 4]| {
+            let offset = 8 + index * 12;
+            vertex_data[offset..offset + 4].copy_from_slice(&point[0].to_ne_bytes());
+            vertex_data[offset + 4..offset + 8].copy_from_slice(&point[1].to_ne_bytes());
+            vertex_data[offset + 8..offset + 12].copy_from_slice(&color);
+        };
+        for (index, point) in [
+            (65535, [-1., -1.]),
+            (65536, [3., -1.]),
+            (65537, [-1., 3.]),
+            (0, [3., -1.]),
+            (1, [-1., 3.]),
+        ] {
+            set_fallback_vertex(index, point, [255, 0, 0, 255]);
+        }
+        for (index, point) in [(65532, [-1., -1.]), (65530, [3., -1.]), (65531, [-1., 3.])] {
+            set_fallback_vertex(index, point, [0, 0, 255, 255]);
+        }
+        native.write_byte_buffer(&order_vertices, 0, &vertex_data)?;
+        let fallback_indices: Vec<u8> = [
+            0xaaaau16, 0xbbbb, 65535, 0, 1, 65535, 65533, 65534, 65532, 65533, 65534, 65532, 65530,
+            65531,
+        ]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect();
+        native.write_byte_buffer(&short_upload, 0, &fallback_indices)?;
+        let fallback_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &short_upload,
+                &short_buffer,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: NonZeroU64::new(28).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &order_pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&order_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&short_buffer, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 7, 1);
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 4, 3, -3, u32::MAX, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        let fallback_value = 11 + instance_commands.len() as u64;
+        unsafe {
+            crate::Queue::submit(&queue, &[&fallback_commands], &[], (&fence, fallback_value))
+                .unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, fallback_value, Some(Duration::from_secs(5)))?);
+        let fallback_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        for (index, pixel) in fallback_pixels.chunks_exact(4).enumerate() {
+            let expected = if index % 8 < 4 {
+                [255, 0, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            };
+            assert_eq!(pixel, expected, "u16 fallback pixel {index}");
+        }
+        instance_commands.push(fallback_commands);
+        std::println!(
+            "PASS: GPU-written u16 gather and negative-base window: 32 red, 32 blue pixels"
+        );
+        let restored_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &order_pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&order_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&short_buffer, 2, None),
+                wgt::IndexFormat::Uint16,
+            );
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 7, 3, 3, 7, 1);
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 10, 3, 0, u32::MAX, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        let restored_value = fallback_value + 1;
+        unsafe {
+            crate::Queue::submit(&queue, &[&restored_commands], &[], (&fence, restored_value))
+                .unwrap()
+        };
+        assert!(native.wait_native_fence(&fence, restored_value, Some(Duration::from_secs(5)))?);
+        let restored_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        for (index, pixel) in restored_pixels.chunks_exact(4).enumerate() {
+            let expected = if index % 8 < 4 {
+                [255, 0, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            };
+            assert_eq!(
+                pixel, expected,
+                "u16 positive-base binding restoration pixel {index}"
+            );
+        }
+        instance_commands.push(restored_commands);
+        std::println!(
+            "PASS: positive-base u16 window and subsequent native draw: 32 red, 32 blue pixels"
+        );
         unsafe {
             crate::Device::destroy_buffer(&device, short_buffer);
             crate::Device::destroy_buffer(&device, short_upload);

@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 180 tests; older
+operations are safe. The latest combined strict suite passed 181 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -93,18 +93,14 @@ separate-alpha blending, and the existing private blend modes have not been
 shown portable to historical drivers. Native compute and UAV storage are not
 FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
 
-Core also permits draw combinations that this HAL rejects at replay,
-including nonzero first-instance;
-the existing downlevel flags alone do not make all of them unreachable. Core
-also permits indexed data outside the private path's conservative limits.
-accepts other layouts, resource shapes and baseline query operations outside
-the private subset. A safe public backend needs implementations, sound
-fallbacks or targeted core validation for each such case. A contained core
-test could eventually use the existing unsafe HAL adapter/device injection
-APIs with an owner-matched test-only adapter. Such a fixture now proves a
-buffer round trip and an offscreen triangle; it does not make general adapter exposure safe. The existing
-Dx11 unreachable in core's shader path is specifically in unsafe passthrough, not normal
-validated WGSL; its reachability still needs an audit before exposure.
+Core permits draw combinations, layouts, resource shapes and baseline query
+operations outside the private subset; the existing downlevel flags alone do
+not make all of them unreachable. A safe public backend needs implementations,
+sound fallbacks or targeted core validation for each such case. The unsafe,
+owner-matched fixture proves buffer and textured indexed depth rendering through
+core and public wgpu calls; it does not make general adapter exposure safe.
+The Dx11 unreachable in core's shader path is specifically in unsafe passthrough,
+not normal validated WGSL; its reachability still needs an audit before exposure.
 
 ## Reproduction and latest evidence
 
@@ -174,8 +170,8 @@ the vertex buffer, gathers wider triangles with GPU copies, allocates scratch at
 replay, and may stall for index staging. Historical-driver high-offset and
 buffer-copy behavior remains unverified.
 Restricted direct and indexed instancing repeat ordered native draws for
-shaders without instance-dependent inputs. Instance-index shaders and nonzero
-first instance remain unsupported.
+shaders without instance-dependent inputs. Nonzero first instance is
+unobservable in this subset; instance-index shaders remain unsupported.
 DXGI may synchronously call a window procedure during presentation. A private
 application can avoid the deadlock only by keeping its UI callback nonblocking
 and queueing graphics work; that cooperation cannot be assumed for arbitrary

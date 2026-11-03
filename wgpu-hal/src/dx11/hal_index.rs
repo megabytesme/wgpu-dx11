@@ -113,7 +113,7 @@ impl IndexBinding {
             }
             let size = if self.is_u32() { 4 } else { 2 };
             let start = self.offset as usize + first as usize * size;
-            if self.is_u32() {
+            let plan = if self.is_u32() {
                 let read = |index: usize| {
                     core::ptr::read_unaligned(
                         mapped
@@ -123,7 +123,7 @@ impl IndexBinding {
                             .cast::<u32>(),
                     )
                 };
-                let plan = plan_u32_windows(
+                plan_u32_windows(
                     read,
                     count as usize,
                     base_vertex,
@@ -131,114 +131,10 @@ impl IndexBinding {
                     vertex_offset,
                     vertex_layout,
                     max_vertices,
-                );
-                context.Unmap(&self.staging, 0);
-                let Some(plan) = plan? else {
-                    return Ok(());
-                };
-                let mut windows = Vec::new();
-                windows
-                    .try_reserve_exact(plan.len())
-                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-                let device = context.GetDevice()?;
-                let scratch_size = stride
-                    .checked_mul(3)
-                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-                let mut zeroes = Vec::<u8>::new();
-                if plan
-                    .iter()
-                    .any(|segment| matches!(segment, U32Segment::Gather(_)))
-                {
-                    zeroes
-                        .try_reserve_exact(scratch_size as usize)
-                        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-                    zeroes.resize(scratch_size as usize, 0);
-                }
-                for segment in plan {
-                    let mut buffer = None;
-                    match segment {
-                        U32Segment::Window(window) => {
-                            let desc = D3D11_BUFFER_DESC {
-                                ByteWidth: window.data.len() as u32,
-                                Usage: D3D11_USAGE_IMMUTABLE,
-                                BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
-                                ..Default::default()
-                            };
-                            let data = D3D11_SUBRESOURCE_DATA {
-                                pSysMem: window.data.as_ptr().cast(),
-                                ..Default::default()
-                            };
-                            device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
-                            windows.push(PreparedU32Segment::Window {
-                                buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
-                                vertex_offset: window.vertex_offset,
-                                count: window.count,
-                            });
-                        }
-                        U32Segment::Gather(sources) => {
-                            let desc = D3D11_BUFFER_DESC {
-                                ByteWidth: scratch_size,
-                                Usage: D3D11_USAGE_DEFAULT,
-                                BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
-                                ..Default::default()
-                            };
-                            let data = D3D11_SUBRESOURCE_DATA {
-                                pSysMem: zeroes.as_ptr().cast(),
-                                ..Default::default()
-                            };
-                            device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
-                            windows.push(PreparedU32Segment::Gather {
-                                buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
-                                sources,
-                            });
-                        }
-                    }
-                }
-                for segment in &windows {
-                    if let PreparedU32Segment::Gather { buffer, sources } = segment {
-                        for (index, source) in sources.iter().enumerate() {
-                            context.CopySubresourceRegion(
-                                buffer,
-                                0,
-                                index as u32 * stride,
-                                0,
-                                0,
-                                vertex,
-                                0,
-                                Some(source),
-                            );
-                        }
-                    }
-                }
-                for_each_window(instances, windows.len(), |index| match &windows[index] {
-                    PreparedU32Segment::Window {
-                        buffer,
-                        vertex_offset,
-                        count,
-                    } => {
-                        context.IASetVertexBuffers(
-                            0,
-                            1,
-                            Some(&Some(vertex.clone())),
-                            Some(&stride),
-                            Some(vertex_offset),
-                        );
-                        context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
-                        context.DrawIndexed(*count, 0, 0);
-                    }
-                    PreparedU32Segment::Gather { buffer, .. } => {
-                        context.IASetVertexBuffers(
-                            0,
-                            1,
-                            Some(&Some(buffer.clone())),
-                            Some(&stride),
-                            Some(&0),
-                        );
-                        context.Draw(3, 0);
-                    }
-                });
+                )
+                .map(|plan| plan.map(IndexPlan::Rewritten))
             } else {
-                let indices = (0..count as usize).map(|index| {
+                let read = |index: usize| {
                     core::ptr::read_unaligned(
                         mapped
                             .pData
@@ -246,25 +142,135 @@ impl IndexBinding {
                             .add(start + index * 2)
                             .cast::<u16>(),
                     )
-                });
-                let decision =
-                    classify_indices(indices, base_vertex, self.max_index, vertex_layout);
-                context.Unmap(&self.staging, 0);
-                match decision {
-                    IndexDecision::Draw => {}
-                    IndexDecision::Discard => return Ok(()),
-                    IndexDecision::Unsupported => return Err(Error::from_hresult(E_INVALIDARG)),
-                }
-                context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
-                super::command::draw_batches(
-                    first,
-                    count,
-                    instances,
+                };
+                plan_u16_draw(
+                    read,
+                    count as usize,
+                    base_vertex,
+                    self.max_index,
+                    vertex_offset,
+                    vertex_layout,
                     max_vertices,
-                    |first, count| {
-                        context.DrawIndexed(count, first, base_vertex);
-                    },
-                )?;
+                )
+            };
+            context.Unmap(&self.staging, 0);
+            let Some(plan) = plan? else { return Ok(()) };
+            match plan {
+                IndexPlan::NativeU16 => {
+                    context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
+                    super::command::draw_batches(
+                        first,
+                        count,
+                        instances,
+                        max_vertices,
+                        |first, count| {
+                            context.DrawIndexed(count, first, base_vertex);
+                        },
+                    )?;
+                }
+                IndexPlan::Rewritten(plan) => {
+                    let mut windows = Vec::new();
+                    windows
+                        .try_reserve_exact(plan.len())
+                        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                    let device = context.GetDevice()?;
+                    let scratch_size = stride
+                        .checked_mul(3)
+                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                    let mut zeroes = Vec::<u8>::new();
+                    if plan
+                        .iter()
+                        .any(|segment| matches!(segment, U32Segment::Gather(_)))
+                    {
+                        zeroes
+                            .try_reserve_exact(scratch_size as usize)
+                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                        zeroes.resize(scratch_size as usize, 0);
+                    }
+                    for segment in plan {
+                        let mut buffer = None;
+                        match segment {
+                            U32Segment::Window(window) => {
+                                let desc = D3D11_BUFFER_DESC {
+                                    ByteWidth: window.data.len() as u32,
+                                    Usage: D3D11_USAGE_IMMUTABLE,
+                                    BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                                    ..Default::default()
+                                };
+                                let data = D3D11_SUBRESOURCE_DATA {
+                                    pSysMem: window.data.as_ptr().cast(),
+                                    ..Default::default()
+                                };
+                                device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                                windows.push(PreparedU32Segment::Window {
+                                    buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                                    vertex_offset: window.vertex_offset,
+                                    count: window.count,
+                                });
+                            }
+                            U32Segment::Gather(sources) => {
+                                let desc = D3D11_BUFFER_DESC {
+                                    ByteWidth: scratch_size,
+                                    Usage: D3D11_USAGE_DEFAULT,
+                                    BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                                    ..Default::default()
+                                };
+                                let data = D3D11_SUBRESOURCE_DATA {
+                                    pSysMem: zeroes.as_ptr().cast(),
+                                    ..Default::default()
+                                };
+                                device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                                windows.push(PreparedU32Segment::Gather {
+                                    buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                                    sources,
+                                });
+                            }
+                        }
+                    }
+                    for segment in &windows {
+                        if let PreparedU32Segment::Gather { buffer, sources } = segment {
+                            for (index, source) in sources.iter().enumerate() {
+                                context.CopySubresourceRegion(
+                                    buffer,
+                                    0,
+                                    index as u32 * stride,
+                                    0,
+                                    0,
+                                    vertex,
+                                    0,
+                                    Some(source),
+                                );
+                            }
+                        }
+                    }
+                    for_each_window(instances, windows.len(), |index| match &windows[index] {
+                        PreparedU32Segment::Window {
+                            buffer,
+                            vertex_offset,
+                            count,
+                        } => {
+                            context.IASetVertexBuffers(
+                                0,
+                                1,
+                                Some(&Some(vertex.clone())),
+                                Some(&stride),
+                                Some(vertex_offset),
+                            );
+                            context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
+                            context.DrawIndexed(*count, 0, 0);
+                        }
+                        PreparedU32Segment::Gather { buffer, .. } => {
+                            context.IASetVertexBuffers(
+                                0,
+                                1,
+                                Some(&Some(buffer.clone())),
+                                Some(&stride),
+                                Some(&0),
+                            );
+                            context.Draw(3, 0);
+                        }
+                    });
+                }
             }
         }
         Ok(())
@@ -284,6 +290,37 @@ enum IndexDecision {
     Draw,
     Discard,
     Unsupported,
+}
+
+#[derive(Debug)]
+enum IndexPlan {
+    NativeU16,
+    Rewritten(Vec<U32Segment>),
+}
+
+fn plan_u16_draw(
+    read: impl Fn(usize) -> u16,
+    count: usize,
+    base_vertex: i32,
+    max_index: u16,
+    vertex_offset: u32,
+    vertex_layout: (u64, u32, u32),
+    max_vertices: u32,
+) -> Result<Option<IndexPlan>> {
+    match classify_indices((0..count).map(&read), base_vertex, max_index, vertex_layout) {
+        IndexDecision::Draw => Ok(Some(IndexPlan::NativeU16)),
+        IndexDecision::Discard => Ok(None),
+        IndexDecision::Unsupported => plan_u32_windows(
+            |index| u32::from(read(index)),
+            count,
+            base_vertex,
+            max_index,
+            vertex_offset,
+            vertex_layout,
+            max_vertices,
+        )
+        .map(|plan| plan.map(IndexPlan::Rewritten)),
+    }
 }
 
 fn classify_indices(
@@ -511,9 +548,57 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::{
-        classify_indices, classify_u32_indices, for_each_window, plan_u32_windows,
-        rebased_vertex_offset, IndexDecision, U32Decision, U32Segment,
+        classify_indices, classify_u32_indices, for_each_window, plan_u16_draw, plan_u32_windows,
+        rebased_vertex_offset, IndexDecision, IndexPlan, U32Decision, U32Segment,
     };
+
+    #[test]
+    fn u16_rewrites_only_when_native_indices_exceed_fl9_limits() {
+        let layout = (70000 * 8, 8, 8);
+        let plan = |indices: &[u16], base, offset, layout| {
+            plan_u16_draw(
+                |i| indices[i],
+                indices.len(),
+                base,
+                65534,
+                offset,
+                layout,
+                196605,
+            )
+        };
+        assert!(matches!(
+            plan(&[0, 1, 2], 0, 8, layout).unwrap(),
+            Some(IndexPlan::NativeU16)
+        ));
+        let Some(IndexPlan::Rewritten(segments)) =
+            plan(&[65533, 65534, 65535], -65533, 8, layout).unwrap()
+        else {
+            panic!("expected rebased u16")
+        };
+        let U32Segment::Window(window) = &segments[0] else {
+            panic!("expected index window")
+        };
+        assert_eq!(window.vertex_offset, 8);
+        assert_eq!(window.data, [0, 0, 1, 0, 2, 0, 0, 0]);
+        let Some(IndexPlan::Rewritten(segments)) = plan(&[0, 1, 2], 65535, 8, layout).unwrap()
+        else {
+            panic!("expected shifted u16")
+        };
+        let U32Segment::Window(window) = &segments[0] else {
+            panic!("expected index window")
+        };
+        assert_eq!(window.vertex_offset, 8 + 65535 * 8);
+        let Some(IndexPlan::Rewritten(segments)) = plan(&[0, 1, 65535], 0, 8, layout).unwrap()
+        else {
+            panic!("expected gathered u16")
+        };
+        assert!(matches!(segments[0], U32Segment::Gather(_)));
+        assert!(plan(&[65535, 0, 1], -1, 8, layout).unwrap().is_none());
+        assert!(plan(&[0, 1, 2, 0, 1, 65535], 0, 8, (100 * 8, 8, 8))
+            .unwrap()
+            .is_none());
+        assert!(plan(&[0, 1, 2], 65535, u32::MAX - 3, layout).is_err());
+    }
 
     #[test]
     fn indexed_instance_windows_remain_in_primitive_order() {

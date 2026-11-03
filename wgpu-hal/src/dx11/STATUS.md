@@ -36,12 +36,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
 - Direct and indexed instancing repeat native draws in instance order when the
-  shader has no instance-dependent inputs; nonzero first instance remains
-  unavailable. General instancing is not advertised.
+  shader has no instance-dependent inputs. Nonzero first instance is ignored
+  within this subset; general instancing is not advertised.
 - Restricted indexed draws support signed base vertices and validate GPU index
-  contents at replay. Uint32 triangle lists convert to ordered native 16-bit
-  windows, with wide triangles gathered through GPU vertex-buffer copies;
-  out-of-bounds vertex fetches discard the whole draw. Staging and scratch
+  contents at replay. Uint32 triangle lists and Uint16 values beyond native
+  limits convert to ordered native 16-bit windows, with wide triangles gathered
+  through GPU vertex-buffer copies. Out-of-bounds vertex fetches discard the
+  whole draw. Staging and scratch
   allocation can stall the CPU; this is not a full public draw contract.
 - An original two-texture overlay shader passes checked FL9_1 GPU readback
   with alpha and inversion blend states; its surface diagnostic also passed

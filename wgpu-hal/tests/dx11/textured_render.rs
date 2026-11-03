@@ -1892,7 +1892,7 @@ fn sampled_triangle_variant(
             );
             crate::CommandEncoder::set_index_buffer(
                 &mut encoder,
-                crate::BufferBinding::new_unchecked(index, 2, None),
+                crate::BufferBinding::new_unchecked(index, 3, None),
                 wgt::IndexFormat::Uint16,
             );
             crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 0, 1, 1);

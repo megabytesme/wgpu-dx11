@@ -51,7 +51,9 @@ The strict depth-render test also checks zero, one and two direct instances and
 an overlapping blend case across the native primitive-count boundary. The
 expected 64-pixel outputs distinguish instance order from batch order.
 The indexed test also covers u16 chunk and u32 window ordering across instances,
-including whole-draw out-of-bounds handling.
+including nonzero first instance and whole-draw out-of-bounds handling. It
+checks GPU-written u16 values that require gather or window translation and
+verifies that a later native draw restores its vertex binding.
 
 Read the printed result, not just libtest's final line:
 

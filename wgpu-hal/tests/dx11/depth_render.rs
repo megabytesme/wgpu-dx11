@@ -935,7 +935,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         encoder.set_render_pipeline(&pipeline);
         encoder.set_bind_group(&layout, 0, &group, &[]);
         encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
-        encoder.draw(0, 3, 1, 2);
+        encoder.draw(0, 1000, 1, 2);
         encoder.end_render_pass();
         assert!(encoder.end_encoding().is_err());
         encoder.begin_encoding(None).unwrap();

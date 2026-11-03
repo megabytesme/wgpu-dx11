@@ -574,3 +574,17 @@ destroyed too early; isolating the descriptor fixed it. The strict private suite
 then passed 180 tests, with two filtered; older tests may skip internally.
 Independent review found no concrete defect. The public indexed fixture and
 HAL Clippy passed; Clippy retained ten existing warnings.
+
+Within the restricted instancing subset, nonzero first-instance values are now
+accepted without narrowing arithmetic because no selected shader or vertex
+input can observe them. Strict GPU tests covered first-instance 0, 7 and
+u32::MAX with direct and indexed draws. Uint16 draws that exceed FL9 native
+index limits now use the same validated windows and GPU gather as Uint32 while
+the native fast path remains for supported values. GPU readback verified a
+65535 gather, negative- and positive-base windows, and restoration for a
+subsequent native draw. The first full-suite run exposed five obsolete tests
+that expected nonzero first instance to fail; their negative coverage was
+changed to invalid ranges/alignment. The rerun passed 181 tests, two filtered;
+older hardware tests can skip internally. Independent review found no concrete
+defect in the translation or instance semantics. The public indexed fixture
+passed again, and HAL Clippy passed with ten existing warnings.
