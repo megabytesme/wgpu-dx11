@@ -59,6 +59,26 @@ fn hal_encoder_accepts_empty_scissor() -> windows::core::Result<()> {
 }
 
 #[test]
+fn hal_encoder_accepts_zero_width_viewport() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 7, None)
+}
+
+#[test]
+fn hal_encoder_accepts_zero_height_viewport() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 8, None)
+}
+
+#[test]
+fn hal_encoder_restores_nonempty_viewport() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 9, None)
+}
+
+#[test]
+fn hal_encoder_draws_indices_with_zero_viewport() -> windows::core::Result<()> {
+    sampled_triangle(true, false, false, false, false, 10, None)
+}
+
+#[test]
 fn hal_encoder_splits_large_level_9_triangle_draw() -> windows::core::Result<()> {
     sampled_triangle(true, false, false, false, false, 5, None)
 }
@@ -1558,7 +1578,7 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     native.write_byte_buffer(&buffer, 0, &bytes)?;
-    let index_buffer = if effect == 6 || variant == 20 {
+    let index_buffer = if effect == 6 || effect == 10 || variant == 20 {
         let index = unsafe {
             device
                 .create_buffer(&crate::BufferDescriptor {
@@ -1879,6 +1899,34 @@ fn sampled_triangle_variant(
             crate::CommandEncoder::end_render_pass(&mut encoder);
             assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
         }
+        if effect == 7 {
+            for rect in [
+                crate::Rect {
+                    x: -1.,
+                    y: 0.,
+                    w: 1.,
+                    h: 1.,
+                },
+                crate::Rect {
+                    x: 0.,
+                    y: 0.,
+                    w: -1.,
+                    h: 1.,
+                },
+                crate::Rect {
+                    x: f32::NAN,
+                    y: 0.,
+                    w: 1.,
+                    h: 1.,
+                },
+            ] {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_viewport(&mut encoder, &rect, 0.0..1.0);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            }
+        }
         crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
         crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
         if effect == 3 || effect == 4 {
@@ -1899,6 +1947,40 @@ fn sampled_triangle_variant(
             crate::BufferBinding::new_unchecked(&buffer, 0, None),
         );
         crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+        if (7..=10).contains(&effect) {
+            crate::CommandEncoder::set_viewport(
+                &mut encoder,
+                &crate::Rect {
+                    x: 0.,
+                    y: 0.,
+                    w: if effect == 8 { 8. } else { 0. },
+                    h: if effect == 8 { 0. } else { 8. },
+                },
+                0.0..1.0,
+            );
+            if effect == 9 {
+                crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+                crate::CommandEncoder::set_viewport(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 0.,
+                        y: 0.,
+                        w: 8.,
+                        h: 8.,
+                    },
+                    0.0..1.0,
+                );
+                crate::CommandEncoder::set_scissor_rect(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 4,
+                        y: 0,
+                        w: 4,
+                        h: 8,
+                    },
+                );
+            }
+        }
         if variant == 14 || variant == 16 || variant == 21 || variant == 22 || variant == 38 {
             crate::CommandEncoder::set_scissor_rect(
                 &mut encoder,
@@ -2046,7 +2128,7 @@ fn sampled_triangle_variant(
         assert_eq!(actual, &[0, 255, 255, 255]);
     } else if effect == 2 {
         assert_eq!(actual, &[0, 0, 0, 255]);
-    } else if effect == 4 {
+    } else if matches!(effect, 4 | 7 | 8 | 10) {
         assert_eq!(actual, &[0, 0, 255, 255]);
     } else if invert {
         assert_eq!(
@@ -2063,6 +2145,17 @@ fn sampled_triangle_variant(
     }
     if effect == 3 {
         assert_eq!(&pixels[..4], &[0, 0, 255, 255]);
+    }
+    if matches!(effect, 7 | 8 | 10) {
+        assert!(pixels
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 0, 255, 255]));
+    }
+    if effect == 9 {
+        for row in pixels.chunks_exact(8 * 4) {
+            assert!(row[..4 * 4].chunks_exact(4).all(|p| p == [0, 0, 255, 255]));
+            assert!(row[4 * 4..].chunks_exact(4).all(|p| p == [0, 255, 0, 255]));
+        }
     }
     if let Some(index) = index_buffer.as_ref() {
         // Recording must not snapshot the data: GPU writes before submission

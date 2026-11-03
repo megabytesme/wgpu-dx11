@@ -678,8 +678,8 @@ impl crate::CommandEncoder for CommandEncoder {
         .all(|v| v.is_finite())
             || rect.x < 0.
             || rect.y < 0.
-            || rect.w <= 0.
-            || rect.h <= 0.
+            || rect.w < 0.
+            || rect.h < 0.
             || rect.x + rect.w > render.extent[0] as f32
             || rect.y + rect.h > render.extent[1] as f32
             || depth_range.start < 0.

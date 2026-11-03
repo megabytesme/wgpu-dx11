@@ -17,8 +17,9 @@ below is met. This plan does not claim WebGPU conformance.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats, multiple groups and dynamic
    uniform offsets. Each feature needs positive GPU and negative tests.
-4. Resolve core/HAL contract mismatches before exposure: viewport cases can
-   reach rejecting HAL paths; audit mapping/device-loss panics. Empty compute
+4. Resolve core/HAL contract mismatches before exposure: negative and
+   out-of-target viewport cases can reach rejecting HAL paths; zero-sized
+   viewports are tested. Audit mapping/device-loss panics. Empty compute
    passes and unused blend constants are handled; compute dispatch remains
    unavailable. The downlevel combined-index usage rule has been corrected.
    Handle depth-only initialization passes and read-only depth hazards.

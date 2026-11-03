@@ -114,3 +114,17 @@ pipeline changes. The strict private suite passed 130 tests; older tests may
 still skip internally. The zero-adapter core test and targeted Clippy passed,
 with ten existing Clippy warnings. Independent review found no issue in this
 restricted path. Public core execution has not been tested through D3D11.
+The encoder change was checkpointed as `26825d96e`.
+
+Viewport dimensions of zero are now accepted. Four strict forced-FL9_1 hardware
+tests verified zero width and height preserve all 64 clear pixels, an indexed
+draw also preserves them, and restoring the viewport with a half-width scissor
+produces 32 clear and 32 drawn pixels. Negative coordinates and non-finite
+values remain rejected. The full private suite passed 134 tests before adding
+the additional negative viewport checks; all four focused tests passed again
+afterward. Targeted Clippy passed with ten existing warnings and the core
+zero-adapter test passed. Microsoft documents both zero dimensions and the
+FL9_x negative-origin failure in
+<https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_viewport>.
+Negative origins and rectangles extending beyond the target remain unresolved
+public integration blockers; historical FL9 drivers have not been tested.
