@@ -401,8 +401,18 @@ stencil depth-fail Replace is remapped to a native pass write. The focused stric
 GPU test passed with the preserved 32 green/32 blue result. This validates the
 guard against the effective native operations, not only the input descriptor.
 
-Latest checkpoint: `f2e746d83` (`dx11: test remapped stencil writes on
-read-only depth`). Continue by auditing core-recordable render-pass usages,
-especially query and resolve combinations. Keep public D3D11 adapter and HWND
-surface exposure disabled until broader truthful capabilities and presentation
-reentrancy are resolved.
+The render-pass audit confirmed the fixture's reported capabilities prevent
+core from recording the HAL's unsupported query, resolve, multisample and
+multiview commands. Core rejects occlusion/timestamp query creation and now
+has a 4x RGBA8 negative case; the D3D11 HAL independently rejects unsupported
+render-pass descriptors. Fixture-enabled core tests passed 70/70 in strict
+hardware mode, and core Clippy passed without warnings. Ordinary D3D11 adapter
+enumeration remains empty.
+
+Latest production checkpoint: `5ea3045f9` (read-only stencil guard); latest
+core validation checkpoint: `8d8877e7a` (reject FL9_1 multisample textures).
+The remapped stencil-write regression is checkpointed as `f2e746d83`. Next,
+exercise a depth-only render pass through the unsafe core fixture and continue
+the device-loss/render-pass audit. Keep public adapter and HWND surface
+exposure disabled until capability truthfulness and presentation reentrancy are
+resolved.

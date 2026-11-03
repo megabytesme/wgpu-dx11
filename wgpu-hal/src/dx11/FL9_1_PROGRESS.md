@@ -1648,3 +1648,28 @@ again, while its preserved-depth image remained 32 green/32 blue. Clippy passed
 with the same ten existing warnings; `rustfmt --edition 2021 --check` and
 `git diff --check` passed. No production behavior changed in this follow-up.
 Checkpoint: `f2e746d83` (`dx11: test remapped stencil writes on read-only depth`).
+
+The render-pass audit found the unsupported query, resolve, multisample and
+multiview paths are blocked at both relevant boundaries. The D3D11 HAL rejects
+query commands, resolve targets, multisampled passes, multiview, multiple color
+targets and pass query descriptors. The controlled core fixture exposes no
+occlusion downlevel flag, no timestamp feature, no multisample format flags and
+one array layer; it already asserts that query creation fails before HAL use.
+A new 4x RGBA8 texture request asserts core returns
+`InvalidMultisampledFormat`, which also prevents a legal resolve source from
+being formed. No capability was enabled to make these tests pass.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the fixture-enabled core library suite
+passed 70/70 tests on the physical RTX 3090 Ti forced to FL9_1; this includes
+real offscreen GPU work, active stencil through core, query validation,
+zero-adapter isolation and the new CPU-side multisample rejection. Core
+Clippy passed without warnings. Ordinary HAL enumeration remained empty. The
+4x case does not itself execute GPU work, and the HAL's negative resolve and
+multiview branches are structurally guarded but not independently invoked from
+core because the adapter contract does not expose their prerequisites.
+
+Next: exercise the already-supported depth-only pass through the controlled
+core fixture, then continue the broader render-pass and device-loss audit.
+Public adapter/surface exposure remains gated by truthful full validation and
+DXGI reentrancy.
+Checkpoint: `8d8877e7a` (`core: reject unsupported FL9_1 multisample textures`).
