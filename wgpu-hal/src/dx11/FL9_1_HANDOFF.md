@@ -137,6 +137,9 @@ in FL9_1_PROGRESS.md. No public D3D11 example or visual display test ran.
 Core's zero inter-stage limit panic was reproduced in a public Noop test and
 fixed with signed deduction arithmetic. The expanded focused test and the
 fixture-enabled core suite (68 tests) passed; see the progress log for details.
+The controlled core fixture has also rendered a sampled texture with depth on
+the forced-FL9_1 RTX: readback matched 32 red and 32 green pixels. This is an
+unsafe, feature-gated fixture rather than ordinary public adapter enumeration.
 
 Known costs include per-group scratch allocation, per-draw staging and mapping
 of uniform ranges, and buffer-texture
@@ -148,5 +151,13 @@ Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
 sound presentation synchronization design and core/HAL contract coverage while
 continuing verified FL9_1 increments.
+DXGI may synchronously call a window procedure during presentation. A private
+application can avoid the deadlock only by keeping its UI callback nonblocking
+and queueing graphics work; that cooperation cannot be assumed for arbitrary
+public callers. A worker or recursive mutex alone does not establish safety.
+The documented FL9_1 minimum D3D9 caps do not establish depth write-mask support
+on every historical device; the existing no-write path is GPU-tested on the
+RTX but its historical portability remains unverified. A zero-write depth state
+also does not make simultaneous depth sampling safe without a read-only DSV.
 Only begin higher feature levels after the requested FL9_1 contract is met;
 retain the shared capability-driven architecture when doing so.

@@ -420,3 +420,15 @@ the fragment error-format test. A first core test build caught missing alloc
 imports in the new unit test; these were added and the suite then passed.
 Fixture-enabled core Clippy passed. The public suite reported Vulkan loader
 warnings about an absent OBS layer manifest; these did not fail tests.
+
+The controlled core fixture now uploads a two-color texture and renders two
+overlapping textured shapes with a D24S8 depth attachment through wgpu-core.
+On the RTX 3090 Ti at requested and actual FL9_1, strict readback matched all
+64 pixels: 32 red pixels where the near geometry occluded the far draw, and 32
+green pixels where the far draw remained visible. The first focused run found
+an obsolete assertion about the fixture's format flags; after updating that
+assertion, the test passed. The fixture's queried format flags and narrow
+test limits do not establish a safe general public adapter contract. The
+fixture-enabled core suite passed 68 tests and the feature-off zero-adapter
+test passed. Independent review confirmed the two draws and their readback
+distinguish missing sampling, missing depth testing and missing depth writes.

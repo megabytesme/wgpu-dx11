@@ -76,10 +76,29 @@ impl crate::Adapter for Adapter {
         match self.inner {
             #[cfg(feature = "dx11-test-fixture")]
             AdapterInner::Fixture(ref native) => {
-                let supported = super::capabilities::Capabilities::query(native)
+                use super::capabilities::{Capabilities, Query};
+                use windows::Win32::Graphics::Direct3D11::{
+                    D3D11_FORMAT_SUPPORT_DEPTH_STENCIL, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+                };
+                let caps = Capabilities::query(native);
+                if format == wgt::TextureFormat::Depth24PlusStencil8 {
+                    let required = (D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0
+                        | D3D11_FORMAT_SUPPORT_TEXTURE2D.0)
+                        as u32;
+                    return if matches!(caps.driver.depth24_stencil8, Query::Value(bits) if bits & required == required)
+                    {
+                        crate::TextureFormatCapabilities::DEPTH_STENCIL_ATTACHMENT
+                    } else {
+                        crate::TextureFormatCapabilities::empty()
+                    };
+                }
+                let supported = caps
                     .check_private_texture_2d(
                         format,
-                        wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                        wgt::TextureUses::COLOR_TARGET
+                            | wgt::TextureUses::COPY_SRC
+                            | wgt::TextureUses::COPY_DST
+                            | wgt::TextureUses::RESOURCE,
                         [8, 8],
                         1,
                         1,
@@ -89,6 +108,9 @@ impl crate::Adapter for Adapter {
                 if supported {
                     crate::TextureFormatCapabilities::COLOR_ATTACHMENT
                         | crate::TextureFormatCapabilities::COPY_SRC
+                        | crate::TextureFormatCapabilities::COPY_DST
+                        | crate::TextureFormatCapabilities::SAMPLED
+                        | crate::TextureFormatCapabilities::SAMPLED_LINEAR
                 } else {
                     crate::TextureFormatCapabilities::empty()
                 }

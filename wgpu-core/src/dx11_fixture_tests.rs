@@ -40,22 +40,22 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_texture_dimension_2d: 8,
         max_texture_dimension_3d: 0,
         max_texture_array_layers: 1,
-        max_bind_groups: 0,
-        max_bind_groups_plus_vertex_buffers: 1,
-        max_bindings_per_bind_group: 0,
+        max_bind_groups: 1,
+        max_bind_groups_plus_vertex_buffers: 2,
+        max_bindings_per_bind_group: 64,
         max_dynamic_uniform_buffers_per_pipeline_layout: 0,
-        max_sampled_textures_per_shader_stage: 0,
-        max_samplers_per_shader_stage: 0,
+        max_sampled_textures_per_shader_stage: 1,
+        max_samplers_per_shader_stage: 1,
         max_uniform_buffers_per_shader_stage: 0,
         max_uniform_buffer_binding_size: 0,
         max_vertex_buffers: 1,
-        max_vertex_attributes: 1,
-        max_vertex_buffer_array_stride: 8,
+        max_vertex_attributes: 2,
+        max_vertex_buffer_array_stride: 20,
         max_inter_stage_shader_variables: 1,
         max_color_attachments: 1,
         max_color_attachment_bytes_per_sample: 8,
         max_buffer_size: 512 << 10,
-        max_non_sampler_bindings: 0,
+        max_non_sampler_bindings: 1,
         max_buffers_and_acceleration_structures_per_shader_stage: 1,
         ..wgt::Limits::downlevel_webgl2_defaults()
     };
@@ -72,18 +72,37 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba8Unorm)
     };
     if !rgba_caps.contains(
-        hal::TextureFormatCapabilities::COLOR_ATTACHMENT | hal::TextureFormatCapabilities::COPY_SRC,
+        hal::TextureFormatCapabilities::COLOR_ATTACHMENT
+            | hal::TextureFormatCapabilities::COPY_SRC
+            | hal::TextureFormatCapabilities::COPY_DST
+            | hal::TextureFormatCapabilities::SAMPLED
+            | hal::TextureFormatCapabilities::SAMPLED_LINEAR,
     ) {
         assert!(
             !required,
-            "strict mode requires RGBA8 render and copy support"
+            "strict mode requires RGBA8 rendering, copy and filtered sampling support"
         );
-        std::println!("SKIP: required RGBA8 format support unavailable");
+        std::println!("SKIP: required RGBA8 render, copy or sampling support unavailable");
+        return;
+    }
+    let depth_caps = unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Depth24PlusStencil8)
+    };
+    if !depth_caps.contains(hal::TextureFormatCapabilities::DEPTH_STENCIL_ATTACHMENT) {
+        assert!(
+            !required,
+            "strict mode requires depth24/stencil8 attachment support"
+        );
+        std::println!("SKIP: depth24/stencil8 attachment support unavailable");
         return;
     }
     assert_eq!(
         rgba_caps,
-        hal::TextureFormatCapabilities::COLOR_ATTACHMENT | hal::TextureFormatCapabilities::COPY_SRC
+        hal::TextureFormatCapabilities::COLOR_ATTACHMENT
+            | hal::TextureFormatCapabilities::COPY_SRC
+            | hal::TextureFormatCapabilities::COPY_DST
+            | hal::TextureFormatCapabilities::SAMPLED
+            | hal::TextureFormatCapabilities::SAMPLED_LINEAR
     );
     assert!(unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bgra8Unorm)
@@ -209,6 +228,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.render_pipelines.is_empty());
     assert!(hub.pipeline_layouts.is_empty());
     assert!(hub.shader_modules.is_empty());
+    assert!(hub.bind_groups.is_empty());
+    assert!(hub.bind_group_layouts.is_empty());
+    assert!(hub.samplers.is_empty());
     assert!(hub.queues.is_empty());
     assert!(hub.devices.is_empty());
     assert!(hub.adapters.is_empty());
@@ -239,7 +261,130 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
     let (view, error) =
         global.texture_create_view(target, &resource::TextureViewDescriptor::default(), None);
     assert!(error.is_none(), "texture view creation: {error:?}");
-    let source = "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }";
+    let (depth, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Depth24PlusStencil8,
+            usage: wgt::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(error.is_none(), "depth texture creation: {error:?}");
+    let (depth_view, error) =
+        global.texture_create_view(depth, &resource::TextureViewDescriptor::default(), None);
+    assert!(error.is_none(), "depth view creation: {error:?}");
+    let sample_extent = wgt::Extent3d {
+        width: 2,
+        height: 1,
+        depth_or_array_layers: 1,
+    };
+    let (sampled, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: sample_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(error.is_none(), "sampled texture creation: {error:?}");
+    global
+        .queue_write_texture(
+            queue,
+            &wgt::TexelCopyTextureInfo {
+                texture: sampled,
+                mip_level: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &[255, 0, 0, 255, 0, 255, 0, 255],
+            &wgt::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: None,
+                rows_per_image: None,
+            },
+            &sample_extent,
+        )
+        .expect("sampled texture upload");
+    let (sample_view, error) =
+        global.texture_create_view(sampled, &resource::TextureViewDescriptor::default(), None);
+    assert!(error.is_none(), "sampled texture view: {error:?}");
+    let (sampler, error) = global.device_create_sampler(
+        device,
+        &resource::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Nearest,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 32.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        },
+        None,
+    );
+    assert!(error.is_none(), "sampler creation: {error:?}");
+    let group_entries = [
+        wgt::BindGroupLayoutEntry {
+            binding: 7,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgt::BindGroupLayoutEntry {
+            binding: 42,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+            count: None,
+        },
+    ];
+    let (group_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&group_entries),
+        },
+        None,
+    );
+    assert!(error.is_none(), "bind group layout: {error:?}");
+    let group_resources = [
+        binding_model::BindGroupEntry {
+            binding: 7,
+            resource: binding_model::BindingResource::TextureView(sample_view),
+        },
+        binding_model::BindGroupEntry {
+            binding: 42,
+            resource: binding_model::BindingResource::Sampler(sampler),
+        },
+    ];
+    let (group, error) = global.device_create_bind_group(
+        device,
+        &binding_model::BindGroupDescriptor {
+            label: None,
+            layout: group_layout,
+            entries: Cow::Borrowed(&group_resources),
+        },
+        None,
+    );
+    assert!(error.is_none(), "bind group creation: {error:?}");
+    let source = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }";
     let (shader, error) = global.device_create_shader_module(
         device,
         &pipeline::ShaderModuleDescriptor {
@@ -254,19 +399,26 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
         device,
         &binding_model::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: Cow::Borrowed(&[]),
+            bind_group_layouts: Cow::Borrowed(&[Some(group_layout)]),
             immediate_size: 0,
         },
         None,
     );
     assert!(error.is_none(), "pipeline layout creation: {error:?}");
-    let attrs = [wgt::VertexAttribute {
-        format: wgt::VertexFormat::Float32x2,
-        offset: 0,
-        shader_location: 0,
-    }];
+    let attrs = [
+        wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        },
+        wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x2,
+            offset: 12,
+            shader_location: 1,
+        },
+    ];
     let buffers = [Some(pipeline::VertexBufferLayout {
-        array_stride: 8,
+        array_stride: 20,
         step_mode: wgt::VertexStepMode::Vertex,
         attributes: Cow::Borrowed(&attrs),
     })];
@@ -287,7 +439,13 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
                 buffers: Cow::Borrowed(&buffers),
             },
             primitive: wgt::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgt::DepthStencilState {
+                format: wgt::TextureFormat::Depth24PlusStencil8,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgt::CompareFunction::LessEqual),
+                stencil: wgt::StencilState::default(),
+                bias: wgt::DepthBiasState::default(),
+            }),
             multisample: wgt::MultisampleState::default(),
             fragment: Some(pipeline::FragmentState {
                 stage: stage("fs"),
@@ -303,17 +461,21 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
         device,
         &wgt::BufferDescriptor {
             label: None,
-            size: 24,
+            size: 180,
             usage: wgt::BufferUsages::VERTEX | wgt::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         },
         None,
     );
     assert!(error.is_none(), "vertex buffer creation: {error:?}");
-    let bytes: Vec<_> = [-1f32, -1., 3., -1., -1., 3.]
-        .into_iter()
-        .flat_map(f32::to_ne_bytes)
-        .collect();
+    let bytes: Vec<_> = [
+        -1f32, -1., 0.25, 0.25, 0.5, 0., -1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, 0., -1.,
+        0.25, 0.25, 0.5, 0., 1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, -1., -1., 0.75, 0.75,
+        0.5, 3., -1., 0.75, 0.75, 0.5, -1., 3., 0.75, 0.75, 0.5,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
@@ -349,7 +511,19 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
         &render::RenderPassDescriptor {
             label: None,
             color_attachments: Cow::Borrowed(&attachments),
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(render::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth: render::PassChannel {
+                    load_op: Some(wgt::LoadOp::Clear(Some(1.0))),
+                    store_op: Some(wgt::StoreOp::Store),
+                    read_only: false,
+                },
+                stencil: render::PassChannel {
+                    load_op: Some(wgt::LoadOp::Clear(Some(0))),
+                    store_op: Some(wgt::StoreOp::Store),
+                    read_only: false,
+                },
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
@@ -362,7 +536,11 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
     global
         .render_pass_set_vertex_buffer(&mut pass, 0, Some(vertices), 0, None)
         .unwrap();
-    global.render_pass_draw(&mut pass, 3, 1, 0, 0).unwrap();
+    global
+        .render_pass_set_bind_group(&mut pass, 0, Some(group), &[])
+        .unwrap();
+    global.render_pass_draw(&mut pass, 6, 1, 0, 0).unwrap();
+    global.render_pass_draw(&mut pass, 3, 1, 6, 0).unwrap();
     global.render_pass_end(&mut pass).unwrap();
     drop(pass);
     global
@@ -428,18 +606,31 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                &[255, 0, 0, 255],
+                if x < 4 {
+                    &[255, 0, 0, 255]
+                } else {
+                    &[0, 255, 0, 255]
+                },
                 "pixel ({x}, {y})"
             );
         }
     }
-    std::println!("PASS: core offscreen triangle GPU readback: 64/64 pixels [255, 0, 0, 255]");
+    std::println!(
+        "PASS: core textured depth test GPU readback: 32 red left pixels, 32 green right pixels"
+    );
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.render_pipeline_drop(pipeline_id);
     global.pipeline_layout_drop(layout);
     global.shader_module_drop(shader);
+    global.bind_group_drop(group);
+    global.bind_group_layout_drop(group_layout);
+    global.sampler_drop(sampler);
+    global.texture_view_drop(sample_view);
+    global.texture_drop(sampled);
+    global.texture_view_drop(depth_view);
+    global.texture_drop(depth);
     global.texture_view_drop(view);
     global.texture_drop(target);
     global.buffer_drop(vertices);
