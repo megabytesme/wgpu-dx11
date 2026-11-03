@@ -542,9 +542,17 @@ R8 render targets, copy-source/readback, mip chains and linear-filter visual
 validation remain unsupported or unverified. Full evidence and commands are
 in `FL9_1_PROGRESS.md`.
 
-The next bounded task is to investigate FL9_1-required R8G8_SNORM sampled
+The next bounded task is to investigate FL9_1-required R8G8B8A8_SNORM sampled
 textures and add only the one-mip upload/sample subset if its actual format
 queries and strict GPU output agree. Ordinary adapter enumeration remains
 disabled. Continue auditing public-core/HAL contract gaps and presentation
 reentrancy; do not infer historical-device support from the modern forced-level
 GPU.
+
+`881640796` completes the required R8G8_SNORM sampled/upload increment. Strict
+execution reported support mask `0x00021320`, uploaded padded signed data from
+a nonzero source offset and matched 80/80 pixels within one UNORM code value.
+The full strict private suite passed 309 tests (two filtered); core isolation,
+DX12 regression, build, lint and formatting checks passed. See the latest
+progress entry for the initial midpoint-rounding observation and its bounded
+test tolerance.

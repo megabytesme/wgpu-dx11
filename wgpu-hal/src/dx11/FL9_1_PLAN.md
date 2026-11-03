@@ -91,9 +91,10 @@ Run only one heavyweight Cargo process at a time with bounded build jobs.
 Record exact commands, hardware results, skips, failures and commit hashes in
 FL9_1_PROGRESS.md. Maintain FL9_1_HANDOFF.md for interruption and final audit.
 
-Latest completed resource increment: R8_UNORM one-mip sampled/upload support is
-checkpointed as `268431ec3`, with strict FL9_1 GPU readback. The next selected
-increment is to verify the required FL9_1 R8G8_SNORM format and implement only
-the queried upload/sample path if the HAL's format and shader semantics support
-it correctly. Continue the public contract and presentation audits in parallel
-with the ordered work above; public adapter exposure remains gated.
+Latest completed sampled-format increments: R8_UNORM is checkpointed as
+`268431ec3`, and R8G8_SNORM as `881640796`. Both use queried, single-mip
+sampled/upload paths and strict FL9_1 GPU readback. Next investigate required
+R8G8B8A8_SNORM and implement only the same narrow path if its query, signed
+sampling semantics and upload layout verify correctly. Continue the public
+contract and presentation audits in parallel with the ordered work above;
+public adapter exposure remains gated.
