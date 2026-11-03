@@ -12,10 +12,10 @@ below is met. This plan does not claim WebGPU conformance.
    indexed vertex constant array of 255 float4s and reject 256 at index 256;
    pixel FXC accepts 32 and rejects 33 at register 32. Forced-FL9_1 GPU
    execution now verifies that WGSL access to vertex constant c254 changes
-   rendered geometry. Runtime integer indexing remains rejected, so dynamic
-   near-limit indexing is still unavailable. Continue investigating matrix,
-   array and nested-structure layouts and FXC instruction pressure with checked
-   shader translation.
+   geometry and pixel constant c31 changes fragment color. Runtime integer
+   indexing remains rejected, so dynamic near-limit indexing is still
+   unavailable. Continue investigating matrix, array and nested-structure
+   layouts and FXC instruction pressure with checked shader translation.
 2. Implement depth/stencil textures, views, initialization, render-pass
    attachments and depth state incrementally. Verify overlapping geometry in
    both draw orders on forced FL9_1, and independent load/clear/store behavior.
