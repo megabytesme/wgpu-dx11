@@ -192,9 +192,9 @@ arithmetic precision on historical FL9 hardware, nor a public adapter contract.
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_read_only_depth_preserves_depth_and_rejects_writes -- --nocapture` checks
 the private read-only D24S8 path. It validates depth preservation, rejects
-depth-writing and stencil-writing pipeline transitions plus invalid pass
-operations, then exercises READ→WRITE→READ across submissions after caller
-resource destruction. This
+depth-writing, stencil-writing and depth-Never-remapped stencil-write pipeline
+transitions plus invalid pass operations, then exercises READ→WRITE→READ
+across submissions after caller resource destruction. This
 does not establish sampled-depth alias support or a public read-only flag.
 
 For dynamic uniform offsets, run `cargo test -p wgpu-hal --lib

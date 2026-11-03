@@ -1642,7 +1642,7 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let make_pipeline = |write, stencil: &wgt::StencilState| unsafe {
+    let make_pipeline = |write, compare, stencil: &wgt::StencilState| unsafe {
         device
             .create_render_pipeline(&crate::RenderPipelineDescriptor {
                 label: None,
@@ -1655,7 +1655,7 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
                 depth_stencil: Some(wgt::DepthStencilState {
                     format: wgt::TextureFormat::Depth24PlusStencil8,
                     depth_write_enabled: Some(write),
-                    depth_compare: Some(wgt::CompareFunction::LessEqual),
+                    depth_compare: Some(compare),
                     stencil: stencil.clone(),
                     bias: wgt::DepthBiasState::default(),
                 }),
@@ -1667,21 +1667,46 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
             })
             .unwrap()
     };
-    let read_pipeline = make_pipeline(false, &wgt::StencilState::default());
-    let write_pipeline = make_pipeline(true, &wgt::StencilState::default());
+    let read_pipeline = make_pipeline(
+        false,
+        wgt::CompareFunction::LessEqual,
+        &wgt::StencilState::default(),
+    );
+    let write_pipeline = make_pipeline(
+        true,
+        wgt::CompareFunction::LessEqual,
+        &wgt::StencilState::default(),
+    );
     let stencil_face = wgt::StencilFaceState {
         compare: wgt::CompareFunction::Always,
         pass_op: wgt::StencilOperation::Replace,
         ..wgt::StencilFaceState::IGNORE
     };
-    let stencil_write_pipeline = make_pipeline(
-        false,
-        &wgt::StencilState {
-            front: stencil_face,
-            back: stencil_face,
-            read_mask: 0xff,
-            write_mask: 0xff,
+    let stencil_write_state = wgt::StencilState {
+        front: stencil_face,
+        back: stencil_face,
+        read_mask: 0xff,
+        write_mask: 0xff,
+    };
+    let stencil_write_pipeline =
+        make_pipeline(false, wgt::CompareFunction::LessEqual, &stencil_write_state);
+    let stencil_depth_fail_write_state = wgt::StencilState {
+        front: wgt::StencilFaceState {
+            pass_op: wgt::StencilOperation::Keep,
+            depth_fail_op: wgt::StencilOperation::Replace,
+            ..stencil_face
         },
+        back: wgt::StencilFaceState {
+            pass_op: wgt::StencilOperation::Keep,
+            depth_fail_op: wgt::StencilOperation::Replace,
+            ..stencil_face
+        },
+        ..stencil_write_state.clone()
+    };
+    let stencil_depth_never_pipeline = make_pipeline(
+        false,
+        wgt::CompareFunction::Never,
+        &stencil_depth_fail_write_state,
     );
     let vertices = unsafe {
         device
@@ -1831,6 +1856,14 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
             encoder.end_encoding().is_err(),
             "stencil-writing pipeline on read-only attachment"
         );
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&read_pass).unwrap();
+        encoder.set_render_pipeline(&stencil_depth_never_pipeline);
+        encoder.end_render_pass();
+        assert!(
+            encoder.end_encoding().is_err(),
+            "depth-Never remapped stencil write on read-only attachment"
+        );
         let load_store = crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE;
         for (usage, depth_ops, stencil_ops) in [
             (
@@ -1924,6 +1957,7 @@ fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::R
         device.destroy_render_pipeline(read_pipeline);
         device.destroy_render_pipeline(write_pipeline);
         device.destroy_render_pipeline(stencil_write_pipeline);
+        device.destroy_render_pipeline(stencil_depth_never_pipeline);
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
         queue.submit(&[&write_commands], &[], (&fence, 2)).unwrap();
