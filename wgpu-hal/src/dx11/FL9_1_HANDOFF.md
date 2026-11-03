@@ -577,7 +577,17 @@ before a readability-only validation refactor, and the focused BC1 tests passed
 3/3 after it. The HAL build, core zero-adapter test, DX12 pipeline tests,
 Clippy (ten pre-existing warnings), formatting and diff checks passed.
 
-Next, test whether the unsafe core fixture can cover BC1 creation, queue upload,
-binding, rendering and readback without ordinary D3D11 adapter exposure. The
-fixture must report only the narrow per-format operations it tests. Continue
-keeping regular adapter enumeration disabled.
+`1e59db97a` extends the controlled core fixture through BC1 texture creation,
+queue upload, binding, sampling and mapped RGBA8 readback; the tested red/green
+regions matched all 64 pixels. The fixture reports only BC1 `SAMPLED | COPY_DST`
+and rejects all other BC formats at both HAL capability query and core texture
+creation. The strict fixture-enabled core library suite passed 70/70.
+
+`6b86270ec` changes the main fixture device creation to
+`Global::adapter_request_device`, which calls the fixture-gated HAL
+`Adapter::open`. The strict forced-FL9_1 core render fixture passed, including
+BC1. The regular HAL build also passed with the test-fixture feature disabled.
+The test still injects hand-chosen limits/features and therefore does not
+validate a production adapter capability report. Next audit and model that
+core/HAL boundary without enabling ordinary adapter enumeration or surface
+exposure.

@@ -96,8 +96,12 @@ Latest sampled-format increments: R8_UNORM (`268431ec3`), R8G8_SNORM
 use queried, single-mip sampled/upload paths and strict FL9_1 GPU readback.
 BC1 upload uses 4x4 blocks and 8-byte block rows, including padded pitches,
 nonzero source offsets and aligned partial updates. BC1 copy-source, render
-target, readback, sRGB and mip-chain uses remain unsupported. Next audit the
-controlled wgpu-core fixture and determine whether BC1 can be validated through
-core resource creation, queue upload and render recording without exposing an
-ordinary D3D11 adapter. Continue the public contract and presentation audits;
-public adapter exposure remains gated.
+target, readback, sRGB and mip-chain uses remain unsupported. The controlled
+core fixture now validates BC1 through texture creation, queue upload, binding,
+rendering and readback, and creates its device via `adapter_request_device`
+and the test-only HAL `Adapter::open`. It still injects hand-selected limits
+and does not represent the public adapter contract. Next audit the public
+HAL/core adapter capability boundary and build a truthful, testable capability
+snapshot without enabling ordinary DXGI enumeration. Keep the public adapter
+and HWND surface gates closed until every core-legal operation in that snapshot
+is implemented or rejected.

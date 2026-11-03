@@ -2216,8 +2216,27 @@ filtered before the final readability-only refactor of texture-format
 validation. The HAL build passed; the focused core isolation test passed 1/1;
 DX12 pipeline descriptor tests passed 2/2; formatting and diff checks passed.
 Clippy passed with ten existing warnings, unchanged from the prior checkpoint.
-Ordinary public D3D11 enumeration remains empty. Next, extend the controlled
-core fixture to exercise BC1 texture creation, queue upload, binding, rendering
-and readback while preserving empty normal adapter enumeration. If fixture
-capability plumbing cannot model this narrowly without pretending the fixture
-is a general adapter, retain the test-only gate and document the boundary.
+Ordinary public D3D11 enumeration remains empty. The strict fixture-enabled
+core library suite subsequently passed 70/70 with BC1 included, and the
+focused core fixture matched all 64 pixels for `Bc1` on the forced-FL9_1 RTX.
+It creates the BC1 texture and view, uploads
+compressed blocks through `Global::queue_write_texture`, binds them, renders,
+and maps readback. The fixture reports only `SAMPLED | COPY_DST` for BC1 and
+rejects every other BC format at both HAL capability query and core texture
+creation.
+
+Checkpoint `1e59db97a` adds the test-only BC1 capability and core render case.
+Checkpoint `6b86270ec` routes the main core fixture through
+`Global::adapter_request_device` and the fixture-gated HAL `Adapter::open`
+instead of creating a device directly from HAL. The strict core suite still
+passed 70/70. The plain D3D11 HAL build and focused fixture pass; targeted
+Clippy passes with ten existing HAL warnings. Ordinary DXGI/HAL adapter
+enumeration remains empty. The fixture still injects manually constrained
+limits and is not evidence that a truthful public adapter report exists.
+
+Next audit the core/HAL adapter capability boundary and derive a small,
+accurate, testable FL9_1 report from the existing capability model without
+enabling ordinary enumeration. Identify every core-legal operation that such
+a report would permit but HAL rejects; implement narrow validation or keep
+that capability out of the report. Public adapter and HWND surface exposure
+remain gated.
