@@ -39,9 +39,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   shader has no instance-dependent inputs; indexed instancing and nonzero first
   instance remain unavailable. General instancing is not advertised.
 - Restricted indexed draws support signed base vertices and validate GPU index
-  contents at replay. Uint32 values convert to a native 16-bit buffer when
-  their effective index span fits FL9_1; out-of-bounds vertex fetches discard
-  the whole draw, and otherwise-valid wider spans fail replay. Staging
+  contents at replay. Uint32 triangle lists convert to ordered native 16-bit
+  windows; out-of-bounds vertex fetches discard the whole draw, and a single
+  otherwise-valid triangle spanning over 65534 indices fails replay. Staging
   and scratch allocation can stall the CPU; this is not a full public draw contract.
 - An original two-texture overlay shader passes checked FL9_1 GPU readback
   with alpha and inversion blend states; its surface diagnostic also passed

@@ -2360,6 +2360,237 @@ mod tests {
             assert_eq!(pixel, expected, "discarded indexed draw pixel {index}");
         }
         std::println!("PASS: late out-of-bounds index discarded whole draw; later GPU upload and draw succeeded");
+        let order_module = naga::front::wgsl::parse_str(
+            "struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f } @vertex fn vs(@location(0) p: vec2f, @location(1) color: vec4f) -> Out { var o: Out; o.pos = vec4f(p, 0.5, 1.0); o.color = color; return o; } @fragment fn fs(i: Out) -> @location(0) vec4f { return i.color; }",
+        ).unwrap();
+        let order_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&order_module)
+        .unwrap();
+        let order_shader = unsafe {
+            crate::Device::create_shader_module(
+                &device,
+                &ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                },
+                ShaderInput::Naga(NagaShader {
+                    module: Cow::Owned(order_module),
+                    info: order_info,
+                    debug_source: None,
+                }),
+            )
+            .unwrap()
+        };
+        let order_attributes = [
+            wgt::VertexAttribute {
+                format: wgt::VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            wgt::VertexAttribute {
+                format: wgt::VertexFormat::Unorm8x4,
+                offset: 8,
+                shader_location: 1,
+            },
+        ];
+        let order_buffers = [Some(VertexBufferLayout {
+            array_stride: 12,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: &order_attributes,
+        })];
+        let order_stage = |entry_point| ProgrammableStage {
+            module: &order_shader,
+            entry_point,
+            constants: &constants,
+            zero_initialize_workgroup_memory: false,
+        };
+        let order_pipeline = unsafe {
+            crate::Device::create_render_pipeline(
+                &device,
+                &RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: VertexProcessor::Standard {
+                        vertex_buffers: &order_buffers,
+                        vertex_stage: order_stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(order_stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                },
+            )
+            .unwrap()
+        };
+        let vertex_size = 65538 * 12 + 8;
+        let order_vertices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: vertex_size as u64,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let mut vertex_data = vec![0u8; vertex_size];
+        let mut put_triangle = |first: usize, points: [[f32; 2]; 3], color: [u8; 4]| {
+            for (i, point) in points.into_iter().enumerate() {
+                let offset = 8 + (first + i) * 12;
+                vertex_data[offset..offset + 4].copy_from_slice(&point[0].to_ne_bytes());
+                vertex_data[offset + 4..offset + 8].copy_from_slice(&point[1].to_ne_bytes());
+                vertex_data[offset + 8..offset + 12].copy_from_slice(&color);
+            }
+        };
+        put_triangle(0, [[-1., -1.], [3., -1.], [-1., 3.]], [255, 0, 0, 255]);
+        put_triangle(65535, [[0., -1.], [4., -1.], [0., 3.]], [0, 255, 0, 255]);
+        put_triangle(3, [[0., -1.], [1., -1.], [0., 1.]], [0, 0, 255, 255]);
+        native.write_byte_buffer(&order_vertices, 0, &vertex_data)?;
+        let order_indices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 36,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let order_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 36,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let index_data: Vec<u8> = [0u32, 1, 2, 65535, 65536, 65537, 3, 4, 5]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&order_upload, 0, &index_data)?;
+        let order_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &order_upload,
+                &order_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: NonZeroU64::new(36).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &order_pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&order_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&order_indices, 0, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 0, 9, 0, 0, 1);
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 7,
+                    y: 0,
+                    w: 1,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe { crate::Queue::submit(&queue, &[&order_commands], &[], (&fence, 9)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 9, Some(Duration::from_secs(5)))?);
+        let order_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        for (x, expected) in [
+            (1, [255, 0, 0, 255]),
+            (4, [0, 0, 255, 255]),
+            (6, [0, 255, 0, 255]),
+            (7, [255, 0, 0, 255]),
+        ] {
+            let offset = (4 * 8 + x) * 4;
+            assert_eq!(
+                &order_pixels[offset..offset + 4],
+                &expected,
+                "multi-window pixel {x}"
+            );
+        }
+        std::println!("PASS: ordered low/high/low u32 windows and subsequent direct draw");
+        let atomic_indices: Vec<u8> = [0u32, 1, 2, 0, 65535, 1]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&order_upload, 0, &atomic_indices)?;
+        let atomic_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &order_upload,
+                &order_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: NonZeroU64::new(24).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &order_pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&order_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&order_indices, 0, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 0, 6, 0, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe {
+            assert!(crate::Queue::submit(&queue, &[&atomic_commands], &[], (&fence, 10)).is_err());
+            crate::Queue::submit(&queue, &[], &[], (&fence, 10)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 10, Some(Duration::from_secs(5)))?);
+        let atomic_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        assert!(
+            atomic_pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 0, 0, 255]),
+            "late unsupported triangle drew an earlier window: {atomic_pixels:?}"
+        );
+        std::println!("PASS: late unsupported triangle rejected before any window drew");
+        unsafe {
+            crate::Device::destroy_buffer(&device, order_vertices);
+            crate::Device::destroy_buffer(&device, order_indices);
+            crate::Device::destroy_buffer(&device, order_upload);
+            crate::Device::destroy_render_pipeline(&device, order_pipeline);
+            crate::Device::destroy_shader_module(&device, order_shader);
+        }
         unsafe {
             crate::CommandEncoder::reset_all(
                 &mut encoder,
@@ -2374,6 +2605,8 @@ mod tests {
                     u32_over_limit,
                     u32_discarded,
                     discarded_draw,
+                    order_commands,
+                    atomic_commands,
                 ]
                 .into_iter(),
             );

@@ -528,3 +528,15 @@ alpha-writing separate-blend portability remains unresolved. The strict private
 suite passed 176 tests, two filtered; older tests may skip internally. The
 public fixture still rendered correctly and HAL Clippy passed with ten existing
 warnings. An independent review found no concrete correctness defect.
+
+Uint32 triangle lists now split into ordered rebased windows, with all indices
+and scratch allocations checked before any native draw. A strict GPU test
+verified low/high/low window order and a following direct draw. A second test
+verified that a later unsupported wide triangle prevents an earlier valid
+window from drawing. A synthetic test initially expected three windows for data
+that fit in two; its input was corrected and the test passed. The first test
+build also caught a missing `alloc::vec::Vec` import, which was added. The
+strict private suite passed 177 tests, with two filtered; older tests can skip
+internally. The public indexed fixture passed with 32 red and 32 green pixels.
+An individual triangle spanning over 65534 effective indices still fails,
+and high stream offsets remain unverified on historical FL9_1 hardware.

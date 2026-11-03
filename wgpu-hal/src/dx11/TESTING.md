@@ -43,8 +43,9 @@ offsets and a preceding GPU index upload; all 64 pixels must be red. A late
 out-of-bounds index discards a whole draw; a later GPU index update and draw
 still complete, producing black on the left and red on the right.
 It also checks Uint32 conversion, including raw values 65535–65537 with base
-vertex -3, high effective indices via a rebased vertex offset, a valid-fetch
-window wider than 65534, and a GPU rewrite following a discarded draw.
+vertex -3, high effective indices via rebased vertex offsets, ordered windows,
+a valid-fetch triangle spanning over 65534, and a GPU rewrite following a
+discarded draw. A later unsupported triangle is checked before any window draws.
 
 The strict depth-render test also checks zero, one and two direct instances and
 an overlapping blend case across the native primitive-count boundary. The

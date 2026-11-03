@@ -101,20 +101,6 @@ impl IndexBinding {
         if count == 0 {
             return Ok(());
         }
-        let mut converted_data = Vec::new();
-        let converted_size = if self.is_u32() {
-            let size = u64::from(count)
-                .checked_mul(2)
-                .and_then(|size| size.checked_add(3))
-                .map(|size| size & !3)
-                .and_then(|size| u32::try_from(size).ok())
-                .and_then(|size| usize::try_from(size).ok())
-                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-            Some(size)
-        } else {
-            None
-        };
-        let mut rebase = None;
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
             context.CopyResource(&self.staging, &self.buffer);
@@ -125,49 +111,63 @@ impl IndexBinding {
             }
             let size = if self.is_u32() { 4 } else { 2 };
             let start = self.offset as usize + first as usize * size;
-            let read_u32 = |index: usize| {
-                core::ptr::read_unaligned(
-                    mapped
-                        .pData
-                        .cast::<u8>()
-                        .add(start + index * 4)
-                        .cast::<u32>(),
-                )
-            };
-            let decision = if self.is_u32() {
-                let decision = classify_u32_indices(
-                    (0..count as usize).map(read_u32),
+            if self.is_u32() {
+                let read = |index: usize| {
+                    core::ptr::read_unaligned(
+                        mapped
+                            .pData
+                            .cast::<u8>()
+                            .add(start + index * 4)
+                            .cast::<u32>(),
+                    )
+                };
+                let plan = plan_u32_windows(
+                    read,
+                    count as usize,
                     base_vertex,
                     self.max_index,
+                    vertex_offset,
                     vertex_layout,
+                    max_vertices,
                 );
-                if let U32Decision::Draw(minimum) = decision {
-                    let Some(offset) = rebased_vertex_offset(minimum, vertex_offset, vertex_layout)
-                    else {
-                        context.Unmap(&self.staging, 0);
-                        return Err(Error::from_hresult(E_INVALIDARG));
+                context.Unmap(&self.staging, 0);
+                let Some(plan) = plan? else {
+                    return Ok(());
+                };
+                let mut windows = Vec::new();
+                windows
+                    .try_reserve_exact(plan.len())
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                let device = context.GetDevice()?;
+                for window in plan {
+                    let desc = D3D11_BUFFER_DESC {
+                        ByteWidth: window.data.len() as u32,
+                        Usage: D3D11_USAGE_IMMUTABLE,
+                        BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                        ..Default::default()
                     };
-                    rebase = Some(offset);
-                    let Some(size) = converted_size else {
-                        context.Unmap(&self.staging, 0);
-                        return Err(Error::from_hresult(E_INVALIDARG));
+                    let data = D3D11_SUBRESOURCE_DATA {
+                        pSysMem: window.data.as_ptr().cast(),
+                        ..Default::default()
                     };
-                    if converted_data.try_reserve_exact(size).is_err() {
-                        context.Unmap(&self.staging, 0);
-                        return Err(Error::from_hresult(E_OUTOFMEMORY));
-                    }
-                    converted_data.resize(size, 0);
-                    for index in 0..count as usize {
-                        let effective = (i64::from(read_u32(index)) + i64::from(base_vertex)
-                            - minimum as i64) as u16;
-                        converted_data[index * 2..index * 2 + 2]
-                            .copy_from_slice(&effective.to_ne_bytes());
-                    }
+                    let mut buffer = None;
+                    device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                    windows.push((
+                        buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                        window.vertex_offset,
+                        window.count,
+                    ));
                 }
-                match decision {
-                    U32Decision::Draw(_) => IndexDecision::Draw,
-                    U32Decision::Discard => IndexDecision::Discard,
-                    U32Decision::Unsupported => IndexDecision::Unsupported,
+                for (buffer, offset, count) in &windows {
+                    context.IASetVertexBuffers(
+                        0,
+                        1,
+                        Some(&Some(vertex.clone())),
+                        Some(&stride),
+                        Some(offset),
+                    );
+                    context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
+                    context.DrawIndexed(*count, 0, 0);
                 }
             } else {
                 let indices = (0..count as usize).map(|index| {
@@ -179,58 +179,26 @@ impl IndexBinding {
                             .cast::<u16>(),
                     )
                 });
-                classify_indices(indices, base_vertex, self.max_index, vertex_layout)
-            };
-            context.Unmap(&self.staging, 0);
-            match decision {
-                IndexDecision::Draw => {}
-                IndexDecision::Discard => return Ok(()),
-                IndexDecision::Unsupported => return Err(Error::from_hresult(E_INVALIDARG)),
-            }
-            let converted = if self.is_u32() {
-                let desc = D3D11_BUFFER_DESC {
-                    ByteWidth: converted_data.len() as u32,
-                    Usage: D3D11_USAGE_IMMUTABLE,
-                    BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
-                    ..Default::default()
-                };
-                let data = D3D11_SUBRESOURCE_DATA {
-                    pSysMem: converted_data.as_ptr().cast(),
-                    ..Default::default()
-                };
-                let mut buffer = None;
-                context
-                    .GetDevice()?
-                    .CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
-                Some(buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?)
-            } else {
-                None
-            };
-            let (buffer, offset, mut next, native_base) = if let Some(buffer) = &converted {
-                let Some(offset) = rebase else {
-                    return Err(Error::from_hresult(E_INVALIDARG));
-                };
-                context.IASetVertexBuffers(
-                    0,
-                    1,
-                    Some(&Some(vertex.clone())),
-                    Some(&stride),
-                    Some(&offset),
-                );
-                (buffer, 0, 0, 0)
-            } else {
-                (&self.buffer, self.offset, first, base_vertex)
-            };
-            context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, offset);
-            let mut remaining = count;
-            while remaining != 0 {
-                let batch = remaining.min(max_vertices);
-                context.DrawIndexed(batch, next, native_base);
-                remaining -= batch;
-                if remaining != 0 {
-                    next = next
-                        .checked_add(batch)
-                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                let decision =
+                    classify_indices(indices, base_vertex, self.max_index, vertex_layout);
+                context.Unmap(&self.staging, 0);
+                match decision {
+                    IndexDecision::Draw => {}
+                    IndexDecision::Discard => return Ok(()),
+                    IndexDecision::Unsupported => return Err(Error::from_hresult(E_INVALIDARG)),
+                }
+                context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
+                let mut next = first;
+                let mut remaining = count;
+                while remaining != 0 {
+                    let batch = remaining.min(max_vertices);
+                    context.DrawIndexed(batch, next, base_vertex);
+                    remaining -= batch;
+                    if remaining != 0 {
+                        next = next
+                            .checked_add(batch)
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                    }
                 }
             }
         }
@@ -314,6 +282,88 @@ enum U32Decision {
     Unsupported,
 }
 
+#[derive(Debug)]
+struct U32Window {
+    vertex_offset: u32,
+    count: u32,
+    data: Vec<u8>,
+}
+
+fn plan_u32_windows(
+    read: impl Fn(usize) -> u32,
+    count: usize,
+    base_vertex: i32,
+    max_index: u16,
+    vertex_offset: u32,
+    vertex_layout: (u64, u32, u32),
+    max_vertices: u32,
+) -> Result<Option<Vec<U32Window>>> {
+    if max_vertices == 0 || !max_vertices.is_multiple_of(3) {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    if classify_u32_indices((0..count).map(&read), base_vertex, max_index, vertex_layout)
+        == U32Decision::Discard
+    {
+        return Ok(None);
+    }
+    let complete = count - count % 3;
+    let mut windows = Vec::new();
+    let mut start = 0;
+    while start < complete {
+        let mut end = start;
+        let mut minimum = u64::MAX;
+        let mut maximum = 0;
+        while end < complete && end - start < max_vertices as usize {
+            let mut triangle_min = u64::MAX;
+            let mut triangle_max = 0;
+            for index in end..end + 3 {
+                let value = (i64::from(read(index)) + i64::from(base_vertex)) as u64;
+                triangle_min = triangle_min.min(value);
+                triangle_max = triangle_max.max(value);
+            }
+            if triangle_max - triangle_min > u64::from(max_index) {
+                return Err(Error::from_hresult(E_INVALIDARG));
+            }
+            let next_min = minimum.min(triangle_min);
+            let next_max = maximum.max(triangle_max);
+            if end != start && next_max - next_min > u64::from(max_index) {
+                break;
+            }
+            minimum = next_min;
+            maximum = next_max;
+            end += 3;
+        }
+        let offset = rebased_vertex_offset(minimum, vertex_offset, vertex_layout)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let size = (end - start)
+            .checked_mul(2)
+            .and_then(|n| n.checked_add(3))
+            .map(|n| n & !3)
+            .filter(|&n| u32::try_from(n).is_ok())
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let mut data = Vec::new();
+        data.try_reserve_exact(size)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        data.resize(size, 0);
+        for index in start..end {
+            let effective = (i64::from(read(index)) + i64::from(base_vertex)) as u64;
+            let value = (effective - minimum) as u16;
+            let pos = (index - start) * 2;
+            data[pos..pos + 2].copy_from_slice(&value.to_ne_bytes());
+        }
+        windows
+            .try_reserve(1)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        windows.push(U32Window {
+            vertex_offset: offset,
+            count: (end - start) as u32,
+            data,
+        });
+        start = end;
+    }
+    Ok(Some(windows))
+}
+
 fn rebased_vertex_offset(minimum: u64, offset: u32, vertex_layout: (u64, u32, u32)) -> Option<u32> {
     let (vertex_bytes, stride, extent) = vertex_layout;
     let relative = minimum.checked_mul(u64::from(stride))?;
@@ -328,9 +378,57 @@ fn rebased_vertex_offset(minimum: u64, offset: u32, vertex_layout: (u64, u32, u3
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::{
-        classify_indices, classify_u32_indices, rebased_vertex_offset, IndexDecision, U32Decision,
+        classify_indices, classify_u32_indices, plan_u32_windows, rebased_vertex_offset,
+        IndexDecision, U32Decision,
     };
+
+    #[test]
+    fn u32_windows_preflight_whole_draw_and_preserve_triangle_order() {
+        let plan = |indices: &[u32], max_vertices| {
+            plan_u32_windows(
+                |i| indices[i],
+                indices.len(),
+                0,
+                65534,
+                8,
+                (70000 * 8, 8, 8),
+                max_vertices,
+            )
+        };
+        let indices = [0, 1, 2, 65538, 65539, 65540, 3, 4, 5];
+        let windows = plan(&indices, 196605).unwrap().unwrap();
+        assert_eq!(windows.len(), 3);
+        assert_eq!(
+            windows.iter().map(|w| w.vertex_offset).collect::<Vec<_>>(),
+            [8, 8 + 65538 * 8, 8 + 3 * 8]
+        );
+        for window in &windows {
+            assert_eq!(window.count, 3);
+            assert_eq!(window.data, [0, 0, 1, 0, 2, 0, 0, 0]);
+        }
+        assert_eq!(plan(&[0, 1, 65534], 196605).unwrap().unwrap().len(), 1);
+        assert!(plan(&[0, 1, 65535], 196605).is_err());
+        assert!(plan(&[0, 1, 65535, 70000, 1, 2], 196605).unwrap().is_none());
+        assert_eq!(plan(&[0, 1, 2, 65535], 196605).unwrap().unwrap().len(), 1);
+        assert!(plan(&[0, 1, 2, 70000], 196605).unwrap().is_none());
+        assert!(plan(&[], 196605).unwrap().unwrap().is_empty());
+        assert!(plan(&[0, 1], 196605).unwrap().unwrap().is_empty());
+        assert_eq!(plan(&[0, 1, 2, 3, 4, 5], 3).unwrap().unwrap().len(), 2);
+        assert!(plan(&indices, 4).is_err());
+        assert!(plan_u32_windows(
+            |i| indices[i],
+            indices.len(),
+            0,
+            65534,
+            u32::MAX - 3,
+            (70000 * 8, 8, 8),
+            196605
+        )
+        .is_err());
+    }
 
     #[test]
     fn u32_conversion_checks_effective_indices_and_whole_draw() {
