@@ -334,6 +334,71 @@ mod tests {
             cache: None,
         };
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+        let primitive_module = naga::front::wgsl::parse_str(r#"
+            enable primitive_index;
+            struct Input { @builtin(primitive_index) id: u32 }
+            @fragment fn direct(@builtin(primitive_index) id: u32) -> @location(0) vec4f { return vec4f(f32(id)); }
+            @fragment fn structured(input: Input) -> @location(0) vec4f { return vec4f(f32(input.id)); }
+            @fragment fn unused(@builtin(primitive_index) id: u32) -> @location(0) vec4f { return vec4f(1.0); }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+        "#).unwrap();
+        let primitive_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::PRIMITIVE_INDEX,
+        )
+        .validate(&primitive_module)
+        .unwrap();
+        let primitive_shader = unsafe {
+            device
+                .create_shader_module(
+                    &crate::ShaderModuleDescriptor {
+                        label: None,
+                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                    },
+                    crate::ShaderInput::Naga(crate::NagaShader {
+                        module: Cow::Owned(primitive_module),
+                        info: primitive_info,
+                        debug_source: None,
+                    }),
+                )
+                .unwrap()
+        };
+        for entry in ["direct", "structured", "unused", "safe"] {
+            let primitive_desc = crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &buffers,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(crate::ProgrammableStage {
+                    module: &primitive_shader,
+                    entry_point: entry,
+                    constants: &constants,
+                    zero_initialize_workgroup_memory: false,
+                }),
+                color_targets: &targets,
+                multiview_mask: None,
+                cache: None,
+            };
+            let result = unsafe { device.create_render_pipeline(&primitive_desc) };
+            if entry == "safe" {
+                unsafe {
+                    device.destroy_render_pipeline(result.unwrap());
+                }
+            } else {
+                assert!(
+                    matches!(result, Err(crate::PipelineError::Linkage(stages, _)) if stages == wgt::ShaderStages::FRAGMENT),
+                    "entry {entry}"
+                );
+            }
+        }
+        unsafe {
+            device.destroy_shader_module(primitive_shader);
+        }
         desc.multisample.count = 4;
         assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
         assert!(Arc::ptr_eq(&pipeline.owner, &native));
@@ -734,6 +799,11 @@ impl RenderPipeline {
             .module
             .validate_instance_index(vertex_stage.entry_point)?;
         let fragment = desc.fragment_stage.as_ref();
+        if let Some(fragment) = fragment {
+            fragment
+                .module
+                .validate_primitive_index(fragment.entry_point)?;
+        }
         let [Some(buffer)] = *vertex_buffers else {
             return Err(invalid());
         };

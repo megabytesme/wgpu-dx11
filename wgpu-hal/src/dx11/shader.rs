@@ -574,6 +574,33 @@ mod tests {
     }
 
     #[test]
+    fn fl91_fragment_primitive_index_fxc_diagnostic() {
+        let module = naga::front::wgsl::parse_str(
+            "enable primitive_index; @fragment fn main(@builtin(primitive_index) id: u32) -> @location(0) vec4f { return vec4f(f32(id)); }",
+        ).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::PRIMITIVE_INDEX,
+        )
+        .validate(&module)
+        .unwrap();
+        let error = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+        )
+        .unwrap_err();
+        let NagaCompileError::Compilation(error) = error else {
+            panic!("Naga translation failed before FXC: {error:?}");
+        };
+        std::println!("FL9_1 primitive_index FXC diagnostic: {}", error.message);
+        assert!(!error.message.is_empty());
+    }
+
+    #[test]
     fn compiles_level_9_1_and_shader_model_5_dxbc() {
         let vertex = "float4 main(float4 p : POSITION) : SV_POSITION { return p; }";
         let pixel = "float4 main() : SV_TARGET { return float4(1, 0, 0, 1); }";

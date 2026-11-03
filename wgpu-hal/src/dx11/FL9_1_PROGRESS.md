@@ -563,3 +563,14 @@ late OOB discard. The private suite passed 178 tests, two filtered, and the
 public indexed fixture passed. An independent review found no concrete defect;
 historical-driver copy behavior remains unverified and each gathered triangle
 currently requires a scratch allocation and three GPU copies.
+
+To prevent draw splitting or gathering from changing a shader-visible ID, the
+private pipeline now explicitly rejects `primitive_index` on the selected
+fragment entry point, including struct members and unused declarations. Other
+entry points remain unaffected. Validated Naga tests, actual pipeline creation
+and Naga-to-FXC checks passed; the installed FL9_1 compiler reported X4583 and
+X4568 for the builtin. The first test build caught a borrowed test shader being
+destroyed too early; isolating the descriptor fixed it. The strict private suite
+then passed 180 tests, with two filtered; older tests may skip internally.
+Independent review found no concrete defect. The public indexed fixture and
+HAL Clippy passed; Clippy retained ten existing warnings.

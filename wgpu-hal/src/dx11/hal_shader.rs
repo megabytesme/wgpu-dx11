@@ -75,6 +75,62 @@ mod tests {
     }
 
     #[test]
+    fn primitive_index_detection_uses_only_selected_fragment_entry() {
+        let module = naga::front::wgsl::parse_str(r#"
+            enable primitive_index;
+            struct Input { @builtin(primitive_index) id: u32 }
+            @fragment fn direct(@builtin(primitive_index) id: u32) -> @location(0) vec4f { return vec4f(f32(id)); }
+            @fragment fn structured(input: Input) -> @location(0) vec4f { return vec4f(f32(input.id)); }
+            @fragment fn unused(@builtin(primitive_index) id: u32) -> @location(0) vec4f { return vec4f(1.0); }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+        "#).unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::PRIMITIVE_INDEX,
+        )
+        .validate(&module)
+        .unwrap();
+        for entry in ["direct", "structured", "unused"] {
+            assert_eq!(
+                entry_has_builtin(
+                    &module,
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    naga::BuiltIn::PrimitiveIndex
+                ),
+                Some(true)
+            );
+        }
+        assert_eq!(
+            entry_has_builtin(
+                &module,
+                naga::ShaderStage::Fragment,
+                "safe",
+                naga::BuiltIn::PrimitiveIndex
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            entry_has_builtin(
+                &module,
+                naga::ShaderStage::Fragment,
+                "missing",
+                naga::BuiltIn::PrimitiveIndex
+            ),
+            None
+        );
+        assert_eq!(
+            entry_has_builtin(
+                &module,
+                naga::ShaderStage::Vertex,
+                "direct",
+                naga::BuiltIn::PrimitiveIndex
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn unused_entry_point_resource_does_not_conflict_with_layout_mapping() {
         let module = naga::front::wgsl::parse_str(
             "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn plain() -> @location(0) vec4f { return vec4f(1.0); } @fragment fn textured() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }",
@@ -427,10 +483,19 @@ fn entry_has_vertex_builtin(
     entry: &str,
     builtin: naga::BuiltIn,
 ) -> Option<bool> {
+    entry_has_builtin(module, naga::ShaderStage::Vertex, entry, builtin)
+}
+
+fn entry_has_builtin(
+    module: &naga::Module,
+    stage: naga::ShaderStage,
+    entry: &str,
+    builtin: naga::BuiltIn,
+) -> Option<bool> {
     let entry = module
         .entry_points
         .iter()
-        .find(|ep| ep.stage == naga::ShaderStage::Vertex && ep.name == entry)?;
+        .find(|ep| ep.stage == stage && ep.name == entry)?;
     Some(entry.function.arguments.iter().any(|arg| {
         matches!(
             arg.binding.as_ref(),
@@ -448,6 +513,23 @@ fn entry_has_vertex_builtin(
 }
 
 impl ShaderModule {
+    pub(super) fn validate_primitive_index(&self, entry: &str) -> Result<(), crate::PipelineError> {
+        match entry_has_builtin(
+            &self.shader.module,
+            naga::ShaderStage::Fragment,
+            entry,
+            naga::BuiltIn::PrimitiveIndex,
+        ) {
+            Some(false) => Ok(()),
+            Some(true) => Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 primitive_index is not implemented".into(),
+            )),
+            None => Err(crate::PipelineError::EntryPoint(
+                naga::ShaderStage::Fragment,
+            )),
+        }
+    }
     pub(super) fn validate_instance_index(&self, entry: &str) -> Result<(), crate::PipelineError> {
         match entry_has_vertex_builtin(&self.shader.module, entry, naga::BuiltIn::InstanceIndex) {
             Some(false) => Ok(()),
