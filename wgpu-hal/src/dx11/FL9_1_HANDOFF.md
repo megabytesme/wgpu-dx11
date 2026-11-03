@@ -542,12 +542,10 @@ R8 render targets, copy-source/readback, mip chains and linear-filter visual
 validation remain unsupported or unverified. Full evidence and commands are
 in `FL9_1_PROGRESS.md`.
 
-The next bounded task is to investigate FL9_1-required R8G8B8A8_SNORM sampled
-textures and add only the one-mip upload/sample subset if its actual format
-queries and strict GPU output agree. Ordinary adapter enumeration remains
-disabled. Continue auditing public-core/HAL contract gaps and presentation
-reentrancy; do not infer historical-device support from the modern forced-level
-GPU.
+The R8G8B8A8_SNORM follow-up noted below fulfilled the next-format task from
+this checkpoint. Ordinary adapter enumeration remains disabled. Continue
+auditing public-core/HAL contract gaps and presentation reentrancy; do not infer
+historical-device support from the modern forced-level GPU.
 
 `881640796` completes the required R8G8_SNORM sampled/upload increment. Strict
 execution reported support mask `0x00021320`, uploaded padded signed data from
@@ -556,3 +554,18 @@ The full strict private suite passed 309 tests (two filtered); core isolation,
 DX12 regression, build, lint and formatting checks passed. See the latest
 progress entry for the initial midpoint-rounding observation and its bounded
 test tolerance.
+
+## Latest checkpoint — required R8G8B8A8_SNORM sampled uploads
+
+`312dba141` adds a queried single-mip R8G8B8A8_SNORM sampled/upload path.
+Strict execution on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`)
+requested and selected FL9_1, observed support mask `0x000213a0`, uploaded a
+padded signed texture from a nonzero offset and matched all 80 rendered pixels
+within one UNORM code value. The full strict private suite passed 311 tests
+(two filtered); core zero-adapter isolation, DX12 regression, build, Clippy and
+formatting checks passed. See FL9_1_PROGRESS.md for exact commands.
+
+Next investigate required BC1 compressed texture sampling and upload layout.
+Prove block addressing and partial-region constraints with deterministic CPU
+tests before native support. Keep public adapter and HWND surface exposure
+gated.

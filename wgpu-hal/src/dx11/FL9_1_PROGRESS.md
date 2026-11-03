@@ -2130,3 +2130,48 @@ passed. Ten pre-existing HAL Clippy warnings remain. The mission continues;
 ordinary public adapter enumeration and HWND surface exposure remain gated.
 Next, verify the required four-channel R8G8B8A8_SNORM sampled/upload subset,
 then reassess the texture/depth and public-core contract gaps.
+
+## Checkpoint — queried R8G8B8A8_SNORM sampled uploads
+
+`312dba141` adds a one-mip, one-layer R8G8B8A8_SNORM sampled/upload path. The
+required-format table identifies the FL9_1 2D shader-sample minimum through
+legacy Q8W8V8U8. The internal model records the feature-level guarantee,
+selected-device `CheckFormatSupport`, and implemented usage separately. The
+transfer path accounts for four bytes per texel; render-target, copy-source,
+readback and mip-chain uses remain rejected.
+
+Strict hardware execution on the RTX 3090 Ti requested and selected FL9_1. The
+device returned `R8G8B8A8_SNORM` support mask `0x000213a0`, including 2D and
+shader-sample support. A padded 5x4 signed image was uploaded from byte offset
+4 with 24-byte rows, sampled through the private shader/binding path and
+remapped to RGBA8. All 80 pixels matched within one UNORM code value for
+conversion rounding. The test also verifies the HAL rejects copy-source,
+render-target and mipmapped descriptors.
+
+Verification on Rust 1.93.1/MSVC:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rgba8_snorm -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_texture_tests -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 "dx11::" -- --test-threads=1
+cargo build --offline -p wgpu-hal --no-default-features --features dx11
+cargo clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx12 pipeline_desc::tests -- --test-threads=1
+cargo fmt --package wgpu-hal -- --check
+rustfmt --check --edition 2021 wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_transfer.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/tests/dx11/r8_texture.rs
+git diff --check
+```
+
+All three focused sampled-format GPU cases passed 3/3. The complete strict
+private D3D11 suite passed 311 tests, zero failed, with two filtered. HAL build
+and Clippy, core zero-adapter isolation (1/1), targeted DX12 tests (2/2),
+formatting and diff checks passed. HAL Clippy reports ten existing warnings;
+none were introduced by this change. The current texture test helper also
+asserts unsupported copy-source, render-target and mipmapped descriptors fail
+at the HAL boundary. Public D3D11 adapter enumeration remains disabled.
+
+Next investigate the required FL9_1 BC1 format and compressed buffer-to-texture
+layout. Establish block row/height calculations and boundary rules with CPU
+tests before attempting native upload and strict sampled-pixel verification.

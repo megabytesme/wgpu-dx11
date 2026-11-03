@@ -91,10 +91,11 @@ Run only one heavyweight Cargo process at a time with bounded build jobs.
 Record exact commands, hardware results, skips, failures and commit hashes in
 FL9_1_PROGRESS.md. Maintain FL9_1_HANDOFF.md for interruption and final audit.
 
-Latest completed sampled-format increments: R8_UNORM is checkpointed as
-`268431ec3`, and R8G8_SNORM as `881640796`. Both use queried, single-mip
+Latest completed sampled-format increments: R8_UNORM (`268431ec3`), R8G8_SNORM
+(`881640796`) and R8G8B8A8_SNORM (`312dba141`) use queried, single-mip
 sampled/upload paths and strict FL9_1 GPU readback. Next investigate required
-R8G8B8A8_SNORM and implement only the same narrow path if its query, signed
-sampling semantics and upload layout verify correctly. Continue the public
-contract and presentation audits in parallel with the ordered work above;
-public adapter exposure remains gated.
+BC1 compressed sampling and block-layout uploads, implementing only the
+single-mip sampled/upload subset first if native and synthetic validation can
+prove the block addressing rules. Continue the public contract and presentation
+audits in parallel with the ordered work above; public adapter exposure remains
+gated.
