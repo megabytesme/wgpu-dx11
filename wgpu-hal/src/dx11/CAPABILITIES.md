@@ -145,10 +145,12 @@ validation or emulation must be resolved before any such capability is exposed.
 
 The nondefault `dx11-test-fixture` feature provides an unsafe, non-enumerated
 adapter solely for a controlled core integration test. Normal `Adapter::open`
-still fails, and the fixture reports no format or surface capabilities. Its
-test-only limits do not express the entire private HAL contract and are not a
-general adapter report. The fixture has verified core buffer upload, GPU copy,
-fence completion and mapped readback, not public graphics or presentation.
+still fails. The fixture reports only driver-queried RGBA8 color-attachment
+and copy-source capabilities, and no surface capabilities. Core's mapping also
+permits transient attachments from the color flag, which this HAL does not
+support; its test-only limits and format report are not a general adapter
+contract. The fixture verifies core buffer operations and an offscreen triangle,
+not ordinary public adapter selection or presentation.
 
 ## Logical binding translation
 

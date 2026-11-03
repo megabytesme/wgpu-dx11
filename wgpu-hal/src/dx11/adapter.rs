@@ -70,9 +70,30 @@ impl crate::Adapter for Adapter {
     }
     unsafe fn texture_format_capabilities(
         &self,
-        _: wgt::TextureFormat,
+        format: wgt::TextureFormat,
     ) -> crate::TextureFormatCapabilities {
-        crate::TextureFormatCapabilities::empty()
+        let _ = format;
+        match self.inner {
+            #[cfg(feature = "dx11-test-fixture")]
+            AdapterInner::Fixture(ref native) => {
+                let supported = super::capabilities::Capabilities::query(native)
+                    .check_private_texture_2d(
+                        format,
+                        wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                        [8, 8],
+                        1,
+                        1,
+                        1,
+                    )
+                    .is_ok();
+                if supported {
+                    crate::TextureFormatCapabilities::COLOR_ATTACHMENT
+                        | crate::TextureFormatCapabilities::COPY_SRC
+                } else {
+                    crate::TextureFormatCapabilities::empty()
+                }
+            }
+        }
     }
     unsafe fn surface_capabilities(
         &self,

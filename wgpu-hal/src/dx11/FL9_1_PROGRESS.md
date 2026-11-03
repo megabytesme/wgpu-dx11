@@ -393,3 +393,21 @@ passed 67 tests; the feature-off zero-adapter test passed. Targeted fixture-on
 core Clippy and feature-off HAL build passed. Independent review prompted
 explicit command encoder and command-buffer teardown before device removal;
 the focused hardware test passed again after that change.
+
+The core buffer fixture was checkpointed as `f6aa8f241`. Its current extension
+queries the actual RGBA8 driver support and tests a closed core offscreen
+rendering sequence; forced-FL9_1 GPU readback matched 64/64 red pixels after a
+blue clear. The fixture-enabled core suite passed 67 tests. Independent review
+confirmed the observed readback path and requested negative format-capability
+checks. The test-only format report is not safe for general public use:
+core also treats color attachment support as transient attachment support,
+which this HAL does not implement. Normal enumeration remains disabled.
+
+The first rendering attempt exposed a separate core shader-validation panic
+when a native device requests `max_inter_stage_shader_variables = 0`:
+`wgpu-core/src/validation.rs` subtracts one from zero. Nearby deduction and
+error-format arithmetic can also underflow. A limit of one was used for this
+fixture because it is supported by the private backend; a separate core fix
+and public Noop regression are still required. An independent audit confirmed
+zero is a valid native limit request. Do not use saturating arithmetic to hide
+negative post-deduction budgets.

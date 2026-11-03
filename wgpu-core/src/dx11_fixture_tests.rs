@@ -1,10 +1,10 @@
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{borrow::Cow, boxed::Box, sync::Arc, vec::Vec};
 use core::{num::NonZeroU64, time::Duration};
 
 use crate::{device::HostMap, global::Global, resource::BufferMapOperation};
 
 #[test]
-fn fl91_core_buffer_copy_readback_on_hardware() {
+fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
     let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
@@ -37,26 +37,26 @@ fn fl91_core_buffer_copy_readback_on_hardware() {
     info.device = identity.device_id;
     let limits = wgt::Limits {
         max_texture_dimension_1d: 0,
-        max_texture_dimension_2d: 0,
+        max_texture_dimension_2d: 8,
         max_texture_dimension_3d: 0,
-        max_texture_array_layers: 0,
+        max_texture_array_layers: 1,
         max_bind_groups: 0,
-        max_bind_groups_plus_vertex_buffers: 0,
+        max_bind_groups_plus_vertex_buffers: 1,
         max_bindings_per_bind_group: 0,
         max_dynamic_uniform_buffers_per_pipeline_layout: 0,
         max_sampled_textures_per_shader_stage: 0,
         max_samplers_per_shader_stage: 0,
         max_uniform_buffers_per_shader_stage: 0,
         max_uniform_buffer_binding_size: 0,
-        max_vertex_buffers: 0,
-        max_vertex_attributes: 0,
-        max_vertex_buffer_array_stride: 0,
-        max_inter_stage_shader_variables: 0,
-        max_color_attachments: 0,
-        max_color_attachment_bytes_per_sample: 0,
+        max_vertex_buffers: 1,
+        max_vertex_attributes: 1,
+        max_vertex_buffer_array_stride: 8,
+        max_inter_stage_shader_variables: 1,
+        max_color_attachments: 1,
+        max_color_attachment_bytes_per_sample: 8,
         max_buffer_size: 512 << 10,
         max_non_sampler_bindings: 0,
-        max_buffers_and_acceleration_structures_per_shader_stage: 0,
+        max_buffers_and_acceleration_structures_per_shader_stage: 1,
         ..wgt::Limits::downlevel_webgl2_defaults()
     };
     assert!(unsafe {
@@ -68,6 +68,27 @@ fn fl91_core_buffer_copy_readback_on_hardware() {
         )
     }
     .is_err());
+    let rgba_caps = unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba8Unorm)
+    };
+    if !rgba_caps.contains(
+        hal::TextureFormatCapabilities::COLOR_ATTACHMENT | hal::TextureFormatCapabilities::COPY_SRC,
+    ) {
+        assert!(
+            !required,
+            "strict mode requires RGBA8 render and copy support"
+        );
+        std::println!("SKIP: required RGBA8 format support unavailable");
+        return;
+    }
+    assert_eq!(
+        rgba_caps,
+        hal::TextureFormatCapabilities::COLOR_ATTACHMENT | hal::TextureFormatCapabilities::COPY_SRC
+    );
+    assert!(unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bgra8Unorm)
+    }
+    .is_empty());
     let exposed = hal::ExposedAdapter::<hal::dx11::Api> {
         adapter: fixture,
         info,
@@ -170,6 +191,7 @@ fn fl91_core_buffer_copy_readback_on_hardware() {
     assert_eq!(actual, expected.as_slice());
     std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
+    render_triangle(&global, device, queue);
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -182,7 +204,244 @@ fn fl91_core_buffer_copy_readback_on_hardware() {
     assert!(hub.command_buffers.is_empty());
     assert!(hub.command_encoders.is_empty());
     assert!(hub.buffers.is_empty());
+    assert!(hub.textures.is_empty());
+    assert!(hub.texture_views.is_empty());
+    assert!(hub.render_pipelines.is_empty());
+    assert!(hub.pipeline_layouts.is_empty());
+    assert!(hub.shader_modules.is_empty());
     assert!(hub.queues.is_empty());
     assert!(hub.devices.is_empty());
     assert!(hub.adapters.is_empty());
+}
+
+fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::id::QueueId) {
+    use crate::{binding_model, command as render, pipeline, resource};
+    let extent = wgt::Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let (target, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::COPY_SRC,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(error.is_none(), "texture creation: {error:?}");
+    let (view, error) =
+        global.texture_create_view(target, &resource::TextureViewDescriptor::default(), None);
+    assert!(error.is_none(), "texture view creation: {error:?}");
+    let source = "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }";
+    let (shader, error) = global.device_create_shader_module(
+        device,
+        &pipeline::ShaderModuleDescriptor {
+            label: None,
+            runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+        },
+        pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(source)),
+        None,
+    );
+    assert!(error.is_none(), "shader creation: {error:?}");
+    let (layout, error) = global.device_create_pipeline_layout(
+        device,
+        &binding_model::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: Cow::Borrowed(&[]),
+            immediate_size: 0,
+        },
+        None,
+    );
+    assert!(error.is_none(), "pipeline layout creation: {error:?}");
+    let attrs = [wgt::VertexAttribute {
+        format: wgt::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let buffers = [Some(pipeline::VertexBufferLayout {
+        array_stride: 8,
+        step_mode: wgt::VertexStepMode::Vertex,
+        attributes: Cow::Borrowed(&attrs),
+    })];
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let stage = |entry: &'static str| pipeline::ProgrammableStageDescriptor {
+        module: shader,
+        entry_point: Some(Cow::Borrowed(entry)),
+        constants: Default::default(),
+        zero_initialize_workgroup_memory: false,
+    };
+    let (pipeline_id, error) = global.device_create_render_pipeline(
+        device,
+        &pipeline::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(layout),
+            vertex: pipeline::VertexState {
+                stage: stage("vs"),
+                buffers: Cow::Borrowed(&buffers),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment: Some(pipeline::FragmentState {
+                stage: stage("fs"),
+                targets: Cow::Borrowed(&targets),
+            }),
+            multiview_mask: None,
+            cache: None,
+        },
+        None,
+    );
+    assert!(error.is_none(), "render pipeline creation: {error:?}");
+    let (vertices, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 24,
+            usage: wgt::BufferUsages::VERTEX | wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "vertex buffer creation: {error:?}");
+    let bytes: Vec<_> = [-1f32, -1., 3., -1., -1., 3.]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    global
+        .queue_write_buffer(queue, vertices, 0, &bytes)
+        .expect("vertex upload");
+    let (readback, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 2048,
+            usage: wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "render readback buffer creation: {error:?}"
+    );
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "render encoder: {error:?}");
+    let attachments = [Some(render::RenderPassColorAttachment {
+        view,
+        depth_slice: None,
+        resolve_target: None,
+        load_op: wgt::LoadOp::Clear(wgt::Color::BLUE),
+        store_op: wgt::StoreOp::Store,
+    })];
+    let (mut pass, error) = global.command_encoder_begin_render_pass(
+        encoder,
+        &render::RenderPassDescriptor {
+            label: None,
+            color_attachments: Cow::Borrowed(&attachments),
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        },
+    );
+    assert!(error.is_none(), "render pass begin: {error:?}");
+    global
+        .render_pass_set_pipeline(&mut pass, pipeline_id)
+        .unwrap();
+    global
+        .render_pass_set_vertex_buffer(&mut pass, 0, Some(vertices), 0, None)
+        .unwrap();
+    global.render_pass_draw(&mut pass, 3, 1, 0, 0).unwrap();
+    global.render_pass_end(&mut pass).unwrap();
+    drop(pass);
+    global
+        .command_encoder_copy_texture_to_buffer(
+            encoder,
+            &wgt::TexelCopyTextureInfo {
+                texture: target,
+                mip_level: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &wgt::TexelCopyBufferInfo {
+                buffer: readback,
+                layout: wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            &extent,
+        )
+        .unwrap();
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(error.is_none(), "render command finish: {error:?}");
+    global
+        .queue_submit(queue, &[command])
+        .expect("render submit");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            readback,
+            0,
+            Some(2048),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| {
+                    sender.send(result).unwrap();
+                })),
+            },
+        )
+        .expect("render map request");
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .expect("render device poll");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("render map callback")
+        .expect("render map result");
+    let (pointer, length) = global
+        .buffer_get_mapped_range(readback, 0, Some(2048))
+        .unwrap();
+    assert_eq!(length, 2048);
+    let pixels = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
+    for y in 0..8 {
+        for x in 0..8 {
+            let offset = y * 256 + x * 4;
+            assert_eq!(
+                &pixels[offset..offset + 4],
+                &[255, 0, 0, 255],
+                "pixel ({x}, {y})"
+            );
+        }
+    }
+    std::println!("PASS: core offscreen triangle GPU readback: 64/64 pixels [255, 0, 0, 255]");
+    global.buffer_unmap(readback).unwrap();
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.render_pipeline_drop(pipeline_id);
+    global.pipeline_layout_drop(layout);
+    global.shader_module_drop(shader);
+    global.texture_view_drop(view);
+    global.texture_drop(target);
+    global.buffer_drop(vertices);
+    global.buffer_drop(readback);
 }

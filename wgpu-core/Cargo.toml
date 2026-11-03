@@ -132,7 +132,7 @@ portable-atomic = ["dep:portable-atomic", "wgpu-hal/portable-atomic"]
 ## Experimental DX11 backend; ordinary adapter enumeration remains disabled.
 dx11 = ["wgpu-core-deps-windows-linux-android/dx11"]
 ## Unsafe, narrowly scoped D3D11 integration fixture; not a public adapter.
-dx11-test-fixture = ["dx11", "wgpu-hal/dx11-test-fixture"]
+dx11-test-fixture = ["dx11", "wgsl", "wgpu-hal/dx11-test-fixture"]
 ## DX12 backend
 dx12 = ["wgpu-core-deps-windows-linux-android/dx12"]
 ## Metal backend
