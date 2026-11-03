@@ -305,7 +305,6 @@ impl crate::Device for Device {
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, is_depth)
             || !texture.supports_usage(desc.usage)
-            || desc.usage.is_empty()
             || !desc
                 .range
                 .is_full_resource(format, native.MipLevels, native.ArraySize)
@@ -796,10 +795,19 @@ mod tests {
     #[test]
     fn private_device_creates_restricted_texture_views() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
         let device = Device::new(native.clone());
         let dynamic: &dyn DynDevice = &device;
         let desc = TextureDescriptor {
@@ -884,6 +892,43 @@ mod tests {
             unsafe { dynamic.create_texture_view(color_texture.as_ref(), &view_desc) },
             Err(DeviceError::Unexpected)
         ));
+        let mut copy_only = desc.clone();
+        copy_only.usage = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+        let copy_texture = unsafe { dynamic.create_texture(&copy_only).unwrap() };
+        let mut metadata_desc = view_desc.clone();
+        metadata_desc.usage = wgt::TextureUses::empty();
+        let metadata_view = unsafe {
+            dynamic
+                .create_texture_view(copy_texture.as_ref(), &metadata_desc)
+                .unwrap()
+        };
+        let metadata_native = metadata_view
+            .as_any()
+            .downcast_ref::<super::super::texture::NativeTextureView>()
+            .unwrap();
+        assert!(metadata_native.shader_resource().is_none());
+        assert!(metadata_native.render_target().is_none());
+        assert!(native.sampled_view(metadata_native).is_err());
+        assert!(native.render_target_view(metadata_native).is_err());
+        assert!(matches!(
+            unsafe { dynamic.create_texture_view(copy_texture.as_ref(), &view_desc) },
+            Err(DeviceError::Unexpected)
+        ));
+        let mut invalid_metadata = metadata_desc.clone();
+        invalid_metadata.dimension = wgt::TextureViewDimension::D2Array;
+        assert!(matches!(
+            unsafe { dynamic.create_texture_view(copy_texture.as_ref(), &invalid_metadata) },
+            Err(DeviceError::Unexpected)
+        ));
+        invalid_metadata = metadata_desc;
+        invalid_metadata.format = wgt::TextureFormat::Bgra8Unorm;
+        assert!(matches!(
+            unsafe { dynamic.create_texture_view(copy_texture.as_ref(), &invalid_metadata) },
+            Err(DeviceError::Unexpected)
+        ));
+        unsafe { dynamic.destroy_texture(copy_texture) };
+        assert!(native.sampled_view(metadata_native).is_err());
+        unsafe { dynamic.destroy_texture_view(metadata_view) };
         let other = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?));
         assert!(other.native().render_target_view(native_view).is_err());
         assert!(matches!(

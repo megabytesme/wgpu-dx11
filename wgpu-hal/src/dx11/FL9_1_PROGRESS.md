@@ -990,3 +990,14 @@ unverified or rejected. The complete strict suite passed 235 cases with two
 filtered before the final test-only mip-linear extension and model-field update;
 the updated focused GPU and four capability CPU tests passed. HAL Clippy passed
 with ten existing warnings and core ordinary enumeration remained empty.
+Checkpoint: `62ef2660b`.
+
+Copy-only texture views may now retain metadata without native SRV/RTV objects;
+unsupported sampling or attachment use remains rejected. The strict private
+view test passed on RTX FL9_1, including retained resource lifetime. The
+controlled core fixture created RGBA8 and BGRA8 copy-only views, rejected
+sampled/render view usages and matched 12 GPU-transferred pixels for each.
+The combined strict suite passed 237 cases, two filtered, with three documented
+internal shader skips. HAL Clippy passed with ten existing warnings; core
+ordinary D3D11 enumeration remained empty. Independent review found no concrete
+ownership or usage defect.

@@ -221,6 +221,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.texture_view_drop(view);
         global.texture_drop(texture);
     }
+    copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
+    if !bgra_caps.is_empty() {
+        copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
+    }
     let (query_set, error) = global.device_create_query_set(
         device,
         &wgt::QuerySetDescriptor {
@@ -362,6 +366,184 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.queues.is_empty());
     assert!(hub.devices.is_empty());
     assert!(hub.adapters.is_empty());
+}
+
+fn copy_only_texture_view(
+    global: &Global,
+    device: crate::id::DeviceId,
+    queue: crate::id::QueueId,
+    format: wgt::TextureFormat,
+) {
+    let extent = wgt::Extent3d {
+        width: 4,
+        height: 3,
+        depth_or_array_layers: 1,
+    };
+    let usage = wgt::TextureUsages::COPY_SRC | wgt::TextureUsages::COPY_DST;
+    let (texture, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format,
+            usage,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(error.is_none(), "copy-only {format:?} texture: {error:?}");
+    let (view, error) = global.texture_create_view(
+        texture,
+        &crate::resource::TextureViewDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "copy-only {format:?} view: {error:?}");
+    for invalid_usage in [
+        wgt::TextureUsages::TEXTURE_BINDING,
+        wgt::TextureUsages::RENDER_ATTACHMENT,
+    ] {
+        let (invalid, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor {
+                usage: Some(invalid_usage),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(crate::resource::CreateTextureViewError::InvalidTextureViewUsage { .. })
+            ),
+            "copy-only {format:?} must reject {invalid_usage:?} view usage: {error:?}"
+        );
+        global.texture_view_drop(invalid);
+    }
+    global.texture_view_drop(view);
+    let create_buffer = |usage| {
+        let (buffer, error) = global.device_create_buffer(
+            device,
+            &wgt::BufferDescriptor {
+                label: None,
+                size: 768,
+                usage,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(error.is_none(), "copy-only test buffer: {error:?}");
+        buffer
+    };
+    let upload = create_buffer(wgt::BufferUsages::COPY_SRC | wgt::BufferUsages::COPY_DST);
+    let readback = create_buffer(wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ);
+    let mut expected = vec![0u8; 768];
+    for y in 0..3 {
+        for x in 0..4 {
+            let start = y * 256 + x * 4;
+            expected[start..start + 4].copy_from_slice(&[
+                (x * 41 + y * 7 + 1) as u8,
+                (x * 13 + y * 43 + 2) as u8,
+                (x * 17 + y * 29 + 3) as u8,
+                255,
+            ]);
+        }
+    }
+    global
+        .queue_write_buffer(queue, upload, 0, &expected)
+        .unwrap();
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "copy-only encoder: {error:?}");
+    let layout = wgt::TexelCopyBufferLayout {
+        offset: 0,
+        bytes_per_row: Some(256),
+        rows_per_image: Some(3),
+    };
+    let texture_copy = wgt::TexelCopyTextureInfo {
+        texture,
+        mip_level: 0,
+        origin: wgt::Origin3d::ZERO,
+        aspect: wgt::TextureAspect::All,
+    };
+    global
+        .command_encoder_copy_buffer_to_texture(
+            encoder,
+            &wgt::TexelCopyBufferInfo {
+                buffer: upload,
+                layout,
+            },
+            &texture_copy,
+            &extent,
+        )
+        .unwrap();
+    global
+        .command_encoder_copy_texture_to_buffer(
+            encoder,
+            &texture_copy,
+            &wgt::TexelCopyBufferInfo {
+                buffer: readback,
+                layout,
+            },
+            &extent,
+        )
+        .unwrap();
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(error.is_none(), "copy-only command finish: {error:?}");
+    global
+        .queue_submit(queue, &[command])
+        .expect("copy-only submit");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            readback,
+            0,
+            Some(768),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| sender.send(result).unwrap())),
+            },
+        )
+        .expect("copy-only map");
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .expect("copy-only poll");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap()
+        .unwrap();
+    let (pointer, length) = global
+        .buffer_get_mapped_range(readback, 0, Some(768))
+        .unwrap();
+    assert_eq!(length, 768);
+    let actual = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
+    for y in 0..3 {
+        let start = y * 256;
+        assert_eq!(
+            &actual[start..start + 16],
+            &expected[start..start + 16],
+            "{format:?} row {y}"
+        );
+    }
+    global.buffer_unmap(readback).unwrap();
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.buffer_drop(upload);
+    global.buffer_drop(readback);
+    global.texture_drop(texture);
+    std::println!("PASS: copy-only {format:?} view and GPU transfer, 12 pixels matched");
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
