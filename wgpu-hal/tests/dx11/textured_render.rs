@@ -75,6 +75,31 @@ fn checked_two_texture_overlay_inverts_destination() -> windows::core::Result<()
     sampled_triangle(true, true, false, true, true, 0, Some(source))
 }
 
+#[test]
+fn sparse_texture_sampler_bindings_render() -> windows::core::Result<()> {
+    sampled_triangle_variant(false, false, false, false, false, 0, None, 1)
+}
+
+#[test]
+fn reversed_sparse_declarations_render() -> windows::core::Result<()> {
+    sampled_triangle_variant(false, false, false, false, false, 0, None, 2)
+}
+
+#[test]
+fn sparse_sampler_before_texture_binding_renders() -> windows::core::Result<()> {
+    sampled_triangle_variant(false, false, false, false, false, 0, None, 4)
+}
+
+#[test]
+fn sparse_bindings_coexist_with_uniform() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, false, false, false, false, 0, None, 1)
+}
+
+#[test]
+fn sparse_binding_transition_replaces_texture() -> windows::core::Result<()> {
+    sampled_triangle_variant(false, false, false, false, false, 0, None, 3)
+}
+
 fn sampled_triangle(
     combined: bool,
     multi: bool,
@@ -84,11 +109,41 @@ fn sampled_triangle(
     effect: u8,
     overlay_shader: Option<&str>,
 ) -> windows::core::Result<()> {
+    sampled_triangle_variant(
+        combined,
+        multi,
+        alpha,
+        two,
+        invert,
+        effect,
+        overlay_shader,
+        0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sampled_triangle_variant(
+    combined: bool,
+    multi: bool,
+    alpha: bool,
+    two: bool,
+    invert: bool,
+    effect: u8,
+    overlay_shader: Option<&str>,
+    variant: u8,
+) -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
-    let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|message| panic!("{message}"))
+    else {
+        std::println!("SKIP: no hardware adapter");
         return Ok(());
     };
+    std::println!("Hardware: {:?}; requested FL9_1", adapter.identity());
     let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    std::println!("Actual feature level: {:?}", native.feature_level());
     let device = Device::new(native.clone());
     let source = if let Some(source) = overlay_shader {
         source
@@ -101,7 +156,26 @@ fn sampled_triangle(
     } else {
         "@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }"
     };
-    let module = naga::front::wgsl::parse_str(source).unwrap();
+    let (mapped_texture, mapped_sampler) = if variant == 4 { (42, 7) } else { (7, 42) };
+    let source = if variant != 0 {
+        let texture_binding = u32::from(combined);
+        let sampler_binding = texture_binding + 1;
+        let old_texture =
+            alloc::format!("@group(0) @binding({texture_binding}) var t: texture_2d<f32>;");
+        let old_sampler = alloc::format!("@group(0) @binding({sampler_binding}) var s: sampler;");
+        let declarations = if variant == 2 {
+            alloc::format!("@group(0) @binding({mapped_sampler}) var s: sampler; @group(0) @binding({mapped_texture}) var t: texture_2d<f32>;")
+        } else {
+            alloc::format!("@group(0) @binding({mapped_texture}) var t: texture_2d<f32>; @group(0) @binding({mapped_sampler}) var s: sampler;")
+        };
+        source.replace(
+            &alloc::format!("{old_texture} {old_sampler}"),
+            &declarations,
+        )
+    } else {
+        source.into()
+    };
+    let module = naga::front::wgsl::parse_str(&source).unwrap();
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::empty(),
@@ -163,6 +237,14 @@ fn sampled_triangle(
             count: None,
         },
     ]);
+    if variant != 0 {
+        let index = usize::from(combined);
+        entries[index].binding = mapped_texture;
+        entries[index + 1].binding = mapped_sampler;
+        if variant == 2 {
+            entries.swap(index, index + 1);
+        }
+    }
     if two {
         entries.push(wgt::BindGroupLayoutEntry {
             binding: 3,
@@ -327,9 +409,20 @@ fn sampled_triangle(
         } else if combined {
             super::super::hal_bind_group::GroupKind::UniformTextureSampler {
                 minimum: if multi { 0 } else { 16 },
+                pair: super::super::hal_bind_group::TexturePair {
+                    texture: if variant != 0 { mapped_texture } else { 1 },
+                    sampler: if variant != 0 { mapped_sampler } else { 2 },
+                    slot: 0,
+                },
             }
         } else {
-            super::super::hal_bind_group::GroupKind::TextureSampler
+            super::super::hal_bind_group::GroupKind::TextureSampler {
+                pair: super::super::hal_bind_group::TexturePair {
+                    texture: if variant != 0 { mapped_texture } else { 0 },
+                    sampler: if variant != 0 { mapped_sampler } else { 1 },
+                    slot: 0,
+                },
+            }
         })
     );
     let texture_desc = crate::TextureDescriptor {
@@ -350,7 +443,9 @@ fn sampled_triangle(
     let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
     let mut texels = alloc::vec![0; 64];
     for pixel in texels.chunks_exact_mut(4) {
-        pixel.copy_from_slice(if two {
+        pixel.copy_from_slice(if variant == 3 {
+            &[255, 0, 0, 255]
+        } else if two {
             &[255, 255, 255, 255]
         } else if combined {
             &[255, 255, 0, 255]
@@ -441,15 +536,14 @@ fn sampled_triangle(
     } else {
         [0.0, 1.0, 1.0, 1.0]
     };
-    let mut color_bytes: alloc::vec::Vec<u8> =
-        color.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    let mut color_bytes: alloc::vec::Vec<u8> = color.iter().flat_map(|v| v.to_ne_bytes()).collect();
     if overlay_shader.is_some() {
         color_bytes.resize(64, 0);
     }
     native.write_byte_buffer(&uniform, 0, &color_bytes)?;
     let uniform_bindings = [crate::BufferBinding::new_unchecked(&uniform, 0, None)];
     let buffer_bindings: &[_] = if combined { &uniform_bindings } else { &[] };
-    let group_entries: alloc::vec::Vec<_> = (0..if two {
+    let mut group_entries: alloc::vec::Vec<_> = (0..if two {
         5
     } else if combined {
         3
@@ -462,6 +556,12 @@ fn sampled_triangle(
             count: 1,
         })
         .collect();
+    if variant != 0 {
+        let index = usize::from(combined);
+        group_entries[index].binding = mapped_texture;
+        group_entries[index + 1].binding = mapped_sampler;
+        group_entries.sort_by_key(|entry| entry.binding);
+    }
     if two {
         let mut invalid_entries = group_entries.clone();
         invalid_entries[3].resource_index = 0;
@@ -492,6 +592,57 @@ fn sampled_triangle(
                 external_textures: &[],
             })
             .unwrap()
+    };
+    if variant != 0 {
+        let missing_entries = &group_entries[..group_entries.len() - 1];
+        assert!(unsafe {
+            device.create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &group_layout,
+                buffers: buffer_bindings,
+                samplers: &sampler_bindings,
+                textures: &texture_bindings,
+                entries: missing_entries,
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+        }
+        .is_err());
+        assert!(unsafe {
+            device.create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &group_layout,
+                buffers: buffer_bindings,
+                samplers: &[],
+                textures: &texture_bindings,
+                entries: &group_entries,
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+        }
+        .is_err());
+    }
+    let transition_group = if variant == 3 {
+        let textures = [crate::TextureBinding {
+            view: &second_view,
+            usage: wgt::TextureUses::RESOURCE,
+        }];
+        Some(unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: buffer_bindings,
+                    samplers: &sampler_bindings,
+                    textures: &textures,
+                    entries: &group_entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        })
+    } else {
+        None
     };
     let vertices: [f32; 6] = if overlay_shader.is_some() {
         [0., 8., 16., 8., 0., -8.]
@@ -811,6 +962,10 @@ fn sampled_triangle(
                 1,
             );
         }
+        if let Some(group) = transition_group.as_ref() {
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, group, &[]);
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+        }
         crate::CommandEncoder::end_render_pass(&mut encoder);
     }
     let command = unsafe { crate::CommandEncoder::end_encoding(&mut encoder).unwrap() };
@@ -820,6 +975,9 @@ fn sampled_triangle(
     assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
     let actual = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
+    if variant != 0 {
+        std::println!("FL9_1 variant {variant} readback: {actual:?}");
+    }
     if alpha {
         assert_eq!(actual[0], 0);
         assert!((127..=128).contains(&actual[1]) && (127..=128).contains(&actual[2]));

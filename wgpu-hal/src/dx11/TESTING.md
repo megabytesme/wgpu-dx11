@@ -76,6 +76,19 @@ The DX11-disabled DX12 GPU tests for mapped-buffer copy/readback and capability
 validation each passed on the RTX 3090 Ti. Repeat the focused command to
 establish fresh hardware evidence.
 
+### Sparse texture and sampler bindings
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, run:
+
+```console
+cargo test -p wgpu-hal --lib --no-default-features --features dx11 dx11::hal_encoder::textured_tests -- --test-threads=1 --nocapture
+```
+
+This includes sparse bindings 7 and 42 in either numerical order, reversed WGSL
+declarations and layout entries, uniform coexistence, and a red-to-green texture
+binding transition.
+Each checks GPU readback at FL9_1. No-adapter runs fail in strict mode.
+
 ### Broader suite
 
 On a Windows machine with the DX11 feature enabled, run:

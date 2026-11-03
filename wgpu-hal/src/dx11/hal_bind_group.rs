@@ -13,10 +13,140 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResou
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum GroupKind {
     Empty,
-    TextureSampler,
+    TextureSampler { pair: TexturePair },
     Uniform { minimum: u64 },
-    UniformTextureSampler { minimum: u64 },
+    UniformTextureSampler { minimum: u64, pair: TexturePair },
     UniformTwoTextures { minimum: u64 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TexturePair {
+    pub texture: u32,
+    pub sampler: u32,
+    pub slot: u32,
+}
+
+impl GroupKind {
+    pub(super) fn pairs(self) -> [Option<TexturePair>; 2] {
+        match self {
+            Self::TextureSampler { pair } | Self::UniformTextureSampler { pair, .. } => {
+                [Some(pair), None]
+            }
+            Self::UniformTwoTextures { .. } => [
+                Some(TexturePair {
+                    texture: 1,
+                    sampler: 2,
+                    slot: 0,
+                }),
+                Some(TexturePair {
+                    texture: 3,
+                    sampler: 4,
+                    slot: 1,
+                }),
+            ],
+            _ => [None, None],
+        }
+    }
+
+    pub(super) fn shader_bindings(self) -> alloc::vec::Vec<super::shader::ShaderBinding> {
+        use super::shader::{ShaderBinding, ShaderBindingKind};
+        let mut bindings = alloc::vec::Vec::new();
+        if matches!(
+            self,
+            Self::Uniform { .. }
+                | Self::UniformTextureSampler { .. }
+                | Self::UniformTwoTextures { .. }
+        ) {
+            bindings.push(ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 0,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Uniform,
+            });
+        }
+        for pair in self.pairs().into_iter().flatten() {
+            for (binding, kind) in [
+                (pair.texture, ShaderBindingKind::Texture2dFloat),
+                (pair.sampler, ShaderBindingKind::Sampler),
+            ] {
+                bindings.push(ShaderBinding {
+                    binding: naga::ResourceBinding { group: 0, binding },
+                    slot: pair.slot,
+                    kind,
+                });
+            }
+        }
+        bindings
+    }
+}
+
+fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> bool {
+    entries.len() == expected.len()
+        && expected.iter().all(|&(binding, index)| {
+            entries
+                .iter()
+                .filter(|entry| {
+                    entry.binding == binding && entry.resource_index == index && entry.count == 1
+                })
+                .count()
+                == 1
+        })
+}
+
+fn single_pair(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate::DeviceError> {
+    let mut texture = None;
+    let mut sampler = None;
+    let mut uniform = None;
+    for (index, entry) in entries.iter().enumerate() {
+        if entry.count.is_some()
+            || entries[..index]
+                .iter()
+                .any(|other| other.binding == entry.binding)
+        {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        match entry.ty {
+            wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            } if entry.visibility == wgt::ShaderStages::FRAGMENT && texture.is_none() => {
+                texture = Some(entry.binding)
+            }
+            wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
+                if entry.visibility == wgt::ShaderStages::FRAGMENT && sampler.is_none() =>
+            {
+                sampler = Some(entry.binding)
+            }
+            wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size,
+            } if entry.binding == 0
+                && entry.visibility
+                    == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
+                && uniform.is_none()
+                && min_binding_size.map_or(0, |v| v.get()) <= 65536 =>
+            {
+                uniform = Some(min_binding_size.map_or(0, |v| v.get()))
+            }
+            _ => return Err(crate::DeviceError::Unexpected),
+        }
+    }
+    let (Some(texture), Some(sampler)) = (texture, sampler) else {
+        return Err(crate::DeviceError::Unexpected);
+    };
+    let pair = TexturePair {
+        texture,
+        sampler,
+        slot: 0,
+    };
+    Ok(match uniform {
+        Some(minimum) => GroupKind::UniformTextureSampler { minimum, pair },
+        None => GroupKind::TextureSampler { pair },
+    })
 }
 
 #[doc(hidden)]
@@ -116,43 +246,7 @@ impl BindGroupLayout {
                     _ => return Err(crate::DeviceError::Unexpected),
                 }
             }
-            [uniform, texture, sampler]
-                if uniform.binding == 0
-                    && uniform.count.is_none()
-                    && uniform.visibility
-                        == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
-                    && texture.binding == 1
-                    && sampler.binding == 2
-                    && texture.visibility == wgt::ShaderStages::FRAGMENT
-                    && sampler.visibility == wgt::ShaderStages::FRAGMENT
-                    && texture.count.is_none()
-                    && sampler.count.is_none()
-                    && matches!(
-                        texture.ty,
-                        wgt::BindingType::Texture {
-                            sample_type: wgt::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgt::TextureViewDimension::D2,
-                            multisampled: false,
-                        }
-                    )
-                    && matches!(
-                        sampler.ty,
-                        wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
-                    ) =>
-            {
-                match uniform.ty {
-                    wgt::BindingType::Buffer {
-                        ty: wgt::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size,
-                    } if min_binding_size.map_or(0, |value| value.get()) <= 65536 => {
-                        GroupKind::UniformTextureSampler {
-                            minimum: min_binding_size.map_or(0, |value| value.get()),
-                        }
-                    }
-                    _ => return Err(crate::DeviceError::Unexpected),
-                }
-            }
+            entries if entries.len() == 2 || entries.len() == 3 => single_pair(entries)?,
             [uniform]
                 if uniform.binding == 0
                     && uniform.count.is_none()
@@ -173,28 +267,6 @@ impl BindGroupLayout {
                     }
                     _ => return Err(crate::DeviceError::Unexpected),
                 }
-            }
-            [texture, sampler]
-                if texture.binding == 0
-                    && sampler.binding == 1
-                    && texture.visibility == wgt::ShaderStages::FRAGMENT
-                    && sampler.visibility == wgt::ShaderStages::FRAGMENT
-                    && texture.count.is_none()
-                    && sampler.count.is_none()
-                    && matches!(
-                        texture.ty,
-                        wgt::BindingType::Texture {
-                            sample_type: wgt::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgt::TextureViewDimension::D2,
-                            multisampled: false
-                        }
-                    )
-                    && matches!(
-                        sampler.ty,
-                        wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
-                    ) =>
-            {
-                GroupKind::TextureSampler
             }
             _ => return Err(crate::DeviceError::Unexpected),
         };
@@ -281,16 +353,14 @@ impl BindGroup {
                     secondary: Some(secondary),
                 }
             }
-            GroupKind::UniformTextureSampler { minimum } => {
+            GroupKind::UniformTextureSampler { minimum, pair } => {
                 if desc.buffers.len() != 1
                     || desc.textures.len() != 1
                     || desc.samplers.len() != 1
-                    || desc.entries.len() != 3
-                    || desc.entries.iter().enumerate().any(|(index, entry)| {
-                        entry.binding != index as u32
-                            || entry.resource_index != 0
-                            || entry.count != 1
-                    })
+                    || !entries_match(
+                        desc.entries,
+                        &[(0, 0), (pair.texture, 0), (pair.sampler, 0)],
+                    )
                     || desc.textures[0].usage != wgt::TextureUses::RESOURCE
                 {
                     return Err(crate::DeviceError::Unexpected);
@@ -346,17 +416,11 @@ impl BindGroup {
                     .map_err(super::hal_device::device_error)?;
                 GroupResources::Uniform(Arc::new(uniform))
             }
-            GroupKind::TextureSampler => {
+            GroupKind::TextureSampler { pair } => {
                 if !desc.buffers.is_empty()
                     || desc.textures.len() != 1
                     || desc.samplers.len() != 1
-                    || desc.entries.len() != 2
-                    || desc.entries[0].binding != 0
-                    || desc.entries[0].resource_index != 0
-                    || desc.entries[0].count != 1
-                    || desc.entries[1].binding != 1
-                    || desc.entries[1].resource_index != 0
-                    || desc.entries[1].count != 1
+                    || !entries_match(desc.entries, &[(pair.texture, 0), (pair.sampler, 0)])
                     || desc.textures[0].usage != wgt::TextureUses::RESOURCE
                 {
                     return Err(crate::DeviceError::Unexpected);
@@ -392,6 +456,130 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn sparse_pair_layout_validation_is_order_independent_and_fail_closed() {
+        let texture = wgt::BindGroupLayoutEntry {
+            binding: 7,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            count: None,
+            ty: wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+        };
+        let sampler = wgt::BindGroupLayoutEntry {
+            binding: 42,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            count: None,
+            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+        };
+        let expected = GroupKind::TextureSampler {
+            pair: TexturePair {
+                texture: 7,
+                sampler: 42,
+                slot: 0,
+            },
+        };
+        assert_eq!(single_pair(&[texture, sampler]).unwrap(), expected);
+        assert_eq!(single_pair(&[sampler, texture]).unwrap(), expected);
+        let mappings = expected.shader_bindings();
+        assert_eq!(mappings.len(), 2);
+        assert_eq!(
+            (
+                mappings[0].binding.group,
+                mappings[0].binding.binding,
+                mappings[0].slot
+            ),
+            (0, 7, 0)
+        );
+        assert_eq!(
+            (
+                mappings[1].binding.group,
+                mappings[1].binding.binding,
+                mappings[1].slot
+            ),
+            (0, 42, 0)
+        );
+        assert!(mappings
+            .iter()
+            .all(|binding| binding.slot != 13 && binding.slot != 15));
+        assert!(single_pair(&[texture]).is_err());
+        assert!(single_pair(&[
+            texture,
+            wgt::BindGroupLayoutEntry {
+                binding: 7,
+                ..sampler
+            }
+        ])
+        .is_err());
+        assert!(single_pair(&[
+            texture,
+            wgt::BindGroupLayoutEntry {
+                visibility: wgt::ShaderStages::VERTEX,
+                ..sampler
+            }
+        ])
+        .is_err());
+        assert!(single_pair(&[
+            texture,
+            wgt::BindGroupLayoutEntry {
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
+                ..sampler
+            }
+        ])
+        .is_err());
+        assert!(single_pair(&[
+            wgt::BindGroupLayoutEntry {
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2Array,
+                    multisampled: false
+                },
+                ..texture
+            },
+            sampler
+        ])
+        .is_err());
+        assert!(single_pair(&[
+            texture,
+            sampler,
+            wgt::BindGroupLayoutEntry {
+                binding: 9,
+                ..texture
+            }
+        ])
+        .is_err());
+        let valid = [
+            crate::BindGroupEntry {
+                binding: 7,
+                resource_index: 0,
+                count: 1,
+            },
+            crate::BindGroupEntry {
+                binding: 42,
+                resource_index: 0,
+                count: 1,
+            },
+        ];
+        assert!(entries_match(&valid, &[(7, 0), (42, 0)]));
+        assert!(!entries_match(&valid[..1], &[(7, 0), (42, 0)]));
+        assert!(!entries_match(
+            &[valid[0].clone(), valid[0].clone()],
+            &[(7, 0), (42, 0)]
+        ));
+        assert!(!entries_match(
+            &[
+                valid[0].clone(),
+                crate::BindGroupEntry {
+                    resource_index: 1,
+                    ..valid[1]
+                }
+            ],
+            &[(7, 0), (42, 0)]
+        ));
+    }
 
     #[test]
     fn empty_layout_and_group_enforce_owner_and_no_resources() -> windows::core::Result<()> {

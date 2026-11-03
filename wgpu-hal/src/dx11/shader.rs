@@ -247,6 +247,15 @@ pub(crate) fn compile_naga_with_bindings(
         ray_query_initialization_tracking: true,
         ..Default::default()
     };
+    if level_9
+        && bindings
+            .iter()
+            .filter(|mapping| mapping.kind == ShaderBindingKind::Texture2dFloat)
+            .count()
+            > 8
+    {
+        return Err(NagaCompileError::InvalidBindingMapping);
+    }
     for (index, mapping) in bindings.iter().enumerate() {
         let max_slots = match mapping.kind {
             ShaderBindingKind::Uniform => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT,
@@ -1112,6 +1121,147 @@ mod tests {
             ),
             Err(NagaCompileError::InvalidBindingMapping)
         ));
+    }
+
+    #[test]
+    fn sparse_bindings_map_registers_and_reject_invalid_mappings() {
+        use naga::{
+            back::hlsl,
+            valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
+        };
+        let source = "@group(0) @binding(42) var s: sampler; @group(0) @binding(7) var t: texture_2d<f32>; @fragment fn main() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5)); }";
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let image = ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Texture2dFloat,
+        };
+        let sampler = ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 42,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Sampler,
+        };
+        let compile = |bindings: &[ShaderBinding]| {
+            compile_naga_with_bindings(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::PixelLevel9_1,
+                bindings,
+            )
+        };
+        assert!(compile(&[image, sampler]).unwrap().starts_with(b"DXBC"));
+        assert!(matches!(
+            compile(&[image]),
+            Err(NagaCompileError::UnsupportedBindings)
+        ));
+        assert!(matches!(
+            compile(&[image, image, sampler]),
+            Err(NagaCompileError::InvalidBindingMapping)
+        ));
+        let colliding_image = ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 1,
+                binding: 7,
+            },
+            ..image
+        };
+        assert!(matches!(
+            compile(&[image, colliding_image, sampler]),
+            Err(NagaCompileError::InvalidBindingMapping)
+        ));
+        assert!(compile(&[image, ShaderBinding { slot: 1, ..sampler }])
+            .unwrap()
+            .starts_with(b"DXBC"));
+        assert!(matches!(
+            compile(&[ShaderBinding { slot: 16, ..image }, sampler]),
+            Err(NagaCompileError::InvalidBindingMapping)
+        ));
+        let mut exhaustion_source = String::new();
+        for slot in 0..9 {
+            exhaustion_source.push_str(&format!(
+                "@group(0) @binding({slot}) var t{slot}: texture_2d<f32>;\n"
+            ));
+        }
+        exhaustion_source.push_str("@group(0) @binding(20) var samp: sampler; @fragment fn main() -> @location(0) vec4f { return ");
+        for slot in 0..9 {
+            if slot != 0 {
+                exhaustion_source.push_str(" + ");
+            }
+            exhaustion_source.push_str(&format!("textureSample(t{slot}, samp, vec2f(0.5))"));
+        }
+        exhaustion_source.push_str("; }");
+        let exhaustion_module = naga::front::wgsl::parse_str(&exhaustion_source).unwrap();
+        let exhaustion_info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&exhaustion_module)
+            .unwrap();
+        let mut exhausted: Vec<_> = (0..9)
+            .map(|slot| ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: slot,
+                },
+                slot,
+                kind: ShaderBindingKind::Texture2dFloat,
+            })
+            .collect();
+        exhausted.push(ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 20,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Sampler,
+        });
+        assert!(matches!(
+            compile_naga_with_bindings(
+                &exhaustion_module,
+                &exhaustion_info,
+                ShaderStage::Fragment,
+                "main",
+                ShaderProfile::PixelLevel9_1,
+                &exhausted
+            ),
+            Err(NagaCompileError::InvalidBindingMapping)
+        ));
+        let mut options = hlsl::Options {
+            shader_model: hlsl::ShaderModel::V5_0,
+            direct_sampler_bindings: true,
+            fake_missing_bindings: false,
+            ..Default::default()
+        };
+        for binding in [image, sampler] {
+            options.binding_map.insert(
+                binding.binding,
+                hlsl::BindTarget {
+                    register: binding.slot,
+                    ..Default::default()
+                },
+            );
+        }
+        let mut hlsl = String::new();
+        hlsl::Writer::new(
+            &mut hlsl,
+            &options,
+            &hlsl::PipelineOptions {
+                entry_point: Some((ShaderStage::Fragment, "main".into())),
+            },
+        )
+        .write(&module, &info, None)
+        .unwrap();
+        assert!(hlsl.contains("register(t0)"), "{hlsl}");
+        assert!(hlsl.contains("register(s0)"), "{hlsl}");
     }
 
     #[test]

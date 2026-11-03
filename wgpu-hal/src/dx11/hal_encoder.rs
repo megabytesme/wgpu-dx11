@@ -326,15 +326,23 @@ impl crate::CommandEncoder for CommandEncoder {
                             self.reject();
                             return;
                         }
+                        let Some(pair) = group.kind.pairs()[1] else {
+                            self.reject();
+                            return;
+                        };
                         secondary_command = Some(NativeCommand::SetTextureGroup {
-                            slot: 1,
+                            slot: pair.slot,
                             texture: texture.clone(),
                             sampler: sampler.clone(),
                         });
                     }
                 }
+                let Some(pair) = group.kind.pairs()[0] else {
+                    self.reject();
+                    return;
+                };
                 NativeCommand::SetTextureGroup {
-                    slot: 0,
+                    slot: pair.slot,
                     texture: texture.clone(),
                     sampler: sampler.clone(),
                 }

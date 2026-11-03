@@ -375,7 +375,7 @@ mod tests {
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
         assert!(matches!(
             pipeline.group,
-            Some(super::super::hal_bind_group::GroupKind::TextureSampler)
+            Some(super::super::hal_bind_group::GroupKind::TextureSampler { .. })
         ));
         let texture_desc = crate::TextureDescriptor {
             label: None,
@@ -627,7 +627,7 @@ impl RenderPipeline {
         let mut required_uniform_size = 0;
         if let Some(
             super::hal_bind_group::GroupKind::Uniform { minimum }
-            | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum }
+            | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum, .. }
             | super::hal_bind_group::GroupKind::UniformTwoTextures { minimum },
         ) = desc.layout.group
         {
@@ -639,93 +639,19 @@ impl RenderPipeline {
                 required_uniform_size = required_uniform_size.max(required);
             }
         }
-        use super::shader::{ShaderBinding, ShaderBindingKind};
-        let bindings = [
-            ShaderBinding {
-                binding: naga::ResourceBinding {
-                    group: 0,
-                    binding: 0,
-                },
-                slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
-            },
-            ShaderBinding {
-                binding: naga::ResourceBinding {
-                    group: 0,
-                    binding: 1,
-                },
-                slot: 0,
-                kind: ShaderBindingKind::Sampler,
-            },
-        ];
-        let uniform_binding = [ShaderBinding {
-            binding: naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            slot: 0,
-            kind: ShaderBindingKind::Uniform,
-        }];
-        let combined_bindings = [
-            uniform_binding[0],
-            ShaderBinding {
-                binding: naga::ResourceBinding {
-                    group: 0,
-                    binding: 1,
-                },
-                slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
-            },
-            ShaderBinding {
-                binding: naga::ResourceBinding {
-                    group: 0,
-                    binding: 2,
-                },
-                slot: 0,
-                kind: ShaderBindingKind::Sampler,
-            },
-        ];
-        let two_texture_bindings = [
-            combined_bindings[0],
-            combined_bindings[1],
-            combined_bindings[2],
-            ShaderBinding {
-                binding: naga::ResourceBinding {
-                    group: 0,
-                    binding: 3,
-                },
-                slot: 1,
-                kind: ShaderBindingKind::Texture2dFloat,
-            },
-            ShaderBinding {
-                binding: naga::ResourceBinding {
-                    group: 0,
-                    binding: 4,
-                },
-                slot: 1,
-                kind: ShaderBindingKind::Sampler,
-            },
-        ];
-        let bindings: &[_] = match desc.layout.group {
-            Some(super::hal_bind_group::GroupKind::TextureSampler) => &bindings,
-            Some(super::hal_bind_group::GroupKind::Uniform { .. }) => &uniform_binding,
-            Some(super::hal_bind_group::GroupKind::UniformTextureSampler { .. }) => {
-                &combined_bindings
-            }
-            Some(super::hal_bind_group::GroupKind::UniformTwoTextures { .. }) => {
-                &two_texture_bindings
-            }
-            Some(super::hal_bind_group::GroupKind::Empty) | None => &[],
-        };
+        let bindings = desc
+            .layout
+            .group
+            .map_or_else(alloc::vec::Vec::new, |group| group.shader_bindings());
         let vertex_code = vertex_stage.module.compile_with_bindings(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
-            bindings,
+            &bindings,
         )?;
         let pixel_code = fragment.module.compile_with_bindings(
             naga::ShaderStage::Fragment,
             fragment.entry_point,
-            bindings,
+            &bindings,
         )?;
         let mut input_desc = alloc::vec::Vec::with_capacity(buffer.attributes.len());
         let mut vertex_extent = 0u32;

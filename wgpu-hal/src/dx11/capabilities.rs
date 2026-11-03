@@ -89,6 +89,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_buffers: u32,
     pub color_attachments: u32,
     pub index_u16: bool,
+    pub sparse_texture_sampler_bindings: bool,
     pub compute: bool,
     pub storage: bool,
     pub depth_stencil: bool,
@@ -104,6 +105,7 @@ impl BackendCapabilities {
         vertex_buffers: 1,
         color_attachments: 1,
         index_u16: true,
+        sparse_texture_sampler_bindings: true,
         compute: false,
         storage: false,
         depth_stencil: false,
@@ -275,6 +277,7 @@ mod tests {
         assert_eq!(fl9.hardware.max_primitives_per_draw, 65_535);
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
+        assert!(fl9.backend.sparse_texture_sampler_bindings);
         assert!(!fl9.backend.instancing && !fl9.backend.storage && !fl9.backend.queries);
     }
 
