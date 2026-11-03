@@ -288,6 +288,23 @@ fn public_wgpu_textured_depth_on_forced_fl91() {
         mapped_at_creation: false,
     });
     queue.write_buffer(&vertex_buffer, 0, &vertices);
+    let index_upload = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 12,
+        usage: BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let index_buffer = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 12,
+        usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let indices: Vec<u8> = [6u32, 7, 8]
+        .into_iter()
+        .flat_map(u32::to_ne_bytes)
+        .collect();
+    queue.write_buffer(&index_upload, 0, &indices);
     let readback = device.create_buffer(&BufferDescriptor {
         label: None,
         size: 2048,
@@ -295,6 +312,7 @@ fn public_wgpu_textured_depth_on_forced_fl91() {
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_buffer(&index_upload, 0, &index_buffer, 0, 12);
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: None,
@@ -326,7 +344,8 @@ fn public_wgpu_textured_depth_on_forced_fl91() {
         pass.set_bind_group(0, &group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..6, 0..1);
-        pass.draw(6..9, 0..1);
+        pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint32);
+        pass.draw_indexed(0..3, 0, 0..1);
     }
     encoder.copy_texture_to_buffer(
         TexelCopyTextureInfo {
@@ -377,5 +396,5 @@ fn public_wgpu_textured_depth_on_forced_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public wgpu textured depth rendering, 32 red and 32 green pixels");
+    println!("PASS: public wgpu textured depth rendering with GPU-uploaded u32 indices, 32 red and 32 green pixels");
 }

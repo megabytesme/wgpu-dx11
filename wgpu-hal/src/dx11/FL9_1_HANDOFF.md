@@ -142,9 +142,10 @@ Naga, core, public Noop validation and targeted DX12 regressions as recorded
 in FL9_1_PROGRESS.md. No public D3D11 example or visual display test ran.
 
 The opt-in `wgpu` integration test used the public Rust API with an unsafe
-injected fixture. On the forced-FL9_1 RTX, textured depth rendering produced
-32 red and 32 green pixels. Ordinary D3D11 enumeration remained empty before
-and after injection. This is a controlled test, not general public exposure.
+injected fixture. On the forced-FL9_1 RTX, GPU-uploaded Uint32 indexed textured
+depth rendering produced 32 red and 32 green pixels. Ordinary D3D11 enumeration
+remained empty before and after injection. This is a controlled test, not
+general public exposure.
 
 Core's zero inter-stage limit panic was reproduced in a public Noop test and
 fixed with signed deduction arithmetic. The expanded focused test and the

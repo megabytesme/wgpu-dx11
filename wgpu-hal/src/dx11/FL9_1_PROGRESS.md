@@ -512,6 +512,11 @@ internally. Independent review found no concrete defect. High stream offsets
 remain unverified on historical FL9_1 drivers, and multiple windows or a
 single triangle with a wider span remain unsupported.
 
+The opt-in public wgpu fixture now records a GPU buffer copy to a Uint32 index
+buffer and uses indexed drawing for the far textured triangle. Strict FL9_1
+readback still matched 32 red and 32 green pixels, and ordinary adapter
+enumeration remained empty. This remains a controlled unsafe fixture.
+
 Restricted direct instancing now records one logical draw and replays all
 triangle-aligned native batches for each instance in order. Selected shaders
 declaring `instance_index`, indexed instancing and nonzero first instance are
