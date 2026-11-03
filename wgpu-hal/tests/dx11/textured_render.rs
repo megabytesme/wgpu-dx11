@@ -160,6 +160,15 @@ fn checked_two_texture_overlay_blends_alpha() -> windows::core::Result<()> {
 }
 
 #[test]
+fn checked_sampling_ignores_unselected_texture_load() -> windows::core::Result<()> {
+    let source = alloc::format!(
+        "{}\nfn unused_helper() -> vec4f {{ return textureLoad(first_texture, vec2i(0), 0); }} @fragment fn unused_load() -> @location(0) vec4f {{ return unused_helper(); }}",
+        include_str!("fixtures/two_texture_overlay.wgsl")
+    );
+    sampled_triangle(true, true, true, true, false, 0, Some(&source))
+}
+
+#[test]
 fn checked_two_texture_overlay_inverts_destination() -> windows::core::Result<()> {
     let source = include_str!("fixtures/two_texture_overlay.wgsl");
     sampled_triangle(true, true, false, true, true, 0, Some(source))

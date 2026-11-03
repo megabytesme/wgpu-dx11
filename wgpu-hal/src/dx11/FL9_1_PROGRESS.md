@@ -275,8 +275,10 @@ This synchronization draft does not resolve synchronous window-message
 reentrancy: a callback that reenters the context or waits for the same surface
 operation may deadlock. It must not be treated as a safe public presentation
 contract. Presentation completion in `wait_for_idle` also remains unproven.
+The restricted private swapchain synchronization was checkpointed as
+`9464c4aef`.
 
-Separately, an uncommitted shader-validation change narrows checked `textureLoad`
+Separately, a shader-validation change narrows checked `textureLoad`
 rejection to the selected entry point and transitively called functions.
 Reachable loads remain rejected. A CPU call-graph test and a selected-entry
 Naga/FXC sampled-rendering test passed; the latter verified the existing

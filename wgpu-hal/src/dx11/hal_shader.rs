@@ -70,6 +70,36 @@ mod tests {
         .is_err());
     }
 
+    #[test]
+    fn texture_load_scan_follows_only_selected_entry_calls() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            fn load() -> vec4f { return textureLoad(image, vec2i(0), 0); }
+            fn nested(flag: bool) -> vec4f {
+                if flag { return load(); }
+                return vec4f(0.0);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            @fragment fn unsafe_load() -> @location(0) vec4f { return nested(true); }
+            @vertex fn vertex() -> @builtin(position) vec4f { return vec4f(0.0); }
+            "#,
+        )
+        .unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        for entry in &module.entry_points {
+            let has_load = reachable_expression(&module, &entry.function, |expression| {
+                matches!(expression, naga::Expression::ImageLoad { .. })
+            });
+            assert_eq!(has_load, entry.name == "unsafe_load", "{}", entry.name);
+        }
+    }
+
     fn input() -> crate::NagaShader {
         let module = naga::front::wgsl::parse_str("@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }").unwrap();
         let info = naga::valid::Validator::new(
@@ -135,7 +165,7 @@ mod tests {
             .unwrap()
             .compile(naga::ShaderStage::Vertex, "vs")
             .is_ok());
-        let resource_module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return textureLoad(t, vec2i(0, 0), 0); }").unwrap();
+        let resource_module = naga::front::wgsl::parse_str("@group(0) @binding(0) var t: texture_2d<f32>; fn load() -> vec4f { return textureLoad(t, vec2i(0, 0), 0); } @fragment fn fs() -> @location(0) vec4f { return load(); } @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }").unwrap();
         let resource_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -154,6 +184,9 @@ mod tests {
         assert!(
             matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 texture loads are not implemented")
         );
+        assert!(checked_resource
+            .compile(naga::ShaderStage::Fragment, "safe")
+            .is_ok());
         let uniform_module = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> color: vec4f; @fragment fn fs() -> @location(0) vec4f { return color; }").unwrap();
         let uniform_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -277,53 +310,65 @@ fn used_shader_bindings(
         .collect()
 }
 
-// Initially permit checked uniform shaders only when every reachable function
-// uses constant indexing. This conservative restriction covers uniform
-// arrays passed through helpers as well as direct global accesses.
-fn has_dynamic_access(module: &naga::Module, function: &naga::Function) -> bool {
-    fn block_has_dynamic_access(
+fn reachable_expression(
+    module: &naga::Module,
+    function: &naga::Function,
+    predicate: fn(&naga::Expression) -> bool,
+) -> bool {
+    fn block_contains(
         module: &naga::Module,
         block: &naga::Block,
         visited: &mut Vec<naga::Handle<naga::Function>>,
+        predicate: fn(&naga::Expression) -> bool,
     ) -> bool {
         block.iter().any(|statement| match statement {
-            naga::Statement::Block(block) => block_has_dynamic_access(module, block, visited),
+            naga::Statement::Block(block) => block_contains(module, block, visited, predicate),
             naga::Statement::If { accept, reject, .. } => {
-                block_has_dynamic_access(module, accept, visited)
-                    || block_has_dynamic_access(module, reject, visited)
+                block_contains(module, accept, visited, predicate)
+                    || block_contains(module, reject, visited, predicate)
             }
             naga::Statement::Switch { cases, .. } => cases
                 .iter()
-                .any(|case| block_has_dynamic_access(module, &case.body, visited)),
+                .any(|case| block_contains(module, &case.body, visited, predicate)),
             naga::Statement::Loop {
                 body, continuing, ..
             } => {
-                block_has_dynamic_access(module, body, visited)
-                    || block_has_dynamic_access(module, continuing, visited)
+                block_contains(module, body, visited, predicate)
+                    || block_contains(module, continuing, visited, predicate)
             }
             naga::Statement::Call { function, .. } => {
                 if visited.contains(function) {
                     false
                 } else {
                     visited.push(*function);
-                    function_has_dynamic_access(module, &module.functions[*function], visited)
+                    function_contains(module, &module.functions[*function], visited, predicate)
                 }
             }
             _ => false,
         })
     }
-    fn function_has_dynamic_access(
+    fn function_contains(
         module: &naga::Module,
         function: &naga::Function,
         visited: &mut Vec<naga::Handle<naga::Function>>,
+        predicate: fn(&naga::Expression) -> bool,
     ) -> bool {
         function
             .expressions
             .iter()
-            .any(|(_, expression)| matches!(expression, naga::Expression::Access { .. }))
-            || block_has_dynamic_access(module, &function.body, visited)
+            .any(|(_, expression)| predicate(expression))
+            || block_contains(module, &function.body, visited, predicate)
     }
-    function_has_dynamic_access(module, function, &mut Vec::new())
+    function_contains(module, function, &mut Vec::new(), predicate)
+}
+
+// Initially permit checked uniform shaders only when every reachable function
+// uses constant indexing. This conservative restriction covers uniform
+// arrays passed through helpers as well as direct global accesses.
+fn has_dynamic_access(module: &naga::Module, function: &naga::Function) -> bool {
+    reachable_expression(module, function, |expression| {
+        matches!(expression, naga::Expression::Access { .. })
+    })
 }
 
 impl ShaderModule {
@@ -498,26 +543,13 @@ impl ShaderModule {
         // Sampled views are checked single-mip RGBA8 2D resources and sampler
         // address modes are checked against used pairs before drawing.
         // Keep explicit texel loads fail-closed until their FL9 bounds behavior
-        // is independently tested; scan helpers as well as entry points.
-        let has_texture_load = |function: &naga::Function| {
-            function
-                .expressions
-                .iter()
-                .any(|(_, expression)| matches!(expression, naga::Expression::ImageLoad { .. }))
-        };
+        // is independently tested; include helpers reachable from this entry.
         if requests_checks
-            && (self
-                .shader
-                .module
-                .functions
-                .iter()
-                .any(|(_, function)| has_texture_load(function))
-                || self
-                    .shader
-                    .module
-                    .entry_points
-                    .iter()
-                    .any(|entry| has_texture_load(&entry.function)))
+            && reachable_expression(
+                &self.shader.module,
+                &self.shader.module.entry_points[entry_index].function,
+                |expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+            )
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
