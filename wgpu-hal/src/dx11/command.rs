@@ -15,7 +15,10 @@ use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
-            Direct3D::{D3D_PRIMITIVE_TOPOLOGY_POINTLIST, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
+            Direct3D::{
+                D3D_PRIMITIVE_TOPOLOGY_POINTLIST, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+                D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+            },
             Direct3D11::{
                 ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
                 ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
@@ -118,6 +121,11 @@ pub(super) enum NativeCommand {
         max_vertices: u32,
         zero_input: bool,
     },
+    DrawStrip {
+        vertex: Option<(ID3D11Buffer, u32, u32)>,
+        count: u32,
+        instances: u32,
+    },
     DrawIndexed {
         binding: Arc<IndexBinding>,
         vertex: ID3D11Buffer,
@@ -170,6 +178,38 @@ fn draw_start_vertex(first: u32, zero_input: bool) -> u32 {
     } else {
         first
     }
+}
+
+pub(super) fn strip_vertex_offset(offset: u32, stride: u32, first: u32) -> Result<u32> {
+    first
+        .checked_mul(stride)
+        .and_then(|value| value.checked_add(offset))
+        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))
+}
+
+fn strip_batches(
+    count: u32,
+    instances: u32,
+    mut draw: impl FnMut(u32, u32) -> Result<()>,
+) -> Result<()> {
+    const MAX_VERTICES: u32 = 65_534;
+    for _ in 0..instances {
+        let mut first = 0;
+        let mut remaining = count;
+        while remaining >= 3 {
+            let batch = remaining.min(MAX_VERTICES);
+            draw(first, batch)?;
+            if batch == remaining {
+                break;
+            }
+            let step = batch - 2;
+            first = first
+                .checked_add(step)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            remaining -= step;
+        }
+    }
+    Ok(())
 }
 
 /// Owned commands retain their D3D11 resources until the command buffer drops.
@@ -343,6 +383,9 @@ impl CommandBuffer {
                             wgt::PrimitiveTopology::TriangleList => {
                                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
                             }
+                            wgt::PrimitiveTopology::TriangleStrip => {
+                                D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
+                            }
                             _ => return Err(Error::from_hresult(E_INVALIDARG)),
                         });
                         context.VSSetShader(Some(vertex), None);
@@ -396,6 +439,33 @@ impl CommandBuffer {
                     } => {
                         draw_batches(*first, *count, *instances, *max_vertices, |first, count| {
                             context.Draw(count, draw_start_vertex(first, *zero_input));
+                        })?;
+                    }
+                    NativeCommand::DrawStrip {
+                        vertex,
+                        count,
+                        instances,
+                    } => {
+                        let vertex_offset = |first: u32| -> Result<u32> {
+                            let Some((_, offset, stride)) = vertex else {
+                                return Ok(0);
+                            };
+                            strip_vertex_offset(*offset, *stride, first)
+                        };
+                        strip_batches(*count, 1, |first, _| vertex_offset(first).map(|_| ()))?;
+                        strip_batches(*count, *instances, |first, count| {
+                            if let Some((buffer, _, stride)) = vertex {
+                                let offset = vertex_offset(first)?;
+                                context.IASetVertexBuffers(
+                                    0,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(stride),
+                                    Some(&offset),
+                                );
+                            }
+                            context.Draw(count, 0);
+                            Ok(())
                         })?;
                     }
                     NativeCommand::DrawIndexed {
@@ -484,6 +554,42 @@ mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
+
+    #[test]
+    fn strip_batches_preserve_winding_overlap_and_instances() {
+        let mut batches = Vec::new();
+        for count in 0..3 {
+            strip_batches(count, 1, |first, count| {
+                batches.push((first, count));
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert!(batches.is_empty());
+        strip_batches(65_536, 2, |first, count| {
+            batches.push((first, count));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            batches,
+            [(0, 65_534), (65_532, 4), (0, 65_534), (65_532, 4)]
+        );
+        assert!(batches
+            .iter()
+            .all(|(first, count)| first % 2 == 0 && *count <= 65_534));
+        batches.clear();
+        strip_batches(u32::MAX, 0, |first, count| {
+            batches.push((first, count));
+            Ok(())
+        })
+        .unwrap();
+        assert!(batches.is_empty());
+        assert!(strip_batches(4, 1, |_, _| Err(Error::from_hresult(E_INVALIDARG))).is_err());
+        assert_eq!(strip_vertex_offset(8, 12, 65_532).unwrap(), 786_392);
+        assert!(strip_vertex_offset(8, 12, u32::MAX).is_err());
+        assert!(strip_vertex_offset(u32::MAX, 4, 1).is_err());
+    }
 
     #[test]
     fn draw_batches_keep_instance_order_and_check_boundaries() {

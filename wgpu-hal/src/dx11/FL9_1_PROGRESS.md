@@ -701,11 +701,18 @@ Checkpoint: `7c4fd052c`.
 
 The next topology baseline, `fl91_nonindexed_triangle_strip_winding_and_first_vertex`,
 selected the RTX at requested/actual FL9_1 and failed pipeline creation with
-the existing unsupported-topology error. Nonindexed strips are in progress;
+the existing unsupported-topology error. Nonindexed strips now work privately;
 indexed strip restart remains excluded because not all 10level9 hardware
 supports native strip cuts. The D3D9 65,535-unique-vertex caveat requires
 conservative, even-parity overlapping batches rather than assuming the full
 primitive count can be consumed by one strip.
+The strict RTX test compared both winding and cull modes with triangle lists,
+checked the second batch of a 65,536-vertex strip, rejected indexed strips and
+verified a nonzero-offset strip-to-list transition with 32 red/32 green pixels.
+The CPU batch test checked overlap and instance order. Naga→FXC reported X4568
+for one flat-interpolation declaration; it did not execute on GPU. The combined
+strict suite and Clippy results are recorded below. Rebased stream offsets and
+strip behavior remain unverified on historical FL9_1 drivers.
 
 Independent shader review found that Naga's HLSL matrix-in-struct store
 lowering can emit an unchecked dynamic component index and that some related

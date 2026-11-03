@@ -1003,6 +1003,39 @@ impl crate::CommandEncoder for CommandEncoder {
         if vertex_count == 0 || instance_count == 0 {
             return;
         }
+        if topology == wgt::PrimitiveTopology::TriangleStrip {
+            if vertex_count < 3 {
+                return;
+            }
+            let vertex = if let Some((buffer, offset, stride)) = vertex {
+                let byte_offset =
+                    |index: u32| super::command::strip_vertex_offset(offset, stride, index).ok();
+                let start = byte_offset(first_vertex);
+                let last = first_vertex
+                    .checked_add(vertex_count - 1)
+                    .and_then(byte_offset);
+                let (Some(start), Some(_)) = (start, last) else {
+                    self.reject();
+                    return;
+                };
+                Some((buffer, start, stride))
+            } else {
+                None
+            };
+            let Some(binding_commands) = render.binding_commands() else {
+                self.reject();
+                return;
+            };
+            for command in binding_commands {
+                self.record(command);
+            }
+            self.record(NativeCommand::DrawStrip {
+                vertex,
+                count: vertex_count,
+                instances: instance_count,
+            });
+            return;
+        }
         let Some(binding_commands) = render.binding_commands() else {
             self.reject();
             return;
@@ -3593,6 +3626,10 @@ mod texture_transfer_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/depth_render.rs"]
 mod depth_render_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/triangle_strip.rs"]
+mod triangle_strip_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/uniform_bindings.rs"]

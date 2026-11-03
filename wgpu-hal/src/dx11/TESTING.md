@@ -11,6 +11,12 @@ expressed by `Limits` alone.
 ### Focused FL9_1 hardware test
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+triangle_strip -- --nocapture --test-threads=1` checks the private nonindexed
+strip path. The strict GPU test compares culling and winding with triangle lists,
+exercises a split boundary, and checks a nonzero-offset pipeline transition.
+The separate FXC diagnostic does not establish flat interpolation execution.
+
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_checked_ -- --nocapture --test-threads=1` tests selected checked shaders
 with uniforms and dynamic local-vector access. On the tested FXC, negative
 indices and dynamic vector stores fail compilation and explicitly skip GPU

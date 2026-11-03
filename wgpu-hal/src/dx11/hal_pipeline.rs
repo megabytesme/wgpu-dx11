@@ -1539,8 +1539,12 @@ impl RenderPipeline {
         }
         if !matches!(
             desc.primitive.topology,
-            wgt::PrimitiveTopology::TriangleList | wgt::PrimitiveTopology::PointList
+            wgt::PrimitiveTopology::TriangleList
+                | wgt::PrimitiveTopology::TriangleStrip
+                | wgt::PrimitiveTopology::PointList
         ) || (desc.primitive.topology == wgt::PrimitiveTopology::PointList && buffer.is_some())
+            || (desc.primitive.topology != wgt::PrimitiveTopology::TriangleStrip
+                && desc.primitive.strip_index_format.is_some())
         {
             return Err(invalid());
         }
@@ -1563,6 +1567,7 @@ impl RenderPipeline {
                 front_face: wgt::FrontFace::default(),
                 cull_mode: None,
                 topology: wgt::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
             || desc.multisample != wgt::MultisampleState::default()

@@ -108,9 +108,10 @@ Checked shaders permit dynamic access to proven value vectors. Dynamic vector
 pointers, uniform-pointer indexing and unknown provenance remain restricted.
 The tested FXC rejected a negative-index case before GPU execution; successful
 read cases do not prove that case or historical drivers.
-Work in progress: nonindexed triangle strips with parity-preserving batching;
-indexed strip restart is not a guaranteed FL9_x native operation and remains
-rejected pending a separate translation.
+Nonindexed triangle strips use parity-preserving, rebased batches. Indexed strip
+restart is not a guaranteed FL9_x native operation and remains rejected pending
+a separate translation; accepting a strip index format in a private pipeline
+does not make indexed strip draws supported.
 The existing input-layout validation does not reject overlapping vertex
 elements, which are not guaranteed by the FL9_1 minimum. Audit and fix this
 before treating the private vertex path as portable to historical hardware.
