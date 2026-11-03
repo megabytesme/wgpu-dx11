@@ -1826,7 +1826,7 @@ through `VsDevCmd.bat` passed. This code path maps the index staging buffer and
 may stall; wide pairs also allocate small scratch buffers. Historical FL9_1
 hardware remains untested.
 
-Checkpoint pending: indexed LineList replay and controlled core fixture.
-Next, analyze fixed-index restart semantics and implement indexed LineStrip
-only if it can preserve core draw behavior under FL9_1. Keep ordinary adapter
+Checkpoint `82c9b9228` (`dx11: add FL9_1 indexed line-list rendering`). Next,
+analyze fixed-index restart semantics and implement indexed LineStrip only if
+it can preserve core draw behavior under FL9_1. Keep ordinary adapter
 enumeration and HWND exposure disabled.

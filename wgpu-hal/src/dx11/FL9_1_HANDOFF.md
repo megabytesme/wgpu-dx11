@@ -481,6 +481,7 @@ suite passed 297 tests with two filtered; the strict core fixture suite passed
 70/70 and its focused run confirmed eight red pixels for both index formats.
 HAL build and Clippy passed (ten existing HAL warnings), core Clippy passed,
 formatting and diff checks passed. Ordinary adapter enumeration remains empty.
-Checkpoint is being committed; afterward continue with fixed-index restart
-analysis and indexed LineStrip only if safely emulatable. Historical FL9_1
-hardware and public adapter exposure remain unverified.
+Checkpoint `82c9b9228` (`dx11: add FL9_1 indexed line-list rendering`).
+Continue with fixed-index restart analysis and indexed LineStrip only if safely
+emulatable. Historical FL9_1 hardware and public adapter exposure remain
+unverified.
