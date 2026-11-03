@@ -697,3 +697,37 @@ libtest cases: three executed on GPU and three skipped GPU execution after X3548
 or X3500, including an added out-of-bounds store case. The guard diagnostic is
 asserted exactly and unexpected compiler failures fail the test. HAL Clippy
 passed with ten existing warnings. Historical drivers remain unverified.
+Checkpoint: `7c4fd052c`.
+
+The next topology baseline, `fl91_nonindexed_triangle_strip_winding_and_first_vertex`,
+selected the RTX at requested/actual FL9_1 and failed pipeline creation with
+the existing unsupported-topology error. Nonindexed strips are in progress;
+indexed strip restart remains excluded because not all 10level9 hardware
+supports native strip cuts. The D3D9 65,535-unique-vertex caveat requires
+conservative, even-parity overlapping batches rather than assuming the full
+primitive count can be consumed by one strip.
+
+Independent shader review found that Naga's HLSL matrix-in-struct store
+lowering can emit an unchecked dynamic component index and that some related
+store helpers take destinations by value. The installed FL9 FXC rejects the
+raw dynamic store with X3500 in both vertex and pixel profiles; this does not
+establish safety on all compilers. Checked-shader fail-closed validation and
+static-store correctness tests are in progress, including shaders without
+uniforms and pointer-helper paths. Do not infer completion from the prior
+local-vector GPU passes.
+CPU regression baselines `checked_matrix_component_stores_require_safe_lowering`
+and `matrix_struct_stores_require_correct_lowering_even_unchecked` both failed
+before the fix, confirming the existing classifier accepts the problematic
+shapes. The guard must cover stores and pointer call arguments through nested
+struct/array paths in both checked and unchecked modes, while leaving safe
+read-only matrix use available.
+The implemented guard fails closed for affected aggregate stores and unknown
+pointer provenance, tracks call-site provenance, and bounds the work and
+nesting of its type and call-graph analysis. Five focused matrix tests passed,
+including shared type DAGs, call-state limits and shared work exhaustion; the
+checked/unchecked shader-module test passed. The combined strict private suite
+passed 203 libtest cases with two filtered; three local-vector cases explicitly
+skipped GPU execution, as noted above. Independent review found no concrete
+provenance bypass. The guard conservatively rejects writes to other fields in
+an affected aggregate and sufficiently complex valid shaders; it does not fix
+the shared Naga lowering.

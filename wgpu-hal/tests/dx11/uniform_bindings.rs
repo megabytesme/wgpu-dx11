@@ -317,7 +317,7 @@ fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()
             rejected,
             Err(crate::PipelineError::Linkage(stage, message))
                 if stage == wgt::ShaderStages::FRAGMENT
-                    && message == "checked D3D11 dynamic indexing with uniforms is not implemented"
+                    && message == "checked D3D11 dynamic pointer or uniform indexing is not implemented"
         ));
     }
     let pipeline_result = unsafe {
@@ -348,15 +348,19 @@ fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()
             ) =>
         {
             assert_eq!(stage, wgt::ShaderStages::FRAGMENT);
-            assert!(message.contains("Compilation("), "{message}");
-            let diagnostic = if dynamic_vector == LocalVectorIndex::Negative {
-                "X3548"
+            if dynamic_vector == LocalVectorIndex::Negative {
+                assert!(
+                    message.contains("Compilation(") && message.contains("X3548"),
+                    "{message}"
+                );
             } else {
-                "X3500"
-            };
-            assert!(message.contains(diagnostic), "{message}");
-            std::println!("PASS: FXC rejected {dynamic_vector:?}: {message}");
-            std::println!("SKIP: {dynamic_vector:?} GPU execution; shader compilation failed");
+                assert_eq!(
+                    message,
+                    "checked D3D11 dynamic pointer or uniform indexing is not implemented"
+                );
+            }
+            std::println!("PASS: rejected {dynamic_vector:?}: {message}");
+            std::println!("SKIP: {dynamic_vector:?} GPU execution; pipeline was rejected");
             unsafe {
                 device.destroy_pipeline_layout(layout);
                 device.destroy_pipeline_layout(changed_layout);

@@ -201,10 +201,15 @@ offsets are consumed in ascending logical binding order and checked against the
 logical source-buffer size before recording. A range extending to the buffer end
 allows only offset zero. Four-byte alignment is the private HAL minimum; a future
 public adapter must enforce its reported wgpu alignment through core. Checked
-shaders using uniforms permit dynamic access to proven local or value vectors;
-uniform-pointer indexing, dynamic arrays, matrices and unknown provenance remain
-rejected. The tested FXC rejects potentially negative indices and dynamic vector
-stores in the pixel profile; other compiler versions may differ. General checked
+shaders using uniforms permit dynamic access to proven value vectors;
+checked dynamic vector-pointer indexing is rejected regardless of uniform use.
+Uniform-pointer indexing, dynamic arrays with uniforms, matrices and unknown
+provenance remain restricted. Matrix-containing aggregate stores are rejected
+in checked and unchecked shaders because Naga's current HLSL special lowering
+can lose writes or omit an index clamp. The conservative guard also rejects
+unrelated stores to such aggregates and shaders exceeding its analysis budget.
+The tested FXC rejects a potentially negative value index in the pixel profile;
+other compiler versions may differ. General checked
 uniform indexing and broad public adapter exposure remain unsupported. GPU coverage exercises multiple
 range bindings, pipeline transitions, a matrix and padded structure, and sampled
 texture coexistence. A checked forced-FL9_1 GPU test also verifies nested

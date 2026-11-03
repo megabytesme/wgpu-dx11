@@ -249,6 +249,7 @@ mod tests {
             &info,
             &module.entry_points[1].function,
             info.get_entry_point(1),
+            true,
         ));
         for entry_index in [2, 3] {
             assert!(has_unsupported_dynamic_access(
@@ -256,6 +257,7 @@ mod tests {
                 &info,
                 &module.entry_points[entry_index].function,
                 info.get_entry_point(entry_index),
+                true,
             ));
         }
         assert!(
@@ -264,6 +266,7 @@ mod tests {
                 &info,
                 &module.entry_points[0].function,
                 info.get_entry_point(0),
+                true,
             ),
             "a local vector access must not be treated as dynamic uniform indexing"
         );
@@ -284,6 +287,250 @@ mod tests {
             &mapping,
         )
         .is_ok());
+    }
+
+    fn matrix_store_module() -> (naga::Module, naga::valid::ModuleInfo) {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct State { m: mat2x2f }
+            struct Nested { m: array<mat2x2f, 2> }
+            struct Outer { inner: State }
+            struct Deep { outer: Outer }
+            @group(0) @binding(0) var<uniform> tint: vec4f;
+            @group(0) @binding(1) var<uniform> read_state: State;
+            var<private> private_state: State;
+            fn store_matrix(p: ptr<function, State>) {
+                (*p).m = mat2x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0));
+            }
+            fn store_component(p: ptr<function, State>, index: u32) {
+                (*p).m[0][index] = 0.5;
+            }
+            fn store_vector(p: ptr<function, vec2f>) { (*p).x = 0.5; }
+            fn forward_vector(p: ptr<function, vec2f>) { store_vector(p); }
+            fn store_direct_matrix(p: ptr<function, mat2x2f>) { *p = mat2x2f(); }
+            @vertex fn dynamic_with_uniform(@location(0) index: u32) -> @builtin(position) vec4f {
+                var s: State;
+                s.m[0][index] = tint.x;
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn dynamic_without_uniform(@location(0) index: u32) -> @builtin(position) vec4f {
+                var s: State;
+                s.m[0][index] = 0.5;
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn static_matrix_store() -> @builtin(position) vec4f {
+                var s: State;
+                s.m = mat2x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0));
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn helper_matrix_store() -> @builtin(position) vec4f {
+                var s: State;
+                store_matrix(&s);
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn helper_component_store(@location(0) index: u32) -> @builtin(position) vec4f {
+                var s: State;
+                store_component(&s, index);
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn nested_matrix_store(@location(0) index: u32) -> @builtin(position) vec4f {
+                var s: Nested;
+                s.m[0][index] = vec2f(0.5);
+                return vec4f(s.m[0][0], 0.0, 1.0);
+            }
+            @vertex fn nested_struct_store() -> @builtin(position) vec4f {
+                var s: Outer;
+                s.inner.m = mat2x2f();
+                return vec4f(s.inner.m[0], 0.0, 1.0);
+            }
+            @vertex fn private_matrix_store() -> @builtin(position) vec4f {
+                private_state.m = mat2x2f();
+                return vec4f(private_state.m[0], 0.0, 1.0);
+            }
+            @vertex fn pointer_call_sites() -> @builtin(position) vec4f {
+                var ordinary = vec2f(0.0);
+                forward_vector(&ordinary);
+                var s: State;
+                forward_vector(&s.m[0]);
+                return vec4f(ordinary + s.m[0], 0.0, 1.0);
+            }
+            @vertex fn safe_vector_store() -> @builtin(position) vec4f {
+                var ordinary = vec2f(0.0);
+                forward_vector(&ordinary);
+                return vec4f(ordinary, 0.0, 1.0);
+            }
+            @vertex fn safe_matrix_read() -> @builtin(position) vec4f {
+                return vec4f(read_state.m[0], 0.0, 1.0);
+            }
+            @vertex fn direct_matrix_pointer() -> @builtin(position) vec4f {
+                var s: Deep;
+                store_direct_matrix(&s.outer.inner.m);
+                return vec4f(s.outer.inner.m[0], 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        (module, info)
+    }
+
+    #[test]
+    fn checked_matrix_component_stores_require_safe_lowering() {
+        let (module, info) = matrix_store_module();
+        for index in [0, 1, 4] {
+            let entry = &module.entry_points[index];
+            assert!(
+                has_unsafe_matrix_store(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index)
+                ),
+                "{} must not bypass checked vector-store validation",
+                entry.name
+            );
+        }
+    }
+
+    #[test]
+    fn matrix_struct_stores_require_correct_lowering_even_unchecked() {
+        let (module, info) = matrix_store_module();
+        for index in [2, 3, 5, 6, 7, 8, 11] {
+            let entry = &module.entry_points[index];
+            assert!(
+                has_unsafe_matrix_store(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index)
+                ),
+                "{} must not silently drop matrix stores",
+                entry.name
+            );
+        }
+        for index in [9, 10] {
+            let entry = &module.entry_points[index];
+            assert!(
+                !has_unsafe_matrix_store(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index),
+                ),
+                "{} must remain valid",
+                entry.name
+            );
+        }
+    }
+
+    #[test]
+    fn matrix_store_analysis_fails_closed_at_call_state_limit() {
+        for count in [1024, 1025] {
+            let mut source = alloc::string::String::new();
+            for i in 0..count {
+                source.push_str(&format!("fn f{i}() {{}}\n"));
+            }
+            source.push_str("@vertex fn main() -> @builtin(position) vec4f {\n");
+            for i in 0..count {
+                source.push_str(&format!("f{i}();\n"));
+            }
+            source.push_str("return vec4f(0.0, 0.0, 0.0, 1.0); }");
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            assert_eq!(
+                has_unsafe_matrix_store(
+                    &module,
+                    &info,
+                    &module.entry_points[0].function,
+                    info.get_entry_point(0),
+                ),
+                count == 1025
+            );
+        }
+    }
+
+    #[test]
+    fn matrix_store_analysis_handles_shared_type_dag() {
+        let mut source = alloc::string::String::from("struct S0 { value: f32 }\n");
+        for index in 1..=20 {
+            source.push_str(&format!(
+                "struct S{index} {{ left: S{}, right: S{} }}\n",
+                index - 1,
+                index - 1,
+            ));
+        }
+        let path = ".left".repeat(20);
+        source.push_str(&format!(
+            "@vertex fn main() -> @builtin(position) vec4f {{ var s: S20; s{path}.value = 1.0; return vec4f(s{path}.value); }}"
+        ));
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        assert!(!has_unsafe_matrix_store(
+            &module,
+            &info,
+            &module.entry_points[0].function,
+            info.get_entry_point(0),
+        ));
+    }
+
+    #[test]
+    fn matrix_store_analysis_shares_work_budget_across_pointer_lookups() {
+        for forwarded_only in [false, true] {
+            let mut source = alloc::string::String::from("struct S0 { value: f32 }\n");
+            for index in 1..=40 {
+                source.push_str(&format!("struct S{index} {{ inner: S{} }}\n", index - 1));
+            }
+            source.push_str("fn observe(p: ptr<function, f32>) { let v = *p; }\n");
+            source.push_str("@vertex fn main() -> @builtin(position) vec4f { var s: S40;\n");
+            let path = ".inner".repeat(40);
+            if forwarded_only {
+                source.push_str(&format!("observe(&s{path}.value);\n"));
+            } else {
+                for _ in 0..80 {
+                    source.push_str(&format!("s{path}.value = 1.0;\n"));
+                }
+            }
+            source.push_str("return vec4f(0.0, 0.0, 0.0, 1.0); }");
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let analyze = |budget| {
+                has_unsafe_matrix_store_with_budget(
+                    &module,
+                    &info,
+                    &module.entry_points[0].function,
+                    info.get_entry_point(0),
+                    budget,
+                )
+            };
+            assert!(analyze(16), "analysis must reject exhausted work");
+            if forwarded_only {
+                assert!(
+                    analyze(60),
+                    "type traversal exhaustion must reject forwarded pointers"
+                );
+            }
+            assert!(!analyze(65536), "ordinary pointers must remain valid");
+        }
     }
 
     fn input() -> crate::NagaShader {
@@ -420,8 +667,46 @@ mod tests {
             .compile_with_bindings(naga::ShaderStage::Fragment, "safe", &uniform_mapping)
             .is_ok());
         assert!(
-            matches!(checked_indexed.compile_with_bindings(naga::ShaderStage::Fragment, "dynamic", &uniform_mapping), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 dynamic indexing with uniforms is not implemented")
+            matches!(checked_indexed.compile_with_bindings(naga::ShaderStage::Fragment, "dynamic", &uniform_mapping), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 dynamic pointer or uniform indexing is not implemented")
         );
+        let (matrix_module, matrix_info) = matrix_store_module();
+        for checks in [
+            wgt::ShaderRuntimeChecks::checked(),
+            wgt::ShaderRuntimeChecks::unchecked(),
+        ] {
+            let shader = ShaderModule::new(
+                native.clone(),
+                crate::NagaShader {
+                    module: Cow::Owned(matrix_module.clone()),
+                    info: matrix_info.clone(),
+                    debug_source: None,
+                },
+                checks,
+            );
+            for entry in [
+                "static_matrix_store",
+                "helper_matrix_store",
+                "pointer_call_sites",
+            ] {
+                assert!(matches!(
+                    shader.compile(naga::ShaderStage::Vertex, entry),
+                    Err(crate::PipelineError::Linkage(stage, message))
+                        if stage == wgt::ShaderStages::VERTEX
+                            && message == "D3D11 matrix aggregate stores are not implemented safely"
+                ));
+            }
+            let bindings = [ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 1,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Uniform,
+            }];
+            assert!(shader
+                .compile_with_bindings(naga::ShaderStage::Vertex, "safe_matrix_read", &bindings)
+                .is_ok());
+        }
         let storage = naga::front::wgsl::parse_str("@group(0) @binding(0) var<storage, read> data: array<vec4f>; @fragment fn fs() -> @location(0) vec4f { return data[0]; }").unwrap();
         let storage_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -496,41 +781,68 @@ fn used_shader_bindings(
         .collect()
 }
 
-fn reachable_expression(
+fn reachable_expression<F>(
     module: &naga::Module,
     module_info: &naga::valid::ModuleInfo,
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
-    predicate: fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
-) -> bool {
-    fn block_contains(
+    predicate: F,
+) -> bool
+where
+    F: Fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
+{
+    fn block_contains<F>(
         module: &naga::Module,
         module_info: &naga::valid::ModuleInfo,
         block: &naga::Block,
         visited: &mut Vec<naga::Handle<naga::Function>>,
-        predicate: fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
-    ) -> bool {
+        predicate: &F,
+        depth: usize,
+    ) -> bool
+    where
+        F: Fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
+    {
+        if depth >= 256 {
+            return true;
+        }
         block.iter().any(|statement| match statement {
             naga::Statement::Block(block) => {
-                block_contains(module, module_info, block, visited, predicate)
+                block_contains(module, module_info, block, visited, predicate, depth + 1)
             }
             naga::Statement::If { accept, reject, .. } => {
-                block_contains(module, module_info, accept, visited, predicate)
-                    || block_contains(module, module_info, reject, visited, predicate)
+                block_contains(module, module_info, accept, visited, predicate, depth + 1)
+                    || block_contains(module, module_info, reject, visited, predicate, depth + 1)
             }
-            naga::Statement::Switch { cases, .. } => cases
-                .iter()
-                .any(|case| block_contains(module, module_info, &case.body, visited, predicate)),
+            naga::Statement::Switch { cases, .. } => cases.iter().any(|case| {
+                block_contains(
+                    module,
+                    module_info,
+                    &case.body,
+                    visited,
+                    predicate,
+                    depth + 1,
+                )
+            }),
             naga::Statement::Loop {
                 body, continuing, ..
             } => {
-                block_contains(module, module_info, body, visited, predicate)
-                    || block_contains(module, module_info, continuing, visited, predicate)
+                block_contains(module, module_info, body, visited, predicate, depth + 1)
+                    || block_contains(
+                        module,
+                        module_info,
+                        continuing,
+                        visited,
+                        predicate,
+                        depth + 1,
+                    )
             }
             naga::Statement::Call { function, .. } => {
                 if visited.contains(function) {
                     false
                 } else {
+                    if visited.len() >= 1024 {
+                        return true;
+                    }
                     visited.push(*function);
                     function_contains(
                         module,
@@ -539,25 +851,37 @@ fn reachable_expression(
                         &module_info[*function],
                         visited,
                         predicate,
+                        depth + 1,
                     )
                 }
             }
             _ => false,
         })
     }
-    fn function_contains(
+    fn function_contains<F>(
         module: &naga::Module,
         module_info: &naga::valid::ModuleInfo,
         function: &naga::Function,
         function_info: &naga::valid::FunctionInfo,
         visited: &mut Vec<naga::Handle<naga::Function>>,
-        predicate: fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
-    ) -> bool {
+        predicate: &F,
+        depth: usize,
+    ) -> bool
+    where
+        F: Fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
+    {
         function
             .expressions
             .iter()
             .any(|(_, expression)| predicate(module, function_info, expression))
-            || block_contains(module, module_info, &function.body, visited, predicate)
+            || block_contains(
+                module,
+                module_info,
+                &function.body,
+                visited,
+                predicate,
+                depth,
+            )
     }
     function_contains(
         module,
@@ -565,7 +889,8 @@ fn reachable_expression(
         function,
         function_info,
         &mut Vec::new(),
-        predicate,
+        &predicate,
+        0,
     )
 }
 
@@ -574,6 +899,7 @@ fn has_unsupported_dynamic_access(
     module_info: &naga::valid::ModuleInfo,
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
+    uses_uniform: bool,
 ) -> bool {
     reachable_expression(
         module,
@@ -586,19 +912,328 @@ fn has_unsupported_dynamic_access(
             };
             match *info[base].ty.inner_with(&module.types) {
                 naga::TypeInner::Vector { .. } => false,
-                naga::TypeInner::ValuePointer {
-                    size: Some(_),
-                    space: naga::AddressSpace::Function | naga::AddressSpace::Private,
-                    ..
-                } => false,
-                naga::TypeInner::Pointer {
-                    base,
-                    space: naga::AddressSpace::Function | naga::AddressSpace::Private,
-                } => !matches!(module.types[base].inner, naga::TypeInner::Vector { .. }),
-                _ => true,
+                naga::TypeInner::ValuePointer { size: Some(_), .. } => true,
+                naga::TypeInner::Pointer { base, .. }
+                    if matches!(module.types[base].inner, naga::TypeInner::Vector { .. }) =>
+                {
+                    true
+                }
+                _ => uses_uniform,
             }
         },
     )
+}
+
+fn has_unsafe_matrix_store(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+) -> bool {
+    has_unsafe_matrix_store_with_budget(module, module_info, function, function_info, 65536)
+}
+
+fn has_unsafe_matrix_store_with_budget(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    mut budget: usize,
+) -> bool {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum Provenance {
+        Ordinary,
+        SpecialMatrix,
+        Unknown,
+    }
+
+    fn contains_matrix(
+        module: &naga::Module,
+        ty: naga::Handle<naga::Type>,
+        cache: &mut [u8],
+        budget: &mut usize,
+    ) -> bool {
+        let mut stack = alloc::vec![(ty, false)];
+        while let Some((current, finishing)) = stack.pop() {
+            if *budget == 0 {
+                return true;
+            }
+            *budget -= 1;
+            if finishing {
+                let contains = match &module.types[current].inner {
+                    naga::TypeInner::Struct { members, .. } => {
+                        members.iter().any(|member| cache[member.ty.index()] != 2)
+                    }
+                    naga::TypeInner::Array { base, .. } => cache[base.index()] != 2,
+                    naga::TypeInner::Matrix {
+                        rows: naga::VectorSize::Bi,
+                        ..
+                    } => true,
+                    _ => false,
+                };
+                cache[current.index()] = if contains { 3 } else { 2 };
+                continue;
+            }
+            match cache[current.index()] {
+                1 => {
+                    *budget = 0;
+                    return true;
+                }
+                2 | 3 => continue,
+                _ => {}
+            }
+            cache[current.index()] = 1;
+            stack.push((current, true));
+            match &module.types[current].inner {
+                naga::TypeInner::Struct { members, .. } => {
+                    if members.len() > 65536usize.saturating_sub(stack.len()) {
+                        *budget = 0;
+                        return true;
+                    }
+                    stack.extend(members.iter().map(|member| (member.ty, false)));
+                }
+                naga::TypeInner::Array { base, .. } => stack.push((*base, false)),
+                _ => {}
+            }
+        }
+        cache[ty.index()] == 3
+    }
+
+    fn aggregate_provenance(
+        module: &naga::Module,
+        ty: naga::Handle<naga::Type>,
+        cache: &mut [u8],
+        budget: &mut usize,
+    ) -> Provenance {
+        if matches!(
+            module.types[ty].inner,
+            naga::TypeInner::Struct { .. } | naga::TypeInner::Array { .. }
+        ) && contains_matrix(module, ty, cache, budget)
+        {
+            Provenance::SpecialMatrix
+        } else {
+            Provenance::Ordinary
+        }
+    }
+
+    fn provenance(
+        module: &naga::Module,
+        function: &naga::Function,
+        mut expression: naga::Handle<naga::Expression>,
+        arguments: &[Provenance],
+        cache: &mut [u8],
+        budget: &mut usize,
+    ) -> Provenance {
+        while *budget != 0 {
+            *budget -= 1;
+            match function.expressions[expression] {
+                naga::Expression::Access { base, .. }
+                | naga::Expression::AccessIndex { base, .. } => {
+                    expression = base;
+                }
+                naga::Expression::LocalVariable(handle) => {
+                    return aggregate_provenance(
+                        module,
+                        function.local_variables[handle].ty,
+                        cache,
+                        budget,
+                    );
+                }
+                naga::Expression::GlobalVariable(handle) => {
+                    return aggregate_provenance(
+                        module,
+                        module.global_variables[handle].ty,
+                        cache,
+                        budget,
+                    );
+                }
+                naga::Expression::FunctionArgument(index) => {
+                    return arguments
+                        .get(index as usize)
+                        .copied()
+                        .unwrap_or(Provenance::Unknown)
+                }
+                _ => return Provenance::Unknown,
+            }
+        }
+        Provenance::Unknown
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The recursive scan carries its validated function context and shared limits"
+    )]
+    fn scan_block(
+        module: &naga::Module,
+        module_info: &naga::valid::ModuleInfo,
+        function: &naga::Function,
+        function_info: &naga::valid::FunctionInfo,
+        block: &naga::Block,
+        arguments: &[Provenance],
+        visited: &mut alloc::collections::BTreeSet<(naga::Handle<naga::Function>, Vec<Provenance>)>,
+        cache: &mut [u8],
+        depth: usize,
+        budget: &mut usize,
+    ) -> bool {
+        if depth >= 256 {
+            return true;
+        }
+        block.iter().any(|statement| {
+            if *budget == 0 {
+                return true;
+            }
+            *budget -= 1;
+            match statement {
+                naga::Statement::Store { pointer, .. } => !matches!(
+                    provenance(module, function, *pointer, arguments, cache, budget),
+                    Provenance::Ordinary
+                ),
+                naga::Statement::Block(block) => scan_block(
+                    module,
+                    module_info,
+                    function,
+                    function_info,
+                    block,
+                    arguments,
+                    visited,
+                    cache,
+                    depth + 1,
+                    budget,
+                ),
+                naga::Statement::If { accept, reject, .. } => {
+                    scan_block(
+                        module,
+                        module_info,
+                        function,
+                        function_info,
+                        accept,
+                        arguments,
+                        visited,
+                        cache,
+                        depth + 1,
+                        budget,
+                    ) || scan_block(
+                        module,
+                        module_info,
+                        function,
+                        function_info,
+                        reject,
+                        arguments,
+                        visited,
+                        cache,
+                        depth + 1,
+                        budget,
+                    )
+                }
+                naga::Statement::Switch { cases, .. } => cases.iter().any(|case| {
+                    scan_block(
+                        module,
+                        module_info,
+                        function,
+                        function_info,
+                        &case.body,
+                        arguments,
+                        visited,
+                        cache,
+                        depth + 1,
+                        budget,
+                    )
+                }),
+                naga::Statement::Loop {
+                    body, continuing, ..
+                } => {
+                    scan_block(
+                        module,
+                        module_info,
+                        function,
+                        function_info,
+                        body,
+                        arguments,
+                        visited,
+                        cache,
+                        depth + 1,
+                        budget,
+                    ) || scan_block(
+                        module,
+                        module_info,
+                        function,
+                        function_info,
+                        continuing,
+                        arguments,
+                        visited,
+                        cache,
+                        depth + 1,
+                        budget,
+                    )
+                }
+                naga::Statement::Call {
+                    function: callee,
+                    arguments: actual,
+                    ..
+                } => {
+                    if actual.len() >= *budget {
+                        *budget = 0;
+                        return true;
+                    }
+                    *budget -= actual.len();
+                    let mapped: Vec<_> = actual
+                        .iter()
+                        .map(|&expression| {
+                            match function_info[expression].ty.inner_with(&module.types) {
+                                naga::TypeInner::Pointer { .. }
+                                | naga::TypeInner::ValuePointer { .. } => provenance(
+                                    module, function, expression, arguments, cache, budget,
+                                ),
+                                _ => Provenance::Ordinary,
+                            }
+                        })
+                        .collect();
+                    if mapped
+                        .iter()
+                        .any(|value| matches!(value, Provenance::Unknown))
+                    {
+                        return true;
+                    }
+                    let key = (*callee, mapped.clone());
+                    if visited.contains(&key) {
+                        return false;
+                    }
+                    if visited.len() >= 1024 {
+                        return true;
+                    }
+                    visited.insert(key);
+                    let callee_fn = &module.functions[*callee];
+                    scan_block(
+                        module,
+                        module_info,
+                        callee_fn,
+                        &module_info[*callee],
+                        &callee_fn.body,
+                        &mapped,
+                        visited,
+                        cache,
+                        depth + 1,
+                        budget,
+                    )
+                }
+                _ => false,
+            }
+        })
+    }
+
+    let rejected = scan_block(
+        module,
+        module_info,
+        function,
+        function_info,
+        &function.body,
+        &[],
+        &mut alloc::collections::BTreeSet::new(),
+        &mut alloc::vec![0; module.types.len()],
+        0,
+        &mut budget,
+    );
+    rejected || budget == 0
 }
 
 fn entry_has_vertex_index(module: &naga::Module, entry: &str) -> Option<bool> {
@@ -863,18 +1498,29 @@ impl ShaderModule {
             .any(|(handle, global)| {
                 !entry_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
             });
+        if has_unsafe_matrix_store(
+            &self.shader.module,
+            &self.shader.info,
+            &self.shader.module.entry_points[entry_index].function,
+            entry_info,
+        ) {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 matrix aggregate stores are not implemented safely".into(),
+            ));
+        }
         if requests_checks
-            && uses_uniform
             && has_unsupported_dynamic_access(
                 &self.shader.module,
                 &self.shader.info,
                 &self.shader.module.entry_points[entry_index].function,
                 entry_info,
+                uses_uniform,
             )
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "checked D3D11 dynamic indexing with uniforms is not implemented".into(),
+                "checked D3D11 dynamic pointer or uniform indexing is not implemented".into(),
             ));
         }
         // Sampled views are checked single-mip RGBA8 2D resources and sampler

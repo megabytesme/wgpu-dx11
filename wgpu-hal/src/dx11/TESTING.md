@@ -14,8 +14,11 @@ expressed by `Limits` alone.
 fl91_checked_ -- --nocapture --test-threads=1` tests selected checked shaders
 with uniforms and dynamic local-vector access. On the tested FXC, negative
 indices and dynamic vector stores fail compilation and explicitly skip GPU
-execution; the other cases validate every output pixel. Dynamic uniform-pointer
-indexing remains rejected at pipeline creation.
+execution; the other cases validate every output pixel. Checked dynamic pointer
+indexing remains rejected at pipeline creation. Matrix-store analysis tests use
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+matrix_ -- --nocapture` and cover checked/unchecked stores, helper provenance,
+shared type graphs and fail-closed work limits; this does not fix shared Naga.
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_read_only_depth_preserves_depth_and_rejects_writes -- --nocapture` checks
