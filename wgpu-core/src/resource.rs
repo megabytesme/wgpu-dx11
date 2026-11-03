@@ -2644,27 +2644,33 @@ impl Blas {
                 );
                 match map_res {
                     Ok(mapping) => {
-                        if !mapping.is_coherent {
+                        let result = if !mapping.is_coherent {
                             #[expect(clippy::single_range_in_vec_init, reason = "intentional")]
                             self.device.raw().invalidate_mapped_ranges(
                                 compaction_buffer,
                                 &[0..size_of::<wgpu_types::BufferAddress>() as wgt::BufferAddress],
+                            )
+                        } else {
+                            Ok(())
+                        };
+                        if result.is_ok() {
+                            let size = core::ptr::read_unaligned(
+                                mapping.ptr.as_ptr().cast::<wgt::BufferAddress>(),
                             );
+                            if self.size_info.acceleration_structure_size != 0 {
+                                debug_assert_ne!(size, 0);
+                            }
+                            *state = BlasCompactState::Ready { size };
                         }
-                        let size = core::ptr::read_unaligned(
-                            mapping.ptr.as_ptr().cast::<wgt::BufferAddress>(),
-                        );
                         self.device.raw().unmap_buffer(compaction_buffer);
-                        if self.size_info.acceleration_structure_size != 0 {
-                            debug_assert_ne!(size, 0);
-                        }
-                        *state = BlasCompactState::Ready { size };
-                        Ok(())
+                        result
                     }
-                    Err(err) => Err(BlasPrepareCompactError::from(DeviceError::from_hal(err))),
+                    Err(err) => Err(err),
                 }
             }
         };
+        drop(state);
+        let status = status.map_err(|error| self.device.handle_hal_error(error).into());
         Some((pending_compact.op, status))
     }
 }

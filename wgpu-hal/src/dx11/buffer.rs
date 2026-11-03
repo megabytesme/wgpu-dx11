@@ -28,11 +28,26 @@ pub struct NativeBuffer {
     size: u32,
     usage: wgt::BufferUses,
     mapping: Mutex<Option<ShadowMapping>>,
+    #[cfg(feature = "dx11-test-fixture")]
+    fail_next_invalidate: core::sync::atomic::AtomicBool,
 }
 
 impl NativeBuffer {
     pub(super) fn logical_size(&self) -> u32 {
         self.size
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_fail_next_invalidate(&self) {
+        self.fail_next_invalidate
+            .store(true, core::sync::atomic::Ordering::Release);
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_shadow_is_mapped(&self) -> bool {
+        self.mapping.lock().is_some()
     }
 }
 
@@ -191,6 +206,8 @@ impl NativeDevice {
             size,
             usage,
             mapping: Mutex::new(None),
+            #[cfg(feature = "dx11-test-fixture")]
+            fail_next_invalidate: core::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -260,6 +277,16 @@ impl NativeDevice {
         let shadow = guard
             .as_mut()
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        #[cfg(feature = "dx11-test-fixture")]
+        if !upload
+            && buffer
+                .fail_next_invalidate
+                .swap(false, core::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(Error::from_hresult(
+                windows::Win32::Foundation::E_OUTOFMEMORY,
+            ));
+        }
         for range in ranges {
             if range.start > range.end || range.end > u64::from(buffer.size) {
                 return Err(Error::from_hresult(E_INVALIDARG));

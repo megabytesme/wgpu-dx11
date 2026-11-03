@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### Hal
 
+- `Device::invalidate_mapped_ranges` now returns a `Result` so invalidation failures can be handled without exposing stale mapped data.
 - HAL adapters with occlusion query support must report the new `DownlevelFlags::OCCLUSION_QUERY` flag. Custom adapters and stored flag sets may need updating.
 
 ### Bug Fixes

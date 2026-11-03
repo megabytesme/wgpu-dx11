@@ -154,13 +154,17 @@ impl crate::Device for Device {
             .expect("D3D11 mapped buffer flush failed")
     }
 
-    unsafe fn invalidate_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
+    unsafe fn invalidate_mapped_ranges<I>(
+        &self,
+        buffer: &<Self::A as Api>::Buffer,
+        ranges: I,
+    ) -> Result<(), DeviceError>
     where
         I: Iterator<Item = MemoryRange>,
     {
         self.native
             .sync_buffer_shadow(buffer, ranges, false)
-            .expect("D3D11 mapped buffer invalidate failed")
+            .map_err(device_error)
     }
 
     unsafe fn create_texture(
@@ -1186,7 +1190,9 @@ mod tests {
         }
         native.copy_byte_buffer(src, dst, &region)?;
         unsafe {
-            dynamic.invalidate_mapped_ranges(dest.as_ref(), &[8..24]);
+            dynamic
+                .invalidate_mapped_ranges(dest.as_ref(), &[8..24])
+                .unwrap();
         }
         let first = unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) };
         assert_eq!(
@@ -1202,7 +1208,9 @@ mod tests {
         }
         native.copy_byte_buffer(src, dst, &region)?;
         unsafe {
-            dynamic.invalidate_mapped_ranges(dest.as_ref(), &[12..20]);
+            dynamic
+                .invalidate_mapped_ranges(dest.as_ref(), &[12..20])
+                .unwrap();
         }
         let second = unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) };
         assert_eq!(&second[4..12], &[0x33; 8]);
@@ -1214,7 +1222,9 @@ mod tests {
         }
         native.copy_byte_buffer(src, dst, &region)?;
         unsafe {
-            dynamic.invalidate_mapped_ranges(dest.as_ref(), &[0..32]);
+            dynamic
+                .invalidate_mapped_ranges(dest.as_ref(), &[0..32])
+                .unwrap();
         }
         assert_eq!(
             unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) },

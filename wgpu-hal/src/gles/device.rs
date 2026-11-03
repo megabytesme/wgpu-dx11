@@ -863,8 +863,13 @@ impl crate::Device for super::Device {
             }
         }
     }
-    unsafe fn invalidate_mapped_ranges<I>(&self, _buffer: &super::Buffer, _ranges: I) {
+    unsafe fn invalidate_mapped_ranges<I>(
+        &self,
+        _buffer: &super::Buffer,
+        _ranges: I,
+    ) -> Result<(), crate::DeviceError> {
         //TODO: do we need to do anything?
+        Ok(())
     }
 
     unsafe fn create_texture(

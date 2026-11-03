@@ -1467,3 +1467,22 @@ disabled. The public map-error path remains a substantive blocker: fallible
 D3D11 staging/map work is behind a void HAL invalidate interface, so failures
 currently panic. A correct remedy needs error propagation through HAL and core;
 silently swallowing errors or marking a shadow coherent would be unsound.
+Checkpoint: `ceaf4d603dc4ecbc6449b520f5a9ef546b5cfa64`.
+
+HAL mapped-range invalidation now returns DeviceError across backends. Core
+unmaps a failed read mapping before returning the error and does not expose the
+pointer; BLAS compaction also unmaps and does not read its size on failure.
+Vulkan now propagates its native invalidation error instead of unwrapping it.
+A feature-gated one-shot fault on a real D3D11 buffer verified an OOM callback
+and released shadow mapping in the controlled FL9_1 core fixture. The fixture
+passed after a test-only label type correction. Strict private D3D11 tests
+passed 286 tests with two filtered (six dynamic-index GPU cases still skip),
+and the persistent shadow mapping test passed again after a reviewer removed a
+test violating the unsafe HAL range precondition. Windows HAL and core checks
+with dx11, dx12, vulkan and gles features passed; the core check emitted 15
+warnings in the no-WGSL configuration. DX12 HAL tests passed 2/2, core adapter
+isolation passed and targeted HAL/core Clippy passed with ten existing HAL test
+warnings. Metal was not compiled on this Windows host. BLAS invalidation failure
+was reviewed but not exercised on ray-tracing hardware. Flush and unmap failure
+handling remain separate work, as does existing device-lost callback reentrancy
+while core mapping locks may be held. Public adapter exposure remains disabled.

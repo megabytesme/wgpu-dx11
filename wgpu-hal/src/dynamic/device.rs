@@ -35,7 +35,11 @@ pub trait DynDevice: DynResource {
     unsafe fn unmap_buffer(&self, buffer: &dyn DynBuffer);
 
     unsafe fn flush_mapped_ranges(&self, buffer: &dyn DynBuffer, ranges: &[MemoryRange]);
-    unsafe fn invalidate_mapped_ranges(&self, buffer: &dyn DynBuffer, ranges: &[MemoryRange]);
+    unsafe fn invalidate_mapped_ranges(
+        &self,
+        buffer: &dyn DynBuffer,
+        ranges: &[MemoryRange],
+    ) -> Result<(), DeviceError>;
 
     unsafe fn create_texture(
         &self,
@@ -217,7 +221,11 @@ impl<D: Device + DynResource> DynDevice for D {
         unsafe { D::flush_mapped_ranges(self, buffer, ranges.iter().cloned()) }
     }
 
-    unsafe fn invalidate_mapped_ranges(&self, buffer: &dyn DynBuffer, ranges: &[MemoryRange]) {
+    unsafe fn invalidate_mapped_ranges(
+        &self,
+        buffer: &dyn DynBuffer,
+        ranges: &[MemoryRange],
+    ) -> Result<(), DeviceError> {
         let buffer = buffer.expect_downcast_ref();
         unsafe { D::invalidate_mapped_ranges(self, buffer, ranges.iter().cloned()) }
     }

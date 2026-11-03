@@ -121,6 +121,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `4ef1fbdaafd138b5981b5765c6a33a887b54b594` | Unfilterable float layout relationship validation |
 | `4f3f608c229fd6e5b7bc309db5ac975bfd790c7e` | Combined sampled-resource visibility |
 | `cac502305de4c2569bfc29da73eecdd9a59e92e8` | Premultiplied alpha blending |
+| `ceaf4d603dc4ecbc6449b520f5a9ef546b5cfa64` | Safe D3D11 passthrough shader rejection |
 
 ## What is and is not usable
 
@@ -251,6 +252,11 @@ of uniform ranges, and buffer-texture
 uploads, and GPU readback for checked indexed draws. They can stall the CPU;
 no representative frame-time measurement has been made. Device removal,
 mapping error paths and surface thread reentrancy require additional audit.
+Mapped-range invalidation now reports failures through HAL and core, and an
+injected D3D11 OOM reached the map callback after releasing the shadow. Flush
+and unmap still use infallible HAL methods; device-lost callback reentrancy
+during mapping remains unaudited. Metal compilation and BLAS error execution
+were not available on the Windows test host.
 
 Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a

@@ -1002,13 +1002,18 @@ pub trait Device: WasmNotSendSync {
         I: Iterator<Item = MemoryRange>;
 
     /// Indicate that GPU writes to mapped buffer memory should be made visible to the CPU.
+    /// If this fails, the requested ranges must not be read before a successful invalidation.
     ///
     /// # Safety
     ///
     /// - The given `buffer` must be currently mapped.
     ///
     /// - All ranges produced by `ranges` must fall within `buffer`'s size.
-    unsafe fn invalidate_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
+    unsafe fn invalidate_mapped_ranges<I>(
+        &self,
+        buffer: &<Self::A as Api>::Buffer,
+        ranges: I,
+    ) -> Result<(), DeviceError>
     where
         I: Iterator<Item = MemoryRange>;
 

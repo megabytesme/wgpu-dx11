@@ -323,7 +323,13 @@ impl crate::Device for Context {
     }
     unsafe fn unmap_buffer(&self, buffer: &Buffer) {}
     unsafe fn flush_mapped_ranges<I>(&self, buffer: &Buffer, ranges: I) {}
-    unsafe fn invalidate_mapped_ranges<I>(&self, buffer: &Buffer, ranges: I) {}
+    unsafe fn invalidate_mapped_ranges<I>(
+        &self,
+        buffer: &Buffer,
+        ranges: I,
+    ) -> Result<(), crate::DeviceError> {
+        Ok(())
+    }
 
     unsafe fn create_texture(&self, desc: &crate::TextureDescriptor) -> DeviceResult<Resource> {
         Ok(Resource)

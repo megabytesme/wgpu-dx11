@@ -327,7 +327,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     };
     let source = create(wgt::BufferUsages::COPY_SRC | wgt::BufferUsages::COPY_DST);
     let readback = create(wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ);
-    let expected: Vec<u8> = (0..64).map(|value| (value * 3 + 7) as u8).collect();
+    let expected: Vec<u8> = (0u8..64).map(|value| value * 3 + 7).collect();
     global
         .queue_write_buffer(queue, source, 0, &expected)
         .expect("core queue upload");
@@ -487,6 +487,61 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             VertexCase::DisjointCloneMip(wgt::TextureFormat::Bgra8Unorm),
         );
     }
+    let (failed_map, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("injected invalidate failure")),
+            size: 64,
+            usage: wgt::BufferUsages::MAP_READ | wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "failure test buffer creation: {error:?}");
+    {
+        let buffer = unsafe { global.buffer_as_hal::<hal::dx11::Api>(failed_map) }
+            .expect("D3D11 failure test buffer");
+        assert!(!buffer.test_fixture_shadow_is_mapped());
+        buffer.test_fixture_fail_next_invalidate();
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            failed_map,
+            0,
+            Some(64),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| sender.send(result).unwrap())),
+            },
+        )
+        .expect("injected invalidate map request");
+    global
+        .device_poll(device, wgt::PollType::Poll)
+        .expect("injected invalidate poll");
+    let result = receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("injected invalidate callback");
+    assert!(matches!(
+        result,
+        Err(crate::resource::BufferAccessError::Device(
+            crate::device::DeviceError::OutOfMemory
+        ))
+    ));
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+    assert!(global
+        .buffer_get_mapped_range(failed_map, 0, Some(64))
+        .is_err());
+    {
+        let buffer = unsafe { global.buffer_as_hal::<hal::dx11::Api>(failed_map) }
+            .expect("D3D11 failed mapping buffer");
+        assert!(!buffer.test_fixture_shadow_is_mapped());
+    }
+    global.buffer_drop(failed_map);
+    std::println!("PASS: injected D3D11 invalidate OOM reached map callback and released shadow");
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
