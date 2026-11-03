@@ -1,17 +1,19 @@
-//! Checked, correctness-first 16-bit indexed draws for the private D3D11 HAL.
+//! Checked, correctness-first indexed draws for the private D3D11 HAL.
 //!
 //! GPU index data is copied to staging and checked at replay time, after all
 //! earlier commands. This preserves command ordering but may stall the CPU.
 use super::{buffer::NativeBuffer, device::NativeDevice};
+use alloc::vec::Vec;
 use core::num::NonZeroU64;
 use windows::{
     core::{Error, Result},
     Win32::{
-        Foundation::{E_FAIL, E_INVALIDARG},
+        Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
             Direct3D11::{
-                ID3D11Buffer, ID3D11DeviceContext, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ,
-                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_USAGE_STAGING,
+                ID3D11Buffer, ID3D11DeviceContext, D3D11_BIND_INDEX_BUFFER, D3D11_BUFFER_DESC,
+                D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_SUBRESOURCE_DATA, D3D11_USAGE_IMMUTABLE, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::DXGI_FORMAT_R16_UINT,
         },
@@ -25,6 +27,7 @@ pub(super) struct IndexBinding {
     offset: u32,
     length: u64,
     max_index: u16,
+    format: wgt::IndexFormat,
 }
 
 impl NativeDevice {
@@ -35,10 +38,6 @@ impl NativeDevice {
         size: Option<NonZeroU64>,
         format: wgt::IndexFormat,
     ) -> Result<IndexBinding> {
-        // 32-bit index translation is not yet implemented.
-        if format != wgt::IndexFormat::Uint16 {
-            return Err(Error::from_hresult(E_INVALIDARG));
-        }
         let (raw, length) = self.index_buffer(buffer, offset, size, format)?;
         let mut source_desc = D3D11_BUFFER_DESC::default();
         unsafe { raw.GetDesc(&mut source_desc) };
@@ -61,6 +60,7 @@ impl NativeDevice {
             max_index: super::capabilities::HardwareGuarantees::for_level(self.feature_level())
                 .max_vertex_index
                 .min(u32::from(u16::MAX)) as u16,
+            format,
         })
     }
 }
@@ -68,10 +68,19 @@ impl NativeDevice {
 impl IndexBinding {
     pub(super) fn contains_range(&self, first: u32, count: u32) -> bool {
         let end = u64::from(first) + u64::from(count);
-        end.checked_mul(2).is_some_and(|bytes| bytes <= self.length)
+        let size = match self.format {
+            wgt::IndexFormat::Uint16 => 2,
+            wgt::IndexFormat::Uint32 => 4,
+        };
+        end.checked_mul(size)
+            .is_some_and(|bytes| bytes <= self.length)
             && u64::from(self.offset)
-                .checked_add(end * 2)
+                .checked_add(end * size)
                 .is_some_and(|bytes| bytes <= isize::MAX as u64)
+    }
+
+    pub(super) fn is_u32(&self) -> bool {
+        self.format == wgt::IndexFormat::Uint32
     }
 
     /// The caller holds the owning device's immediate-context lock.
@@ -90,6 +99,19 @@ impl IndexBinding {
         if count == 0 {
             return Ok(());
         }
+        let mut converted_data = Vec::new();
+        let converted_size = if self.is_u32() {
+            let size = u64::from(count)
+                .checked_mul(2)
+                .and_then(|size| size.checked_add(3))
+                .map(|size| size & !3)
+                .and_then(|size| u32::try_from(size).ok())
+                .and_then(|size| usize::try_from(size).ok())
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            Some(size)
+        } else {
+            None
+        };
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
             context.CopyResource(&self.staging, &self.buffer);
@@ -98,29 +120,89 @@ impl IndexBinding {
                 context.Unmap(&self.staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
-            let start = self.offset as usize + first as usize * 2;
-            let indices = (0..count as usize).map(|index| {
+            let size = if self.is_u32() { 4 } else { 2 };
+            let start = self.offset as usize + first as usize * size;
+            let read_u32 = |index: usize| {
                 core::ptr::read_unaligned(
                     mapped
                         .pData
                         .cast::<u8>()
-                        .add(start + index * 2)
-                        .cast::<u16>(),
+                        .add(start + index * 4)
+                        .cast::<u32>(),
                 )
-            });
-            let decision = classify_indices(indices, base_vertex, self.max_index, vertex_layout);
+            };
+            let decision = if self.is_u32() {
+                let decision = classify_u32_indices(
+                    (0..count as usize).map(read_u32),
+                    base_vertex,
+                    self.max_index,
+                    vertex_layout,
+                );
+                if decision == IndexDecision::Draw {
+                    let Some(size) = converted_size else {
+                        context.Unmap(&self.staging, 0);
+                        return Err(Error::from_hresult(E_INVALIDARG));
+                    };
+                    if converted_data.try_reserve_exact(size).is_err() {
+                        context.Unmap(&self.staging, 0);
+                        return Err(Error::from_hresult(E_OUTOFMEMORY));
+                    }
+                    converted_data.resize(size, 0);
+                    for index in 0..count as usize {
+                        let effective =
+                            (i64::from(read_u32(index)) + i64::from(base_vertex)) as u16;
+                        converted_data[index * 2..index * 2 + 2]
+                            .copy_from_slice(&effective.to_ne_bytes());
+                    }
+                }
+                decision
+            } else {
+                let indices = (0..count as usize).map(|index| {
+                    core::ptr::read_unaligned(
+                        mapped
+                            .pData
+                            .cast::<u8>()
+                            .add(start + index * 2)
+                            .cast::<u16>(),
+                    )
+                });
+                classify_indices(indices, base_vertex, self.max_index, vertex_layout)
+            };
             context.Unmap(&self.staging, 0);
             match decision {
                 IndexDecision::Draw => {}
                 IndexDecision::Discard => return Ok(()),
                 IndexDecision::Unsupported => return Err(Error::from_hresult(E_INVALIDARG)),
             }
-            context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
-            let mut next = first;
+            let converted = if self.is_u32() {
+                let desc = D3D11_BUFFER_DESC {
+                    ByteWidth: converted_data.len() as u32,
+                    Usage: D3D11_USAGE_IMMUTABLE,
+                    BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                    ..Default::default()
+                };
+                let data = D3D11_SUBRESOURCE_DATA {
+                    pSysMem: converted_data.as_ptr().cast(),
+                    ..Default::default()
+                };
+                let mut buffer = None;
+                context
+                    .GetDevice()?
+                    .CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                Some(buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?)
+            } else {
+                None
+            };
+            let (buffer, offset, mut next, native_base) = if let Some(buffer) = &converted {
+                (buffer, 0, 0, 0)
+            } else {
+                (&self.buffer, self.offset, first, base_vertex)
+            };
+            context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, offset);
             let mut remaining = count;
             while remaining != 0 {
                 let batch = remaining.min(max_vertices);
-                context.DrawIndexed(batch, next, base_vertex);
+                context.DrawIndexed(batch, next, native_base);
                 remaining -= batch;
                 if remaining != 0 {
                     next = next
@@ -166,9 +248,74 @@ fn classify_indices(
     decision
 }
 
+fn classify_u32_indices(
+    indices: impl Iterator<Item = u32>,
+    base_vertex: i32,
+    max_index: u16,
+    vertex_layout: (u64, u32, u32),
+) -> IndexDecision {
+    let (vertex_bytes, stride, extent) = vertex_layout;
+    let mut decision = IndexDecision::Draw;
+    for value in indices {
+        let effective = i64::from(value) + i64::from(base_vertex);
+        let end = u64::try_from(effective).ok().and_then(|index| {
+            index
+                .checked_mul(u64::from(stride))
+                .and_then(|bytes| bytes.checked_add(u64::from(extent)))
+        });
+        if end.is_none_or(|end| end > vertex_bytes) {
+            decision = IndexDecision::Discard;
+        } else if decision == IndexDecision::Draw && effective > i64::from(max_index) {
+            decision = IndexDecision::Unsupported;
+        }
+    }
+    decision
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{classify_indices, IndexDecision};
+    use super::{classify_indices, classify_u32_indices, IndexDecision};
+
+    #[test]
+    fn u32_conversion_checks_effective_indices_and_whole_draw() {
+        let large = (u64::MAX, 1, 1);
+        assert_eq!(
+            classify_u32_indices([0, 65534].into_iter(), 0, 65534, large),
+            IndexDecision::Draw
+        );
+        assert_eq!(
+            classify_u32_indices([65535].into_iter(), 0, 65534, large),
+            IndexDecision::Unsupported
+        );
+        assert_eq!(
+            classify_u32_indices([65535].into_iter(), -1, 65534, large),
+            IndexDecision::Draw
+        );
+        assert_eq!(
+            classify_u32_indices([u32::MAX].into_iter(), i32::MIN, 65534, large),
+            IndexDecision::Unsupported
+        );
+        assert_eq!(
+            classify_u32_indices([0].into_iter(), i32::MIN, 65534, large),
+            IndexDecision::Discard
+        );
+        assert_eq!(
+            classify_u32_indices([65535, 0].into_iter(), -1, 65534, large),
+            IndexDecision::Discard
+        );
+        assert_eq!(
+            classify_u32_indices([0, 65535].into_iter(), -1, 65534, large),
+            IndexDecision::Discard
+        );
+        assert_eq!(
+            classify_u32_indices([3].into_iter(), 0, 65534, (24, 8, 8)),
+            IndexDecision::Discard
+        );
+        assert_eq!(
+            classify_u32_indices([2].into_iter(), 0, 65534, (24, 8, 8)),
+            IndexDecision::Draw
+        );
+    }
 
     #[test]
     fn base_vertex_checks_effective_index_and_binding_range() {

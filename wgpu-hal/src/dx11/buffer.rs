@@ -371,8 +371,7 @@ impl NativeDevice {
     ) -> Result<(ID3D11Buffer, u64)> {
         let alignment = match format {
             wgt::IndexFormat::Uint16 => 2,
-            wgt::IndexFormat::Uint32 if self.feature_level() != FeatureLevel::L9_1 => 4,
-            wgt::IndexFormat::Uint32 => return Err(Error::from_hresult(E_INVALIDARG)),
+            wgt::IndexFormat::Uint32 => 4,
         };
         let remaining = u64::from(buffer.size)
             .checked_sub(offset)

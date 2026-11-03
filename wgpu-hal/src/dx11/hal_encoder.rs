@@ -1373,6 +1373,33 @@ mod tests {
         use alloc::borrow::Cow;
         let device = Device::new(native.clone());
         let queue = Queue::new(native.clone());
+        let entry_module = naga::front::wgsl::parse_str(
+            r#"
+            struct Input { @location(0) p: vec2f, @builtin(vertex_index) id: u32 }
+            @vertex fn direct(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, f32(id), 1.0); }
+            @vertex fn structured(input: Input) -> @builtin(position) vec4f { return vec4f(input.p, f32(input.id), 1.0); }
+            @vertex fn safe(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
+            "#,
+        )
+        .unwrap();
+        let entry_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&entry_module)
+        .unwrap();
+        let entry_shader = super::super::hal_shader::ShaderModule::new(
+            native.clone(),
+            NagaShader {
+                module: Cow::Owned(entry_module),
+                info: entry_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::unchecked(),
+        );
+        assert!(entry_shader.validate_vertex_index("direct").is_err());
+        assert!(entry_shader.validate_vertex_index("structured").is_err());
+        assert!(entry_shader.validate_vertex_index("safe").is_ok());
         let unsupported = TextureDescriptor {
             label: None,
             size: wgt::Extent3d {
@@ -1831,6 +1858,285 @@ mod tests {
             timestamp_writes: None,
             occlusion_query_set: None,
         };
+        let u32_indices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 32,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&u32_indices, 0, &[0; 32])?;
+        let u32_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 24,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let u32_valid: Vec<u8> = [0u32, 1, 2, 6, 7, 8]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&u32_upload, 0, &u32_valid)?;
+        let u32_oob_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 24,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let u32_oob: Vec<u8> = [6u32, 7, 8, 6, 7, 0]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&u32_oob_upload, 0, &u32_oob)?;
+        let u32_commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &u32_upload,
+                &u32_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 8,
+                    size: NonZeroU64::new(24).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&u32_indices, 4, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 0, 1);
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 4, 3, -3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe { crate::Queue::submit(&queue, &[&u32_commands], &[], (&fence, 3)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
+        let u32_pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        assert!(u32_pixels
+            .chunks_exact(4)
+            .all(|pixel| pixel == [255, 0, 0, 255]));
+        std::println!(
+            "Readback: GPU-uploaded u32 indices with positive/negative base, 64/64 red pixels"
+        );
+        let near_vertices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 65536 * 8,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let near_vertex_data: Vec<u8> = [-1f32, -1., 3., -1., -1., 3.]
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&near_vertices, 65532 * 8, &near_vertex_data)?;
+        let near_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 12,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let near_data: Vec<u8> = [65532u32, 65533, 65534]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&near_upload, 0, &near_data)?;
+        let record_near = |encoder: &mut CommandEncoder, base_vertex| unsafe {
+            crate::CommandEncoder::begin_encoding(encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                encoder,
+                &near_upload,
+                &u32_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 8,
+                    size: NonZeroU64::new(12).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                encoder,
+                0,
+                BufferBinding::new_unchecked(&near_vertices, 0, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                encoder,
+                BufferBinding::new_unchecked(&u32_indices, 4, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::draw_indexed(encoder, 1, 3, base_vertex, 0, 1);
+            crate::CommandEncoder::end_render_pass(encoder);
+            crate::CommandEncoder::end_encoding(encoder).unwrap()
+        };
+        let u32_near_limit = record_near(&mut encoder, 0);
+        unsafe { crate::Queue::submit(&queue, &[&u32_near_limit], &[], (&fence, 4)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 4, Some(Duration::from_secs(5)))?);
+        assert!(native
+            .read_rgba_texture(&texture, 0, 0)?
+            .chunks_exact(4)
+            .all(|pixel| pixel == [255, 0, 0, 255]));
+        let wide_data: Vec<u8> = [65535u32, 65536, 65537]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&near_upload, 0, &wide_data)?;
+        let u32_wide_base = record_near(&mut encoder, -3);
+        unsafe { crate::Queue::submit(&queue, &[&u32_wide_base], &[], (&fence, 5)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 5, Some(Duration::from_secs(5)))?);
+        assert!(native
+            .read_rgba_texture(&texture, 0, 0)?
+            .chunks_exact(4)
+            .all(|pixel| pixel == [255, 0, 0, 255]));
+        std::println!("PASS: u32 indices 65535..65537 with base -3 rendered 64/64 red pixels");
+        let over_data: Vec<u8> = [65535u32; 3]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&near_upload, 0, &over_data)?;
+        let u32_over_limit = record_near(&mut encoder, 0);
+        unsafe {
+            assert!(crate::Queue::submit(&queue, &[&u32_over_limit], &[], (&fence, 6)).is_err())
+        };
+        unsafe {
+            crate::Device::destroy_buffer(&device, near_vertices);
+            crate::Device::destroy_buffer(&device, near_upload);
+        }
+        std::println!("PASS: u32 effective index 65534 rendered; in-range 65535 rejected");
+        let u32_discarded = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &u32_oob_upload,
+                &u32_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 8,
+                    size: NonZeroU64::new(24).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&u32_indices, 4, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 6, -3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::copy_buffer_to_buffer(
+                &mut encoder,
+                &u32_upload,
+                &u32_indices,
+                core::iter::once(BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 8,
+                    size: NonZeroU64::new(24).unwrap(),
+                }),
+            );
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &load_pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                BufferBinding::new_unchecked(&base_vertices, 8, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                BufferBinding::new_unchecked(&u32_indices, 4, None),
+                wgt::IndexFormat::Uint32,
+            );
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe {
+            crate::Device::destroy_buffer(&device, u32_indices);
+            crate::Device::destroy_buffer(&device, u32_upload);
+            crate::Device::destroy_buffer(&device, u32_oob_upload);
+            crate::Queue::submit(&queue, &[&u32_discarded], &[], (&fence, 6)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 6, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&texture, 0, 0)?;
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            let expected = if index % 8 < 4 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            assert_eq!(pixel, expected, "discarded u32 draw pixel {index}");
+        }
+        std::println!(
+            "PASS: u32 late OOB discarded whole draw; GPU rewrite and later draw succeeded"
+        );
         let discarded_draw = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::copy_buffer_to_buffer(
@@ -1897,9 +2203,9 @@ mod tests {
             crate::Device::destroy_buffer(&device, base_indices);
             crate::Device::destroy_buffer(&device, base_upload);
             crate::Device::destroy_buffer(&device, out_of_bounds_upload);
-            crate::Queue::submit(&queue, &[&discarded_draw], &[], (&fence, 3)).unwrap();
+            crate::Queue::submit(&queue, &[&discarded_draw], &[], (&fence, 7)).unwrap();
         }
-        assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
+        assert!(native.wait_native_fence(&fence, 7, Some(Duration::from_secs(5)))?);
         let discard_pixels = native.read_rgba_texture(&texture, 0, 0)?;
         for (index, pixel) in discard_pixels.chunks_exact(4).enumerate() {
             let expected = if index % 8 < 4 {
@@ -1913,7 +2219,18 @@ mod tests {
         unsafe {
             crate::CommandEncoder::reset_all(
                 &mut encoder,
-                [upload_commands, commands, base_commands, discarded_draw].into_iter(),
+                [
+                    upload_commands,
+                    commands,
+                    base_commands,
+                    u32_commands,
+                    u32_near_limit,
+                    u32_wide_base,
+                    u32_over_limit,
+                    u32_discarded,
+                    discarded_draw,
+                ]
+                .into_iter(),
             );
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             let unsupported = RenderPassDescriptor {

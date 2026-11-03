@@ -695,6 +695,9 @@ impl RenderPipeline {
         else {
             return Err(invalid());
         };
+        vertex_stage
+            .module
+            .validate_vertex_index(vertex_stage.entry_point)?;
         let fragment = desc.fragment_stage.as_ref();
         let [Some(buffer)] = *vertex_buffers else {
             return Err(invalid());

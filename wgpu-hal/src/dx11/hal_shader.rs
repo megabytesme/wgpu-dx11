@@ -28,6 +28,22 @@ mod tests {
     use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;
 
     #[test]
+    fn vertex_index_detection_uses_only_selected_entry() {
+        let module = naga::front::wgsl::parse_str(r#"
+            struct Input { @location(0) p: vec2f, @builtin(vertex_index) id: u32 }
+            @vertex fn direct(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, f32(id), 1.0); }
+            @vertex fn structured(input: Input) -> @builtin(position) vec4f { return vec4f(input.p, f32(input.id), 1.0); }
+            @vertex fn unused(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
+            @vertex fn safe(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
+        "#).unwrap();
+        for entry in ["direct", "structured", "unused"] {
+            assert_eq!(entry_has_vertex_index(&module, entry), Some(true));
+        }
+        assert_eq!(entry_has_vertex_index(&module, "safe"), Some(false));
+        assert_eq!(entry_has_vertex_index(&module, "missing"), None);
+    }
+
+    #[test]
     fn unused_entry_point_resource_does_not_conflict_with_layout_mapping() {
         let module = naga::front::wgsl::parse_str(
             "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn plain() -> @location(0) vec4f { return vec4f(1.0); } @fragment fn textured() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }",
@@ -371,7 +387,38 @@ fn has_dynamic_access(module: &naga::Module, function: &naga::Function) -> bool 
     })
 }
 
+fn entry_has_vertex_index(module: &naga::Module, entry: &str) -> Option<bool> {
+    let entry = module
+        .entry_points
+        .iter()
+        .find(|ep| ep.stage == naga::ShaderStage::Vertex && ep.name == entry)?;
+    Some(entry.function.arguments.iter().any(|arg| {
+        matches!(
+            arg.binding.as_ref(),
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::VertexIndex))
+        ) || match &module.types[arg.ty].inner {
+            naga::TypeInner::Struct { members, .. } => members.iter().any(|member| {
+                matches!(
+                    member.binding.as_ref(),
+                    Some(naga::Binding::BuiltIn(naga::BuiltIn::VertexIndex))
+                )
+            }),
+            _ => false,
+        }
+    }))
+}
+
 impl ShaderModule {
+    pub(super) fn validate_vertex_index(&self, entry: &str) -> Result<(), crate::PipelineError> {
+        match entry_has_vertex_index(&self.shader.module, entry) {
+            Some(false) => Ok(()),
+            Some(true) => Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::VERTEX,
+                "D3D11 vertex_index is not implemented".into(),
+            )),
+            None => Err(crate::PipelineError::EntryPoint(naga::ShaderStage::Vertex)),
+        }
+    }
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         shader: crate::NagaShader,

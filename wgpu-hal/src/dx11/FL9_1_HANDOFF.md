@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 169 tests; older
+operations are safe. The latest combined strict suite passed 173 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -152,9 +152,10 @@ fixture-enabled core suite (68 tests) passed; see the progress log for details.
 The controlled core fixture has also rendered a sampled texture with depth on
 the forced-FL9_1 RTX: readback matched 32 red and 32 green pixels. This is an
 unsafe, feature-gated fixture rather than ordinary public adapter enumeration.
-The private u16 indexed path also passed signed base-vertex GPU tests using
+The private indexed path also passed signed base-vertex GPU tests using
 execution-time index data. Out-of-bounds vertex fetches discard the whole draw;
-valid public draws beyond its conservative native limits still require emulation.
+bounded u32 data converts to u16 scratch, while valid public draws beyond its
+conservative native limits still require emulation.
 
 Known costs include per-group scratch allocation, per-draw staging and mapping
 of uniform ranges, and buffer-texture
@@ -166,6 +167,9 @@ Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
 sound presentation synchronization design and core/HAL contract coverage while
 continuing verified FL9_1 increments.
+Private Uint32 conversion is restricted to effective indices at most 65534 and
+explicitly rejects selected vertex-index shader inputs. The scratch buffer is
+allocated at replay and index staging can stall; broader translation remains.
 DXGI may synchronously call a window procedure during presentation. A private
 application can avoid the deadlock only by keeping its UI callback nonblocking
 and queueing graphics work; that cooperation cannot be assumed for arbitrary

@@ -941,7 +941,7 @@ mod tests {
         assert!(unsafe { dynamic.create_buffer(&combined_desc) }.is_err());
         assert!(native
             .index_buffer(index_native, 0, None, wgt::IndexFormat::Uint32)
-            .is_err());
+            .is_ok());
         assert!(native.vertex_buffer(index_native, 0, None).is_err());
         assert!(native
             .index_buffer(index_native, 2, None, wgt::IndexFormat::Uint32)

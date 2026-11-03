@@ -485,3 +485,18 @@ synthetic error test passed. The full private suite passed 170 tests before
 that small error-path adjustment; the focused GPU and synthetic tests passed
 afterward. Fixture rendering and targeted HAL Clippy passed. Historical FL9_1
 driver behavior and fragment shaders without color targets remain unverified.
+
+The private Uint32 index path stages authoritative GPU contents at replay and
+converts effective indices up to 65534 into a fresh immutable native Uint16
+buffer. It discards whole draws with out-of-range vertex fetches and reports a
+replay error for otherwise-valid larger effective indices. Selected vertex
+entry points declaring `vertex_index` are explicitly rejected. On the RTX at
+forced FL9_1, GPU-written u32 data with both base directions rendered 64/64
+red pixels; raw values 65535–65537 with base -3 also rendered correctly.
+The 65534 boundary rendered, a valid-fetch 65535 was rejected, and a late OOB
+draw was discarded before a subsequent GPU rewrite and draw. The private suite
+passed 173 tests before the additional high-raw test was added; the expanded
+focused GPU test passed, as did public-fixture rendering and targeted Clippy
+(ten existing HAL warnings). Independent review found no concrete defect.
+General u32 support, vertex-index semantics, instancing and public exposure
+remain incomplete; staging and per-draw allocation incur synchronization cost.
