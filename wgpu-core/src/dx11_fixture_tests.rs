@@ -573,6 +573,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::PointInput,
         VertexCase::PointIndexed(wgt::IndexFormat::Uint16),
         VertexCase::PointIndexed(wgt::IndexFormat::Uint32),
+        VertexCase::LineList,
+        VertexCase::LineStrip,
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
@@ -1681,6 +1683,8 @@ enum VertexCase {
     VertexVisibleBindings,
     PointInput,
     PointIndexed(wgt::IndexFormat),
+    LineList,
+    LineStrip,
     FractionalSamplerLod,
     SampledMips,
     SampledMipsBias,
@@ -1733,6 +1737,11 @@ fn render_triangle(
         _ => None,
     };
     let point_input = case == VertexCase::PointInput || point_index.is_some();
+    let line_topology = match case {
+        VertexCase::LineList => Some(wgt::PrimitiveTopology::LineList),
+        VertexCase::LineStrip => Some(wgt::PrimitiveTopology::LineStrip),
+        _ => None,
+    };
     let noop_stencil = case == VertexCase::NoopStencil;
     let never_depth = match case {
         VertexCase::NeverDepth(write) => Some(write),
@@ -2374,11 +2383,11 @@ fn render_triangle(
             buffers: Cow::Borrowed(&buffers),
         },
         primitive: wgt::PrimitiveState {
-            topology: if point_input {
+            topology: line_topology.unwrap_or(if point_input {
                 wgt::PrimitiveTopology::PointList
             } else {
                 wgt::PrimitiveTopology::TriangleList
-            },
+            }),
             ..Default::default()
         },
         depth_stencil: Some(wgt::DepthStencilState {
@@ -2559,6 +2568,13 @@ fn render_triangle(
         values = vec![
             0.0, 0.0, 0.25, 0.25, 0.5, -0.375, 0.375, 0.25, 0.25, 0.5, 0.375, -0.375, 0.25, 0.75,
             0.5,
+        ];
+    }
+    if line_topology == Some(wgt::PrimitiveTopology::LineList) {
+        values = vec![-1., 0., 0.25, 0.25, 0.5, 1., 0., 0.25, 0.25, 0.5];
+    } else if line_topology == Some(wgt::PrimitiveTopology::LineStrip) {
+        values = vec![
+            -1., -0.75, 0.25, 0.25, 0.5, 0., 0.75, 0.25, 0.25, 0.5, 1., -0.75, 0.25, 0.25, 0.5,
         ];
     }
     if depth_bias.is_some() {
@@ -2806,6 +2822,15 @@ fn render_triangle(
             .unwrap();
     } else if point_input {
         global.render_pass_draw(&mut pass, 2, 1, 1, 0).unwrap();
+    } else if line_topology.is_some() {
+        let vertex_count = if line_topology == Some(wgt::PrimitiveTopology::LineList) {
+            2
+        } else {
+            3
+        };
+        global
+            .render_pass_draw(&mut pass, vertex_count, 1, 0, 0)
+            .unwrap();
     } else if depth_only_prepass {
         global.render_pass_draw(&mut pass, 3, 1, 6, 0).unwrap();
     } else {
@@ -2827,7 +2852,7 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, bias_pipeline)
             .unwrap();
     }
-    if !point_input && !depth_only_prepass {
+    if !point_input && !depth_only_prepass && line_topology.is_none() {
         global
             .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
             .unwrap();
@@ -2903,6 +2928,7 @@ fn render_triangle(
         .unwrap();
     assert_eq!(length, 2048);
     let pixels = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
+    let mut line_red_pixels = 0;
     for y in 0..8 {
         for x in 0..8 {
             let offset = y * 256 + x * 4;
@@ -2916,6 +2942,14 @@ fn render_triangle(
                     },
                     "depth-only prepass pixel ({x}, {y})"
                 );
+                continue;
+            }
+            if line_topology.is_some() {
+                match &pixels[offset..offset + 4] {
+                    [0, 0, 255, 255] => {}
+                    [255, 0, 0, 255] => line_red_pixels += 1,
+                    other => panic!("unexpected {case:?} pixel ({x}, {y}): {other:?}"),
+                }
                 continue;
             }
             if premultiplied_blend {
@@ -2964,7 +2998,17 @@ fn render_triangle(
             );
         }
     }
-    std::println!("PASS: core textured depth test ({case:?}): 64 pixels matched");
+    if line_topology.is_some() {
+        assert!(
+            line_red_pixels >= 4,
+            "core {case:?} rendered only {line_red_pixels} sampled pixels"
+        );
+        std::println!(
+            "PASS: core {case:?} through FL9_1 fixture: {line_red_pixels} red pixels, remaining pixels clear"
+        );
+    } else {
+        std::println!("PASS: core textured depth test ({case:?}): 64 pixels matched");
+    }
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
