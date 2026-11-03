@@ -1965,3 +1965,48 @@ Implementation checkpoint: `f1b8c09a7` (`dx11: emulate FL9_1 indexed triangle
 strips`). Indexed TriangleStrip is now implemented; continue with the remaining
 topology, resource and public-contract gates. Keep ordinary D3D11 adapter
 enumeration and public HWND surface exposure disabled.
+
+## Checkpoint — execute the final statically addressed vertex constant
+
+The sparse-uniform suite now includes an end-to-end shader that statically reads
+`constants[254]` from a 255-element vertex uniform array. It draws the same
+triangle twice, first with a zero-filled uniform and then with a value only in
+the final float4. On the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), with FL9_1 explicitly requested and selected, readback
+reported 17 green baseline pixels and 4 red shifted pixels. This verifies that
+the final tested vertex constant affects GPU vertex processing. It does not
+verify runtime indexing; runtime integer indexing remains deliberately rejected.
+The test destroys its groups and buffers before queue submission and then
+submits, waits on the native fence and reads back, exercising retained command
+resource lifetime.
+
+The focused strict test passed 1/1 with 306 tests filtered. The complete strict
+private D3D11 library suite passed 305 tests, 0 failed, with 2 filtered. The
+D3D11 HAL build and Clippy passed; Clippy reports ten existing warnings in
+unrelated HAL code. The core zero-adapter isolation test passed 1/1 when run
+with the required `std` feature. A first invocation without `std` failed to
+compile the test target, then the corrected invocation passed. Targeted DX12
+pipeline descriptor tests passed 2/2. The HAL package formatting check,
+targeted rustfmt check and `git diff --check` passed.
+
+Commands (Rust 1.93.1; Cargo invoked from the Visual Studio 2022 MSVC developer
+environment; the hardware commands used strict mode):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_last_vertex_constant_changes_rendered_geometry -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 "dx11::" -- --test-threads=1
+cargo build --offline -p wgpu-hal --no-default-features --features dx11
+cargo clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx12 pipeline_desc::tests -- --test-threads=1
+cargo fmt --package wgpu-hal -- --check
+rustfmt --check --edition 2021 wgpu-hal/tests/dx11/uniform_bindings.rs
+git diff --check
+```
+
+The feature is checkpointed as `6cac808c9` (`dx11: verify FL9_1 final vertex
+constant execution`). Continue the uniform-layout audit and then work the next
+safe render/resource gates in `FL9_1_PLAN.md`. The larger mission remains
+PARTIALLY COMPLETE: this evidence is private-HAL execution on one modern GPU
+forced to FL9_1, not historical-hardware or public-adapter validation.

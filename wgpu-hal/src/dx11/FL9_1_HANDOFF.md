@@ -1,26 +1,24 @@
 # FL9_1 handoff
 
-**Outcome: PARTIALLY COMPLETE.** The mission is active. The private D3D11 HAL
-can render on a forced-FL9_1 RTX 3090 Ti, but ordinary wgpu adapter enumeration
-is disabled. An unsafe, nondefault test fixture has exercised public wgpu
-rendering, but no ordinary public adapter or HWND presentation has been
-verified. A hidden HWND test has exercised the private surface, but visible
-presentation and surface lifetime/concurrency still require verification.
-A private D24S8 attachment path is implemented and its textured
-depth/readback test has passed on forced FL9_1; stencil tests,
-aspect-specific views and general render-pass operations remain incomplete.
-Depth-only drawing without a fragment stage also passed a private GPU prepass
-test; its trivial pixel-shader fallback has not been tested on historical GPUs.
-Indexed LineStrip is now implemented privately by splitting fixed restart
-indices after base-vertex resolution, compacting/rebasing runs and gathering
-wide edges; forced-FL9_1 GPU and controlled core-fixture runs pass. A checked
-pixel now proves the gathered wide edge contributes output. The complete
-strict private HAL suite passed 301 tests (two filtered), the fixture-enabled
-core suite passed 70 tests, and the implementation is checkpointed as
-`2ff5a58e8`.
-See FL9_1_PLAN.md for completion gates,
-FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
-current implementation and validation matrix.
+**Outcome: PARTIALLY COMPLETE.** The mission is active. Ordinary wgpu D3D11
+adapter enumeration remains disabled; controlled core-fixture tests do not
+constitute a public adapter. The private HAL has tested D24S8 depth/stencil,
+depth-only prepasses, stencil operations, read-only attachments, depth-bias
+subsets, multiple texture formats and mip views, uniform layouts/ranges, and
+indexed/nonindexed point, line and triangle topologies on a modern RTX 3090 Ti
+explicitly forced to FL9_1. Historical FL9_1 compatibility has not been
+verified. Public HWND presentation and the cross-layer `Present` reentrancy
+deadlock remain unresolved; keep both ordinary adapter and public surface
+exposure gated.
+
+The indexed TriangleStrip checkpoint `f1b8c09a7` and strict core-fixture
+coverage `c46c4a908` are followed by a strict shader-to-GPU test of the final
+statically addressed vertex constant c254, checkpointed as `6cac808c9`. The
+test renders 17 green baseline pixels and 4 red shifted pixels at requested and
+selected FL9_1. Dynamic integer indexing remains rejected. The full strict HAL
+suite passed 305 tests (two filtered); see FL9_1_PROGRESS.md for exact commands
+and the limits of that evidence. Continue from FL9_1_PLAN.md and update the
+progress journal after each verified checkpoint.
 
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
 Viewport emulation was checkpointed as `ec645e63e` and retains the
@@ -144,6 +142,9 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `a690866b4a6cdc0981a1ffa448f2c28f0f41b756` | Fallible mapped-range invalidation |
 | `13a4defb9` | Fallible mapped-range flush and core error propagation |
 | `2ff5a58e8` | dx11: emulate FL9_1 indexed line-strip restart |
+| `f1b8c09a7` | dx11: emulate FL9_1 indexed triangle strips |
+| `c46c4a908` | docs: record FL9_1 indexed triangle-strip checkpoint |
+| `6cac808c9` | dx11: verify FL9_1 final vertex constant execution |
 
 ## What is and is not usable
 
