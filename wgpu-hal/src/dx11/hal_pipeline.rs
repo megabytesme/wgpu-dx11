@@ -113,6 +113,7 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
             uniforms: _,
             textures: _,
             samplers: _,
+            sampler_non_filtering_mask: _,
         } = group;
         for binding in group.shader_bindings() {
             match binding.kind {

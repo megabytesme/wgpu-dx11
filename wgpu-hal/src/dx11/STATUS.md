@@ -118,6 +118,14 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   textures and sixteen samplers in total.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
+- NonFiltering sampler layouts accept samplers with nearest minification,
+  magnification and mipmap filtering; Filtering layouts also accept nearest.
+  Sparse bindings and sampler class remain part of layout identity. Strict RTX
+  tests checked two complete images including a layout transition, and a core
+  fixture checked 64 pixels and rejected a linear sampler with
+  `WrongSamplerFiltering`. The original strict baseline rejected the layout.
+  Comparison samplers and unfilterable texture types remain unsupported;
+  historical drivers remain unverified and public enumeration stays disabled.
 - Short uniform ranges use a zero-padded native constant buffer and preserve the
   declared byte range, including non-multiples of 16. This stages through a CPU
   map and can stall; odd-sized GPU copies remain unverified on historical

@@ -336,7 +336,7 @@ public adapter selection or presentation.
 
 ## Logical binding translation
 
-The pipeline assigns textures and filtering samplers independently in ascending
+The pipeline assigns textures and filtering or non-filtering samplers independently in ascending
 group and logical binding order to compact fragment-stage `t` and `s` registers.
 Uniforms from all groups are sorted by group and binding into `b0` through
 `b12`; vertex `b13` is
@@ -348,6 +348,17 @@ views and samplers; recording rejects overlapping render-target feedback, while
 supported disjoint native and clone-backed views can be used. Each draw binds
 resources using the active pipeline's plan, and changing the layout passed to
 `set_bind_group` invalidates groups at and after the first unequal prefix.
+
+NonFiltering sampler layouts require nearest minification, magnification and
+mipmap filters. Filtering layouts also accept nearest samplers. The sampler
+class remains part of layout identity, including with sparse logical bindings;
+switching layouts requires the corresponding group. Strict FL9_1 RTX tests
+checked two full images across a layout transition. A controlled core test
+checked 64 pixels and rejected a linear sampler with `WrongSamplerFiltering`.
+CPU tests cover binding order, the non-filtering mask and original sampler
+filter class. The pre-change strict baseline rejected the NonFiltering layout.
+This does not add unfilterable texture or comparison-sampler support. Historical
+drivers remain unverified and public adapter enumeration remains disabled.
 Render-pass boundaries clear context state.
 
 ## Private uniform-buffer contract

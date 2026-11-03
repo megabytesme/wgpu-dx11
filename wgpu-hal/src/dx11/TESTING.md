@@ -525,6 +525,29 @@ verified 12 upload/copy/readback pixels each for RGBA8 and BGRA8 copy-only views
 and rejected incompatible view usages. Neither result establishes historical
 driver behavior or general public adapter support.
 
+### Non-filtering sampler layouts
+
+With strict hardware mode enabled:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_nonfiltering_sampler_layout_render_and_transitions -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sparse_sampler_filtering_layouts_are_sorted_and_distinct -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 filtering_class_uses_all_original_descriptor_filters -- --nocapture
+```
+
+On the RTX 3090 Ti at requested and selected FL9_1, two 8×8 readback images
+checked nearest sampling through a sparse NonFiltering layout and a transition
+to a Filtering layout using a nearest sampler and a different texture. Separate
+min-only, mag-only and mipmap-only linear samplers were rejected by the
+NonFiltering layout, as were comparison samplers. The controlled core case
+checked 64 pixels and returned `WrongSamplerFiltering` for a linear sampler.
+CPU tests check sampler-class identity, the non-filtering mask, logical binding
+order and the original descriptor's filter class. The initial strict baseline
+rejected the NonFiltering layout. Unfilterable texture types and comparison
+samplers remain unsupported; historical drivers remain unverified, and normal
+public D3D11 adapter enumeration remains disabled.
+
 ### COPY_DST-only POT mip uploads
 
 With strict hardware mode enabled:

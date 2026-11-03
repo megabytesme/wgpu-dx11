@@ -1371,6 +1371,26 @@ remain skipped. Clippy passed with ten existing test warnings, and core's
 zero-adapter isolation test passed. An independent
 review found no concrete usage leak or diagnostic copy defect. Historical FL9
 drivers remain unverified.
+Checkpoint: `735a9755645b54c06c9a1084ebf66ef49e4848e8`.
 
 Next: investigate accepting a non-filtering sampler layout with a nearest
 sampler, which core permits but the current private layout rejects.
+
+NonFiltering sampler layouts now preserve their class in binding-plan identity
+and accept only descriptors whose min, mag and mipmap filters are all nearest.
+Filtering layouts continue accepting nearest or linear samplers. Sparse sampler
+numbers retain the existing native register mapping; mixed sorted bindings and
+reversed resource indices are checked. The strict baseline failed at layout
+creation before the change. Two strict FL9_1 full-image executions passed,
+including a filtering/non-filtering pipeline transition, and the controlled
+core fixture matched 64 pixels and rejected a linear sampler with the expected
+WrongSamplerFiltering error. Synthetic tests cover layout identity, descriptor
+classification and mip-only linear filtering. The full private suite passed
+277 tests, two filtered; six dynamic-index GPU cases remain skipped. Clippy
+passed with ten existing warnings and core's zero-adapter test passed. The first
+test compilation exposed a fixture lifetime error, which was fixed. Independent
+review found no concrete mask, sorting or resource-matching defect.
+
+Next: support explicit unfilterable-float texture layouts only with selected
+shader pairs that use NonFiltering sampler layouts. Preserve layout identity;
+actual nearest sampler state alone cannot justify a Filtering layout.

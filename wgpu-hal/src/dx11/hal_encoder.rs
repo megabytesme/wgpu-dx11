@@ -4094,6 +4094,10 @@ mod integer_uniform_bits_tests;
 mod sampler_lod_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/nonfiltering_sampler.rs"]
+mod nonfiltering_sampler_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/biased_sampling.rs"]
 mod biased_sampling_tests;
 

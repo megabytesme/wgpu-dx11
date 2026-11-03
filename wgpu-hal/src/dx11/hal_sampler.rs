@@ -10,6 +10,7 @@ pub(super) const MAX_ANISOTROPY: u16 = 2;
 pub struct Sampler {
     owner: Arc<NativeDevice>,
     raw: ID3D11SamplerState,
+    filtering: bool,
     wraps: bool,
     bias_compatible: bool,
     lod: super::sampling::SamplerLod,
@@ -114,6 +115,12 @@ fn bias_compatible(desc: &crate::SamplerDescriptor) -> bool {
     desc.anisotropy_clamp == 1 && desc.min_filter == desc.mag_filter
 }
 
+fn sampler_filtering(desc: &crate::SamplerDescriptor) -> bool {
+    desc.min_filter == wgt::FilterMode::Linear
+        || desc.mag_filter == wgt::FilterMode::Linear
+        || desc.mipmap_filter == wgt::MipmapFilterMode::Linear
+}
+
 fn sampler_lod(
     desc: &crate::SamplerDescriptor,
     native: &D3D11_SAMPLER_DESC,
@@ -147,6 +154,7 @@ impl Sampler {
         Ok(Self {
             owner,
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
+            filtering: sampler_filtering(desc),
             lod,
             wraps: requires_power_of_two(&desc.address_modes),
             bias_compatible: bias_compatible(desc),
@@ -166,6 +174,10 @@ impl Sampler {
 
     pub(super) fn wraps(&self) -> bool {
         self.wraps
+    }
+
+    pub(super) fn filtering(&self) -> bool {
+        self.filtering
     }
 
     pub(super) fn bias_compatible(&self) -> bool {
@@ -195,6 +207,24 @@ mod tests {
             anisotropy_clamp: 1,
             border_color: None,
         }
+    }
+
+    #[test]
+    fn filtering_class_uses_all_original_descriptor_filters() {
+        let mut desc = descriptor();
+        assert!(!sampler_filtering(&desc));
+        desc.min_filter = wgt::FilterMode::Linear;
+        assert!(sampler_filtering(&desc));
+        desc.min_filter = wgt::FilterMode::Nearest;
+        desc.mag_filter = wgt::FilterMode::Linear;
+        assert!(sampler_filtering(&desc));
+        desc.mag_filter = wgt::FilterMode::Nearest;
+        desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
+        desc.lod_clamp = 0.5..0.5;
+        let (native, single_mip_only) = translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
+        assert!(single_mip_only);
+        assert_eq!(native.MinLOD, 0.0);
+        assert!(sampler_filtering(&desc));
     }
 
     #[test]

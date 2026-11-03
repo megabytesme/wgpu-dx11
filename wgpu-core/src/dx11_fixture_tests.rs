@@ -359,6 +359,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::NonFiltering,
         VertexCase::PointInput,
         VertexCase::PointIndexed(wgt::IndexFormat::Uint16),
         VertexCase::PointIndexed(wgt::IndexFormat::Uint32),
@@ -1313,6 +1314,7 @@ fn copy_only_texture_view(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum VertexCase {
     Baseline,
+    NonFiltering,
     PointInput,
     PointIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
@@ -1346,6 +1348,7 @@ fn render_triangle(
     case: VertexCase,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
+    let non_filtering = case == VertexCase::NonFiltering;
     let overlapping = case == VertexCase::Overlapping;
     let point_index = match case {
         VertexCase::PointIndexed(format) => Some(format),
@@ -1715,35 +1718,32 @@ fn render_triangle(
             dual,
         )
     });
-    let (sampler, error) = global.device_create_sampler(
-        device,
-        &resource::SamplerDescriptor {
-            label: None,
-            address_modes: [wgt::AddressMode::ClampToEdge; 3],
-            mag_filter: wgt::FilterMode::Nearest,
-            min_filter: wgt::FilterMode::Nearest,
-            mipmap_filter: wgt::MipmapFilterMode::Nearest,
-            lod_min_clamp: if sampled_mip_suffix
-                && disjoint_format.is_none()
-                && !combined.is_some_and(|(_, dual)| dual)
-            {
-                1.0
-            } else if case == VertexCase::FractionalSamplerLod {
-                0.5
-            } else {
-                0.0
-            },
-            lod_max_clamp: if case == VertexCase::FractionalSamplerLod {
-                0.5
-            } else {
-                32.0
-            },
-            compare: None,
-            anisotropy_clamp: 1,
-            border_color: None,
+    let sampler_desc = resource::SamplerDescriptor {
+        label: None,
+        address_modes: [wgt::AddressMode::ClampToEdge; 3],
+        mag_filter: wgt::FilterMode::Nearest,
+        min_filter: wgt::FilterMode::Nearest,
+        mipmap_filter: wgt::MipmapFilterMode::Nearest,
+        lod_min_clamp: if sampled_mip_suffix
+            && disjoint_format.is_none()
+            && !combined.is_some_and(|(_, dual)| dual)
+        {
+            1.0
+        } else if case == VertexCase::FractionalSamplerLod {
+            0.5
+        } else {
+            0.0
         },
-        None,
-    );
+        lod_max_clamp: if case == VertexCase::FractionalSamplerLod {
+            0.5
+        } else {
+            32.0
+        },
+        compare: None,
+        anisotropy_clamp: 1,
+        border_color: None,
+    };
+    let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
     assert!(error.is_none(), "sampler creation: {error:?}");
     let mut group_entries = vec![
         wgt::BindGroupLayoutEntry {
@@ -1759,7 +1759,11 @@ fn render_triangle(
         wgt::BindGroupLayoutEntry {
             binding: 42,
             visibility: wgt::ShaderStages::FRAGMENT,
-            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+            ty: wgt::BindingType::Sampler(if non_filtering {
+                wgt::SamplerBindingType::NonFiltering
+            } else {
+                wgt::SamplerBindingType::Filtering
+            }),
             count: None,
         },
     ];
@@ -1837,6 +1841,46 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
+    if non_filtering {
+        let linear_desc = resource::SamplerDescriptor {
+            mag_filter: wgt::FilterMode::Linear,
+            ..sampler_desc
+        };
+        let (linear, error) = global.device_create_sampler(device, &linear_desc, None);
+        assert!(error.is_none(), "linear sampler creation: {error:?}");
+        let invalid_resources = [
+            binding_model::BindGroupEntry {
+                binding: 7,
+                resource: binding_model::BindingResource::TextureView(sample_view),
+            },
+            binding_model::BindGroupEntry {
+                binding: 42,
+                resource: binding_model::BindingResource::Sampler(linear),
+            },
+        ];
+        let (invalid_group, error) = global.device_create_bind_group(
+            device,
+            &binding_model::BindGroupDescriptor {
+                label: None,
+                layout: group_layout,
+                entries: Cow::Borrowed(&invalid_resources),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error,
+                Some(binding_model::CreateBindGroupError::WrongSamplerFiltering {
+                    binding: 42,
+                    layout_flt: false,
+                    sampler_flt: true,
+                })
+            ),
+            "filtering sampler must fail NonFiltering layout validation: {error:?}"
+        );
+        global.bind_group_drop(invalid_group);
+        global.sampler_drop(linear);
+    }
     let source = if case == VertexCase::SampledMipsBias {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
     } else if sampled_mips && !sampled_mip_suffix {

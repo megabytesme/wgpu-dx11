@@ -23,6 +23,7 @@ pub(super) struct GroupKind {
     pub uniforms: [Option<UniformLayout>; MAX_UNIFORMS],
     pub textures: [Option<u32>; MAX_TEXTURES],
     pub samplers: [Option<u32>; MAX_SAMPLERS],
+    pub sampler_non_filtering_mask: u16,
 }
 
 impl GroupKind {
@@ -30,6 +31,7 @@ impl GroupKind {
         uniforms: [None; MAX_UNIFORMS],
         textures: [None; MAX_TEXTURES],
         samplers: [None; MAX_SAMPLERS],
+        sampler_non_filtering_mask: 0,
     };
 
     pub(super) fn shader_bindings(self) -> alloc::vec::Vec<super::shader::ShaderBinding> {
@@ -129,9 +131,13 @@ impl BindingPlan {
         for group in groups {
             slots.push(next);
             if let Some(group) = group {
+                let sampler_count = dense_count(&group.samplers)?;
+                if u32::from(group.sampler_non_filtering_mask) >> sampler_count != 0 {
+                    return Err(crate::DeviceError::Unexpected);
+                }
                 next.uniforms += dense_count(&group.uniforms)?;
                 next.textures += dense_count(&group.textures)?;
-                next.samplers += dense_count(&group.samplers)?;
+                next.samplers += sampler_count;
             }
             if next.uniforms > MAX_UNIFORMS as u32
                 || next.textures > MAX_TEXTURES as u32
@@ -182,6 +188,10 @@ fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> 
         })
 }
 
+fn sampler_binding_compatible(non_filtering: bool, filtering: bool) -> bool {
+    !non_filtering || !filtering
+}
+
 fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate::DeviceError> {
     if entries.len() > MAX_TEXTURES + MAX_SAMPLERS + MAX_UNIFORMS {
         return Err(crate::DeviceError::Unexpected);
@@ -204,11 +214,13 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
                 view_dimension: wgt::TextureViewDimension::D2,
                 multisampled: false,
             } if entry.visibility == wgt::ShaderStages::FRAGMENT => textures.push(entry.binding),
-            wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
-                if entry.visibility == wgt::ShaderStages::FRAGMENT =>
-            {
-                samplers.push(entry.binding)
-            }
+            wgt::BindingType::Sampler(
+                sampler_type @ (wgt::SamplerBindingType::Filtering
+                | wgt::SamplerBindingType::NonFiltering),
+            ) if entry.visibility == wgt::ShaderStages::FRAGMENT => samplers.push((
+                entry.binding,
+                sampler_type == wgt::SamplerBindingType::NonFiltering,
+            )),
             wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
                 has_dynamic_offset,
@@ -243,8 +255,11 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     for (slot, binding) in textures.into_iter().enumerate() {
         kind.textures[slot] = Some(binding);
     }
-    for (slot, binding) in samplers.into_iter().enumerate() {
+    for (slot, (binding, non_filtering)) in samplers.into_iter().enumerate() {
         kind.samplers[slot] = Some(binding);
+        if non_filtering {
+            kind.sampler_non_filtering_mask |= 1u16 << slot;
+        }
     }
     Ok(kind)
 }
@@ -399,9 +414,16 @@ impl BindGroup {
         let mut samplers_wrap = alloc::vec::Vec::new();
         let mut samplers_lod = alloc::vec::Vec::new();
         let mut samplers_bias_compatible = alloc::vec::Vec::new();
-        for index in sampler_indices {
+        for (slot, index) in sampler_indices.into_iter().enumerate() {
             let sampler = desc.samplers[index];
-            native_samplers.push(sampler.raw_for(owner)?);
+            let raw = sampler.raw_for(owner)?;
+            if !sampler_binding_compatible(
+                kind.sampler_non_filtering_mask & (1u16 << slot) != 0,
+                sampler.filtering(),
+            ) {
+                return Err(crate::DeviceError::Unexpected);
+            }
+            native_samplers.push(raw);
             samplers_wrap.push(sampler.wraps());
             samplers_lod.push(sampler.lod());
             samplers_bias_compatible.push(sampler.bias_compatible());
@@ -435,6 +457,60 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn sparse_sampler_filtering_layouts_are_sorted_and_distinct() {
+        let entry = |binding, ty| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Sampler(ty),
+            count: None,
+        };
+        let filtering = wgt::SamplerBindingType::Filtering;
+        let non_filtering = wgt::SamplerBindingType::NonFiltering;
+        let entries = [
+            entry(500, non_filtering),
+            entry(7, filtering),
+            entry(100, filtering),
+            entry(42, non_filtering),
+        ];
+        let kind = group_kind(&entries).unwrap();
+        assert_eq!(
+            &kind.samplers[..4],
+            &[Some(7), Some(42), Some(100), Some(500)]
+        );
+        assert_eq!(kind.sampler_non_filtering_mask, 0b1010);
+        let mut reversed = entries;
+        reversed.reverse();
+        assert_eq!(group_kind(&reversed).unwrap(), kind);
+        let mut different = kind;
+        different.sampler_non_filtering_mask ^= 1 << 1;
+        let first = BindingPlan::new(&[Some(GroupKind::EMPTY), Some(kind)]).unwrap();
+        let second = BindingPlan::new(&[Some(GroupKind::EMPTY), Some(different)]).unwrap();
+        assert_ne!(kind, different);
+        assert_eq!(first.common_prefix(&second), 1);
+        let mapped = |plan: &BindingPlan| {
+            plan.stage_bindings(wgt::ShaderStages::FRAGMENT)
+                .into_iter()
+                .map(|item| {
+                    (
+                        item.binding.group,
+                        item.binding.binding,
+                        item.slot,
+                        item.kind,
+                    )
+                })
+                .collect::<alloc::vec::Vec<_>>()
+        };
+        assert_eq!(mapped(&first), mapped(&second));
+        let mut invalid = kind;
+        invalid.sampler_non_filtering_mask |= 1 << 4;
+        assert!(BindingPlan::new(&[Some(invalid)]).is_err());
+        assert!(sampler_binding_compatible(false, false));
+        assert!(sampler_binding_compatible(false, true));
+        assert!(sampler_binding_compatible(true, false));
+        assert!(!sampler_binding_compatible(true, true));
+    }
 
     #[test]
     fn pipeline_binding_plan_allocates_across_groups_and_enforces_limits() {
@@ -800,6 +876,120 @@ mod tests {
     }
 
     #[test]
+    fn mixed_sampler_classes_follow_logical_bindings_not_resource_order(
+    ) -> windows::core::Result<()> {
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            assert!(!required, "strict mode requires a hardware adapter");
+            std::println!("SKIP: no hardware adapter for mixed sampler binding test");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        let device = Device::new(native);
+        let layout_entries = [
+            wgt::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::NonFiltering),
+                count: None,
+            },
+            wgt::BindGroupLayoutEntry {
+                binding: 42,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ];
+        let layout = unsafe {
+            device
+                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &layout_entries,
+                })
+                .unwrap()
+        };
+        let mut sampler_desc = crate::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Nearest,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_clamp: 0.0..f32::MAX,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        };
+        let nearest = unsafe { device.create_sampler(&sampler_desc).unwrap() };
+        sampler_desc.mag_filter = wgt::FilterMode::Linear;
+        let linear = unsafe { device.create_sampler(&sampler_desc).unwrap() };
+        let samplers = [&linear, &nearest];
+        let entries = [
+            crate::BindGroupEntry {
+                binding: 7,
+                resource_index: 1,
+                count: 1,
+            },
+            crate::BindGroupEntry {
+                binding: 42,
+                resource_index: 0,
+                count: 1,
+            },
+        ];
+        let descriptor = crate::BindGroupDescriptor {
+            label: None,
+            layout: &layout,
+            buffers: &[],
+            samplers: &samplers,
+            textures: &[],
+            entries: &entries,
+            acceleration_structures: &[],
+            external_textures: &[],
+        };
+        let group = unsafe { device.create_bind_group(&descriptor).unwrap() };
+        let mut first = D3D11_SAMPLER_DESC::default();
+        let mut second = D3D11_SAMPLER_DESC::default();
+        unsafe {
+            group.resources.samplers[0].GetDesc(&mut first);
+            group.resources.samplers[1].GetDesc(&mut second);
+        }
+        assert_eq!(
+            first.Filter,
+            windows::Win32::Graphics::Direct3D11::D3D11_FILTER_MIN_MAG_MIP_POINT
+        );
+        assert_eq!(
+            second.Filter,
+            windows::Win32::Graphics::Direct3D11::D3D11_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT
+        );
+        let swapped = [
+            crate::BindGroupEntry {
+                resource_index: 0,
+                ..entries[0]
+            },
+            crate::BindGroupEntry {
+                resource_index: 1,
+                ..entries[1]
+            },
+        ];
+        assert!(unsafe {
+            device.create_bind_group(&crate::BindGroupDescriptor {
+                entries: &swapped,
+                ..descriptor
+            })
+        }
+        .is_err());
+        unsafe {
+            device.destroy_bind_group(group);
+            device.destroy_sampler(linear);
+            device.destroy_sampler(nearest);
+            device.destroy_bind_group_layout(layout);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn hal_texture_sampler_group_checks_owner_and_fl9_npot_wrap() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
@@ -897,6 +1087,38 @@ mod tests {
         };
         let group = unsafe { device.create_bind_group(&group_desc).unwrap() };
         assert!(unsafe { other.create_bind_group(&group_desc) }.is_err());
+        let non_filtering_entries = [
+            layout_entries[0],
+            wgt::BindGroupLayoutEntry {
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::NonFiltering),
+                ..layout_entries[1]
+            },
+        ];
+        let non_filtering_layout = unsafe {
+            device
+                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    entries: &non_filtering_entries,
+                    ..layout_desc
+                })
+                .unwrap()
+        };
+        let non_filtering_desc = crate::BindGroupDescriptor {
+            layout: &non_filtering_layout,
+            ..group_desc
+        };
+        let non_filtering_group = unsafe { device.create_bind_group(&non_filtering_desc).unwrap() };
+        assert_ne!(group.kind, non_filtering_group.kind);
+        sampler_desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
+        let mip_linear = unsafe { device.create_sampler(&sampler_desc).unwrap() };
+        let mip_linear_samplers = [&mip_linear];
+        assert!(unsafe {
+            device.create_bind_group(&crate::BindGroupDescriptor {
+                samplers: &mip_linear_samplers,
+                ..non_filtering_desc
+            })
+        }
+        .is_err());
+        sampler_desc.mipmap_filter = wgt::MipmapFilterMode::Nearest;
         sampler_desc.address_modes[0] = wgt::AddressMode::Repeat;
         let repeat = unsafe { device.create_sampler(&sampler_desc).unwrap() };
         let repeat_samplers = [&repeat];
@@ -933,6 +1155,9 @@ mod tests {
         );
         unsafe {
             device.destroy_bind_group(group);
+            device.destroy_bind_group(non_filtering_group);
+            device.destroy_sampler(mip_linear);
+            device.destroy_bind_group_layout(non_filtering_layout);
             device.destroy_bind_group(pot_group);
             device.destroy_bind_group(npot_repeat_group);
             device.destroy_texture_view(pot_view);
