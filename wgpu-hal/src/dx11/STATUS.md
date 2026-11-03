@@ -25,6 +25,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   no depth writes and no sampled alias. Stencil tests, aspect-specific views
   and depth copies remain unsupported. Textured depth ordering is verified
   through GPU readback.
+- Transient color and D24S8 attachments use ordinary D3D11 textures; no
+  memoryless allocation or memory saving is claimed. Transient color requires
+  color-attachment usage, and transient depth requires depth-write usage; sampled
+  and copy usages are rejected for these private textures and views.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.

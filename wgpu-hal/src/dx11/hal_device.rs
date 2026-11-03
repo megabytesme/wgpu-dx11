@@ -55,6 +55,23 @@ pub(super) fn device_error(error: windows::core::Error) -> DeviceError {
     }
 }
 
+fn transient_texture_usage_valid(usage: wgt::TextureUses, depth: bool) -> bool {
+    if !usage.contains(wgt::TextureUses::TRANSIENT) {
+        return true;
+    }
+    let attachment = if depth {
+        wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+    } else {
+        wgt::TextureUses::COLOR_TARGET
+    };
+    let required = if depth {
+        wgt::TextureUses::DEPTH_STENCIL_WRITE
+    } else {
+        wgt::TextureUses::COLOR_TARGET
+    };
+    usage.contains(required) && (attachment | wgt::TextureUses::TRANSIENT).contains(usage)
+}
+
 crate::impl_dyn_resource!(Device);
 
 impl crate::Device for Device {
@@ -130,14 +147,15 @@ impl crate::Device for Device {
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
         let depth = desc.format == wgt::TextureFormat::Depth24PlusStencil8;
-        let supported = if depth {
-            wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
-        } else {
-            wgt::TextureUses::COPY_SRC
-                | wgt::TextureUses::COPY_DST
-                | wgt::TextureUses::RESOURCE
-                | wgt::TextureUses::COLOR_TARGET
-        };
+        let supported = wgt::TextureUses::TRANSIENT
+            | if depth {
+                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+            } else {
+                wgt::TextureUses::COPY_SRC
+                    | wgt::TextureUses::COPY_DST
+                    | wgt::TextureUses::RESOURCE
+                    | wgt::TextureUses::COLOR_TARGET
+            };
         if desc.dimension != wgt::TextureDimension::D2
             || (!depth
                 && !matches!(
@@ -157,7 +175,7 @@ impl crate::Device for Device {
                     .texture_2d_dimension
             || desc.usage.is_empty()
             || !supported.contains(desc.usage)
-            || desc.memory_flags.contains(MemoryFlags::TRANSIENT)
+            || !transient_texture_usage_valid(desc.usage, depth)
             || desc
                 .view_formats
                 .iter()
@@ -270,11 +288,13 @@ impl crate::Device for Device {
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
-        let supported = if format == wgt::TextureFormat::Depth24PlusStencil8 {
-            wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
-        } else {
-            wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET
-        };
+        let is_depth = format == wgt::TextureFormat::Depth24PlusStencil8;
+        let supported = wgt::TextureUses::TRANSIENT
+            | if is_depth {
+                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+            } else {
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET
+            };
         let resource = desc.usage.contains(wgt::TextureUses::RESOURCE);
         let target = desc.usage.contains(wgt::TextureUses::COLOR_TARGET);
         let depth = desc.usage.intersects(
@@ -283,6 +303,7 @@ impl crate::Device for Device {
         if desc.format != format
             || desc.dimension != wgt::TextureViewDimension::D2
             || !supported.contains(desc.usage)
+            || !transient_texture_usage_valid(desc.usage, is_depth)
             || !texture.supports_usage(desc.usage)
             || desc.usage.is_empty()
             || !desc
@@ -534,6 +555,10 @@ impl crate::Device for Device {
         unsafe { self.native.raw_device().GetDeviceRemovedReason() }.map_err(device_error)
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/dx11/transient_attachments.rs"]
+mod transient_attachment_tests;
 
 #[cfg(test)]
 mod tests {

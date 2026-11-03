@@ -855,3 +855,17 @@ The corrected strict suite passed 216 cases, two filtered, including the new
 transient tests; three previously documented shader cases still skip GPU work.
 HAL Clippy passed with ten existing test-target warnings. The controlled core
 fixture also passed its texture validation checks and 32 red/32 green readback.
+Checkpoint: `954e07c28`.
+
+Transient color and D24S8 attachments now use ordinary D3D resources and retain
+transient usage on textures and views. Unsupported combinations are rejected;
+the allocation hint does not imply memoryless storage. The strict transient
+filter passed one CPU test and one RTX FL9_1 hardware test, with 64 matching
+pixels each for transient depth and transient color observed through stored
+depth. The core fixture verified color/depth creation and views, rejection of
+invalid transient/unsupported format or storage usages, and subsequent ordinary
+GPU rendering. It does not yet exercise a core-level transient pass. The full
+strict suite passed 216 cases, two filtered, including these tests; HAL Clippy
+passed with ten existing warnings, and normal core enumeration stayed empty.
+An independent review found no concrete correctness issue. Historical drivers
+and memoryless optimization are unverified.

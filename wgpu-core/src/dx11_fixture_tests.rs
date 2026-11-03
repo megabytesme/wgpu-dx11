@@ -148,6 +148,79 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let (device, queue) =
         unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
             .expect("controlled core device initialization");
+    let texture_desc = |format, usage| wgt::TextureDescriptor {
+        label: None,
+        size: wgt::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgt::TextureDimension::D2,
+        format,
+        usage,
+        view_formats: Vec::new(),
+    };
+    for (format, usage) in [
+        (
+            wgt::TextureFormat::Rgba16Float,
+            wgt::TextureUsages::RENDER_ATTACHMENT,
+        ),
+        (
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureUsages::STORAGE_BINDING,
+        ),
+    ] {
+        let (texture, error) =
+            global.device_create_texture(device, &texture_desc(format, usage), None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(crate::resource::CreateTextureError::InvalidFormatUsages(..))
+            ),
+            "unsupported format or usage must fail core validation: {error:?}"
+        );
+        global.texture_drop(texture);
+    }
+    let invalid_usage = wgt::TextureUsages::TRANSIENT_ATTACHMENT
+        | wgt::TextureUsages::RENDER_ATTACHMENT
+        | wgt::TextureUsages::COPY_SRC;
+    let (texture, error) = global.device_create_texture(
+        device,
+        &texture_desc(wgt::TextureFormat::Rgba8Unorm, invalid_usage),
+        None,
+    );
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(crate::resource::CreateTextureError::InvalidTransientTextureUsage(_))
+        ),
+        "invalid transient usage must fail core validation: {error:?}"
+    );
+    global.texture_drop(texture);
+    for format in [
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureFormat::Depth24PlusStencil8,
+    ] {
+        let (texture, error) = global.device_create_texture(
+            device,
+            &texture_desc(
+                format,
+                wgt::TextureUsages::TRANSIENT_ATTACHMENT | wgt::TextureUsages::RENDER_ATTACHMENT,
+            ),
+            None,
+        );
+        assert!(error.is_none(), "transient {format:?} creation: {error:?}");
+        let (view, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor::default(),
+            None,
+        );
+        assert!(error.is_none(), "transient {format:?} view: {error:?}");
+        global.texture_view_drop(view);
+        global.texture_drop(texture);
+    }
     let (query_set, error) = global.device_create_query_set(
         device,
         &wgt::QuerySetDescriptor {

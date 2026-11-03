@@ -10,6 +10,20 @@ expressed by `Limits` alone.
 
 ### Focused FL9_1 hardware test
 
+With strict hardware mode enabled, run the private transient-attachment checks:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 transient_attachment -- --nocapture --test-threads=1
+```
+
+The filter passed two cases on the RTX 3090 Ti at requested and selected
+FL9_1: one CPU usage-validation test and one physical GPU test. The GPU test
+checked all 64 pixels for transient depth followed by readable color, and for
+transient color followed by stored depth and readable color. The backend uses
+ordinary textures for this path, so the test does not establish memoryless
+allocation or memory savings. Historical FL9_1 devices remain unverified.
+
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_sparse_vertex_ -- --nocapture --test-threads=1` checks direct sparse streams,
 slot 15 and rejection at 16, range boundaries, pipeline transitions, a queued
@@ -410,5 +424,8 @@ The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core, without enabling ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,
 mapped readback and explicit teardown. It checks all 64 copied bytes and all
-64 rendered pixels. Its restricted numeric limits and format capabilities do
-not constitute a safe general adapter contract.
+64 rendered pixels, including the 32-red/32-green render. It also validates
+unsupported transient formats and usages and creates transient textures and
+views; it does not execute a transient render pass through core. Its restricted
+numeric limits and format capabilities do not constitute a safe general adapter
+contract.

@@ -112,7 +112,7 @@ Nonindexed triangle strips use parity-preserving, rebased batches. Indexed strip
 restart is not a guaranteed FL9_x native operation and remains rejected pending
 a separate translation; accepting a strip index format in a private pipeline
 does not make indexed strip draws supported.
-Private input-layout validation now rejects overlapping element byte ranges on
+Private input-layout validation currently rejects overlapping element byte ranges on
 FL9_1. Core does not yet express that restriction; stream-offset and stride
 behavior remains unverified on historical hardware.
 Private direct triangle lists and nonindexed strips support up to sixteen sparse
@@ -220,3 +220,7 @@ RTX but its historical portability remains unverified. A zero-write depth state
 also does not make simultaneous depth sampling safe without a read-only DSV.
 Only begin higher feature levels after the requested FL9_1 contract is met;
 retain the shared capability-driven architecture when doing so.
+
+Transient color and D24S8 attachments use ordinary D3D allocations; memoryless
+savings are not claimed. Private GPU rendering and core texture/view creation
+are tested; a core transient render pass and historical hardware remain unverified.
