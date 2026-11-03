@@ -1132,6 +1132,48 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        let hardware =
+            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+        if topology == wgt::PrimitiveTopology::LineStrip {
+            if vertex_count < 2 {
+                return;
+            }
+            let max_vertices = hardware.max_direct_line_strip_vertices_per_draw();
+            for (_, _, offset, stride) in &mut vertices {
+                let byte_offset =
+                    |index: u32| super::command::strip_vertex_offset(*offset, *stride, index).ok();
+                let start = byte_offset(first_vertex);
+                let last = first_vertex
+                    .checked_add(vertex_count - 1)
+                    .and_then(byte_offset);
+                let (Some(start), Some(_)) = (start, last) else {
+                    self.reject();
+                    return;
+                };
+                *offset = start;
+            }
+            let Some(binding_commands) = render.binding_commands() else {
+                self.reject();
+                return;
+            };
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
+            for command in binding_commands {
+                self.record(command);
+            }
+            self.record(NativeCommand::DrawLineStrip {
+                vertices,
+                count: vertex_count,
+                max_vertices,
+                instances: instance_count,
+                instance_bindings,
+            });
+            return;
+        }
         if topology == wgt::PrimitiveTopology::TriangleStrip {
             if vertex_count < 3 {
                 return;
@@ -1174,12 +1216,11 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        let hardware =
-            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
         let max_vertices = match topology {
             wgt::PrimitiveTopology::TriangleList => {
                 hardware.max_direct_triangle_vertices_per_draw()
             }
+            wgt::PrimitiveTopology::LineList => hardware.max_direct_line_list_vertices_per_draw(),
             wgt::PrimitiveTopology::PointList => hardware.max_primitives_per_draw,
             _ => {
                 self.reject();
@@ -1212,6 +1253,39 @@ impl crate::CommandEncoder for CommandEncoder {
                 count: vertex_count,
                 instances: instance_count,
                 max_points: max_vertices,
+                instance_bindings,
+            });
+            return;
+        }
+        if topology == wgt::PrimitiveTopology::LineList {
+            if vertex_count < 2 {
+                return;
+            }
+            for (_, _, offset, stride) in &mut vertices {
+                let start = super::command::strip_vertex_offset(*offset, *stride, first_vertex);
+                let last = first_vertex.checked_add(vertex_count - 1).and_then(|last| {
+                    super::command::strip_vertex_offset(*offset, *stride, last).ok()
+                });
+                let (Ok(start), Some(_)) = (start, last) else {
+                    self.reject();
+                    return;
+                };
+                *offset = start;
+            }
+            if render.depth_never {
+                if !render.depth_never_elision_safe {
+                    self.reject();
+                }
+                return;
+            }
+            for command in binding_commands {
+                self.record(command);
+            }
+            self.record(NativeCommand::DrawLines {
+                vertices,
+                count: vertex_count,
+                max_vertices,
+                instances: instance_count,
                 instance_bindings,
             });
             return;
@@ -4075,6 +4149,10 @@ mod indexed_point_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/triangle_strip.rs"]
 mod triangle_strip_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/line_topology.rs"]
+mod line_topology_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/multi_vertex_stream.rs"]

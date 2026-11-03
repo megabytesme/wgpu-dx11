@@ -183,6 +183,12 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   index values do not affect the output and staging is avoided after range
   validation. Twelve strict RTX images and two 64-pixel core renders covered
   indexed points. Historical FL9_1 drivers remain unverified.
+- Nonindexed line-list and line-strip draws use explicit D3D11 line topologies.
+  List batches preserve vertex pairs, discard an incomplete trailing vertex,
+  and rebase each bound stream; strip batches overlap one endpoint. FL9_1
+  batches contain at most 65,534 list vertices or 65,535 strip vertices,
+  bounded by the 65,535 unique-vertex compatibility limit. Strict RTX readback
+  verified both topologies. Indexed line topologies remain rejected.
 - Nonindexed strips preserve winding through overlapping, rebased batches;
   indexed strips remain unsupported because native strip cuts are not guaranteed.
 - Direct FL9_1 triangle-list batches are conservatively limited to 65,535

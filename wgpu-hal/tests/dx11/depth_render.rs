@@ -302,7 +302,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             );
         }
     }
-    assert!(make_pipeline_with_primitive(
+    let line_pipeline = make_pipeline_with_primitive(
         no_write.clone(),
         wgt::ColorWrites::ALL,
         None,
@@ -311,7 +311,8 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             ..Default::default()
         },
     )
-    .is_err());
+    .expect("FL9_1 non-indexed line-list pipeline");
+    unsafe { device.destroy_render_pipeline(line_pipeline) };
     let additive_pipeline = make_pipeline(
         no_write.clone(),
         wgt::ColorWrites::RED | wgt::ColorWrites::BLUE,

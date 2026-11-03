@@ -65,6 +65,19 @@ impl HardwareGuarantees {
             self.max_triangle_vertices_per_draw()
         }
     }
+
+    pub fn max_direct_line_list_vertices_per_draw(self) -> u32 {
+        self.max_vertex_index
+            .saturating_add(1)
+            .min(self.max_primitives_per_draw.saturating_mul(2))
+            & !1
+    }
+
+    pub fn max_direct_line_strip_vertices_per_draw(self) -> u32 {
+        self.max_vertex_index
+            .saturating_add(1)
+            .min(self.max_primitives_per_draw.saturating_add(1))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +119,8 @@ pub(super) struct BackendCapabilities {
     pub vertex_buffers: u32,
     pub zero_input_vertex_pipeline: bool,
     pub nonindexed_zero_input_points: bool,
+    pub nonindexed_line_lists: bool,
+    pub nonindexed_line_strips: bool,
     pub color_attachments: u32,
     pub index_u16: bool,
     pub index_u16_fl9_rewrite: bool,
@@ -151,6 +166,8 @@ impl BackendCapabilities {
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
         zero_input_vertex_pipeline: true,
         nonindexed_zero_input_points: true,
+        nonindexed_line_lists: true,
+        nonindexed_line_strips: true,
         color_attachments: 1,
         index_u16: true,
         index_u16_fl9_rewrite: true,
@@ -408,9 +425,19 @@ mod tests {
         }
         let fl9 = model(FeatureLevel::L9_1);
         assert_eq!(fl9.hardware.max_vertex_index, 65_534);
+        assert_eq!(
+            fl9.hardware.max_direct_line_list_vertices_per_draw(),
+            65_534
+        );
+        assert_eq!(
+            fl9.hardware.max_direct_line_strip_vertices_per_draw(),
+            65_535
+        );
         assert_eq!(fl9.backend.vertex_buffers, crate::MAX_VERTEX_BUFFERS as u32);
         assert!(fl9.backend.zero_input_vertex_pipeline);
         assert!(fl9.backend.nonindexed_zero_input_points);
+        assert!(fl9.backend.nonindexed_line_lists);
+        assert!(fl9.backend.nonindexed_line_strips);
         assert!(fl9.backend.index_u16_fl9_rewrite);
         assert!(fl9.backend.index_u32_ordered_fl9_windows);
         assert!(fl9.backend.index_u32_wide_triangle_gather);

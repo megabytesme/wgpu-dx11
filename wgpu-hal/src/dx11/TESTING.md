@@ -947,3 +947,22 @@ unsupported transient formats and usages and creates transient textures and
 views; it does not execute a transient render pass through core. Its restricted
 numeric limits and format capabilities do not constitute a safe general adapter
 contract.
+
+### Non-indexed FL9_1 line topologies
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_nonindexed_line_list_and_strip_render -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_line_batch_limits_preserve_complete_primitives -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 line_list_batches_preserve_pairs_and_instances -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 line_strip_batches_overlap_one_vertex_across_batches -- --nocapture
+```
+
+The GPU test requests and asserts FL9_1, renders two independent red line-list
+segments and a green line strip with nonzero first vertices, then verifies
+readback colors. The line-list draw includes one incomplete trailing vertex;
+the D3D draw contract discards it. CPU tests verify pair-preserving list batches,
+strip endpoint overlap, instance order and invalid batch limits. Indexed line
+draws remain unsupported, and the GPU test confirms an indexed line-list
+command fails before submission. On the RTX 3090 Ti, readback contained 22 red
+and 12 green pixels with no unexpected colors.

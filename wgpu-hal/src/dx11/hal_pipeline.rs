@@ -2232,7 +2232,9 @@ impl RenderPipeline {
         }
         if !matches!(
             desc.primitive.topology,
-            wgt::PrimitiveTopology::TriangleList
+            wgt::PrimitiveTopology::LineList
+                | wgt::PrimitiveTopology::LineStrip
+                | wgt::PrimitiveTopology::TriangleList
                 | wgt::PrimitiveTopology::TriangleStrip
                 | wgt::PrimitiveTopology::PointList
         ) || (desc.primitive.topology != wgt::PrimitiveTopology::TriangleStrip

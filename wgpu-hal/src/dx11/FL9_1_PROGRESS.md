@@ -1745,3 +1745,32 @@ passed with the same ten existing warnings. Core's
 and `git diff --check` passed. The public adapter and HWND surface gates are
 unchanged.
 Checkpoint: `f775292a2` (`dx11: verify FL9_1 vertex constant limits`).
+
+## 2026-11-03 — non-indexed FL9_1 line topologies
+
+Starting from clean HEAD `f20a0a15f` (`docs: record FL9_1 constant boundary
+checkpoint`), the private pipeline now accepts non-indexed line lists and line
+strips. Replay batches line lists on even vertex counts and line strips with a
+one-vertex overlap, rebasing bound streams for each batch. Indexed line draws
+remain rejected. The internal capability model records the two implemented
+topologies. Synthetic batch tests cover incomplete tails, instances, invalid
+limits and FL9_1 boundaries.
+
+Strict GPU validation passed on the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`) requested and selected at FL9_1. A deterministic offscreen
+render read back 22 red and 12 green pixels for line-list/line-strip draws; the
+list includes a discarded trailing vertex. An indexed line-list command was
+rejected before submission. CPU tests verified pair boundaries, one-vertex
+strip overlap, instance ordering and maximum FL9_1 batch sizes.
+
+The full strict private D3D11 suite passed 294/294 tests with two filtered.
+Its first run exposed an obsolete test expectation that LineList pipeline
+creation should reject; the test now verifies successful creation, and the
+focused depth regression plus full suite pass. The `line_` filter passed 12/12,
+including the real-device render. `cargo build --offline -p wgpu-hal --no-default-features
+--features dx11` passed; core's `requesting_dx11_does_not_expose_a_stub_adapter`
+passed 1/1. HAL Clippy passed with ten pre-existing warnings. Rustfmt checks
+passed for every changed Rust file, and `git diff --check` passed. This feature
+checkpoint is being committed separately; the exact hash will be recorded in
+the following journal checkpoint. Public adapter and surface exposure remain
+disabled.

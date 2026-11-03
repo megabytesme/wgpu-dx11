@@ -16,6 +16,7 @@ use windows::{
         Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
             Direct3D::{
+                D3D_PRIMITIVE_TOPOLOGY_LINELIST, D3D_PRIMITIVE_TOPOLOGY_LINESTRIP,
                 D3D_PRIMITIVE_TOPOLOGY_POINTLIST, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
             },
@@ -182,6 +183,20 @@ pub(super) enum NativeCommand {
         max_points: u32,
         instance_bindings: InstanceBindings,
     },
+    DrawLines {
+        vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        count: u32,
+        max_vertices: u32,
+        instances: u32,
+        instance_bindings: InstanceBindings,
+    },
+    DrawLineStrip {
+        vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        count: u32,
+        max_vertices: u32,
+        instances: u32,
+        instance_bindings: InstanceBindings,
+    },
     DrawStrip {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
         count: u32,
@@ -280,6 +295,60 @@ fn point_batches(
             first = first
                 .checked_add(batch)
                 .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        }
+    }
+    Ok(())
+}
+
+fn line_list_batches(
+    count: u32,
+    max_vertices: u32,
+    instances: u32,
+    mut draw: impl FnMut(u32, u32) -> Result<()>,
+) -> Result<()> {
+    if max_vertices < 2 || !max_vertices.is_multiple_of(2) {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    for _ in 0..instances {
+        let mut first = 0;
+        let mut remaining = count & !1;
+        while remaining != 0 {
+            let batch = remaining.min(max_vertices);
+            draw(first, batch)?;
+            remaining -= batch;
+            if remaining != 0 {
+                first = first
+                    .checked_add(batch)
+                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn line_strip_batches(
+    count: u32,
+    max_vertices: u32,
+    instances: u32,
+    mut draw: impl FnMut(u32, u32) -> Result<()>,
+) -> Result<()> {
+    if max_vertices < 2 {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    for _ in 0..instances {
+        let mut first = 0;
+        let mut remaining = count;
+        while remaining >= 2 {
+            let batch = remaining.min(max_vertices);
+            draw(first, batch)?;
+            if batch == remaining {
+                break;
+            }
+            let step = batch - 1;
+            first = first
+                .checked_add(step)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            remaining -= step;
         }
     }
     Ok(())
@@ -491,13 +560,14 @@ impl CommandBuffer {
                         context.IASetInputLayout(input.as_ref());
                         context.IASetPrimitiveTopology(match topology {
                             wgt::PrimitiveTopology::PointList => D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
+                            wgt::PrimitiveTopology::LineList => D3D_PRIMITIVE_TOPOLOGY_LINELIST,
+                            wgt::PrimitiveTopology::LineStrip => D3D_PRIMITIVE_TOPOLOGY_LINESTRIP,
                             wgt::PrimitiveTopology::TriangleList => {
                                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
                             }
                             wgt::PrimitiveTopology::TriangleStrip => {
                                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
                             }
-                            _ => return Err(Error::from_hresult(E_INVALIDARG)),
                         });
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
@@ -602,6 +672,70 @@ impl CommandBuffer {
                         for instance in 0..*instances {
                             instance_bindings.bind(context, instance)?;
                             point_batches(*count, *max_points, |first, count| {
+                                for (slot, buffer, base, stride) in vertices {
+                                    let offset = strip_vertex_offset(*base, *stride, first)?;
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer.clone())),
+                                        Some(stride),
+                                        Some(&offset),
+                                    );
+                                }
+                                context.Draw(count, 0);
+                                Ok(())
+                            })?;
+                        }
+                    }
+                    NativeCommand::DrawLines {
+                        vertices,
+                        count,
+                        max_vertices,
+                        instances,
+                        instance_bindings,
+                    } => {
+                        instance_bindings.validate(*instances)?;
+                        line_list_batches(*count, *max_vertices, 1, |first, _| {
+                            for (_, _, offset, stride) in vertices {
+                                strip_vertex_offset(*offset, *stride, first)?;
+                            }
+                            Ok(())
+                        })?;
+                        for instance in 0..*instances {
+                            instance_bindings.bind(context, instance)?;
+                            line_list_batches(*count, *max_vertices, 1, |first, count| {
+                                for (slot, buffer, base, stride) in vertices {
+                                    let offset = strip_vertex_offset(*base, *stride, first)?;
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer.clone())),
+                                        Some(stride),
+                                        Some(&offset),
+                                    );
+                                }
+                                context.Draw(count, 0);
+                                Ok(())
+                            })?;
+                        }
+                    }
+                    NativeCommand::DrawLineStrip {
+                        vertices,
+                        count,
+                        max_vertices,
+                        instances,
+                        instance_bindings,
+                    } => {
+                        instance_bindings.validate(*instances)?;
+                        line_strip_batches(*count, *max_vertices, 1, |first, _| {
+                            for (_, _, offset, stride) in vertices {
+                                strip_vertex_offset(*offset, *stride, first)?;
+                            }
+                            Ok(())
+                        })?;
+                        for instance in 0..*instances {
+                            instance_bindings.bind(context, instance)?;
+                            line_strip_batches(*count, *max_vertices, 1, |first, count| {
                                 for (slot, buffer, base, stride) in vertices {
                                     let offset = strip_vertex_offset(*base, *stride, first)?;
                                     context.IASetVertexBuffers(
@@ -916,6 +1050,93 @@ mod tests {
         assert_eq!(strip_vertex_offset(8, 12, 65_532).unwrap(), 786_392);
         assert!(strip_vertex_offset(8, 12, u32::MAX).is_err());
         assert!(strip_vertex_offset(u32::MAX, 4, 1).is_err());
+    }
+
+    #[test]
+    fn line_list_batches_preserve_pairs_and_instances() {
+        let mut batches = Vec::new();
+        line_list_batches(0, 6, 1, |first, count| {
+            batches.push((first, count));
+            Ok(())
+        })
+        .unwrap();
+        line_list_batches(1, 6, 1, |first, count| {
+            batches.push((first, count));
+            Ok(())
+        })
+        .unwrap();
+        assert!(batches.is_empty());
+
+        line_list_batches(15, 6, 2, |first, count| {
+            batches.push((first, count));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(batches, [(0, 6), (6, 6), (12, 2), (0, 6), (6, 6), (12, 2)]);
+        assert!(batches
+            .iter()
+            .all(|(first, count)| first % 2 == 0 && count % 2 == 0));
+        assert!(line_list_batches(4, 1, 1, |_, _| Ok(())).is_err());
+        assert!(line_list_batches(4, 3, 1, |_, _| Ok(())).is_err());
+        assert!(line_list_batches(4, 4, 1, |_, _| Err(Error::from_hresult(E_INVALIDARG))).is_err());
+    }
+
+    #[test]
+    fn line_strip_batches_overlap_one_vertex_across_batches() {
+        let mut batches = Vec::new();
+        for count in 0..2 {
+            line_strip_batches(count, 6, 1, |first, count| {
+                batches.push((first, count));
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert!(batches.is_empty());
+        line_strip_batches(13, 6, 2, |first, count| {
+            batches.push((first, count));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(batches, [(0, 6), (5, 6), (10, 3), (0, 6), (5, 6), (10, 3)]);
+        for windows in batches.chunks_exact(3) {
+            assert_eq!(windows[1].0, windows[0].0 + windows[0].1 - 1);
+            assert_eq!(windows[2].0, windows[1].0 + windows[1].1 - 1);
+        }
+        assert!(line_strip_batches(2, 1, 1, |_, _| Ok(())).is_err());
+        assert!(
+            line_strip_batches(4, 2, 1, |_, _| Err(Error::from_hresult(E_INVALIDARG))).is_err()
+        );
+    }
+
+    #[test]
+    fn fl91_line_batch_limits_preserve_complete_primitives() {
+        let hardware =
+            super::super::capabilities::HardwareGuarantees::for_level(FeatureLevel::L9_1);
+        let mut batches = Vec::new();
+        line_list_batches(
+            131_070,
+            hardware.max_direct_line_list_vertices_per_draw(),
+            1,
+            |first, count| {
+                batches.push((first, count));
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(batches, [(0, 65_534), (65_534, 65_534), (131_068, 2)]);
+
+        batches.clear();
+        line_strip_batches(
+            65_536,
+            hardware.max_direct_line_strip_vertices_per_draw(),
+            1,
+            |first, count| {
+                batches.push((first, count));
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(batches, [(0, 65_535), (65_534, 2)]);
     }
 
     #[test]

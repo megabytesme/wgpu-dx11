@@ -21,7 +21,9 @@ below is met. This plan does not claim WebGPU conformance.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. Each feature needs positive
-   GPU and negative tests.
+   GPU and negative tests. Non-indexed line lists and line strips now have a
+   bounded private FL9_1 implementation with strict GPU readback; indexed line
+   topologies and their index validation/batching remain open.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport
