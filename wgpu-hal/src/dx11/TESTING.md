@@ -173,6 +173,22 @@ runtime-index GPU output is historical and superseded by the guard. Matrix-store
 matrix_ -- --nocapture` and cover checked/unchecked stores, helper provenance,
 shared type graphs and fail-closed work limits; this does not fix shared Naga.
 
+With strict hardware mode enabled, run the constant-depth-bias test with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_constant_depth_bias_and_pipeline_transition -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested and selected FL9_1, five full 8×8 D24S8
+render/readback cases checked positive, negative and zero constant bias,
+depth-write control and pipeline transitions. Two controlled core cases each
+checked 64 pixels. Nonzero slope and clamp, biased point pipelines and selected
+`frag_depth` outputs with nonzero bias were rejected. With zero bias, FXC
+rejected a direct-only fragment-depth output with X4530; a structured
+color-and-depth output compiled. Selecting a separate color entry from the same
+module succeeded with nonzero bias. These results do not establish bias
+arithmetic precision on historical FL9 hardware, nor a public adapter contract.
+
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_read_only_depth_preserves_depth_and_rejects_writes -- --nocapture` checks
 the private read-only D24S8 path. It validates depth preservation, rejects

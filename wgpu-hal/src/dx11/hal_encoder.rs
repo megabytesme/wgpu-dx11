@@ -4058,6 +4058,10 @@ mod depth_render_tests;
 mod depth_never_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/depth_bias.rs"]
+mod depth_bias_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/point_vertex.rs"]
 mod point_vertex_tests;
 

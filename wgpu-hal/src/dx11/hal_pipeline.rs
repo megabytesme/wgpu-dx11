@@ -89,6 +89,23 @@ fn depth_comparison(
     }
 }
 
+fn constant_depth_bias(
+    bias: &wgt::DepthBiasState,
+    topology: wgt::PrimitiveTopology,
+) -> Option<i32> {
+    if bias.slope_scale != 0.0
+        || bias.clamp != 0.0
+        || (bias.constant != 0
+            && !matches!(
+                topology,
+                wgt::PrimitiveTopology::TriangleList | wgt::PrimitiveTopology::TriangleStrip
+            ))
+    {
+        return None;
+    }
+    Some(bias.constant)
+}
+
 fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
     use super::{hal_bind_group::GroupKind, shader::ShaderBindingKind};
     for group in plan.groups().iter().flatten() {
@@ -357,6 +374,36 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn constant_depth_bias_accepts_only_unclamped_triangle_states() {
+        use super::constant_depth_bias;
+        use wgt::{DepthBiasState, PrimitiveTopology as T};
+
+        for topology in [T::TriangleList, T::TriangleStrip] {
+            for value in [i32::MIN, -1, 0, 1, i32::MAX] {
+                let bias = DepthBiasState {
+                    constant: value,
+                    slope_scale: -0.0,
+                    clamp: -0.0,
+                };
+                assert_eq!(constant_depth_bias(&bias, topology), Some(value));
+            }
+        }
+        let mut bias = DepthBiasState::default();
+        assert_eq!(constant_depth_bias(&bias, T::PointList), Some(0));
+        bias.constant = 1;
+        assert_eq!(constant_depth_bias(&bias, T::PointList), None);
+        bias.constant = 0;
+        for value in [1.0, -1.0, f32::NAN, f32::INFINITY] {
+            bias.slope_scale = value;
+            assert_eq!(constant_depth_bias(&bias, T::TriangleList), None);
+            bias.slope_scale = 0.0;
+            bias.clamp = value;
+            assert_eq!(constant_depth_bias(&bias, T::TriangleList), None);
+            bias.clamp = 0.0;
+        }
+    }
+
     #[test]
     fn depth_comparison_never_is_suppressed_not_native() {
         use super::{depth_comparison, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS_EQUAL};
@@ -2020,12 +2067,21 @@ impl RenderPipeline {
             }
         }
         let mut depth_never = false;
+        let mut depth_bias = 0;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if state.format != wgt::TextureFormat::Depth24PlusStencil8
                 || !stencil_is_noop(&state.stencil)
-                || state.bias != wgt::DepthBiasState::default()
             {
                 return Err(invalid());
+            }
+            depth_bias =
+                constant_depth_bias(&state.bias, desc.primitive.topology).ok_or_else(invalid)?;
+            if depth_bias != 0 {
+                if let Some(fragment) = fragment {
+                    fragment
+                        .module
+                        .validate_no_fragment_depth(fragment.entry_point)?;
+                }
             }
             let (comparison, suppress_draws) =
                 depth_comparison(state.depth_compare).ok_or_else(invalid)?;
@@ -2227,6 +2283,7 @@ impl RenderPipeline {
                 Some(wgt::Face::Back) => D3D11_CULL_BACK,
             },
             FrontCounterClockwise: (desc.primitive.front_face == wgt::FrontFace::Ccw).into(),
+            DepthBias: depth_bias,
             DepthClipEnable: true.into(),
             ScissorEnable: true.into(),
             ..Default::default()

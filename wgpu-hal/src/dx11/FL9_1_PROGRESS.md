@@ -1315,3 +1315,23 @@ Clippy passed with ten pre-existing test warnings, and the core isolation test
 passed. The unsafe public-wgpu fixture still rendered 32 red and 32 green pixels.
 Historical drivers are unverified. The implementation can stall for GPU index
 staging and use one native draw per scattered index.
+Checkpoint: `8c2be917a31a0e124007b77989e2365a83fc376a`.
+
+The private D24S8 triangle path now accepts signed constant depth bias when
+slope and clamp are zero. Nonzero bias with selected `frag_depth`, nonzero or
+nonfinite slope/clamp, and biased point pipelines remain rejected. Five strict
+RTX FL9_1 full-image cases passed for positive, negative and zero bias, writes
+and transitions. The core fixture matched all 64 pixels for each bias sign.
+Pipeline tests rejected direct and structured fragment-depth outputs with bias;
+zero-bias structured output compiled, while FXC rejected the direct-only output
+with X4530 because the pixel shader did not write SV_Target0. A synthetic test
+checked selected entry points and descriptor boundaries. The strict suite
+passed 269 tests with two filtered; six dynamic-index GPU cases remain skipped.
+Clippy passed with ten pre-existing test warnings, the core zero-adapter test
+passed, and the targeted DX12 HAL library tests passed 2/2. Historical FL9 bias precision
+is not established: Microsoft documents 32-bit bias arithmetic for FL10+.
+No pristine failing GPU baseline was captured before implementation; the prior
+code rejected all non-default depth bias, and the earlier full suite passed.
+
+Next: allow and verify copies between different mip subresources of the same
+texture. Core permits them but the private HAL currently rejects all self-copy.

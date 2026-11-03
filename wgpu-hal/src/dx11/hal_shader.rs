@@ -320,6 +320,29 @@ mod tests {
     }
 
     #[test]
+    fn fragment_depth_detection_uses_only_selected_entry() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Output { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 }
+            @fragment fn direct() -> @builtin(frag_depth) f32 { return 0.5; }
+            @fragment fn structured() -> Output { return Output(vec4f(1.0), 0.5); }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        assert_eq!(entry_has_fragment_depth(&module, "direct"), Some(true));
+        assert_eq!(entry_has_fragment_depth(&module, "structured"), Some(true));
+        assert_eq!(entry_has_fragment_depth(&module, "safe"), Some(false));
+        assert_eq!(entry_has_fragment_depth(&module, "missing"), None);
+    }
+
+    #[test]
     fn instance_index_detection_uses_only_selected_entry() {
         let module = naga::front::wgsl::parse_str(r#"
             struct Input { @location(0) p: vec2f, @builtin(instance_index) id: u32 }
@@ -2127,7 +2150,47 @@ fn entry_has_builtin(
     }))
 }
 
+fn entry_has_fragment_depth(module: &naga::Module, entry: &str) -> Option<bool> {
+    let entry = module
+        .entry_points
+        .iter()
+        .find(|ep| ep.stage == naga::ShaderStage::Fragment && ep.name == entry)?;
+    let Some(result) = &entry.function.result else {
+        return Some(false);
+    };
+    let depth = |binding: Option<&naga::Binding>| {
+        matches!(
+            binding,
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::FragDepth))
+        )
+    };
+    Some(
+        depth(result.binding.as_ref())
+            || match &module.types[result.ty].inner {
+                naga::TypeInner::Struct { members, .. } => {
+                    members.iter().any(|member| depth(member.binding.as_ref()))
+                }
+                _ => false,
+            },
+    )
+}
+
 impl ShaderModule {
+    pub(super) fn validate_no_fragment_depth(
+        &self,
+        entry: &str,
+    ) -> Result<(), crate::PipelineError> {
+        match entry_has_fragment_depth(&self.shader.module, entry) {
+            Some(false) => Ok(()),
+            Some(true) => Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 depth bias with frag_depth is not implemented".into(),
+            )),
+            None => Err(crate::PipelineError::EntryPoint(
+                naga::ShaderStage::Fragment,
+            )),
+        }
+    }
     pub(super) fn validate_no_vertex_locations(
         &self,
         entry: &str,

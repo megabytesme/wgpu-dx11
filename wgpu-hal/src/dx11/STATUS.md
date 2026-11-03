@@ -87,6 +87,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   pass and cannot write are accepted as no-ops; nontrivial stencil tests or
   writes, aspect-specific views and depth copies remain unsupported. Textured
   depth ordering is verified through GPU readback.
+- D24S8 triangle pipelines accept signed constant depth bias with zero slope
+  scale and clamp. Nonzero bias with a selected fragment-depth output and
+  nonzero point-list bias are rejected. Five strict FL9_1 RTX images and two
+  64-pixel core renders exercised the restricted constant-bias path. FXC rejected
+  a direct-only zero-bias `frag_depth` entry with X4530, while a structured
+  color-and-depth zero-bias entry compiled. FL9 historical bias precision remains
+  unverified; public adapter enumeration remains disabled.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled

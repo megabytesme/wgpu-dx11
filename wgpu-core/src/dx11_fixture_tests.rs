@@ -364,6 +364,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::NoopStencil,
         VertexCase::NeverDepth(false),
         VertexCase::NeverDepth(true),
+        VertexCase::DepthBias(1_048_576),
+        VertexCase::DepthBias(-1_048_576),
         VertexCase::Snorm,
         VertexCase::ZeroStride,
         VertexCase::InstanceRate,
@@ -1079,6 +1081,7 @@ enum VertexCase {
     Overlapping,
     NoopStencil,
     NeverDepth(bool),
+    DepthBias(i32),
     Snorm,
     ZeroStride,
     InstanceRate,
@@ -1104,6 +1107,10 @@ fn render_triangle(
     let noop_stencil = case == VertexCase::NoopStencil;
     let never_depth = match case {
         VertexCase::NeverDepth(write) => Some(write),
+        _ => None,
+    };
+    let depth_bias = match case {
+        VertexCase::DepthBias(value) => Some(value),
         _ => None,
     };
     let snorm = case == VertexCase::Snorm;
@@ -1734,6 +1741,18 @@ fn render_triangle(
         assert!(error.is_none(), "Never pipeline creation: {error:?}");
         pipeline
     });
+    let bias_pipeline = depth_bias.map(|value| {
+        pipeline_descriptor
+            .depth_stencil
+            .as_mut()
+            .unwrap()
+            .bias
+            .constant = value;
+        let (pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(error.is_none(), "bias pipeline creation: {error:?}");
+        pipeline
+    });
     let (vertices, error) = global.device_create_buffer(
         device,
         &wgt::BufferDescriptor {
@@ -1755,6 +1774,11 @@ fn render_triangle(
             0.0, 0.0, 0.25, 0.25, 0.5, -0.375, 0.375, 0.25, 0.25, 0.5, 0.375, -0.375, 0.25, 0.75,
             0.5,
         ];
+    }
+    if depth_bias.is_some() {
+        for vertex in values.chunks_exact_mut(5) {
+            vertex[2] = 0.5;
+        }
     }
     if never_depth.is_some() {
         values.extend_from_slice(&[
@@ -1959,6 +1983,11 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, pipeline_id)
             .unwrap();
     }
+    if let Some(bias_pipeline) = bias_pipeline {
+        global
+            .render_pass_set_pipeline(&mut pass, bias_pipeline)
+            .unwrap();
+    }
     if !point_input {
         global
             .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
@@ -2049,7 +2078,7 @@ fn render_triangle(
                     &[0, 0, 0, 0]
                 } else if sampled_mips {
                     &[0, 0, 255, 255]
-                } else if !zero_stride && x < 4 {
+                } else if !zero_stride && x < 4 && depth_bias.is_none_or(|value| value > 0) {
                     &[255, 0, 0, 255]
                 } else {
                     &[0, 255, 0, 255]
@@ -2065,6 +2094,9 @@ fn render_triangle(
     global.render_pipeline_drop(pipeline_id);
     if let Some(never_pipeline) = never_pipeline {
         global.render_pipeline_drop(never_pipeline);
+    }
+    if let Some(bias_pipeline) = bias_pipeline {
+        global.render_pipeline_drop(bias_pipeline);
     }
     global.pipeline_layout_drop(layout);
     global.shader_module_drop(shader);
