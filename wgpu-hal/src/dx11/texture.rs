@@ -9,12 +9,14 @@ use windows::{
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
+            Direct3D::D3D11_SRV_DIMENSION_TEXTURE2D,
             Direct3D11::{
                 ID3D11DepthStencilView, ID3D11Device, ID3D11RenderTargetView,
                 ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_DEPTH_STENCIL,
                 D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CLEAR_DEPTH,
                 D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                D3D11_MAP_READ, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
+                D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -91,6 +93,8 @@ pub struct NativeTextureView {
     usage: wgt::TextureUses,
     owner: ID3D11Device,
     texture: ID3D11Texture2D,
+    mip_base: u32,
+    mip_count: u32,
 }
 
 impl NativeTextureView {
@@ -311,12 +315,23 @@ impl NativeDevice {
                 && (view.usage != wgt::TextureUses::RESOURCE
                     || !desc.Width.is_power_of_two()
                     || !desc.Height.is_power_of_two()))
+            || view.mip_count == 0
+            || view.mip_base >= desc.MipLevels
+            || view.mip_base >= u32::BITS
+            || view.mip_base.checked_add(view.mip_count) != Some(desc.MipLevels)
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
         }
-        Ok((resource.clone(), [desc.Width, desc.Height], desc.MipLevels))
+        Ok((
+            resource.clone(),
+            [
+                (desc.Width >> view.mip_base).max(1),
+                (desc.Height >> view.mip_base).max(1),
+            ],
+            view.mip_count,
+        ))
     }
 
     /// Validate and retain a color attachment view for render command recording.
@@ -494,6 +509,8 @@ impl NativeDevice {
             usage: wgt::TextureUses::RESOURCE,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
+            mip_base: 0,
+            mip_count: texture.mip_levels,
         })
     }
 
@@ -504,16 +521,30 @@ impl NativeDevice {
         render_target: bool,
         depth_stencil: bool,
         usage: wgt::TextureUses,
+        mip_range: (u32, u32),
     ) -> Result<NativeTextureView> {
         self.check_texture_owner(texture)?;
+        let (mip_base, mip_count) = mip_range;
         let mut shader = None;
         let mut target = None;
         let mut depth = None;
         unsafe {
             if resource {
+                let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
+                texture.raw.GetDesc(&mut texture_desc);
+                let shader_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
+                    Format: texture_desc.Format,
+                    ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
+                    Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                        Texture2D: D3D11_TEX2D_SRV {
+                            MostDetailedMip: mip_base,
+                            MipLevels: mip_count,
+                        },
+                    },
+                };
                 self.raw_device().CreateShaderResourceView(
                     &texture.raw,
-                    None,
+                    Some(&shader_desc),
                     Some(&mut shader),
                 )?;
             }
@@ -545,6 +576,8 @@ impl NativeDevice {
             usage,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
+            mip_base,
+            mip_count,
         })
     }
 

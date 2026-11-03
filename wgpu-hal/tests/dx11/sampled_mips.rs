@@ -338,6 +338,40 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
         native.write_rgba_texture(&single, 0, 0, &[255, 255, 255, 255])?;
         let texture_view = create_view(&device, &texture, format, wgt::TextureUses::RESOURCE);
         let single_view = create_view(&device, &single, format, wgt::TextureUses::RESOURCE);
+        let suffix_desc = crate::TextureViewDescriptor {
+            label: None,
+            format,
+            dimension: wgt::TextureViewDimension::D2,
+            usage: wgt::TextureUses::RESOURCE,
+            range: wgt::ImageSubresourceRange {
+                base_mip_level: 1,
+                mip_level_count: None,
+                ..Default::default()
+            },
+        };
+        let suffix_view = unsafe { device.create_texture_view(&texture, &suffix_desc) }
+            .expect("sampled suffix view");
+        assert_eq!(native.sampled_view(&suffix_view)?.2, 3);
+        let explicit_suffix_desc = crate::TextureViewDescriptor {
+            range: wgt::ImageSubresourceRange {
+                mip_level_count: Some(3),
+                ..suffix_desc.range
+            },
+            ..suffix_desc.clone()
+        };
+        let explicit_suffix =
+            unsafe { device.create_texture_view(&texture, &explicit_suffix_desc) }
+                .expect("explicit sampled suffix view");
+        assert_eq!(native.sampled_view(&explicit_suffix)?.2, 3);
+        let nonsuffix_desc = crate::TextureViewDescriptor {
+            range: wgt::ImageSubresourceRange {
+                mip_level_count: Some(2),
+                ..suffix_desc.range
+            },
+            ..suffix_desc.clone()
+        };
+        assert!(unsafe { device.create_texture_view(&texture, &nonsuffix_desc) }.is_err());
+        unsafe { device.destroy_texture_view(explicit_suffix) };
         let textures = [
             crate::TextureBinding {
                 view: &texture_view,
@@ -364,6 +398,167 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
                 .unwrap()
         };
         let normalized = create_sampler(wgt::MipmapFilterMode::Nearest, 0.5..0.5);
+        let capped = create_sampler(wgt::MipmapFilterMode::Nearest, 0.0..2.0);
+        let capped_samplers = [&capped, &normalized];
+        let full_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    textures: &textures,
+                    samplers: &capped_samplers,
+                    entries: &entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&pipelines[0]);
+            encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+            encoder.set_bind_group(&layout, 0, &full_group, &[]);
+            encoder.draw(0, 3, 0, 1);
+            encoder.end_render_pass();
+            assert!(
+                encoder.end_encoding().is_err(),
+                "LOD maximum 2 cannot represent a four-level view"
+            );
+            device.destroy_bind_group(full_group);
+        }
+        let suffix_textures = [
+            crate::TextureBinding {
+                view: &suffix_view,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+            crate::TextureBinding {
+                view: &single_view,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+        ];
+        let suffix_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    textures: &suffix_textures,
+                    samplers: &capped_samplers,
+                    entries: &entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        for (pipeline, expected, relative_level) in [
+            (0usize, logical_colors[1], 0),
+            (2, logical_colors[2], 1),
+            (3, logical_colors[3], 2),
+        ] {
+            let commands = unsafe {
+                encoder.begin_encoding(None).unwrap();
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_render_pipeline(&pipelines[pipeline]);
+                encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                encoder.set_bind_group(&layout, 0, &suffix_group, &[]);
+                encoder.draw(0, 3, 0, 1);
+                encoder.end_render_pass();
+                encoder
+                    .end_encoding()
+                    .expect("compatible suffix-view mip sampler")
+            };
+            fence_value += 1;
+            unsafe {
+                queue
+                    .submit(&[&commands], &[], (&fence, fence_value))
+                    .unwrap()
+            };
+            assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+            let pixels = native.read_rgba_texture(&target, 0, 0)?;
+            assert_eq!(pixels.len(), 8 * 8 * 4);
+            for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+                assert_eq!(
+                    pixel, expected,
+                    "{format:?} suffix relative mip {relative_level}, pixel {index}"
+                );
+            }
+            unsafe { encoder.reset_all([commands].into_iter()) };
+            executed += 1;
+        }
+        unsafe {
+            device.destroy_bind_group(suffix_group);
+            device.destroy_sampler(capped);
+        }
+        let last_desc = crate::TextureViewDescriptor {
+            range: wgt::ImageSubresourceRange {
+                base_mip_level: 3,
+                ..Default::default()
+            },
+            ..suffix_desc.clone()
+        };
+        let last_view = unsafe { device.create_texture_view(&texture, &last_desc) }
+            .expect("single-level suffix view");
+        assert_eq!(native.sampled_view(&last_view)?.2, 1);
+        let last_textures = [
+            crate::TextureBinding {
+                view: &last_view,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+            crate::TextureBinding {
+                view: &single_view,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+        ];
+        let last_samplers = [&normalized, &normalized];
+        let last_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    textures: &last_textures,
+                    samplers: &last_samplers,
+                    entries: &entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        let last_commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&pipelines[0]);
+            encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+            encoder.set_bind_group(&layout, 0, &last_group, &[]);
+            encoder.draw(0, 3, 0, 1);
+            encoder.end_render_pass();
+            encoder
+                .end_encoding()
+                .expect("normalized sampler with one-level suffix")
+        };
+        fence_value += 1;
+        unsafe {
+            queue
+                .submit(&[&last_commands], &[], (&fence, fence_value))
+                .unwrap()
+        };
+        assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        assert_eq!(pixels.len(), 8 * 8 * 4);
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            assert_eq!(
+                pixel, logical_colors[3],
+                "{format:?} one-level suffix pixel {index}"
+            );
+        }
+        unsafe {
+            encoder.reset_all([last_commands].into_iter());
+            device.destroy_bind_group(last_group);
+            device.destroy_texture_view(last_view);
+        }
+        executed += 1;
         for mip_filter in [
             wgt::MipmapFilterMode::Nearest,
             wgt::MipmapFilterMode::Linear,
@@ -544,7 +739,7 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
                     label: None,
                     layout: &group_layout,
                     buffers: &[],
-                    textures: &textures,
+                    textures: &suffix_textures,
                     samplers: &second_samplers,
                     entries: &entries,
                     acceleration_structures: &[],
@@ -578,6 +773,7 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
             device.destroy_sampler(second_sampler);
             device.destroy_sampler(normalized);
             device.destroy_texture_view(single_view);
+            device.destroy_texture_view(suffix_view);
             device.destroy_texture_view(texture_view);
             device.destroy_texture(single);
             device.destroy_texture(texture);

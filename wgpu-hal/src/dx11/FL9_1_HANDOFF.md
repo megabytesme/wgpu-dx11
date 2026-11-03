@@ -254,9 +254,11 @@ Current FL9_1 shader profiles reject reachable textureSampleBias, including
 helper calls, because legacy texldb has a narrower documented bias range.
 A future semantics-preserving lowering is needed before accepting it.
 
-POT RGBA8/BGRA8 mip chains support initialization, transfers and full-chain
-sampled views. Mip attachment views remain unavailable. FL9 SRVs require the
-smallest mip, so arbitrary core-valid sampled views need emulation or validation.
+POT RGBA8/BGRA8 mip chains support initialization, transfers and sampled
+suffix views including the smallest resource mip. View-relative LOD selection
+passed strict private and controlled core GPU tests. Mip attachment views and
+non-suffix sampled views remain unavailable; arbitrary core-valid views need
+emulation or validation.
 
 Sampler LOD policy is validated against actual selected texture/sampler pairs
 and mip counts; finite max normalization and anisotropy remain restricted.

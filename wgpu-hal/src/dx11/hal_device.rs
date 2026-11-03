@@ -346,11 +346,16 @@ impl crate::Device for Device {
             || !texture.supports_usage(desc.usage)
             || (if desc.usage.is_empty() {
                 !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
+            } else if native.MipLevels > 1 && desc.usage == wgt::TextureUses::RESOURCE {
+                !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
+                    || desc.range.mip_level_count.is_some_and(|count| {
+                        desc.range.base_mip_level.checked_add(count) != Some(native.MipLevels)
+                    })
             } else {
-                !desc
-                    .range
-                    .is_full_resource(format, native.MipLevels, native.ArraySize)
-                    || (native.MipLevels > 1 && desc.usage != wgt::TextureUses::RESOURCE)
+                native.MipLevels != 1
+                    || !desc
+                        .range
+                        .is_full_resource(format, native.MipLevels, native.ArraySize)
             })
             || native.ArraySize != 1
             || native.SampleDesc.Count != 1
@@ -360,8 +365,20 @@ impl crate::Device for Device {
         {
             return Err(DeviceError::Unexpected);
         }
+        let mip_base = desc.range.base_mip_level;
+        let mip_count = desc
+            .range
+            .mip_level_count
+            .unwrap_or(native.MipLevels - mip_base);
         self.native
-            .create_full_hal_view(texture, resource, target, depth, desc.usage)
+            .create_full_hal_view(
+                texture,
+                resource,
+                target,
+                depth,
+                desc.usage,
+                (mip_base, mip_count),
+            )
             .map_err(device_error)
     }
 
@@ -745,9 +762,38 @@ mod tests {
                 .unwrap();
         let (_, size, mips) = native.sampled_view(&sampled_view)?;
         assert_eq!((size, mips), ([8, 4], 4));
+        let mut suffix_views = Vec::new();
+        for (base, count, size, mip_count) in [
+            (1, Some(3), [4, 2], 3),
+            (2, None, [2, 1], 2),
+            (3, Some(1), [1, 1], 1),
+        ] {
+            let mut suffix = full_sampled.clone();
+            suffix.range.base_mip_level = base;
+            suffix.range.mip_level_count = count;
+            let view =
+                unsafe { crate::Device::create_texture_view(&device, &sampled, &suffix) }.unwrap();
+            let (raw, actual_size, actual_mips) = native.sampled_view(&view)?;
+            assert_eq!((actual_size, actual_mips), (size, mip_count));
+            let mut native_desc =
+                windows::Win32::Graphics::Direct3D11::D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+            unsafe { raw.GetDesc(&mut native_desc) };
+            let texture_desc = unsafe { native_desc.Anonymous.Texture2D };
+            assert_eq!(
+                (texture_desc.MostDetailedMip, texture_desc.MipLevels),
+                (base, mip_count)
+            );
+            suffix_views.push(view);
+        }
         let mut partial_sampled = full_sampled.clone();
         partial_sampled.range.base_mip_level = 1;
-        partial_sampled.range.mip_level_count = Some(3);
+        partial_sampled.range.mip_level_count = Some(2);
+        assert!(
+            unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
+                .is_err()
+        );
+        partial_sampled.range.base_mip_level = u32::MAX;
+        partial_sampled.range.mip_level_count = Some(2);
         assert!(
             unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
                 .is_err()
@@ -761,6 +807,10 @@ mod tests {
         unsafe {
             crate::Device::destroy_texture(&device, sampled);
             crate::Device::destroy_texture_view(&device, sampled_view);
+            for suffix in suffix_views {
+                assert!(native.sampled_view(&suffix).is_ok());
+                crate::Device::destroy_texture_view(&device, suffix);
+            }
             crate::Device::destroy_texture(&device, texture);
             crate::Device::destroy_texture_view(&device, view);
         }

@@ -1055,3 +1055,15 @@ cases remain internally skipped. HAL Clippy passed with ten existing warnings,
 and ordinary core D3D11 enumeration remained empty. Independent source and
 GPU-test reviews found no concrete defect. Non-full sampled views, attachment
 mips, NPOT chains, certain LOD/aniso pairs and historical drivers remain gaps.
+Checkpoint: `e066d405c`.
+
+Private POT RGBA8/BGRA8 sampled mip views may now start at any mip if the
+view includes the resource's last mip, as required by FL9. Sampling-pair LOD
+validation uses the view's dimensions and relative mip count. Strict RTX
+FL9_1 testing passed 54/54 sampled-mip cases with no format skips, including
+relative LOD, finite max LOD, single-level suffixes, lifetime and rejection of
+non-suffix views. The controlled core suffix-view fixture read 64/64 blue
+pixels. The full strict private suite passed 244 tests with two filtered; three
+older shader cases skip hardware internally. HAL Clippy passed with ten
+existing test warnings. Arbitrary non-suffix sampled views and mip attachment
+views remain unsupported, and public adapter exposure remains disabled.
