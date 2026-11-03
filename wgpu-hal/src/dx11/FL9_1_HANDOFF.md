@@ -374,8 +374,17 @@ with ten existing warnings. A DX12 HAL regression build/check hit Windows paging
 file error 1455 while mapping Rust crate metadata; it remains unverified for
 this increment.
 
-Next, cover one-sided stencil through the unsafe core fixture while preserving
-empty ordinary D3D11 enumeration. Then continue core/HAL contract auditing. Do
-not expose a public adapter or surface: DXGI message-pump reentrancy remains an
-unresolved presentation blocker.
-Code checkpoint: `ae40c514a` (`dx11: support one-sided FL9_1 stencil operations`).
+The one-sided stencil subset now also runs through the unsafe, feature-gated
+core fixture. `ActiveStencil` records a symmetric Always/Replace pipeline with
+color writes masked, then switches to an Equal pipeline and renders. On the
+forced-FL9_1 RTX 3090 Ti, all 64 readback pixels matched. The full fixture-
+enabled core library suite passed 70/70 tests, including ordinary adapter
+isolation; the focused core hardware fixture also passed in strict mode. The
+fixture continues to assert that ordinary HAL enumeration is empty. This is
+controlled core/HAL coverage, not public adapter exposure or historical-device
+validation.
+
+Checkpoint commit is pending. Next, audit core-valid read-only depth/stencil
+attachment use and remaining private render-pass contracts. Do not expose a
+public adapter or surface: DXGI message-pump reentrancy and truthful broad
+capability reporting remain unresolved gates.

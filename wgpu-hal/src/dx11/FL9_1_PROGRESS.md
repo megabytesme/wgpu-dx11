@@ -1590,3 +1590,25 @@ fixture, then continue the outstanding core/HAL contract audit. This does not
 unblock ordinary public adapter exposure or the unresolved HWND presentation
 reentrancy gate.
 Checkpoint: `ae40c514a` (`dx11: support one-sided FL9_1 stencil operations`).
+
+The same restricted stencil behavior now runs through `wgpu-core`'s unsafe,
+feature-gated D3D11 fixture. A new case writes reference `0xa5` with a symmetric
+Always/Replace pipeline whose color writes are masked, then switches to a
+symmetric Equal pipeline and renders the image. The expected 64-pixel output
+only appears if the core-recorded reference, stencil attachment, selected
+pipeline state and HAL replay all agree. The fixture still asserts ordinary
+HAL enumeration is empty; no normal adapter path was enabled.
+
+On the physical NVIDIA RTX 3090 Ti (vendor 0x10de, device 0x2203), the fixture
+requested and selected FL9_1 and the new ActiveStencil case matched all 64
+pixels. The complete fixture-enabled core library suite passed 70/70 tests,
+including its zero-adapter isolation test and both controlled hardware tests.
+The focused fixture also passed independently with `WGPU_DX11_REQUIRE_HARDWARE=1`.
+This verifies core-to-HAL stencil state on this modern GPU restricted to FL9_1;
+historical FL9_1 behavior remains unverified. Rust formatting and
+`git diff --check` passed. Checkpoint commit is pending.
+
+Next: audit core-valid read-only depth/stencil attachment use and the remaining
+private HAL render-pass contract. Keep public adapter and surface exposure
+disabled while presentation reentrancy and truthful full capability reporting
+remain unresolved.

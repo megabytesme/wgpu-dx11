@@ -558,6 +558,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
+        VertexCase::ActiveStencil,
         VertexCase::NeverDepth(false),
         VertexCase::NeverDepth(true),
         VertexCase::DepthBias(1_048_576),
@@ -1674,6 +1675,7 @@ enum VertexCase {
     DisjointCloneMip(wgt::TextureFormat),
     Overlapping,
     NoopStencil,
+    ActiveStencil,
     NeverDepth(bool),
     DepthBias(i32),
     Snorm,
@@ -1704,6 +1706,7 @@ fn render_triangle(
         wgt::ShaderStages::FRAGMENT
     };
     let overlapping = case == VertexCase::Overlapping;
+    let active_stencil = case == VertexCase::ActiveStencil;
     let point_index = match case {
         VertexCase::PointIndexed(format) => Some(format),
         _ => None,
@@ -2332,6 +2335,10 @@ fn render_triangle(
     if premultiplied_blend {
         targets[0].as_mut().unwrap().blend = Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
     }
+    if active_stencil {
+        targets[0].as_mut().unwrap().write_mask = wgt::ColorWrites::empty();
+    }
+    let mut stencil_test_targets = targets.clone();
     let stage = |entry: &'static str| pipeline::ProgrammableStageDescriptor {
         module: shader,
         entry_point: Some(Cow::Borrowed(entry)),
@@ -2368,6 +2375,18 @@ fn render_triangle(
                     back: face,
                     read_mask: 0x100,
                     write_mask: 0,
+                }
+            } else if active_stencil {
+                let face = wgt::StencilFaceState {
+                    compare: wgt::CompareFunction::Always,
+                    pass_op: wgt::StencilOperation::Replace,
+                    ..wgt::StencilFaceState::IGNORE
+                };
+                wgt::StencilState {
+                    front: face,
+                    back: face,
+                    read_mask: 0xff,
+                    write_mask: 0xff,
                 }
             } else {
                 wgt::StencilState::default()
@@ -2446,6 +2465,27 @@ fn render_triangle(
     let (pipeline_id, error) =
         global.device_create_render_pipeline(device, &pipeline_descriptor, None);
     assert!(error.is_none(), "render pipeline creation: {error:?}");
+    let stencil_test_pipeline = if active_stencil {
+        let face = wgt::StencilFaceState {
+            compare: wgt::CompareFunction::Equal,
+            ..wgt::StencilFaceState::IGNORE
+        };
+        pipeline_descriptor.depth_stencil.as_mut().unwrap().stencil = wgt::StencilState {
+            front: face,
+            back: face,
+            read_mask: 0xff,
+            write_mask: 0,
+        };
+        stencil_test_targets[0].as_mut().unwrap().write_mask = wgt::ColorWrites::ALL;
+        pipeline_descriptor.fragment.as_mut().unwrap().targets =
+            Cow::Borrowed(&stencil_test_targets);
+        let (pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(error.is_none(), "stencil verification pipeline: {error:?}");
+        Some(pipeline)
+    } else {
+        None
+    };
     let never_pipeline = never_depth.map(|write| {
         let depth = pipeline_descriptor.depth_stencil.as_mut().unwrap();
         depth.depth_compare = Some(wgt::CompareFunction::Never);
@@ -2661,7 +2701,7 @@ fn render_triangle(
     global
         .render_pass_set_pipeline(&mut pass, pipeline_id)
         .unwrap();
-    if noop_stencil {
+    if noop_stencil || active_stencil {
         global
             .render_pass_set_stencil_reference(&mut pass, 0xa5)
             .unwrap();
@@ -2712,6 +2752,17 @@ fn render_triangle(
             .unwrap();
     }
     if !point_input {
+        global
+            .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
+            .unwrap();
+    }
+    if let Some(stencil_test_pipeline) = stencil_test_pipeline {
+        global
+            .render_pass_set_pipeline(&mut pass, stencil_test_pipeline)
+            .unwrap();
+        global
+            .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
+            .unwrap();
         global
             .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
             .unwrap();
@@ -2830,6 +2881,9 @@ fn render_triangle(
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.render_pipeline_drop(pipeline_id);
+    if let Some(stencil_test_pipeline) = stencil_test_pipeline {
+        global.render_pipeline_drop(stencil_test_pipeline);
+    }
     if let Some(never_pipeline) = never_pipeline {
         global.render_pipeline_drop(never_pipeline);
     }
