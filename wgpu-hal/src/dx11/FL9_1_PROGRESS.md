@@ -947,3 +947,10 @@ it, 228 cases passed with two filtered and three documented internal shader
 skips. HAL Clippy passed with ten existing warnings and ordinary core D3D11
 enumeration remained empty. Independent review found no concrete defect.
 All-instance-only indexed draws and instance_index remain unsupported.
+Checkpoint: `8653ba625`.
+
+Corrected the internal maximum vertex-buffer count from the obsolete single-
+stream value to the backend's 16-slot limit. The synthetic capability tests
+passed (4 cases); slot 15 and sparse bindings were GPU-tested previously, but
+simultaneous execution using all 16 slots has not been established. This does
+not expose a public adapter.

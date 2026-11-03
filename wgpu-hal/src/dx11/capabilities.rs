@@ -135,7 +135,7 @@ impl BackendCapabilities {
         texture_zero_initialized: true,
         texture_array_layers: 1,
         sample_count: 1,
-        vertex_buffers: 1,
+        vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
         zero_input_vertex_pipeline: true,
         nonindexed_zero_input_points: true,
         color_attachments: 1,
@@ -333,6 +333,7 @@ mod tests {
         }
         let fl9 = model(FeatureLevel::L9_1);
         assert_eq!(fl9.hardware.max_vertex_index, 65_534);
+        assert_eq!(fl9.backend.vertex_buffers, crate::MAX_VERTEX_BUFFERS as u32);
         assert!(fl9.backend.zero_input_vertex_pipeline);
         assert!(fl9.backend.nonindexed_zero_input_points);
         assert!(fl9.backend.index_u16_fl9_rewrite);
