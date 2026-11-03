@@ -24,7 +24,8 @@ below is met. This plan does not claim WebGPU conformance.
    interpolation, clipping edges and historical-driver precision need more
    coverage. Audit mapping/device-loss panics. Empty compute
    passes and unused blend constants are handled; compute dispatch remains
-   unavailable. The downlevel combined-index usage rule has been corrected.
+   unavailable. The downlevel combined-index usage rule has been corrected,
+   and unavailable occlusion query sets are rejected by a downlevel flag.
    Depth-only clears and restricted draws work privately; handle read-only
    depth hazards and audit the remaining general render-pass combinations.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
@@ -32,7 +33,11 @@ below is met. This plan does not claim WebGPU conformance.
    restrict safely or implement/emulate it. No placeholder capabilities.
 6. Complete HWND surface lifecycle while preserving CoreWindow; the private
    hidden-window path and retained-command-buffer resize are tested, but
-   concurrent presentation requires work. Build public
+   concurrent presentation requires work. DXGI can synchronously enter a window
+   procedure while the immediate-context lock is held; a callback that uses
+   the same device can deadlock even when it does not reenter the surface.
+   Resolve this without allowing concurrent context/DXGI use or assuming a
+   cooperative window procedure. Build public
    wgpu offscreen and desktop examples selecting real D3D11 and forcing 9_1.
    Verify an indexed textured depth-tested 3D scene, readback and presentation.
 7. Audit unsupported operations, synchronization, lifetime and device loss;

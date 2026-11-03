@@ -7,7 +7,7 @@ rendering, but no ordinary public adapter or HWND presentation has been
 verified. A hidden HWND test has exercised the private surface, but visible
 presentation and surface lifetime/concurrency still require verification.
 A private D24S8 attachment path is implemented and its textured
-depth/readback test has passed on forced FL9_1; stencil tests, read-only passes,
+depth/readback test has passed on forced FL9_1; stencil tests,
 aspect-specific views and general render-pass operations remain incomplete.
 Depth-only drawing without a fragment stage also passed a private GPU prepass
 test; its trivial pixel-shader fallback has not been tested on historical GPUs.
@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 187 tests; older
+operations are safe. The latest combined strict suite passed 188 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -87,7 +87,7 @@ vertex layouts, resource shapes and bindings need implementation or safe
 validation. Private HAL errors can currently surface as device loss. Clipped
 viewport emulation can exceed the FXC instruction budget, and the tested FXC
 profile rejects fragment-position and front-facing inputs. Stencil operations,
-read-only depth, depth comparisons other than Always/LessEqual,
+read-only depth with sampled aliases, depth comparisons other than Always/LessEqual,
 broader formats and mipmaps remain incomplete. FL9_1 does not guarantee
 separate-alpha blending; the default path now rejects modes that require it,
 while masked-channel equivalents remain supported. Native compute and UAV storage are not
@@ -102,6 +102,8 @@ core and public wgpu calls; it does not make general adapter exposure safe.
 An occlusion-query downlevel flag now rejects unavailable query sets in core
 before they can cause device loss. The D3D11 fixture omits the flag; ordinary
 adapter exposure remains gated.
+Private read-only D24S8 passes require load/store of both aspects, no sampled
+aliases and no depth or stencil writes. Keep the public read-only flag off.
 The Dx11 unreachable in core's shader path is specifically in unsafe passthrough,
 not normal validated WGSL; its reachability still needs an audit before exposure.
 
@@ -120,7 +122,7 @@ cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --feature
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
-The strict private suite most recently passed 187 tests with two filtered;
+The strict private suite most recently passed 188 tests with two filtered;
 some older tests can skip internally. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,

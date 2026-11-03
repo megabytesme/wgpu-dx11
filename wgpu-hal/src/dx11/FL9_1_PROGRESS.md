@@ -663,3 +663,25 @@ occlusion_queries_are_required_for_webgpu_compliance` and `cargo test --offline
 conservative_occlusion_query_availability`. The core suite used
 `cargo test --offline -p wgpu-core --lib --no-default-features --features
 dx11-test-fixture,std`; strict hardware mode was enabled for the fixture.
+Checkpoint: `17b840c1d`.
+
+The next private increment is a read-only D24S8 attachment without sampled
+aliasing. Its strict hardware baseline first failed to compile because a test
+cloned a generic descriptor with an unsupported bound; after correcting the
+test, the RTX at requested/actual FL9_1 failed read-only texture creation with
+`Unexpected`. No public read-only-depth capability is implied by this work.
+The private implementation now accepts READ-only textures/views and passes
+only with LOAD|STORE for both aspects and a non-writing pipeline. A strict GPU
+test on the RTX verified 32 green/32 blue pixels for depth preservation, then
+32 red/32 blue pixels across READ→WRITE→READ submissions after releasing
+caller resources. It rejects write-enabled pipeline transitions, clears,
+discard, don't-care and depth sampling aliases. The full strict private suite
+passed 188 tests, two filtered, before the added transition/lifetime assertions;
+the expanded focused test passed afterward. HAL Clippy passed with ten existing
+warnings. Independent review found no concrete defect. Historical support for
+the zero depth-write mask remains unverified.
+
+The next shader baseline demonstrates that a selected checked shader with a
+uniform and local-vector dynamic indexing is rejected by the existing blanket
+guard. The safe subset is under investigation; uniform-array dynamic indexing
+must remain rejected until separately proven.

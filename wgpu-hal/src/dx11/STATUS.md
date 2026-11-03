@@ -21,8 +21,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   up to 2. On 9_1/9_2, translated finite maximum LODs require single-mip views.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
-  optional writes. Stencil tests, read-only/aspect views and copies remain
-  unsupported. Textured depth ordering is verified through GPU readback.
+  optional writes. Private read-only passes require load/store on both aspects,
+  no depth writes and no sampled alias. Stencil tests, aspect-specific views
+  and depth copies remain unsupported. Textured depth ordering is verified
+  through GPU readback.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.

@@ -10,6 +10,13 @@ expressed by `Limits` alone.
 
 ### Focused FL9_1 hardware test
 
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+fl91_read_only_depth_preserves_depth_and_rejects_writes -- --nocapture` checks
+the private read-only D24S8 path. It validates depth preservation, rejects
+write-enabled pipeline transitions and invalid pass operations, then exercises
+READ→WRITE→READ across submissions after caller resource destruction. This
+does not establish sampled-depth alias support or a public read-only flag.
+
 For dynamic uniform offsets, run `cargo test -p wgpu-hal --lib
 --no-default-features --features dx11 dynamic_uniform -- --nocapture` with
 strict hardware mode enabled. These tests cover sampled and indexed draws,

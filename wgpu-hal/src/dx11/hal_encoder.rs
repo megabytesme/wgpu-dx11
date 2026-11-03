@@ -32,6 +32,7 @@ pub struct CommandEncoder {
 struct RenderState {
     format: Option<wgt::TextureFormat>,
     depth_format: Option<wgt::TextureFormat>,
+    depth_read_only: bool,
     extent: [u32; 2],
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     pipeline: bool,
@@ -685,7 +686,12 @@ impl crate::CommandEncoder for CommandEncoder {
                     return Err(DeviceError::Unexpected);
                 }
             };
-            if attachment.target.usage != wgt::TextureUses::DEPTH_STENCIL_WRITE {
+            let read_only = attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ;
+            let read_ops = AttachmentOps::LOAD | AttachmentOps::STORE;
+            if !(read_only || attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_WRITE)
+                || (read_only
+                    && (attachment.depth_ops != read_ops || attachment.stencil_ops != read_ops))
+            {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
@@ -727,6 +733,12 @@ impl crate::CommandEncoder for CommandEncoder {
             depth_format: depth
                 .as_ref()
                 .map(|_| wgt::TextureFormat::Depth24PlusStencil8),
+            depth_read_only: desc
+                .depth_stencil_attachment
+                .as_ref()
+                .is_some_and(|attachment| {
+                    attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ
+                }),
             extent,
             target: target.clone(),
             pipeline: false,
@@ -779,6 +791,7 @@ impl crate::CommandEncoder for CommandEncoder {
         if !Arc::ptr_eq(&pipeline.owner, &self.device)
             || pipeline.target_format != render.format
             || pipeline.depth_format != render.depth_format
+            || (render.depth_read_only && pipeline.depth_write)
         {
             self.reject();
             return;

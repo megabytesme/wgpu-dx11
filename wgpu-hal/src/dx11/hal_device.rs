@@ -156,7 +156,6 @@ impl crate::Device for Device {
                 > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
                     .texture_2d_dimension
             || desc.usage.is_empty()
-            || (depth && !desc.usage.contains(wgt::TextureUses::DEPTH_STENCIL_WRITE))
             || !supported.contains(desc.usage)
             || desc.memory_flags.contains(MemoryFlags::TRANSIENT)
             || desc
@@ -286,7 +285,6 @@ impl crate::Device for Device {
             || !supported.contains(desc.usage)
             || !texture.supports_usage(desc.usage)
             || desc.usage.is_empty()
-            || (depth && !desc.usage.contains(wgt::TextureUses::DEPTH_STENCIL_WRITE))
             || !desc
                 .range
                 .is_full_resource(format, native.MipLevels, native.ArraySize)

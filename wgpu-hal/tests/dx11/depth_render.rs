@@ -499,7 +499,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device
             .create_texture(&descriptor(
                 wgt::TextureFormat::Depth24PlusStencil8,
-                wgt::TextureUses::DEPTH_STENCIL_READ,
+                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::RESOURCE,
             ))
             .is_err()
     });
@@ -1483,5 +1483,441 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         );
         std::println!("FL9_1 depth pass {index}: 64/64 pixels {expected:?}");
     }
+    Ok(())
+}
+
+#[test]
+fn fl91_read_only_depth_preserves_depth_and_rejects_writes() -> windows::core::Result<()> {
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|e| panic!("{e}"))
+    else {
+        std::println!("SKIP: no hardware adapter");
+        return Ok(());
+    };
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {:?}; requested and selected FL9_1",
+        adapter.identity()
+    );
+    let device = Device::new(native.clone());
+    let queue = Queue::new(native.clone());
+    let extent = wgt::Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let descriptor = |format, usage| crate::TextureDescriptor {
+        label: None,
+        size: extent,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgt::TextureDimension::D2,
+        format,
+        usage,
+        memory_flags: crate::MemoryFlags::empty(),
+        view_formats: vec![],
+    };
+    let readonly = unsafe {
+        device.create_texture(&descriptor(
+            wgt::TextureFormat::Depth24PlusStencil8,
+            wgt::TextureUses::DEPTH_STENCIL_READ,
+        ))
+    }
+    .expect("read-only depth texture creation");
+    let depth = unsafe {
+        device
+            .create_texture(&descriptor(
+                wgt::TextureFormat::Depth24PlusStencil8,
+                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
+            ))
+            .unwrap()
+    };
+    let color = unsafe {
+        device
+            .create_texture(&descriptor(
+                wgt::TextureFormat::Rgba8Unorm,
+                wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+            ))
+            .unwrap()
+    };
+    let view = |texture, format, usage| unsafe {
+        device
+            .create_texture_view(
+                texture,
+                &crate::TextureViewDescriptor {
+                    label: None,
+                    format,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+            .unwrap()
+    };
+    let readonly_only_view = view(
+        &readonly,
+        wgt::TextureFormat::Depth24PlusStencil8,
+        wgt::TextureUses::DEPTH_STENCIL_READ,
+    );
+    let invalid_view = crate::TextureViewDescriptor {
+        label: None,
+        format: wgt::TextureFormat::Depth24PlusStencil8,
+        dimension: wgt::TextureViewDimension::D2,
+        usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+        range: wgt::ImageSubresourceRange::default(),
+    };
+    assert!(unsafe { device.create_texture_view(&readonly, &invalid_view) }.is_err());
+    let depth_read = view(
+        &depth,
+        wgt::TextureFormat::Depth24PlusStencil8,
+        wgt::TextureUses::DEPTH_STENCIL_READ,
+    );
+    let depth_write = view(
+        &depth,
+        wgt::TextureFormat::Depth24PlusStencil8,
+        wgt::TextureUses::DEPTH_STENCIL_WRITE,
+    );
+    let color_view = view(
+        &color,
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUses::COLOR_TARGET,
+    );
+    let module = naga::front::wgsl::parse_str("struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f } @vertex fn vs(@location(0) p: vec3f, @location(1) c: vec4f) -> Out { return Out(vec4f(p, 1.0), c); } @fragment fn fs(input: Out) -> @location(0) vec4f { return input.color; }").unwrap();
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&module)
+    .unwrap();
+    let shader = unsafe {
+        device
+            .create_shader_module(
+                &crate::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                },
+                crate::ShaderInput::Naga(crate::NagaShader {
+                    module: Cow::Owned(module),
+                    info,
+                    debug_source: None,
+                }),
+            )
+            .unwrap()
+    };
+    let layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let attributes = [
+        wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        },
+        wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x4,
+            offset: 12,
+            shader_location: 1,
+        },
+    ];
+    let buffers = [Some(crate::VertexBufferLayout {
+        array_stride: 28,
+        step_mode: wgt::VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let constants = naga::back::PipelineConstants::default();
+    let stage = |entry_point| crate::ProgrammableStage {
+        module: &shader,
+        entry_point,
+        constants: &constants,
+        zero_initialize_workgroup_memory: false,
+    };
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let make_pipeline = |write| unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &buffers,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: Some(wgt::DepthStencilState {
+                    format: wgt::TextureFormat::Depth24PlusStencil8,
+                    depth_write_enabled: Some(write),
+                    depth_compare: Some(wgt::CompareFunction::LessEqual),
+                    stencil: wgt::StencilState::default(),
+                    bias: wgt::DepthBiasState::default(),
+                }),
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs")),
+                color_targets: &targets,
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
+    let read_pipeline = make_pipeline(false);
+    let write_pipeline = make_pipeline(true);
+    let vertices = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: 9 * 28,
+                usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    let mut vertex_data = Vec::new();
+    for (z, color) in [
+        (0.75f32, [1., 0., 0., 1.]),
+        (0.25, [1., 0., 0., 1.]),
+        (0.4, [0., 1., 0., 1.]),
+    ] {
+        for (x, y) in [(-1f32, -1f32), (3., -1.), (-1., 3.)] {
+            for value in [x, y, z].into_iter().chain(color) {
+                vertex_data.extend_from_slice(&value.to_ne_bytes());
+            }
+        }
+    }
+    native.write_byte_buffer(&vertices, 0, &vertex_data)?;
+    let color_attachment = [Some(crate::ColorAttachment {
+        target: crate::Attachment {
+            view: &color_view,
+            usage: wgt::TextureUses::COLOR_TARGET,
+        },
+        depth_slice: None,
+        resolve_target: None,
+        ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+        clear_value: wgt::Color::BLUE,
+    })];
+    let clear_pass = crate::RenderPassDescriptor {
+        label: None,
+        extent,
+        sample_count: 1,
+        color_attachments: &[],
+        depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+            target: crate::Attachment {
+                view: &depth_write,
+                usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+            },
+            depth_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            stencil_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: (0.5, 0),
+        }),
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let read_pass = crate::RenderPassDescriptor {
+        label: None,
+        extent,
+        sample_count: 1,
+        color_attachments: &color_attachment,
+        depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+            target: crate::Attachment {
+                view: &depth_read,
+                usage: wgt::TextureUses::DEPTH_STENCIL_READ,
+            },
+            depth_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+            stencil_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+            clear_value: (0.5, 0),
+        }),
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let readonly_only_pass = crate::RenderPassDescriptor {
+        label: None,
+        extent,
+        sample_count: 1,
+        color_attachments: &[],
+        depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+            target: crate::Attachment {
+                view: &readonly_only_view,
+                usage: wgt::TextureUses::DEPTH_STENCIL_READ,
+            },
+            depth_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+            stencil_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+            clear_value: (0.0, 0),
+        }),
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let mut encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&readonly_only_pass).unwrap();
+        encoder.end_render_pass();
+        encoder.begin_render_pass(&clear_pass).unwrap();
+        encoder.end_render_pass();
+        encoder
+            .begin_render_pass(&read_pass)
+            .expect("read-only depth attachment");
+        encoder.set_render_pipeline(&read_pipeline);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertices, 0, None));
+        encoder.draw(0, 3, 0, 1);
+        encoder.set_scissor_rect(&crate::Rect {
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 8,
+        });
+        encoder.draw(3, 3, 0, 1);
+        encoder.draw(6, 3, 0, 1);
+        encoder.end_render_pass();
+        encoder.end_encoding().unwrap()
+    };
+    let fence = native.create_native_fence();
+    unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
+    assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+    let pixels = native.read_rgba_texture(&color, 0, 0)?;
+    for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+        let expected = if index % 8 < 4 {
+            [0, 255, 0, 255]
+        } else {
+            [0, 0, 255, 255]
+        };
+        assert_eq!(pixel, expected, "read-only depth pixel {index}");
+    }
+    unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&read_pass).unwrap();
+        encoder.set_render_pipeline(&read_pipeline);
+        encoder.set_render_pipeline(&write_pipeline);
+        encoder.end_render_pass();
+        assert!(
+            encoder.end_encoding().is_err(),
+            "write-enabled pipeline on read-only attachment"
+        );
+        let load_store = crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE;
+        for (usage, depth_ops, stencil_ops) in [
+            (
+                wgt::TextureUses::DEPTH_STENCIL_READ,
+                crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                load_store,
+            ),
+            (
+                wgt::TextureUses::DEPTH_STENCIL_READ,
+                load_store,
+                crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            ),
+            (
+                wgt::TextureUses::DEPTH_STENCIL_READ,
+                crate::AttachmentOps::LOAD_DONT_CARE | crate::AttachmentOps::STORE,
+                load_store,
+            ),
+            (
+                wgt::TextureUses::DEPTH_STENCIL_READ,
+                load_store,
+                crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE_DISCARD,
+            ),
+            (
+                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::RESOURCE,
+                load_store,
+                load_store,
+            ),
+        ] {
+            let invalid_pass = crate::RenderPassDescriptor {
+                label: None,
+                extent,
+                sample_count: 1,
+                color_attachments: &color_attachment,
+                depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                    target: crate::Attachment {
+                        view: &depth_read,
+                        usage,
+                    },
+                    depth_ops,
+                    stencil_ops,
+                    clear_value: (0.5, 0),
+                }),
+                multiview_mask: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            };
+            encoder.begin_encoding(None).unwrap();
+            assert!(
+                encoder.begin_render_pass(&invalid_pass).is_err(),
+                "usage {usage:?}, ops {depth_ops:?} {stencil_ops:?}"
+            );
+            encoder.discard_encoding();
+        }
+        let reset_depth = crate::RenderPassDescriptor {
+            depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                target: crate::Attachment {
+                    view: &depth_write,
+                    usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                },
+                depth_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                stencil_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+                clear_value: (0.3, 0),
+            }),
+            ..clear_pass
+        };
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&reset_depth).unwrap();
+        encoder.end_render_pass();
+        let write_commands = encoder.end_encoding().unwrap();
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&read_pass).unwrap();
+        encoder.set_render_pipeline(&read_pipeline);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertices, 0, None));
+        encoder.draw(6, 3, 0, 1);
+        encoder.set_scissor_rect(&crate::Rect {
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 8,
+        });
+        encoder.draw(3, 3, 0, 1);
+        encoder.end_render_pass();
+        let read_commands = encoder.end_encoding().unwrap();
+        device.destroy_texture_view(readonly_only_view);
+        device.destroy_texture(readonly);
+        device.destroy_texture_view(depth_read);
+        device.destroy_texture_view(depth_write);
+        device.destroy_texture_view(color_view);
+        device.destroy_texture(depth);
+        device.destroy_buffer(vertices);
+        device.destroy_render_pipeline(read_pipeline);
+        device.destroy_render_pipeline(write_pipeline);
+        device.destroy_pipeline_layout(layout);
+        device.destroy_shader_module(shader);
+        queue.submit(&[&write_commands], &[], (&fence, 2)).unwrap();
+        queue.submit(&[&read_commands], &[], (&fence, 3)).unwrap();
+        assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&color, 0, 0)?;
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            let expected = if index % 8 < 4 {
+                [255, 0, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            };
+            assert_eq!(pixel, expected, "read/write/read depth pixel {index}");
+        }
+        encoder.reset_all([commands, write_commands, read_commands].into_iter());
+        device.destroy_texture(color);
+    }
+    std::println!("PASS: FL9_1 read-only depth preserved (32 green, 32 blue pixels)");
     Ok(())
 }

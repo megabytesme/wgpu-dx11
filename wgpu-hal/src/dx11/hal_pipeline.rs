@@ -232,6 +232,7 @@ pub struct RenderPipeline {
     pub(super) blend: Option<ID3D11BlendState>,
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
     pub(super) depth_format: Option<wgt::TextureFormat>,
+    pub(super) depth_write: bool,
     pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
@@ -1894,6 +1895,10 @@ impl RenderPipeline {
             blend,
             depth_state,
             depth_format: desc.depth_stencil.as_ref().map(|state| state.format),
+            depth_write: desc
+                .depth_stencil
+                .as_ref()
+                .is_some_and(|state| state.depth_write_enabled.unwrap_or(false)),
             target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),
