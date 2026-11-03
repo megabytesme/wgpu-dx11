@@ -991,13 +991,18 @@ pub trait Device: WasmNotSendSync {
     unsafe fn unmap_buffer(&self, buffer: &<Self::A as Api>::Buffer);
 
     /// Indicate that CPU writes to mapped buffer memory should be made visible to the GPU.
+    /// If this fails, the requested writes must not be used by the GPU before a successful flush.
     ///
     /// # Safety
     ///
     /// - The given `buffer` must be currently mapped.
     ///
     /// - All ranges produced by `ranges` must fall within `buffer`'s size.
-    unsafe fn flush_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
+    unsafe fn flush_mapped_ranges<I>(
+        &self,
+        buffer: &<Self::A as Api>::Buffer,
+        ranges: I,
+    ) -> Result<(), DeviceError>
     where
         I: Iterator<Item = MemoryRange>;
 

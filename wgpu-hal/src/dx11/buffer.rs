@@ -30,6 +30,8 @@ pub struct NativeBuffer {
     mapping: Mutex<Option<ShadowMapping>>,
     #[cfg(feature = "dx11-test-fixture")]
     fail_next_invalidate: core::sync::atomic::AtomicBool,
+    #[cfg(feature = "dx11-test-fixture")]
+    fail_next_flush: core::sync::atomic::AtomicBool,
 }
 
 impl NativeBuffer {
@@ -41,6 +43,13 @@ impl NativeBuffer {
     #[doc(hidden)]
     pub fn test_fixture_fail_next_invalidate(&self) {
         self.fail_next_invalidate
+            .store(true, core::sync::atomic::Ordering::Release);
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_fail_next_flush(&self) {
+        self.fail_next_flush
             .store(true, core::sync::atomic::Ordering::Release);
     }
 
@@ -208,6 +217,8 @@ impl NativeDevice {
             mapping: Mutex::new(None),
             #[cfg(feature = "dx11-test-fixture")]
             fail_next_invalidate: core::sync::atomic::AtomicBool::new(false),
+            #[cfg(feature = "dx11-test-fixture")]
+            fail_next_flush: core::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -281,6 +292,16 @@ impl NativeDevice {
         if !upload
             && buffer
                 .fail_next_invalidate
+                .swap(false, core::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(Error::from_hresult(
+                windows::Win32::Foundation::E_OUTOFMEMORY,
+            ));
+        }
+        #[cfg(feature = "dx11-test-fixture")]
+        if upload
+            && buffer
+                .fail_next_flush
                 .swap(false, core::sync::atomic::Ordering::AcqRel)
         {
             return Err(Error::from_hresult(

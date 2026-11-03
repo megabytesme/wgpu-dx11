@@ -34,7 +34,11 @@ pub trait DynDevice: DynResource {
 
     unsafe fn unmap_buffer(&self, buffer: &dyn DynBuffer);
 
-    unsafe fn flush_mapped_ranges(&self, buffer: &dyn DynBuffer, ranges: &[MemoryRange]);
+    unsafe fn flush_mapped_ranges(
+        &self,
+        buffer: &dyn DynBuffer,
+        ranges: &[MemoryRange],
+    ) -> Result<(), DeviceError>;
     unsafe fn invalidate_mapped_ranges(
         &self,
         buffer: &dyn DynBuffer,
@@ -216,7 +220,11 @@ impl<D: Device + DynResource> DynDevice for D {
         unsafe { D::unmap_buffer(self, buffer) }
     }
 
-    unsafe fn flush_mapped_ranges(&self, buffer: &dyn DynBuffer, ranges: &[MemoryRange]) {
+    unsafe fn flush_mapped_ranges(
+        &self,
+        buffer: &dyn DynBuffer,
+        ranges: &[MemoryRange],
+    ) -> Result<(), DeviceError> {
         let buffer = buffer.expect_downcast_ref();
         unsafe { D::flush_mapped_ranges(self, buffer, ranges.iter().cloned()) }
     }

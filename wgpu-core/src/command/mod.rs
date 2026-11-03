@@ -1338,6 +1338,8 @@ impl CommandEncoder {
             _ => unreachable!(),
         };
 
+        self.device.fire_deferred_device_lost_invocation();
+
         let (data, error) = match res {
             Err(EncoderErrorState {
                 error,

@@ -20,7 +20,8 @@ use crate::{
     binding_model::{BindGroup, BindingError},
     device::{
         queue, resource::DeferredDestroy, BufferMapPendingClosure, Device, DeviceError,
-        DeviceMismatch, HostMap, MissingDownlevelFlags, MissingFeatures,
+        DeviceLostInvocation, DeviceMismatch, HostMap, MissingDownlevelFlags, MissingFeatures,
+        UserClosures,
     },
     hal_label,
     init_tracker::{BufferInitTracker, TextureInitTracker},
@@ -820,10 +821,13 @@ impl Buffer {
         } else {
             // We don't have a queue, so go ahead and map the buffer.
             // We can safely unwrap below since we just set the `map_state` to `BufferMapState::Waiting`.
-            let (mut operation, status) = self.map(&device.snatchable_lock.read()).unwrap();
-            if let Some(callback) = operation.callback.take() {
-                callback(status);
-            }
+            let snatch_guard = device.snatchable_lock.read();
+            let (mapping, invocation) = self.map(&snatch_guard).unwrap();
+            drop(snatch_guard);
+            let mut closures = UserClosures::default();
+            closures.mappings.push(mapping);
+            closures.device_lost_invocations.extend(invocation);
+            closures.fire();
             Ok(0)
         }
     }
@@ -911,7 +915,10 @@ impl Buffer {
     /// This function returns [`None`] only if [`Self::map_state`] is not [`BufferMapState::Waiting`].
     /// Other errors are returned within `BufferMapPendingClosure`.
     #[must_use]
-    pub(crate) fn map(&self, snatch_guard: &SnatchGuard) -> Option<BufferMapPendingClosure> {
+    pub(crate) fn map(
+        &self,
+        snatch_guard: &SnatchGuard,
+    ) -> Option<(BufferMapPendingClosure, Option<DeviceLostInvocation>)> {
         // This _cannot_ be inlined into the match. If it is, the lock will be held
         // open through the whole match, resulting in a deadlock when we try to re-lock
         // the buffer back to active.
@@ -928,7 +935,10 @@ impl Buffer {
             }
             _ => panic!("No pending mapping."),
         };
-        let status = if pending_mapping.range.start != pending_mapping.range.end {
+        let mut invocation = None;
+        let status = if let Err(error) = self.device.check_is_valid() {
+            Err(error.into())
+        } else if pending_mapping.range.start != pending_mapping.range.end {
             let host = pending_mapping.op.host;
             let size = pending_mapping.range.end - pending_mapping.range.start;
             match crate::device::map_buffer(
@@ -946,7 +956,10 @@ impl Buffer {
                     };
                     Ok(())
                 }
-                Err(e) => Err(e),
+                Err((error, lost)) => {
+                    invocation = lost;
+                    Err(error)
+                }
             }
         } else {
             *self.map_state.lock() = BufferMapState::Active {
@@ -959,7 +972,7 @@ impl Buffer {
             };
             Ok(())
         };
-        Some((pending_mapping.op, status))
+        Some(((pending_mapping.op, status), invocation))
     }
 
     // Note: This must not be called while holding a lock.
@@ -995,7 +1008,13 @@ impl Buffer {
                     });
                 }
 
-                let staging_buffer = staging_buffer.flush();
+                let staging_buffer = match staging_buffer.flush() {
+                    Ok(staging_buffer) => staging_buffer,
+                    Err(error) => {
+                        drop(snatch_guard);
+                        return Err(device.handle_hal_error(error).into());
+                    }
+                };
 
                 if let Some(queue) = device.get_queue() {
                     let region = wgt::BufferSize::new(self.size).map(|size| hal::BufferCopy {
@@ -1061,11 +1080,19 @@ impl Buffer {
                             queued: false,
                         });
                     }
-                    if !mapping.is_coherent {
-                        unsafe { device.raw().flush_mapped_ranges(raw_buf, &[range]) };
+                    let result = if !mapping.is_coherent {
+                        unsafe { device.raw().flush_mapped_ranges(raw_buf, &[range]) }
+                    } else {
+                        Ok(())
+                    };
+                    unsafe { device.raw().unmap_buffer(raw_buf) };
+                    if let Err(error) = result {
+                        drop(snatch_guard);
+                        return Err(device.handle_hal_error(error).into());
                     }
+                } else {
+                    unsafe { device.raw().unmap_buffer(raw_buf) };
                 }
-                unsafe { device.raw().unmap_buffer(raw_buf) };
             }
         }
         Ok(None)
@@ -1244,7 +1271,7 @@ unsafe impl Sync for StagingBuffer {}
 /// [`Device::pending_writes`]: crate::device::Device
 #[derive(Debug)]
 pub struct StagingBuffer {
-    raw: Box<dyn hal::DynBuffer>,
+    raw: Option<Box<dyn hal::DynBuffer>>,
     device: Arc<Device>,
     pub(crate) size: wgt::BufferSize,
     is_coherent: bool,
@@ -1263,11 +1290,16 @@ impl StagingBuffer {
 
         let raw = unsafe { device.raw().create_buffer(&stage_desc) }
             .map_err(|e| device.handle_hal_error(e))?;
-        let mapping = unsafe { device.raw().map_buffer(raw.as_ref(), 0..size.get()) }
-            .map_err(|e| device.handle_hal_error(e))?;
+        let mapping = match unsafe { device.raw().map_buffer(raw.as_ref(), 0..size.get()) } {
+            Ok(mapping) => mapping,
+            Err(error) => {
+                unsafe { device.raw().destroy_buffer(raw) };
+                return Err(device.handle_hal_error(error));
+            }
+        };
 
         let staging_buffer = StagingBuffer {
-            raw,
+            raw: Some(raw),
             device: device.clone(),
             size,
             is_coherent: mapping.is_coherent,
@@ -1329,24 +1361,33 @@ impl StagingBuffer {
         }
     }
 
-    pub(crate) fn flush(self) -> FlushedStagingBuffer {
+    pub(crate) fn flush(mut self) -> Result<FlushedStagingBuffer, hal::DeviceError> {
         let device = self.device.raw();
+        let raw = self.raw.as_ref().expect("staging buffer is mapped");
         if !self.is_coherent {
             #[allow(clippy::single_range_in_vec_init)]
             unsafe {
-                device.flush_mapped_ranges(self.raw.as_ref(), &[0..self.size.get()])
+                device.flush_mapped_ranges(raw.as_ref(), &[0..self.size.get()])?
             };
         }
-        unsafe { device.unmap_buffer(self.raw.as_ref()) };
+        unsafe { device.unmap_buffer(raw.as_ref()) };
+        let raw = self.raw.take().expect("staging buffer is mapped");
 
-        let StagingBuffer {
-            raw, device, size, ..
-        } = self;
-
-        FlushedStagingBuffer {
+        Ok(FlushedStagingBuffer {
             raw: ManuallyDrop::new(raw),
-            device,
-            size,
+            device: self.device.clone(),
+            size: self.size,
+        })
+    }
+}
+
+impl Drop for StagingBuffer {
+    fn drop(&mut self) {
+        if let Some(raw) = self.raw.take() {
+            unsafe {
+                self.device.raw().unmap_buffer(raw.as_ref());
+                self.device.raw().destroy_buffer(raw);
+            }
         }
     }
 }

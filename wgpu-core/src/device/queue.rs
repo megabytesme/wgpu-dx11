@@ -239,26 +239,22 @@ impl Queue {
         &self,
         submission_index: u64,
         snatch_guard: &SnatchGuard,
-    ) -> (
-        SmallVec<[SubmittedWorkDoneClosure; 1]>,
-        Vec<super::BufferMapPendingClosure>,
-        Vec<BlasCompactReadyPendingClosure>,
-        bool,
-    ) {
+    ) -> QueueMaintainResult {
         let mut life_tracker = self.lock_life();
         let submission_closures = life_tracker.triage_submissions(submission_index);
 
-        let mapping_closures = life_tracker.handle_mapping(snatch_guard);
+        let (mapping_closures, lost_invocations) = life_tracker.handle_mapping(snatch_guard);
         let blas_closures = life_tracker.handle_compact_read_back();
 
         let queue_empty = life_tracker.queue_empty();
 
-        (
-            submission_closures,
-            mapping_closures,
-            blas_closures,
+        QueueMaintainResult {
+            submissions: submission_closures,
+            mappings: mapping_closures,
+            blas_compact_ready: blas_closures,
+            device_lost_invocations: lost_invocations,
             queue_empty,
-        )
+        }
     }
 }
 
@@ -294,17 +290,16 @@ impl Drop for Queue {
             .load(Ordering::Acquire);
 
         let snatch_guard = self.device.snatchable_lock.read();
-        let (submission_closures, mapping_closures, blas_compact_ready_closures, queue_empty) =
-            self.maintain(last_successful_submission_index, &snatch_guard);
+        let maintain_result = self.maintain(last_successful_submission_index, &snatch_guard);
         drop(snatch_guard);
 
-        assert!(queue_empty);
+        assert!(maintain_result.queue_empty);
 
         let closures = crate::device::UserClosures {
-            mappings: mapping_closures,
-            blas_compact_ready: blas_compact_ready_closures,
-            submissions: submission_closures,
-            device_lost_invocations: SmallVec::new(),
+            mappings: maintain_result.mappings,
+            blas_compact_ready: maintain_result.blas_compact_ready,
+            submissions: maintain_result.submissions,
+            device_lost_invocations: maintain_result.device_lost_invocations,
         };
 
         closures.fire();
@@ -315,6 +310,14 @@ impl Drop for Queue {
 pub type SubmittedWorkDoneClosure = Box<dyn FnOnce() + Send + 'static>;
 #[cfg(not(send_sync))]
 pub type SubmittedWorkDoneClosure = Box<dyn FnOnce() + 'static>;
+
+pub(crate) struct QueueMaintainResult {
+    pub(crate) submissions: SmallVec<[SubmittedWorkDoneClosure; 1]>,
+    pub(crate) mappings: Vec<super::BufferMapPendingClosure>,
+    pub(crate) blas_compact_ready: Vec<BlasCompactReadyPendingClosure>,
+    pub(crate) device_lost_invocations: SmallVec<[super::DeviceLostInvocation; 1]>,
+    pub(crate) queue_empty: bool,
+}
 
 /// A texture or buffer to be freed soon.
 ///
@@ -664,7 +667,9 @@ impl Queue {
         let staging_buffer = {
             profiling::scope!("copy");
             staging_buffer.write(data);
-            staging_buffer.flush()
+            staging_buffer
+                .flush()
+                .map_err(|error| self.device.handle_hal_error(error))?
         };
 
         let snatch_guard = self.device.snatchable_lock.read();
@@ -678,11 +683,10 @@ impl Queue {
             buffer_offset,
         );
 
-        drop(snatch_guard);
-
         pending_writes.consume(staging_buffer);
 
         drop(pending_writes);
+        drop(snatch_guard);
 
         result
     }
@@ -718,7 +722,9 @@ impl Queue {
         // user. Platform validation requires that the staging buffer always
         // be freed, even if an error occurs. All paths from here must call
         // `device.pending_writes.consume`.
-        let staging_buffer = staging_buffer.flush();
+        let staging_buffer = staging_buffer
+            .flush()
+            .map_err(|error| self.device.handle_hal_error(error))?;
 
         let snatch_guard = self.device.snatchable_lock.read();
         let mut pending_writes = self.pending_writes.lock();
@@ -731,11 +737,10 @@ impl Queue {
             buffer_offset,
         );
 
-        drop(snatch_guard);
-
         pending_writes.consume(staging_buffer);
 
         drop(pending_writes);
+        drop(snatch_guard);
 
         result
     }
@@ -910,61 +915,16 @@ impl Queue {
                 .map_err(TransferError::from)?;
         }
 
-        let snatch_guard = self.device.snatchable_lock.read();
-
-        let dst_raw = dst.try_inner(&snatch_guard)?.raw();
+        {
+            let snatch_guard = self.device.snatchable_lock.read();
+            dst.try_inner(&snatch_guard)?;
+        }
 
         // This must happen after parameter validation (so that errors are reported
         // as required by the spec), but before any side effects.
         if size.width == 0 || size.height == 0 || size.depth_or_array_layers == 0 {
             log::trace!("Ignoring write_texture of size 0");
             return Ok(());
-        }
-
-        let mut pending_writes = self.pending_writes.lock();
-        let encoder = pending_writes.activate();
-
-        // If the copy does not fully cover the layers, we need to initialize to
-        // zero *first* as we don't keep track of partial texture layer inits.
-        //
-        // Strictly speaking we only need to clear the areas of a layer
-        // untouched, but this would get increasingly messy.
-        let init_layer_range = if dst.desc.dimension == wgt::TextureDimension::D3 {
-            // volume textures don't have a layer range as array volumes aren't supported
-            0..1
-        } else {
-            destination.origin.z..destination.origin.z + size.depth_or_array_layers
-        };
-        let mut dst_initialization_status = dst.initialization_status.write();
-        if dst_initialization_status.mips[destination.mip_level as usize]
-            .check(init_layer_range.clone())
-            .is_some()
-        {
-            if has_copy_partial_init_tracker_coverage(size, &destination, &dst.desc) {
-                for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
-                    .drain(init_layer_range)
-                    .collect::<Vec<core::ops::Range<u32>>>()
-                {
-                    let mut trackers = self.device.trackers.lock();
-                    crate::command::clear_texture(
-                        &dst,
-                        TextureInitRange {
-                            mip_range: destination.mip_level..(destination.mip_level + 1),
-                            layer_range,
-                        },
-                        encoder,
-                        &mut trackers.textures,
-                        &self.device.alignments,
-                        self.device.zero_buffer.as_ref(),
-                        &snatch_guard,
-                        self.device.instance_flags,
-                    )
-                    .map_err(QueueWriteError::from)?;
-                }
-            } else {
-                dst_initialization_status.mips[destination.mip_level as usize]
-                    .drain(init_layer_range);
-            }
         }
 
         let (block_width, block_height) = dst.desc.format.block_dimensions();
@@ -1029,7 +989,52 @@ impl Queue {
             staging_buffer
         };
 
-        let staging_buffer = staging_buffer.flush();
+        let staging_buffer = staging_buffer
+            .flush()
+            .map_err(|error| self.device.handle_hal_error(error))?;
+
+        let snatch_guard = self.device.snatchable_lock.read();
+        let dst_raw = dst.try_inner(&snatch_guard)?.raw();
+        let mut pending_writes = self.pending_writes.lock();
+        let encoder = pending_writes.activate();
+
+        // Partial copies require initialization of the untouched destination.
+        let init_layer_range = if dst.desc.dimension == wgt::TextureDimension::D3 {
+            0..1
+        } else {
+            destination.origin.z..destination.origin.z + size.depth_or_array_layers
+        };
+        let mut dst_initialization_status = dst.initialization_status.write();
+        if dst_initialization_status.mips[destination.mip_level as usize]
+            .check(init_layer_range.clone())
+            .is_some()
+        {
+            if has_copy_partial_init_tracker_coverage(size, &destination, &dst.desc) {
+                for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
+                    .drain(init_layer_range)
+                    .collect::<Vec<core::ops::Range<u32>>>()
+                {
+                    let mut trackers = self.device.trackers.lock();
+                    crate::command::clear_texture(
+                        &dst,
+                        TextureInitRange {
+                            mip_range: destination.mip_level..(destination.mip_level + 1),
+                            layer_range,
+                        },
+                        encoder,
+                        &mut trackers.textures,
+                        &self.device.alignments,
+                        self.device.zero_buffer.as_ref(),
+                        &snatch_guard,
+                        self.device.instance_flags,
+                    )
+                    .map_err(QueueWriteError::from)?;
+                }
+            } else {
+                dst_initialization_status.mips[destination.mip_level as usize]
+                    .drain(init_layer_range);
+            }
+        }
 
         let regions = (0..array_layer_count)
             .map(|array_layer_offset| {

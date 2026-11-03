@@ -4,6 +4,172 @@ use core::{num::NonZeroU64, time::Duration};
 use crate::{device::HostMap, global::Global, resource::BufferMapOperation};
 
 #[test]
+fn fl91_core_mapped_write_flush_failure_cleans_up() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!("Hardware: {identity:?}; requested and actual FL9_1");
+    let global = Arc::new(unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 flush failure fixture",
+            hal::dx11::Instance,
+        )
+    });
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let limits = wgt::Limits {
+        max_texture_dimension_1d: 0,
+        max_texture_dimension_2d: 8,
+        max_texture_dimension_3d: 0,
+        max_texture_array_layers: 1,
+        max_bind_groups: 1,
+        max_bind_groups_plus_vertex_buffers: 3,
+        max_bindings_per_bind_group: 64,
+        max_dynamic_uniform_buffers_per_pipeline_layout: 1,
+        max_sampled_textures_per_shader_stage: 1,
+        max_samplers_per_shader_stage: 1,
+        max_uniform_buffers_per_shader_stage: 1,
+        max_uniform_buffer_binding_size: 256,
+        max_vertex_buffers: 2,
+        max_vertex_attributes: 2,
+        max_vertex_buffer_array_stride: 20,
+        max_inter_stage_shader_variables: 2,
+        max_color_attachments: 1,
+        max_color_attachment_bytes_per_sample: 8,
+        max_buffer_size: 512 << 10,
+        max_non_sampler_bindings: 2,
+        max_buffers_and_acceleration_structures_per_shader_stage: 2,
+        ..wgt::Limits::downlevel_webgl2_defaults()
+    };
+    let exposed = hal::ExposedAdapter::<hal::dx11::Api> {
+        adapter: fixture,
+        info,
+        features: wgt::Features::empty(),
+        capabilities: hal::Capabilities {
+            limits: limits.clone(),
+            alignments: hal::Alignments {
+                buffer_copy_offset: NonZeroU64::new(4).unwrap(),
+                buffer_copy_pitch: NonZeroU64::new(256).unwrap(),
+                uniform_bounds_check_alignment: NonZeroU64::new(16).unwrap(),
+                raw_tlas_instance_size: 0,
+                ray_tracing_scratch_buffer_alignment: 0,
+                ray_tracing_pipeline_group_data_size: 0,
+                ray_tracing_pipeline_group_data_alignment: 0,
+                ray_tracing_pipeline_data_offset_alignment: 0,
+            },
+            downlevel: wgt::DownlevelCapabilities {
+                flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
+                shader_model: wgt::ShaderModel::Sm2,
+                ..Default::default()
+            },
+            cooperative_matrix_properties: Vec::new(),
+        },
+    };
+    let adapter_id = unsafe { global.create_adapter_from_hal(exposed.into(), None) };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled core device initialization");
+    let (buffer_id, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("injected mapped write flush failure")),
+            size: 64,
+            usage: wgt::BufferUsages::MAP_WRITE | wgt::BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+        },
+        None,
+    );
+    assert!(error.is_none(), "mapped write buffer creation: {error:?}");
+    let (reentrant_buffer, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("flush failure callback reentrancy")),
+            size: 64,
+            usage: wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "reentrant buffer creation: {error:?}");
+    let (lost_sender, lost_receiver) = std::sync::mpsc::channel();
+    let weak_global = Arc::downgrade(&global);
+    global.device_set_device_lost_closure(
+        device,
+        Box::new(move |reason, message| {
+            let global = weak_global.upgrade().expect("fixture remains alive");
+            let unmapped = unsafe { global.buffer_as_hal::<hal::dx11::Api>(buffer_id) }
+                .is_some_and(|buffer| !buffer.test_fixture_shadow_is_mapped());
+            global.buffer_destroy(reentrant_buffer);
+            let _ = global.device_poll(device, wgt::PollType::Poll);
+            lost_sender.send((reason, message, unmapped)).unwrap();
+        }),
+    );
+    {
+        let buffer = unsafe { global.buffer_as_hal::<hal::dx11::Api>(buffer_id) }
+            .expect("D3D11 mapped write buffer");
+        assert!(buffer.test_fixture_shadow_is_mapped());
+        buffer.test_fixture_fail_next_flush();
+    }
+    let (unmap_sender, unmap_receiver) = std::sync::mpsc::channel();
+    let unmap_global = global.clone();
+    std::thread::spawn(move || {
+        let result = unmap_global.buffer_unmap(buffer_id);
+        let _ = unmap_sender.send(result);
+    });
+    assert!(matches!(
+        unmap_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("failed flush and reentrant lost callback must return"),
+        Err(crate::resource::BufferAccessError::Device(
+            crate::device::DeviceError::OutOfMemory
+        ))
+    ));
+    let (reason, _, shadow_unmapped) = lost_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("device-lost callback");
+    assert_eq!(reason, wgt::DeviceLostReason::Unknown);
+    assert!(shadow_unmapped, "failed flush must release its HAL shadow");
+    assert!(matches!(
+        *global
+            .hub
+            .buffers
+            .get(buffer_id)
+            .get()
+            .unwrap()
+            .map_state
+            .lock(),
+        crate::resource::BufferMapState::Idle
+    ));
+    assert!(unsafe { global.buffer_as_hal::<hal::dx11::Api>(reentrant_buffer) }.is_none());
+    global.buffer_drop(buffer_id);
+    global.buffer_drop(reentrant_buffer);
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!("PASS: injected D3D11 write flush OOM returned and released shadow");
+}
+
+#[test]
 fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
@@ -24,9 +190,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         native.feature_level()
     );
 
-    let global = unsafe {
+    let global = Arc::new(unsafe {
         Global::from_hal_instance::<hal::dx11::Api>("dx11 controlled fixture", hal::dx11::Instance)
-    };
+    });
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
     assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
@@ -498,6 +664,39 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         None,
     );
     assert!(error.is_none(), "failure test buffer creation: {error:?}");
+    let (pending_map, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("map queued after device loss")),
+            size: 64,
+            usage: wgt::BufferUsages::MAP_READ | wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "pending map buffer creation: {error:?}");
+    let (reentrant_buffer, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("device-lost reentrancy buffer")),
+            size: 64,
+            usage: wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "reentrant buffer creation: {error:?}");
+    let (lost_sender, lost_receiver) = std::sync::mpsc::channel();
+    let weak_global = Arc::downgrade(&global);
+    global.device_set_device_lost_closure(
+        device,
+        Box::new(move |reason, _| {
+            let global = weak_global.upgrade().expect("fixture remains alive");
+            global.buffer_destroy(reentrant_buffer);
+            let _ = global.device_poll(device, wgt::PollType::Poll);
+            lost_sender.send(reason).unwrap();
+        }),
+    );
     {
         let buffer = unsafe { global.buffer_as_hal::<hal::dx11::Api>(failed_map) }
             .expect("D3D11 failure test buffer");
@@ -505,6 +704,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         buffer.test_fixture_fail_next_invalidate();
     }
     let (sender, receiver) = std::sync::mpsc::channel();
+    let weak_global = Arc::downgrade(&global);
     global
         .buffer_map_async(
             failed_map,
@@ -512,22 +712,81 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             Some(64),
             BufferMapOperation {
                 host: HostMap::Read,
-                callback: Some(Box::new(move |result| sender.send(result).unwrap())),
+                callback: Some(Box::new(move |result| {
+                    let global = weak_global.upgrade().expect("fixture remains alive");
+                    let unmapped = unsafe { global.buffer_as_hal::<hal::dx11::Api>(failed_map) }
+                        .is_some_and(|buffer| !buffer.test_fixture_shadow_is_mapped());
+                    sender.send((result, unmapped)).unwrap();
+                })),
             },
         )
         .expect("injected invalidate map request");
+    let (pending_sender, pending_receiver) = std::sync::mpsc::channel();
+    let weak_global = Arc::downgrade(&global);
     global
-        .device_poll(device, wgt::PollType::Poll)
+        .buffer_map_async(
+            pending_map,
+            0,
+            Some(64),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| {
+                    let global = weak_global.upgrade().expect("fixture remains alive");
+                    let unmapped = unsafe { global.buffer_as_hal::<hal::dx11::Api>(pending_map) }
+                        .is_some_and(|buffer| !buffer.test_fixture_shadow_is_mapped());
+                    pending_sender.send((result, unmapped)).unwrap();
+                })),
+            },
+        )
+        .expect("map queued behind injected failure");
+    let (poll_sender, poll_receiver) = std::sync::mpsc::channel();
+    let poll_global = global.clone();
+    std::thread::spawn(move || {
+        let result = poll_global.device_poll(device, wgt::PollType::Poll);
+        let _ = poll_sender.send(result);
+    });
+    poll_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("injected invalidate poll and reentrant device-lost callback must return")
         .expect("injected invalidate poll");
-    let result = receiver
+    let (result, shadow_unmapped) = receiver
         .recv_timeout(Duration::from_secs(10))
         .expect("injected invalidate callback");
+    assert!(
+        shadow_unmapped,
+        "failed mapping must release its HAL shadow"
+    );
     assert!(matches!(
         result,
         Err(crate::resource::BufferAccessError::Device(
             crate::device::DeviceError::OutOfMemory
         ))
     ));
+    let (pending_result, pending_unmapped) = pending_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("subsequent pending map callback");
+    assert!(
+        matches!(
+            pending_result,
+            Err(crate::resource::BufferAccessError::Device(
+                crate::device::DeviceError::Lost
+            ))
+        ),
+        "a map queued after device loss must fail: {pending_result:?}"
+    );
+    assert!(
+        pending_unmapped,
+        "a later pending map must not create a native mapping after device loss"
+    );
+    assert_eq!(
+        lost_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("reentrant device-lost callback"),
+        wgt::DeviceLostReason::Unknown
+    );
+    assert!(unsafe { global.buffer_as_hal::<hal::dx11::Api>(reentrant_buffer) }.is_none());
+    global.buffer_drop(reentrant_buffer);
+    global.buffer_drop(pending_map);
     assert!(matches!(
         receiver.try_recv(),
         Err(std::sync::mpsc::TryRecvError::Disconnected)
@@ -535,11 +794,6 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(global
         .buffer_get_mapped_range(failed_map, 0, Some(64))
         .is_err());
-    {
-        let buffer = unsafe { global.buffer_as_hal::<hal::dx11::Api>(failed_map) }
-            .expect("D3D11 failed mapping buffer");
-        assert!(!buffer.test_fixture_shadow_is_mapped());
-    }
     global.buffer_drop(failed_map);
     std::println!("PASS: injected D3D11 invalidate OOM reached map callback and released shadow");
     global.command_buffer_drop(command);

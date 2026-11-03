@@ -302,7 +302,10 @@ impl Draw {
         let staging_buffers: Vec<_> = staging_buffers
             .into_iter()
             .map(|buffer| buffer.flush())
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(|error| {
+                RenderPassErrorInner::Device(device.defer_hal_error_for_command_encoder(error))
+            })?;
 
         let mut current_metadata_entry = None;
         for batch in batches.values_mut() {

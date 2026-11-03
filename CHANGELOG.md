@@ -47,6 +47,7 @@ Bottom level categories:
 #### Hal
 
 - `Device::invalidate_mapped_ranges` now returns a `Result` so invalidation failures can be handled without exposing stale mapped data.
+- `Device::flush_mapped_ranges` now returns a `Result` so flush failures can be handled before using mapped writes on the GPU.
 - HAL adapters with occlusion query support must report the new `DownlevelFlags::OCCLUSION_QUERY` flag. Custom adapters and stored flag sets may need updating.
 
 ### Bug Fixes
@@ -57,6 +58,10 @@ Bottom level categories:
 - Reject non-finite viewport coordinates and dimensions.
 - Validate pipelines without panicking when inter-stage variable limits are zero or below built-in deductions.
 - Reject occlusion query sets on adapters that do not report query support, without losing the device.
+
+#### WebGPU
+
+- Propagate mapped buffer flush failures, release mappings on failure, and invoke device-lost callbacks after releasing the callback lock.
 
 #### naga
 

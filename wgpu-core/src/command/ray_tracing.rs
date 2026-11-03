@@ -350,6 +350,21 @@ pub(crate) fn build_acceleration_structures(
     let blas_present = !blas_storage.is_empty();
     let tlas_present = !tlas_storage.is_empty();
 
+    let staging_buffer = if tlas_present && !instance_buffer_staging_source.is_empty() {
+        let mut staging_buffer = StagingBuffer::new(
+            state.device,
+            wgt::BufferSize::new(instance_buffer_staging_source.len() as u64).unwrap(),
+        )?;
+        staging_buffer.write(&instance_buffer_staging_source);
+        Some(staging_buffer.flush().map_err(|error| {
+            BuildAccelerationStructureError::Device(
+                state.device.defer_hal_error_for_command_encoder(error),
+            )
+        })?)
+    } else {
+        None
+    };
+
     let raw_encoder = &mut state.raw_encoder;
 
     let mut blas_s_compactable = Vec::new();
@@ -375,18 +390,6 @@ pub(crate) fn build_acceleration_structures(
     );
 
     if tlas_present {
-        let staging_buffer = if !instance_buffer_staging_source.is_empty() {
-            let mut staging_buffer = StagingBuffer::new(
-                state.device,
-                wgt::BufferSize::new(instance_buffer_staging_source.len() as u64).unwrap(),
-            )?;
-            staging_buffer.write(&instance_buffer_staging_source);
-            let flushed = staging_buffer.flush();
-            Some(flushed)
-        } else {
-            None
-        };
-
         unsafe {
             if let Some(ref staging_buffer) = staging_buffer {
                 raw_encoder.transition_buffers(&[hal::BufferBarrier::<dyn hal::DynBuffer> {

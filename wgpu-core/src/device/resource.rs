@@ -250,6 +250,7 @@ pub struct Device {
     /// device.lose or by the UserCallbacks returned from maintain when the device
     /// has been destroyed and its queues are empty.
     pub(crate) device_lost_closure: Mutex<Option<DeviceLostClosure>>,
+    deferred_device_lost_invocation: Mutex<Option<DeviceLostInvocation>>,
 
     /// Stores the state of buffers and textures.
     pub(crate) trackers: Mutex<DeviceTracker>,
@@ -671,6 +672,7 @@ impl Device {
             snatchable_lock: unsafe { SnatchLock::new(rank::DEVICE_SNATCHABLE_LOCK) },
             valid: AtomicBool::new(true),
             device_lost_closure: Mutex::new(rank::DEVICE_LOST_CLOSURE, None),
+            deferred_device_lost_invocation: Mutex::new(rank::DEVICE_DEFERRED_LOST_CALLBACK, None),
             trackers: Mutex::new(
                 rank::DEVICE_TRACKERS,
                 DeviceTracker::new(ordered_buffer_usages, ordered_texture_usages),
@@ -733,7 +735,9 @@ impl Device {
         let mut staging_buffer =
             StagingBuffer::new(self, wgt::BufferSize::new(size_of_val(&data) as _).unwrap())?;
         staging_buffer.write(bytemuck::bytes_of(&data));
-        let staging_buffer = staging_buffer.flush();
+        let staging_buffer = staging_buffer
+            .flush()
+            .map_err(|error| self.handle_hal_error(error))?;
 
         let params_buffer = self.default_external_texture_params_buffer.as_ref();
         let queue = self.get_queue().unwrap();
@@ -839,6 +843,47 @@ impl Device {
         DeviceError::from_hal(error)
     }
 
+    pub(crate) fn defer_hal_error(
+        &self,
+        error: hal::DeviceError,
+    ) -> (DeviceError, Option<DeviceLostInvocation>) {
+        self.valid.store(false, Ordering::Release);
+        let invocation =
+            self.device_lost_closure
+                .lock()
+                .take()
+                .map(|closure| DeviceLostInvocation {
+                    closure,
+                    reason: DeviceLostReason::Unknown,
+                    message: error.to_string(),
+                });
+        (DeviceError::from_hal(error), invocation)
+    }
+
+    pub(crate) fn defer_hal_error_for_command_encoder(
+        &self,
+        error: hal::DeviceError,
+    ) -> DeviceError {
+        let (device_error, invocation) = self.defer_hal_error(error);
+        if let Some(invocation) = invocation {
+            let previous = self
+                .deferred_device_lost_invocation
+                .lock()
+                .replace(invocation);
+            debug_assert!(previous.is_none());
+        }
+        device_error
+    }
+
+    pub(crate) fn fire_deferred_device_lost_invocation(&self) {
+        let invocation = self.deferred_device_lost_invocation.lock().take();
+        if let Some(invocation) = invocation {
+            let mut closures = UserClosures::default();
+            closures.device_lost_invocations.push(invocation);
+            closures.fire();
+        }
+    }
+
     pub fn handle_hal_error_with_nonfatal_oom(&self, error: hal::DeviceError) -> DeviceError {
         match error {
             hal::DeviceError::OutOfMemory => DeviceError::from_hal(error),
@@ -925,7 +970,11 @@ impl Device {
         poll_type: wgt::PollType<crate::SubmissionIndex>,
     ) -> (UserClosures, Result<wgt::PollStatus, WaitIdleError>) {
         let snatch_guard = self.snatchable_lock.read();
-        let maintain_result = self.maintain(poll_type, snatch_guard);
+        let (mut user_closures, result) = self.maintain(poll_type, snatch_guard);
+
+        if let Some(invocation) = self.deferred_device_lost_invocation.lock().take() {
+            user_closures.device_lost_invocations.push(invocation);
+        }
 
         self.lose_if_oom();
 
@@ -933,7 +982,7 @@ impl Device {
         // to avoid holding on to them until the next device poll.
         self.deferred_resource_destruction();
 
-        maintain_result
+        (user_closures, result)
     }
 
     /// Check the current status of the GPU and process any submissions that have
@@ -1045,12 +1094,11 @@ impl Device {
         let mut queue_empty = false;
         if let Some(queue) = self.get_queue() {
             let queue_result = queue.maintain(current_finished_submission, &snatch_guard);
-            (
-                user_closures.submissions,
-                user_closures.mappings,
-                user_closures.blas_compact_ready,
-                queue_empty,
-            ) = queue_result;
+            user_closures.submissions = queue_result.submissions;
+            user_closures.mappings = queue_result.mappings;
+            user_closures.blas_compact_ready = queue_result.blas_compact_ready;
+            user_closures.device_lost_invocations = queue_result.device_lost_invocations;
+            queue_empty = queue_result.queue_empty;
             // DEADLOCK PREVENTION: We must drop `snatch_guard` before `queue` goes out of scope.
             //
             // `Queue::drop` acquires the snatch guard. If we still hold it when `queue` is dropped
@@ -1281,7 +1329,19 @@ impl Device {
                 }
             } else {
                 let snatch_guard: SnatchGuard = self.snatchable_lock.read();
-                map_buffer(&buffer, 0, map_size, HostMap::Write, &snatch_guard)?
+                let result = map_buffer(&buffer, 0, map_size, HostMap::Write, &snatch_guard);
+                drop(snatch_guard);
+                match result {
+                    Ok(mapping) => mapping,
+                    Err((error, invocation)) => {
+                        if let Some(invocation) = invocation {
+                            let mut closures = UserClosures::default();
+                            closures.device_lost_invocations.push(invocation);
+                            closures.fire();
+                        }
+                        return Err(error.into());
+                    }
+                }
             };
             *buffer.map_state.lock() = resource::BufferMapState::Active {
                 mapping,
@@ -1348,25 +1408,34 @@ impl Device {
             });
         }
 
-        let mapping = unsafe {
+        let mapping = match unsafe {
             device
                 .raw()
                 .map_buffer(raw_buf, offset..offset + u64::try_from(data.len()).unwrap())
-        }
-        .map_err(|e| device.handle_hal_error(e))?;
+        } {
+            Ok(mapping) => mapping,
+            Err(error) => {
+                drop(snatch_guard);
+                return Err(device.handle_hal_error(error).into());
+            }
+        };
 
         unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), mapping.ptr.as_ptr(), data.len()) };
 
-        if !mapping.is_coherent {
+        let flush_result = if !mapping.is_coherent {
             #[allow(clippy::single_range_in_vec_init)]
             unsafe {
                 device
                     .raw()
                     .flush_mapped_ranges(raw_buf, &[offset..offset + data.len() as u64])
-            };
-        }
+            }
+        } else {
+            Ok(())
+        };
 
         unsafe { device.raw().unmap_buffer(raw_buf) };
+        drop(snatch_guard);
+        flush_result.map_err(|e| device.handle_hal_error(e))?;
 
         Ok(())
     }
@@ -5347,9 +5416,8 @@ impl Device {
 
         log::debug!("configuring surface with {config:?}");
 
+        let mut user_callbacks = UserClosures::default();
         let error = 'error: {
-            // User callbacks must not be called while we are holding locks.
-            let user_callbacks;
             {
                 if let Err(e) = self.check_is_valid() {
                     break 'error e.into();
@@ -5447,6 +5515,10 @@ impl Device {
                     }
                 }
 
+                if let Err(error) = self.check_is_valid() {
+                    break 'error error.into();
+                }
+
                 // All textures must be destroyed before the surface can be re-configured.
                 if let Some(present) = surface.presentation.lock().take() {
                     if present.acquired_texture.is_some() {
@@ -5492,6 +5564,7 @@ impl Device {
             return None;
         };
 
+        user_callbacks.fire();
         Some(error)
     }
 
@@ -5503,7 +5576,8 @@ impl Device {
         self.valid.store(false, Ordering::Release);
 
         // 1) Resolve the GPUDevice device.lost promise.
-        if let Some(device_lost_closure) = self.device_lost_closure.lock().take() {
+        let device_lost_closure = self.device_lost_closure.lock().take();
+        if let Some(device_lost_closure) = device_lost_closure {
             device_lost_closure(DeviceLostReason::Unknown, message.to_string());
         }
 

@@ -145,13 +145,17 @@ impl crate::Device for Device {
             .expect("invalid D3D11 buffer unmap")
     }
 
-    unsafe fn flush_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
+    unsafe fn flush_mapped_ranges<I>(
+        &self,
+        buffer: &<Self::A as Api>::Buffer,
+        ranges: I,
+    ) -> Result<(), DeviceError>
     where
         I: Iterator<Item = MemoryRange>,
     {
         self.native
             .sync_buffer_shadow(buffer, ranges, true)
-            .expect("D3D11 mapped buffer flush failed")
+            .map_err(device_error)
     }
 
     unsafe fn invalidate_mapped_ranges<I>(
@@ -1064,7 +1068,9 @@ mod tests {
         let expected: Vec<u8> = (0..64).collect();
         unsafe {
             core::ptr::copy_nonoverlapping(expected.as_ptr(), mapping.ptr.as_ptr(), expected.len());
-            dynamic.flush_mapped_ranges(staging.as_ref(), &[0..64]);
+            dynamic
+                .flush_mapped_ranges(staging.as_ref(), &[0..64])
+                .unwrap();
             dynamic.unmap_buffer(staging.as_ref());
         }
         let descriptor: CommandEncoderDescriptor<dyn DynQueue> = CommandEncoderDescriptor {
@@ -1186,7 +1192,9 @@ mod tests {
         };
         unsafe {
             core::ptr::write_bytes(src_map.ptr.as_ptr(), 0x7a, 16);
-            dynamic.flush_mapped_ranges(source.as_ref(), &[12..20]);
+            dynamic
+                .flush_mapped_ranges(source.as_ref(), &[12..20])
+                .unwrap();
         }
         native.copy_byte_buffer(src, dst, &region)?;
         unsafe {
@@ -1204,7 +1212,9 @@ mod tests {
         );
         unsafe {
             core::ptr::write_bytes(src_map.ptr.as_ptr().add(4), 0x33, 8);
-            dynamic.flush_mapped_ranges(source.as_ref(), &[12..20]);
+            dynamic
+                .flush_mapped_ranges(source.as_ref(), &[12..20])
+                .unwrap();
         }
         native.copy_byte_buffer(src, dst, &region)?;
         unsafe {
@@ -1218,7 +1228,9 @@ mod tests {
         assert_eq!(&second[12..], &[0x11; 4]);
         unsafe {
             core::ptr::write_bytes(src_map.ptr.as_ptr(), 0xab, 16);
-            dynamic.flush_mapped_ranges(source.as_ref(), &[0..32]);
+            dynamic
+                .flush_mapped_ranges(source.as_ref(), &[0..32])
+                .unwrap();
         }
         native.copy_byte_buffer(src, dst, &region)?;
         unsafe {

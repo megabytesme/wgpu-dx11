@@ -560,7 +560,13 @@ impl crate::Device for super::Device {
         unsafe { buffer.resource.Unmap(0, None) };
     }
 
-    unsafe fn flush_mapped_ranges<I>(&self, _buffer: &super::Buffer, _ranges: I) {}
+    unsafe fn flush_mapped_ranges<I>(
+        &self,
+        _buffer: &super::Buffer,
+        _ranges: I,
+    ) -> Result<(), crate::DeviceError> {
+        Ok(())
+    }
     unsafe fn invalidate_mapped_ranges<I>(
         &self,
         _buffer: &super::Buffer,

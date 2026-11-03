@@ -112,11 +112,14 @@ define_lock_ranks! {
         COMMAND_ALLOCATOR_FREE_ENCODERS,
         BUFFER_POOL,
         DEVICE_TRACE,
+        DEVICE_DEFERRED_LOST_CALLBACK,
         DEVICE_USAGE_SCOPES,
         HUB_OTHER,
         SHARED_TRACKER_INDEX_ALLOCATOR_INNER,
     }
     rank DEVICE_SNATCHABLE_LOCK "Device::snatchable_lock" followed by {
+        DEVICE_LOST_CLOSURE,
+        DEVICE_DEFERRED_LOST_CALLBACK,
         BUFFER_MAP_STATE,
         DEVICE_COMMAND_INDICES,
         QUEUE_PENDING_WRITES,
@@ -160,6 +163,7 @@ define_lock_ranks! {
         TEXTURE_CLEAR_MODE,
     }
     rank QUEUE_LIFE_TRACKER "Queue::life_tracker" followed by {
+        DEVICE_LOST_CLOSURE,
         BUFFER_MAP_STATE,
         BUFFER_INITIALIZATION_STATUS,
         BUFFER_POOL,
@@ -213,6 +217,7 @@ define_lock_ranks! {
     // Ranks not connected to the graph, alphabetical.
     rank BLAS_BUILT_INDEX "Blas::built_index" followed by { }
     rank DEVICE_LOST_CLOSURE "Device::device_lost_closure" followed by { }
+    rank DEVICE_DEFERRED_LOST_CALLBACK "Device::deferred_device_lost_invocation" followed by { }
     rank IDENTITY_MANAGER_VALUES "IdentityManager::values" followed by { }
     rank RESOURCE_POOL_INNER "ResourcePool::inner" followed by { }
     rank SURFACE_PRESENTATION "Surface::presentation" followed by { }

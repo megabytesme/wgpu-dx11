@@ -396,20 +396,27 @@ impl LifetimeTracker {
     pub(crate) fn handle_mapping(
         &mut self,
         snatch_guard: &SnatchGuard,
-    ) -> Vec<super::BufferMapPendingClosure> {
+    ) -> (
+        Vec<super::BufferMapPendingClosure>,
+        SmallVec<[super::DeviceLostInvocation; 1]>,
+    ) {
         if self.ready_to_map.is_empty() {
-            return Vec::new();
+            return (Vec::new(), SmallVec::new());
         }
         let mut pending_callbacks: Vec<super::BufferMapPendingClosure> =
             Vec::with_capacity(self.ready_to_map.len());
+        let mut lost = SmallVec::new();
 
         for buffer in self.ready_to_map.drain(..) {
             match buffer.map(snatch_guard) {
-                Some(cb) => pending_callbacks.push(cb),
+                Some((cb, invocation)) => {
+                    pending_callbacks.push(cb);
+                    lost.extend(invocation);
+                }
                 None => continue,
             }
         }
-        pending_callbacks
+        (pending_callbacks, lost)
     }
     /// Read back compact sizes from the BLASes in `self.ready_to_compact`.
     ///

@@ -190,7 +190,7 @@ impl UserClosures {
             .extend(other.device_lost_invocations);
     }
 
-    fn fire(self) {
+    pub(crate) fn fire(self) {
         // Note: this logic is specifically moved out of `handle_mapping()` in order to
         // have nothing locked by the time we execute users callback code.
 
@@ -232,13 +232,18 @@ pub(crate) fn map_buffer(
     size: BufferAddress,
     kind: HostMap,
     snatch_guard: &SnatchGuard,
-) -> Result<hal::BufferMapping, BufferAccessError> {
+) -> Result<hal::BufferMapping, (BufferAccessError, Option<DeviceLostInvocation>)> {
     let raw_device = buffer.device.raw();
-    let raw_buffer = buffer.try_raw(snatch_guard)?;
+    let raw_buffer = buffer
+        .try_raw(snatch_guard)
+        .map_err(|error| (error.into(), None))?;
     let mapping = unsafe {
         raw_device
             .map_buffer(raw_buffer, offset..offset + size)
-            .map_err(|e| buffer.device.handle_hal_error(e))?
+            .map_err(|e| {
+                let (error, invocation) = buffer.device.defer_hal_error(e);
+                (error.into(), invocation)
+            })?
     };
 
     if !mapping.is_coherent && kind == HostMap::Read {
@@ -247,7 +252,8 @@ pub(crate) fn map_buffer(
             unsafe { raw_device.invalidate_mapped_ranges(raw_buffer, &[offset..offset + size]) }
         {
             unsafe { raw_device.unmap_buffer(raw_buffer) };
-            return Err(buffer.device.handle_hal_error(error).into());
+            let (error, invocation) = buffer.device.defer_hal_error(error);
+            return Err((error.into(), invocation));
         }
     }
 
@@ -269,42 +275,36 @@ pub(crate) fn map_buffer(
 
     let mapped = unsafe { core::slice::from_raw_parts_mut(mapping.ptr.as_ptr(), size as usize) };
 
-    // We can't call flush_mapped_ranges in this case, so we can't drain the uninitialized ranges either
-    if !mapping.is_coherent
+    let needs_flush = !mapping.is_coherent
         && kind == HostMap::Read
-        && !buffer.usage.contains(wgt::BufferUsages::MAP_WRITE)
-    {
-        for uninitialized in buffer
-            .initialization_status
-            .write()
-            .uninitialized(offset..(size + offset))
-        {
-            // The mapping's pointer is already offset, however we track the
-            // uninitialized range relative to the buffer's start.
+        && buffer.usage.contains(wgt::BufferUsages::MAP_WRITE);
+    let needs_drain = mapping.is_coherent || kind != HostMap::Read || needs_flush;
+    let flush_result = {
+        let mut initialization = buffer.initialization_status.write();
+        let mut result = Ok(());
+        for uninitialized in initialization.uninitialized(offset..(size + offset)) {
             let fill_range =
                 (uninitialized.start - offset) as usize..(uninitialized.end - offset) as usize;
             mapped[fill_range].fill(0);
-        }
-    } else {
-        for uninitialized in buffer
-            .initialization_status
-            .write()
-            .drain(offset..(size + offset))
-        {
-            // The mapping's pointer is already offset, however we track the
-            // uninitialized range relative to the buffer's start.
-            let fill_range =
-                (uninitialized.start - offset) as usize..(uninitialized.end - offset) as usize;
-            mapped[fill_range].fill(0);
-
-            // NOTE: This is only possible when MAPPABLE_PRIMARY_BUFFERS is enabled.
-            if !mapping.is_coherent
-                && kind == HostMap::Read
-                && buffer.usage.contains(wgt::BufferUsages::MAP_WRITE)
-            {
-                unsafe { raw_device.flush_mapped_ranges(raw_buffer, &[uninitialized]) };
+            if needs_flush {
+                #[allow(clippy::single_range_in_vec_init)]
+                if let Err(error) =
+                    unsafe { raw_device.flush_mapped_ranges(raw_buffer, &[uninitialized]) }
+                {
+                    result = Err(error);
+                    break;
+                }
             }
         }
+        if result.is_ok() && needs_drain {
+            initialization.drain(offset..(size + offset)).for_each(drop);
+        }
+        result
+    };
+    if let Err(error) = flush_result {
+        unsafe { raw_device.unmap_buffer(raw_buffer) };
+        let (error, invocation) = buffer.device.defer_hal_error(error);
+        return Err((error.into(), invocation));
     }
 
     Ok(mapping)

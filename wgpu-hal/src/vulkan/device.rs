@@ -1142,7 +1142,11 @@ impl crate::Device for super::Device {
         }
     }
 
-    unsafe fn flush_mapped_ranges<I>(&self, buffer: &super::Buffer, ranges: I)
+    unsafe fn flush_mapped_ranges<I>(
+        &self,
+        buffer: &super::Buffer,
+        ranges: I,
+    ) -> Result<(), crate::DeviceError>
     where
         I: Iterator<Item = crate::MemoryRange>,
     {
@@ -1154,8 +1158,9 @@ impl crate::Device for super::Device {
                         &smallvec::SmallVec::<[vk::MappedMemoryRange; 32]>::from_iter(vk_ranges),
                     )
             }
-            .unwrap();
+            .map_err(super::map_host_device_oom_and_lost_err)?;
         }
+        Ok(())
     }
     unsafe fn invalidate_mapped_ranges<I>(
         &self,

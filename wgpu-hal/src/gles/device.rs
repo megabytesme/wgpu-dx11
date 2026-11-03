@@ -839,7 +839,11 @@ impl crate::Device for super::Device {
             }
         }
     }
-    unsafe fn flush_mapped_ranges<I>(&self, buffer: &super::Buffer, ranges: I)
+    unsafe fn flush_mapped_ranges<I>(
+        &self,
+        buffer: &super::Buffer,
+        ranges: I,
+    ) -> Result<(), crate::DeviceError>
     where
         I: Iterator<Item = crate::MemoryRange>,
     {
@@ -862,6 +866,7 @@ impl crate::Device for super::Device {
                 }
             }
         }
+        Ok(())
     }
     unsafe fn invalidate_mapped_ranges<I>(
         &self,
