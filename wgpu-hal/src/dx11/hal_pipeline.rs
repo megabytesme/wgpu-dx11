@@ -280,21 +280,10 @@ fn source_alpha_blend_factor(
 }
 
 fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::DeviceError> {
-    use windows::Win32::{
-        Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
-        Graphics::Dxgi::{
-            DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-            DXGI_ERROR_DRIVER_INTERNAL_ERROR,
-        },
-    };
-    match error.code() {
-        E_OUTOFMEMORY => Some(crate::DeviceError::OutOfMemory),
-        DXGI_ERROR_DEVICE_HUNG
-        | DXGI_ERROR_DEVICE_REMOVED
-        | DXGI_ERROR_DEVICE_RESET
-        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Some(crate::DeviceError::Lost),
-        E_INVALIDARG => None,
-        _ => Some(crate::DeviceError::Unexpected),
+    if error.code() == windows::Win32::Foundation::E_INVALIDARG {
+        None
+    } else {
+        Some(super::hal_device::classify_device_error(error.code()))
     }
 }
 

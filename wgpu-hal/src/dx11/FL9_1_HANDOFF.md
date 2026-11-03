@@ -419,3 +419,12 @@ warnings. Latest checkpoint: `a13699edd` (`core: test FL9_1 depth-only render
 prepass`). Continue the device-loss/render-pass audit. Keep public adapter and
 HWND surface exposure disabled until capability truthfulness and presentation
 reentrancy are resolved.
+
+The latest verified increment centralizes DXGI HRESULT classification and
+recognizes `DXGI_ERROR_DRIVER_INTERNAL_ERROR` as device loss in queue, device,
+surface and optional pipeline-variant paths. CPU error-mapping tests passed;
+the strict private HAL suite passed 289 tests and the strict fixture-enabled
+core suite passed 70 tests on the RTX 3090 Ti forced to FL9_1. This does not
+simulate actual device removal. The follow-up audit must cover teardown and
+failure recovery while preserving the existing public adapter and presentation
+gates.

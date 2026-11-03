@@ -9,12 +9,6 @@ use core::{borrow::Borrow, ffi::c_void, num::NonZeroIsize, time::Duration};
 use parking_lot::{Condvar, Mutex};
 use windows::{
     core::{AgileReference, IUnknown, Interface},
-    Win32::{
-        Foundation::E_OUTOFMEMORY,
-        Graphics::Dxgi::{
-            DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-        },
-    },
     UI::Core::ICoreWindow,
 };
 
@@ -101,20 +95,14 @@ impl Drop for SurfaceTexture {
 }
 
 fn surface_error(error: windows::core::Error) -> crate::SurfaceError {
-    let code = error.code();
     log::error!("D3D11 surface error: {error}");
-    if code == E_OUTOFMEMORY {
-        crate::SurfaceError::Device(crate::DeviceError::OutOfMemory)
-    } else if [
-        DXGI_ERROR_DEVICE_HUNG,
-        DXGI_ERROR_DEVICE_REMOVED,
-        DXGI_ERROR_DEVICE_RESET,
-    ]
-    .contains(&code)
-    {
-        crate::SurfaceError::Device(crate::DeviceError::Lost)
-    } else {
-        crate::SurfaceError::Other("D3D11 window swapchain operation failed")
+    match super::hal_device::classify_device_error(error.code()) {
+        error @ (crate::DeviceError::OutOfMemory | crate::DeviceError::Lost) => {
+            crate::SurfaceError::Device(error)
+        }
+        crate::DeviceError::Unexpected => {
+            crate::SurfaceError::Other("D3D11 window swapchain operation failed")
+        }
     }
 }
 
@@ -893,6 +881,17 @@ mod hwnd_surface_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn driver_internal_error_marks_surface_device_lost() {
+        let error = windows::core::Error::from_hresult(
+            windows::Win32::Graphics::Dxgi::DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+        );
+        assert!(matches!(
+            surface_error(error),
+            crate::SurfaceError::Device(crate::DeviceError::Lost)
+        ));
+    }
 
     #[test]
     fn surface_operations_fail_fast_and_release_on_unwind() {

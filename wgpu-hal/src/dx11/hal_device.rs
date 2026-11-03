@@ -31,21 +31,21 @@ impl Device {
     }
 }
 
-pub(super) fn device_error(error: windows::core::Error) -> DeviceError {
+pub(super) fn classify_device_error(code: windows::core::HRESULT) -> DeviceError {
     use windows::Win32::{
         Foundation::E_OUTOFMEMORY,
         Graphics::Dxgi::{
             DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+            DXGI_ERROR_DRIVER_INTERNAL_ERROR,
         },
     };
-    let code = error.code();
-    log::error!("D3D11 device failure: {error}");
     if code == E_OUTOFMEMORY {
         DeviceError::OutOfMemory
     } else if [
         DXGI_ERROR_DEVICE_HUNG,
         DXGI_ERROR_DEVICE_REMOVED,
         DXGI_ERROR_DEVICE_RESET,
+        DXGI_ERROR_DRIVER_INTERNAL_ERROR,
     ]
     .contains(&code)
     {
@@ -53,6 +53,11 @@ pub(super) fn device_error(error: windows::core::Error) -> DeviceError {
     } else {
         DeviceError::Unexpected
     }
+}
+
+pub(super) fn device_error(error: windows::core::Error) -> DeviceError {
+    log::error!("D3D11 device failure: {error}");
+    classify_device_error(error.code())
 }
 
 fn transient_texture_usage_valid(usage: wgt::TextureUses, depth: bool) -> bool {
@@ -641,6 +646,31 @@ mod tests {
     use crate::{DynCommandBuffer, DynDevice, DynQueue};
     use alloc::vec;
     use windows::core::Interface;
+
+    #[test]
+    fn device_error_classification_covers_driver_reset_and_memory_failure() {
+        use windows::Win32::{
+            Foundation::{E_FAIL, E_OUTOFMEMORY},
+            Graphics::Dxgi::{
+                DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+                DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+            },
+        };
+
+        for code in [
+            DXGI_ERROR_DEVICE_HUNG,
+            DXGI_ERROR_DEVICE_REMOVED,
+            DXGI_ERROR_DEVICE_RESET,
+            DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+        ] {
+            assert_eq!(classify_device_error(code), DeviceError::Lost);
+        }
+        assert_eq!(
+            classify_device_error(E_OUTOFMEMORY),
+            DeviceError::OutOfMemory
+        );
+        assert_eq!(classify_device_error(E_FAIL), DeviceError::Unexpected);
+    }
 
     #[test]
     fn metadata_texture_view_ranges_check_bounds_and_aspect() {

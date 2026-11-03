@@ -310,9 +310,10 @@ Before the change, the DX11 unit-test command below reported 64 passed and 0
 failed. Those tests did not report their hardware execution individually; the
 native diagnostic separately confirmed that the RTX could create FL9_1. A
 successful suite total therefore should not be interpreted as 64 proven GPU
-tests. CPU-only cases include feature-level ordering, queue error mapping and
-the no-adapter guard; other cases exercise native GPU paths when an adapter is
-available. The same suite reported 64 passed and 0 failed after the change.
+tests. CPU-only cases include feature-level ordering, queue error mapping
+(including `DXGI_ERROR_DRIVER_INTERNAL_ERROR`) and the no-adapter guard; other
+cases exercise native GPU paths when an adapter is available. The same suite
+reported 64 passed and 0 failed after the change.
 The DX11-disabled DX12 GPU tests for mapped-buffer copy/readback and capability
 validation each passed on the RTX 3090 Ti. Repeat the focused command to
 establish fresh hardware evidence.

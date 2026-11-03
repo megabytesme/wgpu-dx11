@@ -1,10 +1,6 @@
 //! Restricted D3D11 HAL queue; no adapter exposes it yet.
-use super::{Api, device::NativeDevice};
+use super::{device::NativeDevice, Api};
 use alloc::sync::Arc;
-use windows::Win32::{
-    Foundation::E_OUTOFMEMORY,
-    Graphics::Dxgi::{DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET},
-};
 
 /// A serialized immediate-context queue for the restricted command path.
 #[derive(Debug)]
@@ -21,24 +17,6 @@ impl Queue {
     #[allow(dead_code)]
     pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
         Arc::ptr_eq(&self.device, device)
-    }
-}
-
-fn device_error(error: windows::core::Error) -> crate::DeviceError {
-    let code = error.code();
-    log::error!("D3D11 queue failure: {error}");
-    if code == E_OUTOFMEMORY {
-        crate::DeviceError::OutOfMemory
-    } else if [
-        DXGI_ERROR_DEVICE_HUNG,
-        DXGI_ERROR_DEVICE_REMOVED,
-        DXGI_ERROR_DEVICE_RESET,
-    ]
-    .contains(&code)
-    {
-        crate::DeviceError::Lost
-    } else {
-        crate::DeviceError::Unexpected
     }
 }
 
@@ -61,7 +39,7 @@ impl crate::Queue for Queue {
         }
         self.device
             .submit_copy_batches_signaled(command_buffers, signal_fence.0, signal_fence.1)
-            .map_err(device_error)
+            .map_err(super::hal_device::device_error)
     }
 
     unsafe fn present(
@@ -73,7 +51,9 @@ impl crate::Queue for Queue {
     }
 
     unsafe fn wait_for_idle(&self) -> Result<(), crate::DeviceError> {
-        self.device.wait_for_copy_idle().map_err(device_error)
+        self.device
+            .wait_for_copy_idle()
+            .map_err(super::hal_device::device_error)
     }
 
     unsafe fn get_timestamp_period(&self) -> f32 {
@@ -85,31 +65,40 @@ impl crate::Queue for Queue {
 mod tests {
     use super::*;
     use crate::{
+        dx11::{enumerate_native_adapters, FeatureLevel},
         DynCommandBuffer, DynQueue,
-        dx11::{FeatureLevel, enumerate_native_adapters},
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
 
     #[test]
     fn queue_errors_report_memory_and_lost_devices() {
-        use windows::Win32::Foundation::E_FAIL;
+        use windows::Win32::{
+            Foundation::{E_FAIL, E_OUTOFMEMORY},
+            Graphics::Dxgi::{
+                DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+                DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+            },
+        };
         for code in [
             DXGI_ERROR_DEVICE_HUNG,
             DXGI_ERROR_DEVICE_REMOVED,
             DXGI_ERROR_DEVICE_RESET,
+            DXGI_ERROR_DRIVER_INTERNAL_ERROR,
         ] {
             assert_eq!(
-                device_error(windows::core::Error::from_hresult(code)),
+                super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
                 crate::DeviceError::Lost
             );
         }
         assert_eq!(
-            device_error(windows::core::Error::from_hresult(E_OUTOFMEMORY)),
+            super::super::hal_device::device_error(windows::core::Error::from_hresult(
+                E_OUTOFMEMORY,
+            )),
             crate::DeviceError::OutOfMemory
         );
         assert_eq!(
-            device_error(windows::core::Error::from_hresult(E_FAIL)),
+            super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
             crate::DeviceError::Unexpected
         );
     }

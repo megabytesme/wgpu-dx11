@@ -1693,3 +1693,28 @@ render prepass`).
 Next: continue auditing device-loss and command submission error paths around
 render passes. Public adapter exposure remains gated; this core fixture is
 unsafe, test-only and still confirms ordinary enumeration is empty.
+
+The command/device-loss audit found that pipeline creation classified
+`DXGI_ERROR_DRIVER_INTERNAL_ERROR` as `DeviceError::Lost`, but device, queue and
+surface paths did not. Microsoft documents this HRESULT as a driver failure
+that puts the device into the removed state. A shared HRESULT classifier now
+handles it consistently with device hung/removed/reset and preserves
+out-of-memory and unexpected-error distinctions. Optional viewport shader
+creation still treats `E_INVALIDARG` as a nonfatal unsupported variant, and
+surface errors still map ordinary failures to `SurfaceError::Other`.
+
+CPU regressions passed for the shared classifier, queue mapping, surface
+mapping and optional viewport shader error handling. The strict D3D11 suite
+passed 289/289 tests with two filtered on the RTX 3090 Ti at requested/actual
+FL9_1; several expected unsupported-shader cases report a deliberate rendering
+skip after asserting rejection. The fixture-enabled core suite passed 70/70
+with strict hardware required, and its focused public-wgpu/core fixture also
+passed on the same hardware, including texture transfers and all depth/stencil
+render cases. `cargo build --offline -p wgpu-hal --no-default-features
+--features dx11` passed. HAL Clippy passed with the same ten pre-existing
+warnings. Formatting and `git diff --check` passed. These tests validate
+classification logic, not recovery from an induced physical device removal.
+
+Checkpoint pending: shared DXGI device-loss classification. Device teardown,
+loss during live presentation and debug-layer diagnostics remain unaudited;
+public adapter and surface exposure remain gated.
