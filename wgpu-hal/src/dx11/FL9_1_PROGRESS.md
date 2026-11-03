@@ -128,3 +128,16 @@ FL9_x negative-origin failure in
 <https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_viewport>.
 Negative origins and rectangles extending beyond the target remain unresolved
 public integration blockers; historical FL9 drivers have not been tested.
+Zero-sized viewport support was checkpointed as `4afbb21da`.
+
+Core's viewport validation previously accepted NaN position and size values;
+the new public Noop regression reproduced acceptance before the fix. Core now
+rejects non-finite coordinates and dimensions before the HAL call, with
+accurate diagnostics. The test covers NaN and both infinities in all six
+fields and checks zero-sized, negative-origin and out-of-target finite controls.
+The full public validation suite passed 90 tests before the final additional
+controls and diagnostic wording; the focused test passed afterward. The 66
+core library tests, targeted core Clippy and the rebuilt DX12
+`wgpu_gpu::encoder::drop_encoder_after_error` hardware test passed. Vulkan
+loader warnings about a missing OBS layer JSON are pre-existing. This shared
+validation fix affects all native wgpu-core backends.

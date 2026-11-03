@@ -47,6 +47,7 @@ Bottom level categories:
 #### Validation
 
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
+- Reject non-finite viewport coordinates and dimensions.
 
 ## v30.0.1 (2026-08-21)
 

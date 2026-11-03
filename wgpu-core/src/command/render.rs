@@ -3013,7 +3013,9 @@ fn set_viewport(
 ) -> Result<(), RenderPassErrorInner> {
     api_log!("RenderPass::set_viewport {rect:?}");
 
-    if rect.w < 0.0
+    if !rect.w.is_finite()
+        || !rect.h.is_finite()
+        || rect.w < 0.0
         || rect.h < 0.0
         || rect.w > state.pass.base.device.limits.max_texture_dimension_2d as f32
         || rect.h > state.pass.base.device.limits.max_texture_dimension_2d as f32
@@ -3028,7 +3030,9 @@ fn set_viewport(
 
     let max_viewport_range = state.pass.base.device.limits.max_texture_dimension_2d as f32 * 2.0;
 
-    if rect.x < -max_viewport_range
+    if !rect.x.is_finite()
+        || !rect.y.is_finite()
+        || rect.x < -max_viewport_range
         || rect.y < -max_viewport_range
         || rect.x + rect.w > max_viewport_range - 1.0
         || rect.y + rect.h > max_viewport_range - 1.0

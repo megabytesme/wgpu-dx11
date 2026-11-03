@@ -117,9 +117,9 @@ pub enum RenderCommandError {
     ImmediateData(#[from] ImmediateUploadError),
     #[error(transparent)]
     BindingError(#[from] BindingError),
-    #[error("Viewport size {{ w: {w}, h: {h} }} greater than device's requested `max_texture_dimension_2d` limit {max}, or less than zero")]
+    #[error("Viewport size {{ w: {w}, h: {h} }} is non-finite, greater than device's requested `max_texture_dimension_2d` limit {max}, or less than zero")]
     InvalidViewportRectSize { w: f32, h: f32, max: u32 },
-    #[error("Viewport has invalid rect {rect:?} for device's requested `max_texture_dimension_2d` limit; Origin less than -2 * `max_texture_dimension_2d` ({min}), or rect extends past 2 * `max_texture_dimension_2d` - 1 ({max})")]
+    #[error("Viewport has invalid rect {rect:?} for device's requested `max_texture_dimension_2d` limit; origin is non-finite or less than -2 * `max_texture_dimension_2d` ({min}), or rect extends past 2 * `max_texture_dimension_2d` - 1 ({max})")]
     InvalidViewportRectPosition { rect: Rect<f32>, min: f32, max: f32 },
     #[error("Viewport minDepth {0} and/or maxDepth {1} are not in [0, 1]")]
     InvalidViewportDepth(f32, f32),

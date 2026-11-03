@@ -11,7 +11,6 @@ FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
 current implementation and validation matrix.
 
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
-The empty compute pass and unused blend-constant fix was checkpointed as
-`26825d96e`. Do not infer full FL9_1 or
+Zero-sized viewport support was checkpointed as `4afbb21da`. Do not infer full FL9_1 or
 historical-device compatibility from modern GPU tests. Keep public adapter
 enumeration gated until core-valid operations are safe.
