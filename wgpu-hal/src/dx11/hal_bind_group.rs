@@ -231,7 +231,6 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     if uniforms.len() > MAX_UNIFORMS
         || textures.len() > MAX_TEXTURES
         || samplers.len() > MAX_SAMPLERS
-        || textures.is_empty() != samplers.is_empty()
     {
         return Err(crate::DeviceError::Unexpected);
     }
@@ -626,7 +625,8 @@ mod tests {
         assert!(mappings
             .iter()
             .all(|binding| binding.slot != 13 && binding.slot != 15));
-        assert!(group_kind(&[texture]).is_err());
+        assert!(group_kind(&[texture]).is_ok());
+        assert!(group_kind(&[sampler]).is_ok());
         assert!(group_kind(&[
             texture,
             wgt::BindGroupLayoutEntry {

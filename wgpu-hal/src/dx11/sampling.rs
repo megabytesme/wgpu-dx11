@@ -26,6 +26,13 @@ pub(super) struct SamplingResources {
     pub samplers_wrap: Vec<bool>,
 }
 
+impl SamplingResources {
+    pub(super) fn append(&mut self, other: &Self) {
+        self.textures.extend_from_slice(&other.textures);
+        self.samplers_wrap.extend_from_slice(&other.samplers_wrap);
+    }
+}
+
 pub(super) fn relationships(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
@@ -168,6 +175,117 @@ mod tests {
             ],
             samplers_wrap: alloc::vec![true, false],
         }
+    }
+
+    #[test]
+    fn cross_group_relationships_use_global_slots_and_actual_pairs() {
+        let module = naga::front::wgsl::parse_str(r#"
+            @group(0) @binding(7) var pot: texture_2d<f32>;
+            @group(1) @binding(7) var npot: texture_2d<f32>;
+            @group(2) @binding(7) var wrap: sampler;
+            @group(3) @binding(7) var clamp: sampler;
+            fn sample_pair(t: texture_2d<f32>, s: sampler) -> vec4f { return textureSample(t, s, vec2f(0.5)); }
+            @fragment fn valid() -> @location(0) vec4f { return sample_pair(pot, wrap) + sample_pair(npot, clamp); }
+            @fragment fn invalid() -> @location(0) vec4f { return sample_pair(npot, wrap); }
+        "#).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let bindings: Vec<_> = [
+            (0, 0, ShaderBindingKind::Texture2dFloat),
+            (1, 1, ShaderBindingKind::Texture2dFloat),
+            (2, 0, ShaderBindingKind::Sampler),
+            (3, 1, ShaderBindingKind::Sampler),
+        ]
+        .into_iter()
+        .map(|(group, slot, kind)| ShaderBinding {
+            binding: naga::ResourceBinding { group, binding: 7 },
+            slot,
+            kind,
+        })
+        .collect();
+        let get = |entry| {
+            relationships(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+                &bindings,
+            )
+            .unwrap()
+        };
+        let valid = get("valid");
+        assert_eq!(
+            valid
+                .iter()
+                .map(|p| (
+                    p.texture.group,
+                    p.sampler.group,
+                    p.texture_slot,
+                    p.sampler_slot
+                ))
+                .collect::<Vec<_>>(),
+            [(0, 2, 0, 0), (1, 3, 1, 1)]
+        );
+        let mut combined = SamplingResources::default();
+        for group in [
+            SamplingResources {
+                textures: alloc::vec![TextureInfo {
+                    size: [4, 8],
+                    mip_levels: 1
+                }],
+                samplers_wrap: alloc::vec![],
+            },
+            SamplingResources {
+                textures: alloc::vec![TextureInfo {
+                    size: [3, 5],
+                    mip_levels: 1
+                }],
+                samplers_wrap: alloc::vec![],
+            },
+            SamplingResources {
+                textures: alloc::vec![],
+                samplers_wrap: alloc::vec![true],
+            },
+            SamplingResources {
+                textures: alloc::vec![],
+                samplers_wrap: alloc::vec![false],
+            },
+        ] {
+            combined.append(&group);
+        }
+        assert!(compatible(
+            &valid,
+            &combined,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        let invalid = get("invalid");
+        assert!(!compatible(
+            &invalid,
+            &combined,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        assert!(!compatible(
+            &invalid,
+            &combined,
+            FeatureLevel::L9_1,
+            Query::Unavailable(-1)
+        ));
+        assert!(compatible(
+            &invalid,
+            &combined,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+        combined.samplers_wrap.pop();
+        assert!(!compatible(
+            &valid,
+            &combined,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
     }
 
     #[test]

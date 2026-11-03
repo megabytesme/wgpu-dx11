@@ -292,8 +292,9 @@ orders, verifies initial zero depth, checks independent depth-only and
 stencil-only clears, and checks an Always/no-write pipeline. Ten 8x8 readbacks
 are compared in full. It also checks attachment extent and pipeline mismatch
 rejection. Stencil tests and read-only/aspect views are not implemented.
-Additional passes cover all color write masks, face culling and a sampled
-texture in group 0 with a uniform in group 1.
+Additional passes cover all color write masks, face culling, sampled textures
+and samplers in separate groups, sampler and pipeline transitions, alias
+rejection, and coexistence with a uniform in another group.
 
 ### FL9_1 default buffer bind flags
 

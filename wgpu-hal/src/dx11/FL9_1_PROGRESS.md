@@ -350,5 +350,31 @@ The strict 167-test private suite passed; some older tests may skip internally.
 An independent review found no concrete correctness defect. Dynamic offsets
 here have private four-byte alignment, not a public wgpu limit. Each group bind
 allocates scratch buffers and each draw stages and maps all bound uniforms;
-this is correctness-first and can stall substantially. Sampled bindings remain
-restricted to group 0, and public adapter exposure remains disabled.
+this is correctness-first and can stall substantially. At that checkpoint,
+sampled bindings remained restricted to group 0; public exposure was disabled.
+
+The multiple-uniform-group implementation was checkpointed as `a914c9a1f`.
+Current work extends sampled textures and samplers to separate logical groups,
+using the same pipeline-wide native register plan and flattening current
+per-group metadata for shader-relationship and conditional-NPOT validation.
+Synthetic tests cover helper-derived cross-group pairs, unused invalid
+cross-products and unavailable versus positive NPOT queries. Strict GPU tests
+sample a patterned texture using samplers in different groups, switch the
+sampler and pipeline slots during a pass, combine two sampled textures across
+five groups, use a shared sampler and multiple samplers for one texture, retain
+resources after destruction, and reject a later-group
+render-target feedback alias, a missing group and an incompatible group.
+The checked pixels distinguish [0,96,32,255], [64,0,0,255] and
+[32,96,32,255]. These tests use a modern driver and do not establish legacy
+conditional-NPOT hardware behavior. A test descriptor initially used the wrong
+flags type; compilation caught it and the corrected focused GPU test passed.
+The first full-suite run then had 167 passes and one failure: an old test still
+expected a sampled layout at group 1 to be rejected. That layout is now
+supported; its expectation was updated and the full suite passed 168 tests,
+with two filtered. Afterward, added shared- and multiple-sampler GPU cases
+passed the focused test; the latter checked [32,48,16,255] over 64 pixels.
+The shared-sampler test was strengthened after review so that the second
+patterned texture also distinguishes clamp from repeat; its 64 pixels matched
+[16,56,48,255] on the forced-FL9_1 device.
+Targeted Clippy passed with ten existing warnings after fixing a new style
+warning, and the core zero-adapter test passed.

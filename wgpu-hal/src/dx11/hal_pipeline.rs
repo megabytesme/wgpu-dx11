@@ -430,7 +430,7 @@ mod tests {
                 immediate_size: 0,
             })
         }
-        .is_err());
+        .is_ok());
         let attributes = [wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
             offset: 0,
@@ -634,15 +634,9 @@ impl PipelineLayout {
         owner: Arc<NativeDevice>,
         desc: &crate::PipelineLayoutDescriptor<super::hal_bind_group::BindGroupLayout>,
     ) -> Result<Self, crate::DeviceError> {
-        for (index, layout) in desc.bind_group_layouts.iter().enumerate() {
-            if let Some(layout) = layout {
-                if !layout.belongs_to(&owner)
-                    || (index != 0
-                        && (layout.kind.textures.iter().any(Option::is_some)
-                            || layout.kind.samplers.iter().any(Option::is_some)))
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
+        for layout in desc.bind_group_layouts.iter().flatten() {
+            if !layout.belongs_to(&owner) {
+                return Err(crate::DeviceError::Unexpected);
             }
         }
         // Core supplies these D3D12-specific root-constant flags on every

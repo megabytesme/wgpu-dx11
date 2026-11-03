@@ -50,10 +50,11 @@ uploads a texture through mapped-buffer and recorded-copy paths, records a
 sampled triangle through the HAL encoder, checks a backbuffer pixel and presents. This sampled shader uses unchecked runtime behavior; the path does
 not provide general shaders, render passes, or WebGPU.
 
-The same restricted encoder can bind one validated fragment-stage 2D float
-texture and sampler. On feature level 9, non-power-of-two textures reject
-repeat/mirror addressing; unsupported layouts and texture/attachment aliasing
-are rejected rather than silently rendered incorrectly. FL9_1/9_2 support the
+The restricted encoder can bind up to eight fragment-stage 2D float textures
+and sixteen samplers across private bind groups. Used texture/sampler pairs
+are checked for conditional non-power-of-two restrictions unless the device
+positively reports unrestricted support. Unsupported layouts and texture/attachment
+aliasing are rejected. FL9_1/9_2 support the
 default 0..32 sampler LOD range only for validated single-mip views; other
 non-native clamp ranges remain restricted.
 
@@ -62,15 +63,16 @@ and replayed in queue order. They use staging and synchronous CPU mapping on
 D3D11, so these paths may stall; unsupported subresources and layouts fail.
 
 A private uniform-range prototype stages each ordinary logical buffer range and
-updates a separate constant buffer in full before binding. Group 0 supports up
-to thirteen static or dynamic uniform slots, including alongside sampled textures and
-samplers. Shader-profile constant and instruction limits can be lower than the
+updates a separate constant buffer in full before binding. Up to eight groups
+support thirteen static or dynamic uniform slots in total, including alongside
+sampled textures and samplers. Shader-profile constant and instruction limits can be lower than the
 layout slot count. When no minimum binding size is
 provided, each draw checks the bound range against the shader's required size.
 Dynamic offsets are checked and captured at binding time. Checked uniform shaders reject dynamic
 indexing in reachable functions; other checked buffer/storage bindings remain
 unsupported.
-The staging path may stall and avoids D3D11's partial-update restriction.
+Each group bind creates scratch buffers and each draw stages the bound ranges;
+this avoids D3D11's partial-update restriction but may stall substantially.
 
 The original WGSL fixture in `wgpu-hal/tests/dx11/fixtures` covers a checked
 two-texture overlay, alpha blending, inversion and pixel readback. Run its

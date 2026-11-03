@@ -29,12 +29,19 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         @group(0) @binding(7) var image: texture_2d<f32>;
         @group(0) @binding(42) var image_sampler: sampler;
         @group(1) @binding(33) var<uniform> tint: vec4f;
+        @group(2) @binding(7) var late_image: texture_2d<f32>;
+        @group(3) @binding(42) var late_sampler: sampler;
+        @group(4) @binding(7) var second_image: texture_2d<f32>;
         struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }
         @vertex fn vs(@location(0) p: vec3f, @location(1) color: vec4f) -> Out {
             return Out(vec4f(p, 1.0), color);
         }
         @fragment fn fs(in: Out) -> @location(0) vec4f { return in.color * textureSample(image, image_sampler, vec2f(0.5)); }
         @fragment fn fs_tint(in: Out) -> @location(0) vec4f { return in.color * textureSample(image, image_sampler, vec2f(0.5)) * tint; }
+        @fragment fn fs_cross(in: Out) -> @location(0) vec4f { return in.color * textureSample(late_image, late_sampler, vec2f(1.25, 0.5)) * tint; }
+        @fragment fn fs_cross2(in: Out) -> @location(0) vec4f { return in.color * (textureSample(late_image, late_sampler, vec2f(1.25, 0.5)) * 0.5 + textureSample(second_image, image_sampler, vec2f(1.25, 0.5)) * 0.5) * tint; }
+        @fragment fn fs_shared(in: Out) -> @location(0) vec4f { return in.color * (textureSample(late_image, late_sampler, vec2f(1.25, 0.5)) * 0.5 + textureSample(second_image, late_sampler, vec2f(1.25, 0.5)) * 0.5) * tint; }
+        @fragment fn fs_multi_sampler(in: Out) -> @location(0) vec4f { return in.color * (textureSample(late_image, late_sampler, vec2f(1.25, 0.5)) * 0.5 + textureSample(late_image, image_sampler, vec2f(1.25, 0.5)) * 0.5) * tint; }
     "#,
     )
     .unwrap();
@@ -125,6 +132,70 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             })
             .unwrap()
     };
+    let texture_only_layout = unsafe {
+        device
+            .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                label: None,
+                flags: crate::BindGroupLayoutFlags::empty(),
+                entries: &group_entries[..1],
+            })
+            .unwrap()
+    };
+    let sampler_only_layout = unsafe {
+        device
+            .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                label: None,
+                flags: crate::BindGroupLayoutFlags::empty(),
+                entries: &group_entries[1..],
+            })
+            .unwrap()
+    };
+    let cross_layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[
+                    Some(&sampler_only_layout),
+                    Some(&tint_layout),
+                    Some(&texture_only_layout),
+                    Some(&sampler_only_layout),
+                ],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let cross_layout2 = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[
+                    None,
+                    Some(&tint_layout),
+                    Some(&texture_only_layout),
+                    Some(&sampler_only_layout),
+                ],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let cross_layout3 = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[
+                    Some(&sampler_only_layout),
+                    Some(&tint_layout),
+                    Some(&texture_only_layout),
+                    Some(&sampler_only_layout),
+                    Some(&texture_only_layout),
+                ],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
     assert!(unsafe {
         device.create_pipeline_layout(&crate::PipelineLayoutDescriptor {
             label: None,
@@ -133,7 +204,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             immediate_size: 0,
         })
     }
-    .is_err());
+    .is_ok());
     let attrs = [
         wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x3,
@@ -258,7 +329,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                     vertex_stage: stage("vs"),
                 },
                 primitive: wgt::PrimitiveState::default(),
-                depth_stencil: Some(no_write),
+                depth_stencil: Some(no_write.clone()),
                 multisample: wgt::MultisampleState::default(),
                 fragment_stage: Some(stage("fs_tint")),
                 color_targets: &[Some(wgt::TextureFormat::Rgba8Unorm.into())],
@@ -267,6 +338,84 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             })
             .unwrap()
     };
+    let cross_pipeline = unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &cross_layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &vertex_layout,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: Some(no_write.clone()),
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs_cross")),
+                color_targets: &[Some(wgt::TextureFormat::Rgba8Unorm.into())],
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
+    let cross_pipeline2 = unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &cross_layout2,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &vertex_layout,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: Some(no_write.clone()),
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs_cross")),
+                color_targets: &[Some(wgt::TextureFormat::Rgba8Unorm.into())],
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
+    let cross_pipeline3 = unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &cross_layout3,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &vertex_layout,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: Some(no_write.clone()),
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs_cross2")),
+                color_targets: &[Some(wgt::TextureFormat::Rgba8Unorm.into())],
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
+    let make_cross_pipeline = |entry| unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &cross_layout3,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &vertex_layout,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: Some(no_write.clone()),
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage(entry)),
+                color_targets: &[Some(wgt::TextureFormat::Rgba8Unorm.into())],
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
+    let shared_pipeline = make_cross_pipeline("fs_shared");
+    let multi_sampler_pipeline = make_cross_pipeline("fs_multi_sampler");
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -287,7 +436,9 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device
             .create_texture(&descriptor(
                 wgt::TextureFormat::Rgba8Unorm,
-                wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                wgt::TextureUses::COLOR_TARGET
+                    | wgt::TextureUses::COPY_SRC
+                    | wgt::TextureUses::RESOURCE,
             ))
             .unwrap()
     };
@@ -334,6 +485,34 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         wgt::TextureFormat::Rgba8Unorm,
         wgt::TextureUses::COLOR_TARGET,
     );
+    let alias_view = view(
+        &color,
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUses::RESOURCE,
+    );
+    let alias_bindings = [crate::TextureBinding {
+        view: &alias_view,
+        usage: wgt::TextureUses::RESOURCE,
+    }];
+    let alias_entries = [crate::BindGroupEntry {
+        binding: 7,
+        resource_index: 0,
+        count: 1,
+    }];
+    let alias_group = unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &texture_only_layout,
+                buffers: &[],
+                textures: &alias_bindings,
+                samplers: &[],
+                entries: &alias_entries,
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
     let depth_view = view(
         &depth_texture,
         wgt::TextureFormat::Depth24PlusStencil8,
@@ -437,6 +616,104 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             })
             .unwrap()
     };
+    let mut late_desc = descriptor(
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+    );
+    late_desc.size.width = 2;
+    late_desc.size.height = 1;
+    let late_texture = unsafe { device.create_texture(&late_desc).unwrap() };
+    native.write_rgba_texture(&late_texture, 0, 0, &[128, 0, 0, 255, 0, 192, 64, 255])?;
+    let late_view = view(
+        &late_texture,
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUses::RESOURCE,
+    );
+    let wrap_sampler = unsafe {
+        device
+            .create_sampler(&crate::SamplerDescriptor {
+                label: None,
+                address_modes: [
+                    wgt::AddressMode::Repeat,
+                    wgt::AddressMode::ClampToEdge,
+                    wgt::AddressMode::ClampToEdge,
+                ],
+                mag_filter: wgt::FilterMode::Nearest,
+                min_filter: wgt::FilterMode::Nearest,
+                mipmap_filter: wgt::MipmapFilterMode::Nearest,
+                lod_clamp: 0.0..f32::MAX,
+                compare: None,
+                anisotropy_clamp: 1,
+                border_color: None,
+            })
+            .unwrap()
+    };
+    let late_bindings = [crate::TextureBinding {
+        view: &late_view,
+        usage: wgt::TextureUses::RESOURCE,
+    }];
+    let wrap_bindings = [&wrap_sampler];
+    let clamp_bindings = [&sampler];
+    let late_group = unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &texture_only_layout,
+                buffers: &[],
+                textures: &late_bindings,
+                samplers: &[],
+                entries: &group_bindings[..1],
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
+    let second_texture = unsafe { device.create_texture(&late_desc).unwrap() };
+    native.write_rgba_texture(
+        &second_texture,
+        0,
+        0,
+        &[128, 192, 64, 255, 64, 32, 128, 255],
+    )?;
+    let second_view = view(
+        &second_texture,
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUses::RESOURCE,
+    );
+    let second_bindings = [crate::TextureBinding {
+        view: &second_view,
+        usage: wgt::TextureUses::RESOURCE,
+    }];
+    let second_group = unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &texture_only_layout,
+                buffers: &[],
+                textures: &second_bindings,
+                samplers: &[],
+                entries: &group_bindings[..1],
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
+    let make_sampler_group = |samplers: &[&super::super::hal_sampler::Sampler]| unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &sampler_only_layout,
+                buffers: &[],
+                textures: &[],
+                samplers,
+                entries: &group_bindings[1..],
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
+    let wrap_group = make_sampler_group(&wrap_bindings);
+    let clamp_group = make_sampler_group(&clamp_bindings);
     let vertex = unsafe {
         device
             .create_buffer(&crate::BufferDescriptor {
@@ -569,6 +846,40 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         encoder.set_render_pipeline(&pipeline);
         encoder.end_render_pass();
         assert!(encoder.end_encoding().is_err());
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&no_depth).unwrap();
+        encoder.set_bind_group(&cross_layout, 2, &alias_group, &[]);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        let valid_depth = crate::RenderPassDescriptor {
+            depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                target: crate::Attachment {
+                    view: &depth_view,
+                    usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                },
+                depth_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                stencil_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                clear_value: (1.0, 0),
+            }),
+            ..no_depth
+        };
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&valid_depth).unwrap();
+        encoder.set_render_pipeline(&cross_pipeline);
+        encoder.set_bind_group(&cross_layout, 0, &wrap_group, &[]);
+        encoder.set_bind_group(&cross_layout, 1, &tint_group, &[]);
+        encoder.set_bind_group(&cross_layout, 2, &late_group, &[]);
+        encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+        encoder.draw(6, 3, 0, 1);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&valid_depth).unwrap();
+        encoder.set_bind_group(&cross_layout, 3, &late_group, &[]);
+        encoder.end_render_pass();
+        assert!(encoder.end_encoding().is_err());
+        device.destroy_bind_group(alias_group);
+        device.destroy_texture_view(alias_view);
         device.destroy_texture_view(other_view);
         device.destroy_texture(other_depth);
     }
@@ -732,7 +1043,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         commands.push(command);
     }
-    for case in 0..27 {
+    for case in 0..31 {
         let attachments = [Some(crate::ColorAttachment {
             target: crate::Attachment {
                 view: &color_view,
@@ -821,6 +1132,59 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                     encoder.set_bind_group(&tinted_layout, 1, &tint_group, &[]);
                     encoder.draw(6, 3, 0, 1);
                 }
+                27 => {
+                    encoder.set_bind_group(&cross_layout, 3, &clamp_group, &[]);
+                    encoder.set_bind_group(&cross_layout, 2, &late_group, &[]);
+                    encoder.set_bind_group(&cross_layout, 1, &tint_group, &[]);
+                    encoder.set_bind_group(&cross_layout, 0, &wrap_group, &[]);
+                    encoder.set_render_pipeline(&cross_pipeline);
+                    encoder.set_scissor_rect(&crate::Rect {
+                        x: 0,
+                        y: 0,
+                        w: 2,
+                        h: 8,
+                    });
+                    encoder.draw(6, 3, 0, 1);
+                    encoder.set_bind_group(&cross_layout, 3, &wrap_group, &[]);
+                    encoder.set_scissor_rect(&crate::Rect {
+                        x: 2,
+                        y: 0,
+                        w: 2,
+                        h: 8,
+                    });
+                    encoder.draw(6, 3, 0, 1);
+                    encoder.set_bind_group(&cross_layout, 3, &clamp_group, &[]);
+                    encoder.set_render_pipeline(&cross_pipeline2);
+                    encoder.set_scissor_rect(&crate::Rect {
+                        x: 4,
+                        y: 0,
+                        w: 2,
+                        h: 8,
+                    });
+                    encoder.draw(6, 3, 0, 1);
+                    encoder.set_render_pipeline(&cross_pipeline);
+                    encoder.set_scissor_rect(&crate::Rect {
+                        x: 6,
+                        y: 0,
+                        w: 2,
+                        h: 8,
+                    });
+                    encoder.draw(6, 3, 0, 1);
+                }
+                28..=30 => {
+                    encoder.set_bind_group(&cross_layout3, 4, &second_group, &[]);
+                    encoder.set_bind_group(&cross_layout3, 3, &clamp_group, &[]);
+                    encoder.set_bind_group(&cross_layout3, 2, &late_group, &[]);
+                    encoder.set_bind_group(&cross_layout3, 1, &tint_group, &[]);
+                    encoder.set_bind_group(&cross_layout3, 0, &wrap_group, &[]);
+                    encoder.set_render_pipeline(match case {
+                        28 => &cross_pipeline3,
+                        29 => &shared_pipeline,
+                        30 => &multi_sampler_pipeline,
+                        _ => unreachable!(),
+                    });
+                    encoder.draw(6, 3, 0, 1);
+                }
                 _ => unreachable!(),
             }
             encoder.end_render_pass();
@@ -833,6 +1197,15 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device.destroy_bind_group(group);
         device.destroy_bind_group(tint_group);
         device.destroy_buffer(tint_buffer);
+        device.destroy_bind_group(late_group);
+        device.destroy_bind_group(second_group);
+        device.destroy_texture_view(second_view);
+        device.destroy_texture(second_texture);
+        device.destroy_bind_group(wrap_group);
+        device.destroy_bind_group(clamp_group);
+        device.destroy_sampler(wrap_sampler);
+        device.destroy_texture_view(late_view);
+        device.destroy_texture(late_texture);
         device.destroy_sampler(sampler);
         device.destroy_texture_view(sampled_view);
         device.destroy_texture(sampled_texture);
@@ -860,6 +1233,11 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                         25 if i % 8 < 4 => [128, 0, 0, 255],
                         25 => [0, 0, 255, 0],
                         26 => [64, 96, 32, 255],
+                        27 if (2..4).contains(&(i % 8)) => [64, 0, 0, 255],
+                        27 => [0, 96, 32, 255],
+                        28 => [32, 96, 32, 255],
+                        29 => [16, 56, 48, 255],
+                        30 => [32, 48, 16, 255],
                         _ => unreachable!(),
                     };
                     assert_eq!(pixel, expected, "cull case {bits}, pixel {i}");

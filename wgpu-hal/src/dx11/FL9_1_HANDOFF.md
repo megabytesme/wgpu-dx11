@@ -22,7 +22,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 167 tests; older
+operations are safe. The latest combined strict suite passed 168 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -50,6 +50,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `4bba5f9c53e1ed70fa8569cc9ed7eeec30f06a0f` | Single-target color write masks |
 | `f8bd5183a770dd7e81568516f6a3e3411a8de7d8` | Triangle face culling and winding |
 | `f4df16d8b` | Pipeline-wide register planning |
+| `a914c9a1f95f7806069051deef55630b9a8244f5` | Private multi-group uniform bindings |
 
 ## What is and is not usable
 
@@ -75,8 +76,7 @@ vertex layouts, resource shapes and bindings need implementation or safe
 validation. Private HAL errors can currently surface as device loss. Clipped
 viewport emulation can exceed the FXC instruction budget, and the tested FXC
 profile rejects fragment-position and front-facing inputs. Stencil operations,
-read-only depth, depth comparisons other than Always/LessEqual, sampled resources
-outside group 0,
+read-only depth, depth comparisons other than Always/LessEqual,
 broader formats and mipmaps remain incomplete. FL9_1 does not guarantee
 separate-alpha blending, and the existing private blend modes have not been
 shown portable to historical drivers. Native compute and UAV storage are not
@@ -108,14 +108,17 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,st
 cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --features dx11
 ```
 
-The strict private suite most recently passed 167 tests with two filtered;
+The strict private suite most recently passed 168 tests with two filtered;
 some older tests can skip internally. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,
 three transition regions, zero color writes with depth writes and masked
 additive blending. Multiple uniform groups, dynamic offsets, changed register
 plans, and group-0 texture sampling with a group-1 uniform also passed strict
-GPU readback. The focused hidden HWND test read BGRA [0,0,255,255] and
+GPU readback. Cross-group textures and samplers, shared and multiple samplers,
+transitions and feedback rejection have also been exercised; see the progress
+log and `git status` for checkpoint status. The focused hidden HWND test read
+BGRA [0,0,255,255] and
 reported successful present and recreation. Core's zero-adapter test passed;
 targeted Clippy completed with ten existing warnings. Earlier work also ran
 Naga, core, public Noop validation and targeted DX12 regressions as recorded
@@ -129,7 +132,7 @@ mapping error paths and surface thread reentrancy require additional audit.
 
 Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
-sound presentation synchronization design, core/HAL contract coverage and
-cross-group sampled resources while continuing verified FL9_1 increments.
+sound presentation synchronization design and core/HAL contract coverage while
+continuing verified FL9_1 increments.
 Only begin higher feature levels after the requested FL9_1 contract is met;
 retain the shared capability-driven architecture when doing so.

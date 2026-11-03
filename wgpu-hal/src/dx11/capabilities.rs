@@ -95,6 +95,8 @@ pub(super) struct BackendCapabilities {
     pub sparse_texture_sampler_bindings: bool,
     pub sampled_textures_per_group: u32,
     pub samplers_per_group: u32,
+    pub sampled_textures_total: u32,
+    pub samplers_total: u32,
     pub uniform_bindings_per_group: u32,
     pub uniform_bindings_total: u32,
     pub uniform_bind_groups: u32,
@@ -122,10 +124,12 @@ impl BackendCapabilities {
         sparse_texture_sampler_bindings: true,
         sampled_textures_per_group: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_per_group: super::hal_bind_group::MAX_SAMPLERS as u32,
+        sampled_textures_total: super::hal_bind_group::MAX_TEXTURES as u32,
+        samplers_total: super::hal_bind_group::MAX_SAMPLERS as u32,
         uniform_bindings_per_group: super::hal_bind_group::MAX_UNIFORMS as u32,
         uniform_bindings_total: super::hal_bind_group::MAX_UNIFORMS as u32,
         uniform_bind_groups: crate::MAX_BIND_GROUPS as u32,
-        sampled_bindings_group_zero_only: true,
+        sampled_bindings_group_zero_only: false,
         dynamic_uniform_offsets: true,
         compute: false,
         storage: false,
@@ -312,7 +316,14 @@ mod tests {
             crate::MAX_BIND_GROUPS as u32
         );
         assert_eq!(fl9.backend.uniform_bindings_total, 13);
-        assert!(fl9.backend.sampled_bindings_group_zero_only);
+        assert!(!fl9.backend.sampled_bindings_group_zero_only);
+        assert_eq!(
+            (
+                fl9.backend.sampled_textures_total,
+                fl9.backend.samplers_total
+            ),
+            (8, 16)
+        );
         assert_eq!(
             (
                 fl9.backend.sampled_textures_per_group,

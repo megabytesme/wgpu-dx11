@@ -59,21 +59,31 @@ struct BoundGroup {
 }
 
 impl RenderState {
-    fn sampling_compatible(&self, level: super::device::FeatureLevel) -> bool {
+    fn resources_compatible(&self, level: super::device::FeatureLevel) -> bool {
+        if !self.bindings_compatible() {
+            return false;
+        }
         if self.sampling_pairs.is_empty() {
             return true;
         }
-        self.bound_groups
-            .first()
-            .and_then(Option::as_ref)
-            .is_some_and(|group| {
-                super::sampling::compatible(
-                    &self.sampling_pairs,
-                    &group.resources.sampling,
-                    level,
-                    self.full_npot,
-                )
-            })
+        let Some(plan) = &self.active_plan else {
+            return false;
+        };
+        let mut resources = super::sampling::SamplingResources::default();
+        for (index, expected) in plan.groups().iter().enumerate() {
+            let Some(expected) = expected else { continue };
+            if *expected == super::hal_bind_group::GroupKind::EMPTY {
+                continue;
+            }
+            let Some(group) = self.bound_groups.get(index).and_then(Option::as_ref) else {
+                return false;
+            };
+            if group.kind != *expected {
+                return false;
+            }
+            resources.append(&group.resources.sampling);
+        }
+        super::sampling::compatible(&self.sampling_pairs, &resources, level, self.full_npot)
     }
 
     fn bindings_compatible(&self) -> bool {
@@ -94,6 +104,8 @@ impl RenderState {
             if bound.resources.uniforms.len() != expected.uniforms.iter().flatten().count()
                 || bound.resources.textures.len() != expected.textures.iter().flatten().count()
                 || bound.resources.samplers.len() != expected.samplers.iter().flatten().count()
+                || bound.resources.sampling.textures.len() != bound.resources.textures.len()
+                || bound.resources.sampling.samplers_wrap.len() != bound.resources.samplers.len()
                 || bound.ranges.len() != bound.resources.uniforms.len()
             {
                 return false;
@@ -956,8 +968,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     .vertex_shaders
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
-            || !render.bindings_compatible()
-            || !render.sampling_compatible(self.device.feature_level())
+            || !render.resources_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
             || required.is_none_or(|required| required > *bytes)
@@ -1026,8 +1037,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     .vertex_shaders
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
-            || !render.bindings_compatible()
-            || !render.sampling_compatible(self.device.feature_level())
+            || !render.resources_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
             || base_vertex != 0
