@@ -465,6 +465,10 @@ impl CommandBuffer {
                         source_box,
                     } => uniform.execute(context, *slot, *visibility, source_box)?,
                     NativeCommand::RefreshSampledTextures { textures } => {
+                        let mut targets = [None];
+                        let mut depth = None;
+                        context.OMGetRenderTargets(Some(&mut targets), Some(&mut depth));
+                        context.OMSetRenderTargets(None, None);
                         context.PSSetShaderResources(
                             0,
                             Some(&[None, None, None, None, None, None, None, None]),
@@ -472,6 +476,14 @@ impl CommandBuffer {
                         for texture in textures {
                             texture.execute(context);
                         }
+                        context.OMSetRenderTargets(
+                            if targets[0].is_some() {
+                                Some(&targets)
+                            } else {
+                                None
+                            },
+                            depth.as_ref(),
+                        );
                     }
                     NativeCommand::SetTexture { slot, texture } => {
                         context.PSSetShaderResources(*slot, Some(&[Some(texture.clone())]));

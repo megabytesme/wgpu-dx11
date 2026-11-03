@@ -1204,3 +1204,23 @@ the public adapter remains disabled. The full strict private suite passed 253
 tests with two filtered; three older shader cases skip GPU execution internally.
 HAL Clippy passed with ten existing test warnings, and the core zero-adapter
 isolation test passed. Independent review found no concrete alias-check bypass.
+Checkpoint: `07eaee830f8600b1b56391089ab3df03a20bcddf`.
+
+Next investigation: disjoint clone-backed views of the current attachment.
+Copies must not read the source while its RTV is bound unless the native
+contract guarantees it; unbinding and restoring output views must preserve
+depth, surface lifetime and all other pipeline state without re-clearing.
+
+Disjoint clone-backed sampled mips are now permitted. During clone refresh,
+replay snapshots and unbinds the current single RTV and optional DSV, clears
+PS SRVs, copies, restores the attachments without clearing, then rebinds active
+sampling resources. Strict RTX FL9_1 tests passed both RGBA/BGRA depth cases,
+each reading 32 green and 32 blue pixels after repeated refreshes; controlled
+core cases matched the same depth-dependent results. A strict hidden-HWND test
+sampled a clone, read BGRA [0,0,255,255], presented successfully and resized
+with the completed command buffer retained. Visible presentation and the
+synchronous window-callback reentrancy blocker remain unresolved. Independent
+review found no concrete defect under the current one-RTV, PS-only restrictions.
+The full strict private suite passed 255 tests with two filtered; three older
+shader cases skip GPU execution internally. HAL Clippy passed with ten existing
+test warnings, and core's ordinary zero-adapter test passed.

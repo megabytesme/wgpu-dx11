@@ -100,7 +100,7 @@ or emulates that restriction is unresolved. Indexed batches use their separate
 index limits. Large native start offsets still need historical-driver testing.
 | Queries / synchronization / readback | Native event queries back the private fence; this is not a public query-set implementation. Queue submission serializes the immediate context, and staging readback waits for completion. | Fence, sequencing, copy and GPU readback tests. Core rejects occlusion query sets when `OCCLUSION_QUERY` is absent; timestamp queries require a feature. The private HAL rejects both, and some impossible destroy paths panic. Device loss, all lifetime/error paths and debug-layer diagnostics remain incomplete. |
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and storage usages. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences; feature/limit gating alone is insufficient until core can safely create and validate a downlevel device without compute and all associated paths are audited. No compute/storage feature is exposed. |
-| Presentation | FL9 hardware can support display through platform/format-specific paths. Private backend has restricted WinRT CoreWindow and borrowed Win32 HWND BGRA8 FIFO paths. | Prior UWP diagnostic and a hidden HWND HAL clear, readback, present, resize and recreation test, including a retained completed command buffer. Swapchain calls are serialized against the immediate context, but synchronous window callbacks can still deadlock on reentry; pending presentation completion, visible output, device loss and surface capability reporting remain unverified. No public surface is advertised. |
+| Presentation | FL9 hardware can support display through platform/format-specific paths. Private backend has restricted WinRT CoreWindow and borrowed Win32 HWND BGRA8 FIFO paths. | Prior UWP diagnostic and hidden HWND HAL tests cover clear and clone-sampled rendering, readback, present, resize and recreation with a completed command buffer retained. On the RTX at FL9_1 the clone-sampled test read BGRA `[0, 0, 255, 255]` and present returned `Ok`. Swapchain calls are serialized against the immediate context, but synchronous window callbacks can still deadlock on reentry; pending presentation completion, visible output, device loss and surface capability reporting remain unverified. No public surface is advertised. |
 
 For FL9_1/9_2, default buffers have exactly one native vertex or index bind:
 copy-only, mapped and uniform-source buffers use an internal vertex bind, while
@@ -190,9 +190,12 @@ mip chains use `COLOR_TARGET` with optional `RESOURCE`, `COPY_SRC` and/or
 `COPY_DST`, excluding `TRANSIENT`; each attachment view selects one mip. A view
 with both sampled and attachment usages can select any single mip: a nonfinal
 mip uses a clone SRV and an original-resource RTV.
-In the same pass, a native suffix SRV may sample the same texture as an RTV
-only when their mip ranges are disjoint. Overlapping ranges and clone-backed
-SRVs of the attachment resource remain rejected. Sampled view metadata and the selected shader relationships drive
+In the same pass, native suffix and clone-backed SRVs may sample the same
+texture as an RTV only when their mip ranges are disjoint; overlapping ranges
+are rejected. For clone refresh, replay snapshots the active RTV and DSV,
+unbinds both, clears pixel shader resource slots, performs the copies and
+restores the attachments; the current pixel shader resources are rebound
+before drawing. Sampled view metadata and the selected shader relationships drive
 LOD compatibility validation at draw time; no cross-product check rejects an
 unused texture/sampler pair. On the tested RTX FL9_1 device, a same-pass
 pipeline and bind-group transition retained caller-destroyed sampled resources
@@ -226,6 +229,9 @@ Same-resource disjoint native suffix SRV and RTV use passed six strict GPU cases
 across both formats on the RTX at FL9_1; controlled core cases checked 64 pixels
 per format. [D3D11.3 functional specification §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
 permits simultaneously binding disjoint subresources for input and output.
+Two additional strict clone-backed cases, one per format, produced 32 green and
+32 blue pixels each across a same-pass depth-tested transition. Controlled core
+cases verified the same depth-preserving output for both formats.
 [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
 warns against binding a texture as both render target and texture at draw time;
 that API statement does not establish historical FL9 D3D11 driver behavior.

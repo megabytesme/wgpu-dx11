@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 253 tests; older
+operations are safe. The latest completed strict suite passed 255 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -108,6 +108,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `d62f52eaca76e4a8ff50eabbc9ee09910d94ffb5` | Bounded FL9_1 texture sample bias |
 | `9e9c21392b0996c1ea2b6489c11c268c37379206` | Emulate non-suffix sampled mip views |
 | `b431ff5d013dc9050f729b00a92973f961676ff1` | Dual-use FL9_1 mip views |
+| `07eaee830f8600b1b56391089ab3df03a20bcddf` | Disjoint native mip sampling |
 
 ## What is and is not usable
 
@@ -309,9 +310,9 @@ views. Native suffix views include the smallest resource mip; non-suffix views
 use a GPU clone refreshed before each draw. Strict private and controlled core
 tests verify view-relative sampling and updates. A single-mip dual-use view
 can render to the original and sample through a refreshed clone in later passes.
-The same texture can be sampled through a native suffix view while a disjoint
-mip is attached; overlapping ranges and same-resource clone-backed views are
-still rejected.
+The same texture can be sampled through a disjoint native or clone-backed view
+while another mip is attached. Clone refresh temporarily unbinds and restores
+the active attachments. Overlapping ranges remain rejected.
 
 Sampled mip chains also accept COPY_DST|RESOURCE without COPY_SRC. They use
 shader-resource-only native textures; copy-source use and direct readback stay

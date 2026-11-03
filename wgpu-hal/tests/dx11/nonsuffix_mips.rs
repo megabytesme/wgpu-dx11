@@ -565,7 +565,7 @@ fn fl91_nonsuffix_sampled_views_track_source_contents() -> windows::core::Result
                 | wgt::TextureUses::COLOR_TARGET
                 | wgt::TextureUses::COPY_DST,
         );
-        let feedback_sample = view(&feedback, format, wgt::TextureUses::RESOURCE, 1, 2);
+        let feedback_sample = view(&feedback, format, wgt::TextureUses::RESOURCE, 0, 2);
         let feedback_target = view(&feedback, format, wgt::TextureUses::COLOR_TARGET, 0, 1);
         let feedback_group = group(&feedback_sample, &second);
         let feedback_attachments = [Some(crate::ColorAttachment {

@@ -86,9 +86,8 @@ fn instance_range_fits(
             .is_some_and(|value| value <= u64::from(u32::MAX))
 }
 
-fn disjoint_native_sample(base: u32, count: u32, target: u32, refresh: bool) -> bool {
-    !refresh
-        && count != 0
+fn disjoint_sample(base: u32, count: u32, target: u32) -> bool {
+    count != 0
         && base
             .checked_add(count)
             .is_some_and(|end| target < base || target >= end)
@@ -608,12 +607,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 };
                 if sampled.as_raw() == target.as_raw()
                     && !render.target_mip.is_some_and(|target_mip| {
-                        disjoint_native_sample(
-                            texture.mip_base,
-                            texture.mip_count,
-                            target_mip,
-                            texture.refresh.is_some(),
-                        )
+                        disjoint_sample(texture.mip_base, texture.mip_count, target_mip)
                     })
                 {
                     self.reject();
@@ -1525,14 +1519,13 @@ mod tests {
     use core::{num::NonZeroU64, time::Duration};
 
     #[test]
-    fn sampled_mip_overlap_rejects_clones_and_invalid_ranges() {
-        assert!(disjoint_native_sample(1, 3, 0, false));
-        assert!(!disjoint_native_sample(1, 3, 1, false));
-        assert!(!disjoint_native_sample(1, 3, 3, false));
-        assert!(disjoint_native_sample(1, 3, 4, false));
-        assert!(!disjoint_native_sample(1, 3, 0, true));
-        assert!(!disjoint_native_sample(1, 0, 0, false));
-        assert!(!disjoint_native_sample(u32::MAX, 2, 0, false));
+    fn sampled_mip_overlap_rejects_invalid_ranges() {
+        assert!(disjoint_sample(1, 3, 0));
+        assert!(!disjoint_sample(1, 3, 1));
+        assert!(!disjoint_sample(1, 3, 3));
+        assert!(disjoint_sample(1, 3, 4));
+        assert!(!disjoint_sample(1, 0, 0));
+        assert!(!disjoint_sample(u32::MAX, 2, 0));
     }
 
     #[test]
@@ -3927,6 +3920,10 @@ mod dual_mip_views;
 #[cfg(test)]
 #[path = "../../tests/dx11/disjoint_mips.rs"]
 mod disjoint_mips;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/disjoint_clone_mips.rs"]
+mod disjoint_clone_mips;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]

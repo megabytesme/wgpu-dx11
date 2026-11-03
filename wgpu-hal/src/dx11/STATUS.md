@@ -11,8 +11,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted
   BGRA8 FIFO surfaces for WinRT CoreWindow and borrowed Win32 HWND handles.
-  The HWND path has hidden-window coverage; visible presentation and
-  surface concurrency remain unverified.
+  A strict hidden HWND clone-sampling test on the RTX at FL9_1 read BGRA
+  `[0, 0, 255, 255]`, returned `Ok` from present and resized with the completed
+  command buffer retained. Visible public presentation and surface concurrency
+  remain unverified; synchronous window callbacks can deadlock on reentry.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
 - RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
@@ -66,11 +68,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   render/sample transitions passed six private GPU cases across both formats and
   four core cases with 64 checked pixels each. An additional eight private GPU
   cases covered nonfinal dual views, and default-view core cases checked 64
-  pixels per format. A native suffix SRV may sample disjoint mips of the same
-  texture in the attachment pass. Six strict RTX FL9_1 GPU cases passed across
-  both formats, and controlled core cases checked 64 pixels per format. Overlapping
-  ranges and disjoint clone-backed SRVs of the attachment resource remain
-  rejected. [D3D11.3 §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+  pixels per format. Native suffix and clone-backed SRVs may sample disjoint
+  mips of the same texture in the attachment pass; overlapping ranges remain
+  rejected. Clone refresh snapshots and unbinds the RTV/DSV, copies, restores
+  the attachments and rebinds pixel shader resources. Six strict RTX FL9_1
+  native cases and two clone-backed cases passed across both formats; the latter
+  and matching controlled core cases each produced 32 green and 32 blue pixels,
+  demonstrating depth preservation. [D3D11.3 §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
   permits disjoint subresource input/output; the [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
   warns against simultaneous texture and render-target binding. Historical FL9
   drivers remain unverified, and public adapter enumeration remains disabled.

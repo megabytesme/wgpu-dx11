@@ -158,8 +158,13 @@ The private HWND path can be checked with a hidden desktop window using
 `cargo test -p wgpu-hal --lib --no-default-features --features dx11
 fl91_hidden_hwnd_surface -- --nocapture`. With strict hardware mode enabled,
 the test reports its physical adapter and actual feature level, reads back a
-HAL clear, presents, resizes and recreates the swapchain. A hidden-window test
-does not verify visible presentation or concurrent surface use.
+HAL clear, presents, resizes and recreates the swapchain. The additional strict
+clone-sampling case can be selected with
+`fl91_hidden_hwnd_clone_sampling_presents_and_resizes`. On the RTX 3090 Ti at
+requested and actual FL9_1 it read BGRA `[0, 0, 255, 255]`, present returned
+`Ok`, and resize succeeded while the completed command buffer remained retained.
+A hidden-window test does not verify visible public presentation or concurrent
+surface use. Synchronous window callbacks can still deadlock on reentry.
 
 From an x64 Visual Studio developer shell, require physical hardware with
 `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"` in PowerShell, then run:
@@ -545,7 +550,7 @@ group creation and between submissions, and retained resources after caller
 destruction. A recorded buffer-to-texture upload followed by an indexed draw in
 the same submission produced 64 blue pixels per format after the upload and
 index buffers were destroyed before submission. A feedback test rejects sampling
-the original texture during its attachment pass. The controlled core fixture checked 64 yellow pixels after a
+an overlapping mip of the attachment. The controlled core fixture checked 64 yellow pixels after a
 source update. The source needs no logical `COPY_SRC` usage.
 
 Non-suffix sampled views use a GPU clone refreshed by copying the selected
@@ -583,8 +588,8 @@ render/sample state transitions. The controlled core fixture passed four cases
 with 64 checked pixels each: suffix sampled views and last-mip dual-use views
 for both formats. Native sampled suffix views include the resource's last mip;
 non-suffix sampled views use clones. Attachment views and dual-use views select
-one mip. Use in distinct passes is supported. Same-pass use is supported only
-for disjoint native suffix SRVs and attachment mips, as tested below. Historical
+one mip. Use in distinct passes is supported. Same-pass use is supported for
+disjoint native suffix and clone-backed SRVs and attachment mips. Historical
 devices and public adapter exposure remain unresolved.
 
 ```powershell
@@ -597,8 +602,8 @@ nonfinal dual-use view has an SRV backed by a per-draw clone and an RTV backed
 by the original mip. The controlled core fixture also used a default dual-usage
 view to render and then sample a nonfinal mip in separate passes, checking 64
 pixels for each format. Same-pass clone-backed views of the attachment resource
-remain rejected even when their mip ranges are disjoint; historical driver
-behavior remains unverified.
+are supported when their mip ranges are disjoint; historical driver behavior
+remains unverified.
 
 ### Same-resource disjoint native mip views
 
@@ -611,13 +616,34 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 Six strict GPU cases passed on the RTX 3090 Ti at requested and selected FL9_1
 across RGBA8 and BGRA8. Controlled core cases sampled a disjoint suffix while
 rendering to mip 0 of the same texture and verified 64 pixels per format.
-Overlapping full-range SRVs and disjoint clone-backed views are rejected.
+Overlapping full-range SRVs are rejected. Disjoint clone-backed views are
+covered by the separate test below.
 [D3D11.3 §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
 permits input and output views of disjoint subresources. The separate
 [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
 warns against simultaneously binding a texture for sampling and rendering;
 it does not prove D3D11 behavior on historical FL9 drivers. Those drivers remain
 unverified, and normal public D3D11 adapter enumeration remains disabled.
+
+### Same-resource disjoint clone-backed mip views
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_clone_disjoint_mips_preserve_depth -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The strict RTX 3090 Ti run at requested and selected FL9_1 passed two GPU cases,
+one each for RGBA8 and BGRA8. Each checked 32 green and 32 blue pixels after
+two same-pass draws with different clone-backed mip views and a depth test. The
+controlled core fixture verified the same output for both formats. The tests
+reject an overlapping mip and retain resources through submission.
+
+Before each clone refresh, replay snapshots and unbinds the current RTV and DSV,
+clears pixel shader resource slots, copies the selected mips, restores the
+attachments and rebinds the pixel shader resources. This adds attachment
+transitions to the existing per-draw copy cost. Historical FL9 drivers remain
+unverified; ordinary public adapter enumeration remains disabled.
 
 ### FL9_1 uniform bindings
 

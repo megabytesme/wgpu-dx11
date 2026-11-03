@@ -235,7 +235,7 @@ fn fl91_native_suffix_disjoint_attachment_mips() -> windows::core::Result<()> {
         };
         let clone_view = unsafe {
             device
-                .create_texture_view(&texture, &make_view(1, 1, wgt::TextureUses::RESOURCE))
+                .create_texture_view(&texture, &make_view(0, 1, wgt::TextureUses::RESOURCE))
                 .unwrap()
         };
         let target_resource = unsafe { target.render_target().unwrap().GetResource() }

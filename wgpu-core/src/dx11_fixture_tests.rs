@@ -405,6 +405,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             queue,
             VertexCase::DisjointMip(wgt::TextureFormat::Rgba8Unorm),
         );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::DisjointCloneMip(wgt::TextureFormat::Rgba8Unorm),
+        );
     }
     if bgra_mips {
         render_triangle(
@@ -430,6 +436,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             device,
             queue,
             VertexCase::DisjointMip(wgt::TextureFormat::Bgra8Unorm),
+        );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::DisjointCloneMip(wgt::TextureFormat::Bgra8Unorm),
         );
     }
     global.command_buffer_drop(command);
@@ -1056,6 +1068,7 @@ enum VertexCase {
     RenderSampleMip(wgt::TextureFormat, bool),
     RenderSampleMipDefault(wgt::TextureFormat),
     DisjointMip(wgt::TextureFormat),
+    DisjointCloneMip(wgt::TextureFormat),
     Overlapping,
     NoopStencil,
     Snorm,
@@ -1079,8 +1092,9 @@ fn render_triangle(
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
+    let disjoint_clone = matches!(case, VertexCase::DisjointCloneMip(_));
     let disjoint_format = match case {
-        VertexCase::DisjointMip(format) => Some(format),
+        VertexCase::DisjointMip(format) | VertexCase::DisjointCloneMip(format) => Some(format),
         _ => None,
     };
     let default_non_suffix = matches!(case, VertexCase::RenderSampleMipDefault(_));
@@ -1225,6 +1239,20 @@ fn render_triangle(
             if format == wgt::TextureFormat::Bgra8Unorm {
                 bytes.swap(0, 2);
             }
+            let mut data = bytes.repeat((width * width) as usize);
+            if disjoint_clone && mip == 1 {
+                let blue = if format == wgt::TextureFormat::Bgra8Unorm {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                };
+                for y in 0..width {
+                    for x in width / 2..width {
+                        let offset = ((y * width + x) * 4) as usize;
+                        data[offset..offset + 4].copy_from_slice(&blue);
+                    }
+                }
+            }
             global
                 .queue_write_texture(
                     queue,
@@ -1234,7 +1262,7 @@ fn render_triangle(
                         origin: wgt::Origin3d::ZERO,
                         aspect: wgt::TextureAspect::All,
                     },
-                    &bytes.repeat((width * width) as usize),
+                    &data,
                     &wgt::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(width * 4),
@@ -1337,7 +1365,9 @@ fn render_triangle(
                     } else {
                         1
                     },
-                    mip_level_count: Some(if disjoint_format.is_some() {
+                    mip_level_count: Some(if disjoint_clone {
+                        1
+                    } else if disjoint_format.is_some() {
                         3
                     } else if non_suffix || combined.is_some_and(|(_, dual)| dual) {
                         1
@@ -1908,7 +1938,13 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if disjoint_format.is_some() {
+                if disjoint_clone && x >= 4 {
+                    if disjoint_format == Some(wgt::TextureFormat::Bgra8Unorm) {
+                        &[255, 0, 0, 255]
+                    } else {
+                        &[0, 0, 255, 255]
+                    }
+                } else if disjoint_format.is_some() {
                     &[0, 255, 0, 255]
                 } else if non_suffix {
                     &[255, 255, 0, 255]
