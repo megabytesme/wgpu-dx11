@@ -23,6 +23,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   depth/stencil clears, depth-only clear passes and Always/LessEqual depth tests
   with optional writes. Stencil tests, read-only/aspect views and copies remain
   unsupported. Textured depth ordering is verified through GPU readback.
+- Negative and out-of-target viewports use a separately compiled vertex shader
+  and a reserved constant buffer. If FXC cannot compile that variant, draws
+  needing remapping are rejected; the original shader remains usable.
 - Group-0 layouts with up to eight sampled textures, sixteen samplers and thirteen
   static uniform slots, and shader-aware pair validation; restricted
   Naga/FXC shaders.

@@ -71,6 +71,7 @@ pub(super) enum NativeCommand {
         target: Option<RenderTarget>,
         clear: Option<[f32; 4]>,
         depth: Option<DepthAttachment>,
+        viewport_buffer: ID3D11Buffer,
         width: u32,
         height: u32,
     },
@@ -82,6 +83,7 @@ pub(super) enum NativeCommand {
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
         depth_state: Option<ID3D11DepthStencilState>,
     },
+    SetVertexShader(ID3D11VertexShader),
     SetUniformGroup {
         uniform: Arc<UniformBinding>,
         slot: u32,
@@ -100,7 +102,11 @@ pub(super) enum NativeCommand {
         offset: u32,
         stride: u32,
     },
-    SetViewport(D3D11_VIEWPORT),
+    SetViewport {
+        viewport: D3D11_VIEWPORT,
+        buffer: ID3D11Buffer,
+        transform: [f32; 4],
+    },
     SetScissor(windows::Win32::Foundation::RECT),
     Draw {
         first: u32,
@@ -207,6 +213,7 @@ impl CommandBuffer {
                         target,
                         clear,
                         depth,
+                        viewport_buffer,
                         width,
                         height,
                     } => {
@@ -225,6 +232,16 @@ impl CommandBuffer {
                         }
                         context.OMSetBlendState(None, None, u32::MAX);
                         context.OMSetDepthStencilState(None, 0);
+                        let identity: [f32; 4] = [1., 1., 0., 0.];
+                        context.UpdateSubresource(
+                            viewport_buffer,
+                            0,
+                            None,
+                            identity.as_ptr().cast(),
+                            0,
+                            0,
+                        );
+                        context.VSSetConstantBuffers(13, Some(&[Some(viewport_buffer.clone())]));
                         context.RSSetViewports(Some(&[D3D11_VIEWPORT {
                             TopLeftX: 0.,
                             TopLeftY: 0.,
@@ -276,6 +293,9 @@ impl CommandBuffer {
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
                     }
+                    NativeCommand::SetVertexShader(vertex) => {
+                        context.VSSetShader(Some(vertex), None)
+                    }
                     NativeCommand::SetUniformGroup {
                         uniform,
                         slot,
@@ -300,8 +320,13 @@ impl CommandBuffer {
                             Some(offset),
                         );
                     }
-                    NativeCommand::SetViewport(viewport) => {
-                        context.RSSetViewports(Some(core::slice::from_ref(viewport)))
+                    NativeCommand::SetViewport {
+                        viewport,
+                        buffer,
+                        transform,
+                    } => {
+                        context.UpdateSubresource(buffer, 0, None, transform.as_ptr().cast(), 0, 0);
+                        context.RSSetViewports(Some(core::slice::from_ref(viewport)));
                     }
                     NativeCommand::SetScissor(rect) => {
                         context.RSSetScissorRects(Some(core::slice::from_ref(rect)))

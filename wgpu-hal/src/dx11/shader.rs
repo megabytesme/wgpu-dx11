@@ -1,14 +1,14 @@
 //! In-memory FXC shader compilation. WGSL lowering is not implemented here.
 use alloc::{ffi::CString, format, string::String, vec::Vec};
 use windows::{
+    core::PCSTR,
     Win32::{
         Foundation::E_INVALIDARG,
         Graphics::Direct3D::{
-            Fxc::{D3DCOMPILE_ENABLE_STRICTNESS, D3DCompile},
+            Fxc::{D3DCompile, D3DCOMPILE_ENABLE_STRICTNESS},
             ID3DBlob, ID3DInclude,
         },
     },
-    core::PCSTR,
 };
 
 /// Explicit shader targets supported by this diagnostic compiler seam.
@@ -218,6 +218,18 @@ pub(crate) fn compile_naga_with_bindings(
     profile: ShaderProfile,
     bindings: &[ShaderBinding],
 ) -> Result<Vec<u8>, NagaCompileError> {
+    compile_naga_with_viewport(module, info, stage, entry, profile, bindings, false)
+}
+
+pub(super) fn compile_naga_with_viewport(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+    bindings: &[ShaderBinding],
+    viewport_transform: bool,
+) -> Result<Vec<u8>, NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
@@ -241,6 +253,11 @@ pub(crate) fn compile_naga_with_bindings(
         shader_model: hlsl::ShaderModel::V5_0,
         fake_missing_bindings: false,
         direct_sampler_bindings: true,
+        fl9_viewport_transform: if viewport_transform && stage == naga::ShaderStage::Vertex {
+            Some(13)
+        } else {
+            None
+        },
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
         force_loop_bounding: true,
@@ -341,6 +358,132 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fl91_viewport_transform_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            "struct Out { @builtin(position) pos: vec4f, @location(0) c: vec4f } @vertex fn main(@location(0) p: vec3f) -> Out { return Out(vec4f(p, 1.), vec4f(1.)); }",
+        ).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let options = naga::back::hlsl::Options {
+            direct_sampler_bindings: true,
+            fake_missing_bindings: false,
+            fl9_viewport_transform: Some(13),
+            ..Default::default()
+        };
+        let pipeline = naga::back::hlsl::PipelineOptions {
+            entry_point: Some((naga::ShaderStage::Vertex, "main".into())),
+        };
+        let mut source = String::new();
+        let reflection = naga::back::hlsl::Writer::new(&mut source, &options, &pipeline)
+            .write(&module, &info, None)
+            .unwrap();
+        let entry = reflection
+            .entry_point_names
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap();
+        compile_hlsl(&source, &entry, ShaderProfile::VertexLevel9_1)
+            .expect("compile viewport transform for FL9_1");
+    }
+
+    #[test]
+    fn fl91_viewport_transform_instruction_budget_diagnostic() {
+        for count in [240, 248, 252, 254] {
+            let mut body = String::from("p");
+            for i in 0..count {
+                body.push_str(&alloc::format!(" + c[{i}]"));
+            }
+            let base = alloc::format!("cbuffer C : register(b0) {{ float4 c[{count}]; }}; float4 main(float4 p : POSITION) : SV_POSITION {{ return {body}; }}");
+            let mapped = alloc::format!("cbuffer C : register(b0) {{ float4 c[{count}]; }}; cbuffer V : register(b13) {{ float4 v; }}; precise float4 main(float4 p : POSITION) : SV_POSITION {{ float4 q = {body}; return float4(q.xy * v.xy + q.ww * v.zw, q.zw); }}");
+            let a = compile_hlsl(&base, "main", ShaderProfile::VertexLevel9_1);
+            let b = compile_hlsl(&mapped, "main", ShaderProfile::VertexLevel9_1);
+            std::println!(
+                "{count} referenced constants: base={:?}; remap={:?}",
+                a.as_ref().map(|_| ()).map_err(|e| &e.message),
+                b.as_ref().map(|_| ()).map_err(|e| &e.message)
+            );
+        }
+    }
+
+    #[test]
+    fn fl91_naga_viewport_transform_preserves_base_shader_budget() {
+        let mut source = String::from("@group(0) @binding(0) var<uniform> c: array<vec4f, 254>; @vertex fn main(@location(0) p: vec4f) -> @builtin(position) vec4f { var v = p;");
+        for i in 0..254 {
+            source.push_str(&alloc::format!(" v += c[{i}];"));
+        }
+        source.push_str(" return v; }");
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let bindings = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        let base = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &bindings,
+            false,
+        );
+        let mapped = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &bindings,
+            true,
+        );
+        std::println!(
+            "Naga 254 constants: base={:?}, remapped={:?}",
+            base.as_ref().map(|_| ()),
+            mapped.as_ref().map(|_| ())
+        );
+        assert!(base.is_ok());
+        assert!(mapped.is_err());
+    }
+
+    #[test]
+    fn fl91_fragment_position_is_rejected_by_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            "@fragment fn main(@builtin(position) p: vec4f) -> @location(0) vec4f { return p; }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let error = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+        )
+        .unwrap_err();
+        assert!(matches!(error, NagaCompileError::Compilation(_)));
+    }
+
+    #[test]
     fn compiles_level_9_1_and_shader_model_5_dxbc() {
         let vertex = "float4 main(float4 p : POSITION) : SV_POSITION { return p; }";
         let pixel = "float4 main() : SV_TARGET { return float4(1, 0, 0, 1); }";
@@ -359,7 +502,7 @@ mod tests {
 
     #[test]
     fn creates_level_9_1_shader_objects() -> windows::core::Result<()> {
-        use crate::dx11::{FeatureLevel, enumerate_native_adapters};
+        use crate::dx11::{enumerate_native_adapters, FeatureLevel};
         use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;
 
         let adapters = enumerate_native_adapters()?;
@@ -399,16 +542,16 @@ mod tests {
 
     #[test]
     fn draws_compiled_shaders_on_level_9_1_device() -> windows::core::Result<()> {
-        use crate::dx11::{FeatureLevel, enumerate_native_adapters};
+        use crate::dx11::{enumerate_native_adapters, FeatureLevel};
         use windows::{
+            core::PCSTR,
             Win32::Graphics::{
                 Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
                 Direct3D11::*,
                 Dxgi::Common::{
-                    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32G32_FLOAT, DXGI_SAMPLE_DESC,
+                    DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
                 },
             },
-            core::PCSTR,
         };
 
         let adapters = enumerate_native_adapters()?;
@@ -417,8 +560,8 @@ mod tests {
         };
         let device = adapter.open_device(&[FeatureLevel::L9_1])?;
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(0) var<uniform> color: vec4<f32>;
@@ -655,8 +798,8 @@ mod tests {
     #[test]
     fn compiles_resource_free_naga_hlsl_for_level_9_1_and_5_0() {
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @vertex fn vertex_main(@location(0) p: vec2<f32>) -> @builtin(position) vec4<f32> {
@@ -705,17 +848,15 @@ mod tests {
         let compute_info = Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&compute)
             .expect("validate compute WGSL");
-        assert!(
-            compile_resource_free_naga(
-                &compute,
-                &compute_info,
-                ShaderStage::Compute,
-                "main",
-                ShaderProfile::Compute5_0
-            )
-            .expect("compile compute WGSL")
-            .starts_with(b"DXBC")
-        );
+        assert!(compile_resource_free_naga(
+            &compute,
+            &compute_info,
+            ShaderStage::Compute,
+            "main",
+            ShaderProfile::Compute5_0
+        )
+        .expect("compile compute WGSL")
+        .starts_with(b"DXBC"));
     }
 
     #[test]
@@ -767,8 +908,8 @@ mod tests {
     #[test]
     fn naga_uniform_bindings_require_explicit_valid_mappings() {
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(0) var<uniform> color: vec4<f32>;
@@ -796,18 +937,16 @@ mod tests {
             slot: 0,
         };
         for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::Pixel5_0] {
-            assert!(
-                compile_naga_with_uniforms(
-                    &module,
-                    &info,
-                    ShaderStage::Fragment,
-                    "main",
-                    profile,
-                    &[mapping]
-                )
-                .expect("compile mapped uniform")
-                .starts_with(b"DXBC")
-            );
+            assert!(compile_naga_with_uniforms(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                profile,
+                &[mapping]
+            )
+            .expect("compile mapped uniform")
+            .starts_with(b"DXBC"));
         }
         assert!(matches!(
             compile_naga_with_uniforms(
@@ -858,8 +997,8 @@ mod tests {
     #[test]
     fn naga_uniforms_from_different_groups_cannot_share_a_slot() {
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(0) var<uniform> a: vec4<f32>;
@@ -896,26 +1035,24 @@ mod tests {
             Err(NagaCompileError::InvalidBindingMapping)
         ));
         let b = UniformBinding { slot: 1, ..b };
-        assert!(
-            compile_naga_with_uniforms(
-                &module,
-                &info,
-                ShaderStage::Fragment,
-                "main",
-                ShaderProfile::Pixel5_0,
-                &[a, b]
-            )
-            .expect("compile distinct uniform slots")
-            .starts_with(b"DXBC")
-        );
+        assert!(compile_naga_with_uniforms(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel5_0,
+            &[a, b]
+        )
+        .expect("compile distinct uniform slots")
+        .starts_with(b"DXBC"));
     }
 
     #[test]
     fn naga_direct_sampler_emits_d3d11_registers_without_changing_default_mode() {
         use naga::{
-            ShaderStage,
             back::hlsl,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(0) var image: texture_2d<f32>;
@@ -960,11 +1097,9 @@ mod tests {
         assert!(source.contains("register(s3)"), "{source}");
         assert!(!source.contains("nagaSamplerHeap"), "{source}");
         for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::Pixel5_0] {
-            assert!(
-                compile_hlsl(&source, &name, profile)
-                    .unwrap_or_else(|error| panic!("{profile:?}: {error:?}\n{source}"))
-                    .starts_with(b"DXBC")
-            );
+            assert!(compile_hlsl(&source, &name, profile)
+                .unwrap_or_else(|error| panic!("{profile:?}: {error:?}\n{source}"))
+                .starts_with(b"DXBC"));
         }
         options
             .binding_map
@@ -975,11 +1110,9 @@ mod tests {
             .unwrap()
             .space = 1;
         let mut rejected = String::new();
-        assert!(
-            hlsl::Writer::new(&mut rejected, &options, &pipeline)
-                .write(&module, &info, None)
-                .is_err()
-        );
+        assert!(hlsl::Writer::new(&mut rejected, &options, &pipeline)
+            .write(&module, &info, None)
+            .is_err());
         options.direct_sampler_bindings = false;
         options.fake_missing_bindings = true;
         let mut default_source = String::new();
@@ -995,9 +1128,9 @@ mod tests {
     #[test]
     fn naga_direct_sampler_rejects_binding_arrays() {
         use naga::{
-            ShaderStage,
             back::hlsl,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             enable wgpu_binding_array;
@@ -1039,8 +1172,8 @@ mod tests {
     #[test]
     fn naga_sampled_bindings_require_valid_explicit_registers() {
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(0) var image: texture_2d<f32>;
@@ -1070,18 +1203,16 @@ mod tests {
             kind: ShaderBindingKind::Sampler,
         };
         for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::Pixel5_0] {
-            assert!(
-                compile_naga_with_bindings(
-                    &module,
-                    &info,
-                    ShaderStage::Fragment,
-                    "main",
-                    profile,
-                    &[image, sampler]
-                )
-                .expect("compile mapped sample")
-                .starts_with(b"DXBC")
-            );
+            assert!(compile_naga_with_bindings(
+                &module,
+                &info,
+                ShaderStage::Fragment,
+                "main",
+                profile,
+                &[image, sampler]
+            )
+            .expect("compile mapped sample")
+            .starts_with(b"DXBC"));
         }
         assert!(matches!(
             compile_naga_with_bindings(
@@ -1362,8 +1493,8 @@ mod tests {
     #[test]
     fn level_9_1_rejects_vertex_texture_sampling() {
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(0) var image: texture_2d<f32>;
@@ -1405,25 +1536,23 @@ mod tests {
             ),
             Err(NagaCompileError::UnsupportedBindings)
         ));
-        assert!(
-            compile_naga_with_bindings(
-                &module,
-                &info,
-                ShaderStage::Vertex,
-                "main",
-                ShaderProfile::Vertex5_0,
-                &bindings
-            )
-            .unwrap()
-            .starts_with(b"DXBC")
-        );
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            ShaderStage::Vertex,
+            "main",
+            ShaderProfile::Vertex5_0,
+            &bindings
+        )
+        .unwrap()
+        .starts_with(b"DXBC"));
     }
 
     #[test]
     fn naga_path_rejects_texture_bindings() {
         use naga::{
-            ShaderStage,
             valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
         };
         let wgsl = r#"
             @group(0) @binding(1) var tex: texture_2d<f32>;

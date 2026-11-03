@@ -1490,6 +1490,7 @@ impl crate::Device for super::Device {
                 sampler_heap_target,
                 direct_sampler_bindings: false,
                 fl9_texel_load_proof: None,
+                fl9_viewport_transform: None,
                 sampler_buffer_binding_map,
                 external_texture_binding_map,
                 force_loop_bounding: true,

@@ -412,7 +412,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device.destroy_texture(other_depth);
     }
     let mut commands = Vec::new();
-    for pass_index in 0..10 {
+    for pass_index in 0..11 {
         let color_attachment = [Some(crate::ColorAttachment {
             target: crate::Attachment {
                 view: &color_view,
@@ -532,11 +532,22 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                 encoder.set_blend_constants(&[0.8, 0.7, 0.6, 0.5]);
                 encoder.set_bind_group(&layout, 0, &group, &[]);
                 encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                if pass_index == 10 {
+                    encoder.set_viewport(
+                        &crate::Rect {
+                            x: -4.,
+                            y: 0.,
+                            w: 8.,
+                            h: 8.,
+                        },
+                        0.25..0.75,
+                    );
+                }
                 match pass_index {
                     0 => {
                         encoder.draw(0, 3, 0, 1);
                     }
-                    1 => {
+                    1 | 10 => {
                         encoder.draw(0, 3, 0, 1);
                         encoder.draw(3, 3, 0, 1);
                     }
@@ -581,6 +592,18 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             Some(Duration::from_secs(5))
         )?);
         let pixels = native.read_rgba_texture(&color, 0, 0)?;
+        if index == 10 {
+            for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+                let expected = if i % 8 < 4 {
+                    [128, 0, 0, 255]
+                } else {
+                    [0, 0, 0, 255]
+                };
+                assert_eq!(pixel, expected, "viewport depth pass pixel {i}");
+            }
+            std::println!("FL9_1 viewport depth pass: 32 red and 32 black pixels");
+            continue;
+        }
         let expected = match index {
             0 | 2 => [0, 0, 255, 255],
             5..=7 | 9 => [0, 192, 0, 255],

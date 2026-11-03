@@ -30,6 +30,8 @@ const SPECIAL_CBUF_VAR: &str = "_NagaConstants";
 const SPECIAL_FIRST_VERTEX: &str = "first_vertex";
 const SPECIAL_FIRST_INSTANCE: &str = "first_instance";
 const SPECIAL_OTHER: &str = "other";
+const FL9_VIEWPORT_PARAMS: &str = "naga_fl9_viewport_params";
+const FL9_VIEWPORT_ADJUST: &str = "naga_fl9_viewport_adjust";
 
 pub(crate) const MODF_FUNCTION: &str = "naga_modf";
 pub(crate) const FREXP_FUNCTION: &str = "naga_frexp";
@@ -328,6 +330,89 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         fragment_entry_point: Option<&FragmentEntryPoint<'_>>,
     ) -> Result<super::ReflectionInfo, Error> {
         self.reset(module);
+
+        if let Some(register) = self.options.fl9_viewport_transform {
+            let entry = match self.pipeline_options.entry_point.as_ref() {
+                Some(&(ShaderStage::Vertex, ref name)) => module
+                    .entry_points
+                    .iter()
+                    .find(|entry| entry.stage == ShaderStage::Vertex && entry.name == *name),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                Error::Custom(
+                    "FL9 viewport transform requires a selected vertex entry point".into(),
+                )
+            })?;
+            let position_type = |ty| {
+                matches!(
+                    module.types[ty].inner,
+                    TypeInner::Vector {
+                        size: crate::VectorSize::Quad,
+                        scalar: Scalar {
+                            kind: ScalarKind::Float,
+                            width: 4
+                        }
+                    }
+                )
+            };
+            let result = entry.function.result.as_ref().ok_or_else(|| {
+                Error::Custom("FL9 viewport transform requires a vertex position output".into())
+            })?;
+            let position_count = match result.binding {
+                Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
+                    if position_type(result.ty) =>
+                {
+                    1
+                }
+                None => match &module.types[result.ty].inner {
+                    &TypeInner::Struct { ref members, .. } => members
+                        .iter()
+                        .filter(|member| {
+                            matches!(
+                                &member.binding,
+                                &Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
+                            ) && position_type(member.ty)
+                        })
+                        .count(),
+                    _ => 0,
+                },
+                _ => 0,
+            };
+            if register >= 14
+                || position_count != 1
+                || !self.options.direct_sampler_bindings
+                || self.options.fake_missing_bindings
+                || self.options.fl9_texel_load_proof.is_some()
+                || self.options.special_constants_binding.is_some()
+                || self.options.immediates_target.is_some()
+                || !self
+                    .options
+                    .dynamic_storage_buffer_offsets_targets
+                    .is_empty()
+                || !self.options.sampler_buffer_binding_map.is_empty()
+                || !self.options.external_texture_binding_map.is_empty()
+                || self.options.binding_map.values().any(|target| {
+                    target.space != 0
+                        || target.binding_array_size.is_some()
+                        || target.dynamic_storage_buffer_offsets_index.is_some()
+                })
+                || module.global_variables.iter().any(|(_, global)| {
+                    global.space == crate::AddressSpace::Uniform
+                        && global
+                            .binding
+                            .as_ref()
+                            .and_then(|binding| self.options.binding_map.get(binding))
+                            .is_some_and(|target| target.register == register)
+                })
+            {
+                return Err(Error::Custom(
+                    "FL9 viewport transform requires one float4 position and a reserved constant-buffer register".into(),
+                ));
+            }
+            writeln!(self.out, "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; }};")?;
+            writeln!(self.out, "precise float4 {FL9_VIEWPORT_ADJUST}(precise float4 p) {{ return float4(p.xy * {FL9_VIEWPORT_PARAMS}.xy + p.ww * {FL9_VIEWPORT_PARAMS}.zw, p.zw); }}")?;
+        }
 
         if module.uses_mesh_shaders() && self.options.shader_model < ShaderModel::V6_5 {
             return Err(Error::ShaderModelTooLow(
@@ -2447,6 +2532,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 writeln!(self.out, "{level}return;")?;
             }
             Statement::Return { value: Some(expr) } => {
+                let adjust_position = self.options.fl9_viewport_transform.is_some()
+                    && matches!(
+                        func_ctx.ty,
+                        back::FunctionType::EntryPoint(index)
+                            if module.entry_points[index as usize].stage == ShaderStage::Vertex
+                    );
                 let base_ty_res = &func_ctx.info[expr].ty;
                 let mut resolved = base_ty_res.inner_with(&module.types);
                 if let TypeInner::Pointer { base, space: _ } = *resolved {
@@ -2485,7 +2576,17 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                     write!(self.out, ", ")?;
                                 }
                                 let member_name = &self.names[&NameKey::StructMember(ty, m.index)];
+                                let position = adjust_position && matches!(
+                                    &m.binding,
+                                    &Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
+                                );
+                                if position {
+                                    write!(self.out, "{FL9_VIEWPORT_ADJUST}(")?;
+                                }
                                 write!(self.out, "{variable_name}.{member_name}")?;
+                                if position {
+                                    write!(self.out, ")")?;
+                                }
                             }
                             writeln!(self.out, " }};")?;
                             final_name
@@ -2495,7 +2596,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     writeln!(self.out, "{level}return {final_name};")?;
                 } else {
                     write!(self.out, "{level}return ")?;
+                    if adjust_position {
+                        write!(self.out, "{FL9_VIEWPORT_ADJUST}(")?;
+                    }
                     self.write_expr(module, expr, func_ctx)?;
+                    if adjust_position {
+                        write!(self.out, ")")?;
+                    }
                     writeln!(self.out, ";")?
                 }
             }
@@ -5309,4 +5416,81 @@ fn get_inner_matrix_of_global_uniform(
         };
     }
     None
+}
+
+#[cfg(all(test, feature = "wgsl-in"))]
+mod fl9_viewport_tests {
+    use super::*;
+    use crate::valid::{Capabilities, ValidationFlags, Validator};
+
+    fn translate(source: &str, options: &Options, stage: ShaderStage) -> Result<String, Error> {
+        let module = crate::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let pipeline = PipelineOptions {
+            entry_point: Some((stage, "main".into())),
+        };
+        let mut output = String::new();
+        super::super::Writer::new(&mut output, options, &pipeline).write(&module, &info, None)?;
+        Ok(output)
+    }
+
+    fn make_options() -> Options {
+        Options {
+            direct_sampler_bindings: true,
+            fake_missing_bindings: false,
+            fl9_viewport_transform: Some(13),
+            ..Options::default()
+        }
+    }
+
+    #[test]
+    fn position_transform_handles_early_returns_and_struct_outputs() {
+        let direct = "@vertex fn main(@location(0) p: vec2f) -> @builtin(position) vec4f { if (p.x > 0.0) { return vec4f(p, 0.0, 1.0); } return vec4f(p, 0.5, 1.0); }";
+        let output = translate(direct, &make_options(), ShaderStage::Vertex).unwrap();
+        assert!(output.contains("register(b13)"));
+        assert_eq!(
+            output.matches("return naga_fl9_viewport_adjust(").count(),
+            2
+        );
+        let no_transform = translate(direct, &Options::default(), ShaderStage::Vertex).unwrap();
+        assert!(!no_transform.contains("naga_fl9_viewport_adjust"));
+
+        let structured = "struct Out { @builtin(position) position: vec4f, @location(0) color: vec4f } @vertex fn main(@location(0) p: vec2f) -> Out { return Out(vec4f(p, 0.0, 1.0), vec4f(0.5)); }";
+        let output = translate(structured, &make_options(), ShaderStage::Vertex).unwrap();
+        assert_eq!(output.matches("naga_fl9_viewport_adjust(").count(), 2);
+        assert!(output.contains(".color"));
+    }
+
+    #[test]
+    fn position_transform_rejects_collisions_and_wrong_stage() {
+        let source = "@group(0) @binding(7) var<uniform> naga_fl9_viewport_params: vec4f; @vertex fn main() -> @builtin(position) vec4f { return naga_fl9_viewport_params; }";
+        let mut options = make_options();
+        options.binding_map.insert(
+            crate::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            super::super::BindTarget {
+                register: 13,
+                ..Default::default()
+            },
+        );
+        assert!(translate(source, &options, ShaderStage::Vertex).is_err());
+        options
+            .binding_map
+            .get_mut(&crate::ResourceBinding {
+                group: 0,
+                binding: 7,
+            })
+            .unwrap()
+            .register = 0;
+        let output = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(output.contains("gen_naga_fl9_viewport_params"));
+        options.fl9_viewport_transform = Some(14);
+        assert!(translate(source, &options, ShaderStage::Vertex).is_err());
+        let fragment = "@fragment fn main() -> @location(0) vec4f { return vec4f(1.0); }";
+        assert!(translate(fragment, &make_options(), ShaderStage::Fragment).is_err());
+    }
 }

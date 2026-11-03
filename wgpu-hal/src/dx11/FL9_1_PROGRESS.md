@@ -195,3 +195,41 @@ point an experimental Naga viewport transform was also in the working tree and
 introduced three separate Clippy warnings; it was not used by the DX11 shader
 path and is not part of the surface ownership fix. Visible presentation and
 concurrent Present/context synchronization remain unverified.
+The surface-view ownership fix was checkpointed as `7e045c4ed`.
+
+Viewport remapping is implemented experimentally. The encoder rounds the
+logical viewport consistently, intersects it with the target, and uses a
+reserved vertex constant at `b13` with a second Naga-generated FL9 vertex
+shader. The original shader is retained for in-target viewports. If the
+remapped shader cannot be compiled or created, ordinary draws still work and
+draws requiring remapping fail. Strict forced-FL9_1 tests cover all four
+partially clipped edges, an entirely offscreen viewport, a one-pixel
+intersection, fractional rounding, indexed and non-indexed draws, viewport
+switching, variable clip-space w and depth testing with a nondefault depth
+range. They check the complete 8x8 image. They do not establish arbitrary
+perspective-varying interpolation, all clipping precision cases or historical
+drivers. FXC rejects fragment-position input in `ps_4_0_level_9_1`; that is a
+separate public-adapter blocker.
+
+An FXC probe using 254 referenced uniform vectors compiled the original Naga
+vertex shader, while its remapped variant failed with X5615 (258 instructions;
+the profile limit is 256). The fallback and unavailable-variant draw rejection
+are tested, but no general solution exists yet for such shaders. One diagnostic
+using a 252-term nested WGSL expression overflowed the Windows test thread's
+stack; the test was rewritten as sequential statements, and the lingering
+crashed test process was terminated. The responsible parser/validator/writer
+stage was not isolated; this remains an investigation item rather than a claim
+about viewport math.
+
+After integration, 153 private D3D11 tests passed in strict mode, and 135 Naga
+library tests passed. Targeted Naga and DX11 Clippy passed with ten existing
+DX11 test warnings; core zero-adapter isolation and DX12 HAL compilation
+passed. The public HLSL `Options` struct gained a field, so downstream exhaustive
+Rust literals need updating. GPU presentation remains hidden-only.
+Following the error-classification and restored-pipeline checks, the focused
+viewport suite passed 20 tests and the full strict private suite again passed
+153 tests. A rebuilt DX12 GPU executable passed
+`wgpu_gpu::encoder::drop_encoder_after_error` on the NVIDIA adapter; the DX12
+HAL also compiled with the new Naga option disabled. During an earlier DX12
+test build, other Cargo checks overlapped unintentionally; subsequent checks
+were serialized. No memory-commit failure was observed.

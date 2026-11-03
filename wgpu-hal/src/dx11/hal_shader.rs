@@ -1,9 +1,11 @@
 //! Owned Naga shader modules for the private D3D11 HAL.
+#[cfg(test)]
+use super::shader::compile_naga_with_bindings;
 use super::{
     device::NativeDevice,
     shader::{
-        compile_naga_with_bindings, shader_binding_kind, ShaderBinding, ShaderBindingKind,
-        ShaderProfile,
+        compile_naga_with_viewport, shader_binding_kind, NagaCompileError, ShaderBinding,
+        ShaderBindingKind, ShaderProfile,
     },
 };
 use alloc::{format, sync::Arc, vec::Vec};
@@ -420,6 +422,16 @@ impl ShaderModule {
         entry: &str,
         bindings: &[ShaderBinding],
     ) -> Result<Vec<u8>, crate::PipelineError> {
+        self.compile_with_viewport(stage, entry, bindings, false)
+    }
+
+    pub(super) fn compile_with_viewport(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+        bindings: &[ShaderBinding],
+        viewport_transform: bool,
+    ) -> Result<Vec<u8>, crate::PipelineError> {
         let stages = match stage {
             naga::ShaderStage::Vertex => wgt::ShaderStages::VERTEX,
             naga::ShaderStage::Fragment => wgt::ShaderStages::FRAGMENT,
@@ -518,15 +530,19 @@ impl ShaderModule {
             _ => unreachable!(),
         };
         let present = used_shader_bindings(&self.shader.module, entry_info, bindings);
-        compile_naga_with_bindings(
+        compile_naga_with_viewport(
             &self.shader.module,
             &self.shader.info,
             stage,
             entry,
             profile,
             &present,
+            viewport_transform,
         )
         .map_err(|error| {
+            if matches!(&error, NagaCompileError::Compilation(error) if error.code == windows::Win32::Foundation::E_OUTOFMEMORY.0) {
+                return crate::PipelineError::Device(crate::DeviceError::OutOfMemory);
+            }
             crate::PipelineError::Linkage(
                 stages,
                 format!("D3D11 shader compilation failed: {error:?}"),

@@ -530,6 +530,18 @@ pub struct Options {
     /// This restricted proof rejects other resources, inputs and control flow.
     pub fl9_texel_load_proof: Option<crate::ResourceBinding>,
 
+    /// Apply an FL9 viewport remapping to the selected vertex entry point's
+    /// position output. The host must reserve this D3D constant-buffer register
+    /// and bind a float4 containing scale_x, scale_y, offset_x and offset_y.
+    /// The transform is position.xy * scale + position.ww * offset; position
+    /// z, w, and all other outputs are unchanged. The caller is responsible for
+    /// selecting a native viewport and maintaining the constants per draw.
+    ///
+    /// This experimental option requires an explicitly selected vertex entry
+    /// point, direct sampler bindings, and explicit nonconflicting bindings.
+    /// It cannot be combined with the FL9 texel-load proof.
+    pub fl9_viewport_transform: Option<u32>,
+
     /// Mapping of each bind group's sampler index buffer to a bind target.
     #[cfg_attr(
         feature = "deserialize",
@@ -587,6 +599,7 @@ impl Default for Options {
             sampler_heap_target: SamplerHeapBindTargets::default(),
             direct_sampler_bindings: false,
             fl9_texel_load_proof: None,
+            fl9_viewport_transform: None,
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,
             dynamic_storage_buffer_offsets_targets: alloc::collections::BTreeMap::new(),

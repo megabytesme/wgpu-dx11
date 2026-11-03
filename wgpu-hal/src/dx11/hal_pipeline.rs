@@ -22,6 +22,25 @@ use windows::{
     },
 };
 
+fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::DeviceError> {
+    use windows::Win32::{
+        Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
+        Graphics::Dxgi::{
+            DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+            DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+        },
+    };
+    match error.code() {
+        E_OUTOFMEMORY => Some(crate::DeviceError::OutOfMemory),
+        DXGI_ERROR_DEVICE_HUNG
+        | DXGI_ERROR_DEVICE_REMOVED
+        | DXGI_ERROR_DEVICE_RESET
+        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Some(crate::DeviceError::Lost),
+        E_INVALIDARG => None,
+        _ => Some(crate::DeviceError::Unexpected),
+    }
+}
+
 pub(super) const INVERT_BLEND: wgt::BlendState = wgt::BlendState {
     color: wgt::BlendComponent {
         src_factor: wgt::BlendFactor::OneMinusDst,
@@ -76,6 +95,7 @@ impl crate::DynPipelineLayout for PipelineLayout {}
 pub struct RenderPipeline {
     pub(super) owner: Arc<NativeDevice>,
     pub(super) vertex: ID3D11VertexShader,
+    pub(super) vertex_viewport: Option<ID3D11VertexShader>,
     pub(super) fragment: ID3D11PixelShader,
     pub(super) input: ID3D11InputLayout,
     pub(super) rasterizer: ID3D11RasterizerState,
@@ -95,6 +115,38 @@ pub struct RenderPipeline {
 mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
+
+    #[test]
+    fn optional_viewport_shader_errors_distinguish_device_failure() {
+        use windows::Win32::{
+            Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
+            Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DRIVER_INTERNAL_ERROR},
+        };
+        assert_eq!(
+            viewport_shader_fatal_error(&windows::core::Error::from_hresult(E_INVALIDARG)),
+            None
+        );
+        assert_eq!(
+            viewport_shader_fatal_error(&windows::core::Error::from_hresult(E_OUTOFMEMORY)),
+            Some(crate::DeviceError::OutOfMemory)
+        );
+        assert_eq!(
+            viewport_shader_fatal_error(&windows::core::Error::from_hresult(
+                DXGI_ERROR_DEVICE_REMOVED
+            )),
+            Some(crate::DeviceError::Lost)
+        );
+        assert_eq!(
+            viewport_shader_fatal_error(&windows::core::Error::from_hresult(
+                DXGI_ERROR_DRIVER_INTERNAL_ERROR
+            )),
+            Some(crate::DeviceError::Lost)
+        );
+        assert_eq!(
+            viewport_shader_fatal_error(&windows::core::Error::from_hresult(E_FAIL)),
+            Some(crate::DeviceError::Unexpected)
+        );
+    }
     use crate::Device as _;
     use alloc::borrow::Cow;
     use core::num::NonZeroU64;
@@ -730,6 +782,22 @@ impl RenderPipeline {
             vertex_stage.entry_point,
             &vertex_bindings,
         )?;
+        // Keep the original shader available when the remap exceeds FL9 limits.
+        let vertex_viewport_code = match vertex_stage.module.compile_with_viewport(
+            naga::ShaderStage::Vertex,
+            vertex_stage.entry_point,
+            &vertex_bindings,
+            true,
+        ) {
+            Ok(code) => Some(code),
+            Err(crate::PipelineError::Device(error)) => {
+                return Err(crate::PipelineError::Device(error))
+            }
+            Err(error) => {
+                log::debug!("D3D11 viewport-remapped vertex shader unavailable: {error:?}");
+                None
+            }
+        };
         let pixel_code = fragment.module.compile_with_bindings(
             naga::ShaderStage::Fragment,
             fragment.entry_point,
@@ -777,6 +845,7 @@ impl RenderPipeline {
         };
         let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend, mut depth_state) =
             (None, None, None, None, None, None);
+        let mut viewport_vertex = None;
         let failure = |error: windows::core::Error| {
             crate::PipelineError::Linkage(
                 wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
@@ -788,6 +857,19 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateVertexShader(&vertex_code, None::<&ID3D11ClassLinkage>, Some(&mut vertex))
                 .map_err(failure)?;
+            if let Some(code) = &vertex_viewport_code {
+                if let Err(error) = owner.raw_device().CreateVertexShader(
+                    code,
+                    None::<&ID3D11ClassLinkage>,
+                    Some(&mut viewport_vertex),
+                ) {
+                    if let Some(error) = viewport_shader_fatal_error(&error) {
+                        return Err(crate::PipelineError::Device(error));
+                    }
+                    log::debug!("D3D11 viewport-remapped vertex shader creation failed: {error}");
+                    viewport_vertex = None;
+                }
+            }
             owner
                 .raw_device()
                 .CreatePixelShader(
@@ -855,6 +937,7 @@ impl RenderPipeline {
         Ok(Self {
             owner: owner.clone(),
             vertex: vertex.ok_or_else(invalid)?,
+            vertex_viewport: viewport_vertex,
             fragment: fragment.ok_or_else(invalid)?,
             input: input.ok_or_else(invalid)?,
             rasterizer: rasterizer.ok_or_else(invalid)?,

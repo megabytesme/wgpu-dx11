@@ -26,6 +26,7 @@ mod shader;
 mod surface;
 mod swapchain;
 mod texture;
+mod viewport;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/fl9_texel_load.rs"]

@@ -26,6 +26,7 @@ pub struct CommandEncoder {
     render: Option<RenderState>,
     compute: bool,
     failure: Option<DeviceError>,
+    viewport_buffer: Option<windows::Win32::Graphics::Direct3D11::ID3D11Buffer>,
 }
 #[derive(Debug)]
 struct RenderState {
@@ -44,6 +45,11 @@ struct RenderState {
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
+    viewport_remap: bool,
+    vertex_shaders: Option<(
+        windows::Win32::Graphics::Direct3D11::ID3D11VertexShader,
+        Option<windows::Win32::Graphics::Direct3D11::ID3D11VertexShader>,
+    )>,
 }
 
 impl RenderState {
@@ -103,7 +109,20 @@ impl CommandEncoder {
             render: None,
             compute: false,
             failure: None,
+            viewport_buffer: None,
         }
+    }
+
+    fn viewport_buffer(
+        &mut self,
+    ) -> Result<windows::Win32::Graphics::Direct3D11::ID3D11Buffer, DeviceError> {
+        if let Some(buffer) = &self.viewport_buffer {
+            return Ok(buffer.clone());
+        }
+        let buffer = super::viewport::create_buffer(&self.device)
+            .map_err(super::hal_device::device_error)?;
+        self.viewport_buffer = Some(buffer.clone());
+        Ok(buffer)
     }
 }
 
@@ -561,6 +580,13 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return Err(DeviceError::Unexpected);
         }
+        let viewport_buffer = match self.viewport_buffer() {
+            Ok(buffer) => buffer,
+            Err(error) => {
+                self.failure = Some(error.clone());
+                return Err(error);
+            }
+        };
         self.render = Some(RenderState {
             format,
             depth_format: depth
@@ -579,6 +605,8 @@ impl crate::CommandEncoder for CommandEncoder {
             vertex: None,
             vertex_layout: None,
             index: None,
+            viewport_remap: false,
+            vertex_shaders: None,
         });
         let target = target.map(|target| {
             match color.and_then(|color| color.target.view.recorded_surface_target()) {
@@ -590,6 +618,7 @@ impl crate::CommandEncoder for CommandEncoder {
             target,
             clear,
             depth,
+            viewport_buffer,
             width: extent[0],
             height: extent[1],
         });
@@ -627,8 +656,18 @@ impl crate::CommandEncoder for CommandEncoder {
         render.full_npot = pipeline.full_npot;
         render.required_uniform_sizes = pipeline.required_uniform_sizes;
         render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
+        render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
+        let vertex = if render.viewport_remap {
+            pipeline
+                .vertex_viewport
+                .as_ref()
+                .unwrap_or(&pipeline.vertex)
+        } else {
+            &pipeline.vertex
+        }
+        .clone();
         self.record(NativeCommand::SetPipeline {
-            vertex: pipeline.vertex.clone(),
+            vertex,
             fragment: pipeline.fragment.clone(),
             input: pipeline.input.clone(),
             rasterizer: pipeline.rasterizer.clone(),
@@ -689,39 +728,42 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        if ![
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
-            depth_range.start,
-            depth_range.end,
-        ]
-        .iter()
-        .all(|v| v.is_finite())
-            || rect.x < 0.
-            || rect.y < 0.
-            || rect.w < 0.
-            || rect.h < 0.
-            || rect.x + rect.w > render.extent[0] as f32
-            || rect.y + rect.h > render.extent[1] as f32
-            || depth_range.start < 0.
-            || depth_range.end > 1.
-            || depth_range.start > depth_range.end
-        {
+        let max_dimension =
+            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                .texture_2d_dimension;
+        let Some(viewport) =
+            super::viewport::translate(rect, depth_range, render.extent, max_dimension)
+        else {
             self.reject();
             return;
+        };
+        let remap = viewport.transform != [1., 1., 0., 0.];
+        let shader = render
+            .vertex_shaders
+            .as_ref()
+            .and_then(
+                |(base, adjusted)| {
+                    if remap {
+                        adjusted.as_ref()
+                    } else {
+                        Some(base)
+                    }
+                },
+            )
+            .cloned();
+        self.render.as_mut().unwrap().viewport_remap = remap;
+        if let Some(shader) = shader {
+            self.record(NativeCommand::SetVertexShader(shader));
         }
-        self.record(NativeCommand::SetViewport(
-            windows::Win32::Graphics::Direct3D11::D3D11_VIEWPORT {
-                TopLeftX: rect.x,
-                TopLeftY: rect.y,
-                Width: rect.w,
-                Height: rect.h,
-                MinDepth: depth_range.start,
-                MaxDepth: depth_range.end,
-            },
-        ));
+        let Some(buffer) = self.viewport_buffer.clone() else {
+            self.reject();
+            return;
+        };
+        self.record(NativeCommand::SetViewport {
+            viewport: viewport.native,
+            buffer,
+            transform: viewport.transform,
+        });
     }
 
     unsafe fn set_scissor_rect(&mut self, rect: &Rect<u32>) {
@@ -790,6 +832,11 @@ impl crate::CommandEncoder for CommandEncoder {
                 .and_then(|v| v.checked_add(u64::from(extent)))
         };
         if !render.pipeline
+            || (render.viewport_remap
+                && render
+                    .vertex_shaders
+                    .as_ref()
+                    .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || (render.required_group.is_some() && render.required_group != render.bound_group)
             || render
                 .bound_uniform_sizes
@@ -853,6 +900,11 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         if !render.pipeline
+            || (render.viewport_remap
+                && render
+                    .vertex_shaders
+                    .as_ref()
+                    .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || (render.required_group.is_some() && render.required_group != render.bound_group)
             || render
                 .bound_uniform_sizes

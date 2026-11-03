@@ -49,6 +49,10 @@ Bottom level categories:
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
 - Reject non-finite viewport coordinates and dimensions.
 
+#### naga
+
+- Add an experimental HLSL vertex-position transform option for downlevel viewport emulation. Existing exhaustive `hlsl::Options` literals must specify the new field.
+
 ## v30.0.1 (2026-08-21)
 
 ### Bug Fixes

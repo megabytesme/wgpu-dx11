@@ -18,8 +18,10 @@ below is met. This plan does not claim WebGPU conformance.
    indexed semantics, render state, mips/formats, multiple groups and dynamic
    uniform offsets. Each feature needs positive GPU and negative tests.
 4. Resolve core/HAL contract mismatches before exposure: negative and
-   out-of-target viewport cases can reach rejecting HAL paths; zero-sized
-   viewports are tested. Audit mapping/device-loss panics. Empty compute
+   out-of-target viewports work for shaders with a remapped variant, but the
+   variant can exceed FL9 compiler limits and those draws still fail; viewport
+   interpolation, clipping edges and historical-driver precision need more
+   coverage. Audit mapping/device-loss panics. Empty compute
    passes and unused blend constants are handled; compute dispatch remains
    unavailable. The downlevel combined-index usage rule has been corrected.
    Handle depth-only initialization passes and read-only depth hazards.

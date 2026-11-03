@@ -79,6 +79,61 @@ fn hal_encoder_draws_indices_with_zero_viewport() -> windows::core::Result<()> {
 }
 
 #[test]
+fn fl91_viewport_negative_x() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 11, None)
+}
+
+#[test]
+fn fl91_viewport_right_overflow() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 12, None)
+}
+
+#[test]
+fn fl91_viewport_negative_y() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 13, None)
+}
+
+#[test]
+fn fl91_viewport_bottom_overflow() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 14, None)
+}
+
+#[test]
+fn fl91_viewport_fully_outside() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 15, None)
+}
+
+#[test]
+fn fl91_viewport_perspective_clip_w() -> windows::core::Result<()> {
+    sampled_triangle(true, false, false, false, false, 16, None)
+}
+
+#[test]
+fn fl91_viewport_fractional_rounding() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 17, None)
+}
+
+#[test]
+fn fl91_viewport_transition() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 18, None)
+}
+
+#[test]
+fn fl91_viewport_negative_indexed() -> windows::core::Result<()> {
+    sampled_triangle(true, false, false, false, false, 19, None)
+}
+
+#[test]
+fn fl91_viewport_missing_remap_shader_fails_only_when_drawing() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 20, None)
+}
+
+#[test]
+fn fl91_viewport_one_pixel_intersection() -> windows::core::Result<()> {
+    sampled_triangle(true, true, false, true, false, 22, None)
+}
+
+#[test]
 fn hal_encoder_splits_large_level_9_triangle_draw() -> windows::core::Result<()> {
     sampled_triangle(true, false, false, false, false, 5, None)
 }
@@ -357,6 +412,8 @@ fn sampled_triangle_variant(
     let device = Device::new(native.clone());
     let source = if let Some(source) = overlay_shader {
         source
+    } else if effect == 16 {
+        "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { let w = select(1.0, 2.0, p.x > 0.0); return vec4f(p * w, 0.5 * w, w); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5)) * color; }"
     } else if two {
         "@group(0) @binding(0) var<uniform> color: vec4f; @group(0) @binding(1) var t: texture_2d<f32>; @group(0) @binding(2) var s: sampler; @group(0) @binding(3) var t2: texture_2d<f32>; @group(0) @binding(4) var s2: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5)) * textureSample(t2, s2, vec2f(0.5)) * color * in.color; }"
     } else if multi {
@@ -1578,7 +1635,7 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     native.write_byte_buffer(&buffer, 0, &bytes)?;
-    let index_buffer = if effect == 6 || effect == 10 || variant == 20 {
+    let index_buffer = if effect == 6 || effect == 10 || effect == 19 || variant == 20 {
         let index = unsafe {
             device
                 .create_buffer(&crate::BufferDescriptor {
@@ -1899,10 +1956,80 @@ fn sampled_triangle_variant(
             crate::CommandEncoder::end_render_pass(&mut encoder);
             assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
         }
+        if effect == 20 {
+            let mut limited = pipeline.clone();
+            limited.vertex_viewport = None;
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &limited);
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::set_viewport(
+                &mut encoder,
+                &crate::Rect {
+                    x: -4.,
+                    y: 0.,
+                    w: 8.,
+                    h: 8.,
+                },
+                0.0..1.0,
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &limited);
+            crate::CommandEncoder::set_viewport(
+                &mut encoder,
+                &crate::Rect {
+                    x: -4.,
+                    y: 0.,
+                    w: 8.,
+                    h: 8.,
+                },
+                0.0..1.0,
+            );
+            crate::CommandEncoder::set_viewport(
+                &mut encoder,
+                &crate::Rect {
+                    x: 0.,
+                    y: 0.,
+                    w: 8.,
+                    h: 8.,
+                },
+                0.0..1.0,
+            );
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &group, &[]);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            let restored = crate::CommandEncoder::end_encoding(&mut encoder).unwrap();
+            let restored_fence = native.create_native_fence();
+            crate::Queue::submit(&queue, &[&restored], &[], (&restored_fence, 1)).unwrap();
+            assert!(native.wait_native_fence(
+                &restored_fence,
+                1,
+                Some(core::time::Duration::from_secs(5))
+            )?);
+            let restored_pixels = native.read_rgba_texture(&target, 0, 0)?;
+            assert!(restored_pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 255, 0, 255]));
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(restored));
+        }
         if effect == 7 {
             for rect in [
                 crate::Rect {
-                    x: -1.,
+                    x: -5000.,
                     y: 0.,
                     w: 1.,
                     h: 1.,
@@ -1959,6 +2086,55 @@ fn sampled_triangle_variant(
                 0.0..1.0,
             );
             if effect == 9 {
+                crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+                crate::CommandEncoder::set_viewport(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 0.,
+                        y: 0.,
+                        w: 8.,
+                        h: 8.,
+                    },
+                    0.0..1.0,
+                );
+                crate::CommandEncoder::set_scissor_rect(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 4,
+                        y: 0,
+                        w: 4,
+                        h: 8,
+                    },
+                );
+            }
+        }
+        if (11..=19).contains(&effect) || effect == 22 {
+            let (x, y) = match effect {
+                11 | 16 | 18 | 19 => (-4., 0.),
+                12 => (4., 0.),
+                13 => (0., -4.),
+                14 => (0., 4.),
+                17 => (-3.6, 0.),
+                22 => (-2047., 0.),
+                _ => (-20., 0.),
+            };
+            crate::CommandEncoder::set_viewport(
+                &mut encoder,
+                &crate::Rect {
+                    x,
+                    y,
+                    w: if effect == 17 {
+                        8.3
+                    } else if effect == 22 {
+                        2048.
+                    } else {
+                        8.
+                    },
+                    h: 8.,
+                },
+                0.0..1.0,
+            );
+            if effect == 18 {
                 crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
                 crate::CommandEncoder::set_viewport(
                     &mut encoder,
@@ -2128,7 +2304,7 @@ fn sampled_triangle_variant(
         assert_eq!(actual, &[0, 255, 255, 255]);
     } else if effect == 2 {
         assert_eq!(actual, &[0, 0, 0, 255]);
-    } else if matches!(effect, 4 | 7 | 8 | 10) {
+    } else if matches!(effect, 4 | 7 | 8 | 10 | 11 | 13 | 15 | 16 | 17 | 19 | 22) {
         assert_eq!(actual, &[0, 0, 255, 255]);
     } else if invert {
         assert_eq!(
@@ -2155,6 +2331,29 @@ fn sampled_triangle_variant(
         for row in pixels.chunks_exact(8 * 4) {
             assert!(row[..4 * 4].chunks_exact(4).all(|p| p == [0, 0, 255, 255]));
             assert!(row[4 * 4..].chunks_exact(4).all(|p| p == [0, 255, 0, 255]));
+        }
+    }
+    if (11..=19).contains(&effect) || effect == 22 {
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            let (x, y) = (index % 8, index / 8);
+            let covered = match effect {
+                11 | 16 | 17 | 19 => x < 4,
+                12 => x >= 4,
+                13 => y < 4,
+                14 => y >= 4,
+                18 => true,
+                22 => x == 0,
+                _ => false,
+            };
+            assert_eq!(
+                pixel,
+                if covered {
+                    &[0, 255, 0, 255]
+                } else {
+                    &[0, 0, 255, 255]
+                },
+                "pixel {x},{y}"
+            );
         }
     }
     if let Some(index) = index_buffer.as_ref() {
