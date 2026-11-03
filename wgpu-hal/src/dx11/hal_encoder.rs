@@ -24,6 +24,7 @@ pub struct CommandEncoder {
     device: Arc<NativeDevice>,
     recording: Option<Vec<NativeCommand>>,
     render: Option<RenderState>,
+    compute: bool,
     failure: Option<DeviceError>,
 }
 #[derive(Debug)]
@@ -81,6 +82,7 @@ impl CommandEncoder {
             device,
             recording: None,
             render: None,
+            compute: false,
             failure: None,
         }
     }
@@ -97,6 +99,7 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         self.failure = None;
         self.render = None;
+        self.compute = false;
         self.recording = Some(Vec::new());
         Ok(())
     }
@@ -104,12 +107,15 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn discard_encoding(&mut self) {
         self.recording = None;
         self.render = None;
+        self.compute = false;
         self.failure = None;
     }
 
     unsafe fn end_encoding(&mut self) -> Result<<Self::A as Api>::CommandBuffer, DeviceError> {
         let commands = self.recording.take().ok_or(DeviceError::Unexpected)?;
-        if self.render.take().is_some() {
+        let render_open = self.render.take().is_some();
+        let compute_open = core::mem::take(&mut self.compute);
+        if render_open || compute_open {
             self.reject();
         }
         if let Some(error) = self.failure.take() {
@@ -144,7 +150,7 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn clear_buffer(&mut self, buffer: &<Self::A as Api>::Buffer, range: MemoryRange) {
-        if self.render.is_some() || self.recording.is_none() {
+        if self.render.is_some() || self.compute || self.recording.is_none() {
             self.reject();
             return;
         }
@@ -169,6 +175,10 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferCopy>,
     {
+        if self.render.is_some() || self.compute {
+            self.reject();
+            return;
+        }
         let Some(commands) = &mut self.recording else {
             self.failure = Some(DeviceError::Unexpected);
             return;
@@ -202,6 +212,7 @@ impl crate::CommandEncoder for CommandEncoder {
         T: Iterator<Item = TextureCopy>,
     {
         if self.render.is_some()
+            || self.compute
             || self.recording.is_none()
             || src_usage != wgt::TextureUses::COPY_SRC
         {
@@ -234,7 +245,7 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = BufferTextureCopy>,
     {
-        if self.render.is_some() || self.recording.is_none() {
+        if self.render.is_some() || self.compute || self.recording.is_none() {
             self.reject();
             return;
         }
@@ -266,6 +277,7 @@ impl crate::CommandEncoder for CommandEncoder {
         T: Iterator<Item = BufferTextureCopy>,
     {
         if self.render.is_some()
+            || self.compute
             || self.recording.is_none()
             || src_usage != wgt::TextureUses::COPY_SRC
         {
@@ -440,6 +452,7 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         if self.recording.is_none()
             || self.render.is_some()
+            || self.compute
             || desc.sample_count != 1
             || desc.multiview_mask.is_some()
             || desc.timestamp_writes.is_some()
@@ -720,7 +733,10 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn set_blend_constants(&mut self, color: &[f32; 4]) {
-        self.reject()
+        // Accepted blend states do not use constant factors; revisit if they do.
+        if self.render.is_none() {
+            self.reject();
+        }
     }
 
     unsafe fn draw(
@@ -925,11 +941,21 @@ impl crate::CommandEncoder for CommandEncoder {
         &mut self,
         desc: &ComputePassDescriptor<<Self::A as Api>::QuerySet>,
     ) {
-        self.reject()
+        if self.recording.is_none()
+            || self.render.is_some()
+            || self.compute
+            || desc.timestamp_writes.is_some()
+        {
+            self.reject();
+        } else {
+            self.compute = true;
+        }
     }
 
     unsafe fn end_compute_pass(&mut self) {
-        self.reject()
+        if !core::mem::take(&mut self.compute) {
+            self.reject();
+        }
     }
 
     unsafe fn set_compute_pipeline(&mut self, pipeline: &<Self::A as Api>::ComputePipeline) {
@@ -1706,6 +1732,82 @@ mod tests {
                 Err(DeviceError::Unexpected)
             ));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn fl91_empty_compute_pass_preserves_order_and_rejects_invalid_commands(
+    ) -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|e| panic!("{e}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let device = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested FL9_1; actual {:?}",
+            adapter.identity(),
+            device.feature_level()
+        );
+        let source = device.create_byte_buffer(16)?;
+        let intermediate = device.create_byte_buffer(16)?;
+        let output = device.create_byte_buffer(16)?;
+        device.write_byte_buffer(&source, 0, &[0x39; 16])?;
+        let region = BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: NonZeroU64::new(16).unwrap(),
+        };
+        let pass = ComputePassDescriptor {
+            label: None,
+            timestamp_writes: None,
+        };
+        let mut native_encoder = CommandEncoder::new(device.clone());
+        let encoder: &mut dyn DynCommandEncoder = &mut native_encoder;
+        let commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(&source, &intermediate, core::slice::from_ref(&region));
+            encoder.begin_compute_pass(&pass);
+            encoder.end_compute_pass();
+            encoder.copy_buffer_to_buffer(&intermediate, &output, core::slice::from_ref(&region));
+            encoder.end_encoding().unwrap()
+        };
+        drop(source);
+        drop(intermediate);
+        let fence = device.create_native_fence();
+        let queue = Queue::new(device.clone());
+        unsafe { DynQueue::submit(&queue, &[commands.as_ref()], &[], (&fence, 1)).unwrap() };
+        assert!(device.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        assert_eq!(device.read_byte_buffer(&output, 0, 16)?, vec![0x39; 16]);
+        unsafe {
+            encoder.reset_all(vec![commands]);
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_compute_pass(&pass);
+            encoder.begin_compute_pass(&pass);
+            encoder.end_compute_pass();
+            assert!(encoder.end_encoding().is_err());
+            encoder.begin_encoding(None).unwrap();
+            encoder.end_compute_pass();
+            assert!(encoder.end_encoding().is_err());
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_compute_pass(&pass);
+            encoder.dispatch_workgroups([1, 1, 1]);
+            encoder.end_compute_pass();
+            assert!(encoder.end_encoding().is_err());
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_compute_pass(&pass);
+            encoder.copy_buffer_to_buffer(&output, &output, core::slice::from_ref(&region));
+            encoder.end_compute_pass();
+            assert!(encoder.end_encoding().is_err());
+            encoder.begin_encoding(None).unwrap();
+            encoder.set_blend_constants(&[0.2, 0.3, 0.4, 0.5]);
+            assert!(encoder.end_encoding().is_err());
+        }
+        std::println!("PASS: ordered copies across empty compute pass; 16/16 bytes matched");
         Ok(())
     }
 }

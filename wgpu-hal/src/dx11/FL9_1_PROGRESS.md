@@ -101,3 +101,16 @@ tests were checkpointed as `8949812c55514e106e7803e00d7e25801e516d44`.
 The stale expected strings now include the actual DX11 diagnostic. The full
 unfiltered `cargo test --offline -p wgpu-test --test wgpu-validation --
 --test-threads=1` suite passed 89/89 tests.
+The diagnostic fix was checkpointed as `7bdffefe244101bf7374fbc10044424f08eea8c1`.
+
+The encoder now accepts paired empty compute passes while rejecting dispatch,
+timestamps, nesting and transfer commands inside a pass. A strict FL9_1 test
+copied 16/16 expected bytes through two GPU copies around an empty compute
+pass, retaining source resources until submission. The existing textured depth
+test also exercises unused blend constants before and after pipeline selection;
+all ten 64-pixel results still match. Blend factors using constants remain
+unsupported, and any future implementation must retain the factor across
+pipeline changes. The strict private suite passed 130 tests; older tests may
+still skip internally. The zero-adapter core test and targeted Clippy passed,
+with ten existing Clippy warnings. Independent review found no issue in this
+restricted path. Public core execution has not been tested through D3D11.

@@ -439,12 +439,14 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         let command = unsafe {
             encoder.begin_encoding(None).unwrap();
             encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_blend_constants(&[0.2, 0.3, 0.4, 0.5]);
             if pass_index != 4 && pass_index != 6 {
                 encoder.set_render_pipeline(if pass_index == 8 {
                     &no_write_pipeline
                 } else {
                     &pipeline
                 });
+                encoder.set_blend_constants(&[0.8, 0.7, 0.6, 0.5]);
                 encoder.set_bind_group(&layout, 0, &group, &[]);
                 encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
                 match pass_index {
