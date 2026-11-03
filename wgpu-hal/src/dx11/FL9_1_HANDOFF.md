@@ -15,6 +15,12 @@ current implementation and validation matrix.
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
 Viewport emulation was checkpointed as `ec645e63e` and retains the
 compiler-budget limitation recorded in FL9_1_PROGRESS.md. Dynamic uniform
-offsets are being verified. Do not infer full FL9_1 or
-historical-device compatibility from modern GPU tests. Keep public adapter
-enumeration gated until core-valid operations are safe.
+offsets were checkpointed as `edb1efa6b` after strict GPU and regression tests.
+The private swapchain locking and selected-entry shader-load validation
+changes have passed strict tests; check the working tree and recent commits
+for their checkpoint status. Swapchain locking does not resolve DXGI window-callback
+reentrancy or presentation completion in `wait_for_idle`. Do not infer full
+FL9_1 or historical-device compatibility from
+modern GPU tests. Keep public adapter enumeration gated until core-valid
+operations are safe. The latest combined strict suite passed 162 tests; older
+tests may skip internally, so use focused strict tests for hardware evidence.

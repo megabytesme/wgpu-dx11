@@ -31,6 +31,33 @@ use windows::{
 struct State {
     acquired: bool,
 }
+
+struct Reservation<'a> {
+    state: &'a Mutex<State>,
+    active: bool,
+}
+
+impl<'a> Reservation<'a> {
+    fn new(state: &'a Mutex<State>) -> Result<Self> {
+        let mut current = state.lock();
+        if current.acquired {
+            return Err(Error::from_hresult(DXGI_ERROR_INVALID_CALL));
+        }
+        current.acquired = true;
+        Ok(Self {
+            state,
+            active: true,
+        })
+    }
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            self.state.lock().acquired = false;
+        }
+    }
+}
 #[derive(Debug)]
 struct Inner {
     device: Arc<NativeDevice>,
@@ -41,7 +68,7 @@ struct Inner {
 
 /// Private-backend building block for a window swap chain.
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CoreWindowSwapchain {
     inner: Arc<Inner>,
 }
@@ -52,6 +79,7 @@ pub struct CoreWindowSwapchain {
 pub struct CoreWindowFrame {
     inner: Arc<Inner>,
     texture: Option<ID3D11Texture2D>,
+    active: bool,
 }
 
 impl CoreWindowSwapchain {
@@ -66,8 +94,6 @@ impl CoreWindowSwapchain {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let dxgi: IDXGIDevice = device.raw_device().cast()?;
-        let factory: IDXGIFactory2 = unsafe { dxgi.GetAdapter()?.GetParent()? };
         let desc = DXGI_SWAP_CHAIN_DESC1 {
             Width: width,
             Height: height,
@@ -87,18 +113,28 @@ impl CoreWindowSwapchain {
             AlphaMode: DXGI_ALPHA_MODE_IGNORE,
             ..Default::default()
         };
-        let (swapchain, retained_window) = if let Some(hwnd) = surface.hwnd() {
-            let swapchain = unsafe {
-                factory.CreateSwapChainForHwnd(device.raw_device(), hwnd, &desc, None, None)?
-            };
-            (swapchain, None)
-        } else {
-            let window = surface.core_window()?;
-            let retained_window = AgileReference::new(&window)?;
-            let swapchain = unsafe {
-                factory.CreateSwapChainForCoreWindow(device.raw_device(), &window, &desc, None)?
-            };
-            (swapchain, Some(retained_window))
+        let (swapchain, retained_window) = {
+            let _context = device.immediate_context();
+            let dxgi: IDXGIDevice = device.raw_device().cast()?;
+            let factory: IDXGIFactory2 = unsafe { dxgi.GetAdapter()?.GetParent()? };
+            if let Some(hwnd) = surface.hwnd() {
+                let swapchain = unsafe {
+                    factory.CreateSwapChainForHwnd(device.raw_device(), hwnd, &desc, None, None)?
+                };
+                (swapchain, None)
+            } else {
+                let window = surface.core_window()?;
+                let retained_window = AgileReference::new(&window)?;
+                let swapchain = unsafe {
+                    factory.CreateSwapChainForCoreWindow(
+                        device.raw_device(),
+                        &window,
+                        &desc,
+                        None,
+                    )?
+                };
+                (swapchain, Some(retained_window))
+            }
         };
         Ok(Self {
             inner: Arc::new(Inner {
@@ -112,6 +148,7 @@ impl CoreWindowSwapchain {
 
     /// Current swap-chain buffer dimensions in pixels.
     pub fn size(&self) -> Result<[u32; 2]> {
+        let _context = self.inner.device.immediate_context();
         let desc = unsafe { self.inner.swapchain.GetDesc1()? };
         Ok([desc.Width, desc.Height])
     }
@@ -126,16 +163,18 @@ impl CoreWindowSwapchain {
 
     /// Acquire the current backbuffer. Only one frame can be outstanding.
     pub fn acquire(&self) -> Result<CoreWindowFrame> {
-        let mut state = self.inner.state.lock();
-        if state.acquired {
-            return Err(Error::from_hresult(DXGI_ERROR_INVALID_CALL));
-        }
-        let texture = unsafe { self.inner.swapchain.GetBuffer(0)? };
-        state.acquired = true;
-        Ok(CoreWindowFrame {
+        let mut reservation = Reservation::new(&self.inner.state)?;
+        let texture = {
+            let _context = self.inner.device.immediate_context();
+            unsafe { self.inner.swapchain.GetBuffer(0)? }
+        };
+        let frame = CoreWindowFrame {
             inner: self.inner.clone(),
             texture: Some(texture),
-        })
+            active: true,
+        };
+        reservation.active = false;
+        Ok(frame)
     }
 
     pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
@@ -147,10 +186,7 @@ impl CoreWindowSwapchain {
     }
 
     pub(super) fn release_bindings(&self) -> Result<()> {
-        let state = self.inner.state.lock();
-        if state.acquired {
-            return Err(Error::from_hresult(DXGI_ERROR_INVALID_CALL));
-        }
+        let _reservation = Reservation::new(&self.inner.state)?;
         let context = self.inner.device.immediate_context();
         unsafe {
             context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
@@ -163,10 +199,7 @@ impl CoreWindowSwapchain {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let state = self.inner.state.lock();
-        if state.acquired {
-            return Err(Error::from_hresult(DXGI_ERROR_INVALID_CALL));
-        }
+        let _reservation = Reservation::new(&self.inner.state)?;
         let context = self.inner.device.immediate_context();
         unsafe {
             context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
@@ -198,9 +231,10 @@ impl CoreWindowFrame {
 
     pub(super) fn present_for_hal(mut self, sync_interval: u32) -> Result<bool> {
         self.texture.take();
-        let mut state = self.inner.state.lock();
-        let status = unsafe { self.inner.swapchain.Present(sync_interval, DXGI_PRESENT(0)) };
-        state.acquired = false;
+        let status = {
+            let _context = self.inner.device.immediate_context();
+            unsafe { self.inner.swapchain.Present(sync_interval, DXGI_PRESENT(0)) }
+        };
         classify_present_status(status)
     }
 
@@ -284,6 +318,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reservation_releases_on_return_and_unwind() {
+        let state = Mutex::new(State::default());
+        let reservation = Reservation::new(&state).unwrap();
+        assert!(Reservation::new(&state).is_err());
+        drop(reservation);
+        assert!(Reservation::new(&state).is_ok());
+        let result = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
+            let _reservation = Reservation::new(&state).unwrap();
+            panic!("injected failure");
+        }));
+        assert!(result.is_err());
+        assert!(Reservation::new(&state).is_ok());
+    }
+
+    #[test]
     fn present_distinguishes_occlusion_from_success_and_failure() {
         assert!(classify_present_status(windows::core::HRESULT(0)).unwrap());
         assert!(!classify_present_status(windows::core::HRESULT(0x087a0001)).unwrap());
@@ -293,8 +342,10 @@ mod tests {
 
 impl Drop for CoreWindowFrame {
     fn drop(&mut self) {
-        if self.texture.take().is_some() {
+        self.texture.take();
+        if self.active {
             self.inner.state.lock().acquired = false;
+            self.active = false;
         }
     }
 }

@@ -91,6 +91,22 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
     unsafe {
         surface.configure(&device, &config).unwrap();
     }
+    let chain = surface
+        .configured
+        .lock()
+        .as_ref()
+        .unwrap()
+        .swapchain
+        .clone();
+    let guard = native.immediate_context();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        tx.send(chain.size()).unwrap();
+    });
+    assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+    drop(guard);
+    assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap()?, [32, 24]);
+    worker.join().unwrap();
     let acquired = unsafe { surface.acquire_texture(None, &fence).unwrap() };
     assert!(unsafe { surface.acquire_texture(None, &fence) }.is_err());
     let texture: &NativeTexture = acquired.texture.borrow();
@@ -175,14 +191,16 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
     }
     std::println!("Resize with completed command buffer retained: PASS");
     let resized = unsafe { surface.acquire_texture(None, &fence).unwrap() };
-    let size = surface
+    let swapchain = surface
         .configured
         .lock()
         .as_ref()
         .unwrap()
         .swapchain
-        .size()?;
+        .clone();
+    let size = swapchain.size()?;
     assert_eq!(size, [24, 16]);
+    drop(swapchain);
     let resized_view = unsafe {
         device
             .create_texture_view(
@@ -241,9 +259,26 @@ fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
         let recreated = surface.acquire_texture(None, &fence).unwrap();
         surface.discard_texture(recreated.texture);
         queue.wait_for_idle().unwrap();
-        surface.unconfigure(&device);
         encoder.reset_all([command, resized_command].into_iter());
     }
+    std::thread::scope(|scope| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let surface = &surface;
+        scope.spawn(move || {
+            let _operation = surface.begin_operation().unwrap();
+            tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+        });
+        rx.recv().unwrap();
+        unsafe { surface.unconfigure(&device) };
+    });
+    unsafe {
+        surface.configure(&device, &config).unwrap();
+        let recreated = surface.acquire_texture(None, &fence).unwrap();
+        surface.discard_texture(recreated.texture);
+        surface.unconfigure(&device);
+    }
+    std::println!("Unconfigure after concurrent reservation and recreate: PASS");
     std::println!("PASS: hidden HWND acquire, HAL clear/readback, present and resize; visibility not verified");
     Ok(())
 }

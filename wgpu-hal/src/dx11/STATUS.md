@@ -27,7 +27,7 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
 - Group-0 layouts with up to eight sampled textures, sixteen samplers and thirteen
-  static uniform slots, and shader-aware pair validation; restricted
+  static or dynamic uniform slots, and shader-aware pair validation; restricted
   Naga/FXC shaders.
 - Triangle-list passes with one interleaved vertex buffer, bounds-checked
   scissors, replace/alpha/crosshair/additive/vignette blending, and splitting

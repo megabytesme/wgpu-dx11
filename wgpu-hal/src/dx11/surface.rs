@@ -6,7 +6,7 @@ use super::{
 };
 use alloc::{format, sync::Arc};
 use core::{borrow::Borrow, ffi::c_void, num::NonZeroIsize, time::Duration};
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use windows::{
     core::{AgileReference, IUnknown, Interface},
     Win32::{
@@ -18,10 +18,31 @@ use windows::{
     UI::Core::ICoreWindow,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Configured {
     device: Arc<NativeDevice>,
     swapchain: CoreWindowSwapchain,
+}
+
+#[derive(Debug, Default)]
+struct SurfaceState {
+    current: Option<Configured>,
+    busy: bool,
+}
+
+impl SurfaceState {
+    fn as_ref(&self) -> Option<&Configured> {
+        self.current.as_ref()
+    }
+}
+
+struct SurfaceOperation<'a>(&'a Surface);
+
+impl Drop for SurfaceOperation<'_> {
+    fn drop(&mut self) {
+        self.0.configured.lock().busy = false;
+        self.0.operation_complete.notify_one();
+    }
 }
 
 #[derive(Debug)]
@@ -34,7 +55,8 @@ enum Window {
 #[derive(Debug)]
 pub struct Surface {
     window: Window,
-    configured: Mutex<Option<Configured>>,
+    configured: Mutex<SurfaceState>,
+    operation_complete: Condvar,
 }
 crate::impl_dyn_resource!(Surface);
 
@@ -107,13 +129,15 @@ impl Surface {
             .map_err(|e| crate::InstanceError::new(format!("could not retain CoreWindow: {e}")))?;
         Ok(Self {
             window: Window::Core(window),
-            configured: Mutex::new(None),
+            configured: Mutex::new(SurfaceState::default()),
+            operation_complete: Condvar::new(),
         })
     }
     pub(super) fn from_hwnd(hwnd: NonZeroIsize) -> Self {
         Self {
             window: Window::Hwnd(hwnd),
-            configured: Mutex::new(None),
+            configured: Mutex::new(SurfaceState::default()),
+            operation_complete: Condvar::new(),
         }
     }
     pub(super) fn hwnd(&self) -> Option<windows::Win32::Foundation::HWND> {
@@ -129,6 +153,26 @@ impl Surface {
                 windows::Win32::Foundation::E_INVALIDARG,
             )),
         }
+    }
+
+    fn begin_operation(&self) -> Result<SurfaceOperation<'_>, crate::SurfaceError> {
+        let mut state = self.configured.lock();
+        if state.busy {
+            return Err(crate::SurfaceError::Other(
+                "D3D11 surface operation already in progress",
+            ));
+        }
+        state.busy = true;
+        Ok(SurfaceOperation(self))
+    }
+
+    fn wait_for_operation(&self) -> SurfaceOperation<'_> {
+        let mut state = self.configured.lock();
+        while state.busy {
+            self.operation_complete.wait(&mut state);
+        }
+        state.busy = true;
+        SurfaceOperation(self)
     }
 
     /// Exercise the private HAL surface and queue in the UWP diagnostic.
@@ -190,24 +234,25 @@ impl Surface {
             surface.configure(&device, &config)?;
         }
         if native.feature_level() == super::FeatureLevel::L11_0 {
-            let state = self.configured.lock();
-            state
+            let swapchain = self
+                .configured
+                .lock()
                 .as_ref()
                 .expect("configured")
                 .swapchain
-                .verify_texture_array()
-                .map_err(surface_error)?;
+                .clone();
+            swapchain.verify_texture_array().map_err(surface_error)?;
         }
         let first = unsafe { surface.acquire_texture(None, &fence)? };
         {
-            let state = self.configured.lock();
-            if state
+            let swapchain = self
+                .configured
+                .lock()
                 .as_ref()
                 .expect("configured")
                 .swapchain
-                .acquire()
-                .is_ok()
-            {
+                .clone();
+            if swapchain.acquire().is_ok() {
                 return Err(crate::SurfaceError::Other(
                     "duplicate acquire unexpectedly succeeded",
                 ));
@@ -706,9 +751,12 @@ impl Surface {
         device: &Arc<NativeDevice>,
         mut texture: SurfaceTexture,
     ) -> Result<(), crate::SurfaceError> {
-        let state = self.configured.lock();
-        let configured = state
-            .as_ref()
+        let _operation = self.begin_operation()?;
+        let configured = self
+            .configured
+            .lock()
+            .current
+            .clone()
             .ok_or(crate::SurfaceError::Other("surface is not configured"))?;
         let frame = texture
             .frame
@@ -759,8 +807,9 @@ impl crate::Surface for Surface {
                 "unsupported D3D11 surface configuration",
             ));
         }
-        let mut state = self.configured.lock();
-        if let Some(configured) = state.as_ref() {
+        let _operation = self.begin_operation()?;
+        let configured = self.configured.lock().current.clone();
+        if let Some(configured) = configured {
             if !configured.swapchain.belongs_to(device.native()) {
                 return Err(crate::SurfaceError::Other("surface device does not match"));
             }
@@ -777,20 +826,22 @@ impl crate::Surface for Surface {
             config.extent.height,
         )
         .map_err(surface_error)?;
-        *state = Some(Configured {
+        self.configured.lock().current = Some(Configured {
             device: native,
             swapchain,
         });
         Ok(())
     }
     unsafe fn unconfigure(&self, device: &super::Device) {
-        let mut state = self.configured.lock();
-        if let Some(config) = state.as_ref() {
+        let _operation = self.wait_for_operation();
+        let configured = self.configured.lock().current.clone();
+        if let Some(config) = configured {
             if config.swapchain.belongs_to(device.native())
                 && config.swapchain.release_bindings().is_ok()
             {
-                let old = state.take();
+                let old = self.configured.lock().current.take();
                 drop(old);
+                drop(config);
                 unsafe { device.native().immediate_context().Flush() };
                 return;
             }
@@ -804,9 +855,12 @@ impl crate::Surface for Surface {
         _timeout: Option<Duration>,
         fence: &super::fence::NativeFence,
     ) -> Result<crate::AcquiredSurfaceTexture<Self::A>, crate::SurfaceError> {
-        let state = self.configured.lock();
-        let configured = state
-            .as_ref()
+        let _operation = self.begin_operation()?;
+        let configured = self
+            .configured
+            .lock()
+            .current
+            .clone()
             .ok_or(crate::SurfaceError::Other("surface is not configured"))?;
         configured
             .device
@@ -839,6 +893,42 @@ mod hwnd_surface_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn surface_operations_fail_fast_and_release_on_unwind() {
+        let surface = Surface::from_hwnd(NonZeroIsize::new(1).unwrap());
+        let operation = surface.begin_operation().unwrap();
+        assert!(surface.begin_operation().is_err());
+        drop(operation);
+        assert!(surface.begin_operation().is_ok());
+        let result = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
+            let _operation = surface.begin_operation().unwrap();
+            panic!("injected failure");
+        }));
+        assert!(result.is_err());
+        assert!(surface.begin_operation().is_ok());
+    }
+
+    #[test]
+    fn unconfigure_waits_for_an_active_operation() {
+        let surface = Surface::from_hwnd(NonZeroIsize::new(1).unwrap());
+        let operation = surface.begin_operation().unwrap();
+        std::thread::scope(|scope| {
+            let (started_tx, started_rx) = std::sync::mpsc::channel();
+            let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+            let surface = &surface;
+            scope.spawn(move || {
+                started_tx.send(()).unwrap();
+                let _operation = surface.wait_for_operation();
+                finished_tx.send(()).unwrap();
+            });
+            started_rx.recv().unwrap();
+            assert!(finished_rx.recv_timeout(Duration::from_millis(50)).is_err());
+            drop(operation);
+            finished_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        assert!(surface.begin_operation().is_ok());
+    }
 
     #[test]
     fn surface_config_rejects_unimplemented_modes() {

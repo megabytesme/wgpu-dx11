@@ -8,10 +8,11 @@ checkpointed as `26739b52d1ae042a6499b578521eb3250f1d9c21` (generalized static
 uniform bindings). No public D3D11 adapter is exposed.
 
 The verified tree has a restricted private renderer with sampled textures,
-static group-0 uniforms, RGBA8 transfers, indexed draws, restricted D24S8
-depth attachments and event-query fences. It lacks general depth/stencil,
-HWND presentation, a usable public adapter and numerous operations required by
-core. See CAPABILITIES.md for the detailed matrix.
+group-0 uniforms including dynamic offsets, RGBA8 transfers, indexed draws,
+restricted D24S8 depth attachments, event-query fences and a hidden-HWND
+presentation test. It lacks general depth/stencil, verified visible HWND
+presentation, a usable public adapter and numerous operations required by core.
+See CAPABILITIES.md for the detailed matrix.
 
 ## Latest validation
 
@@ -259,3 +260,35 @@ overflow and offsets beyond an implicit-to-end range. The complete private
 suite passed 157 tests; the core zero-adapter test and targeted Clippy passed,
 with ten existing test warnings. Independent review found no source-range or
 lifetime defect. Public adapter exposure and multiple bind groups remain open.
+Dynamic uniform offsets were checkpointed as `edb1efa6b`.
+
+The private swapchain synchronization change serializes DXGI calls with the
+immediate context and uses short-lived surface and frame reservations instead
+of holding their state locks through DXGI. A review identified a lost
+unconfigure operation when a surface was busy; the draft now waits for that
+operation to finish. The revised wait and teardown/recreation test passed on
+the NVIDIA FL9_1 device, including a context-lock serialization check. The
+hidden HWND clear returned BGRA [0,0,255,255], resize/readback succeeded, and
+present returned `Ok(())`. This does not verify visible presentation.
+
+This synchronization draft does not resolve synchronous window-message
+reentrancy: a callback that reenters the context or waits for the same surface
+operation may deadlock. It must not be treated as a safe public presentation
+contract. Presentation completion in `wait_for_idle` also remains unproven.
+
+Separately, an uncommitted shader-validation change narrows checked `textureLoad`
+rejection to the selected entry point and transitively called functions.
+Reachable loads remain rejected. A CPU call-graph test and a selected-entry
+Naga/FXC sampled-rendering test passed; the latter verified the existing
+alpha-blended readback. An independent review confirmed the traversal remains
+conservative for calls in Naga's structured control flow.
+
+The combined drafts passed `cargo test --offline -p wgpu-hal --lib
+--no-default-features --features dx11 dx11:: -- --test-threads=1` with
+`WGPU_DX11_REQUIRE_HARDWARE=1`: 162 passed, 0 failed, 2 filtered; some older
+tests can still skip internally. Focused strict HWND and checked shader-render
+tests independently passed. The core zero-adapter isolation test passed, and
+`cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features
+--features dx11` passed with ten existing warnings. The first build exposed
+three test-closure lifetime errors; these were corrected before the passing
+run. No public D3D11 execution is claimed.
