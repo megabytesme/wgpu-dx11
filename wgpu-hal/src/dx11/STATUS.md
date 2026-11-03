@@ -34,14 +34,17 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   the device reports the required format bits. Strict RTX FL9_1 tests exercised
   four levels, partial uploads, cross-resource copies, readback, metadata views
   and resource retention; a core fixture checked all 43 mip-chain pixels.
-- Sampled POT mip chains require exact `COPY_SRC | COPY_DST | RESOURCE` usage,
+- Sampled POT mip chains require exact `COPY_DST | RESOURCE` or
+  `COPY_SRC | COPY_DST | RESOURCE` usage,
   a positively queried format and a suffix view including the resource's last
   mip. Selected shader pairs are checked against actual mip counts and sampler
   LOD translation. RGBA8 and BGRA8
   GPU readbacks and a controlled core render passed; same-pass transitions
   retained sampled resources after caller destruction before submission. Strict
   suffix-view tests passed on the RTX FL9_1 device, including 64 blue pixels
-  through the controlled core fixture. Non-suffix sampled views,
+  through the controlled core fixture. Without `COPY_SRC`, core cases sampled
+  an uploaded blue mip and an untouched zero mip, each across 64 pixels; direct
+  readback from that shader-resource-only texture is unavailable. Non-suffix sampled views,
   multi-mip attachments, NPOT mip chains and self-copies remain unsupported.
   FL9 sampled views must include the smallest resource mip, and
   historical GPU behavior is unverified.

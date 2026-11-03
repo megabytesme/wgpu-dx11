@@ -744,6 +744,22 @@ mod tests {
         let mut sampled_desc = desc.clone();
         sampled_desc.usage |= wgt::TextureUses::RESOURCE;
         let sampled = unsafe { crate::Device::create_texture(&device, &sampled_desc) }.unwrap();
+        let mut upload_sample_desc = sampled_desc.clone();
+        upload_sample_desc.usage = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
+        let upload_sample =
+            unsafe { crate::Device::create_texture(&device, &upload_sample_desc) }.unwrap();
+        let native_desc = native.texture_desc(&upload_sample)?;
+        assert_eq!(
+            native_desc.BindFlags,
+            windows::Win32::Graphics::Direct3D11::D3D11_BIND_SHADER_RESOURCE.0 as u32
+        );
+        assert!(native
+            .texture_copy_texture_source(&upload_sample, 0)
+            .is_err());
+        assert!(native.read_rgba_texture(&upload_sample, 0, 0).is_err());
+        for mip in 0..4 {
+            assert_eq!(native.texture_copy_destination(&upload_sample, mip)?.2, mip);
+        }
         for mip in 0..4 {
             assert!(native
                 .read_rgba_texture(&sampled, mip, 0)?
@@ -805,6 +821,7 @@ mod tests {
                 .is_err()
         );
         unsafe {
+            crate::Device::destroy_texture(&device, upload_sample);
             crate::Device::destroy_texture(&device, sampled);
             crate::Device::destroy_texture_view(&device, sampled_view);
             for suffix in suffix_views {

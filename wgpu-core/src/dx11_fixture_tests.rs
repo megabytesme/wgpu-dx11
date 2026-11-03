@@ -358,6 +358,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     if rgba_mips {
         render_triangle(&global, device, queue, VertexCase::SampledMips);
         render_triangle(&global, device, queue, VertexCase::SampledMipSuffix);
+        render_triangle(&global, device, queue, VertexCase::SampledMipsNoCopySrc);
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::SampledMipsNoCopySrcUninitialized,
+        );
     }
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
@@ -772,6 +779,8 @@ enum VertexCase {
     FractionalSamplerLod,
     SampledMips,
     SampledMipSuffix,
+    SampledMipsNoCopySrc,
+    SampledMipsNoCopySrcUninitialized,
     Overlapping,
     NoopStencil,
     Snorm,
@@ -796,7 +805,9 @@ fn render_triangle(
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
     let sampled_mip_suffix = case == VertexCase::SampledMipSuffix;
-    let sampled_mips = case == VertexCase::SampledMips || sampled_mip_suffix;
+    let uninitialized_mip = case == VertexCase::SampledMipsNoCopySrcUninitialized;
+    let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip;
+    let sampled_mips = case == VertexCase::SampledMips || sampled_mip_suffix || no_copy_src;
     let uniform_size = match case {
         VertexCase::Uniform4 => Some(4),
         VertexCase::Uniform5 => Some(5),
@@ -868,7 +879,7 @@ fn render_triangle(
             format: wgt::TextureFormat::Rgba8Unorm,
             usage: wgt::TextureUsages::TEXTURE_BINDING
                 | wgt::TextureUsages::COPY_DST
-                | if sampled_mips {
+                | if sampled_mips && !no_copy_src {
                     wgt::TextureUsages::COPY_SRC
                 } else {
                     wgt::TextureUsages::empty()
@@ -902,7 +913,7 @@ fn render_triangle(
             &sample_extent,
         )
         .expect("sampled texture upload");
-    if sampled_mips {
+    if sampled_mips && !uninitialized_mip {
         global
             .queue_write_texture(
                 queue,
@@ -1090,7 +1101,7 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = if case == VertexCase::SampledMips {
+    let source = if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
     } else if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: f32; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
@@ -1433,7 +1444,9 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if sampled_mips {
+                if uninitialized_mip {
+                    &[0, 0, 0, 0]
+                } else if sampled_mips {
                     &[0, 0, 255, 255]
                 } else if !zero_stride && x < 4 {
                     &[255, 0, 0, 255]

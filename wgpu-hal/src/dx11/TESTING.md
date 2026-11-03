@@ -500,7 +500,7 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sam
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
-The strict private test executed 54 GPU cases without skips on the RTX 3090 Ti
+The strict private test executed 68 GPU cases without skips on the RTX 3090 Ti
 at requested and actual FL9_1. RGBA8 and BGRA8 readbacks cover selected mip
 levels, nearest and linear mip filtering, fractional LOD and used versus unused
 sampler relationships. For each format, a same-pass pipeline and bind-group
@@ -508,10 +508,15 @@ transition retained sampled textures, views, groups and samplers after the calle
 destroyed them before submission, and readback matched 32 green and 32 blue
 pixels. The controlled core fixture sampled the blue mip of a
 2x1 texture and verified all 64 output pixels. Supported chains have one layer,
-POT dimensions, exact `COPY_SRC | COPY_DST | RESOURCE` usage, a suffix SRV that
+POT dimensions, exact `COPY_DST | RESOURCE` or `COPY_SRC | COPY_DST | RESOURCE`
+usage, a suffix SRV that
 includes the resource's last mip, and positive format support. Previously
 verified results include suffix views for both formats. The controlled core
 `SampledMipSuffix` case produced 64 blue pixels, verifying view-relative LOD.
+A separate pair of core cases used `TEXTURE_BINDING | COPY_DST` without
+`COPY_SRC`: an uploaded mip produced 64 blue pixels and an untouched mip
+produced 64 transparent-zero pixels. These results check sampling via a separate
+render target; the SRV-only native texture cannot be directly read back.
 A sampler whose minimum LOD was normalized requires
 a single mip; when a finite maximum was raised, a used multi-mip view requires
 the original maximum to reach the last mip and anisotropy 1. Multi-mip attachment

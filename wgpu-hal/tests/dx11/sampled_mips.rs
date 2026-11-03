@@ -715,6 +715,197 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
                 }
             }
         }
+        let upload_only = create_texture(
+            format,
+            8,
+            4,
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+        );
+        let mut upload_data = vec![0u8; 336];
+        let mut regions = Vec::new();
+        for (mip, size, offset) in [(0u32, 8u32, 8usize), (1, 4, 264), (3, 1, 328)] {
+            let mut color = logical_colors[mip as usize];
+            if format == wgt::TextureFormat::Bgra8Unorm {
+                color.swap(0, 2);
+            }
+            for pixel in
+                upload_data[offset..offset + (size * size * 4) as usize].chunks_exact_mut(4)
+            {
+                pixel.copy_from_slice(&color);
+            }
+            regions.push(crate::BufferTextureCopy {
+                buffer_layout: wgt::TexelCopyBufferLayout {
+                    offset: offset as u64,
+                    bytes_per_row: Some(size * 4),
+                    rows_per_image: Some(size),
+                },
+                texture_base: crate::TextureCopyBase {
+                    mip_level: mip,
+                    array_layer: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: crate::FormatAspects::COLOR,
+                },
+                size: crate::CopyExtent {
+                    width: size,
+                    height: size,
+                    depth: 1,
+                },
+            });
+        }
+        let input = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: upload_data.len() as u64,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&input, 0, &upload_data)?;
+        let bad_copy = crate::TextureCopy {
+            src_base: crate::TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: crate::FormatAspects::COLOR,
+            },
+            dst_base: crate::TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: crate::FormatAspects::COLOR,
+            },
+            size: crate::CopyExtent {
+                width: 8,
+                height: 8,
+                depth: 1,
+            },
+        };
+        assert!(
+            native
+                .prepare_texture_to_texture(&upload_only, &texture, &bad_copy)
+                .is_err(),
+            "sampled-only mip texture must reject COPY_SRC"
+        );
+        let upload_full = create_view(&device, &upload_only, format, wgt::TextureUses::RESOURCE);
+        let upload_suffix = unsafe { device.create_texture_view(&upload_only, &suffix_desc) }
+            .expect("sampled-only mip suffix");
+        let upload_sampler = create_sampler(wgt::MipmapFilterMode::Nearest, 0.0..32.0);
+        let upload_samplers = [&upload_sampler, &normalized];
+        let full_textures = [
+            crate::TextureBinding {
+                view: &upload_full,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+            crate::TextureBinding {
+                view: &single_view,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+        ];
+        let upload_suffix_textures = [
+            crate::TextureBinding {
+                view: &upload_suffix,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+            crate::TextureBinding {
+                view: &single_view,
+                usage: wgt::TextureUses::RESOURCE,
+            },
+        ];
+        let upload_full_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    textures: &full_textures,
+                    samplers: &upload_samplers,
+                    entries: &entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        let upload_suffix_group = unsafe {
+            device
+                .create_bind_group(&crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &group_layout,
+                    buffers: &[],
+                    textures: &upload_suffix_textures,
+                    samplers: &upload_samplers,
+                    entries: &entries,
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                })
+                .unwrap()
+        };
+        let mut upload_commands = Vec::new();
+        let cases = [
+            (&upload_full_group, 0usize, logical_colors[0]),
+            (&upload_full_group, 1, logical_colors[1]),
+            (&upload_full_group, 2, [0, 0, 0, 0]),
+            (&upload_full_group, 3, logical_colors[3]),
+            (&upload_suffix_group, 0, logical_colors[1]),
+            (&upload_suffix_group, 2, [0, 0, 0, 0]),
+            (&upload_suffix_group, 3, logical_colors[3]),
+        ];
+        for (case, (group, pipeline, _)) in cases.iter().enumerate() {
+            let commands = unsafe {
+                encoder.begin_encoding(None).unwrap();
+                if case == 0 {
+                    encoder.copy_buffer_to_texture(
+                        &input,
+                        &upload_only,
+                        regions.clone().into_iter(),
+                    );
+                }
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_render_pipeline(&pipelines[*pipeline]);
+                encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                encoder.set_bind_group(&layout, 0, group, &[]);
+                encoder.draw(0, 3, 0, 1);
+                encoder.end_render_pass();
+                encoder
+                    .end_encoding()
+                    .expect("sampled-only mip upload and draw")
+            };
+            upload_commands.push(commands);
+        }
+        let expected_cases = cases.map(|(_, _, expected)| expected);
+        unsafe {
+            device.destroy_buffer(input);
+            device.destroy_bind_group(upload_full_group);
+            device.destroy_bind_group(upload_suffix_group);
+            device.destroy_sampler(upload_sampler);
+            device.destroy_texture_view(upload_full);
+            device.destroy_texture_view(upload_suffix);
+            device.destroy_texture(upload_only);
+        }
+        for (case, (command, expected)) in upload_commands
+            .iter()
+            .zip(expected_cases.into_iter())
+            .enumerate()
+        {
+            fence_value += 1;
+            unsafe {
+                queue
+                    .submit(&[command], &[], (&fence, fence_value))
+                    .unwrap()
+            };
+            assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+            let pixels = native.read_rgba_texture(&target, 0, 0)?;
+            assert_eq!(pixels.len(), 8 * 8 * 4);
+            for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+                assert_eq!(
+                    pixel, expected,
+                    "{format:?} sampled-only mip case {case}, pixel {index}"
+                );
+            }
+            executed += 1;
+        }
+        unsafe { encoder.reset_all(upload_commands.into_iter()) };
         let first_sampler = create_sampler(wgt::MipmapFilterMode::Nearest, 0.0..32.0);
         let second_sampler = create_sampler(wgt::MipmapFilterMode::Linear, 0.0..f32::MAX);
         let first_samplers = [&first_sampler, &normalized];

@@ -190,7 +190,8 @@ pub(super) enum TextureRejection {
 
 pub(super) fn supported_mip_texture_usage(usage: wgt::TextureUses) -> bool {
     let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
-    usage == copy || usage == (copy | wgt::TextureUses::RESOURCE)
+    let upload_sample = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
+    usage == copy || usage == upload_sample || usage == (copy | wgt::TextureUses::RESOURCE)
 }
 
 pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
@@ -285,7 +286,9 @@ impl Capabilities {
                 if !self.backend.pot_copy_only_mip_chains {
                     return Err(UnsupportedShape);
                 }
-            } else if usage == (copy | wgt::TextureUses::RESOURCE) {
+            } else if usage == (wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE)
+                || usage == (copy | wgt::TextureUses::RESOURCE)
+            {
                 if !self.backend.pot_full_chain_sampled_mips {
                     return Err(UnsupportedShape);
                 }
@@ -434,6 +437,7 @@ mod tests {
         use TextureRejection::*;
         let caps = model(FeatureLevel::L9_1);
         let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+        let upload_sample = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
         let rgba = wgt::TextureFormat::Rgba8Unorm;
         let bgra = wgt::TextureFormat::Bgra8Unorm;
         let check = |caps: &Capabilities, format, usage, size, layers, mips, samples| {
@@ -443,6 +447,11 @@ mod tests {
         assert!(caps.backend.pot_copy_only_mip_chains);
         for format in [rgba, bgra] {
             assert_eq!(check(&caps, format, copy, [8, 4], 1, 4, 1), Ok(()));
+            assert_eq!(check(&caps, format, upload_sample, [8, 4], 1, 4, 1), Ok(()));
+            assert_eq!(
+                check(&caps, format, upload_sample, [8, 3], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
             assert_eq!(
                 check(
                     &caps,
@@ -531,6 +540,10 @@ mod tests {
         restricted = caps;
         restricted.backend.pot_full_chain_sampled_mips = false;
         assert_eq!(
+            check(&restricted, rgba, upload_sample, [8, 4], 1, 4, 1),
+            Err(UnsupportedShape)
+        );
+        assert_eq!(
             check(
                 &restricted,
                 rgba,
@@ -545,6 +558,10 @@ mod tests {
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 4, 1), Ok(()));
         restricted = caps;
         restricted.driver.rgba8 = Query::Unavailable(-1);
+        assert_eq!(
+            check(&restricted, rgba, upload_sample, [8, 4], 1, 2, 1),
+            Err(DriverQueryUnavailable)
+        );
         assert_eq!(
             check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
             Err(DriverQueryUnavailable)
@@ -563,6 +580,10 @@ mod tests {
         );
         restricted.driver.rgba8 = Query::Value(!(D3D11_FORMAT_SUPPORT_MIP.0 as u32));
         assert_eq!(
+            check(&restricted, rgba, upload_sample, [8, 4], 1, 2, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert_eq!(
             check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
             Err(DriverFormatUnsupported)
         );
@@ -579,6 +600,27 @@ mod tests {
             Err(DriverFormatUnsupported)
         );
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 1, 1), Ok(()));
+        restricted.driver.rgba8 = Query::Value(
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+                | D3D11_FORMAT_SUPPORT_MIP.0) as u32,
+        );
+        assert_eq!(
+            check(&restricted, rgba, upload_sample, [8, 4], 1, 4, 1),
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                copy | wgt::TextureUses::RESOURCE,
+                [8, 4],
+                1,
+                4,
+                1
+            ),
+            Err(DriverFormatUnsupported)
+        );
         restricted = caps;
         restricted.driver.bgra8 = Query::Unavailable(-1);
         assert_eq!(

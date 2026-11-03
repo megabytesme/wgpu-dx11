@@ -260,5 +260,10 @@ passed strict private and controlled core GPU tests. Mip attachment views and
 non-suffix sampled views remain unavailable; arbitrary core-valid views need
 emulation or validation.
 
+Sampled mip chains also accept COPY_DST|RESOURCE without COPY_SRC. They use
+shader-resource-only native textures; copy-source use and direct readback stay
+unavailable. Strict GPU tests sampled uploaded and untouched levels, and core
+verified 64 blue and 64 zero pixels in separate cases.
+
 Sampler LOD policy is validated against actual selected texture/sampler pairs
 and mip counts; finite max normalization and anisotropy remain restricted.

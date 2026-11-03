@@ -1067,3 +1067,17 @@ pixels. The full strict private suite passed 244 tests with two filtered; three
 older shader cases skip hardware internally. HAL Clippy passed with ten
 existing test warnings. Arbitrary non-suffix sampled views and mip attachment
 views remain unsupported, and public adapter exposure remains disabled.
+Checkpoint: `34794bb52b7389492ffcbd989c09d4de8121c95f`.
+
+POT sampled mip textures now support COPY_DST|RESOURCE without requiring
+COPY_SRC. The native texture has only shader-resource binding; exact usage
+checks continue to reject copy-source and direct readback. Driver mip and
+sample support remain required. Strict sampled-mip GPU tests passed 68/68
+executions across RGBA8/BGRA8 with zero format skips, including seven new
+uploads, suffix selections and untouched-mip zero checks per format. Controlled
+core fixtures sampled 64/64 blue uploaded pixels and 64/64 transparent zero
+untouched pixels. Synthetic model and native bind-flag/usage tests passed.
+The full strict suite passed 244 tests with two filtered and three older shader
+hardware cases skipped internally. HAL Clippy passed with ten existing test
+warnings, and the core zero-adapter test passed. An independent review found no
+concrete issue. Public enumeration stays off.
