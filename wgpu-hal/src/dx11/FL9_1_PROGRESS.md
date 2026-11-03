@@ -1715,6 +1715,7 @@ render cases. `cargo build --offline -p wgpu-hal --no-default-features
 warnings. Formatting and `git diff --check` passed. These tests validate
 classification logic, not recovery from an induced physical device removal.
 
-Checkpoint pending: shared DXGI device-loss classification. Device teardown,
-loss during live presentation and debug-layer diagnostics remain unaudited;
-public adapter and surface exposure remain gated.
+Checkpoint: `da035664154d080ecb80a3518cbfa6e4eecbe4d8` (`dx11: classify
+driver-internal failures as device loss`). Device teardown, loss during live
+presentation and debug-layer diagnostics remain unaudited; public adapter and
+surface exposure remain gated.

@@ -427,4 +427,4 @@ the strict private HAL suite passed 289 tests and the strict fixture-enabled
 core suite passed 70 tests on the RTX 3090 Ti forced to FL9_1. This does not
 simulate actual device removal. The follow-up audit must cover teardown and
 failure recovery while preserving the existing public adapter and presentation
-gates.
+gates. Checkpoint: `da035664154d080ecb80a3518cbfa6e4eecbe4d8`.
