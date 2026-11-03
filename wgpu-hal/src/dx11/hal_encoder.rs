@@ -3733,6 +3733,10 @@ mod overlapping_vertex_attribute_tests;
 mod stencil_noop_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/snorm_vertex.rs"]
+mod snorm_vertex_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/uniform_bindings.rs"]
 mod uniform_binding_tests;
 

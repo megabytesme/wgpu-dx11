@@ -22,12 +22,25 @@ use windows::{
             D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
         },
         Dxgi::Common::{
-            DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT,
-            DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT,
-            DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_SNORM,
+            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT,
+            DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
         },
     },
 };
+
+fn vertex_format(format: wgt::VertexFormat) -> Option<(DXGI_FORMAT, u32)> {
+    Some(match format {
+        wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
+        wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
+        wgt::VertexFormat::Float32x3 => (DXGI_FORMAT_R32G32B32_FLOAT, 12),
+        wgt::VertexFormat::Float32x4 => (DXGI_FORMAT_R32G32B32A32_FLOAT, 16),
+        wgt::VertexFormat::Unorm8x4 => (DXGI_FORMAT_R8G8B8A8_UNORM, 4),
+        wgt::VertexFormat::Snorm16x2 => (DXGI_FORMAT_R16G16_SNORM, 4),
+        wgt::VertexFormat::Snorm16x4 => (DXGI_FORMAT_R16G16B16A16_SNORM, 8),
+        _ => return None,
+    })
+}
 
 fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
     if mask.bits() & !wgt::ColorWrites::ALL.bits() != 0 {
@@ -314,6 +327,22 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vertex_formats_map_signed_normalized_words_without_expanding_other_formats() {
+        use super::{vertex_format, DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SNORM};
+
+        assert_eq!(
+            vertex_format(wgt::VertexFormat::Snorm16x2),
+            Some((DXGI_FORMAT_R16G16_SNORM, 4))
+        );
+        assert_eq!(
+            vertex_format(wgt::VertexFormat::Snorm16x4),
+            Some((DXGI_FORMAT_R16G16B16A16_SNORM, 8))
+        );
+        assert_eq!(vertex_format(wgt::VertexFormat::Unorm16x2), None);
+        assert_eq!(vertex_format(wgt::VertexFormat::Sint16x2), None);
+    }
+
     #[test]
     fn stencil_noop_classifier_checks_both_faces_and_eight_bit_masks() {
         use super::stencil_is_noop;
@@ -2093,14 +2122,7 @@ impl RenderPipeline {
             let Some(layout) = layout else { continue };
             let mut vertex_extent = 0u32;
             for attribute in layout.attributes {
-                let (format, size) = match attribute.format {
-                    wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
-                    wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
-                    wgt::VertexFormat::Float32x3 => (DXGI_FORMAT_R32G32B32_FLOAT, 12),
-                    wgt::VertexFormat::Float32x4 => (DXGI_FORMAT_R32G32B32A32_FLOAT, 16),
-                    wgt::VertexFormat::Unorm8x4 => (DXGI_FORMAT_R8G8B8A8_UNORM, 4),
-                    _ => return Err(invalid()),
-                };
+                let (format, size) = vertex_format(attribute.format).ok_or_else(invalid)?;
                 let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
                 let end = offset.checked_add(size).ok_or_else(invalid)?;
                 if offset % 4 != 0

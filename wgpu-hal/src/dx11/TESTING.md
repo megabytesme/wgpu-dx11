@@ -34,6 +34,22 @@ unverified. The strip test also checks per-slot rebasing across a 65,536-vertex
 split, but its opaque, unculled output does not independently establish parity
 or instance order.
 
+With strict hardware mode enabled, the signed-normalized vertex checks are:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 snorm_vertex -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_signed_normalized_words_without_expanding_other_formats -- --nocapture
+```
+
+The strict RTX 3090 Ti test requested and selected FL9_1, observed format
+support masks `0x21122` and `0x2` for `Snorm16x2` and `Snorm16x4`, and checked
+all 64 pixels from direct and indexed draws using both formats at a nonzero
+buffer offset. The CPU test checks the native mappings. A controlled core
+fixture also rendered 32 red and 32 green pixels using `Snorm16x2` UVs.
+Microsoft lists both IA formats as required at FL9_1, but historical devices
+have not been tested here. The private backend still requires four-byte
+attribute alignment and does not thereby support SNORM texture formats.
+
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 
 ```powershell

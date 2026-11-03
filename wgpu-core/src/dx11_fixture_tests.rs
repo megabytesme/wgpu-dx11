@@ -324,9 +324,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(actual, expected.as_slice());
     std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
-    render_triangle(&global, device, queue, false, false);
-    render_triangle(&global, device, queue, true, false);
-    render_triangle(&global, device, queue, false, true);
+    render_triangle(&global, device, queue, false, false, false);
+    render_triangle(&global, device, queue, true, false, false);
+    render_triangle(&global, device, queue, false, true, false);
+    render_triangle(&global, device, queue, false, false, true);
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -358,6 +359,7 @@ fn render_triangle(
     queue: crate::id::QueueId,
     overlapping: bool,
     noop_stencil: bool,
+    snorm: bool,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let extent = wgt::Extent3d {
@@ -506,7 +508,9 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = if overlapping {
+    let source = if snorm {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), vec2f(uv.x * 0.5 + 0.5, uv.y)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else if overlapping {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), vec2f(uv.y, 0.5)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
     } else {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
@@ -538,7 +542,11 @@ fn render_triangle(
             shader_location: 0,
         },
         wgt::VertexAttribute {
-            format: wgt::VertexFormat::Float32x2,
+            format: if snorm {
+                wgt::VertexFormat::Snorm16x2
+            } else {
+                wgt::VertexFormat::Float32x2
+            },
             offset: if overlapping { 4 } else { 12 },
             shader_location: 1,
         },
@@ -608,14 +616,26 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "vertex buffer creation: {error:?}");
-    let bytes: Vec<_> = [
+    let values = [
         -1f32, -1., 0.25, 0.25, 0.5, 0., -1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, 0., -1.,
         0.25, 0.25, 0.5, 0., 1., 0.25, 0.25, 0.5, -1., 1., 0.25, 0.25, 0.5, -1., -1., 0.75, 0.75,
         0.5, 3., -1., 0.75, 0.75, 0.5, -1., 3., 0.75, 0.75, 0.5,
-    ]
-    .into_iter()
-    .flat_map(f32::to_ne_bytes)
-    .collect();
+    ];
+    let bytes: Vec<_> = if snorm {
+        let mut bytes = Vec::with_capacity(180);
+        for vertex in values.chunks_exact(5) {
+            for value in &vertex[..3] {
+                bytes.extend_from_slice(&value.to_ne_bytes());
+            }
+            let u: i16 = if vertex[3] == 0.25 { -16384 } else { 16384 };
+            bytes.extend_from_slice(&u.to_ne_bytes());
+            bytes.extend_from_slice(&16384i16.to_ne_bytes());
+            bytes.extend_from_slice(&[0x6b; 4]);
+        }
+        bytes
+    } else {
+        values.into_iter().flat_map(f32::to_ne_bytes).collect()
+    };
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
@@ -765,7 +785,7 @@ fn render_triangle(
         }
     }
     std::println!(
-        "PASS: core textured depth test (overlapping={overlapping}, noop_stencil={noop_stencil}): 32 red left pixels, 32 green right pixels"
+        "PASS: core textured depth test (overlapping={overlapping}, noop_stencil={noop_stencil}, snorm={snorm}): 32 red left pixels, 32 green right pixels"
     );
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);

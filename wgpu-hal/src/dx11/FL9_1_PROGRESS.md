@@ -899,3 +899,17 @@ the updated focused test passed. Three historical shader cases still skip GPU
 work. HAL Clippy passed with ten existing warnings and core enumeration stayed
 empty. Independent review found no concrete classifier defect. Future stencil
 support must retain and rebind reference state across pipeline switches.
+Checkpoint: `c9a4105b2`.
+
+Snorm16x2 and Snorm16x4 vertex inputs now map to the corresponding native
+signed-normalized input formats. Microsoft lists these IA formats as required
+on FL9_1. The strict RTX test queried flags 0x21122 and 0x2, and direct and
+indexed rendering matched 64/64 pixels using negative endpoints, zero and
+positive intermediate values. The controlled core fixture selected colors
+using Snorm16x2 UV and produced 32 red/32 green pixels; its y component is not
+independently observable. The CPU mapping test and independent review passed.
+The complete strict private suite passed 222 cases, two filtered, with three
+previously documented internal shader skips; HAL Clippy passed with ten
+existing warnings and ordinary core D3D11 enumeration remained empty. The
+private four-byte alignment remains; no SNORM texture or historical-device
+support is inferred.

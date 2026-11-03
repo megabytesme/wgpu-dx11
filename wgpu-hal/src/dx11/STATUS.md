@@ -44,6 +44,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   at FL9 draw limits. Checked shaders allow proven value-vector dynamic reads;
   dynamic vector-pointer indexing remains rejected. Stores through aggregates
   containing two-row matrices are conservatively rejected in both shader modes.
+- The private vertex-input subset includes `Snorm16x2` and `Snorm16x4`, with
+  driver-checked input-assembler support and four-byte attribute alignment.
+  This does not add signed-normalized texture formats.
 - FL9_1 rejects alpha, inversion and vignette blending when both RGB and alpha
   are written because separate alpha is not guaranteed. RGB-only and alpha-only
   cases use coupled factors; a test-only opt-in retains nonportable diagnostics.
