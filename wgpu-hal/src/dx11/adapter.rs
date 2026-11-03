@@ -133,6 +133,24 @@ impl crate::Adapter for Adapter {
                         crate::TextureFormatCapabilities::empty()
                     };
                 }
+                if format == wgt::TextureFormat::Bc1RgbaUnorm {
+                    let supported = caps
+                        .check_private_texture_2d(
+                            format,
+                            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                            [8, 8],
+                            1,
+                            1,
+                            1,
+                        )
+                        .is_ok();
+                    return if supported {
+                        crate::TextureFormatCapabilities::SAMPLED
+                            | crate::TextureFormatCapabilities::COPY_DST
+                    } else {
+                        crate::TextureFormatCapabilities::empty()
+                    };
+                }
                 let supported = caps
                     .check_private_texture_2d(
                         format,

@@ -291,6 +291,48 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             .test_fixture_bgra8_mip_supported()
             .expect("query BGRA8 mip prerequisites")
     };
+    let bc1_caps = unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc1RgbaUnorm)
+    };
+    let bc1_required =
+        hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST;
+    let bc1_supported = bc1_caps.contains(bc1_required);
+    assert_eq!(bc1_supported, bc1_caps == bc1_required);
+    if required {
+        assert!(
+            bc1_supported,
+            "strict mode requires BC1 sampled upload support"
+        );
+    }
+    for unsupported_bc in [
+        wgt::TextureFormat::Bc1RgbaUnormSrgb,
+        wgt::TextureFormat::Bc2RgbaUnorm,
+        wgt::TextureFormat::Bc2RgbaUnormSrgb,
+        wgt::TextureFormat::Bc3RgbaUnorm,
+        wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        wgt::TextureFormat::Bc4RUnorm,
+        wgt::TextureFormat::Bc4RSnorm,
+        wgt::TextureFormat::Bc5RgUnorm,
+        wgt::TextureFormat::Bc5RgSnorm,
+        wgt::TextureFormat::Bc6hRgbUfloat,
+        wgt::TextureFormat::Bc6hRgbFloat,
+        wgt::TextureFormat::Bc7RgbaUnorm,
+        wgt::TextureFormat::Bc7RgbaUnormSrgb,
+    ] {
+        assert!(
+            unsafe { hal::Adapter::texture_format_capabilities(&fixture, unsupported_bc) }
+                .is_empty(),
+            "the BC1-only fixture must not expose {unsupported_bc:?}"
+        );
+    }
+    if !bc1_supported {
+        std::println!("SKIP: BC1 sampled upload format support unavailable");
+    }
+    let fixture_features = if bc1_supported {
+        wgt::Features::TEXTURE_COMPRESSION_BC
+    } else {
+        wgt::Features::empty()
+    };
     assert!(unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba16Float)
     }
@@ -298,7 +340,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let exposed = hal::ExposedAdapter::<hal::dx11::Api> {
         adapter: fixture,
         info,
-        features: wgt::Features::empty(),
+        features: fixture_features,
         capabilities: hal::Capabilities {
             limits: limits.clone(),
             alignments: hal::Alignments {
@@ -321,6 +363,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     };
     let adapter_id = unsafe { global.create_adapter_from_hal(exposed.into(), None) };
     let descriptor = crate::device::DeviceDescriptor {
+        required_features: fixture_features,
         required_limits: limits,
         ..Default::default()
     };
@@ -382,6 +425,40 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             "unsupported format or usage must fail core validation: {error:?}"
         );
         global.texture_drop(texture);
+    }
+    if bc1_supported {
+        for format in [
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnorm,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnorm,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
+            wgt::TextureFormat::Bc4RUnorm,
+            wgt::TextureFormat::Bc4RSnorm,
+            wgt::TextureFormat::Bc5RgUnorm,
+            wgt::TextureFormat::Bc5RgSnorm,
+            wgt::TextureFormat::Bc6hRgbUfloat,
+            wgt::TextureFormat::Bc6hRgbFloat,
+            wgt::TextureFormat::Bc7RgbaUnorm,
+            wgt::TextureFormat::Bc7RgbaUnormSrgb,
+        ] {
+            let (texture, error) = global.device_create_texture(
+                device,
+                &texture_desc(
+                    format,
+                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+                ),
+                None,
+            );
+            assert!(
+                matches!(
+                    error.as_ref(),
+                    Some(crate::resource::CreateTextureError::InvalidFormatUsages(..))
+                ),
+                "the BC1-only fixture must reject {format:?}: {error:?}"
+            );
+            global.texture_drop(texture);
+        }
     }
     let mut multisampled = texture_desc(
         wgt::TextureFormat::Rgba8Unorm,
@@ -599,6 +676,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Uniform20,
     ] {
         render_triangle(&global, device, queue, case);
+    }
+    if bc1_supported {
+        render_triangle(&global, device, queue, VertexCase::Bc1);
     }
     if rgba_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND) {
         render_triangle(&global, device, queue, VertexCase::PremultipliedBlend);
@@ -1718,6 +1798,7 @@ enum VertexCase {
     Uniform5,
     Uniform12,
     Uniform20,
+    Bc1,
 }
 
 fn render_triangle(
@@ -1730,9 +1811,10 @@ fn render_triangle(
     let premultiplied_blend = case == VertexCase::PremultipliedBlend;
     let non_filtering = matches!(
         case,
-        VertexCase::NonFiltering | VertexCase::UnfilterableFloat
+        VertexCase::NonFiltering | VertexCase::UnfilterableFloat | VertexCase::Bc1
     );
-    let unfilterable_float = case == VertexCase::UnfilterableFloat;
+    let unfilterable_float = matches!(case, VertexCase::UnfilterableFloat | VertexCase::Bc1);
+    let bc1 = case == VertexCase::Bc1;
     let sampled_visibility = if case == VertexCase::VertexVisibleBindings {
         wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
     } else {
@@ -1870,14 +1952,18 @@ fn render_triangle(
         global.texture_create_view(depth, &resource::TextureViewDescriptor::default(), None);
     assert!(error.is_none(), "depth view creation: {error:?}");
     let sample_extent = wgt::Extent3d {
-        width: if disjoint_format.is_some() {
+        width: if bc1 || disjoint_format.is_some() {
             8
         } else if sampled_mip_suffix {
             4
         } else {
             2
         },
-        height: if disjoint_format.is_some() { 8 } else { 1 },
+        height: if bc1 || disjoint_format.is_some() {
+            8
+        } else {
+            1
+        },
         depth_or_array_layers: 1,
     };
     let (sampled, error) = if disjoint_format.is_some() {
@@ -1897,7 +1983,11 @@ fn render_triangle(
                 },
                 sample_count: 1,
                 dimension: wgt::TextureDimension::D2,
-                format: combined.map_or(wgt::TextureFormat::Rgba8Unorm, |(format, _)| format),
+                format: if bc1 {
+                    wgt::TextureFormat::Bc1RgbaUnorm
+                } else {
+                    combined.map_or(wgt::TextureFormat::Rgba8Unorm, |(format, _)| format)
+                },
                 usage: if combined.is_some() {
                     wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
                 } else {
@@ -1915,6 +2005,25 @@ fn render_triangle(
         )
     };
     assert!(error.is_none(), "sampled texture creation: {error:?}");
+    let bc1_data = if bc1 {
+        let mut data = Vec::with_capacity(32);
+        for color in [0x001fu16, 0xffff, 0xf800, 0x07e0] {
+            let endpoint = color.to_le_bytes();
+            data.extend_from_slice(&[
+                endpoint[0],
+                endpoint[1],
+                endpoint[0],
+                endpoint[1],
+                0,
+                0,
+                0,
+                0,
+            ]);
+        }
+        Some(data)
+    } else {
+        None
+    };
     if let Some(format) = disjoint_format {
         for (mip, width, color) in [
             (1, 4u32, [0u8, 255, 0, 255]),
@@ -1976,15 +2085,25 @@ fn render_triangle(
                     &[
                         255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
                     ]
+                } else if bc1 {
+                    bc1_data.as_deref().expect("BC1 sample data")
                 } else if premultiplied_blend {
                     &[128, 0, 0, 128, 0, 128, 0, 128]
                 } else {
                     &[255, 0, 0, 255, 0, 255, 0, 255]
                 },
-                &wgt::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: None,
-                    rows_per_image: None,
+                &if bc1 {
+                    wgt::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(16),
+                        rows_per_image: Some(2),
+                    }
+                } else {
+                    wgt::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: None,
+                        rows_per_image: None,
+                    }
                 },
                 &sample_extent,
             )
@@ -3096,6 +3215,12 @@ fn render_triangle(
                     &[255, 255, 0, 255]
                 } else if uninitialized_mip {
                     &[0, 0, 0, 0]
+                } else if bc1 {
+                    if x < 4 {
+                        &[255, 0, 0, 255]
+                    } else {
+                        &[0, 255, 0, 255]
+                    }
                 } else if sampled_mips {
                     &[0, 0, 255, 255]
                 } else if !zero_stride && x < 4 && depth_bias.is_none_or(|value| value > 0) {
