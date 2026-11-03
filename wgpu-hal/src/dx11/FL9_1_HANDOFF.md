@@ -384,8 +384,20 @@ fixture continues to assert that ordinary HAL enumeration is empty. This is
 controlled core/HAL coverage, not public adapter exposure or historical-device
 validation.
 
-Checkpoint commit: `cff2cc29b` (`core: test FL9_1 stencil through controlled
-fixture`). Next, audit core-valid read-only depth/stencil attachment use and
-remaining private render-pass contracts. Do not expose a public adapter or
-surface: DXGI message-pump reentrancy and truthful broad capability reporting
-remain unresolved gates.
+Core fixture checkpoint: `cff2cc29b` (`core: test FL9_1 stencil through
+controlled fixture`). The HAL now also classifies effective native stencil
+writes and rejects depth- or stencil-writing pipelines on a read-only D24S8
+attachment. This is whole-attachment read-only only: both aspects must use
+LOAD|STORE, and sampled aliasing is not enabled. Strict RTX read-only testing
+preserved 32 green/32 blue pixels and rejected both write cases. The complete
+strict private suite passed 287 tests with two filtered; the fixture-enabled
+core suite passed all 70 tests, including its zero-adapter regression. Clippy
+passed with ten existing warnings. Windows paging-file error 1455 prevented a
+DX12 regression check; historical FL9 hardware and public D3D11 exposure remain
+unverified.
+
+Latest checkpoint: `5ea3045f9` (`dx11: reject stencil writes on read-only
+attachments`). Continue by auditing core-recordable render-pass usages,
+especially query and resolve combinations. Keep public D3D11 adapter and HWND
+surface exposure disabled until broader truthful capabilities and presentation
+reentrancy are resolved.

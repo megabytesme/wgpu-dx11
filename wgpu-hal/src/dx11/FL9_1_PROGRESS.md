@@ -1613,3 +1613,29 @@ private HAL render-pass contract. Keep public adapter and surface exposure
 disabled while presentation reentrancy and truthful full capability reporting
 remain unresolved.
 Checkpoint: `cff2cc29b` (`core: test FL9_1 stencil through controlled fixture`).
+
+The direct HAL read-only D24S8 contract now tracks effective stencil writes as
+well as depth writes. Pipeline state records whether the final native stencil
+operations can mutate bits after no-op canonicalization and the FL9_1 Never
+remapping. Selecting such a pipeline in a read-only attachment pass rejects
+before native replay. This closes a gap previously covered only by core's
+`WRITES_STENCIL` validation. The read-only guard applies to the whole D24S8
+attachment because the current private descriptor accepts READ usage only with
+LOAD|STORE on both aspects; aspect-specific read-only usage remains unsupported.
+
+Strict hardware validation on the RTX 3090 Ti at requested/selected FL9_1
+passed the focused read-only test, preserving the 32 green/32 blue depth result
+and rejecting both depth-writing and stencil-writing pipelines. The full
+private D3D11 suite passed 287/287 tests (two filtered). The fixture-enabled
+core suite passed 70/70, including the active-stencil core render and ordinary
+zero-adapter regression. Targeted HAL Clippy passed with ten existing warnings;
+rustfmt and `git diff --check` passed. This modern forced-FL9_1 device does not
+verify historical drivers. DX12 was not rerun for this increment; its previous
+targeted check was blocked by Windows paging-file error 1455.
+
+Next: audit render-pass attachment usages and query/resolve paths against what
+core can record, prioritizing a specific case that can be rejected or safely
+implemented without broad capability claims. HWND public presentation and
+ordinary D3D11 adapter exposure remain blocked by reentrancy and capability
+gaps.
+Checkpoint: `5ea3045f9` (`dx11: reject stencil writes on read-only attachments`).
