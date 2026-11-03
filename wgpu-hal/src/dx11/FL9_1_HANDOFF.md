@@ -2,7 +2,8 @@
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The private D3D11 HAL
 can render on a forced-FL9_1 RTX 3090 Ti, but ordinary wgpu adapter enumeration
-is disabled, and no public wgpu D3D11 example or HWND presentation has been
+is disabled. An unsafe, nondefault test fixture has exercised public wgpu
+rendering, but no ordinary public adapter or HWND presentation has been
 verified. A hidden HWND test has exercised the private surface, but visible
 presentation and surface lifetime/concurrency still require verification.
 A private D24S8 attachment path is implemented and its textured
@@ -22,7 +23,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 168 tests; older
+operations are safe. The latest combined strict suite passed 169 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -53,14 +54,17 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `a914c9a1f95f7806069051deef55630b9a8244f5` | Private multi-group uniform bindings |
 | `47e8488ef19be593b8d4e899a567f2c302d73861` | Private cross-group sampled resources |
 | `f6aa8f241415822eb2a58f8f992e2ff7e7123ba4` | Gated core buffer round trip |
+| `86db48c45` | Gated core offscreen rendering |
+| `6fe0282e7` | Zero inter-stage validation limits |
+| `28c4a2f1a` | Gated core textured depth rendering |
+| `4c2255de2` | Private checked indexed base vertices |
 
 ## What is and is not usable
 
 No operation currently executes through a public D3D11 wgpu adapter: normal
-adapter enumeration returns zero and the ordinary HAL adapter is uninhabited. The
-nondefault unsafe test fixture makes it possible to inject a device into core
-for closed buffer and offscreen-rendering tests; it is not a general adapter or
-public example.
+adapter enumeration returns zero and the ordinary HAL adapter is uninhabited. A
+nondefault unsafe fixture injects a restricted device into public wgpu and core
+for closed offscreen tests; it is not a general adapter or public example.
 The private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders,
 sampled RGBA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
 triangle rendering with front/back culling, D24S8 Always/LessEqual depth
@@ -134,6 +138,11 @@ normal adapter opening remain disabled. The fixture-on core Clippy check passed.
 targeted Clippy completed with ten existing warnings. Earlier work also ran
 Naga, core, public Noop validation and targeted DX12 regressions as recorded
 in FL9_1_PROGRESS.md. No public D3D11 example or visual display test ran.
+
+The opt-in `wgpu` integration test used the public Rust API with an unsafe
+injected fixture. On the forced-FL9_1 RTX, textured depth rendering produced
+32 red and 32 green pixels. Ordinary D3D11 enumeration remained empty before
+and after injection. This is a controlled test, not general public exposure.
 
 Core's zero inter-stage limit panic was reproduced in a public Noop test and
 fixed with signed deduction arithmetic. The expanded focused test and the

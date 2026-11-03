@@ -51,6 +51,7 @@ default = [
 ## Enables the DX12 backend on Windows.
 # Experimental DX11 selection; this does not expose a usable backend yet.
 dx11 = ["wgpu-core?/dx11"]
+dx11-test-fixture = ["dx11", "wgsl", "wgpu-hal/dx11-test-fixture"]
 dx12 = ["wgpu-core?/dx12"]
 
 ## Enables the Metal backend on macOS & iOS.

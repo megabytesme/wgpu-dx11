@@ -444,3 +444,13 @@ The strict private suite passed 169 tests, with two filtered; some older tests
 can skip internally. Targeted HAL Clippy passed with ten existing warnings.
 This conservative path still rejects valid index data above its FL9 limits and
 does not implement public robust-draw behavior or u32 indices.
+
+With strict hardware mode, `cargo test --offline -p wgpu --no-default-features
+--features std,dx11-test-fixture --test dx11_fixture -- --nocapture` passed on
+the RTX 3090 Ti at requested and actual FL9_1. The nondefault test injects the
+closed unsafe fixture through the public Rust API, verifies zero ordinary
+D3D11 adapters before and after injection, and checks 32 red and 32 green pixels
+from textured depth rendering. The first build exposed a missing unwrap of the
+mapped-range result; after correction the test passed. Targeted fixture Clippy
+and `cargo check --offline -p wgpu --no-default-features --features
+std,dx12,wgsl` passed. This fixture does not provide a usable public adapter.
