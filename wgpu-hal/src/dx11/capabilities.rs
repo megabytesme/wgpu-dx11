@@ -122,6 +122,8 @@ pub(super) struct BackendCapabilities {
     pub d24s8_depth_attachment: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
+    /// Restricted stream emulation; excludes `instance_index` and instance-only indexed draws.
+    pub restricted_instance_rate_streams: bool,
     pub queries: bool,
 }
 
@@ -158,6 +160,7 @@ impl BackendCapabilities {
         d24s8_depth_attachment: true,
         instancing: false,
         instancing_without_instance_inputs: true,
+        restricted_instance_rate_streams: true,
         queries: false,
     };
 }
@@ -371,6 +374,19 @@ mod tests {
             Query::<bool>::from_result(Err(error)),
             Query::Unavailable(windows::Win32::Foundation::E_INVALIDARG.0)
         );
+    }
+
+    #[test]
+    fn restricted_instance_streams_do_not_advertise_general_instancing() {
+        for level in FeatureLevel::ALL_DESCENDING {
+            let mut caps = model(level);
+            caps.driver.full_npot = Query::Unavailable(-1);
+            caps.driver.comparison_shadow = Query::Unavailable(-1);
+            assert!(caps.backend.restricted_instance_rate_streams);
+            assert!(caps.backend.instancing_without_instance_inputs);
+            assert!(!caps.backend.instancing);
+            assert!(!caps.public_adapter_supported());
+        }
     }
 
     #[test]

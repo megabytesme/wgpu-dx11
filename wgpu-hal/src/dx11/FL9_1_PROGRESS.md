@@ -930,3 +930,20 @@ or ordering defect. A negative effective indexed vertex with only zero-stride
 streams is conservatively discarded even though its constant addresses may be
 in bounds; its observable effect is unresolved beyond the current degenerate,
 side-effect-free triangle subset. Historical hardware remains unverified.
+Checkpoint: `cc8e1aa68`.
+
+Restricted instance-rate vertex streams now bind each instance's source record
+as a zero-stride native vertex stream before repeated ordinary draws; logical
+bounds are preflighted using wide arithmetic, and indexed rebasing/gathers use
+only vertex-rate streams. The strict `instance_stream` filter passed two CPU
+and one RTX FL9_1 GPU test. Four full-image executions covered nonzero first
+instance, sparse vertex/instance slots, zero-stride tint, GPU-written data,
+retention, direct/strip/u16/u32 windows and gather. Overlap at pixel (4,7)
+independently distinguishes correct instance-outer ordering. The controlled
+core fixture produced 32 red/32 green pixels for two instance records; the
+unsafe public-wgpu fixture still produced its 32 red/32 green indexed scene.
+The first strict full suite found an obsolete rejection assertion; after updating
+it, 228 cases passed with two filtered and three documented internal shader
+skips. HAL Clippy passed with ten existing warnings and ordinary core D3D11
+enumeration remained empty. Independent review found no concrete defect.
+All-instance-only indexed draws and instance_index remain unsupported.

@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 use super::{
-    command::{CommandBuffer, DepthAttachment, NativeCommand, RenderTarget},
+    command::{CommandBuffer, DepthAttachment, InstanceBindings, NativeCommand, RenderTarget},
     device::NativeDevice,
     Api as Dx11Api,
 };
@@ -44,7 +44,7 @@ struct RenderState {
     required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     vertices: [Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>;
         MAX_VERTEX_BUFFERS],
-    vertex_layouts: [Option<(u32, u32)>; MAX_VERTEX_BUFFERS],
+    vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; MAX_VERTEX_BUFFERS],
     vertex_slots: [Option<usize>; MAX_VERTEX_BUFFERS],
     topology: Option<wgt::PrimitiveTopology>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
@@ -62,7 +62,53 @@ struct BoundGroup {
     ranges: Vec<windows::Win32::Graphics::Direct3D11::D3D11_BOX>,
 }
 
+fn instance_range_fits(
+    offset: u32,
+    length: u64,
+    stride: u32,
+    extent: u32,
+    first: u32,
+    count: u32,
+) -> bool {
+    if count == 0 {
+        return true;
+    }
+    let last = u64::from(first) + u64::from(count) - 1;
+    let Some(relative) = last.checked_mul(u64::from(stride)) else {
+        return false;
+    };
+    relative
+        .checked_add(u64::from(extent))
+        .is_some_and(|end| end <= length)
+        && u64::from(offset)
+            .checked_add(relative)
+            .is_some_and(|value| value <= u64::from(u32::MAX))
+}
+
 impl RenderState {
+    fn instance_bindings(&self, first: u32, count: u32) -> Option<InstanceBindings> {
+        for (slot, layout) in self.vertex_layouts.iter().enumerate() {
+            let Some((stride, extent, wgt::VertexStepMode::Instance)) = *layout else {
+                continue;
+            };
+            let (_, offset, length) = self.vertices[slot].as_ref()?;
+            if !instance_range_fits(*offset, *length, stride, extent, first, count) {
+                return None;
+            }
+        }
+        let mut streams = Vec::new();
+        for (physical, logical) in self.vertex_slots.iter().enumerate() {
+            let Some(logical) = *logical else { continue };
+            let (stride, _, mode) = self.vertex_layouts[logical]?;
+            if mode != wgt::VertexStepMode::Instance {
+                continue;
+            }
+            let (buffer, offset, _) = self.vertices[logical].as_ref()?;
+            streams.push((physical as u32, buffer.clone(), *offset, stride));
+        }
+        Some(InstanceBindings { first, streams })
+    }
+
     fn resources_compatible(&self, level: super::device::FeatureLevel) -> bool {
         if !self.bindings_compatible() {
             return false;
@@ -962,7 +1008,7 @@ impl crate::CommandEncoder for CommandEncoder {
         &mut self,
         first_vertex: u32,
         vertex_count: u32,
-        _first_instance: u32,
+        first_instance: u32,
         instance_count: u32,
     ) {
         let Some(render) = self.render.as_ref() else {
@@ -971,9 +1017,12 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         let mut vertices = Vec::new();
         for (slot, layout) in render.vertex_layouts.iter().enumerate() {
-            let Some((stride, extent)) = *layout else {
+            let Some((stride, extent, mode)) = *layout else {
                 continue;
             };
+            if mode == wgt::VertexStepMode::Instance {
+                continue;
+            }
             let Some((_, _, bytes)) = render.vertices[slot].as_ref() else {
                 self.reject();
                 return;
@@ -997,10 +1046,13 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some((stride, _)) = render.vertex_layouts[logical] else {
+            let Some((stride, _, mode)) = render.vertex_layouts[logical] else {
                 self.reject();
                 return;
             };
+            if mode == wgt::VertexStepMode::Instance {
+                continue;
+            }
             vertices.push((physical as u32, buffer.clone(), *offset, stride));
         }
         let Some(topology) = render.topology else {
@@ -1022,6 +1074,11 @@ impl crate::CommandEncoder for CommandEncoder {
         if vertex_count == 0 || instance_count == 0 {
             return;
         }
+        let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
+        else {
+            self.reject();
+            return;
+        };
         if topology == wgt::PrimitiveTopology::TriangleStrip {
             if vertex_count < 3 {
                 return;
@@ -1050,6 +1107,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 vertices,
                 count: vertex_count,
                 instances: instance_count,
+                instance_bindings,
             });
             return;
         }
@@ -1089,6 +1147,7 @@ impl crate::CommandEncoder for CommandEncoder {
             instances: instance_count,
             max_vertices,
             zero_input,
+            instance_bindings,
         });
     }
 
@@ -1097,7 +1156,7 @@ impl crate::CommandEncoder for CommandEncoder {
         first_index: u32,
         index_count: u32,
         base_vertex: i32,
-        _first_instance: u32,
+        first_instance: u32,
         instance_count: u32,
     ) {
         let Some(render) = self.render.as_ref() else {
@@ -1109,6 +1168,11 @@ impl crate::CommandEncoder for CommandEncoder {
             .iter()
             .enumerate()
             .any(|(physical, logical)| logical.is_some() && (physical != 0 || *logical != Some(0)))
+            || render
+                .vertex_layouts
+                .iter()
+                .flatten()
+                .any(|(_, _, mode)| *mode == wgt::VertexStepMode::Instance)
         {
             let Some(index) = render.index.as_ref() else {
                 self.reject();
@@ -1130,7 +1194,7 @@ impl crate::CommandEncoder for CommandEncoder {
             let mut vertices = Vec::new();
             for (physical, logical) in render.vertex_slots.iter().enumerate() {
                 let Some(logical) = *logical else { continue };
-                let Some((stride, extent)) = render.vertex_layouts[logical] else {
+                let Some((stride, extent, mode)) = render.vertex_layouts[logical] else {
                     self.reject();
                     return;
                 };
@@ -1138,6 +1202,9 @@ impl crate::CommandEncoder for CommandEncoder {
                     self.reject();
                     return;
                 };
+                if mode == wgt::VertexStepMode::Instance {
+                    continue;
+                }
                 vertices.push((
                     physical as u32,
                     buffer.clone(),
@@ -1150,6 +1217,15 @@ impl crate::CommandEncoder for CommandEncoder {
             if index_count == 0 || instance_count == 0 {
                 return;
             }
+            if vertices.is_empty() {
+                self.reject();
+                return;
+            }
+            let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
+            else {
+                self.reject();
+                return;
+            };
             let Some(binding_commands) = render.binding_commands() else {
                 self.reject();
                 return;
@@ -1169,14 +1245,20 @@ impl crate::CommandEncoder for CommandEncoder {
                 base_vertex,
                 max_vertices,
                 instances: instance_count,
+                instance_bindings,
             });
             return;
         }
-        let (Some((buffer, offset, vertex_bytes)), Some((stride, extent)), Some(index)) = (
+        let (
+            Some((buffer, offset, vertex_bytes)),
+            Some((stride, extent, wgt::VertexStepMode::Vertex)),
+            Some(index),
+        ) = (
             render.vertices[0].as_ref(),
             render.vertex_layouts[0],
             render.index.as_ref(),
-        ) else {
+        )
+        else {
             self.reject();
             return;
         };
@@ -1405,6 +1487,24 @@ mod tests {
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
+
+    #[test]
+    fn instance_stream_range_checks_last_element_and_native_offset() {
+        assert!(instance_range_fits(8, 68, 24, 20, 0, 3));
+        assert!(!instance_range_fits(8, 67, 24, 20, 0, 3));
+        assert!(instance_range_fits(8, 20, 0, 20, u32::MAX, u32::MAX));
+        assert!(!instance_range_fits(8, 19, 0, 20, u32::MAX, u32::MAX));
+        assert!(instance_range_fits(8, 0, 4, 4, u32::MAX, 0));
+        assert!(!instance_range_fits(u32::MAX - 3, u64::MAX, 4, 4, 1, 1));
+        assert!(!instance_range_fits(
+            0,
+            u64::MAX,
+            u32::MAX,
+            4,
+            u32::MAX,
+            u32::MAX
+        ));
+    }
 
     #[test]
     fn attachment_ops_accept_discard_and_reject_ambiguous_flags() {
@@ -1749,7 +1849,12 @@ mod tests {
                 },
             )
         };
-        assert!(instance_result.is_err(), "instance-stepped vertex input");
+        unsafe {
+            crate::Device::destroy_render_pipeline(
+                &device,
+                instance_result.expect("instance-stepped vertex input"),
+            )
+        };
         let extent = wgt::Extent3d {
             width: 8,
             height: 8,
@@ -3727,6 +3832,10 @@ mod multi_vertex_stream_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/zero_stride.rs"]
 mod zero_stride_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/instance_streams.rs"]
+mod instance_stream_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]

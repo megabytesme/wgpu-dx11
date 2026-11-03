@@ -84,6 +84,10 @@ impl IndexBinding {
         self.format == wgt::IndexFormat::Uint32
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Indexed replay needs stream and instance state"
+    )]
     pub(super) fn draw_multi(
         &self,
         context: &ID3D11DeviceContext,
@@ -92,8 +96,10 @@ impl IndexBinding {
         base: i32,
         vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
         draw_limits: (u32, u32),
+        instance_bindings: &super::command::InstanceBindings,
     ) -> Result<()> {
         let (max_vertices, instances) = draw_limits;
+        instance_bindings.validate(instances)?;
         if vertices.is_empty()
             || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
                 !offset.is_multiple_of(4)
@@ -172,15 +178,12 @@ impl IndexBinding {
                     );
                 }
                 context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
-                super::command::draw_batches(
-                    first,
-                    count,
-                    instances,
-                    max_vertices,
-                    |first, count| {
+                for instance in 0..instances {
+                    instance_bindings.bind(context, instance)?;
+                    super::command::draw_batches(first, count, 1, max_vertices, |first, count| {
                         context.DrawIndexed(count, first, base);
-                    },
-                )?;
+                    })?;
+                }
                 return Ok(());
             }
             let Some(plan) = plan else {
@@ -320,43 +323,50 @@ impl IndexBinding {
                     }
                 }
             }
-            for_each_window(instances, prepared.len(), |index| match &prepared[index] {
-                Segment::Window {
-                    buffer,
-                    offsets,
-                    count,
-                } => {
-                    for ((slot, vertex, _, _, stride, _), offset) in vertices.iter().zip(offsets) {
-                        context.IASetVertexBuffers(
-                            *slot,
-                            1,
-                            Some(&Some(vertex.clone())),
-                            Some(stride),
-                            Some(offset),
-                        );
+            for instance in 0..instances {
+                instance_bindings.bind(context, instance)?;
+                for segment in &prepared {
+                    match segment {
+                        Segment::Window {
+                            buffer,
+                            offsets,
+                            count,
+                        } => {
+                            for ((slot, vertex, _, _, stride, _), offset) in
+                                vertices.iter().zip(offsets)
+                            {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(vertex.clone())),
+                                    Some(stride),
+                                    Some(offset),
+                                );
+                            }
+                            context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
+                            context.DrawIndexed(*count, 0, 0);
+                        }
+                        Segment::Gather { streams } => {
+                            for ((slot, vertex, offset, _, stride, _), stream) in
+                                vertices.iter().zip(streams)
+                            {
+                                let (buffer, offset) = match stream {
+                                    Some((buffer, _)) => (buffer, &0),
+                                    None => (vertex, offset),
+                                };
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(stride),
+                                    Some(offset),
+                                );
+                            }
+                            context.Draw(3, 0);
+                        }
                     }
-                    context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
-                    context.DrawIndexed(*count, 0, 0);
                 }
-                Segment::Gather { streams } => {
-                    for ((slot, vertex, offset, _, stride, _), stream) in
-                        vertices.iter().zip(streams)
-                    {
-                        let (buffer, offset) = match stream {
-                            Some((buffer, _)) => (buffer, &0),
-                            None => (vertex, offset),
-                        };
-                        context.IASetVertexBuffers(
-                            *slot,
-                            1,
-                            Some(&Some(buffer.clone())),
-                            Some(stride),
-                            Some(offset),
-                        );
-                    }
-                    context.Draw(3, 0);
-                }
-            });
+            }
         }
         Ok(())
     }

@@ -67,6 +67,26 @@ handling of a negative base-adjusted index when all streams have zero stride is
 still an open specification question; there is no visible proof from the current
 triangle-only shader subset. Historical FL9_1 drivers remain unverified.
 
+With strict hardware mode enabled, run the instance-stream checks with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 instance_stream -- --nocapture --test-threads=1
+```
+
+The filter passed three cases: two CPU arithmetic/range tests and one physical
+RTX 3090 Ti test at requested and selected FL9_1. The GPU case checked four
+full-image executions across direct, strip, Uint16 and Uint32 window/gather
+draws, with sparse mixed-rate streams, nonzero `first_instance`, zero-stride
+tint, GPU copies and retained resources. It also checked short-range rejection.
+In the Uint32 case, a red gather overlaps a green window at pixel (4, 7), while
+the green gather does not cover it. The expected green pixel therefore
+distinguishes instance-outer ordering from segment-outer ordering, which would
+leave it red.
+The controlled core fixture's instance-rate case produced 32 red and 32 green
+pixels. Indexed draws containing only instance-rate streams and shaders using
+`instance_index` remain unsupported. These results do not establish general
+instancing or historical FL9_1-driver behavior.
+
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 
 ```powershell

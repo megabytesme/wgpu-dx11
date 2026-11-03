@@ -320,7 +320,7 @@ pub struct RenderPipeline {
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
-    pub(super) vertex_layouts: [Option<(u32, u32)>; crate::MAX_VERTEX_BUFFERS],
+    pub(super) vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; crate::MAX_VERTEX_BUFFERS],
     pub(super) vertex_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
     pub(super) topology: wgt::PrimitiveTopology,
 }
@@ -1917,7 +1917,6 @@ impl RenderPipeline {
             || vertex_buffers.iter().flatten().any(|buffer| {
                 buffer.array_stride > 2048
                     || buffer.array_stride % 4 != 0
-                    || buffer.step_mode != wgt::VertexStepMode::Vertex
                     || buffer.attributes.is_empty()
                     || buffer.attributes.len() > 16
             })
@@ -2151,7 +2150,8 @@ impl RenderPipeline {
                     InstanceDataStepRate: 0,
                 });
             }
-            vertex_layouts[slot] = Some((layout.array_stride as u32, vertex_extent));
+            vertex_layouts[slot] =
+                Some((layout.array_stride as u32, vertex_extent, layout.step_mode));
         }
         let raster_desc = D3D11_RASTERIZER_DESC {
             FillMode: D3D11_FILL_SOLID,

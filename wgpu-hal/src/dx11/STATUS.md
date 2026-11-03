@@ -38,7 +38,7 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
-  vertex-rate streams, winding and face
+  vertex- or instance-rate streams, winding and face
   culling, bounds-checked scissors, per-channel color write masks,
   restricted replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked shaders allow proven value-vector dynamic reads;
@@ -71,9 +71,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   buffers; other valid indices use ordered rebased Uint16 windows or gather
   each stream into scratch buffers for wide triangles. Indexed strips remain
   unsupported.
-- Direct and indexed instancing repeat native draws in instance order when the
-  shader has no instance-dependent inputs. Nonzero first instance is ignored
-  within this subset; general instancing is not advertised.
+- Restricted direct, strip and indexed instancing repeats non-instanced native
+  draws, binding each instance-rate stream with native stride zero at its
+  `first_instance`-adjusted offset. Pipelines using `instance_index` and indexed
+  draws with only instance-rate streams remain unsupported; general instancing
+  is not advertised.
 - Restricted indexed draws support signed base vertices and validate GPU index
   contents at replay. Uint32 triangle lists and Uint16 values beyond native
   limits convert to ordered native 16-bit windows, with wide triangles gathered

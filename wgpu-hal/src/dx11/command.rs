@@ -50,6 +50,54 @@ pub(super) enum RenderTarget {
     Surface(Weak<ID3D11RenderTargetView>),
 }
 
+#[derive(Debug)]
+pub(super) struct InstanceBindings {
+    pub first: u32,
+    pub streams: Vec<(u32, ID3D11Buffer, u32, u32)>,
+}
+
+impl InstanceBindings {
+    pub(super) fn validate(&self, instances: u32) -> Result<()> {
+        if let Some(last) = instances.checked_sub(1) {
+            for (_, _, offset, stride) in &self.streams {
+                instance_vertex_offset(*offset, *stride, self.first, last)
+                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn bind(&self, context: &ID3D11DeviceContext, instance: u32) -> Result<()> {
+        for (slot, buffer, offset, stride) in &self.streams {
+            let absolute = instance_vertex_offset(*offset, *stride, self.first, instance)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            unsafe {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(&0),
+                    Some(&absolute),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn instance_vertex_offset(
+    offset: u32,
+    stride: u32,
+    first: u32,
+    instance: u32,
+) -> Option<u32> {
+    let index = u64::from(first) + u64::from(instance);
+    let offset = u64::from(stride)
+        .checked_mul(index)?
+        .checked_add(u64::from(offset))?;
+    u32::try_from(offset).ok()
+}
+
 impl RenderTarget {
     fn resolve(&self) -> Result<ID3D11RenderTargetView> {
         match self {
@@ -121,11 +169,13 @@ pub(super) enum NativeCommand {
         instances: u32,
         max_vertices: u32,
         zero_input: bool,
+        instance_bindings: InstanceBindings,
     },
     DrawStrip {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
         count: u32,
         instances: u32,
+        instance_bindings: InstanceBindings,
     },
     DrawIndexed {
         binding: Arc<IndexBinding>,
@@ -148,6 +198,7 @@ pub(super) enum NativeCommand {
         base_vertex: i32,
         max_vertices: u32,
         instances: u32,
+        instance_bindings: InstanceBindings,
     },
     EndRender,
 }
@@ -447,36 +498,47 @@ impl CommandBuffer {
                         instances,
                         max_vertices,
                         zero_input,
+                        instance_bindings,
                     } => {
-                        draw_batches(*first, *count, *instances, *max_vertices, |first, count| {
-                            context.Draw(count, draw_start_vertex(first, *zero_input));
-                        })?;
+                        instance_bindings.validate(*instances)?;
+                        draw_batches(*first, *count, 0, *max_vertices, |_, _| {})?;
+                        for instance in 0..*instances {
+                            instance_bindings.bind(context, instance)?;
+                            draw_batches(*first, *count, 1, *max_vertices, |first, count| {
+                                context.Draw(count, draw_start_vertex(first, *zero_input));
+                            })?;
+                        }
                     }
                     NativeCommand::DrawStrip {
                         vertices,
                         count,
                         instances,
+                        instance_bindings,
                     } => {
+                        instance_bindings.validate(*instances)?;
                         strip_batches(*count, 1, |first, _| {
                             for (_, _, offset, stride) in vertices {
                                 strip_vertex_offset(*offset, *stride, first)?;
                             }
                             Ok(())
                         })?;
-                        strip_batches(*count, *instances, |first, count| {
-                            for (slot, buffer, base_offset, stride) in vertices {
-                                let offset = strip_vertex_offset(*base_offset, *stride, first)?;
-                                context.IASetVertexBuffers(
-                                    *slot,
-                                    1,
-                                    Some(&Some(buffer.clone())),
-                                    Some(stride),
-                                    Some(&offset),
-                                );
-                            }
-                            context.Draw(count, 0);
-                            Ok(())
-                        })?;
+                        for instance in 0..*instances {
+                            instance_bindings.bind(context, instance)?;
+                            strip_batches(*count, 1, |first, count| {
+                                for (slot, buffer, base_offset, stride) in vertices {
+                                    let offset = strip_vertex_offset(*base_offset, *stride, first)?;
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer.clone())),
+                                        Some(stride),
+                                        Some(&offset),
+                                    );
+                                }
+                                context.Draw(count, 0);
+                                Ok(())
+                            })?;
+                        }
                     }
                     NativeCommand::DrawIndexed {
                         binding,
@@ -508,6 +570,7 @@ impl CommandBuffer {
                         base_vertex,
                         max_vertices,
                         instances,
+                        instance_bindings,
                     } => binding.draw_multi(
                         context,
                         *first,
@@ -515,6 +578,7 @@ impl CommandBuffer {
                         *base_vertex,
                         vertices,
                         (*max_vertices, *instances),
+                        instance_bindings,
                     )?,
                     NativeCommand::EndRender => context.ClearState(),
                 }
@@ -580,6 +644,17 @@ mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
+
+    #[test]
+    fn instance_stream_offsets_use_wide_index_arithmetic() {
+        assert_eq!(instance_vertex_offset(8, 4, 1, 2), Some(20));
+        assert_eq!(instance_vertex_offset(8, 0, u32::MAX, u32::MAX), Some(8));
+        assert_eq!(instance_vertex_offset(u32::MAX - 3, 4, 1, 0), None);
+        assert_eq!(
+            instance_vertex_offset(0, u32::MAX, u32::MAX, u32::MAX),
+            None
+        );
+    }
 
     #[test]
     fn fl91_direct_triangle_batches_limit_unique_vertices() {

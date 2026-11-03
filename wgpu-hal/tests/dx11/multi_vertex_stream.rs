@@ -171,12 +171,13 @@ fn sparse_vertex_streams(
     .is_err());
     let duplicates = [buffers[0].clone(), buffers[0].clone()];
     assert!(make_pipeline(&duplicates, "vs", wgt::PrimitiveTopology::TriangleList).is_err());
-    let instance_layout = [Some(crate::VertexBufferLayout {
+    let oversized_instance_layout = [Some(crate::VertexBufferLayout {
+        array_stride: 2052,
         step_mode: wgt::VertexStepMode::Instance,
         ..buffers[0].clone().unwrap()
     })];
     assert!(make_pipeline(
-        &instance_layout,
+        &oversized_instance_layout,
         "vs_red",
         wgt::PrimitiveTopology::TriangleList
     )

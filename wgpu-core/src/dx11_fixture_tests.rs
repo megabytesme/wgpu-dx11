@@ -324,11 +324,16 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(actual, expected.as_slice());
     std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
-    render_triangle(&global, device, queue, false, false, false, false);
-    render_triangle(&global, device, queue, true, false, false, false);
-    render_triangle(&global, device, queue, false, true, false, false);
-    render_triangle(&global, device, queue, false, false, true, false);
-    render_triangle(&global, device, queue, false, false, false, true);
+    for case in [
+        VertexCase::Baseline,
+        VertexCase::Overlapping,
+        VertexCase::NoopStencil,
+        VertexCase::Snorm,
+        VertexCase::ZeroStride,
+        VertexCase::InstanceRate,
+    ] {
+        render_triangle(&global, device, queue, case);
+    }
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -354,16 +359,28 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.adapters.is_empty());
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum VertexCase {
+    Baseline,
+    Overlapping,
+    NoopStencil,
+    Snorm,
+    ZeroStride,
+    InstanceRate,
+}
+
 fn render_triangle(
     global: &Global,
     device: crate::id::DeviceId,
     queue: crate::id::QueueId,
-    overlapping: bool,
-    noop_stencil: bool,
-    snorm: bool,
-    zero_stride: bool,
+    case: VertexCase,
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
+    let overlapping = case == VertexCase::Overlapping;
+    let noop_stencil = case == VertexCase::NoopStencil;
+    let snorm = case == VertexCase::Snorm;
+    let zero_stride = case == VertexCase::ZeroStride;
+    let instance_rate = case == VertexCase::InstanceRate;
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -510,7 +527,9 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = if snorm {
+    let source = if instance_rate {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) inst_data: vec2f) -> Out { return Out(vec4f(p.x + inst_data.x, p.yz, 1.0), vec2f(inst_data.y, 0.5)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else if snorm {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), vec2f(uv.x * 0.5 + 0.5, uv.y)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
     } else if overlapping {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), vec2f(uv.y, 0.5)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
@@ -549,7 +568,7 @@ fn render_triangle(
             } else {
                 wgt::VertexFormat::Float32x2
             },
-            offset: if zero_stride {
+            offset: if zero_stride || instance_rate {
                 0
             } else if overlapping {
                 4
@@ -559,7 +578,7 @@ fn render_triangle(
             shader_location: 1,
         },
     ];
-    let buffers = if zero_stride {
+    let buffers = if zero_stride || instance_rate {
         vec![
             Some(pipeline::VertexBufferLayout {
                 array_stride: 20,
@@ -567,8 +586,12 @@ fn render_triangle(
                 attributes: Cow::Borrowed(&attrs[..1]),
             }),
             Some(pipeline::VertexBufferLayout {
-                array_stride: 0,
-                step_mode: wgt::VertexStepMode::Vertex,
+                array_stride: if instance_rate { 8 } else { 0 },
+                step_mode: if instance_rate {
+                    wgt::VertexStepMode::Instance
+                } else {
+                    wgt::VertexStepMode::Vertex
+                },
                 attributes: Cow::Borrowed(&attrs[1..]),
             }),
         ]
@@ -662,21 +685,26 @@ fn render_triangle(
     global
         .queue_write_buffer(queue, vertices, 0, &bytes)
         .expect("vertex upload");
-    let constant_vertices = if zero_stride {
+    let auxiliary_vertices = if zero_stride || instance_rate {
         let (buffer, error) = global.device_create_buffer(
             device,
             &wgt::BufferDescriptor {
                 label: None,
-                size: 16,
+                size: if instance_rate { 32 } else { 16 },
                 usage: wgt::BufferUsages::VERTEX | wgt::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             },
             None,
         );
-        assert!(error.is_none(), "zero-stride buffer: {error:?}");
-        let data: Vec<_> = [0.0f32, 0.75, 0.5, 0.0]
-            .into_iter()
-            .flat_map(f32::to_ne_bytes)
+        assert!(error.is_none(), "auxiliary vertex buffer: {error:?}");
+        let values: &[f32] = if instance_rate {
+            &[0.0, -8.0, 0.75, 0.0, 0.25, 1.0, 0.75, 0.0]
+        } else {
+            &[0.0, 0.75, 0.5, 0.0]
+        };
+        let data: Vec<_> = values
+            .iter()
+            .flat_map(|value| value.to_ne_bytes())
             .collect();
         global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
         Some(buffer)
@@ -749,7 +777,7 @@ fn render_triangle(
     global
         .render_pass_set_vertex_buffer(&mut pass, 0, Some(vertices), 0, None)
         .unwrap();
-    if let Some(buffer) = constant_vertices {
+    if let Some(buffer) = auxiliary_vertices {
         global
             .render_pass_set_vertex_buffer(&mut pass, 1, Some(buffer), 4, None)
             .unwrap();
@@ -757,8 +785,13 @@ fn render_triangle(
     global
         .render_pass_set_bind_group(&mut pass, 0, Some(group), &[])
         .unwrap();
-    global.render_pass_draw(&mut pass, 6, 1, 0, 0).unwrap();
-    global.render_pass_draw(&mut pass, 3, 1, 6, 0).unwrap();
+    let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
+    global
+        .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
+        .unwrap();
+    global
+        .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
+        .unwrap();
     global.render_pass_end(&mut pass).unwrap();
     drop(pass);
     global
@@ -833,9 +866,7 @@ fn render_triangle(
             );
         }
     }
-    std::println!(
-        "PASS: core textured depth test (overlapping={overlapping}, noop_stencil={noop_stencil}, snorm={snorm}, zero_stride={zero_stride}): 64 pixels matched"
-    );
+    std::println!("PASS: core textured depth test ({case:?}): 64 pixels matched");
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
@@ -852,7 +883,7 @@ fn render_triangle(
     global.texture_view_drop(view);
     global.texture_drop(target);
     global.buffer_drop(vertices);
-    if let Some(buffer) = constant_vertices {
+    if let Some(buffer) = auxiliary_vertices {
         global.buffer_drop(buffer);
     }
     global.buffer_drop(readback);
