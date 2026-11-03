@@ -869,3 +869,17 @@ strict suite passed 216 cases, two filtered, including these tests; HAL Clippy
 passed with ten existing warnings, and normal core enumeration stayed empty.
 An independent review found no concrete correctness issue. Historical drivers
 and memoryless optimization are unverified.
+Checkpoint: `672db3fb3`.
+
+FL9_1 overlapping vertex elements now use deterministic native slot groups,
+while logical buffer bindings and range checks remain unchanged. The strict
+`overlapping_vertex` GPU test passed nine full-image executions on the RTX,
+covering exact/partial overlap, lists, strips, pipeline transitions and u32
+window/wide-gather draws. The slot allocator CPU test passed. The controlled
+core fixture rendered both disjoint and partially overlapping layouts, each
+with 32 red and 32 green pixels. The five strict sparse vertex regressions
+passed. Independent review found no concrete mapping or lifetime defect;
+historical FL9_1 drivers and remaining vertex formats/strides are unverified.
+The complete strict D3D11 suite passed 218 cases, two filtered, with the three
+previously documented internal shader GPU skips. HAL Clippy passed with ten
+existing warnings; core ordinary D3D11 enumeration remained empty.

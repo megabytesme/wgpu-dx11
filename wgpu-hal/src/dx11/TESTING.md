@@ -28,9 +28,11 @@ allocation or memory savings. Historical FL9_1 devices remain unverified.
 fl91_sparse_vertex_ -- --nocapture --test-threads=1` checks direct sparse streams,
 slot 15 and rejection at 16, range boundaries, pipeline transitions, a queued
 GPU copy and resource retention. It binds one buffer in two slots with distinct
-byte regions; overlapping physical bytes across slots remain unverified. The
-strip test also checks per-slot rebasing across a 65,536-vertex split, but its
-opaque, unculled output does not independently establish parity or instance order.
+byte regions. Separate overlap tests bind overlapping physical bytes through
+distinct native slots on the tested RTX; historical FL9_1 devices remain
+unverified. The strip test also checks per-slot rebasing across a 65,536-vertex
+split, but its opaque, unculled output does not independently establish parity
+or instance order.
 
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 
@@ -54,11 +56,21 @@ fl91_direct_triangle_ -- --nocapture --test-threads=1` checks direct triangle
 batch boundaries and order on CPU and validates pixels on both sides of a split
 on physical hardware. Opaque output does not independently prove instance order.
 
-`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
-vertex_element_overlap -- --nocapture --test-threads=1` checks the selected-level
-overlap rule synthetically and on a forced-FL9_1 device. It includes overlapping,
-adjacent, disjoint and invalid-range input layouts; it does not establish older
-driver behavior for nonzero stream offsets or maximum strides.
+With strict hardware mode enabled, run the overlap execution test and allocator
+unit test with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 overlapping_vertex -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_slots_reserve_logical_streams_and_partition_overlaps -- --nocapture
+```
+
+On the RTX 3090 Ti forced to FL9_1, the GPU test checked all pixels for nine
+executions: exact and partial overlaps across triangle lists, nonindexed strips
+and indexed lists, a pipeline transition, and u32 window and wide-gather draws. The CPU test checks slot
+allocation, logical-slot reservations and the selected-level distinction. The
+controlled core fixture also rendered both disjoint and overlapping layouts,
+each producing 32 red and 32 green pixels. These results do not establish
+older-driver behavior, unsupported vertex formats or maximum-stride support.
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 triangle_strip -- --nocapture --test-threads=1` checks the private nonindexed

@@ -58,6 +58,42 @@ fn overlapping_vertex_element(
             .any(|&(other_start, other_end)| start < other_end && other_start < end)
 }
 
+struct VertexSlotAllocator {
+    logical_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
+    ranges: [alloc::vec::Vec<(u32, u32)>; crate::MAX_VERTEX_BUFFERS],
+    level: FeatureLevel,
+}
+
+impl VertexSlotAllocator {
+    fn new(level: FeatureLevel, occupied: impl Iterator<Item = usize>) -> Self {
+        let mut logical_slots = [None; crate::MAX_VERTEX_BUFFERS];
+        for slot in occupied {
+            logical_slots[slot] = Some(slot);
+        }
+        Self {
+            logical_slots,
+            ranges: core::array::from_fn(|_| alloc::vec::Vec::new()),
+            level,
+        }
+    }
+
+    fn assign(&mut self, logical: usize, range: (u32, u32)) -> Option<u32> {
+        let slot = self
+            .logical_slots
+            .iter()
+            .enumerate()
+            .find(|(physical, owner)| {
+                **owner == Some(logical)
+                    && !overlapping_vertex_element(self.level, &self.ranges[*physical], range)
+            })
+            .map(|(physical, _)| physical)
+            .or_else(|| self.logical_slots.iter().position(Option::is_none))?;
+        self.logical_slots[slot] = Some(logical);
+        self.ranges[slot].push(range);
+        Some(slot as u32)
+    }
+}
+
 fn format_blendable(support: windows::core::Result<u32>) -> Result<bool, crate::DeviceError> {
     match support {
         Ok(bits) => Ok(bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0),
@@ -254,6 +290,7 @@ pub struct RenderPipeline {
     pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     pub(super) vertex_layouts: [Option<(u32, u32)>; crate::MAX_VERTEX_BUFFERS],
+    pub(super) vertex_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
     pub(super) topology: wgt::PrimitiveTopology,
 }
 
@@ -357,6 +394,34 @@ mod tests {
     }
 
     #[test]
+    fn vertex_slots_reserve_logical_streams_and_partition_overlaps() {
+        let mut allocator = VertexSlotAllocator::new(FeatureLevel::L9_1, [0, 2, 4].into_iter());
+        assert_eq!(allocator.assign(0, (0, 8)), Some(0));
+        assert_eq!(allocator.assign(0, (4, 12)), Some(1));
+        assert_eq!(allocator.assign(0, (8, 16)), Some(0));
+        assert_eq!(allocator.assign(2, (0, 8)), Some(2));
+        assert_eq!(allocator.assign(2, (0, 8)), Some(3));
+        assert_eq!(allocator.assign(4, (0, 4)), Some(4));
+        assert_eq!(
+            &allocator.logical_slots[..5],
+            &[Some(0), Some(0), Some(2), Some(2), Some(4)]
+        );
+
+        let mut full = VertexSlotAllocator::new(FeatureLevel::L9_1, [0].into_iter());
+        for physical in 0..crate::MAX_VERTEX_BUFFERS {
+            assert_eq!(full.assign(0, (0, 4)), Some(physical as u32));
+        }
+        assert_eq!(full.assign(0, (0, 4)), None);
+        for level in FeatureLevel::ALL_DESCENDING {
+            if level != FeatureLevel::L9_1 {
+                let mut allocator = VertexSlotAllocator::new(level, [2].into_iter());
+                assert_eq!(allocator.assign(2, (0, 8)), Some(2));
+                assert_eq!(allocator.assign(2, (4, 12)), Some(2));
+            }
+        }
+    }
+
+    #[test]
     fn color_write_masks_map_all_channels_and_reject_unknown_bits() {
         for bits in 0..16 {
             assert_eq!(
@@ -422,7 +487,7 @@ mod tests {
     };
 
     #[test]
-    fn fl91_vertex_element_overlap_is_rejected() -> windows::core::Result<()> {
+    fn fl91_vertex_element_overlap_uses_separate_slots() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let required =
             std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
@@ -522,13 +587,11 @@ mod tests {
             let pipeline = make_pipeline(a, b).expect("disjoint vertex elements must work");
             unsafe { device.destroy_render_pipeline(pipeline) };
         }
-        for (name, a, b) in [("same start", 0, 0), ("partial", 0, 12), ("nested", 0, 4)] {
-            let result = make_pipeline(a, b);
-            assert!(
-                matches!(&result, Err(crate::PipelineError::Linkage(_, message))
-                    if message == "overlapping vertex attributes are unsupported at D3D11 feature level 9_1"),
-                "{name} overlap must fail backend validation: {result:?}"
-            );
+        for (a, b) in [(0, 0), (0, 12), (0, 4)] {
+            let pipeline = make_pipeline(a, b).expect("overlapping vertex elements must work");
+            assert_eq!(pipeline.vertex_slots[0], Some(0));
+            assert_eq!(pipeline.vertex_slots[1], Some(0));
+            unsafe { device.destroy_render_pipeline(pipeline) };
         }
         for (a, b) in [(u64::MAX, 0), (28, 0)] {
             assert!(make_pipeline(a, b).is_err(), "invalid range {a}, {b}");
@@ -1924,10 +1987,16 @@ impl RenderPipeline {
         };
         let mut input_desc = alloc::vec::Vec::new();
         let mut vertex_layouts = [None; crate::MAX_VERTEX_BUFFERS];
+        let mut vertex_slots = VertexSlotAllocator::new(
+            owner.feature_level(),
+            vertex_buffers
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, layout)| layout.as_ref().map(|_| slot)),
+        );
         let mut locations = 0u32;
         for (slot, layout) in vertex_buffers.iter().enumerate() {
             let Some(layout) = layout else { continue };
-            let mut vertex_ranges = alloc::vec::Vec::new();
             let mut vertex_extent = 0u32;
             for attribute in layout.attributes {
                 let (format, size) = match attribute.format {
@@ -1947,22 +2016,16 @@ impl RenderPipeline {
                 {
                     return Err(invalid());
                 }
-                if overlapping_vertex_element(owner.feature_level(), &vertex_ranges, (offset, end))
-                {
-                    return Err(crate::PipelineError::Linkage(
-                        wgt::ShaderStages::VERTEX,
-                        "overlapping vertex attributes are unsupported at D3D11 feature level 9_1"
-                            .into(),
-                    ));
-                }
-                vertex_ranges.push((offset, end));
+                let physical_slot = vertex_slots
+                    .assign(slot, (offset, end))
+                    .ok_or_else(invalid)?;
                 locations |= 1 << attribute.shader_location;
                 vertex_extent = vertex_extent.max(end);
                 input_desc.push(D3D11_INPUT_ELEMENT_DESC {
                     SemanticName: PCSTR(c"LOC".as_ptr().cast()),
                     SemanticIndex: attribute.shader_location,
                     Format: format,
-                    InputSlot: slot as u32,
+                    InputSlot: physical_slot,
                     AlignedByteOffset: offset,
                     InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
                     InstanceDataStepRate: 0,
@@ -2073,6 +2136,7 @@ impl RenderPipeline {
             full_npot,
             required_uniform_sizes,
             vertex_layouts,
+            vertex_slots: vertex_slots.logical_slots,
             topology: desc.primitive.topology,
         })
     }

@@ -45,6 +45,7 @@ struct RenderState {
     vertices: [Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>;
         MAX_VERTEX_BUFFERS],
     vertex_layouts: [Option<(u32, u32)>; MAX_VERTEX_BUFFERS],
+    vertex_slots: [Option<usize>; MAX_VERTEX_BUFFERS],
     topology: Option<wgt::PrimitiveTopology>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
     viewport_remap: bool,
@@ -751,6 +752,7 @@ impl crate::CommandEncoder for CommandEncoder {
             required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
             vertices: core::array::from_fn(|_| None),
             vertex_layouts: [None; MAX_VERTEX_BUFFERS],
+            vertex_slots: [None; MAX_VERTEX_BUFFERS],
             topology: None,
             index: None,
             viewport_remap: false,
@@ -803,6 +805,7 @@ impl crate::CommandEncoder for CommandEncoder {
         render.full_npot = pipeline.full_npot;
         render.required_uniform_sizes = pipeline.required_uniform_sizes;
         render.vertex_layouts = pipeline.vertex_layouts;
+        render.vertex_slots = pipeline.vertex_slots;
         render.topology = Some(pipeline.topology);
         render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
         let vertex = if render.viewport_remap {
@@ -969,7 +972,7 @@ impl crate::CommandEncoder for CommandEncoder {
             let Some((stride, extent)) = *layout else {
                 continue;
             };
-            let Some((buffer, offset, bytes)) = render.vertices[slot].as_ref() else {
+            let Some((_, _, bytes)) = render.vertices[slot].as_ref() else {
                 self.reject();
                 return;
             };
@@ -985,7 +988,18 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             }
-            vertices.push((slot as u32, buffer.clone(), *offset, stride));
+        }
+        for (physical, logical) in render.vertex_slots.iter().enumerate() {
+            let Some(logical) = *logical else { continue };
+            let Some((buffer, offset, _)) = render.vertices[logical].as_ref() else {
+                self.reject();
+                return;
+            };
+            let Some((stride, _)) = render.vertex_layouts[logical] else {
+                self.reject();
+                return;
+            };
+            vertices.push((physical as u32, buffer.clone(), *offset, stride));
         }
         let Some(topology) = render.topology else {
             self.reject();
@@ -1088,7 +1102,12 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        if render.vertex_layouts.iter().skip(1).any(Option::is_some) {
+        if render
+            .vertex_slots
+            .iter()
+            .enumerate()
+            .any(|(physical, logical)| logical.is_some() && (physical != 0 || *logical != Some(0)))
+        {
             let Some(index) = render.index.as_ref() else {
                 self.reject();
                 return;
@@ -1107,16 +1126,18 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             }
             let mut vertices = Vec::new();
-            for (slot, layout) in render.vertex_layouts.iter().enumerate() {
-                let Some((stride, extent)) = *layout else {
-                    continue;
+            for (physical, logical) in render.vertex_slots.iter().enumerate() {
+                let Some(logical) = *logical else { continue };
+                let Some((stride, extent)) = render.vertex_layouts[logical] else {
+                    self.reject();
+                    return;
                 };
-                let Some((buffer, offset, length)) = render.vertices[slot].as_ref() else {
+                let Some((buffer, offset, length)) = render.vertices[logical].as_ref() else {
                     self.reject();
                     return;
                 };
                 vertices.push((
-                    slot as u32,
+                    physical as u32,
                     buffer.clone(),
                     *offset,
                     *length,
@@ -3700,6 +3721,10 @@ mod triangle_strip_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/multi_vertex_stream.rs"]
 mod multi_vertex_stream_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
+mod overlapping_vertex_attribute_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/uniform_bindings.rs"]

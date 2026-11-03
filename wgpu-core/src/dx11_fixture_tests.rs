@@ -324,7 +324,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(actual, expected.as_slice());
     std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
-    render_triangle(&global, device, queue);
+    render_triangle(&global, device, queue, false);
+    render_triangle(&global, device, queue, true);
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);
@@ -350,7 +351,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.adapters.is_empty());
 }
 
-fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::id::QueueId) {
+fn render_triangle(
+    global: &Global,
+    device: crate::id::DeviceId,
+    queue: crate::id::QueueId,
+    overlapping: bool,
+) {
     use crate::{binding_model, command as render, pipeline, resource};
     let extent = wgt::Extent3d {
         width: 8,
@@ -498,7 +504,11 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }";
+    let source = if overlapping {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), vec2f(uv.y, 0.5)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    };
     let (shader, error) = global.device_create_shader_module(
         device,
         &pipeline::ShaderModuleDescriptor {
@@ -527,7 +537,7 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
         },
         wgt::VertexAttribute {
             format: wgt::VertexFormat::Float32x2,
-            offset: 12,
+            offset: if overlapping { 4 } else { 12 },
             shader_location: 1,
         },
     ];
@@ -730,7 +740,7 @@ fn render_triangle(global: &Global, device: crate::id::DeviceId, queue: crate::i
         }
     }
     std::println!(
-        "PASS: core textured depth test GPU readback: 32 red left pixels, 32 green right pixels"
+        "PASS: core textured depth test (overlapping={overlapping}): 32 red left pixels, 32 green right pixels"
     );
     global.buffer_unmap(readback).unwrap();
     global.command_buffer_drop(command);

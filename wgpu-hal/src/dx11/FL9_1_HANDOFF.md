@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 216 tests; older
+operations are safe. The latest combined strict suite passed 218 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -112,17 +112,16 @@ Nonindexed triangle strips use parity-preserving, rebased batches. Indexed strip
 restart is not a guaranteed FL9_x native operation and remains rejected pending
 a separate translation; accepting a strip index format in a private pipeline
 does not make indexed strip draws supported.
-Private input-layout validation currently rejects overlapping element byte ranges on
-FL9_1. Core does not yet express that restriction; stream-offset and stride
-behavior remains unverified on historical hardware.
+FL9_1 overlapping vertex attributes are partitioned into separate native input
+slots that bind the same logical buffer and preserve its original bounds. Private
+and controlled-core GPU tests passed; historical-driver behavior remains unverified.
 Private direct triangle lists and nonindexed strips support up to sixteen sparse
 vertex-rate slots. The existing slot-0 indexed path remains available. Multi-slot and nonzero-slot
 indexed triangle lists accept Uint16 and Uint32. GPU index data is scanned
 at replay against every stream; any out-of-range fetch discards the entire draw.
 Native-safe Uint16 uses a direct path; other draws use common translated windows
 or per-stream GPU gathers for wide triangles. All segment resources are prepared
-before drawing. Index staging can stall and historical drivers remain unverified. Overlapping physical bytes read through
-separate slots remain unverified.
+before drawing. Index staging can stall and historical drivers remain unverified.
 Naga's HLSL special handling of matrix stores in structures can omit an index
 clamp or pass a destination by value. The private HAL now rejects stores through
 matrix-containing aggregates in both shader modes with a bounded selected-entry
@@ -146,7 +145,7 @@ cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --feature
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
-The strict private suite most recently passed 216 tests with two filtered;
+The strict private suite most recently passed 218 tests with two filtered;
 some older tests can skip internally. The focused physical-GPU color-mask test
 reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
 requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,

@@ -52,8 +52,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   indexed strips remain unsupported because native strip cuts are not guaranteed.
 - Direct FL9_1 triangle-list batches are conservatively limited to 65,535
   vertices; indexed draw batching retains its separate limit.
-- FL9_1 input layouts reject overlapping element byte ranges within a stream;
-  ordinary core validation does not yet express this restriction.
+- FL9_1 overlapping vertex attributes within one logical stream are assigned
+  to separate native input slots that bind the same underlying buffer. This
+  emulation is limited to the existing vertex formats and available native
+  slots; historical FL9_1 devices remain unverified.
 - Sparse multi-stream indexed triangle lists accept Uint16 and Uint32 indices.
   Replay checks GPU-written indices against every stream and discards a whole
   draw on an out-of-bounds fetch. Native-safe Uint16 indices use the original
