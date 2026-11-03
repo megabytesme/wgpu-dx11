@@ -282,90 +282,40 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         }
-        if matches!(
-            group.resources,
-            super::hal_bind_group::GroupResources::Empty
-        ) {
-            render.bound_uniform_size = 0;
-            render.bound_group = Some(group.kind);
+        let Ok(target) = (unsafe { render.target.GetResource() }) else {
+            self.reject();
             return;
+        };
+        for texture in &group.resources.textures {
+            let Ok(sampled) = (unsafe { texture.GetResource() }) else {
+                self.reject();
+                return;
+            };
+            if sampled.as_raw() == target.as_raw() {
+                self.reject();
+                return;
+            }
         }
-        let mut uniform_command = None;
-        let mut secondary_command = None;
-        let command = match &group.resources {
-            super::hal_bind_group::GroupResources::Empty => unreachable!(),
-            super::hal_bind_group::GroupResources::TextureSampler { texture, sampler }
-            | super::hal_bind_group::GroupResources::UniformTextureSampler {
-                texture,
-                sampler,
-                ..
-            } => {
-                let (Ok(sampled), Ok(target)) = (unsafe { texture.GetResource() }, unsafe {
-                    render.target.GetResource()
-                }) else {
-                    self.reject();
-                    return;
-                };
-                if sampled.as_raw() == target.as_raw() {
-                    self.reject();
-                    return;
-                }
-                if let super::hal_bind_group::GroupResources::UniformTextureSampler {
-                    uniform,
-                    secondary,
-                    ..
-                } = &group.resources
-                {
-                    uniform_command = Some(NativeCommand::SetUniformGroup(uniform.clone()));
-                    if let Some((texture, sampler)) = secondary {
-                        let Ok(sampled) = (unsafe { texture.GetResource() }) else {
-                            self.reject();
-                            return;
-                        };
-                        if sampled.as_raw() == target.as_raw() {
-                            self.reject();
-                            return;
-                        }
-                        let Some(pair) = group.kind.pairs()[1] else {
-                            self.reject();
-                            return;
-                        };
-                        secondary_command = Some(NativeCommand::SetTextureGroup {
-                            slot: pair.slot,
-                            texture: texture.clone(),
-                            sampler: sampler.clone(),
-                        });
-                    }
-                }
-                let Some(pair) = group.kind.pairs()[0] else {
-                    self.reject();
-                    return;
-                };
-                NativeCommand::SetTextureGroup {
-                    slot: pair.slot,
-                    texture: texture.clone(),
-                    sampler: sampler.clone(),
-                }
-            }
-            super::hal_bind_group::GroupResources::Uniform(uniform) => {
-                NativeCommand::SetUniformGroup(uniform.clone())
-            }
-        };
-        render.bound_uniform_size = match &group.resources {
-            super::hal_bind_group::GroupResources::Uniform(uniform)
-            | super::hal_bind_group::GroupResources::UniformTextureSampler { uniform, .. } => {
-                uniform.len()
-            }
-            super::hal_bind_group::GroupResources::TextureSampler { .. }
-            | super::hal_bind_group::GroupResources::Empty => 0,
-        };
+        render.bound_uniform_size = group
+            .resources
+            .uniform
+            .as_ref()
+            .map_or(0, |uniform| uniform.len());
         render.bound_group = Some(group.kind);
-        self.record(command);
-        if let Some(command) = uniform_command {
-            self.record(command);
+        if let Some(uniform) = &group.resources.uniform {
+            self.record(NativeCommand::SetUniformGroup(uniform.clone()));
         }
-        if let Some(command) = secondary_command {
-            self.record(command);
+        for (slot, texture) in group.resources.textures.iter().enumerate() {
+            self.record(NativeCommand::SetTexture {
+                slot: slot as u32,
+                texture: texture.clone(),
+            });
+        }
+        for (slot, sampler) in group.resources.samplers.iter().enumerate() {
+            self.record(NativeCommand::SetSampler {
+                slot: slot as u32,
+                sampler: sampler.clone(),
+            });
         }
     }
 
@@ -507,7 +457,7 @@ impl crate::CommandEncoder for CommandEncoder {
         render.pipeline = true;
         render.required_group = pipeline
             .group
-            .filter(|group| *group != super::hal_bind_group::GroupKind::Empty);
+            .filter(|group| *group != super::hal_bind_group::GroupKind::EMPTY);
         render.required_uniform_size = pipeline.required_uniform_size;
         render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
         self.record(NativeCommand::SetPipeline {

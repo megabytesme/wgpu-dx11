@@ -10,53 +10,27 @@ use super::{
 use alloc::sync::Arc;
 use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResourceView};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum GroupKind {
-    Empty,
-    TextureSampler { pair: TexturePair },
-    Uniform { minimum: u64 },
-    UniformTextureSampler { minimum: u64, pair: TexturePair },
-    UniformTwoTextures { minimum: u64 },
-}
+pub(super) const MAX_TEXTURES: usize = 8;
+pub(super) const MAX_SAMPLERS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct TexturePair {
-    pub texture: u32,
-    pub sampler: u32,
-    pub slot: u32,
+pub(super) struct GroupKind {
+    pub minimum: Option<u64>,
+    pub textures: [Option<u32>; MAX_TEXTURES],
+    pub samplers: [Option<u32>; MAX_SAMPLERS],
 }
 
 impl GroupKind {
-    pub(super) fn pairs(self) -> [Option<TexturePair>; 2] {
-        match self {
-            Self::TextureSampler { pair } | Self::UniformTextureSampler { pair, .. } => {
-                [Some(pair), None]
-            }
-            Self::UniformTwoTextures { .. } => [
-                Some(TexturePair {
-                    texture: 1,
-                    sampler: 2,
-                    slot: 0,
-                }),
-                Some(TexturePair {
-                    texture: 3,
-                    sampler: 4,
-                    slot: 1,
-                }),
-            ],
-            _ => [None, None],
-        }
-    }
+    pub(super) const EMPTY: Self = Self {
+        minimum: None,
+        textures: [None; MAX_TEXTURES],
+        samplers: [None; MAX_SAMPLERS],
+    };
 
     pub(super) fn shader_bindings(self) -> alloc::vec::Vec<super::shader::ShaderBinding> {
         use super::shader::{ShaderBinding, ShaderBindingKind};
         let mut bindings = alloc::vec::Vec::new();
-        if matches!(
-            self,
-            Self::Uniform { .. }
-                | Self::UniformTextureSampler { .. }
-                | Self::UniformTwoTextures { .. }
-        ) {
+        if self.minimum.is_some() {
             bindings.push(ShaderBinding {
                 binding: naga::ResourceBinding {
                     group: 0,
@@ -66,16 +40,21 @@ impl GroupKind {
                 kind: ShaderBindingKind::Uniform,
             });
         }
-        for pair in self.pairs().into_iter().flatten() {
-            for (binding, kind) in [
-                (pair.texture, ShaderBindingKind::Texture2dFloat),
-                (pair.sampler, ShaderBindingKind::Sampler),
-            ] {
-                bindings.push(ShaderBinding {
-                    binding: naga::ResourceBinding { group: 0, binding },
-                    slot: pair.slot,
-                    kind,
-                });
+        for (kind, slots) in [
+            (ShaderBindingKind::Texture2dFloat, self.textures.as_slice()),
+            (ShaderBindingKind::Sampler, self.samplers.as_slice()),
+        ] {
+            for (slot, binding) in slots.iter().enumerate() {
+                if let Some(binding) = binding {
+                    bindings.push(ShaderBinding {
+                        binding: naga::ResourceBinding {
+                            group: 0,
+                            binding: *binding,
+                        },
+                        slot: slot as u32,
+                        kind,
+                    });
+                }
             }
         }
         bindings
@@ -95,10 +74,13 @@ fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> 
         })
 }
 
-fn single_pair(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate::DeviceError> {
-    let mut texture = None;
-    let mut sampler = None;
-    let mut uniform = None;
+fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate::DeviceError> {
+    if entries.len() > MAX_TEXTURES + MAX_SAMPLERS + 1 {
+        return Err(crate::DeviceError::Unexpected);
+    }
+    let mut textures = alloc::vec::Vec::new();
+    let mut samplers = alloc::vec::Vec::new();
+    let mut kind = GroupKind::EMPTY;
     for (index, entry) in entries.iter().enumerate() {
         if entry.count.is_some()
             || entries[..index]
@@ -112,13 +94,11 @@ fn single_pair(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate
                 sample_type: wgt::TextureSampleType::Float { filterable: true },
                 view_dimension: wgt::TextureViewDimension::D2,
                 multisampled: false,
-            } if entry.visibility == wgt::ShaderStages::FRAGMENT && texture.is_none() => {
-                texture = Some(entry.binding)
-            }
+            } if entry.visibility == wgt::ShaderStages::FRAGMENT => textures.push(entry.binding),
             wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
-                if entry.visibility == wgt::ShaderStages::FRAGMENT && sampler.is_none() =>
+                if entry.visibility == wgt::ShaderStages::FRAGMENT =>
             {
-                sampler = Some(entry.binding)
+                samplers.push(entry.binding)
             }
             wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
@@ -127,26 +107,29 @@ fn single_pair(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate
             } if entry.binding == 0
                 && entry.visibility
                     == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
-                && uniform.is_none()
+                && kind.minimum.is_none()
                 && min_binding_size.map_or(0, |v| v.get()) <= 65536 =>
             {
-                uniform = Some(min_binding_size.map_or(0, |v| v.get()))
+                kind.minimum = Some(min_binding_size.map_or(0, |v| v.get()));
             }
             _ => return Err(crate::DeviceError::Unexpected),
         }
     }
-    let (Some(texture), Some(sampler)) = (texture, sampler) else {
+    if textures.len() > MAX_TEXTURES
+        || samplers.len() > MAX_SAMPLERS
+        || textures.is_empty() != samplers.is_empty()
+    {
         return Err(crate::DeviceError::Unexpected);
-    };
-    let pair = TexturePair {
-        texture,
-        sampler,
-        slot: 0,
-    };
-    Ok(match uniform {
-        Some(minimum) => GroupKind::UniformTextureSampler { minimum, pair },
-        None => GroupKind::TextureSampler { pair },
-    })
+    }
+    textures.sort_unstable();
+    samplers.sort_unstable();
+    for (slot, binding) in textures.into_iter().enumerate() {
+        kind.textures[slot] = Some(binding);
+    }
+    for (slot, binding) in samplers.into_iter().enumerate() {
+        kind.samplers[slot] = Some(binding);
+    }
+    Ok(kind)
 }
 
 #[doc(hidden)]
@@ -159,19 +142,10 @@ crate::impl_dyn_resource!(BindGroupLayout);
 impl crate::DynBindGroupLayout for BindGroupLayout {}
 
 #[derive(Clone, Debug)]
-pub(super) enum GroupResources {
-    Empty,
-    TextureSampler {
-        texture: ID3D11ShaderResourceView,
-        sampler: ID3D11SamplerState,
-    },
-    Uniform(Arc<UniformBinding>),
-    UniformTextureSampler {
-        uniform: Arc<UniformBinding>,
-        texture: ID3D11ShaderResourceView,
-        sampler: ID3D11SamplerState,
-        secondary: Option<(ID3D11ShaderResourceView, ID3D11SamplerState)>,
-    },
+pub(super) struct GroupResources {
+    pub uniform: Option<Arc<UniformBinding>>,
+    pub textures: alloc::vec::Vec<ID3D11ShaderResourceView>,
+    pub samplers: alloc::vec::Vec<ID3D11SamplerState>,
 }
 
 #[doc(hidden)]
@@ -195,81 +169,7 @@ impl BindGroupLayout {
         if !desc.flags.is_empty() {
             return Err(crate::DeviceError::Unexpected);
         }
-        let kind = match desc.entries {
-            [] => GroupKind::Empty,
-            [uniform, texture, sampler, second_texture, second_sampler]
-                if uniform.binding == 0
-                    && uniform.count.is_none()
-                    && uniform.visibility
-                        == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
-                    && [texture, second_texture]
-                        .iter()
-                        .enumerate()
-                        .all(|(index, entry)| {
-                            entry.binding == 1 + 2 * index as u32
-                                && entry.visibility == wgt::ShaderStages::FRAGMENT
-                                && entry.count.is_none()
-                                && matches!(
-                                    entry.ty,
-                                    wgt::BindingType::Texture {
-                                        sample_type: wgt::TextureSampleType::Float {
-                                            filterable: true
-                                        },
-                                        view_dimension: wgt::TextureViewDimension::D2,
-                                        multisampled: false,
-                                    }
-                                )
-                        })
-                    && [sampler, second_sampler]
-                        .iter()
-                        .enumerate()
-                        .all(|(index, entry)| {
-                            entry.binding == 2 + 2 * index as u32
-                                && entry.visibility == wgt::ShaderStages::FRAGMENT
-                                && entry.count.is_none()
-                                && matches!(
-                                    entry.ty,
-                                    wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering)
-                                )
-                        }) =>
-            {
-                match uniform.ty {
-                    wgt::BindingType::Buffer {
-                        ty: wgt::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size,
-                    } if min_binding_size.map_or(0, |value| value.get()) <= 65536 => {
-                        GroupKind::UniformTwoTextures {
-                            minimum: min_binding_size.map_or(0, |value| value.get()),
-                        }
-                    }
-                    _ => return Err(crate::DeviceError::Unexpected),
-                }
-            }
-            entries if entries.len() == 2 || entries.len() == 3 => single_pair(entries)?,
-            [uniform]
-                if uniform.binding == 0
-                    && uniform.count.is_none()
-                    && uniform.visibility
-                        == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT) =>
-            {
-                match uniform.ty {
-                    wgt::BindingType::Buffer {
-                        ty: wgt::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size,
-                    } => {
-                        let minimum = min_binding_size.map_or(0, |v| v.get());
-                        if minimum > 65536 {
-                            return Err(crate::DeviceError::Unexpected);
-                        }
-                        GroupKind::Uniform { minimum }
-                    }
-                    _ => return Err(crate::DeviceError::Unexpected),
-                }
-            }
-            _ => return Err(crate::DeviceError::Unexpected),
-        };
+        let kind = group_kind(desc.entries)?;
         Ok(Self { owner, kind })
     }
 }
@@ -291,156 +191,116 @@ impl BindGroup {
         {
             return Err(crate::DeviceError::Unexpected);
         }
-        let resources = match desc.layout.kind {
-            GroupKind::Empty => {
-                if !desc.entries.is_empty()
-                    || !desc.buffers.is_empty()
-                    || !desc.textures.is_empty()
-                    || !desc.samplers.is_empty()
+        let kind = desc.layout.kind;
+        let textures: alloc::vec::Vec<_> = kind.textures.into_iter().flatten().collect();
+        let samplers: alloc::vec::Vec<_> = kind.samplers.into_iter().flatten().collect();
+        if desc.buffers.len() != usize::from(kind.minimum.is_some())
+            || desc.textures.len() != textures.len()
+            || desc.samplers.len() != samplers.len()
+        {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        if desc.entries.len()
+            != textures.len() + samplers.len() + usize::from(kind.minimum.is_some())
+        {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        let indices = |bindings: &[u32]| -> Result<alloc::vec::Vec<usize>, crate::DeviceError> {
+            let mut indices = alloc::vec::Vec::new();
+            for &binding in bindings {
+                let mut matching = desc
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.binding == binding && entry.count == 1);
+                let index = matching
+                    .next()
+                    .ok_or(crate::DeviceError::Unexpected)?
+                    .resource_index as usize;
+                if matching.next().is_some() || index >= bindings.len() || indices.contains(&index)
                 {
                     return Err(crate::DeviceError::Unexpected);
                 }
-                GroupResources::Empty
+                indices.push(index);
             }
-            GroupKind::UniformTwoTextures { minimum } => {
-                if desc.buffers.len() != 1
-                    || desc.textures.len() != 2
-                    || desc.samplers.len() != 2
-                    || desc.entries.len() != 5
-                    || desc.entries.iter().enumerate().any(|(index, entry)| {
-                        entry.binding != index as u32
-                            || entry.resource_index != if index >= 3 { 1 } else { 0 }
-                            || entry.count != 1
-                    })
-                    || desc
-                        .textures
-                        .iter()
-                        .any(|binding| binding.usage != wgt::TextureUses::RESOURCE)
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let binding = &desc.buffers[0];
-                let length = owner
-                    .uniform_binding_length(binding.buffer, binding.offset, binding.size)
-                    .map_err(super::hal_device::device_error)?;
-                if length < minimum {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let uniform = owner
-                    .prepare_uniform_binding(binding.buffer, binding.offset, length)
-                    .map_err(super::hal_device::device_error)?;
-                let mut views = alloc::vec::Vec::new();
-                for index in 0..2 {
-                    let sampler = desc.samplers[index];
-                    let (texture, dimensions, mip_levels) = owner
-                        .sampled_view(desc.textures[index].view)
-                        .map_err(super::hal_device::device_error)?;
-                    let native_sampler = sampler.raw_for(owner, mip_levels)?;
-                    if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
-                        && sampler.wraps()
-                        && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
-                    {
-                        return Err(crate::DeviceError::Unexpected);
-                    }
-                    views.push((texture, native_sampler));
-                }
-                let secondary = views.pop().ok_or(crate::DeviceError::Unexpected)?;
-                let (texture, sampler) = views.pop().ok_or(crate::DeviceError::Unexpected)?;
-                GroupResources::UniformTextureSampler {
-                    uniform: Arc::new(uniform),
-                    texture,
-                    sampler,
-                    secondary: Some(secondary),
-                }
+            Ok(indices)
+        };
+        if kind.minimum.is_some()
+            && !desc
+                .entries
+                .iter()
+                .any(|entry| entry.binding == 0 && entry.resource_index == 0 && entry.count == 1)
+        {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        let texture_indices = indices(&textures)?;
+        let sampler_indices = indices(&samplers)?;
+        let mut expected = alloc::vec::Vec::new();
+        if kind.minimum.is_some() {
+            expected.push((0, 0));
+        }
+        expected.extend(
+            textures
+                .iter()
+                .zip(&texture_indices)
+                .map(|(&binding, &index)| (binding, index as u32)),
+        );
+        expected.extend(
+            samplers
+                .iter()
+                .zip(&sampler_indices)
+                .map(|(&binding, &index)| (binding, index as u32)),
+        );
+        if !entries_match(desc.entries, &expected) {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        let uniform = if let Some(minimum) = kind.minimum {
+            let binding = &desc.buffers[0];
+            let length = owner
+                .uniform_binding_length(binding.buffer, binding.offset, binding.size)
+                .map_err(super::hal_device::device_error)?;
+            if length < minimum {
+                return Err(crate::DeviceError::Unexpected);
             }
-            GroupKind::UniformTextureSampler { minimum, pair } => {
-                if desc.buffers.len() != 1
-                    || desc.textures.len() != 1
-                    || desc.samplers.len() != 1
-                    || !entries_match(
-                        desc.entries,
-                        &[(0, 0), (pair.texture, 0), (pair.sampler, 0)],
-                    )
-                    || desc.textures[0].usage != wgt::TextureUses::RESOURCE
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let binding = &desc.buffers[0];
-                let length = owner
-                    .uniform_binding_length(binding.buffer, binding.offset, binding.size)
-                    .map_err(super::hal_device::device_error)?;
-                if length < minimum {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let uniform = owner
+            Some(Arc::new(
+                owner
                     .prepare_uniform_binding(binding.buffer, binding.offset, length)
-                    .map_err(super::hal_device::device_error)?;
-                let sampler = desc.samplers[0];
-                let (texture, dimensions, mip_levels) = owner
-                    .sampled_view(desc.textures[0].view)
-                    .map_err(super::hal_device::device_error)?;
-                let native_sampler = sampler.raw_for(owner, mip_levels)?;
+                    .map_err(super::hal_device::device_error)?,
+            ))
+        } else {
+            None
+        };
+        let mut views = alloc::vec::Vec::new();
+        let mut dimensions = alloc::vec::Vec::new();
+        for index in texture_indices {
+            let binding = &desc.textures[index];
+            if binding.usage != wgt::TextureUses::RESOURCE {
+                return Err(crate::DeviceError::Unexpected);
+            }
+            let (view, size, mip_levels) = owner
+                .sampled_view(binding.view)
+                .map_err(super::hal_device::device_error)?;
+            views.push(view);
+            dimensions.push((size, mip_levels));
+        }
+        let mut native_samplers = alloc::vec::Vec::new();
+        for index in sampler_indices {
+            let sampler = desc.samplers[index];
+            let mut native = None;
+            for &(size, mip_levels) in &dimensions {
                 if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
                     && sampler.wraps()
-                    && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
+                    && (!size[0].is_power_of_two() || !size[1].is_power_of_two())
                 {
                     return Err(crate::DeviceError::Unexpected);
                 }
-                GroupResources::UniformTextureSampler {
-                    uniform: Arc::new(uniform),
-                    texture,
-                    sampler: native_sampler,
-                    secondary: None,
-                }
+                native = Some(sampler.raw_for(owner, mip_levels)?);
             }
-            GroupKind::Uniform { minimum } => {
-                if desc.buffers.len() != 1
-                    || !desc.textures.is_empty()
-                    || !desc.samplers.is_empty()
-                    || desc.entries.len() != 1
-                    || desc.entries[0].binding != 0
-                    || desc.entries[0].resource_index != 0
-                    || desc.entries[0].count != 1
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let binding = &desc.buffers[0];
-                let length = owner
-                    .uniform_binding_length(binding.buffer, binding.offset, binding.size)
-                    .map_err(super::hal_device::device_error)?;
-                if length < minimum {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let uniform = owner
-                    .prepare_uniform_binding(binding.buffer, binding.offset, length)
-                    .map_err(super::hal_device::device_error)?;
-                GroupResources::Uniform(Arc::new(uniform))
-            }
-            GroupKind::TextureSampler { pair } => {
-                if !desc.buffers.is_empty()
-                    || desc.textures.len() != 1
-                    || desc.samplers.len() != 1
-                    || !entries_match(desc.entries, &[(pair.texture, 0), (pair.sampler, 0)])
-                    || desc.textures[0].usage != wgt::TextureUses::RESOURCE
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                let sampler = desc.samplers[0];
-                let (texture, dimensions, mip_levels) = owner
-                    .sampled_view(desc.textures[0].view)
-                    .map_err(super::hal_device::device_error)?;
-                let native_sampler = sampler.raw_for(owner, mip_levels)?;
-                if owner.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
-                    && sampler.wraps()
-                    && (!dimensions[0].is_power_of_two() || !dimensions[1].is_power_of_two())
-                {
-                    return Err(crate::DeviceError::Unexpected);
-                }
-                GroupResources::TextureSampler {
-                    texture,
-                    sampler: native_sampler,
-                }
-            }
+            native_samplers.push(native.ok_or(crate::DeviceError::Unexpected)?);
+        }
+        let resources = GroupResources {
+            uniform,
+            textures: views,
+            samplers: native_samplers,
         };
         Ok(Self {
             owner: owner.clone(),
@@ -475,15 +335,11 @@ mod tests {
             count: None,
             ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
         };
-        let expected = GroupKind::TextureSampler {
-            pair: TexturePair {
-                texture: 7,
-                sampler: 42,
-                slot: 0,
-            },
-        };
-        assert_eq!(single_pair(&[texture, sampler]).unwrap(), expected);
-        assert_eq!(single_pair(&[sampler, texture]).unwrap(), expected);
+        let mut expected = GroupKind::EMPTY;
+        expected.textures[0] = Some(7);
+        expected.samplers[0] = Some(42);
+        assert_eq!(group_kind(&[texture, sampler]).unwrap(), expected);
+        assert_eq!(group_kind(&[sampler, texture]).unwrap(), expected);
         let mappings = expected.shader_bindings();
         assert_eq!(mappings.len(), 2);
         assert_eq!(
@@ -505,8 +361,8 @@ mod tests {
         assert!(mappings
             .iter()
             .all(|binding| binding.slot != 13 && binding.slot != 15));
-        assert!(single_pair(&[texture]).is_err());
-        assert!(single_pair(&[
+        assert!(group_kind(&[texture]).is_err());
+        assert!(group_kind(&[
             texture,
             wgt::BindGroupLayoutEntry {
                 binding: 7,
@@ -514,7 +370,7 @@ mod tests {
             }
         ])
         .is_err());
-        assert!(single_pair(&[
+        assert!(group_kind(&[
             texture,
             wgt::BindGroupLayoutEntry {
                 visibility: wgt::ShaderStages::VERTEX,
@@ -522,7 +378,7 @@ mod tests {
             }
         ])
         .is_err());
-        assert!(single_pair(&[
+        assert!(group_kind(&[
             texture,
             wgt::BindGroupLayoutEntry {
                 ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
@@ -530,7 +386,7 @@ mod tests {
             }
         ])
         .is_err());
-        assert!(single_pair(&[
+        assert!(group_kind(&[
             wgt::BindGroupLayoutEntry {
                 ty: wgt::BindingType::Texture {
                     sample_type: wgt::TextureSampleType::Float { filterable: true },
@@ -542,15 +398,11 @@ mod tests {
             sampler
         ])
         .is_err());
-        assert!(single_pair(&[
-            texture,
-            sampler,
-            wgt::BindGroupLayoutEntry {
-                binding: 9,
-                ..texture
-            }
-        ])
-        .is_err());
+        let mut over_limit = alloc::vec![sampler];
+        for binding in 50..59 {
+            over_limit.push(wgt::BindGroupLayoutEntry { binding, ..texture });
+        }
+        assert!(group_kind(&over_limit).is_err());
         let valid = [
             crate::BindGroupEntry {
                 binding: 7,
@@ -582,6 +434,53 @@ mod tests {
     }
 
     #[test]
+    fn multi_resource_allocation_is_compact_and_rejects_exhaustion() {
+        let texture = |binding| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            count: None,
+            ty: wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+        };
+        let sampler = |binding| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            count: None,
+            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+        };
+        let mut entries: alloc::vec::Vec<_> = (0..8).rev().map(|i| texture(100 + i * 13)).collect();
+        entries.extend((0..16).rev().map(|i| sampler(500 + i * 17)));
+        let kind = group_kind(&entries).unwrap();
+        for i in 0..8 {
+            assert_eq!(kind.textures[i], Some(100 + i as u32 * 13));
+        }
+        for i in 0..16 {
+            assert_eq!(kind.samplers[i], Some(500 + i as u32 * 17));
+        }
+        entries.reverse();
+        assert_eq!(group_kind(&entries).unwrap(), kind);
+        let bindings = kind.shader_bindings();
+        assert_eq!(bindings.len(), 24);
+        assert_eq!(bindings[7].slot, 7);
+        assert_eq!(bindings[23].slot, 15);
+        let mut too_many_textures = entries.clone();
+        too_many_textures.push(texture(1000));
+        assert!(group_kind(&too_many_textures).is_err());
+        let mut too_many_samplers = entries.clone();
+        too_many_samplers.push(sampler(1001));
+        assert!(group_kind(&too_many_samplers).is_err());
+        let mut duplicate = entries.clone();
+        duplicate.push(sampler(100));
+        assert!(group_kind(&duplicate).is_err());
+        let mut wrong_stage = entries.clone();
+        wrong_stage[0].visibility = wgt::ShaderStages::VERTEX;
+        assert!(group_kind(&wrong_stage).is_err());
+    }
+
+    #[test]
     fn empty_layout_and_group_enforce_owner_and_no_resources() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
@@ -609,7 +508,11 @@ mod tests {
             external_textures: &[],
         };
         let group = unsafe { device.create_bind_group(&desc).unwrap() };
-        assert!(matches!(group.resources, GroupResources::Empty));
+        assert!(
+            group.resources.uniform.is_none()
+                && group.resources.textures.is_empty()
+                && group.resources.samplers.is_empty()
+        );
         assert!(unsafe { other.create_bind_group(&desc) }.is_err());
         let malformed_entries = [crate::BindGroupEntry {
             binding: 0,
@@ -753,9 +656,7 @@ mod tests {
             device.destroy_texture(tex);
         }
         let mut native_desc = D3D11_SAMPLER_DESC::default();
-        let GroupResources::TextureSampler { sampler, .. } = &group.resources else {
-            panic!("texture group expected")
-        };
+        let sampler = &group.resources.samplers[0];
         unsafe { sampler.GetDesc(&mut native_desc) };
         assert_eq!(
             native_desc.AddressU,

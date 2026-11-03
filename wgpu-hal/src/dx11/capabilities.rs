@@ -90,6 +90,8 @@ pub(super) struct BackendCapabilities {
     pub color_attachments: u32,
     pub index_u16: bool,
     pub sparse_texture_sampler_bindings: bool,
+    pub sampled_textures_per_group: u32,
+    pub samplers_per_group: u32,
     pub compute: bool,
     pub storage: bool,
     pub depth_stencil: bool,
@@ -106,6 +108,8 @@ impl BackendCapabilities {
         color_attachments: 1,
         index_u16: true,
         sparse_texture_sampler_bindings: true,
+        sampled_textures_per_group: super::hal_bind_group::MAX_TEXTURES as u32,
+        samplers_per_group: super::hal_bind_group::MAX_SAMPLERS as u32,
         compute: false,
         storage: false,
         depth_stencil: false,
@@ -278,6 +282,13 @@ mod tests {
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
         assert!(fl9.backend.sparse_texture_sampler_bindings);
+        assert_eq!(
+            (
+                fl9.backend.sampled_textures_per_group,
+                fl9.backend.samplers_per_group
+            ),
+            (8, 16)
+        );
         assert!(!fl9.backend.instancing && !fl9.backend.storage && !fl9.backend.queries);
     }
 

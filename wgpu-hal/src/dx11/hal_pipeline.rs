@@ -375,7 +375,7 @@ mod tests {
         let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
         assert!(matches!(
             pipeline.group,
-            Some(super::super::hal_bind_group::GroupKind::TextureSampler { .. })
+            Some(group) if group.textures[0].is_some()
         ));
         let texture_desc = crate::TextureDescriptor {
             label: None,
@@ -501,11 +501,8 @@ mod tests {
             context.IASetVertexBuffers(0, 1, Some(&raw_buffer), Some(&8), Some(&0));
             context.VSSetShader(Some(&pipeline.vertex), None);
             context.PSSetShader(Some(&pipeline.fragment), None);
-            let super::super::hal_bind_group::GroupResources::TextureSampler { texture, sampler } =
-                &group.resources
-            else {
-                panic!("texture group expected")
-            };
+            let texture = &group.resources.textures[0];
+            let sampler = &group.resources.samplers[0];
             context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
             context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
             context.Draw(3, 0);
@@ -625,12 +622,7 @@ impl RenderPipeline {
             return Err(invalid());
         }
         let mut required_uniform_size = 0;
-        if let Some(
-            super::hal_bind_group::GroupKind::Uniform { minimum }
-            | super::hal_bind_group::GroupKind::UniformTextureSampler { minimum, .. }
-            | super::hal_bind_group::GroupKind::UniformTwoTextures { minimum },
-        ) = desc.layout.group
-        {
+        if let Some(minimum) = desc.layout.group.and_then(|group| group.minimum) {
             for module in [vertex_stage.module, fragment.module] {
                 let required = module.required_uniform_size()?.unwrap_or(0);
                 if minimum != 0 && required > minimum {

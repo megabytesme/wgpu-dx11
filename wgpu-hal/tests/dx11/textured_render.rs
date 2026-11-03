@@ -100,6 +100,56 @@ fn sparse_binding_transition_replaces_texture() -> windows::core::Result<()> {
     sampled_triangle_variant(false, false, false, false, false, 0, None, 3)
 }
 
+#[test]
+fn multi_resource_three_distinct() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 10)
+}
+
+#[test]
+fn multi_resource_three_shared_sampler() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 11)
+}
+
+#[test]
+fn multi_resource_eight_shared_sampler() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 12)
+}
+
+#[test]
+fn multi_resource_independent_sampler_states() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 13)
+}
+
+#[test]
+fn multi_resource_change_one_binding() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 14)
+}
+
+#[test]
+fn multi_resource_one_texture_multiple_samplers() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 15)
+}
+
+#[test]
+fn multi_resource_pipeline_transition() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 16)
+}
+
+#[test]
+fn multi_resource_eight_distinct_samplers() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 17)
+}
+
+#[test]
+fn multi_resource_sixteen_sampler_relationships() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 18)
+}
+
+#[test]
+fn multi_resource_without_uniform() -> windows::core::Result<()> {
+    sampled_triangle_variant(false, true, false, true, false, 0, None, 19)
+}
+
 fn sampled_triangle(
     combined: bool,
     multi: bool,
@@ -132,6 +182,23 @@ fn sampled_triangle_variant(
     overlay_shader: Option<&str>,
     variant: u8,
 ) -> windows::core::Result<()> {
+    let sparse = (1..=4).contains(&variant);
+    let multi_resource = variant >= 10;
+    let count = if variant == 12 || variant == 17 { 8 } else { 3 };
+    let shared_sampler = variant == 11 || variant == 12;
+    let sampler_count = if variant == 18 {
+        16
+    } else if shared_sampler {
+        1
+    } else {
+        count
+    };
+    let texture_number = |index: usize| [7, 42, 100, 200, 201, 202, 203, 204][index];
+    let sampler_number = |index: usize| {
+        [
+            11, 50, 110, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262,
+        ][index]
+    };
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -157,7 +224,66 @@ fn sampled_triangle_variant(
         "@group(0) @binding(0) var t: texture_2d<f32>; @group(0) @binding(1) var s: sampler; @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return textureSample(t, s, vec2f(0.5, 0.5)); }"
     };
     let (mapped_texture, mapped_sampler) = if variant == 4 { (42, 7) } else { (7, 42) };
-    let source = if variant != 0 {
+    let source = if multi_resource {
+        let mut wgsl = if combined {
+            alloc::string::String::from("@group(0) @binding(0) var<uniform> color: vec4f; ")
+        } else {
+            alloc::string::String::new()
+        };
+        for index in 0..count {
+            wgsl.push_str(&alloc::format!(
+                "@group(0) @binding({}) var t{}: texture_2d<f32>; ",
+                texture_number(index),
+                index
+            ));
+        }
+        for index in 0..sampler_count {
+            wgsl.push_str(&alloc::format!(
+                "@group(0) @binding({}) var s{}: sampler; ",
+                sampler_number(index),
+                index
+            ));
+        }
+        wgsl.push_str("struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { ");
+        if count == 3 {
+            let samplers = if shared_sampler { [0, 0, 0] } else { [0, 1, 2] };
+            let uv = if variant == 13 || variant == 15 {
+                "vec2f(1.125,0.5)"
+            } else {
+                "vec2f(0.5)"
+            };
+            if variant == 18 {
+                wgsl.push_str("var v: f32 = 0.0; ");
+                for index in 2..16 {
+                    wgsl.push_str(&alloc::format!(
+                        "v += textureSample(t2,s{index},vec2f(1.125,0.5)).b; "
+                    ));
+                }
+                wgsl.push_str("return vec4f(textureSample(t0,s0,vec2f(0.5)).r, textureSample(t1,s1,vec2f(0.5)).g, v, 1.0) * color * in.color; }");
+            } else if variant == 15 {
+                wgsl.push_str("return vec4f(textureSample(t0,s0,vec2f(0.5)).r, textureSample(t1,s1,vec2f(0.5)).g, textureSample(t2,s2,vec2f(1.125,0.5)).b - textureSample(t2,s1,vec2f(1.125,0.5)).b, 1.0) * color * in.color; }");
+            } else {
+                wgsl.push_str(&alloc::format!("return vec4f(textureSample(t0,s{},vec2f(0.5)).r, textureSample(t1,s{},vec2f(0.5)).g, textureSample(t2,s{},{uv}).b, 1.0) * color * in.color; }}", samplers[0], samplers[1], samplers[2]));
+            }
+        } else {
+            wgsl.push_str("var v: f32 = 0.0; ");
+            for index in 0..count {
+                wgsl.push_str(&alloc::format!(
+                    "v += textureSample(t{},s{},vec2f(0.5)).r * 0.125; ",
+                    index,
+                    if shared_sampler { 0 } else { index }
+                ));
+            }
+            wgsl.push_str("return vec4f(v, 0.0, 0.0, 1.0) * color * in.color; }");
+        }
+        if !combined {
+            wgsl = wgsl.replace(" * color * in.color", " * in.color");
+        }
+        if variant == 16 {
+            wgsl.push_str(" @fragment fn fs_short(in: Out) -> @location(0) vec4f { return textureSample(t0, s0, vec2f(0.5)) * color * in.color; }");
+        }
+        wgsl
+    } else if sparse {
         let texture_binding = u32::from(combined);
         let sampler_binding = texture_binding + 1;
         let old_texture =
@@ -237,7 +363,7 @@ fn sampled_triangle_variant(
             count: None,
         },
     ]);
-    if variant != 0 {
+    if sparse {
         let index = usize::from(combined);
         entries[index].binding = mapped_texture;
         entries[index + 1].binding = mapped_sampler;
@@ -263,9 +389,37 @@ fn sampled_triangle_variant(
             count: None,
         });
     }
+    if multi_resource {
+        entries.truncate(usize::from(combined));
+        for index in 0..count {
+            entries.push(wgt::BindGroupLayoutEntry {
+                binding: texture_number(index),
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for index in 0..sampler_count {
+            entries.push(wgt::BindGroupLayoutEntry {
+                binding: sampler_number(index),
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            });
+        }
+        entries.reverse();
+    }
     if combined {
         let mut invalid_entries = entries.clone();
-        invalid_entries[0].ty = wgt::BindingType::Buffer {
+        let uniform_entry = invalid_entries
+            .iter_mut()
+            .find(|entry| entry.binding == 0)
+            .unwrap();
+        uniform_entry.ty = wgt::BindingType::Buffer {
             ty: wgt::BufferBindingType::Uniform,
             has_dynamic_offset: false,
             min_binding_size: core::num::NonZeroU64::new(65552),
@@ -390,6 +544,57 @@ fn sampled_triangle_variant(
         cache: None,
     };
     let pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+    let short_group_layout = if variant == 16 {
+        let short_entries: alloc::vec::Vec<_> = entries
+            .iter()
+            .copied()
+            .filter(|entry| {
+                entry.binding == 0
+                    || entry.binding == texture_number(0)
+                    || entry.binding == sampler_number(0)
+            })
+            .collect();
+        Some(unsafe {
+            device
+                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &short_entries,
+                })
+                .unwrap()
+        })
+    } else {
+        None
+    };
+    let short_layout = short_group_layout.as_ref().map(|group_layout| unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[Some(group_layout)],
+                immediate_size: 0,
+            })
+            .unwrap()
+    });
+    let short_pipeline = short_layout.as_ref().map(|layout| unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &buffers,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs_short")),
+                color_targets: &targets,
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    });
     if alpha {
         let mut unsupported: wgt::ColorTargetState = wgt::TextureFormat::Rgba8Unorm.into();
         unsupported.blend = Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
@@ -400,31 +605,36 @@ fn sampled_triangle_variant(
         };
         assert!(unsafe { device.create_render_pipeline(&unsupported_desc) }.is_err());
     }
+    assert_eq!(pipeline.group, Some(group_layout.kind));
+    let mapped = pipeline.group.unwrap();
     assert_eq!(
-        pipeline.group,
-        Some(if two {
-            super::super::hal_bind_group::GroupKind::UniformTwoTextures {
-                minimum: if multi { 0 } else { 16 },
-            }
-        } else if combined {
-            super::super::hal_bind_group::GroupKind::UniformTextureSampler {
-                minimum: if multi { 0 } else { 16 },
-                pair: super::super::hal_bind_group::TexturePair {
-                    texture: if variant != 0 { mapped_texture } else { 1 },
-                    sampler: if variant != 0 { mapped_sampler } else { 2 },
-                    slot: 0,
-                },
-            }
+        mapped.minimum,
+        combined.then_some(if multi { 0 } else { 16 })
+    );
+    assert_eq!(
+        mapped.textures[0],
+        Some(if multi_resource {
+            texture_number(0)
+        } else if sparse {
+            mapped_texture
         } else {
-            super::super::hal_bind_group::GroupKind::TextureSampler {
-                pair: super::super::hal_bind_group::TexturePair {
-                    texture: if variant != 0 { mapped_texture } else { 0 },
-                    sampler: if variant != 0 { mapped_sampler } else { 1 },
-                    slot: 0,
-                },
-            }
+            shift
         })
     );
+    assert_eq!(
+        mapped.samplers[0],
+        Some(if multi_resource {
+            sampler_number(0)
+        } else if sparse {
+            mapped_sampler
+        } else {
+            1 + shift
+        })
+    );
+    if two && !multi_resource {
+        assert_eq!(mapped.textures[1], Some(3));
+        assert_eq!(mapped.samplers[1], Some(4));
+    }
     let texture_desc = crate::TextureDescriptor {
         label: None,
         size: wgt::Extent3d {
@@ -443,7 +653,9 @@ fn sampled_triangle_variant(
     let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
     let mut texels = alloc::vec![0; 64];
     for pixel in texels.chunks_exact_mut(4) {
-        pixel.copy_from_slice(if variant == 3 {
+        pixel.copy_from_slice(if count == 8 {
+            &[32, 0, 0, 255]
+        } else if multi_resource || variant == 3 {
             &[255, 0, 0, 255]
         } else if two {
             &[255, 255, 255, 255]
@@ -469,7 +681,9 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     let second_texture = unsafe { device.create_texture(&texture_desc).unwrap() };
-    let second_texels: alloc::vec::Vec<u8> = if effect == 2 {
+    let second_texels: alloc::vec::Vec<u8> = if count == 8 && multi_resource {
+        [64u8, 0, 0, 255]
+    } else if effect == 2 {
         [0u8, 255, 255, 255]
     } else {
         [0u8, 255, 0, 255]
@@ -490,6 +704,43 @@ fn sampled_triangle_variant(
             )
             .unwrap()
     };
+    let mut extra_textures = alloc::vec::Vec::new();
+    let mut extra_views = alloc::vec::Vec::new();
+    if multi_resource {
+        for index in 2..count {
+            let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
+            let pixel = if count == 8 {
+                [((index as u32 + 1) * 32).min(255) as u8, 0, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            };
+            let mut data = pixel.repeat(16);
+            if variant == 13 || variant == 15 || variant == 18 {
+                for row in 0..4 {
+                    for column in 1..4 {
+                        data[(row * 4 + column) * 4 + 2] = 0;
+                    }
+                }
+            }
+            native.write_rgba_texture(&texture, 0, 0, &data)?;
+            let view = unsafe {
+                device
+                    .create_texture_view(
+                        &texture,
+                        &crate::TextureViewDescriptor {
+                            label: None,
+                            format: wgt::TextureFormat::Rgba8Unorm,
+                            dimension: wgt::TextureViewDimension::D2,
+                            usage: wgt::TextureUses::RESOURCE,
+                            range: wgt::ImageSubresourceRange::default(),
+                        },
+                    )
+                    .unwrap()
+            };
+            extra_textures.push(texture);
+            extra_views.push(view);
+        }
+    }
     let sampler = unsafe {
         device
             .create_sampler(&crate::SamplerDescriptor {
@@ -505,6 +756,29 @@ fn sampled_triangle_variant(
             })
             .unwrap()
     };
+    let repeat_sampler = if variant == 13 || variant == 15 || variant == 18 {
+        Some(unsafe {
+            device
+                .create_sampler(&crate::SamplerDescriptor {
+                    label: None,
+                    address_modes: [
+                        wgt::AddressMode::Repeat,
+                        wgt::AddressMode::ClampToEdge,
+                        wgt::AddressMode::ClampToEdge,
+                    ],
+                    mag_filter: wgt::FilterMode::Nearest,
+                    min_filter: wgt::FilterMode::Nearest,
+                    mipmap_filter: wgt::MipmapFilterMode::Nearest,
+                    lod_clamp: 0.0..f32::MAX,
+                    compare: None,
+                    anisotropy_clamp: 1,
+                    border_color: None,
+                })
+                .unwrap()
+        })
+    } else {
+        None
+    };
     let mut texture_bindings = alloc::vec![crate::TextureBinding {
         view: &view,
         usage: wgt::TextureUses::RESOURCE,
@@ -516,6 +790,17 @@ fn sampled_triangle_variant(
             usage: wgt::TextureUses::RESOURCE,
         });
         sampler_bindings.push(&sampler);
+    }
+    if multi_resource {
+        texture_bindings.extend(extra_views.iter().map(|view| crate::TextureBinding {
+            view,
+            usage: wgt::TextureUses::RESOURCE,
+        }));
+        sampler_bindings.clear();
+        sampler_bindings.resize(sampler_count, &sampler);
+        if let Some(repeat) = repeat_sampler.as_ref() {
+            sampler_bindings[if variant == 18 { 15 } else { 2 }] = repeat;
+        }
     }
     let uniform = unsafe {
         device
@@ -556,13 +841,37 @@ fn sampled_triangle_variant(
             count: 1,
         })
         .collect();
-    if variant != 0 {
+    if multi_resource {
+        group_entries.clear();
+        if combined {
+            group_entries.push(crate::BindGroupEntry {
+                binding: 0,
+                resource_index: 0,
+                count: 1,
+            });
+        }
+        for index in 0..count {
+            group_entries.push(crate::BindGroupEntry {
+                binding: texture_number(index),
+                resource_index: index as u32,
+                count: 1,
+            });
+        }
+        for index in 0..sampler_count {
+            group_entries.push(crate::BindGroupEntry {
+                binding: sampler_number(index),
+                resource_index: index as u32,
+                count: 1,
+            });
+        }
+    }
+    if sparse {
         let index = usize::from(combined);
         group_entries[index].binding = mapped_texture;
         group_entries[index + 1].binding = mapped_sampler;
         group_entries.sort_by_key(|entry| entry.binding);
     }
-    if two {
+    if two && !multi_resource {
         let mut invalid_entries = group_entries.clone();
         invalid_entries[3].resource_index = 0;
         assert!(unsafe {
@@ -593,7 +902,7 @@ fn sampled_triangle_variant(
             })
             .unwrap()
     };
-    if variant != 0 {
+    if sparse || multi_resource {
         let missing_entries = &group_entries[..group_entries.len() - 1];
         assert!(unsafe {
             device.create_bind_group(&crate::BindGroupDescriptor {
@@ -622,11 +931,58 @@ fn sampled_triangle_variant(
         }
         .is_err());
     }
-    let transition_group = if variant == 3 {
-        let textures = [crate::TextureBinding {
-            view: &second_view,
-            usage: wgt::TextureUses::RESOURCE,
-        }];
+    let short_group = short_group_layout.as_ref().map(|group_layout| unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: group_layout,
+                buffers: buffer_bindings,
+                samplers: &sampler_bindings[..1],
+                textures: &texture_bindings[..1],
+                entries: &[
+                    crate::BindGroupEntry {
+                        binding: 0,
+                        resource_index: 0,
+                        count: 1,
+                    },
+                    crate::BindGroupEntry {
+                        binding: texture_number(0),
+                        resource_index: 0,
+                        count: 1,
+                    },
+                    crate::BindGroupEntry {
+                        binding: sampler_number(0),
+                        resource_index: 0,
+                        count: 1,
+                    },
+                ],
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    });
+    let transition_group = if variant == 3 || variant == 14 {
+        let textures = if variant == 14 {
+            alloc::vec![
+                crate::TextureBinding {
+                    view: &view,
+                    usage: wgt::TextureUses::RESOURCE
+                },
+                crate::TextureBinding {
+                    view: &second_view,
+                    usage: wgt::TextureUses::RESOURCE
+                },
+                crate::TextureBinding {
+                    view: &view,
+                    usage: wgt::TextureUses::RESOURCE
+                },
+            ]
+        } else {
+            alloc::vec![crate::TextureBinding {
+                view: &second_view,
+                usage: wgt::TextureUses::RESOURCE
+            }]
+        };
         Some(unsafe {
             device
                 .create_bind_group(&crate::BindGroupDescriptor {
@@ -756,6 +1112,12 @@ fn sampled_triangle_variant(
             usage: wgt::TextureUses::RESOURCE,
         });
     }
+    if multi_resource {
+        alias_textures.extend(extra_views.iter().map(|view| crate::TextureBinding {
+            view,
+            usage: wgt::TextureUses::RESOURCE,
+        }));
+    }
     let alias_group = unsafe {
         device
             .create_bind_group(&crate::BindGroupDescriptor {
@@ -771,7 +1133,7 @@ fn sampled_triangle_variant(
             .unwrap()
     };
     let secondary_alias_group = if two {
-        let textures = [
+        let mut textures = alloc::vec![
             crate::TextureBinding {
                 view: &view,
                 usage: wgt::TextureUses::RESOURCE,
@@ -781,6 +1143,14 @@ fn sampled_triangle_variant(
                 usage: wgt::TextureUses::RESOURCE,
             },
         ];
+        if multi_resource {
+            textures[1].view = &second_view;
+            textures.extend(extra_views.iter().map(|view| crate::TextureBinding {
+                view,
+                usage: wgt::TextureUses::RESOURCE,
+            }));
+            textures.last_mut().unwrap().view = &sampled_target;
+        }
         Some(unsafe {
             device
                 .create_bind_group(&crate::BindGroupDescriptor {
@@ -903,6 +1273,20 @@ fn sampled_triangle_variant(
             crate::CommandEncoder::end_render_pass(&mut encoder);
             assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
         }
+        if let (Some(short_layout), Some(short_group)) = (&short_layout, &short_group) {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_bind_group(&mut encoder, short_layout, 0, short_group, &[]);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&buffer, 0, None),
+            );
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            assert!(crate::CommandEncoder::end_encoding(&mut encoder).is_err());
+        }
         crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
         crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
         crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
@@ -946,6 +1330,17 @@ fn sampled_triangle_variant(
             crate::BufferBinding::new_unchecked(&buffer, 0, None),
         );
         crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+        if variant == 14 || variant == 16 {
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &crate::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+        }
         if let Some(index) = index_buffer.as_ref() {
             crate::CommandEncoder::set_index_buffer(
                 &mut encoder,
@@ -963,7 +1358,34 @@ fn sampled_triangle_variant(
             );
         }
         if let Some(group) = transition_group.as_ref() {
+            if variant == 14 {
+                crate::CommandEncoder::set_scissor_rect(
+                    &mut encoder,
+                    &crate::Rect {
+                        x: 4,
+                        y: 0,
+                        w: 4,
+                        h: 8,
+                    },
+                );
+            }
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, group, &[]);
+            crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
+        }
+        if let (Some(layout), Some(pipeline), Some(group)) =
+            (&short_layout, &short_pipeline, &short_group)
+        {
+            crate::CommandEncoder::set_scissor_rect(
+                &mut encoder,
+                &crate::Rect {
+                    x: 4,
+                    y: 0,
+                    w: 4,
+                    h: 8,
+                },
+            );
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, pipeline);
+            crate::CommandEncoder::set_bind_group(&mut encoder, layout, 0, group, &[]);
             crate::CommandEncoder::draw(&mut encoder, 0, 3, 0, 1);
         }
         crate::CommandEncoder::end_render_pass(&mut encoder);
@@ -978,7 +1400,25 @@ fn sampled_triangle_variant(
     if variant != 0 {
         std::println!("FL9_1 variant {variant} readback: {actual:?}");
     }
-    if alpha {
+    if multi_resource {
+        if count == 8 {
+            assert_eq!(actual, &[144, 0, 0, 255]);
+        } else if variant == 16 {
+            assert_eq!(actual, &[255, 0, 0, 255]);
+            assert_eq!(
+                &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],
+                &[255, 255, 255, 255]
+            );
+        } else if variant == 14 {
+            assert_eq!(actual, &[255, 255, 0, 255]);
+            assert_eq!(
+                &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],
+                &[255, 255, 255, 255]
+            );
+        } else {
+            assert_eq!(actual, &[255, 255, 255, 255]);
+        }
+    } else if alpha {
         assert_eq!(actual[0], 0);
         assert!((127..=128).contains(&actual[1]) && (127..=128).contains(&actual[2]));
         assert_eq!(actual[3], 255);

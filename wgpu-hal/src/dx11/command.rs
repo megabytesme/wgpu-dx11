@@ -52,9 +52,12 @@ pub(super) enum NativeCommand {
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
     },
     SetUniformGroup(Arc<UniformBinding>),
-    SetTextureGroup {
+    SetTexture {
         slot: u32,
         texture: ID3D11ShaderResourceView,
+    },
+    SetSampler {
+        slot: u32,
         sampler: ID3D11SamplerState,
     },
     SetVertex {
@@ -188,12 +191,10 @@ impl CommandBuffer {
                         context.PSSetShader(Some(fragment), None);
                     }
                     NativeCommand::SetUniformGroup(uniform) => uniform.execute(context)?,
-                    NativeCommand::SetTextureGroup {
-                        slot,
-                        texture,
-                        sampler,
-                    } => {
+                    NativeCommand::SetTexture { slot, texture } => {
                         context.PSSetShaderResources(*slot, Some(&[Some(texture.clone())]));
+                    }
+                    NativeCommand::SetSampler { slot, sampler } => {
                         context.PSSetSamplers(*slot, Some(&[Some(sampler.clone())]));
                     }
                     NativeCommand::SetVertex {

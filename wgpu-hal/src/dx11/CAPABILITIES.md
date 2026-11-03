@@ -64,7 +64,7 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private device creates single-mip, single-layer, single-sample RGBA8 2D textures; BGRA8 is limited to a wrapped swapchain backbuffer. | Transfer, view, clear and draw readback tests. Per-format capabilities and numeric limits can restrict usage and dimensions, but must match creation, copies, initialization and view behavior. All other formats and dimensions need implementation or validation. |
 | Mips, arrays, NPOT / sampling | FL9 conditional NPOT is more restrictive than unconditional support. Private textures have one mip and no arrays; sampled RGBA8 uses checked fragment bindings. | Sampling tests and optional full-NPOT query. `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` covers one restriction but not the NPOT/address-mode pairing; core needs a draw/bind-time texture-sampler compatibility rule or emulation. |
 | Samplers | Point/linear and restricted clamp/wrap/mirror modes exist. No anisotropy, comparison or border mode in the private HAL; FL9_1 LOD translation requires a single-mip view. | Sampler and texture binding tests. Omitting `COMPARISON_SAMPLERS` describes one gap; sampler LOD, filter/address and texture combinations need validation or emulation. Optional driver comparison support does not enable backend comparison sampling. |
-| Bind groups / registers | Only empty, uniform, one texture+sampler, uniform+texture+sampler and a fixed uniform+two-texture/two-sampler shape are accepted. For the single pair, texture and sampler can use distinct arbitrary group-0 binding numbers and either descriptor order; an optional uniform remains at binding 0. Textures and samplers remain fragment-only. | Layout/ownership and textured GPU tests. Counts in `Limits` cannot represent legal binding permutations, gaps, visibility, dynamic offsets, cross-group register allocation or aliasing. A future design needs general register allocation or specific core layout and bind-time validation. |
+| Bind groups / registers | Group 0 supports up to eight fragment sampled textures and sixteen filtering samplers with compact independent registers, plus the restricted uniform at binding 0. Each sampler is conservatively checked against every texture. | Sparse three-texture and eight-texture GPU tests cover selected relationships; FXC limits distinct sampled texture/sampler relationships. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
 | Vertex / index formats | Native FL9 has wider IA support than the HAL. Private pipelines accept a single interleaved vertex buffer and a restricted float/unorm format set. Indexed draws use u16, zero base vertex, replay-time index checks and FL9 index limits. | Indexed and non-indexed readback and rejected-index tests. Limits and downlevel flags cover only part of this; core currently permits other valid vertex formats, buffer slots, u32 index format and zero/nonzero base vertex semantics. Add emulation or explicit validation. |
 | Shader stages / WGSL | FL9_1 uses `vs_4_0_level_9_1` and `ps_4_0_level_9_1`. These profiles restrict shader instructions, registers and flow control; vertex textures are rejected by the private shader path. The pixel profile has 64 arithmetic and 32 texture instructions; the vertex profile has 256 instructions. | Naga/FXC and restricted shader GPU tests. WGSL validation and feature bits do not represent arbitrary FXC instruction pressure or every translation restriction. Shader creation and pipeline validation need conservative diagnostics or emulation; successful Naga validation is insufficient. |
 | Pipeline / raster / blending | Private graphics pipeline requires default triangle-list primitive state, one buffer and target, no depth, one sample and a small set of blend states. Hardware supports more configurations, format permitting. | Pipeline and readback tests. Single-target/sample limits and format flags are expressible, but allowed blend operations, vertex combinations, shader restrictions and all-write-mask requirement are not fully captured by existing limits. FL9_1 does not guarantee separate alpha blending; current private alpha/inversion configurations passed on RTX but need portable hardware validation or a fallback before being advertised. |
@@ -76,31 +76,38 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 
 ## Logical binding translation
 
-Group 0 layout data records each texture and sampler's logical binding and a
-compact native slot. One pair maps to `t0` and `s0`; an optional uniform uses
-`b0`. The existing two-pair layout retains `t0/s0` and `t1/s1` with `b0`.
-The layout's mapping is passed to Naga's HLSL writer and also drives the
-recorded runtime bindings; it does not depend on declaration order. Layout
-identity includes the mapping, so an incompatible group cannot satisfy a draw.
-The current fragment-only visibility restriction and unsupported vertex texture
-sampling remain unchanged. Binding-array, comparison-sampler, storage and
-separate-group shapes remain rejected; this is not general bind-group support.
+Group 0 assigns textures and filtering samplers independently in ascending
+logical binding order to compact fragment-stage `t` and `s` registers. An
+optional uniform remains at `b0`. Layout identity and the same register map are
+used by shader translation and command recording. Bind groups retain the native
+views and samplers; recording rejects render-target feedback. Group resources
+are rebound when changed, and incompatible pipeline layouts cannot draw with
+an old group. Render-pass boundaries clear context state.
 
-FL9_1 exposes at most eight simultaneous pixel shader resources and sixteen
-sampler slots. FXC's level-9 bytecode can map an HLSL texture and sampler with
-different register indices onto a legacy combined sampler; the backend's
-paired `tN/sN` allocation is a deterministic choice, not a claimed native rule.
-The compilation path checks logical and same-namespace register collisions,
-slot bounds and the resource count, and propagates FXC errors for combinations
-its level-9 compiler cannot map. Bind groups retain resource references and
-render-pass replay clears context state. Bindings are reissued on group changes.
+The private layout accepts up to eight sampled textures and sixteen samplers.
+These are binding capacities, not a promise that every shader using them
+compiles: `ps_4_0_level_9_1` has instruction limits and FXC allocates a legacy
+sampler for each distinct texture/sampler relationship. FXC accepted sixteen
+relationships in a focused experiment and rejected seventeen with X4510. It
+can remap multiple textures sharing a sampler and one texture using multiple
+samplers. The forced FL9_1 hardware tests execute three independent textures,
+shared and distinct samplers, one texture with two sampler states, and eight
+textures with either a shared sampler or eight samplers, and sixteen distinct
+texture/sampler relationships. They do not prove all combinations or historical
+driver behavior. FXC compilation errors remain pipeline creation errors.
 
-The separate experimental texel-load proof is **not enabled** in this HAL. It
-reserves `t0`, `s15` and `b13`; therefore it cannot simply be switched on with
-this allocator. Enabling it later requires a unified reservation/allocation
-scheme and collision tests. No such internal slots are reserved by the active
-sampled-texture shader path, which disables Naga's sampler heap and special
-constant bindings.
+The shader compiler currently requires each layout mapping to name a global in
+the shader module, even if the selected entry point does not use it. This is a
+further private-path limitation. Group creation conservatively validates every sampler against every texture,
+including FL9 NPOT wrapping and single-mip restrictions. Some safe combinations
+may therefore be rejected. Binding arrays, comparison samplers, storage, vertex
+sampling and separate bind groups remain unavailable. Limits alone do not
+express those restrictions; normal adapter enumeration remains disabled.
+
+The disabled texel-load proof reserves `t0`, `s15` and `b13`; it cannot simply
+be switched on with this allocator. Enabling it requires coordinated register
+reservations and collision tests. The active sampled path does not reserve
+those slots or enable the proof.
 
 `wgpu-core/src/device/resource.rs` still treats `Backend::Dx11` as unreachable
 for shader module construction; `tests/tests/wgpu-gpu/naga_capabilities.rs`

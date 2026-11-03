@@ -184,3 +184,18 @@ messages, including binding hazards, descriptor errors, lifetime leaks and
 synchronization problems. The current normal device-creation path does not
 enable the debug layer. Installing missing system components may require
 administrator access; do not silently substitute a non-debug run.
+
+### Multiple sampled resources
+
+Set `WGPU_DX11_REQUIRE_HARDWARE=1` and run:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 multi_resource -- --nocapture --test-threads=1
+```
+
+The cases check three sparse textures, distinct and shared samplers, a texture
+using two sampler states, changing one texture, a pipeline transition and eight
+textures with a shared sampler or eight samplers, and sixteen distinct sampler
+relationships. Each reads back GPU output. The `level9_fxc`
+unit test separately checks the FXC boundary of sixteen distinct sampled
+texture/sampler relationships versus seventeen; it is not a hardware test.

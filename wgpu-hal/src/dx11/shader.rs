@@ -1124,6 +1124,101 @@ mod tests {
     }
 
     #[test]
+    fn level9_fxc_accepts_sixteen_pairs_and_rejects_seventeen() {
+        let shader = |count: usize| {
+            let mut source =
+                String::from("Texture2D t0:register(t0); Texture2D t1:register(t1);\n");
+            for index in 0..16 {
+                source.push_str(&format!("SamplerState s{index}:register(s{index});\n"));
+            }
+            source.push_str("float4 main(float2 p:TEXCOORD0):SV_Target { float4 v=0;\n");
+            for index in 0..count {
+                source.push_str(&format!(
+                    "v += t{}.Sample(s{}, p) * 0.05;\n",
+                    usize::from(index >= 16),
+                    index % 16
+                ));
+            }
+            source.push_str("return v; }");
+            source
+        };
+        assert!(compile_hlsl(&shader(16), "main", ShaderProfile::PixelLevel9_1).is_ok());
+        let error = compile_hlsl(&shader(17), "main", ShaderProfile::PixelLevel9_1).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("maximum number of samplers exceeded"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn level9_naga_propagates_fxc_pair_exhaustion() {
+        let mut source = String::new();
+        let mut bindings = Vec::new();
+        for index in 0..2 {
+            source.push_str(&format!(
+                "@group(0) @binding({index}) var t{index}: texture_2d<f32>;\n"
+            ));
+            bindings.push(ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: index,
+                },
+                slot: index,
+                kind: ShaderBindingKind::Texture2dFloat,
+            });
+        }
+        for index in 0..16 {
+            source.push_str(&format!(
+                "@group(0) @binding({}) var s{index}: sampler;\n",
+                index + 10
+            ));
+            bindings.push(ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: index + 10,
+                },
+                slot: index,
+                kind: ShaderBindingKind::Sampler,
+            });
+        }
+        source.push_str("@fragment fn main() -> @location(0) vec4f { var value = vec4f(0.0); ");
+        for index in 0..17 {
+            source.push_str(&format!(
+                "value += textureSample(t{},s{},vec2f(0.5)) * 0.05; ",
+                usize::from(index >= 16),
+                index % 16
+            ));
+        }
+        source.push_str("return value; }");
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let result = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        );
+        match result {
+            Err(NagaCompileError::Compilation(error)) => assert!(
+                error
+                    .message
+                    .contains("maximum number of samplers exceeded"),
+                "{error:?}"
+            ),
+            other => panic!("expected FXC sampler exhaustion, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn sparse_bindings_map_registers_and_reject_invalid_mappings() {
         use naga::{
             back::hlsl,
