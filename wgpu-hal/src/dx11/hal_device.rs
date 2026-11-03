@@ -138,6 +138,15 @@ impl crate::Device for Device {
             || desc.size.depth_or_array_layers != 1
             || desc.mip_level_count != 1
             || desc.sample_count != 1
+            || desc.size.width == 0
+            || desc.size.height == 0
+            || desc.size.width
+                > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
+                    .texture_2d_dimension
+            || desc.size.height
+                > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
+                    .texture_2d_dimension
+            || desc.usage.is_empty()
             || !supported.contains(desc.usage)
             || desc.memory_flags.contains(MemoryFlags::TRANSIENT)
             || desc
@@ -147,6 +156,32 @@ impl crate::Device for Device {
         {
             return Err(DeviceError::Unexpected);
         }
+        use windows::Win32::Graphics::{
+            Direct3D11::{
+                D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+                D3D11_FORMAT_SUPPORT_TEXTURE2D,
+            },
+            Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        };
+        let support = unsafe {
+            self.native
+                .raw_device()
+                .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)
+        }
+        .map_err(device_error)?;
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0)
+            as u32
+            | if desc
+                .usage
+                .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC)
+            {
+                D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
+            } else {
+                0
+            };
+        if support & required != required {
+            return Err(DeviceError::Unexpected);
+        }
         let mut texture = self
             .native
             .create_rgba_texture_inner(
@@ -154,8 +189,21 @@ impl crate::Device for Device {
                 desc.size.height,
                 1,
                 1,
-                desc.usage.contains(wgt::TextureUses::COLOR_TARGET),
+                desc.usage
+                    .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
             )
+            .map_err(device_error)?;
+        let byte_count = (desc.size.width as usize)
+            .checked_mul(desc.size.height as usize)
+            .and_then(|v| v.checked_mul(4))
+            .ok_or(DeviceError::OutOfMemory)?;
+        let mut zeroes = Vec::new();
+        zeroes
+            .try_reserve_exact(byte_count)
+            .map_err(|_| DeviceError::OutOfMemory)?;
+        zeroes.resize(byte_count, 0);
+        self.native
+            .write_rgba_texture(&texture, 0, 0, &zeroes)
             .map_err(device_error)?;
         texture.set_usage(desc.usage);
         Ok(texture)

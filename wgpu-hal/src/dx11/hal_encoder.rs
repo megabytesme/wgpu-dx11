@@ -200,7 +200,29 @@ impl crate::CommandEncoder for CommandEncoder {
     ) where
         T: Iterator<Item = TextureCopy>,
     {
-        self.reject()
+        if self.render.is_some()
+            || self.recording.is_none()
+            || src_usage != wgt::TextureUses::COPY_SRC
+        {
+            self.reject();
+            return;
+        }
+        if self.failure.is_some() {
+            return;
+        }
+        for region in regions {
+            let transfer = match self.device.prepare_texture_to_texture(src, dst, &region) {
+                Ok(transfer) => transfer,
+                Err(error) => {
+                    self.failure = Some(super::hal_device::device_error(error));
+                    return;
+                }
+            };
+            self.record(NativeCommand::TextureToTexture(transfer));
+            if self.failure.is_some() {
+                return;
+            }
+        }
     }
 
     unsafe fn copy_buffer_to_texture<T>(
@@ -1589,6 +1611,10 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/dx11/texture_transfers.rs"]
+mod texture_transfer_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/textured_render.rs"]

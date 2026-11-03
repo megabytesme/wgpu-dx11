@@ -255,6 +255,16 @@ fn sampler_state_clamp_edge() -> windows::core::Result<()> {
     sampled_triangle_variant(true, true, false, true, false, 0, None, 48)
 }
 
+#[test]
+fn fl91_render_copy_then_sample() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 50)
+}
+
+#[test]
+fn fl91_buffer_upload_then_sample() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 51)
+}
+
 fn sampled_triangle(
     combined: bool,
     multi: bool,
@@ -288,7 +298,7 @@ fn sampled_triangle_variant(
     variant: u8,
 ) -> windows::core::Result<()> {
     let sampler_case =
-        (30..=39).contains(&variant) || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48);
+        (30..=39).contains(&variant) || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51);
     let conditional_npot = (20..=24).contains(&variant);
     let sparse = (1..=4).contains(&variant);
     let multi_resource = variant >= 10;
@@ -353,7 +363,9 @@ fn sampled_triangle_variant(
             ));
         }
         if sampler_case {
-            let (scale, bias) = if matches!(variant, 33 | 35 | 44 | 46 | 47) {
+            let (scale, bias) = if variant == 51 {
+                ("0.125", "0.0")
+            } else if matches!(variant, 33 | 35 | 44 | 46 | 47) {
                 ("0.5", "-1.75")
             } else {
                 ("0.03125", "0.359375")
@@ -364,7 +376,7 @@ fn sampled_triangle_variant(
         }
         if sampler_case {
             let uv = match variant {
-                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 => "in.uv",
+                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 => "in.uv",
                 36 | 37 => "vec2f(1.625, 0.125)",
                 48 => "vec2f(1.125, 0.125)",
                 39 => "vec2f(1.625, 1.625)",
@@ -859,6 +871,173 @@ fn sampled_triangle_variant(
         }
     }
     native.write_rgba_texture(&texture, 0, 0, &texels)?;
+    if variant == 51 {
+        let source = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: 104,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let mut upload = alloc::vec![0xa5; 104];
+        for y in 0..4usize {
+            for x in 0..4usize {
+                let pixel = [
+                    10 + x as u8 * 40,
+                    20 + y as u8 * 60,
+                    30 + (x + y) as u8 * 20,
+                    255,
+                ];
+                let offset = 8 + y * 24 + x * 4;
+                upload[offset..offset + 4].copy_from_slice(&pixel);
+            }
+        }
+        native.write_byte_buffer(&source, 0, &upload)?;
+        let queue = crate::dx11::Queue::new(native.clone());
+        let mut encoder = unsafe {
+            device
+                .create_command_encoder(&crate::CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                })
+                .unwrap()
+        };
+        let copy = crate::BufferTextureCopy {
+            buffer_layout: wgt::TexelCopyBufferLayout {
+                offset: 8,
+                bytes_per_row: Some(24),
+                rows_per_image: Some(4),
+            },
+            texture_base: crate::TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: crate::FormatAspects::COLOR,
+            },
+            size: crate::CopyExtent {
+                width: 4,
+                height: 4,
+                depth: 1,
+            },
+        };
+        let commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::copy_buffer_to_texture(
+                &mut encoder,
+                &source,
+                &texture,
+                [copy].into_iter(),
+            );
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe {
+            device.destroy_buffer(source);
+        }
+        let fence = native.create_native_fence();
+        unsafe {
+            crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+        }
+    }
+    if variant == 50 {
+        let mut source_desc = texture_desc.clone();
+        source_desc.usage = wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC;
+        let source = unsafe { device.create_texture(&source_desc).unwrap() };
+        let target_view = unsafe {
+            device
+                .create_texture_view(
+                    &source,
+                    &crate::TextureViewDescriptor {
+                        label: None,
+                        format: wgt::TextureFormat::Rgba8Unorm,
+                        dimension: wgt::TextureViewDimension::D2,
+                        usage: wgt::TextureUses::COLOR_TARGET,
+                        range: wgt::ImageSubresourceRange::default(),
+                    },
+                )
+                .unwrap()
+        };
+        let color = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &target_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color {
+                r: 0.25,
+                g: 0.5,
+                b: 0.75,
+                a: 1.0,
+            },
+        })];
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent: source_desc.size,
+            sample_count: 1,
+            color_attachments: &color,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let queue = crate::dx11::Queue::new(native.clone());
+        let mut encoder = unsafe {
+            device
+                .create_command_encoder(&crate::CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                })
+                .unwrap()
+        };
+        let base = crate::TextureCopyBase {
+            mip_level: 0,
+            array_layer: 0,
+            origin: wgt::Origin3d::ZERO,
+            aspect: crate::FormatAspects::COLOR,
+        };
+        let copy = crate::TextureCopy {
+            src_base: base.clone(),
+            dst_base: base,
+            size: crate::CopyExtent {
+                width: 4,
+                height: 4,
+                depth: 1,
+            },
+        };
+        let commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::copy_texture_to_texture(
+                &mut encoder,
+                &source,
+                wgt::TextureUses::COPY_SRC,
+                &texture,
+                [copy].into_iter(),
+            );
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe {
+            device.destroy_texture_view(target_view);
+            device.destroy_texture(source);
+        }
+        let fence = native.create_native_fence();
+        unsafe {
+            crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+        }
+    }
     let view = unsafe {
         device
             .create_texture_view(
@@ -1752,6 +1931,8 @@ fn sampled_triangle_variant(
             36 | 48 => [0, 255, 0, 255],
             37 => [255, 0, 0, 255],
             39 => [0, 0, 255, 255],
+            51 => [90, 140, 110, 255],
+            50 => [64, 128, 191, 255],
             _ => unreachable!(),
         };
         for (&observed, &want) in actual.iter().zip(&expected) {
@@ -1759,6 +1940,20 @@ fn sampled_triangle_variant(
                 (i16::from(observed) - i16::from(want)).abs() <= 1,
                 "variant {variant}: {actual:?} expected {expected:?}"
             );
+        }
+        if variant == 51 {
+            for y in 0..8usize {
+                for x in 0..8usize {
+                    let expected = [
+                        10 + (x / 2) as u8 * 40,
+                        20 + (y / 2) as u8 * 60,
+                        30 + (x / 2 + y / 2) as u8 * 20,
+                        255,
+                    ];
+                    assert_eq!(&pixels[(y * 8 + x) * 4..][..4], &expected);
+                }
+            }
+            std::println!("FL9_1 padded upload: 64/64 sampled pixels matched");
         }
         if variant == 38 {
             assert_eq!(

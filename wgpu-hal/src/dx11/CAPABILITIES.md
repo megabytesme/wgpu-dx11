@@ -74,6 +74,34 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL rejects compute pipeline creation and storage usages. Other APIs may require CPU or graphics emulation. | Rejection tests; feature/limit gating alone is insufficient until core can safely create and validate a downlevel device without compute and all associated paths are audited. No compute/storage feature is exposed. |
 | Presentation | FL9 hardware can support display through platform/format-specific paths. Private backend has a restricted WinRT CoreWindow BGRA8 FIFO path; no general window-system support. | Prior UWP surface diagnostic; format support and actual surface capabilities must be queried. CoreWindow ownership, resize, device loss, synchronization, compositing and non-WinRT platforms need coverage before any surface is advertised. |
 
+## FL9_1 private texture transfers
+
+| Transfer | Implementation and restrictions | Coverage |
+| --- | --- | --- |
+| Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. | Offset and padded full/partial uploads, GPU-written source and ordered submissions. |
+| Texture to texture | Native GPU `CopySubresourceRegion` between distinct compatible RGBA8 single-subresource textures, with an explicit checked source box. Self-copy is rejected. | Full and partial copies, different overall dimensions, zero-preserving destination and render-to-copy-to-sample. |
+| Texture to buffer | A region is copied to a retained CPU-readable staging texture and mapped; each mapped row is written into the destination GPU buffer at the requested pitch and offset. | Full and partial source regions, nonzero buffer offsets, row padding and complete image comparison. |
+
+HAL texture creation eagerly uploads zeroes before returning, including for
+partial-write targets. The allocation and upload are proportional to the full
+texture size; staging maps in buffer/texture transfers may stall the CPU. Native
+diagnostic texture constructors remain separate and can create uninitialized
+resources. The private HAL accepts only one-mip, one-layer, one-sample RGBA8
+2D textures and enforces feature-level size limits. For `COPY_SRC`, it requests
+an internal render-target bind in addition to the shader-resource bind: FL9
+forbids GPU-to-CPU copying from resources bound only as shader resources. This
+requires RGBA8 render-target support; it does not expose render-target usage to
+callers that did not request it. The native D3D11 creation call can reject an
+unsupported format/bind combination.
+
+HAL transfer commands use explicit regions. No staging-to-default native copy with
+a null source box is used, avoiding the documented 9_x corruption case for
+mismatched dimensions or destination offsets. Core validates empty regions and
+returns before calling HAL; direct private HAL empty-region transfers remain
+rejected. Broad texture formats, multisampling, mip chains and arrays remain
+unsupported. A modern GPU forced to 9_1 does not validate every historical
+runtime or driver; public adapter exposure remains disabled.
+
 ## FL9_1 sampler contract
 
 | Category | Native and driver contract | Private backend and coverage |

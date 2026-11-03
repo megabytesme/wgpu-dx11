@@ -84,6 +84,8 @@ pub(super) struct DriverCapabilities {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BackendCapabilities {
     pub texture_mip_levels: u32,
+    pub rgba8_single_mip_transfers: bool,
+    pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
     pub sample_count: u32,
     pub vertex_buffers: u32,
@@ -103,6 +105,8 @@ pub(super) struct BackendCapabilities {
 impl BackendCapabilities {
     pub const CURRENT: Self = Self {
         texture_mip_levels: 1,
+        rgba8_single_mip_transfers: true,
+        texture_zero_initialized: true,
         texture_array_layers: 1,
         sample_count: 1,
         vertex_buffers: 1,
@@ -219,7 +223,7 @@ impl Capabilities {
         };
         let required = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
             | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
-            | if usage.contains(wgt::TextureUses::COLOR_TARGET) {
+            | if usage.intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC) {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
                 0
@@ -365,6 +369,11 @@ mod tests {
             check(&no_target, rgba, wgt::TextureUses::RESOURCE, 8, 8, 1, 1, 1),
             Ok(())
         );
+        assert_eq!(
+            check(&no_target, rgba, wgt::TextureUses::COPY_SRC, 8, 8, 1, 1, 1),
+            Err(TextureRejection::DriverFormatUnsupported)
+        );
+        assert!(caps.backend.rgba8_single_mip_transfers && caps.backend.texture_zero_initialized);
         let mut optional_unknown = caps;
         optional_unknown.driver.full_npot = Query::Unavailable(-1);
         optional_unknown.driver.comparison_shadow = Query::Unavailable(-1);

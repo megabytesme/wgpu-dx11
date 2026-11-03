@@ -2,7 +2,7 @@
 //!
 //! This is not yet a wgpu texture implementation: usage validation, format
 //! coverage, and WebGPU's initialization guarantees are not implemented.
-use super::device::NativeDevice;
+use super::device::{FeatureLevel, NativeDevice};
 use alloc::{vec, vec::Vec};
 use windows::{
     core::{Error, Interface, Result},
@@ -408,6 +408,16 @@ impl NativeDevice {
         Ok(desc)
     }
 
+    pub(super) fn validate_texture_readback_source(&self, texture: &NativeTexture) -> Result<()> {
+        let desc = self.texture_desc(texture)?;
+        if self.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
+            && desc.BindFlags == D3D11_BIND_SHADER_RESOURCE.0 as u32
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+
     /// Upload one complete tightly-packed mip/layer under the context lock.
     #[allow(dead_code)]
     pub(crate) fn write_rgba_texture(
@@ -500,7 +510,7 @@ impl NativeDevice {
         mip: u32,
         layer: u32,
     ) -> Result<Vec<u8>> {
-        self.check_texture_owner(texture)?;
+        self.validate_texture_readback_source(texture)?;
         let (width, height, index, expected) = subresource_layout(texture, mip, layer)?;
         let desc = D3D11_TEXTURE2D_DESC {
             Width: width,

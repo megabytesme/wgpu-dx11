@@ -228,3 +228,21 @@ for minification, magnification, mixed filters, addressing and a sampler
 transition. It also runs a native border-creation diagnostic; that diagnostic
 is not a rendered-pixel test. Anisotropy 2 is sampled, but a single-mip image
 does not establish visual anisotropic quality.
+
+### FL9_1 texture transfers
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_texture_transfer_chain -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_render_copy_then_sample -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_buffer_upload_then_sample -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 transfer_layout -- --nocapture
+```
+
+The first test checks zeroed resources, padded and offset uploads and readback,
+partial and full texture copies, resource retention and ordered submissions.
+The second clears a render target, copies it and samples the destination.
+The third samples a padded upload with a nonzero source offset. FL9_x readback
+rejects native diagnostic textures bound only as shader resources.
+The layout test is CPU-only. Direct private HAL calls reject empty transfer
+regions; wgpu-core filters validated empty copies before dispatching to HAL.

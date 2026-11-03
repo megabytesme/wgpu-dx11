@@ -3,7 +3,7 @@ use super::{
     buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
     hal_index::IndexBinding,
-    hal_transfer::{BufferToTexture, TextureToBuffer},
+    hal_transfer::{BufferToTexture, TextureToBuffer, TextureToTexture},
     hal_uniform::UniformBinding,
 };
 use alloc::{sync::Arc, vec::Vec};
@@ -36,6 +36,7 @@ pub(super) enum NativeCommand {
     ClearBuffer(NativeBufferClear),
     BufferToTexture(BufferToTexture),
     TextureToBuffer(TextureToBuffer),
+    TextureToTexture(TextureToTexture),
     #[cfg(test)]
     InjectedFailure,
     BeginRender {
@@ -141,6 +142,7 @@ impl CommandBuffer {
 
                     NativeCommand::BufferToTexture(copy) => copy.execute(context)?,
                     NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
+                    NativeCommand::TextureToTexture(copy) => copy.execute(context),
                     #[cfg(test)]
                     NativeCommand::InjectedFailure => {
                         return Err(Error::from_hresult(windows::Win32::Foundation::E_FAIL));

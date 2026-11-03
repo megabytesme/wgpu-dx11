@@ -14,7 +14,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
 - Single-mip RGBA8 sampled/color textures, texture views, bounded staging
-  transfers, and point/linear, clamp/repeat/mirror samplers with anisotropy
+  transfers, zero initialization and GPU texture-region copies, and point/linear,
+  clamp/repeat/mirror samplers with anisotropy
   up to 2. On 9_1/9_2, translated finite maximum LODs require single-mip views.
 - Group-0 layouts with up to eight sampled textures and sixteen samplers,
   an optional restricted uniform, and shader-aware pair validation; restricted

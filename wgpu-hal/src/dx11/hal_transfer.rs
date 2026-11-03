@@ -1,7 +1,7 @@
 //! Checked, retained FL9 transfers between buffers and RGBA textures.
 use super::{buffer::NativeBuffer, device::NativeDevice, texture::NativeTexture};
 use windows::{
-    core::{Error, Result},
+    core::{Error, Interface, Result},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
@@ -17,6 +17,87 @@ use windows::{
 
 fn invalid() -> Error {
     Error::from_hresult(E_INVALIDARG)
+}
+
+fn copy_layout(
+    layout: &wgt::TexelCopyBufferLayout,
+    width: u32,
+    height: u32,
+) -> Result<(u32, u32, u32, u32)> {
+    if width == 0 || height == 0 || !layout.offset.is_multiple_of(4) {
+        return Err(invalid());
+    }
+    let row_bytes = width.checked_mul(4).ok_or_else(invalid)?;
+    let pitch = match layout.bytes_per_row {
+        Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(4) => pitch,
+        None if height == 1 => row_bytes,
+        _ => return Err(invalid()),
+    };
+    if layout.rows_per_image.is_some_and(|rows| rows < height) {
+        return Err(invalid());
+    }
+    let total = (height - 1)
+        .checked_mul(pitch)
+        .and_then(|n| n.checked_add(row_bytes))
+        .ok_or_else(invalid)?;
+    let offset = u32::try_from(layout.offset).map_err(|_| invalid())?;
+    offset.checked_add(total).ok_or_else(invalid)?;
+    Ok((offset, pitch, row_bytes, total))
+}
+
+fn texture_box(
+    base: &crate::TextureCopyBase,
+    size: &crate::CopyExtent,
+    dimensions: [u32; 2],
+) -> Result<D3D11_BOX> {
+    if base.mip_level != 0
+        || base.array_layer != 0
+        || base.origin.z != 0
+        || base.aspect != crate::FormatAspects::COLOR
+        || size.depth != 1
+        || size.width == 0
+        || size.height == 0
+    {
+        return Err(invalid());
+    }
+    let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
+    let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
+    if right > dimensions[0] || bottom > dimensions[1] {
+        return Err(invalid());
+    }
+    Ok(D3D11_BOX {
+        left: base.origin.x,
+        right,
+        top: base.origin.y,
+        bottom,
+        front: 0,
+        back: 1,
+    })
+}
+
+#[derive(Debug)]
+pub(super) struct TextureToTexture {
+    source: ID3D11Texture2D,
+    destination: ID3D11Texture2D,
+    source_box: D3D11_BOX,
+    destination_origin: [u32; 2],
+}
+
+impl TextureToTexture {
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) {
+        unsafe {
+            context.CopySubresourceRegion(
+                &self.destination,
+                0,
+                self.destination_origin[0],
+                self.destination_origin[1],
+                0,
+                &self.source,
+                0,
+                Some(&self.source_box),
+            );
+        }
+    }
 }
 
 /// A checked operation retaining the source, destination and staging buffer.
@@ -46,6 +127,27 @@ pub(super) struct TextureToBuffer {
 }
 
 impl NativeDevice {
+    pub(super) fn prepare_texture_to_texture(
+        &self,
+        source: &NativeTexture,
+        destination: &NativeTexture,
+        region: &crate::TextureCopy,
+    ) -> Result<TextureToTexture> {
+        let (source, src_size) = self.texture_copy_texture_source(source)?;
+        let (destination, dst_size) = self.texture_copy_destination(destination)?;
+        if source.as_raw() == destination.as_raw() {
+            return Err(invalid());
+        }
+        let source_box = texture_box(&region.src_base, &region.size, src_size)?;
+        let destination_box = texture_box(&region.dst_base, &region.size, dst_size)?;
+        Ok(TextureToTexture {
+            source,
+            destination,
+            source_box,
+            destination_origin: [destination_box.left, destination_box.top],
+        })
+    }
+
     #[allow(dead_code)] // Used when recording texture-to-buffer commands.
     pub(super) fn prepare_texture_to_buffer(
         &self,
@@ -56,38 +158,10 @@ impl NativeDevice {
         let base = &region.texture_base;
         let size = &region.size;
         let layout = &region.buffer_layout;
-        if base.mip_level != 0
-            || base.array_layer != 0
-            || base.origin.z != 0
-            || base.aspect != crate::FormatAspects::COLOR
-            || size.depth != 1
-            || size.width == 0
-            || size.height == 0
-            || !layout.offset.is_multiple_of(4)
-        {
-            return Err(invalid());
-        }
+        self.validate_texture_readback_source(texture)?;
         let (source, dimensions) = self.texture_copy_texture_source(texture)?;
-        let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
-        let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
-        if right > dimensions[0] || bottom > dimensions[1] {
-            return Err(invalid());
-        }
-        let row_bytes = size.width.checked_mul(4).ok_or_else(invalid)?;
-        let pitch = match layout.bytes_per_row {
-            Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(4) => pitch,
-            None if size.height == 1 => row_bytes,
-            _ => return Err(invalid()),
-        };
-        if layout.rows_per_image.is_some_and(|rows| rows < size.height) {
-            return Err(invalid());
-        }
-        let total = (size.height - 1)
-            .checked_mul(pitch)
-            .and_then(|v| v.checked_add(row_bytes))
-            .ok_or_else(invalid)?;
-        let offset = u32::try_from(layout.offset).map_err(|_| invalid())?;
-        offset.checked_add(total).ok_or_else(invalid)?;
+        let source_box = texture_box(base, size, dimensions)?;
+        let (offset, pitch, row_bytes, total) = copy_layout(layout, size.width, size.height)?;
         let native_destination =
             self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_TEXTURE2D_DESC {
@@ -113,14 +187,7 @@ impl NativeDevice {
             texture: source,
             staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             destination: native_destination,
-            source_box: D3D11_BOX {
-                left: base.origin.x,
-                right,
-                top: base.origin.y,
-                bottom,
-                front: 0,
-                back: 1,
-            },
+            source_box,
             destination_offset: offset,
             row_pitch: pitch,
             row_bytes,
@@ -138,37 +205,9 @@ impl NativeDevice {
         let base = &region.texture_base;
         let size = &region.size;
         let layout = &region.buffer_layout;
-        if base.mip_level != 0
-            || base.array_layer != 0
-            || base.origin.z != 0
-            || base.aspect != crate::FormatAspects::COLOR
-            || size.depth != 1
-            || size.width == 0
-            || size.height == 0
-            || !layout.offset.is_multiple_of(4)
-        {
-            return Err(invalid());
-        }
         let (destination, dimensions) = self.texture_copy_destination(texture)?;
-        let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
-        let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
-        if right > dimensions[0] || bottom > dimensions[1] {
-            return Err(invalid());
-        }
-        let row_bytes = size.width.checked_mul(4).ok_or_else(invalid)?;
-        let pitch = match layout.bytes_per_row {
-            Some(pitch) if pitch >= row_bytes && pitch.is_multiple_of(4) => pitch,
-            None if size.height == 1 => row_bytes,
-            _ => return Err(invalid()),
-        };
-        if layout.rows_per_image.is_some_and(|rows| rows < size.height) {
-            return Err(invalid());
-        }
-        let total = (size.height - 1)
-            .checked_mul(pitch)
-            .and_then(|v| v.checked_add(row_bytes))
-            .ok_or_else(invalid)?;
-        let offset = u32::try_from(layout.offset).map_err(|_| invalid())?;
+        let destination_box = texture_box(base, size, dimensions)?;
+        let (offset, pitch, _row_bytes, total) = copy_layout(layout, size.width, size.height)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
         let native_source = self.texture_copy_source(source, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_BUFFER_DESC {
@@ -194,14 +233,7 @@ impl NativeDevice {
                 front: 0,
                 back: 1,
             },
-            destination_box: D3D11_BOX {
-                left: base.origin.x,
-                right,
-                top: base.origin.y,
-                bottom,
-                front: 0,
-                back: 1,
-            },
+            destination_box,
             row_pitch: pitch,
         })
     }
@@ -294,6 +326,65 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use alloc::{sync::Arc, vec};
+
+    #[test]
+    fn transfer_layout_checks_offsets_rows_and_overflow() {
+        let layout = wgt::TexelCopyBufferLayout {
+            offset: 8,
+            bytes_per_row: Some(24),
+            rows_per_image: Some(3),
+        };
+        assert_eq!(copy_layout(&layout, 4, 3).unwrap(), (8, 24, 16, 64));
+        let mut invalid = layout;
+        invalid.offset = 3;
+        assert!(copy_layout(&invalid, 4, 3).is_err());
+        invalid = layout;
+        invalid.bytes_per_row = Some(12);
+        assert!(copy_layout(&invalid, 4, 3).is_err());
+        invalid = layout;
+        invalid.rows_per_image = Some(2);
+        assert!(copy_layout(&invalid, 4, 3).is_err());
+        invalid = layout;
+        invalid.offset = u32::MAX as u64 - 3;
+        assert!(copy_layout(&invalid, 4, 3).is_err());
+        invalid = layout;
+        invalid.bytes_per_row = Some(u32::MAX - 3);
+        assert!(copy_layout(&invalid, 4, 3).is_err());
+        invalid = layout;
+        invalid.bytes_per_row = None;
+        assert_eq!(copy_layout(&invalid, 4, 1).unwrap(), (8, 16, 16, 16));
+        assert!(copy_layout(&invalid, u32::MAX, 1).is_err());
+        assert!(copy_layout(&layout, 0, 1).is_err());
+    }
+
+    #[test]
+    fn transfer_texture_boxes_validate_origins_and_subresources() {
+        let mut base = crate::TextureCopyBase {
+            mip_level: 0,
+            array_layer: 0,
+            origin: wgt::Origin3d { x: 2, y: 1, z: 0 },
+            aspect: crate::FormatAspects::COLOR,
+        };
+        let size = crate::CopyExtent {
+            width: 3,
+            height: 2,
+            depth: 1,
+        };
+        let valid = texture_box(&base, &size, [6, 4]).unwrap();
+        assert_eq!(
+            (valid.left, valid.top, valid.right, valid.bottom),
+            (2, 1, 5, 3)
+        );
+        assert!(texture_box(&base, &size, [4, 4]).is_err());
+        base.origin.x = u32::MAX;
+        assert!(texture_box(&base, &size, [6, 4]).is_err());
+        base.origin.x = 2;
+        base.mip_level = 1;
+        assert!(texture_box(&base, &size, [6, 4]).is_err());
+        base.mip_level = 0;
+        base.array_layer = 1;
+        assert!(texture_box(&base, &size, [6, 4]).is_err());
+    }
 
     #[test]
     fn retained_buffer_texture_copy_preserves_padded_rows_and_bounds() -> Result<()> {
