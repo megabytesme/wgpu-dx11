@@ -26,12 +26,15 @@ impl crate::Instance for Instance {
                 "D3D11 requires a Windows display handle",
             )));
         }
-        let RawWindowHandle::WinRt(window) = window else {
-            return Err(crate::InstanceError::new(String::from(
-                "D3D11 currently supports only a WinRT CoreWindow",
-            )));
-        };
-        unsafe { super::Surface::from_core_window(window.core_window.as_ptr()) }
+        match window {
+            RawWindowHandle::WinRt(window) => unsafe {
+                super::Surface::from_core_window(window.core_window.as_ptr())
+            },
+            RawWindowHandle::Win32(window) => Ok(super::Surface::from_hwnd(window.hwnd)),
+            _ => Err(crate::InstanceError::new(String::from(
+                "D3D11 requires a Windows window handle",
+            ))),
+        }
     }
 
     unsafe fn enumerate_adapters(
@@ -46,18 +49,13 @@ impl crate::Instance for Instance {
 mod tests {
     use super::*;
     use crate::Instance as _;
-    use core::{num::NonZeroIsize, ptr::NonNull};
-    use raw_window_handle::{
-        Win32WindowHandle, WinRtWindowHandle, WindowsDisplayHandle, XlibDisplayHandle,
-    };
+    use core::ptr::NonNull;
+    use raw_window_handle::{WinRtWindowHandle, XlibDisplayHandle};
 
     #[test]
     fn incomplete_instance_exposes_no_adapters_and_rejects_unsupported_handles() {
         let instance = Instance;
-        let display = RawDisplayHandle::Windows(WindowsDisplayHandle::new());
-        let hwnd = RawWindowHandle::Win32(Win32WindowHandle::new(NonZeroIsize::new(1).unwrap()));
         assert!(unsafe { instance.enumerate_adapters(None) }.is_empty());
-        assert!(unsafe { instance.create_surface(display, hwnd) }.is_err());
         let other_display = RawDisplayHandle::Xlib(XlibDisplayHandle::new(None, 0));
         let untouched = RawWindowHandle::WinRt(WinRtWindowHandle::new(NonNull::dangling()));
         assert!(unsafe { instance.create_surface(other_display, untouched) }.is_err());

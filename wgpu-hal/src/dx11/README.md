@@ -24,17 +24,21 @@ WGSL support and device capability validation remain unimplemented. A desktop
 FL 9_1 GPU test draws and reads back an actual sampled texture.
 
 The registered DX11 HAL instance deliberately exposes no adapters. It retains
-validated UWP CoreWindow handles as agile COM references. The private HAL
+validated UWP CoreWindow handles as agile COM references and accepts borrowed
+Win32 HWND handles whose owner must outlive the surface. The private HAL
 surface supports only opaque FIFO BGRA8 presentation and the restricted device,
 encoder, and texture paths do not yet provide a usable wgpu renderer. Native
 diagnostic primitives do not yet implement WebGPU semantics.
 
-An internal CoreWindow swapchain owns its device and window, enforces one
+An internal window swapchain retains its device and, for CoreWindow, the window,
+enforces one
 outstanding backbuffer, and implements presentation and resize. A strict x64
 UWP diagnostic checks GPU readback before and after resize at forced 9_1 and
 11_0 on desktop hardware. The primitive backs a restricted HAL surface and
 queue path, including HAL texture views
-and fence ownership checks. Adapter enumeration remains empty.
+and fence ownership checks. A hidden Win32 test verifies HAL clear/readback,
+present, resize and swapchain recreation, but not visible presentation or
+concurrency. Adapter enumeration remains empty.
 
 A restricted FL 9_1 render path records a triangle-list pass with replace or
 standard alpha, crosshair inversion, additive and vignette blending and

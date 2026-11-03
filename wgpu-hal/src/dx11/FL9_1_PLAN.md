@@ -26,7 +26,9 @@ below is met. This plan does not claim WebGPU conformance.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
-6. Implement HWND surface lifecycle while preserving CoreWindow. Build public
+6. Complete HWND surface lifecycle while preserving CoreWindow; the private
+   hidden-window path exists, but resize with retained command buffers and
+   concurrent presentation require work. Build public
    wgpu offscreen and desktop examples selecting real D3D11 and forcing 9_1.
    Verify an indexed textured depth-tested 3D scene, readback and presentation.
 7. Audit unsupported operations, synchronization, lifetime and device loss;

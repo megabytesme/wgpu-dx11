@@ -9,8 +9,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 
 ## Implemented private HAL paths
 
-- DXGI adapter discovery, D3D11 device/context ownership, and a WinRT
-  CoreWindow surface with restricted BGRA8 FIFO presentation.
+- DXGI adapter discovery, D3D11 device/context ownership, and restricted
+  BGRA8 FIFO surfaces for WinRT CoreWindow and borrowed Win32 HWND handles.
+  The HWND path has hidden-window coverage; visible presentation and
+  surface concurrency remain unverified.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
 - Single-mip RGBA8 sampled/color textures, texture views, bounded staging

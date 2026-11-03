@@ -1,11 +1,11 @@
-//! CoreWindow HAL surface with exclusive backbuffer ownership.
+//! Private window surface with exclusive backbuffer ownership.
 use super::{
     device::NativeDevice,
     swapchain::{CoreWindowFrame, CoreWindowSwapchain},
     texture::NativeTexture,
 };
 use alloc::{format, sync::Arc};
-use core::{borrow::Borrow, ffi::c_void, time::Duration};
+use core::{borrow::Borrow, ffi::c_void, num::NonZeroIsize, time::Duration};
 use parking_lot::Mutex;
 use windows::{
     core::{AgileReference, IUnknown, Interface},
@@ -24,10 +24,16 @@ struct Configured {
     swapchain: CoreWindowSwapchain,
 }
 
-/// A CoreWindow retained through a COM agile reference.
+#[derive(Debug)]
+enum Window {
+    Core(AgileReference<ICoreWindow>),
+    Hwnd(NonZeroIsize),
+}
+
+/// An experimental CoreWindow or borrowed HWND surface.
 #[derive(Debug)]
 pub struct Surface {
-    window: AgileReference<ICoreWindow>,
+    window: Window,
     configured: Mutex<Option<Configured>>,
 }
 crate::impl_dyn_resource!(Surface);
@@ -86,7 +92,7 @@ fn surface_error(error: windows::core::Error) -> crate::SurfaceError {
     {
         crate::SurfaceError::Device(crate::DeviceError::Lost)
     } else {
-        crate::SurfaceError::Other("D3D11 CoreWindow swapchain operation failed")
+        crate::SurfaceError::Other("D3D11 window swapchain operation failed")
     }
 }
 
@@ -100,12 +106,29 @@ impl Surface {
         let window = AgileReference::new(&window)
             .map_err(|e| crate::InstanceError::new(format!("could not retain CoreWindow: {e}")))?;
         Ok(Self {
-            window,
+            window: Window::Core(window),
             configured: Mutex::new(None),
         })
     }
+    pub(super) fn from_hwnd(hwnd: NonZeroIsize) -> Self {
+        Self {
+            window: Window::Hwnd(hwnd),
+            configured: Mutex::new(None),
+        }
+    }
+    pub(super) fn hwnd(&self) -> Option<windows::Win32::Foundation::HWND> {
+        match self.window {
+            Window::Hwnd(hwnd) => Some(windows::Win32::Foundation::HWND(hwnd.get() as *mut _)),
+            Window::Core(_) => None,
+        }
+    }
     pub(super) fn core_window(&self) -> windows::core::Result<ICoreWindow> {
-        self.window.resolve()
+        match &self.window {
+            Window::Core(window) => window.resolve(),
+            Window::Hwnd(_) => Err(windows::core::Error::from_hresult(
+                windows::Win32::Foundation::E_INVALIDARG,
+            )),
+        }
     }
 
     /// Exercise the private HAL surface and queue in the UWP diagnostic.
@@ -766,7 +789,9 @@ impl crate::Surface for Surface {
             if config.swapchain.belongs_to(device.native())
                 && config.swapchain.release_bindings().is_ok()
             {
-                *state = None;
+                let old = state.take();
+                drop(old);
+                unsafe { device.native().immediate_context().Flush() };
                 return;
             }
         }
@@ -806,6 +831,10 @@ impl crate::Surface for Surface {
         drop(texture);
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/dx11/hwnd_surface.rs"]
+mod hwnd_surface_tests;
 
 #[cfg(test)]
 mod tests {

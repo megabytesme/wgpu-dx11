@@ -1,4 +1,4 @@
-//! Owned CoreWindow swap-chain primitive; no wgpu surface is exposed yet.
+//! Owned private CoreWindow and HWND swap-chain primitive.
 //!
 //! The acquisition token owns its backbuffer and keeps the swap chain and
 //! device alive. It prevents resizing or a second acquisition until presented
@@ -19,8 +19,9 @@ use windows::{
             Dxgi::{
                 Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
                 IDXGIDevice, IDXGIFactory2, IDXGISwapChain1, DXGI_ERROR_INVALID_CALL, DXGI_PRESENT,
-                DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-                DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                DXGI_SCALING_NONE, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
+                DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+                DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
     },
@@ -33,12 +34,12 @@ struct State {
 #[derive(Debug)]
 struct Inner {
     device: Arc<NativeDevice>,
-    _window: AgileReference<windows::UI::Core::ICoreWindow>,
+    _window: Option<AgileReference<windows::UI::Core::ICoreWindow>>,
     swapchain: IDXGISwapChain1,
     state: Mutex<State>,
 }
 
-/// Private-backend building block for a CoreWindow swap chain; not a wgpu surface.
+/// Private-backend building block for a window swap chain.
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct CoreWindowSwapchain {
@@ -54,8 +55,8 @@ pub struct CoreWindowFrame {
 }
 
 impl CoreWindowSwapchain {
-    /// Create a two-buffer BGRA8 flip-sequential CoreWindow swap chain.
-    /// A zero width and height select the CoreWindow's current pixel size.
+    /// Create a two-buffer BGRA8 flip-sequential window swap chain.
+    /// A zero width and height select the window's current pixel size.
     pub fn new(
         surface: &Surface,
         device: Arc<NativeDevice>,
@@ -65,8 +66,6 @@ impl CoreWindowSwapchain {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let window = surface.core_window()?;
-        let retained_window = AgileReference::new(&window)?;
         let dxgi: IDXGIDevice = device.raw_device().cast()?;
         let factory: IDXGIFactory2 = unsafe { dxgi.GetAdapter()?.GetParent()? };
         let desc = DXGI_SWAP_CHAIN_DESC1 {
@@ -79,13 +78,27 @@ impl CoreWindowSwapchain {
             },
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
             BufferCount: 2,
-            Scaling: DXGI_SCALING_NONE,
+            Scaling: if surface.hwnd().is_some() {
+                DXGI_SCALING_STRETCH
+            } else {
+                DXGI_SCALING_NONE
+            },
             SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
             AlphaMode: DXGI_ALPHA_MODE_IGNORE,
             ..Default::default()
         };
-        let swapchain = unsafe {
-            factory.CreateSwapChainForCoreWindow(device.raw_device(), &window, &desc, None)?
+        let (swapchain, retained_window) = if let Some(hwnd) = surface.hwnd() {
+            let swapchain = unsafe {
+                factory.CreateSwapChainForHwnd(device.raw_device(), hwnd, &desc, None, None)?
+            };
+            (swapchain, None)
+        } else {
+            let window = surface.core_window()?;
+            let retained_window = AgileReference::new(&window)?;
+            let swapchain = unsafe {
+                factory.CreateSwapChainForCoreWindow(device.raw_device(), &window, &desc, None)?
+            };
+            (swapchain, Some(retained_window))
         };
         Ok(Self {
             inner: Arc::new(Inner {

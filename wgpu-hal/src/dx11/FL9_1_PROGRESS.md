@@ -159,4 +159,21 @@ Independent HWND research identified two presentation blockers: `Present`
 thread synchronization and message-pump lock ordering need review, and retained
 command-buffer RTV references may prevent `ResizeBuffers` even after a surface
 texture is released. A future Win32 surface must address and test both; the
-current CoreWindow path and public adapter gate remain unchanged.
+the public adapter gate remains unchanged.
+Attachment discard support was checkpointed as `721469cfe`.
+
+The private surface now accepts a borrowed Win32 HWND and creates a BGRA8
+flip-sequential swapchain. It uses stretch scaling for HWND, preserving the
+existing CoreWindow scaling. After unbinding and dropping a swapchain,
+unconfigure flushes the immediate context before a replacement can be created.
+The strict hidden-window test executed on the RTX 3090 Ti at forced FL9_1,
+submitted a HAL clear, read back BGRA [0,0,255,255], presented with success,
+resized and reacquired, then unconfigured and recreated the swapchain. This
+does not establish visible desktop presentation or presentation concurrency.
+The 136-test strict private suite passed before the final flush and scaling
+changes; the focused hardware test passed after them. Targeted Clippy passed
+with ten existing warnings and core's zero-adapter isolation test passed.
+The test resets its recorded command before resize; live command-buffer RTV
+references, concurrent Present/context access, message-pump locking and whether
+queue idle covers pending presentation remain public-presentation blockers.
+Windows 7 flip-swapchain support is not claimed.

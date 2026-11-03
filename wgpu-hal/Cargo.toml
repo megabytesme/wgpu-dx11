@@ -372,6 +372,9 @@ glam.workspace = true # for ray-traced-triangle example
 naga = { workspace = true, features = ["wgsl-in", "termcolor"] }
 winit.workspace = true # for "halmark" example
 
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
+
 ### Platform: Windows + MacOS + Linux for "raw-gles" example ###
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "visionos", target_env = "ohos")))'.dev-dependencies]
 glutin-winit = { workspace = true, features = ["egl", "wgl", "wayland", "x11"] }
