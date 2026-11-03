@@ -42,6 +42,12 @@ Bottom level categories:
 
 ## Unreleased
 
+### Bug Fixes
+
+#### Validation
+
+- Reject unsupported combinations of index-buffer usages on downlevel adapters.
+
 ## v30.0.1 (2026-08-21)
 
 ### Bug Fixes

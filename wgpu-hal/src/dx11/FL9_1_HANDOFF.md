@@ -11,7 +11,7 @@ FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
 current implementation and validation matrix.
 
 Resume on `uwp-dx11`; inspect `git status` and recent history before editing.
-The latest verified depth checkpoint is
-`424dfaa2f46e757e9d3a0dad9c50b9f110a18592`. Do not infer full FL9_1 or
+The latest verified checkpoint is the FL9_1 default-buffer bind correction,
+`e09825a90b32dc52eb83cd27f084c2803abf96c5`. Do not infer full FL9_1 or
 historical-device compatibility from modern GPU tests. Keep public adapter
 enumeration gated until core-valid operations are safe.

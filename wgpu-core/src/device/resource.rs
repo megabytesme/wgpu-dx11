@@ -1023,11 +1023,11 @@ impl Device {
         }
 
         if desc.usage.contains(wgt::BufferUsages::INDEX)
-            && desc.usage.contains(
-                wgt::BufferUsages::VERTEX
-                    | wgt::BufferUsages::UNIFORM
-                    | wgt::BufferUsages::INDIRECT
-                    | wgt::BufferUsages::STORAGE,
+            && desc.usage.intersects(
+                wgt::BufferUsages::all()
+                    - (wgt::BufferUsages::INDEX
+                        | wgt::BufferUsages::COPY_SRC
+                        | wgt::BufferUsages::COPY_DST),
             )
         {
             self.require_downlevel_flags(wgt::DownlevelFlags::UNRESTRICTED_INDEX_BUFFER)?;

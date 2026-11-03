@@ -37,8 +37,8 @@ core. See CAPABILITIES.md for the detailed matrix.
   texture can share a logical identity with a layout uniform. A regression test
   now proves the unused declaration cannot cause a false rejection.
 - A public adapter must not treat valid core calls as HAL failures: current
-  examples include empty compute passes, several legal viewports, blend
-  constants and combined index/vertex usages. Some mapping errors use
+  examples include empty compute passes, several legal viewports and blend
+  constants. Some mapping errors use
   `expect` and need a device-loss-safe contract audit.
 - The FL9_1 device documentation says buffers require exactly one
   vertex/index/constant bind flag. The implementation now gives default
@@ -81,6 +81,20 @@ The default-buffer bind-flag portability fix passed its synthetic allocation
 test and strict FL9_1 hardware copy/readback (16/16 bytes); the private suite
 passed 129 tests, and the core zero-adapter and targeted Clippy checks passed.
 The existing DX12 GPU test binary also passed `wgpu_gpu::buffer::map_offset`
-on the NVIDIA adapter after generating its temporary GPU configuration.
-Next fix core's `UNRESTRICTED_INDEX_BUFFER` creation check and advance the
-remaining core compatibility and presentation gates in FL9_1_PLAN.md.
+on the NVIDIA adapter after generating its temporary GPU configuration. The
+fix was checkpointed as `e09825a90b32dc52eb83cd27f084c2803abf96c5`.
+
+Core's `UNRESTRICTED_INDEX_BUFFER` creation check was reproduced failing via a
+Noop adapter with only that downlevel flag removed. It accepted `INDEX|VERTEX`
+instead of rejecting it. The proposed core fix checks all known non-copy usages;
+the targeted public-API test passes for restricted and unrestricted adapters,
+including map/query usages, mapped-at-creation and an unrelated non-index
+control. The complete 66-test core library suite and 129-test private D3D11
+suite passed. Targeted core Clippy passed. This changes validation for all
+adapters lacking the flag, including WebGL; the Noop restricted adapter covers
+the shared rule but is not a WebGL runtime test. A rebuilt DX12 GPU buffer map
+regression passed on the NVIDIA adapter.
+The broader validation suite had 86 passes and three pre-existing adapter-error
+message mismatches because the fork's DX11 backend is absent from the expected
+strings. The suite passed with those three tests filtered. The core fix and its
+tests are awaiting final regression and checkpoint.
