@@ -441,6 +441,10 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl9
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_two_uniforms_with_sampled_textures -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_forked_uniform_bindings_keep_dynamic_ranges_independent -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 hal_uniform -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_short_uniform_dynamic_copy_and_odd_source_end -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 integer_uniform -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
 The first two are CPU/compiler tests. The hardware tests verify sparse static
@@ -450,6 +454,26 @@ sampled textures. The multi-group test binds one group at two indices with
 different dynamic offsets, switches pipeline register plans, tests layout
 prefix invalidation and checks all pixels after direct and indexed draws.
 The scratch test reads back both distinct GPU constant-buffer snapshots.
+
+On the RTX 3090 Ti at requested and selected FL9_1, the `hal_uniform` filter
+passed four cases, including a hardware test of exact GPU-copied 4-, 5-, 12-
+and 20-byte ranges, a range at the source-buffer end, and zero native padding.
+The controlled core fixture passed short bindings of those sizes, including a
+scalar with a dynamic offset, with 64 checked pixels per render. Its synthetic
+downlevel flags enable `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`; the initial core
+test without that flag rejected the shader as `UnalignedShader`. This is a
+fixture setting, not public adapter exposure. Binding materialization uses CPU
+scratch and a mapped staging buffer, which can stall. An odd-sized native copy
+is not verified on historical FL9_1 drivers.
+The additional strict `fl91_short_uniform_dynamic_copy_and_odd_source_end`
+GPU test passed on the RTX 3090 Ti at requested and selected FL9_1. It verified
+the exact bytes and zero padding for a 5-byte dynamic range after a GPU copy
+and for a 5-byte range ending exactly at the end of a 65-byte native source.
+
+The `integer_uniform` hardware filter passed three GPU cases, each checking all
+64 pixels: uniform bitcasts in the vertex and fragment stages and a fragment
+comparison distinguishing 2^24 from 2^24+1. These cases do not prove general
+integer shader behavior or behavior on historical hardware.
 
 ### FL9_1 depth attachments
 

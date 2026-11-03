@@ -954,3 +954,23 @@ stream value to the backend's 16-slot limit. The synthetic capability tests
 passed (4 cases); slot 15 and sparse bindings were GPU-tested previously, but
 simultaneous execution using all 16 slots has not been established. This does
 not expose a public adapter.
+Checkpoint: `fc5cfb75e`.
+
+Uniform bindings now retain any nonzero logical size up to 64 KiB rather than
+requiring a 16-byte multiple. The native constant/staging buffers are rounded
+up, with only the exact GPU-copied bytes materialized into a pre-zeroed scratch
+buffer. The strict HAL tests checked 4/5/12/20-byte ranges, a five-byte dynamic
+range following GPU copy and a five-byte range at a 65-byte buffer end; logical
+bytes and native padding matched readback. The controlled core fixture initially
+failed UnalignedShader with its downlevel flags empty; after enabling only the
+fixture's BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED flag, 4/5/12/20-byte cases rendered
+64 expected pixels each, including dynamic offset. This is not public exposure.
+Three strict integer-uniform shader cases (vertex/fragment bitcast and fragment
+comparison at 2^24) passed 64 pixels each on the RTX; FXC disassembly raised a
+possible mismatch that those cases did not reproduce. Integer vertex inputs and
+general integer/historical semantics remain unverified and unadvertised.
+The strict private suite passed 233 cases, two filtered, with three documented
+internal shader skips. HAL Clippy passed with ten existing warnings; ordinary
+core D3D11 enumeration stayed empty. Two independent reviews found no concrete
+uniform materialization defect. Odd-byte GPU copy behavior remains unverified
+on historical drivers, and staging maps may stall.

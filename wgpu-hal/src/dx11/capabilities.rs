@@ -116,6 +116,7 @@ pub(super) struct BackendCapabilities {
     pub uniform_bind_groups: u32,
     pub sampled_bindings_group_zero_only: bool,
     pub dynamic_uniform_offsets: bool,
+    pub uniform_binding_sizes_unaligned_16: bool,
     pub compute: bool,
     pub storage: bool,
     pub depth_stencil: bool,
@@ -154,6 +155,7 @@ impl BackendCapabilities {
         uniform_bind_groups: crate::MAX_BIND_GROUPS as u32,
         sampled_bindings_group_zero_only: false,
         dynamic_uniform_offsets: true,
+        uniform_binding_sizes_unaligned_16: true,
         compute: false,
         storage: false,
         depth_stencil: false,
@@ -329,6 +331,7 @@ mod tests {
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
             assert!(caps.backend.dynamic_uniform_offsets);
+            assert!(caps.backend.uniform_binding_sizes_unaligned_16);
             assert!(!caps.public_adapter_supported());
         }
         let fl9 = model(FeatureLevel::L9_1);

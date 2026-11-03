@@ -222,11 +222,13 @@ referencing only element 256 compiles; this does not establish a 257-constant
 budget because the compiler can remap sparsely referenced constants. The full
 vertex budget and near-limit GPU execution have not been measured here.
 
-Ranges use four-byte-aligned offsets, a nonzero size divisible by 16, and
-at most 64 KiB. At bind replay each range is copied from the authoritative GPU
-buffer to a CPU-readable staging buffer and uploaded to a separate native
-constant buffer. This preserves subrange isolation and queued GPU writes but can
-stall once per binding per draw. Each group bind also allocates an independent
+Ranges use four-byte-aligned offsets and nonzero sizes of at most 64 KiB;
+the logical size need not be a multiple of 16. At bind replay the exact range
+is copied from the authoritative GPU buffer to a CPU-readable staging buffer,
+then placed in zero-padded CPU scratch and uploaded to a separately allocated,
+16-byte-aligned native constant buffer. This preserves subrange isolation and
+queued GPU writes, but mapping can stall once per binding per draw. Each group
+bind also allocates an independent
 staging/constant pair per uniform so that the same group can be used at
 different dynamic offsets simultaneously. D3D11.1 offset binding is not used;
 its range granularity and runtime requirements differ. Group identity,
@@ -250,6 +252,17 @@ range bindings, pipeline transitions, a matrix and padded structure, and sampled
 texture coexistence. A checked forced-FL9_1 GPU test also verifies nested
 structures, an asymmetric `mat3x2<f32>` and a `vec4<f32>` array with distinct
 stride-sensitive values. This does not establish every WGSL layout or operation.
+GPU tests verified 4-, 5-, 12- and 20-byte ranges and zeroed native padding.
+An additional test verified a 5-byte dynamic range following a GPU copy and a
+5-byte range ending exactly at the end of a 65-byte native source buffer;
+historical-driver behavior for an
+odd-sized buffer copy remains unverified. The controlled core fixture enables
+`BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED` to test these ranges and rendered with a
+dynamic offset. Without this flag core rejected its short uniform shader. The
+fixture flag is not a public adapter capability; normal enumeration remains
+disabled. Separate GPU regressions verify selected integer-uniform bitcasts in
+vertex and fragment shaders and a fragment comparison of 2^24 and 2^24+1. They
+do not establish general integer shader semantics or historical GPU support.
 
 The private layout accepts up to eight sampled textures and sixteen samplers.
 These are binding capacities, not a promise that every shader using them

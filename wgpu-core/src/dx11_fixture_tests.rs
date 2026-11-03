@@ -43,11 +43,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_bind_groups: 1,
         max_bind_groups_plus_vertex_buffers: 3,
         max_bindings_per_bind_group: 64,
-        max_dynamic_uniform_buffers_per_pipeline_layout: 0,
+        max_dynamic_uniform_buffers_per_pipeline_layout: 1,
         max_sampled_textures_per_shader_stage: 1,
         max_samplers_per_shader_stage: 1,
-        max_uniform_buffers_per_shader_stage: 0,
-        max_uniform_buffer_binding_size: 0,
+        max_uniform_buffers_per_shader_stage: 1,
+        max_uniform_buffer_binding_size: 256,
         max_vertex_buffers: 2,
         max_vertex_attributes: 2,
         max_vertex_buffer_array_stride: 20,
@@ -55,7 +55,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_color_attachments: 1,
         max_color_attachment_bytes_per_sample: 8,
         max_buffer_size: 512 << 10,
-        max_non_sampler_bindings: 1,
+        max_non_sampler_bindings: 2,
         max_buffers_and_acceleration_structures_per_shader_stage: 2,
         ..wgt::Limits::downlevel_webgl2_defaults()
     };
@@ -133,7 +133,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 ray_tracing_pipeline_data_offset_alignment: 0,
             },
             downlevel: wgt::DownlevelCapabilities {
-                flags: wgt::DownlevelFlags::empty(),
+                flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
                 ..Default::default()
             },
@@ -331,6 +331,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Snorm,
         VertexCase::ZeroStride,
         VertexCase::InstanceRate,
+        VertexCase::Uniform4,
+        VertexCase::Uniform5,
+        VertexCase::Uniform12,
+        VertexCase::Uniform20,
     ] {
         render_triangle(&global, device, queue, case);
     }
@@ -367,6 +371,10 @@ enum VertexCase {
     Snorm,
     ZeroStride,
     InstanceRate,
+    Uniform4,
+    Uniform5,
+    Uniform12,
+    Uniform20,
 }
 
 fn render_triangle(
@@ -381,6 +389,14 @@ fn render_triangle(
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
+    let uniform_size = match case {
+        VertexCase::Uniform4 => Some(4),
+        VertexCase::Uniform5 => Some(5),
+        VertexCase::Uniform12 => Some(12),
+        VertexCase::Uniform20 => Some(20),
+        _ => None,
+    };
+    let dynamic_uniform = case == VertexCase::Uniform4;
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -480,7 +496,7 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "sampler creation: {error:?}");
-    let group_entries = [
+    let mut group_entries = vec![
         wgt::BindGroupLayoutEntry {
             binding: 7,
             visibility: wgt::ShaderStages::FRAGMENT,
@@ -498,6 +514,18 @@ fn render_triangle(
             count: None,
         },
     ];
+    if let Some(size) = uniform_size {
+        group_entries.push(wgt::BindGroupLayoutEntry {
+            binding: 17,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: dynamic_uniform,
+                min_binding_size: NonZeroU64::new(size),
+            },
+            count: None,
+        });
+    }
     let (group_layout, error) = global.device_create_bind_group_layout(
         device,
         &binding_model::BindGroupLayoutDescriptor {
@@ -507,7 +535,30 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group layout: {error:?}");
-    let group_resources = [
+    let uniform = uniform_size.map(|size| {
+        let (buffer, error) = global.device_create_buffer(
+            device,
+            &wgt::BufferDescriptor {
+                label: None,
+                size: 768,
+                usage: wgt::BufferUsages::UNIFORM | wgt::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(error.is_none(), "uniform buffer creation: {error:?}");
+        let mut data = vec![0u8; 768];
+        let offset = if dynamic_uniform { 512 } else { 256 };
+        for byte in data[offset..offset + size as usize].chunks_exact_mut(4) {
+            byte.copy_from_slice(&1.0f32.to_ne_bytes());
+        }
+        if size == 5 {
+            data[offset + 4] = 0xa7;
+        }
+        global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
+        buffer
+    });
+    let mut group_resources = vec![
         binding_model::BindGroupEntry {
             binding: 7,
             resource: binding_model::BindingResource::TextureView(sample_view),
@@ -517,6 +568,16 @@ fn render_triangle(
             resource: binding_model::BindingResource::Sampler(sampler),
         },
     ];
+    if let (Some(buffer), Some(size)) = (uniform, uniform_size) {
+        group_resources.push(binding_model::BindGroupEntry {
+            binding: 17,
+            resource: binding_model::BindingResource::Buffer(binding_model::BufferBinding {
+                buffer,
+                offset: 256,
+                size: Some(size),
+            }),
+        });
+    }
     let (group, error) = global.device_create_bind_group(
         device,
         &binding_model::BindGroupDescriptor {
@@ -527,7 +588,13 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = if instance_rate {
+    let source = if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: f32; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
+    } else if case == VertexCase::Uniform12 {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: vec3f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * (tint.x * tint.y * tint.z); }"
+    } else if case == VertexCase::Uniform20 {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Tint { a: f32, b: f32, c: f32, d: f32, e: f32 }; @group(0) @binding(17) var<uniform> tint: Tint; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * (tint.a * tint.b * tint.c * tint.d * tint.e); }"
+    } else if instance_rate {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) inst_data: vec2f) -> Out { return Out(vec4f(p.x + inst_data.x, p.yz, 1.0), vec2f(inst_data.y, 0.5)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
     } else if snorm {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), vec2f(uv.x * 0.5 + 0.5, uv.y)); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
@@ -783,7 +850,12 @@ fn render_triangle(
             .unwrap();
     }
     global
-        .render_pass_set_bind_group(&mut pass, 0, Some(group), &[])
+        .render_pass_set_bind_group(
+            &mut pass,
+            0,
+            Some(group),
+            if dynamic_uniform { &[256] } else { &[] },
+        )
         .unwrap();
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
     global
@@ -884,6 +956,9 @@ fn render_triangle(
     global.texture_drop(target);
     global.buffer_drop(vertices);
     if let Some(buffer) = auxiliary_vertices {
+        global.buffer_drop(buffer);
+    }
+    if let Some(buffer) = uniform {
         global.buffer_drop(buffer);
     }
     global.buffer_drop(readback);

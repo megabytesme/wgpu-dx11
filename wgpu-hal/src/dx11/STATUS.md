@@ -37,6 +37,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   textures and sixteen samplers in total.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
+- Short uniform ranges use a zero-padded native constant buffer and preserve the
+  declared byte range, including non-multiples of 16. This stages through a CPU
+  map and can stall; odd-sized GPU copies remain unverified on historical
+  drivers. Selected integer uniform bitcasts and a precision-sensitive fragment
+  comparison have GPU regression coverage, not general integer shader coverage.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
   vertex- or instance-rate streams, winding and face
   culling, bounds-checked scissors, per-channel color write masks,

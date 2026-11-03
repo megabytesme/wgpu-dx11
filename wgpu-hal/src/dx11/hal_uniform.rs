@@ -1,15 +1,17 @@
 //! Uniform ranges materialized as D3D11 constant buffers.
 //!
 //! Ordinary logical buffers remain copyable/updatable in arbitrary checked
-//! ranges. At binding time the requested aligned range is staged to the CPU,
+//! ranges. At binding time the requested range is staged to the CPU,
 //! then written in full to a separate D3D constant buffer: D3D11 does not
 //! permit partial UpdateSubresource writes to constant buffers. This is a
 //! correctness-first prototype and can stall the CPU.
 use super::{buffer::NativeBuffer, device::NativeDevice};
+use alloc::vec::Vec;
+use parking_lot::Mutex;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::{E_FAIL, E_INVALIDARG},
+        Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::Direct3D11::{
             ID3D11Buffer, ID3D11DeviceContext, D3D11_BIND_CONSTANT_BUFFER, D3D11_BOX,
             D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
@@ -27,10 +29,11 @@ pub(super) struct UniformBinding {
     constant: ID3D11Buffer,
     source_box: D3D11_BOX,
     source_size: u32,
+    scratch: Mutex<Vec<u8>>,
 }
 
 impl NativeDevice {
-    /// Prepare a nonempty 16-byte-sized range; binding remains private.
+    /// Prepare a nonempty range; binding remains private.
     #[allow(dead_code)]
     pub(super) fn prepare_uniform_binding(
         &self,
@@ -77,14 +80,20 @@ impl NativeDevice {
         source_size: u32,
     ) -> Result<UniformBinding> {
         let length = source_box.right - source_box.left;
+        let native_length = constant_buffer_length(length)?;
+        let mut scratch = Vec::new();
+        scratch
+            .try_reserve_exact(native_length as usize)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        scratch.resize(native_length as usize, 0);
         let staging_desc = D3D11_BUFFER_DESC {
-            ByteWidth: length,
+            ByteWidth: native_length,
             Usage: D3D11_USAGE_STAGING,
             CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
             ..Default::default()
         };
         let constant_desc = D3D11_BUFFER_DESC {
-            ByteWidth: length,
+            ByteWidth: native_length,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
             ..Default::default()
@@ -103,6 +112,7 @@ impl NativeDevice {
             constant: constant.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             source_box,
             source_size,
+            scratch: Mutex::new(scratch),
         })
     }
 }
@@ -126,6 +136,17 @@ impl UniformBinding {
         visibility: wgt::ShaderStages,
         source_box: &D3D11_BOX,
     ) -> Result<()> {
+        if source_box.right.checked_sub(source_box.left) != Some(self.len() as u32)
+            || source_box.right > self.source_size
+            || !source_box.left.is_multiple_of(4)
+            || source_box.top != 0
+            || source_box.bottom != 1
+            || source_box.front != 0
+            || source_box.back != 1
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let mut scratch = self.scratch.lock();
         unsafe {
             context.CopySubresourceRegion(
                 &self.staging,
@@ -143,8 +164,12 @@ impl UniformBinding {
                 context.Unmap(&self.staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
-            context.UpdateSubresource(&self.constant, 0, None, mapped.pData, 0, 0);
+            scratch[..self.len() as usize].copy_from_slice(core::slice::from_raw_parts(
+                mapped.pData.cast::<u8>(),
+                self.len() as usize,
+            ));
             context.Unmap(&self.staging, 0);
+            context.UpdateSubresource(&self.constant, 0, None, scratch.as_ptr().cast(), 0, 0);
             if visibility.contains(wgt::ShaderStages::VERTEX) {
                 context.VSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
             }
@@ -154,6 +179,14 @@ impl UniformBinding {
         }
         Ok(())
     }
+}
+
+fn constant_buffer_length(length: u32) -> Result<u32> {
+    length
+        .checked_add(15)
+        .map(|n| n & !15)
+        .filter(|&n| n != 0 && n <= 65536)
+        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))
 }
 
 fn shifted_range(
@@ -186,6 +219,24 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use alloc::sync::Arc;
     use windows::Win32::Graphics::Direct3D11::D3D11_MAPPED_SUBRESOURCE;
+
+    #[test]
+    fn constant_buffer_lengths_round_up_without_changing_logical_size() {
+        for (logical, native) in [
+            (1, 16),
+            (4, 16),
+            (5, 16),
+            (12, 16),
+            (16, 16),
+            (20, 32),
+            (65536, 65536),
+        ] {
+            assert_eq!(constant_buffer_length(logical).unwrap(), native);
+        }
+        assert!(constant_buffer_length(0).is_err());
+        assert!(constant_buffer_length(65537).is_err());
+        assert!(constant_buffer_length(u32::MAX).is_err());
+    }
 
     #[test]
     fn dynamic_uniform_ranges_check_alignment_bounds_and_overflow() {
@@ -241,7 +292,7 @@ mod tests {
             )
             .unwrap()
         };
-        let data: alloc::vec::Vec<u8> = (0..64).collect();
+        let data: Vec<u8> = (0..64).collect();
         native.write_byte_buffer(&source, 0, &data)?;
         let first = native.prepare_uniform_binding(&source, 0, 16)?;
         let second = native.fork_uniform_binding(&first)?;
@@ -286,10 +337,19 @@ mod tests {
     fn uniform_binding_materializes_partial_updates_without_partial_constant_writes() -> Result<()>
     {
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         let device = Device::new(native.clone());
         let source = unsafe {
@@ -304,7 +364,7 @@ mod tests {
             )
             .unwrap()
         };
-        let mut data: alloc::vec::Vec<u8> = (0..64).collect();
+        let mut data: Vec<u8> = (0..64).collect();
         native.write_byte_buffer(&source, 0, &data)?;
         let nonuniform = unsafe {
             crate::Device::create_buffer(
@@ -321,7 +381,8 @@ mod tests {
         assert!(native.prepare_uniform_binding(&nonuniform, 0, 16).is_err());
         assert!(other.prepare_uniform_binding(&source, 16, 16).is_err());
         assert!(native.prepare_uniform_binding(&source, 2, 16).is_err());
-        assert!(native.prepare_uniform_binding(&source, 0, 12).is_err());
+        assert!(native.prepare_uniform_binding(&source, 0, 0).is_err());
+        assert!(native.prepare_uniform_binding(&source, 0, 12).is_ok());
         assert!(native.prepare_uniform_binding(&source, 60, 16).is_err());
         let binding = native.prepare_uniform_binding(&source, 16, 16)?;
         let staging_desc = D3D11_BUFFER_DESC {
@@ -375,6 +436,132 @@ mod tests {
                 context.ClearState();
             }
         }
+        for (offset, length) in [(0, 4), (4, 5), (8, 12), (20, 20), (60, 4)] {
+            let binding = native.prepare_uniform_binding(&source, offset, length)?;
+            assert_eq!(binding.len(), length);
+            let native_length = constant_buffer_length(length as u32)?;
+            let readback_desc = D3D11_BUFFER_DESC {
+                ByteWidth: native_length,
+                Usage: D3D11_USAGE_STAGING,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..Default::default()
+            };
+            let mut readback = None;
+            unsafe {
+                native
+                    .raw_device()
+                    .CreateBuffer(&readback_desc, None, Some(&mut readback))?;
+            }
+            let readback = readback.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+            let context = native.immediate_context();
+            binding.execute(&context, 0, wgt::ShaderStages::VERTEX, &binding.range(0)?)?;
+            unsafe {
+                context.CopyResource(&readback, &binding.constant);
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context.Map(&readback, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                assert!(!mapped.pData.is_null());
+                let actual =
+                    core::slice::from_raw_parts(mapped.pData.cast::<u8>(), native_length as usize);
+                assert_eq!(
+                    &actual[..length as usize],
+                    &data[offset as usize..(offset + length) as usize]
+                );
+                assert!(actual[length as usize..].iter().all(|&byte| byte == 0));
+                context.Unmap(&readback, 0);
+                context.ClearState();
+            }
+        }
+        std::println!("PASS: short uniform ranges and zero padding matched GPU readback");
+        Ok(())
+    }
+
+    #[test]
+    fn fl91_short_uniform_dynamic_copy_and_odd_source_end() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
+        let device = Device::new(native.clone());
+        let source = native
+            .create_buffer_with_usage(64, wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST)?;
+        let upload = native
+            .create_buffer_with_usage(8, wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST)?;
+        native.write_byte_buffer(&source, 0, &[0; 64])?;
+        let data = [19, 37, 51, 73, 91, 113, 127, 149];
+        native.write_byte_buffer(&upload, 0, &data)?;
+        let dynamic = native.prepare_uniform_binding(&source, 4, 5)?;
+        let range = dynamic.range(8)?;
+        assert_eq!((range.left, range.right), (12, 17));
+        assert!(dynamic.range(56).is_err());
+        let copy = native.prepare_buffer_copy(
+            &upload,
+            &source,
+            &crate::BufferCopy {
+                src_offset: 0,
+                dst_offset: 12,
+                size: core::num::NonZeroU64::new(8).unwrap(),
+            },
+        )?;
+        let odd = native
+            .create_buffer_with_usage(65, wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST)?;
+        assert_eq!(odd.logical_size(), 65);
+        let odd_data: Vec<u8> = (0..65).collect();
+        native.write_byte_buffer(&odd, 0, &odd_data)?;
+        let end = native.prepare_uniform_binding(&odd, 60, 5)?;
+        assert!(end.range(4).is_err());
+        assert!(native.prepare_uniform_binding(&odd, 60, 6).is_err());
+        let desc = D3D11_BUFFER_DESC {
+            ByteWidth: 16,
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut readback = None;
+        unsafe {
+            native
+                .raw_device()
+                .CreateBuffer(&desc, None, Some(&mut readback))?
+        };
+        let readback = readback.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let context = native.immediate_context();
+        copy.execute(&context);
+        for (binding, range, expected) in [
+            (&dynamic, range, &data[..5]),
+            (&end, end.range(0)?, &odd_data[60..65]),
+        ] {
+            binding.execute(&context, 0, wgt::ShaderStages::VERTEX, &range)?;
+            unsafe {
+                context.CopyResource(&readback, &binding.constant);
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context.Map(&readback, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                assert!(!mapped.pData.is_null());
+                let actual = core::slice::from_raw_parts(mapped.pData.cast::<u8>(), 16);
+                assert_eq!(&actual[..5], expected);
+                assert!(actual[5..].iter().all(|&byte| byte == 0));
+                context.Unmap(&readback, 0);
+            }
+        }
+        unsafe { context.ClearState() };
+        drop(context);
+        drop(end);
+        drop(dynamic);
+        drop(copy);
+        unsafe {
+            crate::Device::destroy_buffer(&device, source);
+            crate::Device::destroy_buffer(&device, upload);
+            crate::Device::destroy_buffer(&device, odd);
+        }
+        std::println!("PASS: dynamic copy and odd source-end uniform ranges matched GPU readback");
         Ok(())
     }
 }

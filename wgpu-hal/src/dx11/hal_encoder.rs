@@ -3838,6 +3838,10 @@ mod zero_stride_tests;
 mod instance_stream_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/integer_uniform_bits.rs"]
+mod integer_uniform_bits_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 

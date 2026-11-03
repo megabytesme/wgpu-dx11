@@ -327,7 +327,6 @@ impl NativeDevice {
         if !buffer.usage.contains(wgt::BufferUses::UNIFORM)
             || !offset.is_multiple_of(4)
             || length == 0
-            || !length.is_multiple_of(16)
             || length > 65536
         {
             return Err(Error::from_hresult(E_INVALIDARG));
