@@ -123,7 +123,7 @@ pub(super) enum NativeCommand {
         zero_input: bool,
     },
     DrawStrip {
-        vertex: Option<(ID3D11Buffer, u32, u32)>,
+        vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
         count: u32,
         instances: u32,
     },
@@ -444,22 +444,21 @@ impl CommandBuffer {
                         })?;
                     }
                     NativeCommand::DrawStrip {
-                        vertex,
+                        vertices,
                         count,
                         instances,
                     } => {
-                        let vertex_offset = |first: u32| -> Result<u32> {
-                            let Some((_, offset, stride)) = vertex else {
-                                return Ok(0);
-                            };
-                            strip_vertex_offset(*offset, *stride, first)
-                        };
-                        strip_batches(*count, 1, |first, _| vertex_offset(first).map(|_| ()))?;
+                        strip_batches(*count, 1, |first, _| {
+                            for (_, _, offset, stride) in vertices {
+                                strip_vertex_offset(*offset, *stride, first)?;
+                            }
+                            Ok(())
+                        })?;
                         strip_batches(*count, *instances, |first, count| {
-                            if let Some((buffer, _, stride)) = vertex {
-                                let offset = vertex_offset(first)?;
+                            for (slot, buffer, base_offset, stride) in vertices {
+                                let offset = strip_vertex_offset(*base_offset, *stride, first)?;
                                 context.IASetVertexBuffers(
-                                    0,
+                                    *slot,
                                     1,
                                     Some(&Some(buffer.clone())),
                                     Some(stride),

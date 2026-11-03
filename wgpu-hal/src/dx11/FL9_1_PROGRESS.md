@@ -797,3 +797,25 @@ documented shader GPU skips. HAL Clippy passed with ten existing warnings.
 The controlled core and public wgpu fixtures each passed on the RTX, including
 their 32 red/32 green textured-depth readback. Independent review found no
 concrete slot, bounds, stale-state or lifetime defect.
+Checkpoint: `82a538433`.
+
+Nonindexed strip batching now preflights and rebases every active vertex stream.
+Indexed multi-stream draws remain rejected until their GPU index scan, windows
+and gather handling cover all streams.
+The strict `fl91_sparse_vertex_strips_render` baseline selected the RTX at
+requested/actual FL9_1 and failed at end_encoding with Unexpected, confirming
+the existing multi-slot strip restriction.
+The strict RTX sparse-strip test then passed with slots 0/15, different strides
+and offsets, a nonzero first vertex, a 65,536-vertex split, queued GPU copy and
+resource destruction before submission. Every pixel matched. The opaque,
+unculled output does not independently prove instance order or split parity;
+existing CPU batching and single-stream culling tests cover those aspects.
+Independent review found no concrete per-slot rebasing or lifetime defect.
+The strict private suite passed 210 libtest cases, two filtered; the three
+documented shader GPU skips remain skips. HAL Clippy passed with ten existing
+warnings, and the controlled core fixture again matched 32 red/32 green pixels.
+
+Indexed replay errors are not benign public validation: an Unexpected submit
+error loses the core device and does not signal the requested fence. A future
+partial indexed multi-stream path must avoid data-dependent unsupported replay
+errors or remain explicitly private; earlier GPU work is not rolled back.

@@ -7,6 +7,15 @@ use core::time::Duration;
 
 #[test]
 fn fl91_sparse_vertex_streams_render() -> windows::core::Result<()> {
+    sparse_vertex_streams(false)
+}
+
+#[test]
+fn fl91_sparse_vertex_strips_render() -> windows::core::Result<()> {
+    sparse_vertex_streams(true)
+}
+
+fn sparse_vertex_streams(strip_test: bool) -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -248,6 +257,186 @@ fn fl91_sparse_vertex_streams_render() -> windows::core::Result<()> {
             })
             .unwrap()
     };
+    if strip_test {
+        let sparse_strip = make_pipeline(
+            &last_slot_buffers,
+            "vs",
+            wgt::PrimitiveTopology::TriangleStrip,
+        )
+        .unwrap();
+        let mut strip_positions = vec![0; 8 + 12];
+        strip_positions.extend_from_slice(&position_data[8..]);
+        let mut strip_colors = vec![0; 12 + 20];
+        strip_colors.extend_from_slice(&color_data[12..]);
+        let strip_position_buffer = upload(&strip_positions)?;
+        let strip_color_buffer = upload(&strip_colors)?;
+        let commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&sparse_strip);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&strip_position_buffer, 8, None),
+            );
+            encoder.set_vertex_buffer(
+                15,
+                crate::BufferBinding::new_unchecked(&strip_color_buffer, 12, None),
+            );
+            encoder.draw(1, 3, 0, 1);
+            encoder.end_render_pass();
+            encoder
+                .end_encoding()
+                .expect("sparse triangle-strip vertex streams must be supported")
+        };
+        let fence = native.create_native_fence();
+        unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        assert_eq!(pixels.len(), 8 * 8 * 4);
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            assert!(
+                pixel[0] == 64 && (127..=128).contains(&pixel[1]) && pixel[2..] == [191, 255],
+                "pixel {index}: {pixel:?}"
+            );
+        }
+        unsafe { encoder.reset_all([commands].into_iter()) };
+        let mut boundary_positions = vec![0u8; 8 + 65_538 * 12];
+        for point in boundary_positions[8..].chunks_exact_mut(12) {
+            point[4..8].copy_from_slice(&(-2.0f32).to_ne_bytes());
+            point[8..12].copy_from_slice(&(-2.0f32).to_ne_bytes());
+        }
+        for (index, point) in [
+            (65_534usize, [-1.0f32, -1.0f32]),
+            (65_535, [1.0, -1.0]),
+            (65_536, [-1.0, 1.0]),
+            (65_537, [1.0, 1.0]),
+        ] {
+            let bytes = &mut boundary_positions[8 + index * 12..8 + (index + 1) * 12];
+            bytes[4..8].copy_from_slice(&point[0].to_ne_bytes());
+            bytes[8..12].copy_from_slice(&point[1].to_ne_bytes());
+        }
+        let mut boundary_colors = vec![0u8; 12 + 65_538 * 20];
+        for color in boundary_colors[12..].chunks_exact_mut(20) {
+            for (index, value) in [0.25f32, 0.5, 0.75, 1.0].into_iter().enumerate() {
+                color[4 + index * 4..8 + index * 4].copy_from_slice(&value.to_ne_bytes());
+            }
+        }
+        let boundary_position_buffer = upload(&boundary_positions)?;
+        let boundary_color_buffer = upload(&vec![0; boundary_colors.len()])?;
+        let color_upload = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: boundary_colors.len() as u64,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&color_upload, 0, &boundary_colors)?;
+        let boundary_commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.copy_buffer_to_buffer(
+                &color_upload,
+                &boundary_color_buffer,
+                core::iter::once(crate::BufferCopy {
+                    src_offset: 0,
+                    dst_offset: 0,
+                    size: core::num::NonZeroU64::new(boundary_colors.len() as u64).unwrap(),
+                }),
+            );
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&single);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&strip_position_buffer, 8, None),
+            );
+            encoder.draw(1, 3, 0, 1);
+            encoder.set_render_pipeline(&sparse_strip);
+            encoder.set_vertex_buffer(
+                0,
+                crate::BufferBinding::new_unchecked(&boundary_position_buffer, 8, None),
+            );
+            encoder.set_vertex_buffer(
+                15,
+                crate::BufferBinding::new_unchecked(&boundary_color_buffer, 12, None),
+            );
+            encoder.draw(2, 65_536, 0, 2);
+            encoder.end_render_pass();
+            let commands = encoder.end_encoding().unwrap();
+            device.destroy_buffer(color_upload);
+            device.destroy_buffer(boundary_color_buffer);
+            device.destroy_buffer(boundary_position_buffer);
+            commands
+        };
+        unsafe {
+            queue
+                .submit(&[&boundary_commands], &[], (&fence, 2))
+                .unwrap()
+        };
+        assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            assert!(
+                pixel[0] == 64 && (127..=128).contains(&pixel[1]) && pixel[2..] == [191, 255],
+                "split strip pixel {index}: {pixel:?}"
+            );
+        }
+        unsafe { encoder.reset_all([boundary_commands].into_iter()) };
+        for short_slot in [0, 15] {
+            unsafe {
+                encoder.begin_encoding(None).unwrap();
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_render_pipeline(&sparse_strip);
+                encoder.set_vertex_buffer(
+                    0,
+                    crate::BufferBinding::new_unchecked(
+                        &strip_position_buffer,
+                        8,
+                        if short_slot == 0 {
+                            core::num::NonZeroU64::new(35)
+                        } else {
+                            None
+                        },
+                    ),
+                );
+                encoder.set_vertex_buffer(
+                    15,
+                    crate::BufferBinding::new_unchecked(
+                        &strip_color_buffer,
+                        12,
+                        if short_slot == 15 {
+                            core::num::NonZeroU64::new(59)
+                        } else {
+                            None
+                        },
+                    ),
+                );
+                encoder.draw(1, 3, 0, 1);
+                encoder.end_render_pass();
+                assert!(encoder.end_encoding().is_err(), "short slot {short_slot}");
+            }
+        }
+        unsafe {
+            device.destroy_buffer(strip_position_buffer);
+            device.destroy_buffer(strip_color_buffer);
+            device.destroy_buffer(shared_buffer);
+            device.destroy_buffer(color_buffer);
+            device.destroy_buffer(position_buffer);
+            device.destroy_texture_view(view);
+            device.destroy_texture(target);
+            device.destroy_render_pipeline(sparse_strip);
+            device.destroy_render_pipeline(pipeline);
+            device.destroy_render_pipeline(single);
+            device.destroy_render_pipeline(strip);
+            device.destroy_render_pipeline(last_slot);
+            device.destroy_render_pipeline(tail_pipeline);
+            device.destroy_pipeline_layout(layout);
+            device.destroy_shader_module(shader);
+        }
+        std::println!("PASS: sparse FL9_1 triangle strip produced 64 matching pixels");
+        return Ok(());
+    }
     let commands = unsafe {
         encoder.begin_encoding(None).unwrap();
         encoder.begin_render_pass(&pass).unwrap();
@@ -436,7 +625,7 @@ fn fl91_sparse_vertex_streams_render() -> windows::core::Result<()> {
                 crate::BufferBinding::new_unchecked(&position_buffer, 8, None),
             );
             if invalid != 0 {
-                let size = if invalid == 1 {
+                let size = if invalid == 1 || invalid == 2 {
                     core::num::NonZeroU64::new(16)
                 } else if invalid == 5 {
                     core::num::NonZeroU64::new(67)

@@ -1007,16 +1007,12 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         if topology == wgt::PrimitiveTopology::TriangleStrip {
-            if vertices.len() > 1 || vertices.first().is_some_and(|vertex| vertex.0 != 0) {
-                self.reject();
-                return;
-            }
             if vertex_count < 3 {
                 return;
             }
-            let vertex = if let Some((_, buffer, offset, stride)) = vertices.pop() {
+            for (_, _, offset, stride) in &mut vertices {
                 let byte_offset =
-                    |index: u32| super::command::strip_vertex_offset(offset, stride, index).ok();
+                    |index: u32| super::command::strip_vertex_offset(*offset, *stride, index).ok();
                 let start = byte_offset(first_vertex);
                 let last = first_vertex
                     .checked_add(vertex_count - 1)
@@ -1025,10 +1021,8 @@ impl crate::CommandEncoder for CommandEncoder {
                     self.reject();
                     return;
                 };
-                Some((buffer, start, stride))
-            } else {
-                None
-            };
+                *offset = start;
+            }
             let Some(binding_commands) = render.binding_commands() else {
                 self.reject();
                 return;
@@ -1037,7 +1031,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.record(command);
             }
             self.record(NativeCommand::DrawStrip {
-                vertex,
+                vertices,
                 count: vertex_count,
                 instances: instance_count,
             });
