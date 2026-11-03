@@ -402,7 +402,7 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sam
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_single_mip_same_filter_finite_lod -- --nocapture --test-threads=1
 ```
 
-The first command is CPU-only. The second executes patterned texture readback
+The first two commands are CPU-only. The sampler-state test executes patterned texture readback
 for minification, magnification, mixed filters, addressing and a sampler
 transition. It also runs a native border-creation diagnostic; that diagnostic
 is not a rendered-pixel test. Anisotropy 2 is sampled, but a single-mip image
@@ -415,8 +415,23 @@ min/mag filters, minification and magnification, comparing ranges `0..0`,
 linear mipmap filtering. The controlled core fixture also matched all 64 pixels for a nearest
 sampler with `0.5..0.5`. Mixed-filter and anisotropic ranges that cannot be
 faithfully translated remain rejected. A future mipmapped path must enforce the
-actual-view mip restriction; explicit-LOD and bias sampling and historical FL9_1
-drivers remain unverified.
+actual-view mip restriction; explicit-LOD sampling and historical FL9_1 drivers
+remain unverified.
+
+With strict hardware mode, the following filter passed two cases: a CPU
+selected-entry analysis test and a physical RTX 3090 Ti FL9_1 test that rejects
+both direct and helper-function bias at pipeline creation while an unrelated
+entry renders 64 expected pixels.
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 bias -- --nocapture --test-threads=1
+```
+
+The tested FXC emits an unclamped `texldb`; Microsoft's [instruction
+reference](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/texldb---ps)
+defines ps_2_0 bias values outside [-3, 3] as undefined. The backend currently
+uses FL9_1 shader profiles even on higher-level devices, so the same rejection
+applies there; biased sampling remains unsupported.
 
 ### FL9_1 texture transfers
 
@@ -442,6 +457,13 @@ The third samples a padded upload with a nonzero source offset. FL9_x readback
 rejects native diagnostic textures bound only as shader resources.
 The layout test is CPU-only. Direct private HAL calls reject empty transfer
 regions; wgpu-core filters validated empty copies before dispatching to HAL.
+
+The private `private_device_creates_restricted_texture_views` test also passed
+on the RTX FL9_1 device with a metadata-only copy texture view and rejected
+sampling, attachment use and invalid descriptors. The controlled core fixture
+verified 12 upload/copy/readback pixels each for RGBA8 and BGRA8 copy-only views
+and rejected incompatible view usages. Neither result establishes historical
+driver behavior or general public adapter support.
 
 ### FL9_1 uniform bindings
 

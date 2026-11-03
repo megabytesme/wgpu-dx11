@@ -21,8 +21,14 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   up to 2. On 9_1/9_2, equal min/mag filters with anisotropy 1 allow
   otherwise-unrepresentable LOD ranges to be normalized for single-mip views;
   other translated finite maximum LODs also require single-mip views. Nearest and
-  linear mipmap filters have patterned GPU coverage; explicit-LOD and bias
-  sampling and historical driver behavior remain unverified.
+  linear mipmap filters have patterned GPU coverage; explicit-LOD sampling and
+  historical driver behavior remain unverified. Reachable texture sample bias
+  is rejected for the current FL9_1 shader profiles, including on higher-level
+  devices, because the tested compiler emitted an unclamped legacy instruction
+  with a narrower defined bias range.
+- Copy-only color texture views can retain metadata and texture ownership without
+  creating native sampled or attachment views. They cannot be used for sampling
+  or rendering; core upload, copy and readback were verified for both formats.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,

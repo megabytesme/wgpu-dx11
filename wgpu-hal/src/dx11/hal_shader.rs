@@ -27,6 +27,69 @@ mod tests {
     use alloc::borrow::Cow;
     use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;
 
+    fn sample_bias_module() -> (naga::Module, naga::valid::ModuleInfo) {
+        let module = naga::front::wgsl::parse_str(r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(100) var<uniform> value: vec4f;
+            fn biased(t: texture_2d<f32>, s: sampler, b: f32) -> vec4f {
+                return textureSampleBias(t, s, vec2f(0.5), b);
+            }
+            @fragment fn positive() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 4.0); }
+            @fragment fn negative() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -16.0); }
+            @fragment fn dynamic() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), value.x); }
+            @fragment fn helper() -> @location(0) vec4f { return biased(image, smp, value.x); }
+            @fragment fn normal() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5)); }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+        "#).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        (module, info)
+    }
+
+    #[test]
+    fn sample_bias_guard_uses_selected_entry_and_shader_profile() {
+        let (module, info) = sample_bias_module();
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            let uses_bias = matches!(
+                entry.name.as_str(),
+                "positive" | "negative" | "dynamic" | "helper"
+            );
+            for level in FeatureLevel::ALL_DESCENDING {
+                let profile = selected_shader_profile(entry.stage).unwrap();
+                assert_eq!(
+                    has_unsupported_sample_bias(
+                        &module,
+                        &info,
+                        &entry.function,
+                        info.get_entry_point(index),
+                        profile
+                    ),
+                    uses_bias,
+                    "entry {}, level {level:?}, profile {profile:?}",
+                    entry.name,
+                );
+            }
+            for profile in [
+                ShaderProfile::Vertex5_0,
+                ShaderProfile::Pixel5_0,
+                ShaderProfile::Compute5_0,
+            ] {
+                assert!(!has_unsupported_sample_bias(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index),
+                    profile
+                ));
+            }
+        }
+    }
+
     #[test]
     fn vertex_index_detection_uses_only_selected_entry() {
         let module = naga::front::wgsl::parse_str(r#"
@@ -673,6 +736,54 @@ mod tests {
         assert!(checked_resource
             .compile(naga::ShaderStage::Fragment, "safe")
             .is_ok());
+        let (bias_module, bias_info) = sample_bias_module();
+        for checks in [
+            wgt::ShaderRuntimeChecks::checked(),
+            wgt::ShaderRuntimeChecks::unchecked(),
+        ] {
+            let shader = ShaderModule::new(
+                native.clone(),
+                crate::NagaShader {
+                    module: Cow::Owned(bias_module.clone()),
+                    info: bias_info.clone(),
+                    debug_source: None,
+                },
+                checks,
+            );
+            for entry in ["positive", "negative", "dynamic", "helper"] {
+                assert!(
+                    matches!(
+                        shader.compile(naga::ShaderStage::Fragment, entry),
+                        Err(crate::PipelineError::Linkage(stage, message))
+                            if stage == wgt::ShaderStages::FRAGMENT
+                                && message == "D3D11 FL9 texture sample bias is not implemented safely"
+                    ),
+                    "entry {entry}"
+                );
+            }
+            assert!(shader.compile(naga::ShaderStage::Fragment, "safe").is_ok());
+            let bindings = [
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 7,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::Texture2dFloat,
+                },
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 42,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::Sampler,
+                },
+            ];
+            assert!(shader
+                .compile_with_bindings(naga::ShaderStage::Fragment, "normal", &bindings)
+                .is_ok());
+        }
         let uniform_module = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> color: vec4f; @fragment fn fs() -> @location(0) vec4f { return color; }").unwrap();
         let uniform_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -953,6 +1064,35 @@ where
         &predicate,
         0,
     )
+}
+
+fn selected_shader_profile(stage: naga::ShaderStage) -> Option<ShaderProfile> {
+    match stage {
+        naga::ShaderStage::Vertex => Some(ShaderProfile::VertexLevel9_1),
+        naga::ShaderStage::Fragment => Some(ShaderProfile::PixelLevel9_1),
+        _ => None,
+    }
+}
+
+fn has_unsupported_sample_bias(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    profile: ShaderProfile,
+) -> bool {
+    matches!(
+        profile,
+        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+    ) && reachable_expression(module, info, function, function_info, |_, _, expression| {
+        matches!(
+            expression,
+            naga::Expression::ImageSample {
+                level: naga::SampleLevel::Bias(_),
+                ..
+            }
+        )
+    })
 }
 
 fn has_unsupported_dynamic_access(
@@ -1527,6 +1667,20 @@ impl ShaderModule {
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
         let entry_info = self.shader.info.get_entry_point(entry_index);
+        let profile =
+            selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
+        if has_unsupported_sample_bias(
+            &self.shader.module,
+            &self.shader.info,
+            &self.shader.module.entry_points[entry_index].function,
+            entry_info,
+            profile,
+        ) {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture sample bias is not implemented safely".into(),
+            ));
+        }
         if requests_checks
             && self
                 .shader
@@ -1602,11 +1756,6 @@ impl ShaderModule {
                 "checked D3D11 texture loads are not implemented".into(),
             ));
         }
-        let profile = match stage {
-            naga::ShaderStage::Vertex => ShaderProfile::VertexLevel9_1,
-            naga::ShaderStage::Fragment => ShaderProfile::PixelLevel9_1,
-            _ => unreachable!(),
-        };
         let present = used_shader_bindings(&self.shader.module, entry_info, bindings);
         compile_naga_with_viewport(
             &self.shader.module,

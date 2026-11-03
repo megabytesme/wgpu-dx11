@@ -1001,3 +1001,19 @@ The combined strict suite passed 237 cases, two filtered, with three documented
 internal shader skips. HAL Clippy passed with ten existing warnings; core
 ordinary D3D11 enumeration remained empty. Independent review found no concrete
 ownership or usage defect.
+Checkpoint: `6a64195ad`.
+
+FXC's current level-9 pixel profile emits unclamped legacy texldb for dynamic
+SampleBias, whose documented +/-3 range is narrower than WGSL's allowed bias.
+The selected-entry shader path now conservatively rejects reachable SampleBias
+in checked and unchecked modes, including helper calls. Profile selection is
+shared with compilation so the guard also applies on higher hardware while
+this backend still targets FL9_1 profiles. Strict `bias` tests passed one CPU
+case and one RTX FL9_1 hardware case: direct/helper bias pipelines rejected
+with the specific linkage error and an ordinary sample from the same module
+matched 64 pixels. Two reviews found no further concrete traversal or profile
+defect after the initially identified device-level gating error was fixed.
+The complete strict suite passed 237 cases, two filtered, with three documented
+internal shader skips; HAL Clippy passed with ten existing warnings and ordinary
+core enumeration remained empty. Conservatively rejected bounded bias and
+historical-device behavior remain future work.

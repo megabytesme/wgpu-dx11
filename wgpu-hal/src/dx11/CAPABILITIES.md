@@ -161,6 +161,13 @@ requires render-target support for the selected format; it does not expose rende
 callers that did not request it. The native D3D11 creation call can reject an
 unsupported format/bind combination.
 
+A copy-only color texture may have a metadata-only view with no native shader
+resource or render-target view. It retains the texture and owning device but
+cannot be sampled or attached. The controlled core fixture checked RGBA8 and
+BGRA8 copy-only views, rejected incompatible view usages and verified 12 pixels
+per format through GPU upload, copy and readback. This does not add formats or
+array views.
+
 HAL transfer commands use explicit regions. No staging-to-default native copy with
 a null source box is used, avoiding the documented 9_x corruption case for
 mismatched dimensions or destination offsets. Core validates empty regions and
@@ -179,11 +186,17 @@ runtime or driver; public adapter exposure remains disabled.
 | LOD | FL9_1 native MinLOD must be integral and MaxLOD must be FLT_MAX. | For a validated single-mip view, equal min/mag filters and anisotropy 1, otherwise-unrepresentable finite or fractional LOD clamps are normalized to native 0..FLT_MAX: either filter selects the same level-zero sample. A finite maximum at least 1 with minimum 0 can also be raised to FLT_MAX for a single-mip view with mixed filters. Other unrepresentable mixed-filter and anisotropic ranges remain rejected. FL9 does not specify whether clamping precedes min/mag selection. Any future mip support must validate the actual sampled view before using a normalized sampler. FXC rejects `SampleLevel` for the tested pixel profile with X4532; explicit-LOD sampling is not claimed. |
 | Anisotropy | FL9_1 native maximum is 2; an upper limit alone is not a visual-quality guarantee. | The private backend accepts 1 or 2, requiring linear min, mag and mip filters for 2. Native creation and a sampled GPU output passed; anisotropic quality on minified textures is unverified. Values above 2 are rejected even on a modern GPU forced to 9_1. |
 | Comparison / border | Comparison filtering is not generally supported at 9_1; ordinary border addressing is not normally allowed. Optional 9_x shadow support is separate. | Comparison and border addressing remain rejected. On the RTX forced to 9_1, ordinary border sampler creation returned E_INVALIDARG. No optional wgpu border or comparison feature is advertised. |
+| NPOT | Conditional NPOT requires one mip and restricts addressing; full NPOT is an optional driver query. | Shader-aware validation rejects non-clamp modes for used NPOT pairs unless full NPOT is positively reported. Mirror is treated conservatively as non-clamp, as are all U/V/W modes. Synthetic restrictive-capability tests supplement modern-driver execution. |
 
 For normalized LOD ranges, patterned single-mip GPU tests cover both nearest
-and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD and bias
-sampling and historical FL9_1 driver behavior remain unverified.
-| NPOT | Conditional NPOT requires one mip and restricts addressing; full NPOT is an optional driver query. | Shader-aware validation rejects non-clamp modes for used NPOT pairs unless full NPOT is positively reported. Mirror is treated conservatively as non-clamp, as are all U/V/W modes. Synthetic restrictive-capability tests supplement modern-driver execution. |
+and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
+and historical FL9_1 driver behavior remain unverified. The current compiler
+uses FL9_1 profiles even on higher-level devices; a selected entry point that
+can reach `textureSampleBias` is conservatively rejected, including through
+helper functions. Unrelated entries remain usable.
+The tested FXC emitted an unclamped legacy `texldb`, for which Microsoft
+documents undefined behavior outside [-3, 3] at ps_2_0. This restriction is
+not a general solution for valid biased sampling.
 
 The backend does not expose a public adapter. In particular, the wgpu downlevel
 anisotropy flag does not describe this private maximum of 2 by itself; public

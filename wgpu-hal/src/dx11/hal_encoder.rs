@@ -3846,6 +3846,10 @@ mod integer_uniform_bits_tests;
 mod sampler_lod_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/biased_sampling.rs"]
+mod biased_sampling_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 
