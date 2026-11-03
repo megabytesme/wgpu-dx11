@@ -95,6 +95,7 @@ pub(super) struct BackendCapabilities {
     pub pot_full_chain_sampled_mips: bool,
     pub pot_copy_only_mip_chains: bool,
     pub pot_color_attachment_mips: bool,
+    pub pot_sampled_attachment_mips: bool,
     pub rgba8_single_mip_transfers: bool,
     pub bgra8_single_mip_transfers: bool,
     pub texture_zero_initialized: bool,
@@ -137,6 +138,7 @@ impl BackendCapabilities {
         pot_full_chain_sampled_mips: true,
         pot_copy_only_mip_chains: true,
         pot_color_attachment_mips: true,
+        pot_sampled_attachment_mips: true,
         rgba8_single_mip_transfers: true,
         bgra8_single_mip_transfers: true,
         texture_zero_initialized: true,
@@ -193,11 +195,13 @@ pub(super) enum TextureRejection {
 pub(super) fn supported_mip_texture_usage(usage: wgt::TextureUses) -> bool {
     let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
     let upload_sample = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
+    let sampled_target = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
     usage == copy
         || usage == upload_sample
         || usage == (copy | wgt::TextureUses::RESOURCE)
         || (usage.contains(wgt::TextureUses::COLOR_TARGET)
             && (copy | wgt::TextureUses::COLOR_TARGET).contains(usage))
+        || (usage.contains(sampled_target) && (copy | sampled_target).contains(usage))
 }
 
 pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
@@ -302,6 +306,16 @@ impl Capabilities {
                 && (copy | wgt::TextureUses::COLOR_TARGET).contains(usage)
             {
                 if !self.backend.pot_color_attachment_mips {
+                    return Err(UnsupportedShape);
+                }
+            } else if usage.contains(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE)
+                && (copy | wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE)
+                    .contains(usage)
+            {
+                if !self.backend.pot_sampled_attachment_mips
+                    || !self.backend.pot_full_chain_sampled_mips
+                    || !self.backend.pot_color_attachment_mips
+                {
                     return Err(UnsupportedShape);
                 }
             } else {
@@ -458,7 +472,24 @@ mod tests {
         assert!(caps.backend.pot_full_chain_sampled_mips);
         assert!(caps.backend.pot_copy_only_mip_chains);
         assert!(caps.backend.pot_color_attachment_mips);
+        assert!(caps.backend.pot_sampled_attachment_mips);
         for format in [rgba, bgra] {
+            for usage in [
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+                wgt::TextureUses::RESOURCE
+                    | wgt::TextureUses::COLOR_TARGET
+                    | wgt::TextureUses::COPY_SRC,
+                wgt::TextureUses::RESOURCE
+                    | wgt::TextureUses::COLOR_TARGET
+                    | wgt::TextureUses::COPY_DST,
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET | copy,
+            ] {
+                assert_eq!(check(&caps, format, usage, [8, 4], 1, 4, 1), Ok(()));
+                assert_eq!(
+                    check(&caps, format, usage, [8, 3], 1, 2, 1),
+                    Err(UnsupportedShape)
+                );
+            }
             for usage in [
                 wgt::TextureUses::COLOR_TARGET,
                 wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
@@ -534,7 +565,9 @@ mod tests {
                 wgt::TextureUses::COPY_SRC,
                 wgt::TextureUses::COPY_DST,
                 wgt::TextureUses::RESOURCE,
-                copy | wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+                copy | wgt::TextureUses::RESOURCE
+                    | wgt::TextureUses::COLOR_TARGET
+                    | wgt::TextureUses::STORAGE_READ_ONLY,
             ] {
                 assert_eq!(
                     check(&caps, format, usage, [8, 4], 1, 2, 1),
@@ -543,6 +576,21 @@ mod tests {
             }
         }
         let mut restricted = caps;
+        restricted.backend.pot_sampled_attachment_mips = false;
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+                [8, 4],
+                1,
+                4,
+                1
+            ),
+            Err(UnsupportedShape)
+        );
+        assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 4, 1), Ok(()));
+        restricted = caps;
         restricted.backend.pot_copy_only_mip_chains = false;
         assert_eq!(
             check(&restricted, rgba, copy, [8, 4], 1, 2, 1),

@@ -379,6 +379,32 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             queue,
             VertexCase::SampledMipsNoCopySrcUninitialized,
         );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::RenderSampleMip(wgt::TextureFormat::Rgba8Unorm, false),
+        );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::RenderSampleMip(wgt::TextureFormat::Rgba8Unorm, true),
+        );
+    }
+    if bgra_mips {
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::RenderSampleMip(wgt::TextureFormat::Bgra8Unorm, false),
+        );
+        render_triangle(
+            &global,
+            device,
+            queue,
+            VertexCase::RenderSampleMip(wgt::TextureFormat::Bgra8Unorm, true),
+        );
     }
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
@@ -999,6 +1025,7 @@ enum VertexCase {
     SampledMipSuffix,
     SampledMipsNoCopySrc,
     SampledMipsNoCopySrcUninitialized,
+    RenderSampleMip(wgt::TextureFormat, bool),
     Overlapping,
     NoopStencil,
     Snorm,
@@ -1022,7 +1049,11 @@ fn render_triangle(
     let snorm = case == VertexCase::Snorm;
     let zero_stride = case == VertexCase::ZeroStride;
     let instance_rate = case == VertexCase::InstanceRate;
-    let sampled_mip_suffix = case == VertexCase::SampledMipSuffix;
+    let combined = match case {
+        VertexCase::RenderSampleMip(format, dual) => Some((format, dual)),
+        _ => None,
+    };
+    let sampled_mip_suffix = case == VertexCase::SampledMipSuffix || combined.is_some();
     let uninitialized_mip = case == VertexCase::SampledMipsNoCopySrcUninitialized;
     let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip;
     let sampled_mips = case == VertexCase::SampledMips || sampled_mip_suffix || no_copy_src;
@@ -1094,112 +1125,157 @@ fn render_triangle(
             },
             sample_count: 1,
             dimension: wgt::TextureDimension::D2,
-            format: wgt::TextureFormat::Rgba8Unorm,
-            usage: wgt::TextureUsages::TEXTURE_BINDING
-                | wgt::TextureUsages::COPY_DST
-                | if sampled_mips && !no_copy_src {
-                    wgt::TextureUsages::COPY_SRC
-                } else {
-                    wgt::TextureUsages::empty()
-                },
+            format: combined.map_or(wgt::TextureFormat::Rgba8Unorm, |(format, _)| format),
+            usage: if combined.is_some() {
+                wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
+            } else {
+                wgt::TextureUsages::TEXTURE_BINDING
+                    | wgt::TextureUsages::COPY_DST
+                    | if sampled_mips && !no_copy_src {
+                        wgt::TextureUsages::COPY_SRC
+                    } else {
+                        wgt::TextureUsages::empty()
+                    }
+            },
             view_formats: Vec::new(),
         },
         None,
     );
     assert!(error.is_none(), "sampled texture creation: {error:?}");
-    global
-        .queue_write_texture(
-            queue,
-            &wgt::TexelCopyTextureInfo {
-                texture: sampled,
-                mip_level: 0,
-                origin: wgt::Origin3d::ZERO,
-                aspect: wgt::TextureAspect::All,
-            },
-            if sampled_mip_suffix {
-                &[
-                    255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
-                ]
-            } else {
-                &[255, 0, 0, 255, 0, 255, 0, 255]
-            },
-            &wgt::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: None,
-                rows_per_image: None,
-            },
-            &sample_extent,
-        )
-        .expect("sampled texture upload");
-    if sampled_mips && !uninitialized_mip {
+    if combined.is_none() {
         global
             .queue_write_texture(
                 queue,
                 &wgt::TexelCopyTextureInfo {
                     texture: sampled,
-                    mip_level: 1,
+                    mip_level: 0,
                     origin: wgt::Origin3d::ZERO,
                     aspect: wgt::TextureAspect::All,
                 },
                 if sampled_mip_suffix {
-                    &[0, 255, 0, 255, 0, 255, 0, 255]
+                    &[
+                        255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+                    ]
                 } else {
-                    &[0, 0, 255, 255]
+                    &[255, 0, 0, 255, 0, 255, 0, 255]
                 },
                 &wgt::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: None,
                     rows_per_image: None,
                 },
-                &wgt::Extent3d {
-                    width: if sampled_mip_suffix { 2 } else { 1 },
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
+                &sample_extent,
             )
-            .expect("sampled mip upload");
-    }
-    if sampled_mip_suffix {
-        global
-            .queue_write_texture(
-                queue,
-                &wgt::TexelCopyTextureInfo {
-                    texture: sampled,
-                    mip_level: 2,
-                    origin: wgt::Origin3d::ZERO,
-                    aspect: wgt::TextureAspect::All,
-                },
-                &[0, 0, 255, 255],
-                &wgt::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: None,
-                    rows_per_image: None,
-                },
-                &wgt::Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-            )
-            .expect("sampled last mip upload");
+            .expect("sampled texture upload");
+        if sampled_mips && !uninitialized_mip {
+            global
+                .queue_write_texture(
+                    queue,
+                    &wgt::TexelCopyTextureInfo {
+                        texture: sampled,
+                        mip_level: 1,
+                        origin: wgt::Origin3d::ZERO,
+                        aspect: wgt::TextureAspect::All,
+                    },
+                    if sampled_mip_suffix {
+                        &[0, 255, 0, 255, 0, 255, 0, 255]
+                    } else {
+                        &[0, 0, 255, 255]
+                    },
+                    &wgt::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: None,
+                        rows_per_image: None,
+                    },
+                    &wgt::Extent3d {
+                        width: if sampled_mip_suffix { 2 } else { 1 },
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                )
+                .expect("sampled mip upload");
+        }
+        if sampled_mip_suffix {
+            global
+                .queue_write_texture(
+                    queue,
+                    &wgt::TexelCopyTextureInfo {
+                        texture: sampled,
+                        mip_level: 2,
+                        origin: wgt::Origin3d::ZERO,
+                        aspect: wgt::TextureAspect::All,
+                    },
+                    &[0, 0, 255, 255],
+                    &wgt::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: None,
+                        rows_per_image: None,
+                    },
+                    &wgt::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                )
+                .expect("sampled last mip upload");
+        }
     }
     let (sample_view, error) = global.texture_create_view(
         sampled,
         &resource::TextureViewDescriptor {
             range: if sampled_mip_suffix {
                 wgt::ImageSubresourceRange {
-                    base_mip_level: 1,
-                    mip_level_count: Some(2),
+                    base_mip_level: if combined.is_some_and(|(_, dual)| dual) {
+                        2
+                    } else {
+                        1
+                    },
+                    mip_level_count: Some(if combined.is_some_and(|(_, dual)| dual) {
+                        1
+                    } else {
+                        2
+                    }),
                     ..Default::default()
                 }
             } else {
                 Default::default()
             },
+            usage: combined.map(|(_, dual)| {
+                if dual {
+                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT
+                } else {
+                    wgt::TextureUsages::TEXTURE_BINDING
+                }
+            }),
             ..Default::default()
         },
         None,
     );
     assert!(error.is_none(), "sampled texture view: {error:?}");
+    let render_mip_views = combined.map(|(_, dual)| {
+        let make_view = |mip| {
+            let (view, error) = global.texture_create_view(
+                sampled,
+                &resource::TextureViewDescriptor {
+                    usage: Some(wgt::TextureUsages::RENDER_ATTACHMENT),
+                    range: wgt::ImageSubresourceRange {
+                        base_mip_level: mip,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            );
+            assert!(error.is_none(), "combined render mip view {mip}: {error:?}");
+            view
+        };
+        (
+            make_view(1),
+            if dual { sample_view } else { make_view(2) },
+            dual,
+        )
+    });
     let (sampler, error) = global.device_create_sampler(
         device,
         &resource::SamplerDescriptor {
@@ -1208,7 +1284,7 @@ fn render_triangle(
             mag_filter: wgt::FilterMode::Nearest,
             min_filter: wgt::FilterMode::Nearest,
             mipmap_filter: wgt::MipmapFilterMode::Nearest,
-            lod_min_clamp: if sampled_mip_suffix {
+            lod_min_clamp: if sampled_mip_suffix && !combined.is_some_and(|(_, dual)| dual) {
                 1.0
             } else if case == VertexCase::FractionalSamplerLod {
                 0.5
@@ -1531,6 +1607,30 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "render encoder: {error:?}");
+    if let Some((green, blue, _)) = render_mip_views {
+        for (mip_view, color) in [(green, wgt::Color::GREEN), (blue, wgt::Color::BLUE)] {
+            let attachments = [Some(render::RenderPassColorAttachment {
+                view: mip_view,
+                depth_slice: None,
+                resolve_target: None,
+                load_op: wgt::LoadOp::Clear(color),
+                store_op: wgt::StoreOp::Store,
+            })];
+            let (mut pass, error) = global.command_encoder_begin_render_pass(
+                encoder,
+                &render::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: Cow::Borrowed(&attachments),
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                },
+            );
+            assert!(error.is_none(), "combined mip render pass: {error:?}");
+            global.render_pass_end(&mut pass).unwrap();
+        }
+    }
     let attachments = [Some(render::RenderPassColorAttachment {
         view,
         depth_slice: None,
@@ -1685,6 +1785,12 @@ fn render_triangle(
     global.bind_group_drop(group);
     global.bind_group_layout_drop(group_layout);
     global.sampler_drop(sampler);
+    if let Some((green, blue, dual)) = render_mip_views {
+        global.texture_view_drop(green);
+        if !dual {
+            global.texture_view_drop(blue);
+        }
+    }
     global.texture_view_drop(sample_view);
     global.texture_drop(sampled);
     global.texture_view_drop(depth_view);

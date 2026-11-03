@@ -1099,3 +1099,26 @@ concrete issue. The full strict private suite passed 245 tests, with two filtere
 and three older shader hardware cases skipped internally. HAL Clippy passed
 with ten existing test warnings, and ordinary core adapter enumeration stayed
 empty. Historical devices and public adapter exposure remain unverified.
+Checkpoint: `68c6a804d13cada3d1cb0feccef6bbb3d1d58d7f`.
+
+Next: combined sampled and color-attachment mip textures in separate passes.
+FL9 permits a combined SRV/RTV view only for the last mip, since an RTV selects
+one level and an SRV must include the resource's last level. Preserve explicit
+usage restrictions and reject whole-resource feedback; core-valid non-last
+combined views remain a public integration gap.
+
+POT RGBA8/BGRA8 textures now permit combined RESOURCE|COLOR_TARGET usage with
+optional copy flags. RESOURCE views are suffixes, attachment views select one
+mip, and a dual-use view selects only the last mip. Strict RTX FL9_1 private
+testing passed six GPU transition cases across both formats, including feedback
+rejection and resource lifetime; controlled core testing passed four cases
+with 64/64 expected pixels each. Whole-resource alias rejection remains more
+restrictive than core for disjoint mips. An independent review found no
+concrete issue. Public adapter exposure remains disabled.
+The first full-suite run had 245 passes and one failure because an older
+negative test still expected a two-mip combined-usage texture to be rejected.
+That assertion now checks a four-level chain on a 4x4 texture, exceeding the
+valid mip count; its focused hardware test passed.
+The rerun passed 246 tests with two filtered and three older shader cases
+skipping GPU execution internally. HAL Clippy passed with ten existing test
+warnings; ordinary core D3D11 enumeration remained empty.

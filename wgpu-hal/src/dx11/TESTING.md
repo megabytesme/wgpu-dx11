@@ -508,8 +508,7 @@ transition retained sampled textures, views, groups and samplers after the calle
 destroyed them before submission, and readback matched 32 green and 32 blue
 pixels. The controlled core fixture sampled the blue mip of a
 2x1 texture and verified all 64 output pixels. Supported chains have one layer,
-POT dimensions, exact `COPY_DST | RESOURCE` or `COPY_SRC | COPY_DST | RESOURCE`
-usage, a suffix SRV that
+POT dimensions, the restricted sampled usage combinations, a suffix SRV that
 includes the resource's last mip, and positive format support. Previously
 verified results include suffix views for both formats. The controlled core
 `SampledMipSuffix` case produced 64 blue pixels, verifying view-relative LOD.
@@ -535,10 +534,24 @@ The strict private test passed for both RGBA8 and BGRA8 on the RTX 3090 Ti at
 requested and selected FL9_1, checking the full mip chain. The controlled core
 fixture checked all 43 pixels for each format and submitted a render-only mip
 pass, which has no direct readback. This path requires POT dimensions and
-`COLOR_TARGET` with optional `COPY_SRC` and/or `COPY_DST`; `RESOURCE` and
-`TRANSIENT` are not supported in the same chain. Each view selects one mip.
+`COLOR_TARGET` with optional `RESOURCE`, `COPY_SRC` and/or `COPY_DST`;
+`TRANSIENT` is not supported in the same chain. Each attachment view selects one mip.
 Historical hardware remains unverified and ordinary public enumeration stays
 disabled.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_render_and_sample_mip_transitions -- --nocapture --test-threads=1
+```
+
+The strict RTX FL9_1 run passed six GPU cases across RGBA8 and BGRA8, including
+render/sample state transitions. The controlled core fixture passed four cases
+with 64 checked pixels each: suffix sampled views and last-mip dual-use views
+for both formats. Sampled views must include the resource's last mip, attachment
+views select one mip, and a dual-use view must select the last mip. Use in
+distinct passes is supported; same-pass feedback is rejected at whole-resource
+granularity, including when the views select disjoint mips. Non-suffix sampled
+views, historical devices and public adapter exposure remain unresolved.
 
 ### FL9_1 uniform bindings
 

@@ -128,7 +128,9 @@ fn fl91_copy_only_mip_transfers_and_views() -> windows::core::Result<()> {
         unsupported.size.width = 7;
         assert!(unsafe { device.create_texture(&unsupported) }.is_err());
         unsupported = desc.clone();
-        unsupported.usage |= wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
+        unsupported.usage |= wgt::TextureUses::RESOURCE
+            | wgt::TextureUses::COLOR_TARGET
+            | wgt::TextureUses::TRANSIENT;
         assert!(unsafe { device.create_texture(&unsupported) }.is_err());
         let create_buffer = |size, usage| unsafe {
             device

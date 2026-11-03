@@ -34,8 +34,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   the device reports the required format bits. Strict RTX FL9_1 tests exercised
   four levels, partial uploads, cross-resource copies, readback, metadata views
   and resource retention; a core fixture checked all 43 mip-chain pixels.
-- Sampled POT mip chains require exact `COPY_DST | RESOURCE` or
-  `COPY_SRC | COPY_DST | RESOURCE` usage,
+- Sampled POT mip chains support `COPY_DST | RESOURCE` with optional `COPY_SRC`,
+  or `RESOURCE | COLOR_TARGET` with optional copy usages,
   a positively queried format and a suffix view including the resource's last
   mip. Selected shader pairs are checked against actual mip counts and sampler
   LOD translation. RGBA8 and BGRA8
@@ -49,10 +49,14 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   FL9 sampled views must include the smallest resource mip, and
   historical GPU behavior is unverified.
 - POT RGBA8 and BGRA8 color-attachment mip chains support an individual
-  single-mip render-target view, with optional copy-source and copy-destination
-  usage. Sampled and transient usage cannot be combined with this path. Strict
+  single-mip render-target view, with optional sampled, copy-source and
+  copy-destination usage. A dual sampled/attachment view can select only the
+  last mip; transient usage remains unsupported. Strict
   GPU readback passed for both formats; core checked all 43 pixels per format
-  and submitted a render-only mip pass without direct readback.
+  and submitted a render-only mip pass without direct readback. Combined
+  render/sample transitions passed six private GPU cases across both formats and
+  four core cases with 64 checked pixels each. Whole-resource feedback in the
+  same pass remains rejected, even across disjoint mips.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,

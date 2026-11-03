@@ -358,6 +358,12 @@ impl crate::Device for Device {
                         .mip_level_count
                         .unwrap_or(native.MipLevels - desc.range.base_mip_level)
                         != 1
+            } else if native.MipLevels > 1
+                && desc.usage == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET)
+            {
+                !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
+                    || desc.range.base_mip_level.checked_add(1) != Some(native.MipLevels)
+                    || desc.range.mip_level_count.is_some_and(|count| count != 1)
             } else {
                 native.MipLevels != 1
                     || !desc
@@ -718,7 +724,9 @@ mod tests {
         invalid.mip_level_count = 5;
         assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
         invalid = desc.clone();
-        invalid.usage |= wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE;
+        invalid.usage |= wgt::TextureUses::COLOR_TARGET
+            | wgt::TextureUses::RESOURCE
+            | wgt::TextureUses::STORAGE_READ_ONLY;
         assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
         invalid = desc.clone();
         invalid.usage = wgt::TextureUses::COPY_DST;
@@ -881,7 +889,52 @@ mod tests {
             crate::Device::create_texture_view(&device, &attachment, &invalid_attachment)
         }
         .is_err());
+        let mut combined_desc = sampled_desc.clone();
+        combined_desc.usage |= wgt::TextureUses::COLOR_TARGET;
+        let combined = unsafe { crate::Device::create_texture(&device, &combined_desc) }.unwrap();
+        assert!(native.texture_copy_texture_source(&combined, 1).is_ok());
+        assert!(native.texture_copy_destination(&combined, 1).is_ok());
+        let mut combined_view_desc = view_desc.clone();
+        combined_view_desc.usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
+        combined_view_desc.range.base_mip_level = 3;
+        combined_view_desc.range.mip_level_count = Some(1);
+        let combined_view =
+            unsafe { crate::Device::create_texture_view(&device, &combined, &combined_view_desc) }
+                .unwrap();
+        assert_eq!(native.sampled_view(&combined_view)?.1, [1, 1]);
+        assert_eq!(native.sampled_view(&combined_view)?.2, 1);
+        assert_eq!(native.render_target_view(&combined_view)?.2, [1, 1]);
+        combined_view_desc.range.base_mip_level = 1;
+        assert!(unsafe {
+            crate::Device::create_texture_view(&device, &combined, &combined_view_desc)
+        }
+        .is_err());
+        combined_view_desc.range.base_mip_level = 2;
+        combined_view_desc.range.mip_level_count = Some(2);
+        assert!(unsafe {
+            crate::Device::create_texture_view(&device, &combined, &combined_view_desc)
+        }
+        .is_err());
+        combined_view_desc.usage = wgt::TextureUses::RESOURCE;
+        let suffix =
+            unsafe { crate::Device::create_texture_view(&device, &combined, &combined_view_desc) }
+                .unwrap();
+        assert_eq!(native.sampled_view(&suffix)?.1, [2, 1]);
+        assert_eq!(native.sampled_view(&suffix)?.2, 2);
+        combined_view_desc.usage = wgt::TextureUses::COLOR_TARGET;
+        combined_view_desc.range.base_mip_level = 1;
+        combined_view_desc.range.mip_level_count = Some(1);
+        let target =
+            unsafe { crate::Device::create_texture_view(&device, &combined, &combined_view_desc) }
+                .unwrap();
+        assert_eq!(native.render_target_view(&target)?.2, [4, 2]);
         unsafe {
+            crate::Device::destroy_texture(&device, combined);
+            assert!(native.sampled_view(&combined_view).is_ok());
+            assert!(native.render_target_view(&combined_view).is_ok());
+            crate::Device::destroy_texture_view(&device, combined_view);
+            crate::Device::destroy_texture_view(&device, suffix);
+            crate::Device::destroy_texture_view(&device, target);
             crate::Device::destroy_texture(&device, attachment);
             for attachment_view in attachment_views {
                 assert!(native.render_target_view(&attachment_view).is_ok());
@@ -1215,7 +1268,7 @@ mod tests {
             Err(DeviceError::Unexpected)
         ));
         let mut bad_desc = desc.clone();
-        bad_desc.mip_level_count = 2;
+        bad_desc.mip_level_count = 4;
         assert!(matches!(
             unsafe { dynamic.create_texture(&bad_desc) },
             Err(DeviceError::Unexpected)

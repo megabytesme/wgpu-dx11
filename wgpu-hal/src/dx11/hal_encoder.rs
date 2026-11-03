@@ -3863,6 +3863,10 @@ mod sampled_mip_tests;
 mod render_mip_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/render_sample_mips.rs"]
+mod render_sample_mips;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 

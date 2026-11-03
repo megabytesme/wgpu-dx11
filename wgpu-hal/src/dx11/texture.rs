@@ -314,9 +314,13 @@ impl NativeDevice {
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
             || (desc.MipLevels > 1
-                && (view.usage != wgt::TextureUses::RESOURCE
+                && (!(view.usage == wgt::TextureUses::RESOURCE
+                    || view.usage
+                        == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET))
                     || !desc.Width.is_power_of_two()
-                    || !desc.Height.is_power_of_two()))
+                    || !desc.Height.is_power_of_two()
+                    || (view.usage.contains(wgt::TextureUses::COLOR_TARGET)
+                        && view.mip_count != 1)))
             || view.mip_count == 0
             || view.mip_base >= desc.MipLevels
             || view.mip_base >= u32::BITS
@@ -356,9 +360,13 @@ impl NativeDevice {
         if desc.Width == 0
             || desc.Height == 0
             || (desc.MipLevels > 1
-                && (view.usage != wgt::TextureUses::COLOR_TARGET
+                && (!(view.usage == wgt::TextureUses::COLOR_TARGET
+                    || view.usage
+                        == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET))
                     || !desc.Width.is_power_of_two()
-                    || !desc.Height.is_power_of_two()))
+                    || !desc.Height.is_power_of_two()
+                    || (view.usage.contains(wgt::TextureUses::RESOURCE)
+                        && view.mip_base.checked_add(1) != Some(desc.MipLevels))))
             || view.mip_count != 1
             || view.mip_base >= desc.MipLevels
             || view.mip_base >= u32::BITS
