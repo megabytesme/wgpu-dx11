@@ -196,7 +196,6 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
     assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
-    let open = unsafe { fixture.open_test_fixture() };
     let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
     info.name = identity.name.clone();
     info.vendor = identity.vendor_id;
@@ -225,15 +224,6 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_buffers_and_acceleration_structures_per_shader_stage: 2,
         ..wgt::Limits::downlevel_webgl2_defaults()
     };
-    assert!(unsafe {
-        hal::Adapter::open(
-            &fixture,
-            wgt::Features::empty(),
-            &limits,
-            &wgt::MemoryHints::default(),
-        )
-    }
-    .is_err());
     let rgba_mips = fixture
         .test_fixture_copy_only_rgba8_mip_supported()
         .expect("query copy-only RGBA8 mip prerequisites");
@@ -367,9 +357,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         required_limits: limits,
         ..Default::default()
     };
-    let (device, queue) =
-        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
-            .expect("controlled core device initialization");
+    let (device, queue) = global
+        .adapter_request_device(adapter_id, &descriptor, None, None)
+        .expect("controlled core adapter device request");
     for hlsl in [
         None,
         Some(Cow::Borrowed("float4 main() : SV_Target { return 1; }")),

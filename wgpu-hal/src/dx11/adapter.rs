@@ -104,9 +104,18 @@ impl crate::Adapter for Adapter {
         _: &wgt::Limits,
         _: &wgt::MemoryHints,
     ) -> Result<crate::OpenDevice<Self::A>, crate::DeviceError> {
-        match self.inner {
-            #[cfg(feature = "dx11-test-fixture")]
-            AdapterInner::Fixture(_) => Err(crate::DeviceError::Unexpected),
+        #[cfg(feature = "dx11-test-fixture")]
+        {
+            match &self.inner {
+                AdapterInner::Fixture(native) => Ok(crate::OpenDevice {
+                    device: super::Device::new(native.clone()),
+                    queue: super::Queue::new(native.clone()),
+                }),
+            }
+        }
+        #[cfg(not(feature = "dx11-test-fixture"))]
+        {
+            match self.inner {}
         }
     }
     unsafe fn texture_format_capabilities(
