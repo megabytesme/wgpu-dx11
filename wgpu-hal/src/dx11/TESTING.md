@@ -55,6 +55,11 @@ including nonzero first instance and whole-draw out-of-bounds handling. It
 checks GPU-written u16 values that require gather or window translation and
 verifies that a later native draw restores its vertex binding.
 
+`empty_vertex_input_pipeline_is_accepted` checks zero-input triangle and
+nonindexed point pipelines, including a single interior point and transitions
+between point and triangle pipelines. CPU tests verify point batching at the
+65,535-primitive boundary; indexed points remain unsupported.
+
 Read the printed result, not just libtest's final line:
 
 - `PASS`: the hardware device and all operations completed with the expected pixels.

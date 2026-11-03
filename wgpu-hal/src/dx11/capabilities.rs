@@ -89,6 +89,8 @@ pub(super) struct BackendCapabilities {
     pub texture_array_layers: u32,
     pub sample_count: u32,
     pub vertex_buffers: u32,
+    pub zero_input_vertex_pipeline: bool,
+    pub nonindexed_zero_input_points: bool,
     pub color_attachments: u32,
     pub index_u16: bool,
     pub index_u16_fl9_rewrite: bool,
@@ -122,6 +124,8 @@ impl BackendCapabilities {
         texture_array_layers: 1,
         sample_count: 1,
         vertex_buffers: 1,
+        zero_input_vertex_pipeline: true,
+        nonindexed_zero_input_points: true,
         color_attachments: 1,
         index_u16: true,
         index_u16_fl9_rewrite: true,
@@ -314,6 +318,8 @@ mod tests {
         }
         let fl9 = model(FeatureLevel::L9_1);
         assert_eq!(fl9.hardware.max_vertex_index, 65_534);
+        assert!(fl9.backend.zero_input_vertex_pipeline);
+        assert!(fl9.backend.nonindexed_zero_input_points);
         assert!(fl9.backend.index_u16_fl9_rewrite);
         assert!(fl9.backend.index_u32_ordered_fl9_windows);
         assert!(fl9.backend.index_u32_wide_triangle_gather);

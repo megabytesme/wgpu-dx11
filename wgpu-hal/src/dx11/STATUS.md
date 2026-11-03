@@ -30,11 +30,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   textures and sixteen samplers in total.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
-- Triangle-list passes with one interleaved vertex buffer, winding and face
+- Triangle-list passes with zero inputs or one interleaved vertex buffer, winding and face
   culling, bounds-checked scissors, per-channel color write masks,
   replace/alpha/crosshair/additive/vignette blending, and splitting
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
+- Nonindexed point-list draws are supported for zero-input pipelines; indexed
+  points and point pipelines with vertex buffers remain unavailable.
 - Direct and indexed instancing repeat native draws in instance order when the
   shader has no instance-dependent inputs. Nonzero first instance is ignored
   within this subset; general instancing is not advertised.

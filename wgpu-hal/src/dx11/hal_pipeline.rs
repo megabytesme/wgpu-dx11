@@ -136,7 +136,7 @@ pub struct RenderPipeline {
     pub(super) vertex: ID3D11VertexShader,
     pub(super) vertex_viewport: Option<ID3D11VertexShader>,
     pub(super) fragment: ID3D11PixelShader,
-    pub(super) input: ID3D11InputLayout,
+    pub(super) input: Option<ID3D11InputLayout>,
     pub(super) rasterizer: ID3D11RasterizerState,
     pub(super) blend: Option<ID3D11BlendState>,
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
@@ -146,8 +146,8 @@ pub struct RenderPipeline {
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
-    pub(super) vertex_stride: u32,
-    pub(super) vertex_extent: u32,
+    pub(super) vertex_layout: Option<(u32, u32)>,
+    pub(super) topology: wgt::PrimitiveTopology,
 }
 
 #[cfg(test)]
@@ -240,6 +240,332 @@ mod tests {
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
         Direct3D11::{ID3D11DepthStencilView, D3D11_VIEWPORT},
     };
+
+    #[test]
+    fn empty_vertex_input_pipeline_is_accepted() -> windows::core::Result<()> {
+        use crate::{CommandEncoder as _, Queue as _};
+        let adapters = enumerate_native_adapters()?;
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
+        let device = Device::new(native.clone());
+        let queue = super::super::Queue::new(native.clone());
+        let module = naga::front::wgsl::parse_str(
+            "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(-0.125, -0.125, 0.5, 1.0); } @vertex fn with_input(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); } @fragment fn fs_point() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+        ).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let shader = unsafe {
+            device
+                .create_shader_module(
+                    &crate::ShaderModuleDescriptor {
+                        label: None,
+                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                    },
+                    crate::ShaderInput::Naga(crate::NagaShader {
+                        module: Cow::Owned(module),
+                        info,
+                        debug_source: None,
+                    }),
+                )
+                .unwrap()
+        };
+        let layout = unsafe {
+            device
+                .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                    label: None,
+                    flags: crate::PipelineLayoutFlags::empty(),
+                    bind_group_layouts: &[],
+                    immediate_size: 0,
+                })
+                .unwrap()
+        };
+        let constants = naga::back::PipelineConstants::default();
+        let stage = |entry_point| crate::ProgrammableStage {
+            module: &shader,
+            entry_point,
+            constants: &constants,
+            zero_initialize_workgroup_memory: false,
+        };
+        let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+        let mut desc = crate::RenderPipelineDescriptor {
+            label: None,
+            layout: &layout,
+            vertex_processor: crate::VertexProcessor::Standard {
+                vertex_buffers: &[],
+                vertex_stage: stage("vs"),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment_stage: Some(stage("fs")),
+            color_targets: &targets,
+            multiview_mask: None,
+            cache: None,
+        };
+        let pipeline = unsafe { device.create_render_pipeline(&desc) };
+        assert!(
+            pipeline.is_ok(),
+            "zero-input vertex shader should not need a vertex buffer: {pipeline:?}"
+        );
+        let empty_triangle = pipeline.unwrap();
+        let all_none = [None, None];
+        desc.vertex_processor = crate::VertexProcessor::Standard {
+            vertex_buffers: &all_none,
+            vertex_stage: stage("vs"),
+        };
+        let all_none_pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+        desc.primitive.topology = wgt::PrimitiveTopology::PointList;
+        desc.fragment_stage = Some(stage("fs_point"));
+        let point_pipeline = unsafe { device.create_render_pipeline(&desc).unwrap() };
+        desc.fragment_stage = Some(stage("fs"));
+        desc.vertex_processor = crate::VertexProcessor::Standard {
+            vertex_buffers: &[],
+            vertex_stage: stage("with_input"),
+        };
+        assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
+        let attrs = [wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }];
+        let populated = Some(crate::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: &attrs,
+        });
+        let wrong_slot = [None, populated.clone()];
+        desc.vertex_processor = crate::VertexProcessor::Standard {
+            vertex_buffers: &wrong_slot,
+            vertex_stage: stage("with_input"),
+        };
+        assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
+        let one_buffer = [populated];
+        desc.vertex_processor = crate::VertexProcessor::Standard {
+            vertex_buffers: &one_buffer,
+            vertex_stage: stage("with_input"),
+        };
+        assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
+        desc.primitive.topology = wgt::PrimitiveTopology::TriangleList;
+        let triangle = unsafe { device.create_render_pipeline(&desc).unwrap() };
+        let extent = wgt::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        };
+        let target = unsafe {
+            device
+                .create_texture(&crate::TextureDescriptor {
+                    label: None,
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                    memory_flags: crate::MemoryFlags::empty(),
+                    view_formats: alloc::vec![],
+                })
+                .unwrap()
+        };
+        let view = unsafe {
+            device
+                .create_texture_view(
+                    &target,
+                    &crate::TextureViewDescriptor {
+                        label: None,
+                        format: wgt::TextureFormat::Rgba8Unorm,
+                        dimension: wgt::TextureViewDimension::D2,
+                        usage: wgt::TextureUses::COLOR_TARGET,
+                        range: wgt::ImageSubresourceRange::default(),
+                    },
+                )
+                .unwrap()
+        };
+        let vertices = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: 24,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let bytes: alloc::vec::Vec<_> = [-1f32, -1., 3., -1., -1., 3.]
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&vertices, 0, &bytes)?;
+        let index = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: 4,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&index, 0, &[0; 4])?;
+        let colors = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color::BLUE,
+        })];
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &colors,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let mut encoder = unsafe {
+            device
+                .create_command_encoder(&crate::CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                })
+                .unwrap()
+        };
+        unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&triangle);
+            encoder.draw(0, 3, 0, 1);
+            encoder.end_render_pass();
+            assert!(encoder.end_encoding().is_err());
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&point_pipeline);
+            encoder.set_index_buffer(
+                crate::BufferBinding::new_unchecked(&index, 0, None),
+                wgt::IndexFormat::Uint16,
+            );
+            encoder.draw_indexed(0, 1, 0, 0, 1);
+            encoder.end_render_pass();
+            assert!(encoder.end_encoding().is_err());
+        }
+        let point = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&point_pipeline);
+            encoder.draw(37, 1, 0, 1);
+            encoder.end_render_pass();
+            encoder.end_encoding().unwrap()
+        };
+        let point_boundary = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&point_pipeline);
+            encoder.draw(0, 65_536, 0, 1);
+            encoder.end_render_pass();
+            encoder.end_encoding().unwrap()
+        };
+        let degenerate = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&empty_triangle);
+            encoder.draw(0, 3, 0, 1);
+            encoder.end_render_pass();
+            encoder.end_encoding().unwrap()
+        };
+        let transition = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&point_pipeline);
+            encoder.draw(0, 1, 0, 1);
+            encoder.set_render_pipeline(&triangle);
+            encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertices, 0, None));
+            encoder.draw(0, 3, 0, 1);
+            encoder.set_render_pipeline(&point_pipeline);
+            encoder.draw(0, 1, 0, 1);
+            encoder.end_render_pass();
+            encoder.end_encoding().unwrap()
+        };
+        let fence = native.create_native_fence();
+        unsafe {
+            queue.submit(&[&point], &[], (&fence, 1)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            let expected = if index == 4 * 8 + 3 {
+                [0, 255, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            };
+            assert_eq!(pixel, expected, "zero-input point pixel {index}");
+        }
+        unsafe {
+            queue.submit(&[&point_boundary], &[], (&fence, 2)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 2, Some(core::time::Duration::from_secs(5)))?);
+        assert_eq!(native.read_rgba_texture(&target, 0, 0)?, pixels);
+        unsafe {
+            queue.submit(&[&degenerate], &[], (&fence, 3)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 3, Some(core::time::Duration::from_secs(5)))?);
+        assert!(native
+            .read_rgba_texture(&target, 0, 0)?
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 0, 255, 255]));
+        unsafe {
+            queue.submit(&[&transition], &[], (&fence, 4)).unwrap();
+        }
+        assert!(native.wait_native_fence(&fence, 4, Some(core::time::Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            let expected = if index == 4 * 8 + 3 {
+                [0, 255, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            assert_eq!(
+                pixel, expected,
+                "point/triangle/point transition pixel {index}"
+            );
+        }
+        std::println!("PASS: zero-input point and 65,536-point batch: one green and 63 blue pixels; zero-input triangle: 64 blue pixels; point/triangle/point transitions: one green and 63 red pixels");
+        unsafe {
+            encoder.reset_all([point, point_boundary, degenerate, transition].into_iter());
+            drop(encoder);
+            device.destroy_buffer(index);
+            device.destroy_buffer(vertices);
+            device.destroy_texture_view(view);
+            device.destroy_texture(target);
+            device.destroy_render_pipeline(triangle);
+            device.destroy_render_pipeline(point_pipeline);
+            device.destroy_render_pipeline(all_none_pipeline);
+            device.destroy_render_pipeline(empty_triangle);
+            device.destroy_pipeline_layout(layout);
+            device.destroy_shader_module(shader);
+        }
+        Ok(())
+    }
 
     #[test]
     fn hal_pipeline_draws_level_9_triangle() -> windows::core::Result<()> {
@@ -453,7 +779,7 @@ mod tests {
                 bottom: 8,
             }]));
             context.RSSetState(Some(&pipeline.rasterizer));
-            context.IASetInputLayout(Some(&pipeline.input));
+            context.IASetInputLayout(pipeline.input.as_ref());
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.IASetVertexBuffers(0, 1, Some(&raw_buffer), Some(&8), Some(&0));
             context.VSSetShader(Some(&pipeline.vertex), None);
@@ -705,7 +1031,7 @@ mod tests {
                 bottom: 8,
             }]));
             context.RSSetState(Some(&pipeline.rasterizer));
-            context.IASetInputLayout(Some(&pipeline.input));
+            context.IASetInputLayout(pipeline.input.as_ref());
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.IASetVertexBuffers(0, 1, Some(&raw_buffer), Some(&8), Some(&0));
             context.VSSetShader(Some(&pipeline.vertex), None);
@@ -804,9 +1130,28 @@ impl RenderPipeline {
                 .module
                 .validate_primitive_index(fragment.entry_point)?;
         }
-        let [Some(buffer)] = *vertex_buffers else {
-            return Err(invalid());
+        let buffer = match *vertex_buffers {
+            [Some(buffer)] => Some(buffer),
+            slots
+                if slots.len() <= crate::MAX_VERTEX_BUFFERS
+                    && slots.iter().all(Option::is_none) =>
+            {
+                None
+            }
+            _ => return Err(invalid()),
         };
+        if buffer.is_none() {
+            vertex_stage
+                .module
+                .validate_no_vertex_locations(vertex_stage.entry_point)?;
+        }
+        if !matches!(
+            desc.primitive.topology,
+            wgt::PrimitiveTopology::TriangleList | wgt::PrimitiveTopology::PointList
+        ) || (desc.primitive.topology == wgt::PrimitiveTopology::PointList && buffer.is_some())
+        {
+            return Err(invalid());
+        }
         let target = match desc.color_targets {
             [Some(target)] => Some(target),
             [] | [None] => None,
@@ -825,17 +1170,20 @@ impl RenderPipeline {
             || (wgt::PrimitiveState {
                 front_face: wgt::FrontFace::default(),
                 cull_mode: None,
+                topology: wgt::PrimitiveTopology::TriangleList,
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
             || desc.multisample != wgt::MultisampleState::default()
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
-            || buffer.array_stride == 0
-            || buffer.array_stride > 2048
-            || buffer.array_stride % 4 != 0
-            || buffer.step_mode != wgt::VertexStepMode::Vertex
-            || buffer.attributes.is_empty()
-            || buffer.attributes.len() > 16
+            || buffer.is_some_and(|buffer| {
+                buffer.array_stride == 0
+                    || buffer.array_stride > 2048
+                    || buffer.array_stride % 4 != 0
+                    || buffer.step_mode != wgt::VertexStepMode::Vertex
+                    || buffer.attributes.is_empty()
+                    || buffer.attributes.len() > 16
+            })
             || target.is_some_and(|target| {
                 !matches!(
                     target.format,
@@ -999,10 +1347,16 @@ impl RenderPipeline {
             )
             .map_err(depth_only_shader_error)?
         };
-        let mut input_desc = alloc::vec::Vec::with_capacity(buffer.attributes.len());
+        let mut input_desc =
+            alloc::vec::Vec::with_capacity(buffer.map_or(0, |buffer| buffer.attributes.len()));
         let mut vertex_extent = 0u32;
         let mut locations = 0u32;
-        for attribute in buffer.attributes {
+        for (layout, attribute) in buffer.into_iter().flat_map(|layout| {
+            layout
+                .attributes
+                .iter()
+                .map(move |attribute| (layout, attribute))
+        }) {
             let (format, size) = match attribute.format {
                 wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
                 wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
@@ -1014,7 +1368,7 @@ impl RenderPipeline {
             let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
             let end = offset.checked_add(size).ok_or_else(invalid)?;
             if offset % 4 != 0
-                || u64::from(end) > buffer.array_stride
+                || u64::from(end) > layout.array_stride
                 || attribute.shader_location >= 16
                 || locations & (1 << attribute.shader_location) != 0
             {
@@ -1079,10 +1433,15 @@ impl RenderPipeline {
                     Some(&mut fragment),
                 )
                 .map_err(failure)?;
-            owner
-                .raw_device()
-                .CreateInputLayout(&input_desc, &vertex_code, Some(&mut input))
-                .map_err(failure)?;
+            if buffer.is_some() {
+                owner
+                    .raw_device()
+                    .CreateInputLayout(&input_desc, &vertex_code, Some(&mut input))
+                    .map_err(failure)?;
+                if input.is_none() {
+                    return Err(invalid());
+                }
+            }
             owner
                 .raw_device()
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
@@ -1155,7 +1514,7 @@ impl RenderPipeline {
             vertex: vertex.ok_or_else(invalid)?,
             vertex_viewport: viewport_vertex,
             fragment: fragment.ok_or_else(invalid)?,
-            input: input.ok_or_else(invalid)?,
+            input,
             rasterizer: rasterizer.ok_or_else(invalid)?,
             blend,
             depth_state,
@@ -1165,8 +1524,8 @@ impl RenderPipeline {
             sampling_pairs: Arc::new(sampling_pairs),
             full_npot,
             required_uniform_sizes,
-            vertex_stride: buffer.array_stride as u32,
-            vertex_extent,
+            vertex_layout: buffer.map(|buffer| (buffer.array_stride as u32, vertex_extent)),
+            topology: desc.primitive.topology,
         })
     }
 }

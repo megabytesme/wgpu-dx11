@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 181 tests; older
+operations are safe. The latest combined strict suite passed 182 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -164,6 +164,9 @@ Resume by checking `git status`, `git log` and the latest progress entry.
 Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
 sound presentation synchronization design and core/HAL contract coverage while
 continuing verified FL9_1 increments.
+Zero-input pipelines and nonindexed point lists are supported privately; only
+the interior-point case has GPU readback coverage, and indexed points remain
+unavailable.
 Private Uint32 conversion uses ordered effective-index windows spanning at most
 65534 and explicitly rejects selected vertex-index shader inputs. It rebases
 the vertex buffer, gathers wider triangles with GPU copies, allocates scratch at

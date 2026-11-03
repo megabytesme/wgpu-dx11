@@ -43,6 +43,7 @@ struct RenderState {
     required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
+    topology: Option<wgt::PrimitiveTopology>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
     viewport_remap: bool,
     vertex_shaders: Option<(
@@ -737,6 +738,7 @@ impl crate::CommandEncoder for CommandEncoder {
             required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
             vertex: None,
             vertex_layout: None,
+            topology: None,
             index: None,
             viewport_remap: false,
             vertex_shaders: None,
@@ -786,7 +788,8 @@ impl crate::CommandEncoder for CommandEncoder {
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.full_npot = pipeline.full_npot;
         render.required_uniform_sizes = pipeline.required_uniform_sizes;
-        render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
+        render.vertex_layout = pipeline.vertex_layout;
+        render.topology = Some(pipeline.topology);
         render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
         let vertex = if render.viewport_remap {
             pipeline
@@ -801,6 +804,7 @@ impl crate::CommandEncoder for CommandEncoder {
             vertex,
             fragment: pipeline.fragment.clone(),
             input: pipeline.input.clone(),
+            topology: pipeline.topology,
             rasterizer: pipeline.rasterizer.clone(),
             blend: pipeline.blend.clone(),
             depth_state: pipeline.depth_state.clone(),
@@ -946,21 +950,30 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        let Some((buffer, offset, bytes)) = render.vertex.as_ref() else {
-            self.reject();
-            return;
-        };
-        let Some((stride, extent)) = render.vertex_layout else {
-            self.reject();
-            return;
-        };
-        let end = u64::from(first_vertex) + u64::from(vertex_count);
-        let required = if vertex_count == 0 {
-            Some(0)
+        let vertex = if let Some((stride, extent)) = render.vertex_layout {
+            let Some((buffer, offset, bytes)) = render.vertex.as_ref() else {
+                self.reject();
+                return;
+            };
+            let end = u64::from(first_vertex) + u64::from(vertex_count);
+            let required = if vertex_count == 0 {
+                Some(0)
+            } else {
+                (end - 1)
+                    .checked_mul(u64::from(stride))
+                    .and_then(|v| v.checked_add(u64::from(extent)))
+            };
+            if required.is_none_or(|required| required > *bytes) {
+                self.reject();
+                return;
+            }
+            Some((buffer.clone(), *offset, stride))
         } else {
-            (end - 1)
-                .checked_mul(u64::from(stride))
-                .and_then(|v| v.checked_add(u64::from(extent)))
+            None
+        };
+        let Some(topology) = render.topology else {
+            self.reject();
+            return;
         };
         if !render.pipeline
             || (render.viewport_remap
@@ -970,7 +983,6 @@ impl crate::CommandEncoder for CommandEncoder {
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || !render.resources_compatible(self.device.feature_level())
             || (vertex_count != 0 && first_vertex.checked_add(vertex_count - 1).is_none())
-            || required.is_none_or(|required| required > *bytes)
         {
             self.reject();
             return;
@@ -978,8 +990,6 @@ impl crate::CommandEncoder for CommandEncoder {
         if vertex_count == 0 || instance_count == 0 {
             return;
         }
-        let buffer = buffer.clone();
-        let offset = *offset;
         let Some(binding_commands) = render.binding_commands() else {
             self.reject();
             return;
@@ -987,21 +997,32 @@ impl crate::CommandEncoder for CommandEncoder {
         for command in binding_commands {
             self.record(command);
         }
-        self.record(NativeCommand::SetVertex {
-            buffer,
-            offset,
-            stride,
-        });
+        let zero_input = vertex.is_none();
+        if let Some((buffer, offset, stride)) = vertex {
+            self.record(NativeCommand::SetVertex {
+                buffer,
+                offset,
+                stride,
+            });
+        }
         // Feature level 9 limits the number of primitives per Draw. Split on
         // triangle boundaries so a large HAL draw retains its topology.
-        let max_vertices =
-            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
-                .max_triangle_vertices_per_draw();
+        let hardware =
+            super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+        let max_vertices = match topology {
+            wgt::PrimitiveTopology::TriangleList => hardware.max_triangle_vertices_per_draw(),
+            wgt::PrimitiveTopology::PointList => hardware.max_primitives_per_draw,
+            _ => {
+                self.reject();
+                return;
+            }
+        };
         self.record(NativeCommand::Draw {
             first: first_vertex,
             count: vertex_count,
             instances: instance_count,
             max_vertices,
+            zero_input,
         });
     }
 
@@ -1026,6 +1047,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         if !render.pipeline
+            || render.topology != Some(wgt::PrimitiveTopology::TriangleList)
             || (render.viewport_remap
                 && render
                     .vertex_shaders

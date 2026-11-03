@@ -588,3 +588,15 @@ changed to invalid ranges/alignment. The rerun passed 181 tests, two filtered;
 older hardware tests can skip internally. Independent review found no concrete
 defect in the translation or instance semantics. The public indexed fixture
 passed again, and HAL Clippy passed with ten existing warnings.
+
+Zero-input vertex pipelines and nonindexed zero-input point lists are now
+supported privately. The baseline pipeline test failed before the change. On
+the forced-FL9_1 RTX, an interior point produced one green and 63 blue pixels;
+point-to-triangle-to-point transitions produced one green and 63 red pixels.
+A 65,536-point GPU call was accepted, and CPU checks verified its 65,535/1
+batch split and instance order. Zero-input native batches use start vertex zero
+because shader-visible vertex IDs are rejected. Indexed points and point
+pipelines with vertex buffers remain unsupported. The private suite passed 182
+tests before the strengthened point tests; the focused GPU and CPU tests passed
+afterward. The public indexed fixture and HAL Clippy passed, with ten existing
+warnings. Historical point raster and driver behavior remain unverified.

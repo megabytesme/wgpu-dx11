@@ -513,6 +513,36 @@ fn entry_has_builtin(
 }
 
 impl ShaderModule {
+    pub(super) fn validate_no_vertex_locations(
+        &self,
+        entry: &str,
+    ) -> Result<(), crate::PipelineError> {
+        let entry = self
+            .shader
+            .module
+            .entry_points
+            .iter()
+            .find(|ep| ep.stage == naga::ShaderStage::Vertex && ep.name == entry)
+            .ok_or(crate::PipelineError::EntryPoint(naga::ShaderStage::Vertex))?;
+        let location = |binding: Option<&naga::Binding>| {
+            matches!(binding, Some(naga::Binding::Location { .. }))
+        };
+        if entry.function.arguments.iter().any(|arg| {
+            location(arg.binding.as_ref())
+                || match &self.shader.module.types[arg.ty].inner {
+                    naga::TypeInner::Struct { members, .. } => members
+                        .iter()
+                        .any(|member| location(member.binding.as_ref())),
+                    _ => false,
+                }
+        }) {
+            return Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::VERTEX,
+                "D3D11 vertex inputs require a vertex buffer".into(),
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn validate_primitive_index(&self, entry: &str) -> Result<(), crate::PipelineError> {
         match entry_has_builtin(
             &self.shader.module,

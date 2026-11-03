@@ -15,7 +15,7 @@ use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
-            Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+            Direct3D::{D3D_PRIMITIVE_TOPOLOGY_POINTLIST, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
             Direct3D11::{
                 ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
                 ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
@@ -79,7 +79,8 @@ pub(super) enum NativeCommand {
     SetPipeline {
         vertex: ID3D11VertexShader,
         fragment: ID3D11PixelShader,
-        input: ID3D11InputLayout,
+        input: Option<ID3D11InputLayout>,
+        topology: wgt::PrimitiveTopology,
         rasterizer: ID3D11RasterizerState,
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
         depth_state: Option<ID3D11DepthStencilState>,
@@ -115,6 +116,7 @@ pub(super) enum NativeCommand {
         count: u32,
         instances: u32,
         max_vertices: u32,
+        zero_input: bool,
     },
     DrawIndexed {
         binding: Arc<IndexBinding>,
@@ -160,6 +162,14 @@ pub(super) fn draw_batches(
         }
     }
     Ok(())
+}
+
+fn draw_start_vertex(first: u32, zero_input: bool) -> u32 {
+    if zero_input {
+        0
+    } else {
+        first
+    }
 }
 
 /// Owned commands retain their D3D11 resources until the command buffer drops.
@@ -319,6 +329,7 @@ impl CommandBuffer {
                         vertex,
                         fragment,
                         input,
+                        topology,
                         rasterizer,
                         blend,
                         depth_state,
@@ -326,8 +337,14 @@ impl CommandBuffer {
                         context.RSSetState(Some(rasterizer));
                         context.OMSetBlendState(blend.as_ref(), None, u32::MAX);
                         context.OMSetDepthStencilState(depth_state.as_ref(), 0);
-                        context.IASetInputLayout(Some(input));
-                        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        context.IASetInputLayout(input.as_ref());
+                        context.IASetPrimitiveTopology(match topology {
+                            wgt::PrimitiveTopology::PointList => D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
+                            wgt::PrimitiveTopology::TriangleList => {
+                                D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+                            }
+                            _ => return Err(Error::from_hresult(E_INVALIDARG)),
+                        });
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
                     }
@@ -375,9 +392,10 @@ impl CommandBuffer {
                         count,
                         instances,
                         max_vertices,
+                        zero_input,
                     } => {
                         draw_batches(*first, *count, *instances, *max_vertices, |first, count| {
-                            context.Draw(count, first);
+                            context.Draw(count, draw_start_vertex(first, *zero_input));
                         })?;
                     }
                     NativeCommand::DrawIndexed {
@@ -487,6 +505,37 @@ mod tests {
         assert!(draw_batches(u32::MAX, 2, 1, 6, |_, _| {}).is_err());
         assert!(draw_batches(0, 3, 1, 0, |_, _| {}).is_err());
         assert!(draw_batches(0, 3, 1, 4, |_, _| {}).is_err());
+    }
+
+    #[test]
+    fn point_batches_preserve_instances_and_zero_input_starts() {
+        let mut batches = Vec::new();
+        draw_batches(0, 65_536, 1, 65_535, |first, count| {
+            batches.push((first, count))
+        })
+        .unwrap();
+        assert_eq!(batches, [(0, 65_535), (65_535, 1)]);
+        batches.clear();
+        draw_batches(0, 65_536, 2, 65_535, |first, count| {
+            batches.push((first, count))
+        })
+        .unwrap();
+        assert_eq!(
+            batches,
+            [(0, 65_535), (65_535, 1), (0, 65_535), (65_535, 1)]
+        );
+        let zero_starts: Vec<_> = batches
+            .iter()
+            .map(|&(first, _)| draw_start_vertex(first, true))
+            .collect();
+        assert_eq!(zero_starts, [0, 0, 0, 0]);
+        let attribute_starts: Vec<_> = batches
+            .iter()
+            .map(|&(first, _)| draw_start_vertex(first, false))
+            .collect();
+        assert_eq!(attribute_starts, [0, 65_535, 0, 65_535]);
+        assert_eq!(draw_start_vertex(37, true), 0);
+        assert_eq!(draw_start_vertex(37, false), 37);
     }
 
     #[test]
