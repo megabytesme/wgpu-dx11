@@ -1788,3 +1788,10 @@ the fixture isolation or result assertions. Checkpoint `e79428c50` records this
 core-to-HAL coverage. Next, implement and test indexed LineList semantics
 without assuming indexed strip restart behavior; public D3D11 exposure remains
 disabled.
+
+The core-fixture change was independently reviewed and committed as
+`e79428c50` (`dx11: verify FL9_1 line topologies through core fixture`). The
+strict focused command and the complete fixture-enabled core library suite both
+ran with `WGPU_DX11_REQUIRE_HARDWARE=1`; results were respectively 1/1 and
+70/70. Core Clippy passed with no warnings. The fixture continues to check that
+ordinary D3D11 adapter enumeration returns no adapters.

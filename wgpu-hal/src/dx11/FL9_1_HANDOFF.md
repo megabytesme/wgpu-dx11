@@ -453,8 +453,10 @@ and 12 for LineStrip, with the rest of the target remaining clear blue. The
 fixture-enabled core library suite passed 70/70 tests and core Clippy passed.
 The previous private HAL line-topology implementation remains checkpointed as
 `3db26eed3` and had passed the strict private suite and targeted hardware tests.
-Next assess indexed LineList conversion and batching. Indexed strips remain
-separate pending primitive-restart and connectivity analysis.
+The fixture change was independently reviewed, with no isolation or correctness
+issue identified. Next implement indexed LineList conversion and batching.
+Indexed strips remain separate pending primitive-restart and connectivity
+analysis.
 
 ## Previous checkpoint — non-indexed line topologies
 

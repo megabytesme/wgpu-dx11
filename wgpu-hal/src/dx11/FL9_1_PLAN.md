@@ -25,8 +25,9 @@ below is met. This plan does not claim WebGPU conformance.
    bounded private FL9_1 implementation with strict GPU readback and the
    controlled core fixture verifies both through core command recording and
    readback. Indexed line lists and indexed line-strip semantics remain open;
-   assess a correctness-first indexed line-list path next. Indexed strips need
-   separate primitive-restart and batch-connectivity analysis.
+   implement and verify indexed line-list rebasing while preserving line pairs.
+   Indexed strips need separate primitive-restart and batch-connectivity
+   analysis.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport
