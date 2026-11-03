@@ -396,8 +396,13 @@ passed with ten existing warnings. Windows paging-file error 1455 prevented a
 DX12 regression check; historical FL9 hardware and public D3D11 exposure remain
 unverified.
 
-Latest checkpoint: `5ea3045f9` (`dx11: reject stencil writes on read-only
-attachments`). Continue by auditing core-recordable render-pass usages,
+The read-only regression now also rejects a depth-Never pipeline whose requested
+stencil depth-fail Replace is remapped to a native pass write. The focused strict
+GPU test passed with the preserved 32 green/32 blue result. This validates the
+guard against the effective native operations, not only the input descriptor.
+
+Latest checkpoint: `f2e746d83` (`dx11: test remapped stencil writes on
+read-only depth`). Continue by auditing core-recordable render-pass usages,
 especially query and resolve combinations. Keep public D3D11 adapter and HWND
 surface exposure disabled until broader truthful capabilities and presentation
 reentrancy are resolved.

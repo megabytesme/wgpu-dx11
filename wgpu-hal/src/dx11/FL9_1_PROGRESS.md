@@ -1639,3 +1639,12 @@ implemented without broad capability claims. HWND public presentation and
 ordinary D3D11 adapter exposure remain blocked by reentrancy and capability
 gaps.
 Checkpoint: `5ea3045f9` (`dx11: reject stencil writes on read-only attachments`).
+
+The read-only regression now also covers a pipeline whose depth comparison is
+Never and whose requested stencil depth-fail operation is Replace. The backend
+remaps that operation to native stencil pass; the read-only guard rejects it
+based on the effective descriptor. The strict forced-FL9_1 GPU test passed
+again, while its preserved-depth image remained 32 green/32 blue. Clippy passed
+with the same ten existing warnings; `rustfmt --edition 2021 --check` and
+`git diff --check` passed. No production behavior changed in this follow-up.
+Checkpoint: `f2e746d83` (`dx11: test remapped stencil writes on read-only depth`).
