@@ -306,3 +306,16 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl9
 
 The first test is synthetic. The second checks native descriptors and a
 copy/readback on a hardware device explicitly created at FL9_1.
+
+### Controlled core integration
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_copy_readback_on_hardware -- --nocapture
+```
+
+The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
+device into core, without enabling ordinary adapter enumeration. The test uses
+only buffer operations: core queue upload, GPU copy, submission, fence wait,
+mapped readback and explicit teardown. It checks all 64 bytes. The test's
+restricted numeric limits do not constitute a safe general adapter contract.

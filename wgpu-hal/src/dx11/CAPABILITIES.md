@@ -143,6 +143,13 @@ The backend does not expose a public adapter. In particular, the wgpu downlevel
 anisotropy flag does not describe this private maximum of 2 by itself; public
 validation or emulation must be resolved before any such capability is exposed.
 
+The nondefault `dx11-test-fixture` feature provides an unsafe, non-enumerated
+adapter solely for a controlled core integration test. Normal `Adapter::open`
+still fails, and the fixture reports no format or surface capabilities. Its
+test-only limits do not express the entire private HAL contract and are not a
+general adapter report. The fixture has verified core buffer upload, GPU copy,
+fence completion and mapped readback, not public graphics or presentation.
+
 ## Logical binding translation
 
 The pipeline assigns textures and filtering samplers independently in ascending

@@ -129,8 +129,10 @@ portable-atomic = ["dep:portable-atomic", "wgpu-hal/portable-atomic"]
 # Look to wgpu-hal's Cargo.toml for explaination how these features and the wgpu-core
 # platform crates collude to provide platform-specific behavior.
 
-## Experimental DX11 identity and adapter diagnostics; no HAL renderer yet.
+## Experimental DX11 backend; ordinary adapter enumeration remains disabled.
 dx11 = ["wgpu-core-deps-windows-linux-android/dx11"]
+## Unsafe, narrowly scoped D3D11 integration fixture; not a public adapter.
+dx11-test-fixture = ["dx11", "wgpu-hal/dx11-test-fixture"]
 ## DX12 backend
 dx12 = ["wgpu-core-deps-windows-linux-android/dx12"]
 ## Metal backend

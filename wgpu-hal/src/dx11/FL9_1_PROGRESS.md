@@ -378,3 +378,18 @@ patterned texture also distinguishes clamp from repeat; its 64 pixels matched
 [16,56,48,255] on the forced-FL9_1 device.
 Targeted Clippy passed with ten existing warnings after fixing a new style
 warning, and the core zero-adapter test passed.
+Cross-group sampled resources were checkpointed as `47e8488ef`.
+
+A nondefault, unsafe `dx11-test-fixture` creates an owner-matched device and
+queue for a closed core test without enabling ordinary adapter enumeration or
+normal adapter opening. On the RTX 3090 Ti at requested and actual FL9_1,
+`cargo test --offline -p wgpu-core --lib --no-default-features --features
+dx11-test-fixture,std fl91_core_buffer_copy_readback_on_hardware -- --nocapture`
+passed: core initialized the device, queued a buffer upload, submitted a GPU
+copy, waited for completion and mapped 64/64 expected bytes. The fixture reports
+no texture or surface capabilities and its intentionally restricted limits are
+not a general adapter contract. Core's full fixture-enabled library suite
+passed 67 tests; the feature-off zero-adapter test passed. Targeted fixture-on
+core Clippy and feature-off HAL build passed. Independent review prompted
+explicit command encoder and command-buffer teardown before device removal;
+the focused hardware test passed again after that change.

@@ -1511,3 +1511,7 @@ mod dx11_scaffold_tests {
         assert!(instance.enumerate_adapters(Backends::DX11, false).is_empty());
     }
 }
+
+#[cfg(all(test, windows, feature = "dx11-test-fixture"))]
+#[path = "dx11_fixture_tests.rs"]
+mod dx11_fixture_tests;

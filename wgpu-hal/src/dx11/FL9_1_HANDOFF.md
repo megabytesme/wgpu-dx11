@@ -51,13 +51,16 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `f8bd5183a770dd7e81568516f6a3e3411a8de7d8` | Triangle face culling and winding |
 | `f4df16d8b` | Pipeline-wide register planning |
 | `a914c9a1f95f7806069051deef55630b9a8244f5` | Private multi-group uniform bindings |
+| `47e8488ef19be593b8d4e899a567f2c302d73861` | Private cross-group sampled resources |
 
 ## What is and is not usable
 
 No operation currently executes through a public D3D11 wgpu adapter: normal
-adapter enumeration returns zero and the HAL adapter type is uninhabited. The
-private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders, sampled
-RGBA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
+adapter enumeration returns zero and the ordinary HAL adapter is uninhabited. The
+nondefault unsafe test fixture makes it possible to inject a device into core
+for a closed buffer-only test; it is not a general adapter or public example.
+The private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders,
+sampled RGBA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
 triangle rendering with front/back culling, D24S8 Always/LessEqual depth
 testing and channel masks.
 This is not a general capability report or WebGPU conformance claim. The
@@ -89,9 +92,9 @@ accepts other layouts, resource shapes and baseline query operations outside
 the private subset. A safe public backend needs implementations, sound
 fallbacks or targeted core validation for each such case. A contained core
 test could eventually use the existing unsafe HAL adapter/device injection
-APIs with an owner-matched test-only adapter, but that proof would not by
-itself make general adapter exposure safe. The existing Dx11 unreachable in
-core's shader path is specifically in unsafe shader passthrough, not normal
+APIs with an owner-matched test-only adapter. Such a fixture now proves a
+buffer round trip; it does not make general adapter exposure safe. The existing
+Dx11 unreachable in core's shader path is specifically in unsafe passthrough, not normal
 validated WGSL; its reachability still needs an audit before exposure.
 
 ## Reproduction and latest evidence
@@ -106,6 +109,7 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 dx1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_test_preserves_near_geometry_and_loads_depth -- --nocapture
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
 cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --features dx11
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_copy_readback_on_hardware -- --nocapture
 ```
 
 The strict private suite most recently passed 168 tests with two filtered;
@@ -120,6 +124,9 @@ transitions and feedback rejection have also been exercised; see the progress
 log and `git status` for checkpoint status. The focused hidden HWND test read
 BGRA [0,0,255,255] and
 reported successful present and recreation. Core's zero-adapter test passed;
+the fixture-only core GPU upload/copy/map test matched 64/64 bytes and the
+fixture-enabled core library suite passed 67 tests. Ordinary enumeration and
+normal adapter opening remain disabled. The fixture-on core Clippy check passed.
 targeted Clippy completed with ten existing warnings. Earlier work also ran
 Naga, core, public Noop validation and targeted DX12 regressions as recorded
 in FL9_1_PROGRESS.md. No public D3D11 example or visual display test ran.
