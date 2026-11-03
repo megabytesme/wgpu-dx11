@@ -40,9 +40,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   unavailable. General instancing is not advertised.
 - Restricted indexed draws support signed base vertices and validate GPU index
   contents at replay. Uint32 triangle lists convert to ordered native 16-bit
-  windows; out-of-bounds vertex fetches discard the whole draw, and a single
-  otherwise-valid triangle spanning over 65534 indices fails replay. Staging
-  and scratch allocation can stall the CPU; this is not a full public draw contract.
+  windows, with wide triangles gathered through GPU vertex-buffer copies;
+  out-of-bounds vertex fetches discard the whole draw. Staging and scratch
+  allocation can stall the CPU; this is not a full public draw contract.
 - An original two-texture overlay shader passes checked FL9_1 GPU readback
   with alpha and inversion blend states; its surface diagnostic also passed
   a strict x64 UWP FL9_1 run.
@@ -62,8 +62,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Complete indexed and instanced rendering, remaining depth/stencil paths and other
   operations needed by many applications. On 9_1 the native index format is
   restricted to 16-bit and index values to 65,534; combined vertex/index bindings
-  on 9_1/9_2 need emulation. Valid draws beyond the native index limits still
-  need emulation for full wgpu semantics.
+  on 9_1/9_2 need emulation. Additional topologies and shader-visible IDs still
+  need implementation or validation for full wgpu semantics.
 - Feature level 9_1 has no native compute shaders; applications relying on
   compute or storage need alternatives. The opt-in Naga texel-load/dimensions
   experiments remain isolated proofs and are not enabled in the HAL.

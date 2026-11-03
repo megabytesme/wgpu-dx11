@@ -2190,20 +2190,157 @@ mod tests {
             .chunks_exact(4)
             .all(|pixel| pixel == [255, 0, 0, 255]));
         std::println!("PASS: high effective u32 indices, later direct and u16 draws rendered 64/64 red pixels");
-        let over_data: Vec<u8> = [0u32, 65535, 0]
+        let gather_indices: Vec<u8> = [1u32, 2, 65536]
             .into_iter()
             .flat_map(u32::to_ne_bytes)
             .collect();
-        native.write_byte_buffer(&near_upload, 0, &over_data)?;
-        let u32_over_limit = record_near(&mut encoder, 0);
-        unsafe {
-            assert!(crate::Queue::submit(&queue, &[&u32_over_limit], &[], (&fence, 7)).is_err())
+        native.write_byte_buffer(&near_upload, 0, &gather_indices)?;
+        let gather_length = 65535 * 16 + 8;
+        let gather_vertices = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 8 + gather_length,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
         };
+        let gather_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 24,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        native.write_byte_buffer(&gather_upload, 0, &near_vertex_data)?;
+        let gather_buffers = [Some(VertexBufferLayout {
+            array_stride: 16,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: &attributes,
+        })];
+        let gather_pipeline = unsafe {
+            crate::Device::create_render_pipeline(
+                &device,
+                &RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: VertexProcessor::Standard {
+                        vertex_buffers: &gather_buffers,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                },
+            )
+            .unwrap()
+        };
+        let mut gather_commands = Vec::new();
+        for instances in 0..=2 {
+            gather_commands.push(unsafe {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                crate::CommandEncoder::copy_buffer_to_buffer(
+                    &mut encoder,
+                    &near_upload,
+                    &u32_indices,
+                    core::iter::once(BufferCopy {
+                        src_offset: 0,
+                        dst_offset: 8,
+                        size: NonZeroU64::new(12).unwrap(),
+                    }),
+                );
+                crate::CommandEncoder::copy_buffer_to_buffer(
+                    &mut encoder,
+                    &gather_upload,
+                    &gather_vertices,
+                    [
+                        BufferCopy {
+                            src_offset: 0,
+                            dst_offset: 8,
+                            size: NonZeroU64::new(8).unwrap(),
+                        },
+                        BufferCopy {
+                            src_offset: 8,
+                            dst_offset: 24,
+                            size: NonZeroU64::new(8).unwrap(),
+                        },
+                        BufferCopy {
+                            src_offset: 16,
+                            dst_offset: 8 + 65535 * 16,
+                            size: NonZeroU64::new(8).unwrap(),
+                        },
+                    ]
+                    .into_iter(),
+                );
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, &gather_pipeline);
+                crate::CommandEncoder::set_vertex_buffer(
+                    &mut encoder,
+                    0,
+                    BufferBinding::new_unchecked(
+                        &gather_vertices,
+                        8,
+                        NonZeroU64::new(gather_length),
+                    ),
+                );
+                crate::CommandEncoder::set_index_buffer(
+                    &mut encoder,
+                    BufferBinding::new_unchecked(&u32_indices, 4, None),
+                    wgt::IndexFormat::Uint32,
+                );
+                crate::CommandEncoder::draw_indexed(&mut encoder, 1, 3, -1, 0, instances);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
+                crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+            });
+        }
+        let gather_fence = native.create_native_fence();
+        unsafe {
+            crate::Device::destroy_buffer(&device, gather_vertices);
+            crate::Device::destroy_buffer(&device, gather_upload);
+            crate::Device::destroy_render_pipeline(&device, gather_pipeline);
+        }
+        for (instances, command) in gather_commands.iter().enumerate() {
+            unsafe {
+                crate::Queue::submit(
+                    &queue,
+                    &[command],
+                    &[],
+                    (&gather_fence, instances as u64 + 1),
+                )
+                .unwrap();
+            }
+            assert!(native.wait_native_fence(
+                &gather_fence,
+                instances as u64 + 1,
+                Some(Duration::from_secs(5))
+            )?);
+            let expected = if instances == 0 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            assert!(native
+                .read_rgba_texture(&texture, 0, 0)?
+                .chunks_exact(4)
+                .all(|pixel| pixel == expected));
+        }
         unsafe {
             crate::Device::destroy_buffer(&device, near_vertices);
             crate::Device::destroy_buffer(&device, near_upload);
         }
-        std::println!("PASS: u32 index window spanning 65535 rejected");
+        std::println!("PASS: sparse u32 triangle gathered GPU-written short-stride vertices for 0/1/2 instances");
         let u32_discarded = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::copy_buffer_to_buffer(
@@ -2541,7 +2678,7 @@ mod tests {
             );
         }
         std::println!("PASS: ordered low/high/low u32 windows and subsequent direct draw");
-        let atomic_indices: Vec<u8> = [0u32, 1, 2, 0, 65535, 1]
+        let atomic_indices: Vec<u8> = [0u32, 1, 2, 0, 65538, 1]
             .into_iter()
             .flat_map(u32::to_ne_bytes)
             .collect();
@@ -2575,8 +2712,7 @@ mod tests {
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
         };
         unsafe {
-            assert!(crate::Queue::submit(&queue, &[&atomic_commands], &[], (&fence, 10)).is_err());
-            crate::Queue::submit(&queue, &[], &[], (&fence, 10)).unwrap();
+            crate::Queue::submit(&queue, &[&atomic_commands], &[], (&fence, 10)).unwrap();
         }
         assert!(native.wait_native_fence(&fence, 10, Some(Duration::from_secs(5)))?);
         let atomic_pixels = native.read_rgba_texture(&texture, 0, 0)?;
@@ -2584,9 +2720,9 @@ mod tests {
             atomic_pixels
                 .chunks_exact(4)
                 .all(|pixel| pixel == [0, 0, 0, 255]),
-            "late unsupported triangle drew an earlier window: {atomic_pixels:?}"
+            "late out-of-bounds triangle drew an earlier window: {atomic_pixels:?}"
         );
-        std::println!("PASS: late unsupported triangle rejected before any window drew");
+        std::println!("PASS: late out-of-bounds triangle discarded before any window drew");
         let mut put_instance_triangle = |first: usize, color: [u8; 4]| {
             for (i, point) in [[-1f32, -1.], [3., -1.], [-1., 3.]].into_iter().enumerate() {
                 let offset = 8 + (first + i) * 12;
@@ -2661,15 +2797,40 @@ mod tests {
         };
         native.write_byte_buffer(&short_upload, 0, &short_indices)?;
         native.write_byte_buffer(&order_upload, 0, &index_data)?;
+        let gather_order_upload = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &BufferDescriptor {
+                    label: None,
+                    size: 36,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let gather_order_data: Vec<u8> = [0u32, 1, 2, 3, 65536, 5, 3, 4, 5]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&gather_order_upload, 0, &gather_order_data)?;
         let mut instance_commands = Vec::new();
-        for (format, source, target, count, size) in [
-            (wgt::IndexFormat::Uint16, &short_upload, &short_buffer, 3, 8),
+        for (format, source, target, count, size, gather) in [
+            (
+                wgt::IndexFormat::Uint16,
+                &short_upload,
+                &short_buffer,
+                3,
+                8,
+                false,
+            ),
             (
                 wgt::IndexFormat::Uint16,
                 &short_upload,
                 &short_buffer,
                 196608,
                 short_size,
+                false,
             ),
             (
                 wgt::IndexFormat::Uint32,
@@ -2677,6 +2838,15 @@ mod tests {
                 &order_indices,
                 9,
                 36,
+                false,
+            ),
+            (
+                wgt::IndexFormat::Uint32,
+                &gather_order_upload,
+                &order_indices,
+                9,
+                36,
+                true,
             ),
         ] {
             for instances in 0..=2 {
@@ -2723,13 +2893,15 @@ mod tests {
                 };
                 assert!(native.wait_native_fence(&fence, value, Some(Duration::from_secs(5)))?);
                 let pixels = native.read_rgba_texture(&texture, 0, 0)?;
-                let expected: [u8; 4] = match (format, count, instances) {
-                    (_, _, 0) => [0, 0, 0, 255],
-                    (wgt::IndexFormat::Uint16, 3, 1) => [128, 0, 0, 255],
-                    (wgt::IndexFormat::Uint16, 3, _) => [192, 0, 0, 255],
-                    (wgt::IndexFormat::Uint16, _, _) => [127, 0, 128, 255],
-                    (wgt::IndexFormat::Uint32, _, 1) => [32, 64, 128, 255],
-                    (wgt::IndexFormat::Uint32, _, _) => [36, 72, 144, 255],
+                let expected: [u8; 4] = match (format, count, instances, gather) {
+                    (_, _, 0, _) => [0, 0, 0, 255],
+                    (wgt::IndexFormat::Uint16, 3, 1, _) => [128, 0, 0, 255],
+                    (wgt::IndexFormat::Uint16, 3, _, _) => [192, 0, 0, 255],
+                    (wgt::IndexFormat::Uint16, _, _, _) => [127, 0, 128, 255],
+                    (wgt::IndexFormat::Uint32, _, 1, false) => [32, 64, 128, 255],
+                    (wgt::IndexFormat::Uint32, _, _, false) => [36, 72, 144, 255],
+                    (wgt::IndexFormat::Uint32, _, 1, true) => [32, 18, 174, 255],
+                    (wgt::IndexFormat::Uint32, _, _, true) => [36, 20, 196, 255],
                 };
                 let pixel = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
                 assert!(
@@ -2746,6 +2918,7 @@ mod tests {
         unsafe {
             crate::Device::destroy_buffer(&device, short_buffer);
             crate::Device::destroy_buffer(&device, short_upload);
+            crate::Device::destroy_buffer(&device, gather_order_upload);
             crate::Device::destroy_render_pipeline(&device, instance_pipeline);
         }
         unsafe {
@@ -2766,13 +2939,13 @@ mod tests {
                     u32_near_limit,
                     u32_wide_base,
                     high_then_other_draws,
-                    u32_over_limit,
                     u32_discarded,
                     discarded_draw,
                     order_commands,
                     atomic_commands,
                 ]
                 .into_iter()
+                .chain(gather_commands)
                 .chain(instance_commands),
             );
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();

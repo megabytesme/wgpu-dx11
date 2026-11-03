@@ -551,3 +551,15 @@ identified that a saturating u16 case alone could not prove the second instance
 executed, so an additional small translucent u16 case was added and passed.
 HAL Clippy passed with ten existing warnings after removing a new argument-count
 warning; the focused GPU test passed again after that change.
+
+The private u32 path now gathers vertices for individual triangles spanning
+more than 65534 effective indices. All draw bounds and scratch allocations are
+preflighted, then GPU buffer copies gather only each validated attribute extent
+into zero-initialized vertex scratch. Ordered window/gather segments replay in
+instance order. On the forced-FL9_1 RTX, strict readback passed for GPU-written
+indices and vertices, a negative base, nonzero binding offset, a final vertex
+without trailing stride padding, 0/1/2 instances, mixed segment ordering and
+late OOB discard. The private suite passed 178 tests, two filtered, and the
+public indexed fixture passed. An independent review found no concrete defect;
+historical-driver copy behavior remains unverified and each gathered triangle
+currently requires a scratch allocation and three GPU copies.

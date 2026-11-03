@@ -170,8 +170,9 @@ sound presentation synchronization design and core/HAL contract coverage while
 continuing verified FL9_1 increments.
 Private Uint32 conversion uses ordered effective-index windows spanning at most
 65534 and explicitly rejects selected vertex-index shader inputs. It rebases
-the vertex buffer, allocates scratch at replay, and may stall for index staging;
-individual wider triangles and historical-driver high-offset verification remain.
+the vertex buffer, gathers wider triangles with GPU copies, allocates scratch at
+replay, and may stall for index staging. Historical-driver high-offset and
+buffer-copy behavior remains unverified.
 Restricted direct and indexed instancing repeat ordered native draws for
 shaders without instance-dependent inputs. Instance-index shaders and nonzero
 first instance remain unsupported.
