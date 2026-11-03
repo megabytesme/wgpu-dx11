@@ -494,7 +494,7 @@ initialization and transfer tests also skip failed format queries in normal mode
 and fail in strict mode; the core fixture propagates query errors as failures in
 either mode.
 
-These tests do not exercise sampled or attachment mip views. FL9 shader-resource
+These tests do not exercise sampled or attachment mip views. Native FL9 shader-resource
 views must include the smallest resource mip; NPOT mip chains, self-copies and
 general mip sampling remain unsupported. Historical FL9 GPU behavior is
 unverified.
@@ -515,8 +515,8 @@ transition retained sampled textures, views, groups and samplers after the calle
 destroyed them before submission, and readback matched 32 green and 32 blue
 pixels. The controlled core fixture sampled the blue mip of a
 2x1 texture and verified all 64 output pixels. Supported chains have one layer,
-POT dimensions, the restricted sampled usage combinations, a suffix SRV that
-includes the resource's last mip, and positive format support. Previously
+POT dimensions, the restricted sampled usage combinations and positive format
+support. Native suffix SRVs include the resource's last mip. Previously
 verified results include suffix views for both formats. The controlled core
 `SampledMipSuffix` case produced 64 blue pixels, verifying view-relative LOD.
 A separate pair of core cases used `TEXTURE_BINDING | COPY_DST` without
@@ -525,9 +525,36 @@ produced 64 transparent-zero pixels. These results check sampling via a separate
 render target; the SRV-only native texture cannot be directly read back.
 A sampler whose minimum LOD was normalized requires
 a single mip; when a finite maximum was raised, a used multi-mip view requires
-the original maximum to reach the last mip and anisotropy 1. Non-suffix sampled
-views and NPOT mip chains remain unsupported;
+the original maximum to reach the last mip and anisotropy 1. NPOT mip chains
+remain unsupported;
 historical FL9 GPU behavior is unverified.
+
+### Non-suffix sampled mip views
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_nonsuffix_sampled_views_track_source_contents -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The strict RTX 3090 Ti run at requested and actual FL9_1 passed 16 GPU cases,
+eight each for RGBA8 and BGRA8, with 64 checked pixels per case and no skips.
+The cases exercise view-relative levels, high-LOD clamping to the selected range, two
+simultaneous clones, native suffix and clone transitions, source updates after
+group creation and between submissions, and retained resources after caller
+destruction. A recorded buffer-to-texture upload followed by an indexed draw in
+the same submission produced 64 blue pixels per format after the upload and
+index buffers were destroyed before submission. A feedback test rejects sampling
+the original texture during its attachment pass. The controlled core fixture checked 64 yellow pixels after a
+source update. The source needs no logical `COPY_SRC` usage.
+
+Non-suffix `RESOURCE` views use a GPU clone refreshed by copying the selected
+source mips on each draw; the per-draw copies and additional allocation have a
+performance cost. The original resource is retained for alias checks. Native
+suffix views do not need this clone. Format prerequisites are queried; missing
+support skips the applicable case in normal mode and fails strict mode.
+Historical drivers remain unverified and ordinary public enumeration remains
+disabled.
 
 ### Individual color-attachment mip views
 
@@ -554,11 +581,12 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl9
 The strict RTX FL9_1 run passed six GPU cases across RGBA8 and BGRA8, including
 render/sample state transitions. The controlled core fixture passed four cases
 with 64 checked pixels each: suffix sampled views and last-mip dual-use views
-for both formats. Sampled views must include the resource's last mip, attachment
-views select one mip, and a dual-use view must select the last mip. Use in
+for both formats. Native sampled suffix views include the resource's last mip;
+non-suffix RESOURCE-only views use clones. Attachment views select one mip, and
+a dual-use view must select the last mip. Use in
 distinct passes is supported; same-pass feedback is rejected at whole-resource
-granularity, including when the views select disjoint mips. Non-suffix sampled
-views, historical devices and public adapter exposure remain unresolved.
+granularity, including when the views select disjoint mips. Historical devices
+and public adapter exposure remain unresolved.
 
 ### FL9_1 uniform bindings
 

@@ -4,7 +4,7 @@ use super::{
     hal_uniform::UniformBinding, texture::NativeTextureView,
 };
 use alloc::sync::Arc;
-use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResourceView};
+use windows::Win32::Graphics::Direct3D11::ID3D11SamplerState;
 
 pub(super) const MAX_TEXTURES: usize = 8;
 pub(super) const MAX_SAMPLERS: usize = 16;
@@ -261,7 +261,7 @@ impl crate::DynBindGroupLayout for BindGroupLayout {}
 #[derive(Clone, Debug)]
 pub(super) struct GroupResources {
     pub uniforms: alloc::vec::Vec<Arc<UniformBinding>>,
-    pub textures: alloc::vec::Vec<ID3D11ShaderResourceView>,
+    pub textures: alloc::vec::Vec<super::texture::SampledBinding>,
     pub samplers: alloc::vec::Vec<ID3D11SamplerState>,
     pub sampling: super::sampling::SamplingResources,
 }
@@ -390,7 +390,7 @@ impl BindGroup {
                 return Err(crate::DeviceError::Unexpected);
             }
             let (view, size, mip_levels) = owner
-                .sampled_view(binding.view)
+                .sampled_binding(binding.view)
                 .map_err(super::hal_device::device_error)?;
             views.push(view);
             dimensions.push((size, mip_levels));

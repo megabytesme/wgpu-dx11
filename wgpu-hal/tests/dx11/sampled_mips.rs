@@ -370,8 +370,13 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
             },
             ..suffix_desc.clone()
         };
-        assert!(unsafe { device.create_texture_view(&texture, &nonsuffix_desc) }.is_err());
-        unsafe { device.destroy_texture_view(explicit_suffix) };
+        let nonsuffix = unsafe { device.create_texture_view(&texture, &nonsuffix_desc) }
+            .expect("sampled non-suffix view");
+        assert_eq!(native.sampled_view(&nonsuffix)?.2, 2);
+        unsafe {
+            device.destroy_texture_view(nonsuffix);
+            device.destroy_texture_view(explicit_suffix);
+        }
         let textures = [
             crate::TextureBinding {
                 view: &texture_view,

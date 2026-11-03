@@ -344,13 +344,10 @@ impl crate::Device for Device {
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, is_depth)
             || !texture.supports_usage(desc.usage)
-            || (if desc.usage.is_empty() {
+            || (if desc.usage.is_empty()
+                || (native.MipLevels > 1 && desc.usage == wgt::TextureUses::RESOURCE)
+            {
                 !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
-            } else if native.MipLevels > 1 && desc.usage == wgt::TextureUses::RESOURCE {
-                !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
-                    || desc.range.mip_level_count.is_some_and(|count| {
-                        desc.range.base_mip_level.checked_add(count) != Some(native.MipLevels)
-                    })
             } else if native.MipLevels > 1 && desc.usage == wgt::TextureUses::COLOR_TARGET {
                 !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
                     || desc
@@ -384,7 +381,7 @@ impl crate::Device for Device {
             .mip_level_count
             .unwrap_or(native.MipLevels - mip_base);
         self.native
-            .create_full_hal_view(
+            .create_hal_view(
                 texture,
                 resource,
                 target,
@@ -819,10 +816,20 @@ mod tests {
         let mut partial_sampled = full_sampled.clone();
         partial_sampled.range.base_mip_level = 1;
         partial_sampled.range.mip_level_count = Some(2);
-        assert!(
+        let partial =
             unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
-                .is_err()
+                .unwrap();
+        let (partial_srv, partial_size, partial_levels) = native.sampled_view(&partial)?;
+        assert_eq!((partial_size, partial_levels), ([4, 2], 2));
+        let mut partial_desc =
+            windows::Win32::Graphics::Direct3D11::D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+        unsafe { partial_srv.GetDesc(&mut partial_desc) };
+        assert_eq!(
+            unsafe { partial_desc.Anonymous.Texture2D.MostDetailedMip },
+            0
         );
+        assert_eq!(unsafe { partial_desc.Anonymous.Texture2D.MipLevels }, 2);
+        unsafe { crate::Device::destroy_texture_view(&device, partial) };
         partial_sampled.range.base_mip_level = u32::MAX;
         partial_sampled.range.mip_level_count = Some(2);
         assert!(

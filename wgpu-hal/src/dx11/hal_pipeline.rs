@@ -1777,7 +1777,7 @@ mod tests {
             context.PSSetShader(Some(&pipeline.fragment), None);
             let texture = &group.resources.textures[0];
             let sampler = &group.resources.samplers[0];
-            context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
+            context.PSSetShaderResources(0, Some(&[Some(texture.view.clone())]));
             context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
             context.Draw(3, 0);
             context.ClearState();

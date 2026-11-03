@@ -143,6 +143,9 @@ pub(super) enum NativeCommand {
         visibility: wgt::ShaderStages,
         source_box: D3D11_BOX,
     },
+    RefreshSampledTextures {
+        textures: Vec<Arc<super::texture::SampledRefresh>>,
+    },
     SetTexture {
         slot: u32,
         texture: ID3D11ShaderResourceView,
@@ -461,6 +464,15 @@ impl CommandBuffer {
                         visibility,
                         source_box,
                     } => uniform.execute(context, *slot, *visibility, source_box)?,
+                    NativeCommand::RefreshSampledTextures { textures } => {
+                        context.PSSetShaderResources(
+                            0,
+                            Some(&[None, None, None, None, None, None, None, None]),
+                        );
+                        for texture in textures {
+                            texture.execute(context);
+                        }
+                    }
                     NativeCommand::SetTexture { slot, texture } => {
                         context.PSSetShaderResources(*slot, Some(&[Some(texture.clone())]));
                     }

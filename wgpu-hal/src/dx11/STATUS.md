@@ -39,17 +39,22 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   and resource retention; a core fixture checked all 43 mip-chain pixels.
 - Sampled POT mip chains support `COPY_DST | RESOURCE` with optional `COPY_SRC`,
   or `RESOURCE | COLOR_TARGET` with optional copy usages,
-  a positively queried format and a suffix view including the resource's last
-  mip. Selected shader pairs are checked against actual mip counts and sampler
+  and a positively queried format. Suffix views including the resource's last
+  mip use native SRVs; supported non-suffix `RESOURCE` views use per-draw GPU
+  copies into a clone and retain the original for feedback validation. Selected
+  shader pairs are checked against actual mip counts and sampler
   LOD translation. RGBA8 and BGRA8
   GPU readbacks and a controlled core render passed; same-pass transitions
   retained sampled resources after caller destruction before submission. Strict
   suffix-view tests passed on the RTX FL9_1 device, including 64 blue pixels
   through the controlled core fixture. Without `COPY_SRC`, core cases sampled
   an uploaded blue mip and an untouched zero mip, each across 64 pixels; direct
-  readback from that shader-resource-only texture is unavailable. Non-suffix
-  sampled views, NPOT mip chains and self-copies remain unsupported.
-  FL9 sampled views must include the smallest resource mip, and
+  readback from that shader-resource-only texture is unavailable. Sixteen
+  strict clone-backed GPU cases passed across both formats, including a recorded
+  upload followed by an indexed draw in the same submission; the controlled core
+  fixture checked 64 yellow pixels after a source update. The clone incurs
+  per-draw copies and storage. NPOT mip chains and self-copies remain
+  unsupported. Native FL9 sampled views must include the smallest resource mip;
   historical GPU behavior is unverified.
 - POT RGBA8 and BGRA8 color-attachment mip chains support an individual
   single-mip render-target view, with optional sampled, copy-source and

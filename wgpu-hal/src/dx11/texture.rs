@@ -97,6 +97,44 @@ pub struct NativeTextureView {
     texture: ID3D11Texture2D,
     mip_base: u32,
     mip_count: u32,
+    refresh: Option<Arc<SampledRefresh>>,
+}
+
+#[derive(Debug)]
+pub(super) struct SampledRefresh {
+    source: ID3D11Texture2D,
+    destination: ID3D11Texture2D,
+    source_base: u32,
+    regions: Vec<D3D11_BOX>,
+}
+
+impl SampledRefresh {
+    pub(super) fn execute(
+        &self,
+        context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
+    ) {
+        for (mip, region) in self.regions.iter().enumerate() {
+            unsafe {
+                context.CopySubresourceRegion(
+                    &self.destination,
+                    mip as u32,
+                    0,
+                    0,
+                    0,
+                    &self.source,
+                    self.source_base + mip as u32,
+                    Some(region),
+                );
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SampledBinding {
+    pub view: ID3D11ShaderResourceView,
+    pub original: ID3D11Texture2D,
+    pub refresh: Option<Arc<SampledRefresh>>,
 }
 
 impl NativeTextureView {
@@ -324,7 +362,8 @@ impl NativeDevice {
             || view.mip_count == 0
             || view.mip_base >= desc.MipLevels
             || view.mip_base >= u32::BITS
-            || view.mip_base.checked_add(view.mip_count) != Some(desc.MipLevels)
+            || (view.refresh.is_none()
+                && view.mip_base.checked_add(view.mip_count) != Some(desc.MipLevels))
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
@@ -337,6 +376,22 @@ impl NativeDevice {
                 (desc.Height >> view.mip_base).max(1),
             ],
             view.mip_count,
+        ))
+    }
+
+    pub(super) fn sampled_binding(
+        &self,
+        view: &NativeTextureView,
+    ) -> Result<(SampledBinding, [u32; 2], u32)> {
+        let (resource, size, levels) = self.sampled_view(view)?;
+        Ok((
+            SampledBinding {
+                view: resource,
+                original: view.texture.clone(),
+                refresh: view.refresh.clone(),
+            },
+            size,
+            levels,
         ))
     }
 
@@ -534,10 +589,11 @@ impl NativeDevice {
             texture: texture.raw.clone(),
             mip_base: 0,
             mip_count: texture.mip_levels,
+            refresh: None,
         })
     }
 
-    pub(super) fn create_full_hal_view(
+    pub(super) fn create_hal_view(
         &self,
         texture: &NativeTexture,
         resource: bool,
@@ -551,22 +607,69 @@ impl NativeDevice {
         let mut shader = None;
         let mut target = None;
         let mut depth = None;
+        let mut refresh = None;
         unsafe {
             if resource {
                 let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
                 texture.raw.GetDesc(&mut texture_desc);
+                let non_suffix = mip_base.checked_add(mip_count) != Some(texture_desc.MipLevels);
+                let mut sampled_texture = texture.raw.clone();
+                if non_suffix {
+                    if render_target
+                        || depth_stencil
+                        || mip_count == 0
+                        || mip_base >= texture_desc.MipLevels
+                        || mip_base
+                            .checked_add(mip_count)
+                            .is_none_or(|end| end > texture_desc.MipLevels)
+                        || mip_base >= u32::BITS
+                    {
+                        return Err(invalid());
+                    }
+                    let width = (texture_desc.Width >> mip_base).max(1);
+                    let height = (texture_desc.Height >> mip_base).max(1);
+                    let clone = self.create_color_texture_inner(
+                        width,
+                        height,
+                        mip_count,
+                        1,
+                        false,
+                        texture_desc.Format,
+                    )?;
+                    let mut regions = Vec::new();
+                    regions.try_reserve_exact(mip_count as usize).map_err(|_| {
+                        Error::from_hresult(windows::Win32::Foundation::E_OUTOFMEMORY)
+                    })?;
+                    for mip in 0..mip_count {
+                        regions.push(D3D11_BOX {
+                            left: 0,
+                            top: 0,
+                            front: 0,
+                            right: (width >> mip).max(1),
+                            bottom: (height >> mip).max(1),
+                            back: 1,
+                        });
+                    }
+                    sampled_texture = clone.raw.clone();
+                    refresh = Some(Arc::new(SampledRefresh {
+                        source: texture.raw.clone(),
+                        destination: clone.raw,
+                        source_base: mip_base,
+                        regions,
+                    }));
+                }
                 let shader_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
                     Format: texture_desc.Format,
                     ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
                     Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                         Texture2D: D3D11_TEX2D_SRV {
-                            MostDetailedMip: mip_base,
+                            MostDetailedMip: if non_suffix { 0 } else { mip_base },
                             MipLevels: mip_count,
                         },
                     },
                 };
                 self.raw_device().CreateShaderResourceView(
-                    &texture.raw,
+                    &sampled_texture,
                     Some(&shader_desc),
                     Some(&mut shader),
                 )?;
@@ -613,6 +716,7 @@ impl NativeDevice {
             texture: texture.raw.clone(),
             mip_base,
             mip_count,
+            refresh,
         })
     }
 

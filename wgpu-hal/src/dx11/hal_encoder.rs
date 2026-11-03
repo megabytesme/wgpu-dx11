@@ -182,6 +182,7 @@ impl RenderState {
 
     fn binding_commands(&self) -> Option<Vec<NativeCommand>> {
         let mut commands = Vec::new();
+        let mut refresh = Vec::new();
         let plan = self.active_plan.as_ref()?;
         for (index, expected) in plan.groups().iter().enumerate() {
             let Some(expected) = expected else { continue };
@@ -204,9 +205,12 @@ impl RenderState {
                 });
             }
             for (local, texture) in bound.resources.textures.iter().enumerate() {
+                if let Some(copy) = &texture.refresh {
+                    refresh.push(copy.clone());
+                }
                 commands.push(NativeCommand::SetTexture {
                     slot: slots.textures + local as u32,
-                    texture: texture.clone(),
+                    texture: texture.view.clone(),
                 });
             }
             for (local, sampler) in bound.resources.samplers.iter().enumerate() {
@@ -215,6 +219,12 @@ impl RenderState {
                     sampler: sampler.clone(),
                 });
             }
+        }
+        if !refresh.is_empty() {
+            commands.insert(
+                0,
+                NativeCommand::RefreshSampledTextures { textures: refresh },
+            );
         }
         Some(commands)
     }
@@ -578,8 +588,12 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
+            let Ok(target) = target.cast::<windows::core::IUnknown>() else {
+                self.reject();
+                return;
+            };
             for texture in &group.resources.textures {
-                let Ok(sampled) = (unsafe { texture.GetResource() }) else {
+                let Ok(sampled) = texture.original.cast::<windows::core::IUnknown>() else {
                     self.reject();
                     return;
                 };
@@ -3871,6 +3885,10 @@ mod render_mip_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/render_sample_mips.rs"]
 mod render_sample_mips;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/nonsuffix_mips.rs"]
+mod nonsuffix_mips;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]

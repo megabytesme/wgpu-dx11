@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 249 tests; older
+operations are safe. The latest completed strict suite passed 250 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -105,6 +105,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `4a4b6eec90c12a8d3ba35629311ab1d58e052284` | dx11: support upload-only sampled mip textures |
 | `68c6a804d13cada3d1cb0feccef6bbb3d1d58d7f` | dx11: support FL9_1 color attachment mip views |
 | `2206731ded87a5cdc1c9bb3c557191027c10397b` | Render and sample FL9_1 mip textures |
+| `d62f52eaca76e4a8ff50eabbc9ee09910d94ffb5` | Bounded FL9_1 texture sample bias |
 
 ## What is and is not usable
 
@@ -301,12 +302,12 @@ the selected entry. Dynamic or out-of-range biases and helper arguments remain
 rejected. Wider bias support needs semantics-preserving lowering, and older
 drivers remain unverified.
 
-POT RGBA8/BGRA8 mip chains support initialization, transfers and sampled
-suffix views including the smallest resource mip. View-relative LOD selection
-passed strict private and controlled core GPU tests. Color-attachment mip views
-can coexist with sampled usage in separate passes; a dual-use view is restricted
-to the last mip, and whole-resource feedback is rejected even for distinct mips.
-Non-suffix sampled views remain unavailable and need emulation or validation.
+POT RGBA8/BGRA8 mip chains support initialization, transfers and sampled mip
+views. Native suffix views include the smallest resource mip; non-suffix views
+use a GPU clone refreshed before each draw. Strict private and controlled core
+tests verify view-relative sampling and updates. Color-attachment mip views can
+coexist with sampled usage in separate passes; a dual-use view is restricted to
+the last mip, and whole-resource feedback is rejected even for distinct mips.
 
 Sampled mip chains also accept COPY_DST|RESOURCE without COPY_SRC. They use
 shader-resource-only native textures; copy-source use and direct readback stay

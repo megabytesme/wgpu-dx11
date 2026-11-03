@@ -373,6 +373,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         render_triangle(&global, device, queue, VertexCase::SampledMips);
         render_triangle(&global, device, queue, VertexCase::SampledMipsBias);
         render_triangle(&global, device, queue, VertexCase::SampledMipSuffix);
+        render_triangle(&global, device, queue, VertexCase::SampledMipNonSuffix);
         render_triangle(&global, device, queue, VertexCase::SampledMipsNoCopySrc);
         render_triangle(
             &global,
@@ -1025,6 +1026,7 @@ enum VertexCase {
     SampledMips,
     SampledMipsBias,
     SampledMipSuffix,
+    SampledMipNonSuffix,
     SampledMipsNoCopySrc,
     SampledMipsNoCopySrcUninitialized,
     RenderSampleMip(wgt::TextureFormat, bool),
@@ -1055,9 +1057,11 @@ fn render_triangle(
         VertexCase::RenderSampleMip(format, dual) => Some((format, dual)),
         _ => None,
     };
-    let sampled_mip_suffix = case == VertexCase::SampledMipSuffix || combined.is_some();
+    let non_suffix = case == VertexCase::SampledMipNonSuffix;
+    let sampled_mip_suffix =
+        case == VertexCase::SampledMipSuffix || combined.is_some() || non_suffix;
     let uninitialized_mip = case == VertexCase::SampledMipsNoCopySrcUninitialized;
-    let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip;
+    let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip || non_suffix;
     let sampled_mips = matches!(case, VertexCase::SampledMips | VertexCase::SampledMipsBias)
         || sampled_mip_suffix
         || no_copy_src;
@@ -1234,11 +1238,13 @@ fn render_triangle(
                     } else {
                         1
                     },
-                    mip_level_count: Some(if combined.is_some_and(|(_, dual)| dual) {
-                        1
-                    } else {
-                        2
-                    }),
+                    mip_level_count: Some(
+                        if non_suffix || combined.is_some_and(|(_, dual)| dual) {
+                            1
+                        } else {
+                            2
+                        },
+                    ),
                     ..Default::default()
                 }
             } else {
@@ -1256,6 +1262,30 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "sampled texture view: {error:?}");
+    if non_suffix {
+        global
+            .queue_write_texture(
+                queue,
+                &wgt::TexelCopyTextureInfo {
+                    texture: sampled,
+                    mip_level: 1,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &[255, 255, 0, 255, 255, 255, 0, 255],
+                &wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: None,
+                    rows_per_image: None,
+                },
+                &wgt::Extent3d {
+                    width: 2,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .expect("update sampled mip after view creation");
+    }
     let render_mip_views = combined.map(|(_, dual)| {
         let make_view = |mip| {
             let (view, error) = global.texture_create_view(
@@ -1768,7 +1798,9 @@ fn render_triangle(
             let offset = y * 256 + x * 4;
             assert_eq!(
                 &pixels[offset..offset + 4],
-                if uninitialized_mip {
+                if non_suffix {
+                    &[255, 255, 0, 255]
+                } else if uninitialized_mip {
                     &[0, 0, 0, 0]
                 } else if sampled_mips {
                     &[0, 0, 255, 255]

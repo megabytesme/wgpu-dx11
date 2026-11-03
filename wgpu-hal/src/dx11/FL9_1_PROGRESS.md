@@ -1140,3 +1140,33 @@ passed in the updated focused test. Three older shader cases skip hardware
 internally. HAL Clippy retained ten pre-existing test warnings, the DX12 HAL
 compiled, and ordinary core adapter enumeration remained empty. An independent
 review found no concrete defect. Historical driver behavior remains unverified.
+Checkpoint: `d62f52eaca76e4a8ff50eabbc9ee09910d94ffb5`.
+
+Next investigation: emulate core-valid non-suffix sampled mip views without
+stale contents, feedback bypass or unsupported native FL9 SRVs. A per-view
+copy must reflect execution-time writes, preserve original resource identity,
+and not unbind unrelated shader state. Keep public exposure disabled until all
+core-visible view and presentation contracts are safe.
+
+After the bias checkpoint, the gated public-wgpu regression passed again on
+the RTX FL9_1 device: the indexed textured-depth fixture read 32 red and 32
+green pixels. This nondefault unsafe fixture does not enable public enumeration.
+
+Non-suffix sampled POT RGBA8/BGRA8 views now have a private GPU-copy emulation:
+a view-specific truncated texture is refreshed from the retained original just
+before each draw, then all active shader resources are rebound. The original
+identity remains authoritative for whole-resource feedback checks. Strict RTX
+FL9_1 tests passed 16/16 GPU cases across both formats, and the core fixture
+read 64 yellow pixels after an update following view creation. The full strict
+suite passed 250 tests with two filtered; three older shader cases skip GPU
+execution internally. A build initially exposed non-Send retained IUnknown and
+test closure lifetime errors; typed resource retention with transient canonical
+identity checks and independently scoped test borrows corrected them. An
+independent review found no concrete defect. The updated focused test includes
+recorded upload followed by indexed sampling in one submission, with input
+buffers destroyed before submit, and passed for both formats. HAL Clippy passed
+with ten existing test warnings; the zero-adapter core test passed. The full
+suite preceded those final test-only additions. Each use incurs GPU copies and
+clone memory. The unsafe public-wgpu fixture again passed its indexed textured
+depth check with 32 red and 32 green pixels. Historical drivers and public
+adapter exposure remain unverified.
