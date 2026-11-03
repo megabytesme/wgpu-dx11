@@ -43,6 +43,10 @@ below is met. This plan does not claim WebGPU conformance.
    unsupported at 9_1; wgpu-core's `INDIRECT_EXECUTION` flag is also coupled to
    compute support and GPU argument validation, so the public validation path
    cannot currently expose a private CPU-staging emulation independently.
+   R8_UNORM is implemented as a queried single-mip sampled/upload format. Its
+   2D upload and nearest sampling pass on forced FL9_1; color-target,
+   copy-source, readback and mip-chain uses remain unsupported. Continue adding
+   narrowly verified required formats and usage combinations.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport
@@ -86,3 +90,10 @@ and historical hardware separately from modern GPUs forced to FL9_1.
 Run only one heavyweight Cargo process at a time with bounded build jobs.
 Record exact commands, hardware results, skips, failures and commit hashes in
 FL9_1_PROGRESS.md. Maintain FL9_1_HANDOFF.md for interruption and final audit.
+
+Latest completed resource increment: R8_UNORM one-mip sampled/upload support is
+checkpointed as `268431ec3`, with strict FL9_1 GPU readback. The next selected
+increment is to verify the required FL9_1 R8G8_SNORM format and implement only
+the queried upload/sample path if the HAL's format and shader semantics support
+it correctly. Continue the public contract and presentation audits in parallel
+with the ordered work above; public adapter exposure remains gated.

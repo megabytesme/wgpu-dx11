@@ -2046,3 +2046,42 @@ near-limit vertex and pixel accesses now both have real forced-FL9_1 rendering
 evidence. Runtime integer indexing remains rejected, and matrices/nested layouts
 remain limited to the existing focused tests. Continue the private contract
 audit and keep public adapter and HWND surface exposure disabled.
+
+## Checkpoint — queried R8_UNORM sampled uploads
+
+`268431ec3` adds R8_UNORM as a narrow one-mip, one-layer sampled/upload format.
+The capability model separates the FL9_1 required-format guarantee, the
+selected device's `TEXTURE2D | SHADER_SAMPLE` query, and the implemented
+upload/sampling subset. Transfer layout now uses the format's texel width, so
+the strict GPU test uploads a 5x4 image from byte offset 1 with 7-byte rows,
+samples it through the private binding and shader paths, and reads a 10x8
+RGBA8 target. The output matched 80/80 expected pixels. The physical adapter
+was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), with requested and actual
+FL9_1; its R8 support mask was `0x0002d3e0`. The driver version recorded by the
+existing adapter probe is `32.0.16.2101`. The test exercised nearest sampling;
+linear R8 filtering is query-gated but not visually tested. R8 render targets,
+copy sources, readback, and mip chains remain unsupported.
+
+Verification on Rust 1.93.1/MSVC:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_unorm -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 "dx11::" -- --test-threads=1
+cargo build --offline -p wgpu-hal --no-default-features --features dx11
+cargo clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx12 pipeline_desc::tests -- --test-threads=1
+cargo fmt --package wgpu-hal -- --check
+rustfmt --check --edition 2021 wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_bind_group.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/src/dx11/hal_transfer.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/tests/dx11/r8_texture.rs
+git diff --check
+```
+
+The focused strict test passed 2/2 (one CPU capability test and one physical
+GPU execution). The complete strict private suite passed 307 tests, with zero
+failures and two filtered. HAL build, HAL Clippy, core's zero-adapter isolation
+test (1/1), targeted DX12 tests (2/2), package formatting, targeted rustfmt,
+and diff checks passed. HAL Clippy reported ten existing warnings in unrelated
+code. Public D3D11 adapter enumeration remains disabled. Next, investigate and
+implement the next FL9_1-required sampled format with the same query, usage,
+layout and strict-readback discipline.

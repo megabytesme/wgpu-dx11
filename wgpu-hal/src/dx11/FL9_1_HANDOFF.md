@@ -529,3 +529,22 @@ See `FL9_1_PROGRESS.md` for commands and format-check caveats. The feature
 is checkpointed as `f1b8c09a7` (`dx11: emulate FL9_1 indexed triangle strips`).
 Broader instancing, indirect draws, public adapter exposure and public HWND
 surface exposure remain open.
+
+## Latest checkpoint — required R8_UNORM sampled uploads
+
+`268431ec3` adds single-mip R8_UNORM sampling and buffer-to-texture upload,
+gated by actual device format support and an explicit FL9_1 capability model.
+Strict execution on the RTX 3090 Ti (vendor/device `0x10de:0x2203`, driver
+`32.0.16.2101`) requested and selected FL9_1, uploaded from byte offset 1 with
+7-byte rows, and matched 80/80 readback pixels. The complete private HAL suite
+passed 307 tests; core zero-adapter isolation and targeted DX12 tests passed.
+R8 render targets, copy-source/readback, mip chains and linear-filter visual
+validation remain unsupported or unverified. Full evidence and commands are
+in `FL9_1_PROGRESS.md`.
+
+The next bounded task is to investigate FL9_1-required R8G8_SNORM sampled
+textures and add only the one-mip upload/sample subset if its actual format
+queries and strict GPU output agree. Ordinary adapter enumeration remains
+disabled. Continue auditing public-core/HAL contract gaps and presentation
+reentrancy; do not infer historical-device support from the modern forced-level
+GPU.
