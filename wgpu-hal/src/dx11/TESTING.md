@@ -258,5 +258,6 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl9
 ```
 
 The first two are CPU/compiler tests. The hardware tests verify sparse static
-ranges, GPU-upload ordering, vertex/fragment use, a padded matrix structure,
-pipeline and group transitions, and coexistence with sampled textures.
+ranges, GPU-upload ordering, vertex/fragment use, padded and nested matrix
+structures, array stride, pipeline and group transitions, and coexistence with
+sampled textures.

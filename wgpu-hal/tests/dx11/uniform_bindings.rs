@@ -90,13 +90,17 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         @group(0) @binding(17) var<uniform> red: vec4f;
         struct Transform { matrix: mat4x4f, extra: vec3f, gain: f32 }
         @group(0) @binding(200) var<uniform> transform: Transform;
+        struct Inner { m: mat3x2f, k: vec2f }
+        struct Extra { inner: Inner, arr: array<vec4f, 2>, tail: vec4f }
+        @group(0) @binding(250) var<uniform> extra: Extra;
         struct VertexOutput { @builtin(position) pos: vec4f, @location(0) movement: vec2f }
         @vertex fn vs(@location(0) p: vec2f) -> VertexOutput {
             return VertexOutput(transform.matrix * vec4f(p * scale.xy + shift.xy, 0.5, 1.0), shift.xy);
         }
         fn red_part() -> vec4f { return red; }
-        @fragment fn fs(in: VertexOutput) -> @location(0) vec4f { return red_part() + blue + vec4f(transform.matrix[1][0], transform.extra.y * transform.gain, 0.0, 0.0) + vec4f(in.movement, 0.0, 0.0); }
-        @fragment fn fs2(in: VertexOutput) -> @location(0) vec4f { return red_part() + vec4f(transform.matrix[1][0], transform.extra.y * transform.gain, 0.0, 0.5) + vec4f(in.movement, 0.0, 0.0); }
+        fn more() -> vec4f { return vec4f(extra.inner.m[0].x + extra.inner.m[2].y + extra.tail.x, extra.inner.m[1].x + extra.inner.k.y, extra.arr[0].y + extra.arr[1].z, 0.0); }
+        @fragment fn fs(in: VertexOutput) -> @location(0) vec4f { return red_part() + blue + vec4f(transform.matrix[1][0], transform.extra.y * transform.gain, 0.0, 0.0) + vec4f(in.movement, 0.0, 0.0) + more(); }
+        @fragment fn fs2(in: VertexOutput) -> @location(0) vec4f { return red_part() + vec4f(transform.matrix[1][0], transform.extra.y * transform.gain, 0.0, 0.5) + vec4f(in.movement, 0.0, 0.0) + more(); }
     "#).unwrap();
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
@@ -135,12 +139,14 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         entry(3, wgt::ShaderStages::VERTEX),
         entry(17, wgt::ShaderStages::FRAGMENT),
         entry(200, wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT),
+        entry(250, wgt::ShaderStages::FRAGMENT),
     ];
     entries[4].ty = wgt::BindingType::Buffer {
         ty: wgt::BufferBindingType::Uniform,
         has_dynamic_offset: false,
         min_binding_size: NonZeroU64::new(80),
     };
+    entries[5].ty = entries[4].ty;
     let group_layout = unsafe {
         device
             .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
@@ -160,7 +166,7 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
             })
             .unwrap()
     };
-    let entries2 = [entries[0], entries[2], entries[3], entries[4]];
+    let entries2 = [entries[0], entries[2], entries[3], entries[4], entries[5]];
     let mut dynamic = entries;
     dynamic[0].ty = wgt::BindingType::Buffer {
         ty: wgt::BufferBindingType::Uniform,
@@ -339,12 +345,18 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         .flat_map(|v| v.to_ne_bytes())
         .collect();
     native.write_byte_buffer(&vertices, 0, &vertex_data)?;
-    let source = create_buffer(176, wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST);
-    let uniform = create_buffer(176, wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST);
+    let source = create_buffer(256, wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST);
+    let uniform = create_buffer(256, wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST);
     let independent = create_buffer(16, wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST);
     let group = |second: bool| {
         let items: &[(u32, u64, u64)] = if second {
-            &[(3, 0, 16), (17, 64, 16), (100, 16, 16), (200, 96, 80)]
+            &[
+                (3, 0, 16),
+                (17, 64, 16),
+                (100, 16, 16),
+                (200, 96, 80),
+                (250, 176, 80),
+            ]
         } else {
             &[
                 (3, 0, 16),
@@ -352,6 +364,7 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
                 (42, 48, 16),
                 (100, 16, 16),
                 (200, 96, 80),
+                (250, 176, 80),
             ]
         };
         let buffers: Vec<_> = items
@@ -395,13 +408,14 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
     let first = group(false);
     let second = group(true);
     let invalid_bindings = [
-        crate::BufferBinding::new_unchecked(&uniform, 172, NonZeroU64::new(16)),
+        crate::BufferBinding::new_unchecked(&uniform, 252, NonZeroU64::new(16)),
         crate::BufferBinding::new_unchecked(&uniform, 32, NonZeroU64::new(16)),
         crate::BufferBinding::new_unchecked(&uniform, 48, NonZeroU64::new(16)),
         crate::BufferBinding::new_unchecked(&uniform, 16, NonZeroU64::new(16)),
         crate::BufferBinding::new_unchecked(&uniform, 96, NonZeroU64::new(80)),
+        crate::BufferBinding::new_unchecked(&uniform, 176, NonZeroU64::new(80)),
     ];
-    let invalid_entries: Vec<_> = [3, 17, 42, 100, 200]
+    let invalid_entries: Vec<_> = [3, 17, 42, 100, 200, 250]
         .into_iter()
         .enumerate()
         .map(|(index, binding)| crate::BindGroupEntry {
@@ -488,7 +502,7 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
             [crate::BufferCopy {
                 src_offset: 0,
                 dst_offset: 0,
-                size: NonZeroU64::new(176).unwrap(),
+                size: NonZeroU64::new(256).unwrap(),
             }]
             .into_iter(),
         );
@@ -515,7 +529,7 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         encoder.end_render_pass();
         encoder.end_encoding().unwrap()
     };
-    let values: [[f32; 4]; 11] = [
+    let values: [[f32; 4]; 16] = [
         [1., 1., 0., 0.],
         [0.125, 0.125, 0., 0.],
         [0., 0., 0., 0.],
@@ -527,6 +541,11 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
         [0., 0., 1., 0.],
         [0., 0., 0., 1.],
         [0., 0.125, 0., 1.],
+        [0.015625, 0.75, 0.03125, 0.75],
+        [0.75, 0.015625, 0.75, 0.03125],
+        [0.75, 0.03125, 0.75, 0.75],
+        [0.75, 0.75, 0.03125, 0.75],
+        [0.03125, 0.75, 0.75, 0.75],
     ];
     let bytes: Vec<_> = values
         .iter()
@@ -550,7 +569,7 @@ fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::c
     }
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
-    for (x, expected) in [(2, [128u8, 191, 0, 255]), (6, [64, 128, 0, 255])] {
+    for (x, expected) in [(2, [143u8, 207, 16, 255]), (6, [80, 143, 16, 255])] {
         let actual = &pixels[(4 * 8 + x) * 4..][..4];
         for (&a, &e) in actual.iter().zip(&expected) {
             assert!(

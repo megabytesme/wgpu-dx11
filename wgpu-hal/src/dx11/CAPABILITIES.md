@@ -152,7 +152,9 @@ entry-point minimum sizes and group/pipeline compatibility are checked. Dynamic
 offsets, multiple groups, general checked uniform dynamic indexing, and broad
 public adapter exposure remain unsupported. GPU coverage exercises multiple
 range bindings, pipeline transitions, a matrix and padded structure, and sampled
-texture coexistence; it does not establish every WGSL layout or shader operation.
+texture coexistence. A checked forced-FL9_1 GPU test also verifies nested
+structures, an asymmetric `mat3x2<f32>` and a `vec4<f32>` array with distinct
+stride-sensitive values. This does not establish every WGSL layout or operation.
 
 The private layout accepts up to eight sampled textures and sixteen samplers.
 These are binding capacities, not a promise that every shader using them
