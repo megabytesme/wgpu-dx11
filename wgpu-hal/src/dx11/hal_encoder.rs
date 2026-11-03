@@ -3842,6 +3842,10 @@ mod instance_stream_tests;
 mod integer_uniform_bits_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/sampler_lod.rs"]
+mod sampler_lod_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 

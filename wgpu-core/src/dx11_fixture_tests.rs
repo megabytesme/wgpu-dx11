@@ -326,6 +326,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::FractionalSamplerLod,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
         VertexCase::Snorm,
@@ -366,6 +367,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum VertexCase {
     Baseline,
+    FractionalSamplerLod,
     Overlapping,
     NoopStencil,
     Snorm,
@@ -487,8 +489,16 @@ fn render_triangle(
             mag_filter: wgt::FilterMode::Nearest,
             min_filter: wgt::FilterMode::Nearest,
             mipmap_filter: wgt::MipmapFilterMode::Nearest,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 32.0,
+            lod_min_clamp: if case == VertexCase::FractionalSamplerLod {
+                0.5
+            } else {
+                0.0
+            },
+            lod_max_clamp: if case == VertexCase::FractionalSamplerLod {
+                0.5
+            } else {
+                32.0
+            },
             compare: None,
             anisotropy_clamp: 1,
             border_color: None,

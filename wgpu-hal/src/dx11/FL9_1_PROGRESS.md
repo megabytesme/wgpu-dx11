@@ -974,3 +974,19 @@ internal shader skips. HAL Clippy passed with ten existing warnings; ordinary
 core D3D11 enumeration stayed empty. Two independent reviews found no concrete
 uniform materialization defect. Odd-byte GPU copy behavior remains unverified
 on historical drivers, and staging maps may stall.
+Checkpoint: `61d1e7a3e`.
+
+For FL9_1 samplers with one mip, equal min/mag filters and anisotropy 1,
+previously rejected finite LOD intervals normalize to native 0..FLT_MAX.
+The sampler is marked single-mip-only; current bind-group validation also
+requires sampled textures and views to have one mip. Strict `single_mip` tests
+passed three cases, including 32 patterned RTX FL9_1 readbacks across nearest/
+linear spatial and mip filters, magnification/minification and intervals
+0..0, 0.5..0.5 and 1..4 versus reference. The controlled core fixture's
+fractional sampler case matched all 64 pixels. Two independent reviews found
+no concrete defect for the current one-mip subset. Explicit LOD/bias, mixed
+filters with these clamps, anisotropic cases and historical drivers remain
+unverified or rejected. The complete strict suite passed 235 cases with two
+filtered before the final test-only mip-linear extension and model-field update;
+the updated focused GPU and four capability CPU tests passed. HAL Clippy passed
+with ten existing warnings and core ordinary enumeration remained empty.

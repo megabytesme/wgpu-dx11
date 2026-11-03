@@ -396,8 +396,10 @@ query, and fails in strict mode if that prerequisite is missing.
 
 ```powershell
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampler_translation -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 equal_isotropic_filters_normalize_lod_only_for_single_mip_views -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sampler_state_ -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_single_mip_same_filter_finite_lod -- --nocapture --test-threads=1
 ```
 
 The first command is CPU-only. The second executes patterned texture readback
@@ -405,6 +407,16 @@ for minification, magnification, mixed filters, addressing and a sampler
 transition. It also runs a native border-creation diagnostic; that diagnostic
 is not a rendered-pixel test. Anisotropy 2 is sampled, but a single-mip image
 does not establish visual anisotropic quality.
+
+The same-filter single-mip LOD test passed on the RTX 3090 Ti at requested and
+selected FL9_1. It checked 32 full patterned images for nearest and linear
+min/mag filters, minification and magnification, comparing ranges `0..0`,
+`0.5..0.5` and `1..4` with an unrestricted reference, using both nearest and
+linear mipmap filtering. The controlled core fixture also matched all 64 pixels for a nearest
+sampler with `0.5..0.5`. Mixed-filter and anisotropic ranges that cannot be
+faithfully translated remain rejected. A future mipmapped path must enforce the
+actual-view mip restriction; explicit-LOD and bias sampling and historical FL9_1
+drivers remain unverified.
 
 ### FL9_1 texture transfers
 

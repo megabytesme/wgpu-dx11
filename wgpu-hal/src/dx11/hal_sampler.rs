@@ -44,15 +44,19 @@ fn translate_sampler(
     // Before FL11, min/mag selection can occur before or after LOD clamping.
     let level_9_1_or_2 = level.as_raw() <= super::device::FeatureLevel::L9_2.as_raw();
     // Raising a maximum of at least 1 preserves the filter boundary for mip zero.
-    let single_mip_only = level_9_1_or_2 && desc.lod_clamp.end != f32::MAX;
-    if level_9_1_or_2
+    let finite_max = level_9_1_or_2 && desc.lod_clamp.end != f32::MAX;
+    let native_lod_rejected = level_9_1_or_2
         && (desc.lod_clamp.start.fract() != 0.0
             || (desc.lod_clamp.start > 0.0
                 && (desc.min_filter != desc.mag_filter || desc.anisotropy_clamp > 1))
-            || (single_mip_only && (desc.lod_clamp.start != 0.0 || desc.lod_clamp.end < 1.0)))
-    {
+            || (finite_max && (desc.lod_clamp.start != 0.0 || desc.lod_clamp.end < 1.0)));
+    // With one mip and equal isotropic filters, LOD cannot change the sample.
+    let normalize_lod =
+        native_lod_rejected && desc.min_filter == desc.mag_filter && desc.anisotropy_clamp == 1;
+    if native_lod_rejected && !normalize_lod {
         return Err(crate::DeviceError::Unexpected);
     }
+    let single_mip_only = finite_max || normalize_lod;
     let filter = if desc.anisotropy_clamp == 2 {
         D3D11_FILTER_ANISOTROPIC
     } else {
@@ -83,7 +87,11 @@ fn translate_sampler(
             MaxAnisotropy: u32::from(desc.anisotropy_clamp),
             ComparisonFunc: D3D11_COMPARISON_NEVER,
             BorderColor: border,
-            MinLOD: desc.lod_clamp.start,
+            MinLOD: if normalize_lod {
+                0.0
+            } else {
+                desc.lod_clamp.start
+            },
             MaxLOD: if single_mip_only {
                 f32::MAX
             } else {
@@ -278,14 +286,7 @@ mod tests {
         assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
         desc.compare = None;
         desc.anisotropy_clamp = 1;
-        for range in [
-            0.5..f32::MAX,
-            0.0..0.5,
-            1.0..4.0,
-            -1.0..1.0,
-            2.0..1.0,
-            f32::NAN..2.0,
-        ] {
+        for range in [-1.0..1.0, 2.0..1.0, f32::NAN..2.0] {
             desc.lod_clamp = range;
             assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
         }
@@ -300,6 +301,40 @@ mod tests {
         assert_eq!((native.MinLOD, native.MaxLOD), (0.0, f32::MAX));
         desc.lod_clamp = 0.0..f32::MAX;
         assert!(!translate_sampler(&desc, FeatureLevel::L9_1).unwrap().1);
+    }
+
+    #[test]
+    fn equal_isotropic_filters_normalize_lod_only_for_single_mip_views() {
+        use wgt::FilterMode::{Linear, Nearest};
+        use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
+        let mut desc = descriptor();
+        for filter in [Nearest, Linear] {
+            for mip_filter in [MipNearest, MipLinear] {
+                desc.min_filter = filter;
+                desc.mag_filter = filter;
+                desc.mipmap_filter = mip_filter;
+                for range in [0.0..0.0, 0.0..0.5, 0.5..0.5, 0.5..f32::MAX, 1.0..4.0] {
+                    desc.lod_clamp = range;
+                    let (native, single_mip_only) =
+                        translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
+                    assert!(single_mip_only);
+                    assert_eq!((native.MinLOD, native.MaxLOD), (0.0, f32::MAX));
+                }
+            }
+        }
+        desc.lod_clamp = 0.5..0.5;
+        desc.mag_filter = Nearest;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.mag_filter = Linear;
+        desc.anisotropy_clamp = 2;
+        assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
+        desc.anisotropy_clamp = 1;
+        desc.lod_clamp = 0.0..f32::MAX;
+        assert!(!translate_sampler(&desc, FeatureLevel::L9_1).unwrap().1);
+        desc.lod_clamp = 0.5..4.0;
+        let (native, single_mip_only) = translate_sampler(&desc, FeatureLevel::L11_0).unwrap();
+        assert!(!single_mip_only);
+        assert_eq!((native.MinLOD, native.MaxLOD), (0.5, 4.0));
     }
 
     #[test]
@@ -518,6 +553,15 @@ mod tests {
         desc.lod_clamp.end = f32::MAX;
         desc.lod_clamp.start = 0.5;
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
+        desc.min_filter = Linear;
+        desc.lod_clamp = 0.5..0.5;
+        let normalized = unsafe { device.create_sampler(&desc).unwrap() };
+        let raw = normalized.raw_for(&owner, 1).unwrap();
+        let mut actual = D3D11_SAMPLER_DESC::default();
+        unsafe { raw.GetDesc(&mut actual) };
+        assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
+        assert!(normalized.raw_for(&owner, 2).is_err());
+        unsafe { device.destroy_sampler(normalized) };
         desc.lod_clamp.start = 0.0;
         desc.compare = Some(wgt::CompareFunction::Less);
         assert!(unsafe { device.create_sampler(&desc) }.is_err());

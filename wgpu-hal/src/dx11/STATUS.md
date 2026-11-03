@@ -18,7 +18,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Single-mip RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
-  up to 2. On 9_1/9_2, translated finite maximum LODs require single-mip views.
+  up to 2. On 9_1/9_2, equal min/mag filters with anisotropy 1 allow
+  otherwise-unrepresentable LOD ranges to be normalized for single-mip views;
+  other translated finite maximum LODs also require single-mip views. Nearest and
+  linear mipmap filters have patterned GPU coverage; explicit-LOD and bias
+  sampling and historical driver behavior remain unverified.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,

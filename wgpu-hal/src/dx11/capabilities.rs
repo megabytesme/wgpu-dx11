@@ -106,6 +106,7 @@ pub(super) struct BackendCapabilities {
     pub index_u32_ordered_fl9_windows: bool,
     pub index_u32_wide_triangle_gather: bool,
     pub max_sampler_anisotropy: u16,
+    pub single_mip_equal_filter_lod_normalization: bool,
     pub sparse_texture_sampler_bindings: bool,
     pub sampled_textures_per_group: u32,
     pub samplers_per_group: u32,
@@ -145,6 +146,7 @@ impl BackendCapabilities {
         index_u32_ordered_fl9_windows: true,
         index_u32_wide_triangle_gather: true,
         max_sampler_anisotropy: super::hal_sampler::MAX_ANISOTROPY,
+        single_mip_equal_filter_lod_normalization: true,
         sparse_texture_sampler_bindings: true,
         sampled_textures_per_group: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_per_group: super::hal_bind_group::MAX_SAMPLERS as u32,
@@ -346,6 +348,7 @@ mod tests {
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
         assert_eq!(fl9.backend.max_sampler_anisotropy, 2);
+        assert!(fl9.backend.single_mip_equal_filter_lod_normalization);
         assert!(fl9.backend.sparse_texture_sampler_bindings);
         assert_eq!(
             fl9.backend.uniform_bind_groups,
