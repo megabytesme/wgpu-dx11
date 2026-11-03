@@ -311,3 +311,14 @@ disabled, and masked additive blending. A synthetic test rejects unknown mask
 bits. An independent review found no descriptor or lifetime defect. The full
 strict 163-test suite passed before the final stronger transition assertion;
 the focused hardware test passed again after that test-only improvement.
+
+The color-mask work was checkpointed as `4bba5f9c5`. Triangle-list pipelines
+now accept both front-face windings and none/front/back culling, using the same
+native mapping as DX12. Opposite-winding textured triangles passed all six
+combinations on the forced-FL9_1 RTX, with every pixel checked; a seventh case
+also covered a negatively positioned viewport. An independent review found no
+mapping or state-lifetime defect. The strict private suite passed 163 tests;
+the core isolation test and targeted Clippy passed, with ten existing warnings.
+The subsequently added Naga-to-FXC negative test for fragment `front_facing`
+also passed: that built-in is rejected by the FL9_1 pixel profile even though
+rasterizer face culling works. A direct FXC probe produced X4583 and X4568.

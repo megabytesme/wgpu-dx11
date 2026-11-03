@@ -22,5 +22,109 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest combined strict suite passed 162 tests; older
+operations are safe. The latest combined strict suite passed 163 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
+
+## Verified checkpoints
+
+The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
+(generalized static uniform buffers), then added:
+
+| Commit | Scope |
+| --- | --- |
+| `19e82da409dd0ceec12eb9e9dca8934900b5ff11` | Nested uniform layouts and mission records |
+| `424dfaa2f46e757e9d3a0dad9c50b9f110a18592` | Private textured D24S8 depth rendering |
+| `e09825a90b32dc52eb83cd27f084c2803abf96c5` | FL9 default buffer bind flags |
+| `8949812c55514e106e7803e00d7e25801e516d44` | Downlevel index usage validation |
+| `7bdffefe244101bf7374fbc10044424f08eea8c1` | Adapter error expectations |
+| `26825d96e8da4d9864f741527286d99a9494b53d` | Empty compute passes and unused blend constants |
+| `4afbb21da9f1f319ff39fe73f2dceed58935a279` | Zero-sized viewports |
+| `d13062b65c53a5a5fcac1f644bbec0d581d7e078` | Non-finite viewport rejection in core |
+| `721469cfeabbb86995d3654b84eff1bbeae5d4a6` | Attachment discard flags |
+| `bf56c17b99352a354cae3a4929504880fdc395ef` | Private hidden HWND surface |
+| `7e045c4ed83e9506054161da24c4f13a4986af7b` | Surface-view lifetime and resize |
+| `ec645e63e084fad3c377ccaf0f3b21ed49ee9e13` | Restricted clipped viewport emulation |
+| `edb1efa6b3c07ac080a5a38f85de83282079b112` | Dynamic uniform offsets |
+| `9464c4aef6bd02cb37dfd8aba5adaa0bb697d5ad` | Private swapchain/context serialization |
+| `7a7f249f5bc54cfc67678fc00755b9d8429e7338` | Selected-entry texture-load validation |
+| `4bba5f9c53e1ed70fa8569cc9ed7eeec30f06a0f` | Single-target color write masks |
+
+## What is and is not usable
+
+No operation currently executes through a public D3D11 wgpu adapter: normal
+adapter enumeration returns zero and the HAL adapter type is uninhabited. The
+private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders, sampled
+RGBA8 textures, single-mip transfers, group-0 static and dynamic uniforms,
+triangle rendering with front/back culling, D24S8 Always/LessEqual depth
+testing and channel masks.
+This is not a general capability report or WebGPU conformance claim. The
+capability matrix in CAPABILITIES.md specifies the tested subset and gaps.
+
+The private hidden HWND path acquired, rendered, read back, presented and
+resized, but visible desktop presentation has not been verified. CoreWindow
+has prior private diagnostics; Windows 10 Mobile ARM32 and historical FL9_1
+hardware have not been tested. `wait_for_idle` only has GPU event-query evidence,
+not evidence that presentation completed. A synchronous HWND callback can
+deadlock if it reenters context work or waits on the active surface operation.
+This is a public presentation blocker even with context serialization.
+
+Before exposing an adapter, core-valid states such as broader primitive and
+vertex layouts, resource shapes and bindings need implementation or safe
+validation. Private HAL errors can currently surface as device loss. Clipped
+viewport emulation can exceed the FXC instruction budget, and the tested FXC
+profile rejects fragment-position and front-facing inputs. Stencil operations,
+read-only depth, depth comparisons other than Always/LessEqual, multiple groups,
+broader formats and mipmaps remain incomplete. FL9_1 does not guarantee
+separate-alpha blending, and the existing private blend modes have not been
+shown portable to historical drivers. Native compute and UAV storage are not
+FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
+
+Core also permits direct draw combinations that this HAL rejects at replay,
+including nonzero first-instance, multiple instances and indexed base-vertex;
+the existing downlevel flags alone do not make all of them unreachable. Core
+accepts other layouts, resource shapes and baseline query operations outside
+the private subset. A safe public backend needs implementations, sound
+fallbacks or targeted core validation for each such case. A contained core
+test could eventually use the existing unsafe HAL adapter/device injection
+APIs with an owner-matched test-only adapter, but that proof would not by
+itself make general adapter exposure safe. The existing Dx11 unreachable in
+core's shader path is specifically in unsafe shader passthrough, not normal
+validated WGSL; its reachability still needs an audit before exposure.
+
+## Reproduction and latest evidence
+
+On Windows 11, Rust 1.93.1 and the MSVC developer environment, use
+`CARGO_HOME=C:\dev\personal\wgpu\target\codex-cargo-home`,
+`CARGO_TARGET_DIR=target/codex-milestone1`, `CARGO_BUILD_JOBS=8`, and
+`WGPU_DX11_REQUIRE_HARDWARE=1`. In an x64 Visual Studio developer shell:
+
+```text
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 dx11:: -- --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_test_preserves_near_geometry_and_loads_depth -- --nocapture
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo clippy --offline -p wgpu-hal --lib --tests --no-default-features --features dx11
+```
+
+The strict private suite most recently passed 163 tests with two filtered;
+some older tests can skip internally. After the full run, the stronger
+color-mask transition test was rerun and passed. The focused physical-GPU test
+reported NVIDIA RTX 3090 Ti, vendor 0x10de, device 0x2203, driver 32.0.16.2101,
+requested and actual FL9_1. It checked all 64 pixels for each of 16 masks,
+three transition regions, zero color writes with depth writes and masked
+additive blending. The focused hidden HWND test read BGRA [0,0,255,255] and
+reported successful present and recreation. Core's zero-adapter test passed;
+targeted Clippy completed with ten existing warnings. Earlier work also ran
+Naga, core, public Noop validation and targeted DX12 regressions as recorded
+in FL9_1_PROGRESS.md. No public D3D11 example or visual display test ran.
+
+Known costs include staging/materializing uniform ranges and buffer-texture
+uploads, and GPU readback for checked indexed draws. They can stall the CPU;
+no representative frame-time measurement has been made. Device removal,
+mapping error paths and surface thread reentrancy require additional audit.
+
+Resume by checking `git status`, `git log` and the latest progress entry.
+Keep Cargo jobs bounded and do not overlap heavyweight builds. Prioritize a
+sound presentation synchronization design, core/HAL contract coverage and
+multiple bind groups while continuing independent, verified FL9_1 increments.
+Only begin higher feature levels after the requested FL9_1 contract is met;
+retain the shared capability-driven architecture when doing so.

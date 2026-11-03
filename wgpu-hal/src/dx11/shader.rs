@@ -484,6 +484,30 @@ mod tests {
     }
 
     #[test]
+    fn fl91_fragment_front_facing_is_rejected_by_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            "@fragment fn main(@builtin(front_facing) f: bool) -> @location(0) vec4f { return select(vec4f(0.0), vec4f(1.0), f); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let error = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+        )
+        .unwrap_err();
+        assert!(matches!(error, NagaCompileError::Compilation(_)));
+    }
+
+    #[test]
     fn compiles_level_9_1_and_shader_model_5_dxbc() {
         let vertex = "float4 main(float4 p : POSITION) : SV_POSITION { return p; }";
         let pixel = "float4 main() : SV_TARGET { return float4(1, 0, 0, 1); }";

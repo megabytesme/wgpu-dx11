@@ -11,10 +11,11 @@ use windows::{
             D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
             D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
             D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
-            D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC,
-            D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO,
-            D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
-            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
+            D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT, D3D11_CULL_NONE,
+            D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
+            D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
+            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
+            D3D11_STENCIL_OP_KEEP,
         },
         Dxgi::Common::{
             DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
@@ -686,7 +687,11 @@ impl RenderPipeline {
             || !fragment.module.belongs_to(owner)
             || !vertex_stage.constants.is_empty()
             || !fragment.constants.is_empty()
-            || desc.primitive != wgt::PrimitiveState::default()
+            || (wgt::PrimitiveState {
+                front_face: wgt::FrontFace::default(),
+                cull_mode: None,
+                ..desc.primitive
+            }) != wgt::PrimitiveState::default()
             || desc.multisample != wgt::MultisampleState::default()
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
@@ -871,7 +876,12 @@ impl RenderPipeline {
         }
         let raster_desc = D3D11_RASTERIZER_DESC {
             FillMode: D3D11_FILL_SOLID,
-            CullMode: D3D11_CULL_NONE,
+            CullMode: match desc.primitive.cull_mode {
+                None => D3D11_CULL_NONE,
+                Some(wgt::Face::Front) => D3D11_CULL_FRONT,
+                Some(wgt::Face::Back) => D3D11_CULL_BACK,
+            },
+            FrontCounterClockwise: (desc.primitive.front_face == wgt::FrontFace::Ccw).into(),
             DepthClipEnable: true.into(),
             ScissorEnable: true.into(),
             ..Default::default()

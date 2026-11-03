@@ -125,7 +125,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         stencil: wgt::StencilState::default(),
         bias: wgt::DepthBiasState::default(),
     };
-    let make_pipeline = |depth_state, mask, blend| unsafe {
+    let make_pipeline_with_primitive = |depth_state, mask, blend, primitive| unsafe {
         let targets = [Some(wgt::ColorTargetState {
             format: wgt::TextureFormat::Rgba8Unorm,
             blend,
@@ -138,7 +138,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                 vertex_buffers: &vertex_layout,
                 vertex_stage: stage("vs"),
             },
-            primitive: wgt::PrimitiveState::default(),
+            primitive,
             depth_stencil: Some(depth_state),
             multisample: wgt::MultisampleState::default(),
             fragment_stage: Some(stage("fs")),
@@ -146,6 +146,9 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             multiview_mask: None,
             cache: None,
         })
+    };
+    let make_pipeline = |depth_state, mask, blend| {
+        make_pipeline_with_primitive(depth_state, mask, blend, wgt::PrimitiveState::default())
     };
     let mut unsupported = depth.clone();
     unsupported.depth_compare = Some(wgt::CompareFunction::Less);
@@ -170,6 +173,34 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
     }
     let no_color_depth_pipeline =
         make_pipeline(depth.clone(), wgt::ColorWrites::empty(), None).unwrap();
+    let mut cull_pipelines = Vec::new();
+    for front_face in [wgt::FrontFace::Ccw, wgt::FrontFace::Cw] {
+        for cull_mode in [None, Some(wgt::Face::Front), Some(wgt::Face::Back)] {
+            cull_pipelines.push(
+                make_pipeline_with_primitive(
+                    no_write.clone(),
+                    wgt::ColorWrites::ALL,
+                    None,
+                    wgt::PrimitiveState {
+                        front_face,
+                        cull_mode,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            );
+        }
+    }
+    assert!(make_pipeline_with_primitive(
+        no_write.clone(),
+        wgt::ColorWrites::ALL,
+        None,
+        wgt::PrimitiveState {
+            topology: wgt::PrimitiveTopology::LineList,
+            ..Default::default()
+        },
+    )
+    .is_err());
     let additive_pipeline = make_pipeline(
         no_write,
         wgt::ColorWrites::RED | wgt::ColorWrites::BLUE,
@@ -312,7 +343,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device
             .create_buffer(&crate::BufferDescriptor {
                 label: None,
-                size: 252,
+                size: 336,
                 usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
                 memory_flags: crate::MemoryFlags::empty(),
             })
@@ -328,6 +359,11 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             for value in [p[0], p[1], z].into_iter().chain(color) {
                 vertex_data.extend_from_slice(&value.to_ne_bytes());
             }
+        }
+    }
+    for p in [[-1f32, -1.], [-1., 3.], [3., -1.]] {
+        for value in [p[0], p[1], 0.25, 0., 1., 0., 1.] {
+            vertex_data.extend_from_slice(&value.to_ne_bytes());
         }
     }
     native.write_byte_buffer(&vertex, 0, &vertex_data)?;
@@ -598,7 +634,7 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         commands.push(command);
     }
-    for case in 0..19 {
+    for case in 0..26 {
         let attachments = [Some(crate::ColorAttachment {
             target: crate::Attachment {
                 view: &color_view,
@@ -664,6 +700,24 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
                     encoder.set_render_pipeline(&additive_pipeline);
                     encoder.draw(6, 3, 0, 1);
                 }
+                19..=25 => {
+                    encoder.set_render_pipeline(
+                        &cull_pipelines[if case == 25 { 2 } else { case - 19 }],
+                    );
+                    if case == 25 {
+                        encoder.set_viewport(
+                            &crate::Rect {
+                                x: -4.,
+                                y: 0.,
+                                w: 8.,
+                                h: 8.,
+                            },
+                            0.0..1.0,
+                        );
+                    }
+                    encoder.draw(0, 3, 0, 1);
+                    encoder.draw(9, 3, 0, 1);
+                }
                 _ => unreachable!(),
             }
             encoder.end_render_pass();
@@ -693,6 +747,20 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         let pixels = native.read_rgba_texture(&color, 0, 0)?;
         if index >= 11 {
             let bits = index - 11;
+            if bits >= 19 {
+                for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+                    let expected = match bits {
+                        19 | 20 | 22 | 24 => [0, 192, 0, 255],
+                        21 | 23 => [128, 0, 0, 255],
+                        25 if i % 8 < 4 => [128, 0, 0, 255],
+                        25 => [0, 0, 255, 0],
+                        _ => unreachable!(),
+                    };
+                    assert_eq!(pixel, expected, "cull case {bits}, pixel {i}");
+                }
+                std::println!("FL9_1 cull case {bits}: 64/64 pixels matched");
+                continue;
+            }
             if bits == 16 {
                 for (i, pixel) in pixels.chunks_exact(4).enumerate() {
                     let expected = match i % 8 {
