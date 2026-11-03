@@ -57,6 +57,25 @@ impl RenderState {
     }
 }
 
+fn attachment_needs_clear(ops: AttachmentOps) -> Option<bool> {
+    if !ops.difference(AttachmentOps::all()).is_empty() {
+        return None;
+    }
+    let load =
+        ops & (AttachmentOps::LOAD | AttachmentOps::LOAD_CLEAR | AttachmentOps::LOAD_DONT_CARE);
+    let store = ops & (AttachmentOps::STORE | AttachmentOps::STORE_DISCARD);
+    if !(store == AttachmentOps::STORE || store == AttachmentOps::STORE_DISCARD) {
+        return None;
+    }
+    if load == AttachmentOps::LOAD_CLEAR {
+        Some(true)
+    } else if load == AttachmentOps::LOAD || load == AttachmentOps::LOAD_DONT_CARE {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 impl CommandEncoder {
     fn reject(&mut self) {
         self.failure.get_or_insert(DeviceError::Unexpected);
@@ -434,15 +453,15 @@ impl crate::CommandEncoder for CommandEncoder {
             }
         };
         let clear = if let Some(color) = color {
-            match color.ops {
-                ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE => Some([
+            match attachment_needs_clear(color.ops) {
+                Some(true) => Some([
                     color.clear_value.r as f32,
                     color.clear_value.g as f32,
                     color.clear_value.b as f32,
                     color.clear_value.a as f32,
                 ]),
-                ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
-                _ => {
+                Some(false) => None,
+                None => {
                     self.reject();
                     return Err(DeviceError::Unexpected);
                 }
@@ -489,26 +508,24 @@ impl crate::CommandEncoder for CommandEncoder {
             (None, None)
         };
         let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
-            let depth_clear = match attachment.depth_ops {
-                ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE
-                    && attachment.clear_value.0.is_finite()
-                    && (0.0..=1.0).contains(&attachment.clear_value.0) =>
+            let depth_clear = match attachment_needs_clear(attachment.depth_ops) {
+                Some(true)
+                    if attachment.clear_value.0.is_finite()
+                        && (0.0..=1.0).contains(&attachment.clear_value.0) =>
                 {
                     Some(attachment.clear_value.0)
                 }
-                ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
+                Some(false) => None,
                 _ => {
                     self.reject();
                     return Err(DeviceError::Unexpected);
                 }
             };
-            let stencil_clear = match attachment.stencil_ops {
-                ops if ops == AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE
-                    && attachment.clear_value.1 <= u8::MAX as u32 =>
-                {
+            let stencil_clear = match attachment_needs_clear(attachment.stencil_ops) {
+                Some(true) if attachment.clear_value.1 <= u8::MAX as u32 => {
                     Some(attachment.clear_value.1 as u8)
                 }
-                ops if ops == AttachmentOps::LOAD | AttachmentOps::STORE => None,
+                Some(false) => None,
                 _ => {
                     self.reject();
                     return Err(DeviceError::Unexpected);
@@ -1042,6 +1059,34 @@ mod tests {
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
+
+    #[test]
+    fn attachment_ops_accept_discard_and_reject_ambiguous_flags() {
+        for store in [AttachmentOps::STORE, AttachmentOps::STORE_DISCARD] {
+            assert_eq!(
+                attachment_needs_clear(AttachmentOps::LOAD | store),
+                Some(false)
+            );
+            assert_eq!(
+                attachment_needs_clear(AttachmentOps::LOAD_CLEAR | store),
+                Some(true)
+            );
+            assert_eq!(
+                attachment_needs_clear(AttachmentOps::LOAD_DONT_CARE | store),
+                Some(false)
+            );
+        }
+        for ops in [
+            AttachmentOps::empty(),
+            AttachmentOps::LOAD,
+            AttachmentOps::STORE,
+            AttachmentOps::LOAD | AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE,
+            AttachmentOps::LOAD | AttachmentOps::STORE | AttachmentOps::STORE_DISCARD,
+            AttachmentOps::LOAD | AttachmentOps::STORE | AttachmentOps::from_bits_retain(0x80),
+        ] {
+            assert_eq!(attachment_needs_clear(ops), None);
+        }
+    }
 
     #[test]
     fn fl9_1_hardware_indexed_triangle() {

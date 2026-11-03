@@ -141,3 +141,22 @@ core library tests, targeted core Clippy and the rebuilt DX12
 `wgpu_gpu::encoder::drop_encoder_after_error` hardware test passed. Vulkan
 loader warnings about a missing OBS layer JSON are pre-existing. This shared
 validation fix affects all native wgpu-core backends.
+The shared validation fix was checkpointed as `d13062b65`.
+
+Private render passes now accept exactly one load operation and one store
+operation per attachment aspect, including don't-care and discard. Discard is
+a native no-op, so no discarded contents are promised. Core's later zero
+initialization still requires public-path integration testing. The strict
+FL9_1 depth test executes independent stencil and depth discards, preserves a
+loaded depth aspect, verifies a fully overwritten don't-care color target, and
+checks all 64 pixels of ten subsequent results. Malformed operation flags are
+rejected in unit and encoder tests. The full private suite passed 135 tests;
+after adding the stronger don't-care and encoder-negative checks, the focused
+GPU test passed again. The core isolation test and targeted Clippy passed, with
+ten existing Clippy warnings.
+
+Independent HWND research identified two presentation blockers: `Present`
+thread synchronization and message-pump lock ordering need review, and retained
+command-buffer RTV references may prevent `ResizeBuffers` even after a surface
+texture is released. A future Win32 surface must address and test both; the
+current CoreWindow path and public adapter gate remain unchanged.

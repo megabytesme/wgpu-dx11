@@ -355,6 +355,27 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         encoder.begin_encoding(None).unwrap();
         assert!(encoder.begin_render_pass(&bad_pass).is_err());
         assert!(encoder.end_encoding().is_err());
+        let invalid_ops_color = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &color_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD
+                | crate::AttachmentOps::LOAD_CLEAR
+                | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color::BLACK,
+        })];
+        let invalid_ops = crate::RenderPassDescriptor {
+            color_attachments: &invalid_ops_color,
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            ..bad_pass
+        };
+        encoder.begin_encoding(None).unwrap();
+        assert!(encoder.begin_render_pass(&invalid_ops).is_err());
+        assert!(encoder.end_encoding().is_err());
         for clear_value in [(f32::NAN, 0), (1.0, 256)] {
             let invalid_clear = crate::RenderPassDescriptor {
                 label: None,
@@ -399,7 +420,11 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             },
             depth_slice: None,
             resolve_target: None,
-            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            ops: if pass_index == 1 {
+                crate::AttachmentOps::LOAD_DONT_CARE | crate::AttachmentOps::STORE
+            } else {
+                crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE
+            },
             clear_value: if matches!(pass_index, 0 | 2 | 7 | 8 | 9) {
                 wgt::Color::BLUE
             } else {
@@ -438,6 +463,64 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         let command = unsafe {
             encoder.begin_encoding(None).unwrap();
+            if pass_index == 0 {
+                let discarded_color = [Some(crate::ColorAttachment {
+                    target: crate::Attachment {
+                        view: &color_view,
+                        usage: wgt::TextureUses::COLOR_TARGET,
+                    },
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE_DISCARD,
+                    clear_value: wgt::Color::GREEN,
+                })];
+                let discarded = crate::RenderPassDescriptor {
+                    color_attachments: &discarded_color,
+                    depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                        target: crate::Attachment {
+                            view: &depth_view,
+                            usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                        },
+                        depth_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+                        stencil_ops: crate::AttachmentOps::LOAD_CLEAR
+                            | crate::AttachmentOps::STORE_DISCARD,
+                        clear_value: (f32::NAN, 123),
+                    }),
+                    timestamp_writes: None,
+                    ..pass
+                };
+                encoder.begin_render_pass(&discarded).unwrap();
+                encoder.end_render_pass();
+            }
+            if pass_index == 1 {
+                let dont_care_color = [Some(crate::ColorAttachment {
+                    target: crate::Attachment {
+                        view: &color_view,
+                        usage: wgt::TextureUses::COLOR_TARGET,
+                    },
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: crate::AttachmentOps::LOAD_DONT_CARE | crate::AttachmentOps::STORE_DISCARD,
+                    clear_value: wgt::Color::BLACK,
+                })];
+                let discarded_depth = crate::RenderPassDescriptor {
+                    color_attachments: &dont_care_color,
+                    depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                        target: crate::Attachment {
+                            view: &depth_view,
+                            usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                        },
+                        depth_ops: crate::AttachmentOps::LOAD_CLEAR
+                            | crate::AttachmentOps::STORE_DISCARD,
+                        stencil_ops: crate::AttachmentOps::LOAD | crate::AttachmentOps::STORE,
+                        clear_value: (0.0, 999),
+                    }),
+                    timestamp_writes: None,
+                    ..pass
+                };
+                encoder.begin_render_pass(&discarded_depth).unwrap();
+                encoder.end_render_pass();
+            }
             encoder.begin_render_pass(&pass).unwrap();
             encoder.set_blend_constants(&[0.2, 0.3, 0.4, 0.5]);
             if pass_index != 4 && pass_index != 6 {
