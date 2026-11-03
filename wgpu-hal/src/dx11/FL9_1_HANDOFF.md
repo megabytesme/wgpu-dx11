@@ -11,6 +11,13 @@ depth/readback test has passed on forced FL9_1; stencil tests,
 aspect-specific views and general render-pass operations remain incomplete.
 Depth-only drawing without a fragment stage also passed a private GPU prepass
 test; its trivial pixel-shader fallback has not been tested on historical GPUs.
+Indexed LineStrip is now implemented privately by splitting fixed restart
+indices after base-vertex resolution, compacting/rebasing runs and gathering
+wide edges; forced-FL9_1 GPU and controlled core-fixture runs pass. A checked
+pixel now proves the gathered wide edge contributes output. The complete
+strict private HAL suite passed 301 tests (two filtered), the fixture-enabled
+core suite passed 70 tests, and the implementation is checkpointed as
+`2ff5a58e8`.
 See FL9_1_PLAN.md for completion gates,
 FL9_1_PROGRESS.md for current commands and evidence, and CAPABILITIES.md for the
 current implementation and validation matrix.
@@ -25,10 +32,11 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest strict private HAL suite passed 286 tests with
-two filtered, and the current core suite passed 70/70 including two strict
-FL9_1 GPU fixtures. Older HAL tests may skip internally, so use focused strict
-tests for hardware evidence.
+operations are safe. The latest strict private HAL suite passed 301 tests with
+two filtered, and the current core suite passed 70/70 including strict FL9_1
+GPU fixtures. The focused line-topology test and core fixture ran on the RTX
+3090 Ti at explicitly requested and selected FL9_1. Older HAL tests may skip
+internally, so use focused strict tests for hardware evidence.
 
 The current public-surface gate is an unresolved cross-layer reentrancy issue:
 DXGI may synchronously send messages to the HWND's window procedure during
@@ -135,6 +143,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `ceaf4d603dc4ecbc6449b520f5a9ef546b5cfa64` | Safe D3D11 passthrough shader rejection |
 | `a690866b4a6cdc0981a1ffa448f2c28f0f41b756` | Fallible mapped-range invalidation |
 | `13a4defb9` | Fallible mapped-range flush and core error propagation |
+| `2ff5a58e8` | dx11: emulate FL9_1 indexed line-strip restart |
 
 ## What is and is not usable
 
@@ -471,7 +480,7 @@ test, HAL build and Clippy passed. The working tree is clean after this
 checkpoint. Next validate line topology through the unsafe controlled core
 fixture, then continue toward indexed semantics and the broader public contract.
 
-## Latest checkpoint — indexed FL9_1 LineList
+## Previous checkpoint — indexed FL9_1 LineList
 
 Indexed Uint16 and Uint32 LineList draws preserve pairs through compact
 rebasing, gather wide pairs, ignore an incomplete tail and discard invalid
@@ -482,6 +491,19 @@ suite passed 297 tests with two filtered; the strict core fixture suite passed
 HAL build and Clippy passed (ten existing HAL warnings), core Clippy passed,
 formatting and diff checks passed. Ordinary adapter enumeration remains empty.
 Checkpoint `82c9b9228` (`dx11: add FL9_1 indexed line-list rendering`).
-Continue with fixed-index restart analysis and indexed LineStrip only if safely
-emulatable. Historical FL9_1 hardware and public adapter exposure remain
-unverified.
+
+## Latest checkpoint — indexed FL9_1 LineStrip
+
+`2ff5a58e8` emulates fixed-index LineStrip restart in the private HAL. It
+resolves the signed base vertex before restart matching, splits runs, compacts
+bounded windows, preserves connectivity across windows and gathers wide edges.
+The strict RTX 3090 Ti tests requested and selected FL9_1. They verified both
+index formats, marker creation/removal through base adjustment, format mismatch
+rejection, invalid-fetch discard, and a checked pixel on a gathered wide edge.
+The focused strict hardware test passed 1/1; the complete strict private suite
+passed 301/301 with two filtered. The controlled core fixture passed 70/70,
+including indexed Uint16/Uint32 LineList and LineStrip while ordinary adapter
+enumeration remained empty. HAL build passed, HAL Clippy completed with ten
+pre-existing warnings, core Clippy passed, targeted DX12 tests passed 2/2, and
+format/diff checks passed. Historical FL9_1 hardware is unverified. Indexed
+triangle strips, public adapter exposure and HWND surface exposure remain open.

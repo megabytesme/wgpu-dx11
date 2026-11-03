@@ -1830,3 +1830,70 @@ Checkpoint `82c9b9228` (`dx11: add FL9_1 indexed line-list rendering`). Next,
 analyze fixed-index restart semantics and implement indexed LineStrip only if
 it can preserve core draw behavior under FL9_1. Keep ordinary adapter
 enumeration and HWND exposure disabled.
+
+## 2026-11-03 — indexed FL9_1 LineStrip emulation
+
+The private HAL now accepts indexed LineStrip pipelines when their declared
+`strip_index_format` matches the bound Uint16 or Uint32 index buffer. At replay,
+it maps the GPU-authoritative selected index range, splits format-specific
+restart markers into independent runs, discards runs shorter than two indices,
+validates every effective vertex fetch across all vertex-rate streams, and
+compacts each bounded run to Uint16. Long runs overlap one endpoint at the
+FL9_1 native draw limit. An adjacent pair whose effective indices cannot fit a
+single 65,534-span window is gathered into per-stream scratch buffers and
+rendered as a two-vertex line strip. Native FL9 strip-cut support is not used.
+The internal capability model records this implementation separately from the
+hardware guarantee.
+
+The implementation resolves `baseVertex + index` before testing for the
+format-specific restart value and splitting primitive runs, following the
+current [WebGPU index-resolution and primitive-assembly algorithm](https://www.w3.org/TR/webgpu/#index-resolution).
+FL9_1 does not guarantee native strip-cut support, so this split occurs during
+the replay-time CPU index scan before compact R16 runs are submitted. CPU tests
+cover a non-marker that becomes a marker through a positive base and a raw
+marker that becomes an ordinary, in-range vertex through a negative base. The
+core fixture executes both index formats with base 1 and a marker formed by
+resolution.
+
+Strict private hardware testing used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`) with requested and selected FL9_1. The combined line test
+read back 17 red, 12 green, 24 blue, 14 white, 10 cyan and 14 yellow pixels,
+including marker-separated Uint16 and Uint32 strips. The Uint16 strip used a
+positive base to create the resolved marker. A second submission verified a
+Uint32 wide-edge gather followed by a compact window (15 yellow pixels) and
+asserted a pixel on the gathered edge itself. Missing strip format and
+pipeline/index-format mismatch were rejected before submission. An
+out-of-bounds indexed fetch discarded the whole draw. The controlled core
+fixture also passed indexed Uint16 and Uint32 LineStrip through core command
+recording, with 12 red pixels each. Planner tests cover resolved-marker runs,
+empty/short runs, signed-base rebasing, wide-edge gathering, Uint16 max as an
+ordinary Uint32 index and the 65,536 index native strip boundary.
+
+The first planner-test attempt exposed an undersized synthetic vertex range;
+the corrected fixture now models the full effective index range. The first
+strict GPU attempt had a test-only Uint32 fixture referencing vertex indices
+that had not been appended; the backend correctly discarded it as an
+out-of-bounds draw. The first core attempt then exposed an index-upload size of
+14 bytes, which violates the core queue-write four-byte alignment; an unused
+padding index now keeps the fixture upload valid. A separate review caught
+that the first GPU wide-pair test used identical gathered endpoints. The test
+now uses distinct positions and asserts an interior pixel on that specific
+edge. After these fixture corrections, the focused strict HAL and core tests
+passed; no product validation was weakened.
+
+The focused strict HAL hardware test passed 1/1, and the focused strict core
+fixture test passed 1/1. Final verification on the current implementation then
+passed the complete strict private HAL suite (301 passed, 0 failed, 2 filtered)
+and the strict fixture-enabled core suite (70 passed, 0 failed), which includes
+the ordinary zero-D3D11-adapter isolation test. HAL compilation passed. HAL
+Clippy completed with ten existing warnings and no errors; core Clippy passed
+without warnings. The targeted DX12 pipeline descriptor regression passed
+2/2. Rust formatting and `git diff --check` passed. The strict RTX tests report
+the actual NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), request FL9_1 and
+assert selected FL9_1. Historical FL9_1 devices remain untested.
+
+Implementation checkpoint: `2ff5a58e8` (`dx11: emulate FL9_1 indexed
+line-strip restart`). The checkpoint records the resolved-index restart rule
+and checked wide-edge GPU output. The persistent handoff/journal update follows
+in a documentation-only commit. Indexed triangle strips, public adapter
+exposure and HWND surface exposure remain unavailable.
