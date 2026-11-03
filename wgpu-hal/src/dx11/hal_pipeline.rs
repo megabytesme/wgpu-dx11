@@ -1,5 +1,9 @@
 //! Narrow FL9_1 graphics pipeline for the private D3D11 HAL.
-use super::{api::Unavailable, device::NativeDevice, hal_shader::ShaderModule};
+use super::{
+    api::Unavailable,
+    device::{FeatureLevel, NativeDevice},
+    hal_shader::ShaderModule,
+};
 use alloc::{string::ToString, sync::Arc};
 use windows::{
     core::PCSTR,
@@ -41,6 +45,17 @@ fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
         }
     }
     Some(native)
+}
+
+fn overlapping_vertex_element(
+    level: FeatureLevel,
+    ranges: &[(u32, u32)],
+    (start, end): (u32, u32),
+) -> bool {
+    level == FeatureLevel::L9_1
+        && ranges
+            .iter()
+            .any(|&(other_start, other_end)| start < other_end && other_start < end)
 }
 
 fn format_blendable(support: windows::core::Result<u32>) -> Result<bool, crate::DeviceError> {
@@ -316,6 +331,32 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
 
     #[test]
+    fn vertex_element_overlap_uses_selected_feature_level() {
+        let ranges = [(4, 20), (28, 32)];
+        for level in FeatureLevel::ALL_DESCENDING {
+            for candidate in [(4, 8), (0, 8), (8, 12), (16, 24), (28, 32)] {
+                assert_eq!(
+                    overlapping_vertex_element(level, &ranges, candidate),
+                    level == FeatureLevel::L9_1,
+                    "{level:?} {candidate:?}"
+                );
+            }
+            for candidate in [(0, 4), (20, 28), (32, 36)] {
+                assert!(!overlapping_vertex_element(level, &ranges, candidate));
+            }
+            assert!(!overlapping_vertex_element(level, &[], (0, u32::MAX)));
+            assert_eq!(
+                overlapping_vertex_element(
+                    level,
+                    &[(u32::MAX - 4, u32::MAX)],
+                    (u32::MAX - 2, u32::MAX),
+                ),
+                level == FeatureLevel::L9_1
+            );
+        }
+    }
+
+    #[test]
     fn color_write_masks_map_all_channels_and_reject_unknown_bits() {
         for bits in 0..16 {
             assert_eq!(
@@ -379,6 +420,125 @@ mod tests {
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
         Direct3D11::{ID3D11DepthStencilView, D3D11_VIEWPORT},
     };
+
+    #[test]
+    fn fl91_vertex_element_overlap_is_rejected() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
+        let device = Device::new(native);
+        let module = naga::front::wgsl::parse_str(
+            "@vertex fn vs(@location(0) a: vec4f, @location(1) b: vec2f) -> @builtin(position) vec4f { return vec4f(a.xy + b, 0.0, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let shader = unsafe {
+            device
+                .create_shader_module(
+                    &crate::ShaderModuleDescriptor {
+                        label: None,
+                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                    },
+                    crate::ShaderInput::Naga(crate::NagaShader {
+                        module: Cow::Owned(module),
+                        info,
+                        debug_source: None,
+                    }),
+                )
+                .unwrap()
+        };
+        let layout = unsafe {
+            device
+                .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                    label: None,
+                    flags: crate::PipelineLayoutFlags::empty(),
+                    bind_group_layouts: &[],
+                    immediate_size: 0,
+                })
+                .unwrap()
+        };
+        let constants = naga::back::PipelineConstants::default();
+        let stage = |entry_point| crate::ProgrammableStage {
+            module: &shader,
+            entry_point,
+            constants: &constants,
+            zero_initialize_workgroup_memory: false,
+        };
+        let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+        let make_pipeline = |a_offset, b_offset| {
+            let attributes = [
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32x4,
+                    offset: a_offset,
+                    shader_location: 0,
+                },
+                wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32x2,
+                    offset: b_offset,
+                    shader_location: 1,
+                },
+            ];
+            let buffers = [Some(crate::VertexBufferLayout {
+                array_stride: 32,
+                step_mode: wgt::VertexStepMode::Vertex,
+                attributes: &attributes,
+            })];
+            unsafe {
+                device.create_render_pipeline(&crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &buffers,
+                        vertex_stage: stage("vs"),
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(stage("fs")),
+                    color_targets: &targets,
+                    multiview_mask: None,
+                    cache: None,
+                })
+            }
+        };
+        for (a, b) in [(0, 16), (16, 0)] {
+            let pipeline = make_pipeline(a, b).expect("disjoint vertex elements must work");
+            unsafe { device.destroy_render_pipeline(pipeline) };
+        }
+        for (name, a, b) in [("same start", 0, 0), ("partial", 0, 12), ("nested", 0, 4)] {
+            let result = make_pipeline(a, b);
+            assert!(
+                matches!(&result, Err(crate::PipelineError::Linkage(_, message))
+                    if message == "overlapping vertex attributes are unsupported at D3D11 feature level 9_1"),
+                "{name} overlap must fail backend validation: {result:?}"
+            );
+        }
+        for (a, b) in [(u64::MAX, 0), (28, 0)] {
+            assert!(make_pipeline(a, b).is_err(), "invalid range {a}, {b}");
+        }
+        unsafe {
+            device.destroy_pipeline_layout(layout);
+            device.destroy_shader_module(shader);
+        }
+        Ok(())
+    }
 
     #[test]
     fn empty_vertex_input_pipeline_is_accepted() -> windows::core::Result<()> {
@@ -1772,6 +1932,7 @@ impl RenderPipeline {
             alloc::vec::Vec::with_capacity(buffer.map_or(0, |buffer| buffer.attributes.len()));
         let mut vertex_extent = 0u32;
         let mut locations = 0u32;
+        let mut vertex_ranges = alloc::vec::Vec::new();
         for (layout, attribute) in buffer.into_iter().flat_map(|layout| {
             layout
                 .attributes
@@ -1795,6 +1956,14 @@ impl RenderPipeline {
             {
                 return Err(invalid());
             }
+            if overlapping_vertex_element(owner.feature_level(), &vertex_ranges, (offset, end)) {
+                return Err(crate::PipelineError::Linkage(
+                    wgt::ShaderStages::VERTEX,
+                    "overlapping vertex attributes are unsupported at D3D11 feature level 9_1"
+                        .into(),
+                ));
+            }
+            vertex_ranges.push((offset, end));
             locations |= 1 << attribute.shader_location;
             vertex_extent = vertex_extent.max(end);
             input_desc.push(D3D11_INPUT_ELEMENT_DESC {

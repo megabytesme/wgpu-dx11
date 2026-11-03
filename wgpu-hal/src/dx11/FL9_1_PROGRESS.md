@@ -713,6 +713,7 @@ The CPU batch test checked overlap and instance order. Naga→FXC reported X4568
 for one flat-interpolation declaration; it did not execute on GPU. The combined
 strict suite and Clippy results are recorded below. Rebased stream offsets and
 strip behavior remain unverified on historical FL9_1 drivers.
+Checkpoint: `ec8dbf12e`.
 
 Independent shader review found that Naga's HLSL matrix-in-struct store
 lowering can emit an unchecked dynamic component index and that some related
@@ -738,3 +739,22 @@ skipped GPU execution, as noted above. Independent review found no concrete
 provenance bypass. The guard conservatively rejects writes to other fields in
 an affected aggregate and sufficiently complex valid shaders; it does not fix
 the shared Naga lowering.
+Checkpoint: `d77a14387`.
+
+Vertex-input overlap audit: the FL9_1 minimum does not guarantee overlapping
+elements in one input stream. The strict
+`fl91_vertex_element_overlap_is_rejected` baseline created adjacent and
+reverse-ordered disjoint controls on the RTX at requested/actual FL9_1, then
+failed because the backend accepted a same-start overlap. A selected-level
+fail-closed validation change now rejects same-start, partial and nested byte
+ranges while accepting adjacent and disjoint ranges. The strict production
+test and synthetic checks across seven feature-level identities passed; the
+latter do not claim higher-level execution support. Success on this modern
+driver is not evidence of historical stream-offset or stride support.
+
+Additional matrix-guard regressions passed for a bare matrix and matrix-pointer
+helper, matrix arrays, safe/unsafe helper call order, an unselected unsafe
+entry, checked and unchecked compilation, and the combined call-depth boundary.
+The strict private suite passed 206 libtest cases, two filtered; the three
+documented shader cases still skipped GPU execution. HAL Clippy passed with
+ten existing warnings. Independent overlap review found no concrete defect.

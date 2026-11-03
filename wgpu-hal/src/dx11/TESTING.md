@@ -11,6 +11,12 @@ expressed by `Limits` alone.
 ### Focused FL9_1 hardware test
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+vertex_element_overlap -- --nocapture --test-threads=1` checks the selected-level
+overlap rule synthetically and on a forced-FL9_1 device. It includes overlapping,
+adjacent, disjoint and invalid-range input layouts; it does not establish older
+driver behavior for nonzero stream offsets or maximum strides.
+
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 triangle_strip -- --nocapture --test-threads=1` checks the private nonindexed
 strip path. The strict GPU test compares culling and winding with triangle lists,
 exercises a split boundary, and checks a nonzero-offset pipeline transition.
