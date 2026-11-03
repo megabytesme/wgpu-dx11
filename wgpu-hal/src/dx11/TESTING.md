@@ -21,25 +21,19 @@ opaque, unculled output does not independently establish parity or instance orde
 With `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"`, the focused sparse indexed test is:
 
 ```powershell
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_vertex_indexed_render -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_vertex_indexed -- --nocapture --test-threads=1
 ```
 
-On the RTX 3090 Ti, the test requested and selected FL9_1 and passed readback
-checks for sparse slots 0 and 15, GPU-written Uint16 indices, a nonzero index
-binding offset, positive and negative base vertices, a nonzero first index and
-two additive instances. A later out-of-bounds index discards the complete draw;
-a subsequent valid draw and fence complete. The two-instance result is checked
-separately from a single-instance result. The CPU proof tests run with:
-
-```powershell
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 multi_stream_native_proof -- --nocapture
-```
-
-Those synthetic tests compare the encoder's conservative proof with all 65,536
-Uint16 values for representative capacities and signed bases. The multi-stream
-path rejects Uint32 and ranges it cannot prove native-safe before submission;
-its current coverage does not establish historical-driver portability or general
-public indexed-draw support.
+On the RTX 3090 Ti, all three focused tests passed with requested and selected
+FL9_1. The high-Uint16 case also checks gather-to-native transition and additive
+instances without rebinding vertex streams. The Uint16 test checks sparse slots 0 and 15, GPU-written indices, a
+nonzero index binding offset, positive and negative base vertices, a nonzero
+first index and two additive instances. A later out-of-bounds index discards
+the complete draw; a subsequent valid draw and fence complete. The Uint32 test
+uses GPU-written streams and indices to check ordered window and wide-triangle
+gather rendering, then checks whole-draw discard after a late out-of-bounds
+index. It verifies all 64 readback pixels in each target. These tests do not
+establish historical-driver portability or general public indexed-draw support.
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_direct_triangle_ -- --nocapture --test-threads=1` checks direct triangle

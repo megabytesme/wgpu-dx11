@@ -1107,7 +1107,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             }
             let mut vertices = Vec::new();
-            let mut layouts = Vec::new();
             for (slot, layout) in render.vertex_layouts.iter().enumerate() {
                 let Some((stride, extent)) = *layout else {
                     continue;
@@ -1124,13 +1123,8 @@ impl crate::CommandEncoder for CommandEncoder {
                     stride,
                     extent,
                 ));
-                layouts.push((*length, stride, extent));
             }
             if index_count == 0 || instance_count == 0 {
-                return;
-            }
-            if !index.multi_native_safe(&layouts, base_vertex) {
-                self.reject();
                 return;
             }
             let Some(binding_commands) = render.binding_commands() else {

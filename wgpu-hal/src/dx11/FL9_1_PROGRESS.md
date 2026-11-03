@@ -838,3 +838,20 @@ with 64/64 buffer bytes and 32 red/32 green pixels; ordinary core enumeration
 still returned zero D3D11 adapters. Independent review found no concrete issue.
 The native subset stages and maps index data at replay and may stall; the general
 multistream translation and public validation remain blockers.
+Checkpoint: `9bee6efe5`.
+
+Multi-stream indexed draws now scan all GPU-written Uint16/Uint32 indices against
+every bound stream before drawing; any OOB fetch discards the entire draw.
+Native-safe Uint16 keeps the direct path. Other data is translated to ordered
+common index windows, with per-stream rebasing or per-stream GPU gather for
+wide triangles. All segment resources are prepared before native draw commands.
+The three strict `fl91_sparse_vertex_indexed` GPU cases passed on RTX at
+requested/actual FL9_1: native u16, u16 gather to native transition with signed
+base and instances, and u32 window/gather plus late OOB and retained GPU data.
+Independent review found no concrete scan, ordering or lifetime defect.
+The first combined suite found one obsolete test still expecting Uint32 rejection;
+it was changed to test an index-buffer range that is actually out of bounds.
+The corrected strict suite passed 216 cases, two filtered, including the new
+transient tests; three previously documented shader cases still skip GPU work.
+HAL Clippy passed with ten existing test-target warnings. The controlled core
+fixture also passed its texture validation checks and 32 red/32 green readback.

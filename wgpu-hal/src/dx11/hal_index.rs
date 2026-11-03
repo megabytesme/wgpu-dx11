@@ -84,10 +84,6 @@ impl IndexBinding {
         self.format == wgt::IndexFormat::Uint32
     }
 
-    pub(super) fn multi_native_safe(&self, layouts: &[(u64, u32, u32)], base: i32) -> bool {
-        !self.is_u32() && multi_native_safe(layouts, base, self.max_index)
-    }
-
     pub(super) fn draw_multi(
         &self,
         context: &ID3D11DeviceContext,
@@ -98,7 +94,15 @@ impl IndexBinding {
         draw_limits: (u32, u32),
     ) -> Result<()> {
         let (max_vertices, instances) = draw_limits;
-        if self.is_u32()
+        if vertices.is_empty()
+            || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
+                !offset.is_multiple_of(4)
+                    || *stride == 0
+                    || !stride.is_multiple_of(4)
+                    || *extent == 0
+                    || *extent > *stride
+                    || !extent.is_multiple_of(4)
+            })
             || !self.contains_range(first, count)
             || max_vertices == 0
             || !max_vertices.is_multiple_of(3)
@@ -117,30 +121,244 @@ impl IndexBinding {
                 context.Unmap(&self.staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
-            let start = self.offset as usize + first as usize * 2;
-            let valid = (0..count as usize).all(|i| {
-                let value = core::ptr::read_unaligned(
-                    mapped.pData.cast::<u8>().add(start + i * 2).cast::<u16>(),
+            let size = if self.is_u32() { 4 } else { 2 };
+            let start = self.offset as usize + first as usize * size;
+            let read = |i: usize| {
+                let ptr = mapped.pData.cast::<u8>().add(start + i * size);
+                if self.is_u32() {
+                    core::ptr::read_unaligned(ptr.cast::<u32>())
+                } else {
+                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
+                }
+            };
+            let mut native = !self.is_u32();
+            let mut valid = true;
+            for i in 0..count as usize {
+                let value = read(i);
+                let effective = i64::from(value) + i64::from(base);
+                valid &= multi_u32_index_in_bounds(
+                    value,
+                    base,
+                    vertices.iter().map(|v| (v.3, v.4, v.5)),
                 );
-                multi_index_in_bounds(value, base, vertices.iter().map(|v| (v.3, v.4, v.5)))
-            });
+                native &=
+                    value <= u32::from(self.max_index) && effective <= i64::from(self.max_index);
+            }
+            let plan = if valid && !native {
+                let first_vertex = &vertices[0];
+                Some(plan_u32_windows(
+                    read,
+                    count as usize,
+                    base,
+                    self.max_index,
+                    first_vertex.2,
+                    (first_vertex.3, first_vertex.4, first_vertex.5),
+                    max_vertices,
+                ))
+            } else {
+                None
+            };
             context.Unmap(&self.staging, 0);
             if !valid {
                 return Ok(());
             }
-            for (slot, buffer, offset, _, stride, _) in vertices {
-                context.IASetVertexBuffers(
-                    *slot,
-                    1,
-                    Some(&Some(buffer.clone())),
-                    Some(stride),
-                    Some(offset),
-                );
+            if native {
+                for (slot, buffer, offset, _, stride, _) in vertices {
+                    context.IASetVertexBuffers(
+                        *slot,
+                        1,
+                        Some(&Some(buffer.clone())),
+                        Some(stride),
+                        Some(offset),
+                    );
+                }
+                context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
+                super::command::draw_batches(
+                    first,
+                    count,
+                    instances,
+                    max_vertices,
+                    |first, count| {
+                        context.DrawIndexed(count, first, base);
+                    },
+                )?;
+                return Ok(());
             }
-            context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
-            super::command::draw_batches(first, count, instances, max_vertices, |first, count| {
-                context.DrawIndexed(count, first, base);
-            })?;
+            let Some(plan) = plan else {
+                return Err(Error::from_hresult(E_FAIL));
+            };
+            let Some(plan) = plan? else { return Ok(()) };
+            enum Segment {
+                Window {
+                    buffer: ID3D11Buffer,
+                    offsets: Vec<u32>,
+                    count: u32,
+                },
+                Gather {
+                    streams: Vec<(ID3D11Buffer, [D3D11_BOX; 3])>,
+                },
+            }
+            let device = context.GetDevice()?;
+            let mut prepared = Vec::new();
+            prepared
+                .try_reserve_exact(plan.len())
+                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+            for segment in plan {
+                match segment {
+                    U32Segment::Window(window) => {
+                        let first_vertex = &vertices[0];
+                        let relative = window
+                            .vertex_offset
+                            .checked_sub(first_vertex.2)
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        let minimum = u64::from(relative / first_vertex.4);
+                        let mut offsets = Vec::new();
+                        offsets
+                            .try_reserve_exact(vertices.len())
+                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                        for (_, _, offset, length, stride, extent) in vertices {
+                            offsets.push(
+                                rebased_vertex_offset(
+                                    minimum,
+                                    *offset,
+                                    (*length, *stride, *extent),
+                                )
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                            );
+                        }
+                        let desc = D3D11_BUFFER_DESC {
+                            ByteWidth: window.data.len() as u32,
+                            Usage: D3D11_USAGE_IMMUTABLE,
+                            BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                            ..Default::default()
+                        };
+                        let data = D3D11_SUBRESOURCE_DATA {
+                            pSysMem: window.data.as_ptr().cast(),
+                            ..Default::default()
+                        };
+                        let mut buffer = None;
+                        device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                        prepared.push(Segment::Window {
+                            buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                            offsets,
+                            count: window.count,
+                        });
+                    }
+                    U32Segment::Gather(first_sources) => {
+                        let first_vertex = &vertices[0];
+                        let mut indices = [0u64; 3];
+                        for (index, source) in indices.iter_mut().zip(first_sources) {
+                            let relative = source
+                                .left
+                                .checked_sub(first_vertex.2)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            *index = u64::from(relative / first_vertex.4);
+                        }
+                        let mut streams = Vec::new();
+                        streams
+                            .try_reserve_exact(vertices.len())
+                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                        for (_, _, offset, length, stride, extent) in vertices {
+                            let mut sources = [D3D11_BOX::default(); 3];
+                            for (source, &index) in sources.iter_mut().zip(&indices) {
+                                let left = rebased_vertex_offset(
+                                    index,
+                                    *offset,
+                                    (*length, *stride, *extent),
+                                )
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                let right = left
+                                    .checked_add(*extent)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                *source = D3D11_BOX {
+                                    left,
+                                    right,
+                                    top: 0,
+                                    bottom: 1,
+                                    front: 0,
+                                    back: 1,
+                                };
+                            }
+                            let bytes = stride
+                                .checked_mul(3)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            let mut zeroes = Vec::new();
+                            zeroes
+                                .try_reserve_exact(bytes as usize)
+                                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                            zeroes.resize(bytes as usize, 0u8);
+                            let desc = D3D11_BUFFER_DESC {
+                                ByteWidth: bytes,
+                                Usage: D3D11_USAGE_DEFAULT,
+                                BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                                ..Default::default()
+                            };
+                            let data = D3D11_SUBRESOURCE_DATA {
+                                pSysMem: zeroes.as_ptr().cast(),
+                                ..Default::default()
+                            };
+                            let mut buffer = None;
+                            device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                            streams.push((
+                                buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                                sources,
+                            ));
+                        }
+                        prepared.push(Segment::Gather { streams });
+                    }
+                }
+            }
+            for segment in &prepared {
+                if let Segment::Gather { streams } = segment {
+                    for ((_, source_buffer, _, _, stride, _), (buffer, sources)) in
+                        vertices.iter().zip(streams)
+                    {
+                        for (index, source) in sources.iter().enumerate() {
+                            context.CopySubresourceRegion(
+                                buffer,
+                                0,
+                                index as u32 * stride,
+                                0,
+                                0,
+                                source_buffer,
+                                0,
+                                Some(source),
+                            );
+                        }
+                    }
+                }
+            }
+            for_each_window(instances, prepared.len(), |index| match &prepared[index] {
+                Segment::Window {
+                    buffer,
+                    offsets,
+                    count,
+                } => {
+                    for ((slot, vertex, _, _, stride, _), offset) in vertices.iter().zip(offsets) {
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(vertex.clone())),
+                            Some(stride),
+                            Some(offset),
+                        );
+                    }
+                    context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
+                    context.DrawIndexed(*count, 0, 0);
+                }
+                Segment::Gather { streams } => {
+                    for ((slot, _, _, _, stride, _), (buffer, _)) in vertices.iter().zip(streams) {
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(buffer.clone())),
+                            Some(stride),
+                            Some(&0),
+                        );
+                    }
+                    context.Draw(3, 0);
+                }
+            });
         }
         Ok(())
     }
@@ -338,30 +556,8 @@ impl IndexBinding {
     }
 }
 
-pub(super) fn multi_native_safe(layouts: &[(u64, u32, u32)], base: i32, max_index: u16) -> bool {
-    if layouts.is_empty()
-        || layouts
-            .iter()
-            .any(|&(_, stride, extent)| stride == 0 || extent == 0)
-    {
-        return false;
-    }
-    let mut upper = u64::MAX;
-    for &(length, stride, extent) in layouts {
-        let Some(bytes) = length.checked_sub(u64::from(extent)) else {
-            return true;
-        };
-        upper = upper.min(bytes / u64::from(stride));
-    }
-    let base = i128::from(base);
-    let lower_raw = 0i128.max(-base);
-    let upper_raw = i128::from(u16::MAX).min(i128::from(upper) - base);
-    lower_raw > upper_raw
-        || (upper_raw <= i128::from(max_index) && upper_raw + base <= i128::from(max_index))
-}
-
-fn multi_index_in_bounds(
-    value: u16,
+fn multi_u32_index_in_bounds(
+    value: u32,
     base: i32,
     layouts: impl Iterator<Item = (u64, u32, u32)>,
 ) -> bool {
@@ -647,69 +843,47 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::{
-        classify_indices, classify_u32_indices, for_each_window, multi_index_in_bounds,
-        multi_native_safe, plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision,
-        IndexPlan, U32Decision, U32Segment,
+        classify_indices, classify_u32_indices, for_each_window, multi_u32_index_in_bounds,
+        plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision, IndexPlan,
+        U32Decision, U32Segment,
     };
 
     #[test]
-    fn multi_stream_native_proof_checks_every_possible_u16_index() {
-        let layout = |upper: u64| (upper * 4 + 4, 4, 4);
-        for (upper, base, expected) in [
+    fn multi_stream_index_bounds_check_each_range_and_signed_base() {
+        let layout = |upper: u64, stride: u32, extent: u32| {
+            (
+                upper * u64::from(stride) + u64::from(extent),
+                stride,
+                extent,
+            )
+        };
+        let layouts = [layout(70000, 12, 8), layout(65535, 20, 16)];
+        for (index, base, expected) in [
+            (0, 0, true),
             (65534, 0, true),
-            (65535, 0, false),
-            (65534, -1, false),
-            (65535, 1, false),
-            (0, -65535, false),
-            (0, i32::MIN, true),
-            (65535, i32::MAX, true),
-            (3, 0, true),
+            (65535, 0, true),
+            (65536, 0, false),
+            (65536, -1, true),
+            (0, -1, false),
+            (0, i32::MIN, false),
+            (u32::MAX, i32::MAX, false),
+            (u32::MAX, i32::MIN, false),
         ] {
             assert_eq!(
-                multi_native_safe(&[layout(upper)], base, 65534),
+                multi_u32_index_in_bounds(index, base, layouts.into_iter()),
                 expected,
-                "upper={upper}, base={base}"
+                "index={index}, base={base}"
             );
         }
-        assert!(multi_native_safe(&[layout(65535), layout(3)], 0, 65534));
-        assert!(multi_native_safe(&[(3, 4, 4), layout(65535)], 0, 65534));
-        assert!(!multi_native_safe(&[], 0, 65534));
-        assert!(!multi_native_safe(&[(8, 0, 4)], 0, 65534));
-        assert!(multi_index_in_bounds(
-            2,
-            -1,
-            [layout(3), layout(1)].into_iter()
+        assert!(![0, 1, 2, 65536]
+            .into_iter()
+            .all(|index| { multi_u32_index_in_bounds(index, 0, layouts.into_iter()) }));
+        assert!(!multi_u32_index_in_bounds(0, 0, [(3, 4, 4)].into_iter()));
+        assert!(!multi_u32_index_in_bounds(
+            u32::MAX,
+            i32::MAX,
+            [(u64::MAX, u32::MAX, u32::MAX)].into_iter()
         ));
-        assert!(!multi_index_in_bounds(
-            2,
-            0,
-            [layout(3), layout(1)].into_iter()
-        ));
-        assert!(!multi_index_in_bounds(0, -1, [layout(3)].into_iter()));
-        assert!(![0, 1, 2, 3].into_iter().all(|index| multi_index_in_bounds(
-            index,
-            0,
-            [layout(2), layout(3)].into_iter()
-        )));
-    }
-
-    #[test]
-    fn multi_stream_native_proof_matches_exhaustive_u16_domain() {
-        for base in [i32::MIN, -65535, -1, 0, 1, 65534, i32::MAX] {
-            for upper in [0u64, 1, 65533, 65534, 65535, 65536] {
-                let layouts = [(upper * 4 + 4, 4, 4), (upper * 8 + 8, 8, 8)];
-                let expected = (0..=u16::MAX).all(|raw| {
-                    let effective = i64::from(raw) + i64::from(base);
-                    !multi_index_in_bounds(raw, base, layouts.into_iter())
-                        || (raw <= 65534 && effective <= 65534)
-                });
-                assert_eq!(
-                    multi_native_safe(&layouts, base, 65534),
-                    expected,
-                    "base={base}, upper={upper}"
-                );
-            }
-        }
     }
 
     #[test]
