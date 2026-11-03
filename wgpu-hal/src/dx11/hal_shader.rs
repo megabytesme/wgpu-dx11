@@ -189,18 +189,101 @@ mod tests {
             "#,
         )
         .unwrap();
-        naga::valid::Validator::new(
+        let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
         )
         .validate(&module)
         .unwrap();
-        for entry in &module.entry_points {
-            let has_load = reachable_expression(&module, &entry.function, |expression| {
-                matches!(expression, naga::Expression::ImageLoad { .. })
-            });
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            let has_load = reachable_expression(
+                &module,
+                &info,
+                &entry.function,
+                info.get_entry_point(index),
+                |_, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+            );
             assert_eq!(has_load, entry.name == "unsafe_load", "{}", entry.name);
         }
+    }
+
+    #[test]
+    fn checked_uniform_shader_distinguishes_local_vector_indexing() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(2) var<uniform> tint: vec4f;
+            @group(0) @binding(3) var<uniform> palette: array<vec4f, 2>;
+            fn choose(v: vec4f, index: u32) -> f32 { return v[index]; }
+            fn uniform_color(index: u32) -> vec4f { return palette[index]; }
+            @vertex fn local_vector(@location(0) index: u32) -> @builtin(position) vec4f {
+                return vec4f(choose(vec4f(1.0, 2.0, 3.0, 4.0), index) + tint.x, 0.0, 0.0, 1.0);
+            }
+            @vertex fn uniform_array(@location(0) index: u32) -> @builtin(position) vec4f {
+                return uniform_color(index);
+            }
+            @vertex fn local_array(@location(0) index: u32) -> @builtin(position) vec4f {
+                var values = array<vec4f, 2>(vec4f(0.0), vec4f(1.0));
+                return values[index] + tint;
+            }
+            @vertex fn uniform_vector(@location(0) index: u32) -> @builtin(position) vec4f {
+                return vec4f(tint[index]);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            let uses_uniform = module.global_variables.iter().any(|(handle, global)| {
+                global.space == naga::AddressSpace::Uniform
+                    && !info.get_entry_point(index)[handle].is_empty()
+            });
+            assert!(uses_uniform, "{} must reach a uniform", entry.name);
+        }
+        assert!(has_unsupported_dynamic_access(
+            &module,
+            &info,
+            &module.entry_points[1].function,
+            info.get_entry_point(1),
+        ));
+        for entry_index in [2, 3] {
+            assert!(has_unsupported_dynamic_access(
+                &module,
+                &info,
+                &module.entry_points[entry_index].function,
+                info.get_entry_point(entry_index),
+            ));
+        }
+        assert!(
+            !has_unsupported_dynamic_access(
+                &module,
+                &info,
+                &module.entry_points[0].function,
+                info.get_entry_point(0),
+            ),
+            "a local vector access must not be treated as dynamic uniform indexing"
+        );
+        let mapping = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 2,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "local_vector",
+            ShaderProfile::VertexLevel9_1,
+            &mapping,
+        )
+        .is_ok());
     }
 
     fn input() -> crate::NagaShader {
@@ -415,36 +498,48 @@ fn used_shader_bindings(
 
 fn reachable_expression(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     function: &naga::Function,
-    predicate: fn(&naga::Expression) -> bool,
+    function_info: &naga::valid::FunctionInfo,
+    predicate: fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
 ) -> bool {
     fn block_contains(
         module: &naga::Module,
+        module_info: &naga::valid::ModuleInfo,
         block: &naga::Block,
         visited: &mut Vec<naga::Handle<naga::Function>>,
-        predicate: fn(&naga::Expression) -> bool,
+        predicate: fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
     ) -> bool {
         block.iter().any(|statement| match statement {
-            naga::Statement::Block(block) => block_contains(module, block, visited, predicate),
+            naga::Statement::Block(block) => {
+                block_contains(module, module_info, block, visited, predicate)
+            }
             naga::Statement::If { accept, reject, .. } => {
-                block_contains(module, accept, visited, predicate)
-                    || block_contains(module, reject, visited, predicate)
+                block_contains(module, module_info, accept, visited, predicate)
+                    || block_contains(module, module_info, reject, visited, predicate)
             }
             naga::Statement::Switch { cases, .. } => cases
                 .iter()
-                .any(|case| block_contains(module, &case.body, visited, predicate)),
+                .any(|case| block_contains(module, module_info, &case.body, visited, predicate)),
             naga::Statement::Loop {
                 body, continuing, ..
             } => {
-                block_contains(module, body, visited, predicate)
-                    || block_contains(module, continuing, visited, predicate)
+                block_contains(module, module_info, body, visited, predicate)
+                    || block_contains(module, module_info, continuing, visited, predicate)
             }
             naga::Statement::Call { function, .. } => {
                 if visited.contains(function) {
                     false
                 } else {
                     visited.push(*function);
-                    function_contains(module, &module.functions[*function], visited, predicate)
+                    function_contains(
+                        module,
+                        module_info,
+                        &module.functions[*function],
+                        &module_info[*function],
+                        visited,
+                        predicate,
+                    )
                 }
             }
             _ => false,
@@ -452,26 +547,58 @@ fn reachable_expression(
     }
     fn function_contains(
         module: &naga::Module,
+        module_info: &naga::valid::ModuleInfo,
         function: &naga::Function,
+        function_info: &naga::valid::FunctionInfo,
         visited: &mut Vec<naga::Handle<naga::Function>>,
-        predicate: fn(&naga::Expression) -> bool,
+        predicate: fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
     ) -> bool {
         function
             .expressions
             .iter()
-            .any(|(_, expression)| predicate(expression))
-            || block_contains(module, &function.body, visited, predicate)
+            .any(|(_, expression)| predicate(module, function_info, expression))
+            || block_contains(module, module_info, &function.body, visited, predicate)
     }
-    function_contains(module, function, &mut Vec::new(), predicate)
+    function_contains(
+        module,
+        module_info,
+        function,
+        function_info,
+        &mut Vec::new(),
+        predicate,
+    )
 }
 
-// Initially permit checked uniform shaders only when every reachable function
-// uses constant indexing. This conservative restriction covers uniform
-// arrays passed through helpers as well as direct global accesses.
-fn has_dynamic_access(module: &naga::Module, function: &naga::Function) -> bool {
-    reachable_expression(module, function, |expression| {
-        matches!(expression, naga::Expression::Access { .. })
-    })
+fn has_unsupported_dynamic_access(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+) -> bool {
+    reachable_expression(
+        module,
+        module_info,
+        function,
+        function_info,
+        |module, info, expression| {
+            let naga::Expression::Access { base, .. } = *expression else {
+                return false;
+            };
+            match *info[base].ty.inner_with(&module.types) {
+                naga::TypeInner::Vector { .. } => false,
+                naga::TypeInner::ValuePointer {
+                    size: Some(_),
+                    space: naga::AddressSpace::Function | naga::AddressSpace::Private,
+                    ..
+                } => false,
+                naga::TypeInner::Pointer {
+                    base,
+                    space: naga::AddressSpace::Function | naga::AddressSpace::Private,
+                } => !matches!(module.types[base].inner, naga::TypeInner::Vector { .. }),
+                _ => true,
+            }
+        },
+    )
 }
 
 fn entry_has_vertex_index(module: &naga::Module, entry: &str) -> Option<bool> {
@@ -738,9 +865,11 @@ impl ShaderModule {
             });
         if requests_checks
             && uses_uniform
-            && has_dynamic_access(
+            && has_unsupported_dynamic_access(
                 &self.shader.module,
+                &self.shader.info,
                 &self.shader.module.entry_points[entry_index].function,
+                entry_info,
             )
         {
             return Err(crate::PipelineError::Linkage(
@@ -755,8 +884,10 @@ impl ShaderModule {
         if requests_checks
             && reachable_expression(
                 &self.shader.module,
+                &self.shader.info,
                 &self.shader.module.entry_points[entry_index].function,
-                |expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+                entry_info,
+                |_, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
             )
         {
             return Err(crate::PipelineError::Linkage(

@@ -680,8 +680,20 @@ passed 188 tests, two filtered, before the added transition/lifetime assertions;
 the expanded focused test passed afterward. HAL Clippy passed with ten existing
 warnings. Independent review found no concrete defect. Historical support for
 the zero depth-write mask remains unverified.
+Checkpoint: `03cf563b1`.
 
 The next shader baseline demonstrates that a selected checked shader with a
 uniform and local-vector dynamic indexing is rejected by the existing blanket
-guard. The safe subset is under investigation; uniform-array dynamic indexing
-must remain rejected until separately proven.
+guard. The new selected-entry, typed analysis accepts only proven local/value
+vectors and leaves uniform pointers, arrays, matrices and unknown types rejected.
+The focused strict GPU run executed three cases (in-range vector selection,
+upper out-of-range selection and a uniform copied to a value), each with 64/64
+pixels matching. Two further cases explicitly skipped GPU execution after the
+tested FXC rejected potentially negative indices with X3548 and dynamic vector
+stores with X3500. The complete private suite passed 194 tests, two filtered,
+before final boundary-test refinements; those two GPU skips are included in the
+libtest count and are not hardware passes. The tightened focused run passed six
+libtest cases: three executed on GPU and three skipped GPU execution after X3548
+or X3500, including an added out-of-bounds store case. The guard diagnostic is
+asserted exactly and unexpected compiler failures fail the test. HAL Clippy
+passed with ten existing warnings. Historical drivers remain unverified.

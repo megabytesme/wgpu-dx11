@@ -200,8 +200,12 @@ entry-point minimum sizes and group/pipeline compatibility are checked. Dynamic
 offsets are consumed in ascending logical binding order and checked against the
 logical source-buffer size before recording. A range extending to the buffer end
 allows only offset zero. Four-byte alignment is the private HAL minimum; a future
-public adapter must enforce its reported wgpu alignment through core. General checked uniform dynamic
-indexing and broad public adapter exposure remain unsupported. GPU coverage exercises multiple
+public adapter must enforce its reported wgpu alignment through core. Checked
+shaders using uniforms permit dynamic access to proven local or value vectors;
+uniform-pointer indexing, dynamic arrays, matrices and unknown provenance remain
+rejected. The tested FXC rejects potentially negative indices and dynamic vector
+stores in the pixel profile; other compiler versions may differ. General checked
+uniform indexing and broad public adapter exposure remain unsupported. GPU coverage exercises multiple
 range bindings, pipeline transitions, a matrix and padded structure, and sampled
 texture coexistence. A checked forced-FL9_1 GPU test also verifies nested
 structures, an asymmetric `mat3x2<f32>` and a `vec4<f32>` array with distinct

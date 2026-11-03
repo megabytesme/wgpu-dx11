@@ -76,6 +76,51 @@ fn fl91_dynamic_uniform_ranges_follow_gpu_upload_and_offset_changes() -> windows
 
 #[test]
 fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::Disabled)
+}
+
+#[test]
+fn fl91_checked_local_vector_indexing_with_uniforms() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::InBounds)
+}
+
+#[test]
+fn fl91_checked_local_vector_out_of_bounds_with_uniforms() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::OutOfBounds)
+}
+
+#[test]
+fn fl91_checked_local_vector_negative_index_with_uniforms() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::Negative)
+}
+
+#[test]
+fn fl91_checked_mutable_local_vector_indexing_with_uniforms() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::Mutable)
+}
+
+#[test]
+fn fl91_checked_mutable_local_vector_out_of_bounds() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::MutableOutOfBounds)
+}
+
+#[test]
+fn fl91_checked_uniform_vector_copy_indexing() -> windows::core::Result<()> {
+    multiple_groups(LocalVectorIndex::UniformCopy)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalVectorIndex {
+    Disabled,
+    InBounds,
+    OutOfBounds,
+    Negative,
+    Mutable,
+    MutableOutOfBounds,
+    UniformCopy,
+}
+
+fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -96,8 +141,38 @@ fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows
     let module = naga::front::wgsl::parse_str(r#"
         @group(0) @binding(7) var<uniform> a: vec4f;
         @group(2) @binding(7) var<uniform> b: vec4f;
+        fn choose(v: vec4f, index: u32) -> f32 { return v[index]; }
         @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p * (a.x + a.z + 0.75), 0.5, 1.0); }
         @fragment fn fs() -> @location(0) vec4f { return a + b; }
+        @fragment fn fs_vector() -> @location(0) vec4f {
+            let choice = choose(vec4f(0.0, 0.5, 0.0, 0.75), u32(a.x * 4.0));
+            return vec4f(choice, b.y, a.z, b.w);
+        }
+        @fragment fn fs_vector_oob() -> @location(0) vec4f {
+            let choice = choose(vec4f(0.0, 0.5, 0.0, 0.75), u32(a.x * 4.0 + 9.0));
+            return vec4f(choice, b.y, a.z, b.w);
+        }
+        @fragment fn fs_vector_negative() -> @location(0) vec4f {
+            let choice = vec4f(0.0, 0.5, 0.0, 0.75)[i32(a.x * 4.0 - 10.0)];
+            return vec4f(choice, b.y, a.z, b.w);
+        }
+        @fragment fn fs_vector_mutable() -> @location(0) vec4f {
+            var values = vec4f(0.0, 0.5, 0.0, 0.75);
+            let index = u32(a.x * 4.0);
+            values[index] = a.z + 0.125;
+            return vec4f(values[index], b.y, a.z, b.w);
+        }
+        @fragment fn fs_vector_mutable_oob() -> @location(0) vec4f {
+            var values = vec4f(0.0, 0.25, 0.5, 0.75);
+            let index = u32(a.x * 4.0 + 9.0);
+            values[index] = a.z + 0.125;
+            return vec4f(values.w, values.y + b.y, values.z, b.w);
+        }
+        @fragment fn fs_uniform_copy() -> @location(0) vec4f {
+            let copied = a;
+            return vec4f(choose(copied, u32(a.z * 3.0)), b.y, a.z, b.w);
+        }
+        @fragment fn fs_uniform_index() -> @location(0) vec4f { return vec4f(a[u32(b.y)]); }
     "#).unwrap();
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
@@ -211,9 +286,18 @@ fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let pipeline = unsafe {
-        device
-            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+    let fragment = match dynamic_vector {
+        LocalVectorIndex::Disabled => "fs",
+        LocalVectorIndex::InBounds => "fs_vector",
+        LocalVectorIndex::OutOfBounds => "fs_vector_oob",
+        LocalVectorIndex::Negative => "fs_vector_negative",
+        LocalVectorIndex::Mutable => "fs_vector_mutable",
+        LocalVectorIndex::MutableOutOfBounds => "fs_vector_mutable_oob",
+        LocalVectorIndex::UniformCopy => "fs_uniform_copy",
+    };
+    if dynamic_vector != LocalVectorIndex::Disabled {
+        let rejected = unsafe {
+            device.create_render_pipeline(&crate::RenderPipelineDescriptor {
                 label: None,
                 layout: &layout,
                 vertex_processor: crate::VertexProcessor::Standard {
@@ -223,12 +307,68 @@ fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows
                 primitive: wgt::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgt::MultisampleState::default(),
-                fragment_stage: Some(stage("fs")),
+                fragment_stage: Some(stage("fs_uniform_index")),
                 color_targets: &targets,
                 multiview_mask: None,
                 cache: None,
             })
-            .unwrap()
+        };
+        assert!(matches!(
+            rejected,
+            Err(crate::PipelineError::Linkage(stage, message))
+                if stage == wgt::ShaderStages::FRAGMENT
+                    && message == "checked D3D11 dynamic indexing with uniforms is not implemented"
+        ));
+    }
+    let pipeline_result = unsafe {
+        device.create_render_pipeline(&crate::RenderPipelineDescriptor {
+            label: None,
+            layout: &layout,
+            vertex_processor: crate::VertexProcessor::Standard {
+                vertex_buffers: &vertices_layout,
+                vertex_stage: stage("vs"),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment_stage: Some(stage(fragment)),
+            color_targets: &targets,
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipeline = match pipeline_result {
+        Ok(pipeline) => pipeline,
+        Err(crate::PipelineError::Linkage(stage, message))
+            if matches!(
+                dynamic_vector,
+                LocalVectorIndex::Negative
+                    | LocalVectorIndex::Mutable
+                    | LocalVectorIndex::MutableOutOfBounds
+            ) =>
+        {
+            assert_eq!(stage, wgt::ShaderStages::FRAGMENT);
+            assert!(message.contains("Compilation("), "{message}");
+            let diagnostic = if dynamic_vector == LocalVectorIndex::Negative {
+                "X3548"
+            } else {
+                "X3500"
+            };
+            assert!(message.contains(diagnostic), "{message}");
+            std::println!("PASS: FXC rejected {dynamic_vector:?}: {message}");
+            std::println!("SKIP: {dynamic_vector:?} GPU execution; shader compilation failed");
+            unsafe {
+                device.destroy_pipeline_layout(layout);
+                device.destroy_pipeline_layout(changed_layout);
+                device.destroy_pipeline_layout(expanded_layout);
+                device.destroy_bind_group_layout(group_layout);
+                device.destroy_bind_group_layout(empty_layout);
+                device.destroy_bind_group_layout(extra_layout);
+                device.destroy_shader_module(shader);
+            }
+            return Ok(());
+        }
+        Err(error) => panic!("pipeline creation failed: {error:?}"),
     };
     let expanded_pipeline = unsafe {
         device
@@ -242,7 +382,7 @@ fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows
                 primitive: wgt::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgt::MultisampleState::default(),
-                fragment_stage: Some(stage("fs")),
+                fragment_stage: Some(stage(fragment)),
                 color_targets: &targets,
                 multiview_mask: None,
                 cache: None,
@@ -487,10 +627,24 @@ fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
     for (index, pixel) in pixels.chunks_exact(4).enumerate() {
-        let expected: [u8; 4] = if index % 8 < 2 {
-            [64, 128, 0, 255]
-        } else {
-            [0, 128, 191, 255]
+        let first = index % 8 < 2;
+        let expected: [u8; 4] = match (dynamic_vector, first) {
+            (LocalVectorIndex::Disabled | LocalVectorIndex::UniformCopy, true) => [64, 128, 0, 255],
+            (LocalVectorIndex::InBounds, true) => [128, 128, 0, 255],
+            (LocalVectorIndex::OutOfBounds | LocalVectorIndex::Negative, true) => {
+                [191, 128, 0, 255]
+            }
+            (LocalVectorIndex::Mutable, true) => [32, 128, 0, 255],
+            (LocalVectorIndex::MutableOutOfBounds, true) => [32, 191, 128, 255],
+            (LocalVectorIndex::Disabled | LocalVectorIndex::InBounds, false) => [0, 128, 191, 255],
+            (
+                LocalVectorIndex::OutOfBounds
+                | LocalVectorIndex::Negative
+                | LocalVectorIndex::UniformCopy,
+                false,
+            ) => [191, 128, 191, 255],
+            (LocalVectorIndex::Mutable, false) => [223, 128, 191, 255],
+            (LocalVectorIndex::MutableOutOfBounds, false) => [223, 191, 128, 255],
         };
         for (&actual, expected) in pixel.iter().zip(expected) {
             assert!(
@@ -499,7 +653,7 @@ fn fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent() -> windows
             );
         }
     }
-    std::println!("PASS: groups 0/2, same binding and dynamic buffer, direct/indexed draws; 64/64 pixels matched");
+    std::println!("PASS: groups 0/2, same binding and dynamic buffer, direct/indexed draws, local vector indexing {dynamic_vector:?}; 64/64 pixels matched");
     Ok(())
 }
 
