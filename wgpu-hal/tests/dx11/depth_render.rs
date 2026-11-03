@@ -118,7 +118,6 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         constants: &constants,
         zero_initialize_workgroup_memory: false,
     };
-    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
     let depth = wgt::DepthStencilState {
         format: wgt::TextureFormat::Depth24PlusStencil8,
         depth_write_enabled: Some(true),
@@ -126,7 +125,12 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         stencil: wgt::StencilState::default(),
         bias: wgt::DepthBiasState::default(),
     };
-    let make_pipeline = |depth_state| unsafe {
+    let make_pipeline = |depth_state, mask, blend| unsafe {
+        let targets = [Some(wgt::ColorTargetState {
+            format: wgt::TextureFormat::Rgba8Unorm,
+            blend,
+            write_mask: mask,
+        })];
         device.create_render_pipeline(&crate::RenderPipelineDescriptor {
             label: None,
             layout: &layout,
@@ -145,15 +149,34 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
     };
     let mut unsupported = depth.clone();
     unsupported.depth_compare = Some(wgt::CompareFunction::Less);
-    assert!(make_pipeline(unsupported).is_err());
+    assert!(make_pipeline(unsupported, wgt::ColorWrites::ALL, None).is_err());
     let mut unsupported_stencil = depth.clone();
     unsupported_stencil.stencil.front.compare = wgt::CompareFunction::Never;
-    assert!(make_pipeline(unsupported_stencil).is_err());
+    assert!(make_pipeline(unsupported_stencil, wgt::ColorWrites::ALL, None).is_err());
     let mut no_write = depth.clone();
     no_write.depth_compare = Some(wgt::CompareFunction::Always);
     no_write.depth_write_enabled = Some(false);
-    let no_write_pipeline = make_pipeline(no_write).unwrap();
-    let pipeline = make_pipeline(depth).unwrap();
+    let no_write_pipeline = make_pipeline(no_write.clone(), wgt::ColorWrites::ALL, None).unwrap();
+    let mut masks = Vec::new();
+    for bits in 0..16 {
+        masks.push(
+            make_pipeline(
+                no_write.clone(),
+                wgt::ColorWrites::from_bits_retain(bits),
+                None,
+            )
+            .unwrap(),
+        );
+    }
+    let no_color_depth_pipeline =
+        make_pipeline(depth.clone(), wgt::ColorWrites::empty(), None).unwrap();
+    let additive_pipeline = make_pipeline(
+        no_write,
+        wgt::ColorWrites::RED | wgt::ColorWrites::BLUE,
+        Some(super::super::hal_pipeline::ADDITIVE_BLEND),
+    )
+    .unwrap();
+    let pipeline = make_pipeline(depth, wgt::ColorWrites::ALL, None).unwrap();
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -289,14 +312,18 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         device
             .create_buffer(&crate::BufferDescriptor {
                 label: None,
-                size: 168,
+                size: 252,
                 usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
                 memory_flags: crate::MemoryFlags::empty(),
             })
             .unwrap()
     };
     let mut vertex_data = Vec::new();
-    for (z, color) in [(0.25f32, [1f32, 0., 0., 1.]), (0.75, [0., 1., 0., 1.])] {
+    for (z, color) in [
+        (0.25f32, [1f32, 0., 0., 1.]),
+        (0.75, [0., 1., 0., 1.]),
+        (0.25, [1., 1., 1., 1.]),
+    ] {
         for p in [[-1f32, -1.], [3., -1.], [-1., 3.]] {
             for value in [p[0], p[1], z].into_iter().chain(color) {
                 vertex_data.extend_from_slice(&value.to_ne_bytes());
@@ -571,6 +598,78 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
         };
         commands.push(command);
     }
+    for case in 0..19 {
+        let attachments = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &color_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color {
+                r: 0.0,
+                g: 0.0,
+                b: if case == 18 { 64.0 / 255.0 } else { 1.0 },
+                a: 0.0,
+            },
+        })];
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &attachments,
+            depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                target: crate::Attachment {
+                    view: &depth_view,
+                    usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                },
+                depth_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                stencil_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                clear_value: (1.0, 0),
+            }),
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        commands.push(unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_bind_group(&layout, 0, &group, &[]);
+            encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+            match case {
+                0..=15 => {
+                    encoder.set_render_pipeline(&masks[case]);
+                    encoder.draw(6, 3, 0, 1);
+                }
+                16 => {
+                    for (index, x, width) in [(1, 0, 2), (2, 2, 2), (15, 4, 4)] {
+                        encoder.set_scissor_rect(&crate::Rect {
+                            x,
+                            y: 0,
+                            w: width,
+                            h: 8,
+                        });
+                        encoder.set_render_pipeline(&masks[index]);
+                        encoder.draw(6, 3, 0, 1);
+                    }
+                }
+                17 => {
+                    encoder.set_render_pipeline(&no_color_depth_pipeline);
+                    encoder.draw(0, 3, 0, 1);
+                    encoder.set_render_pipeline(&pipeline);
+                    encoder.draw(3, 3, 0, 1);
+                }
+                18 => {
+                    encoder.set_render_pipeline(&additive_pipeline);
+                    encoder.draw(6, 3, 0, 1);
+                }
+                _ => unreachable!(),
+            }
+            encoder.end_render_pass();
+            encoder.end_encoding().unwrap()
+        });
+    }
     unsafe {
         device.destroy_texture_view(depth_view);
         device.destroy_texture(depth_texture);
@@ -592,6 +691,41 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
             Some(Duration::from_secs(5))
         )?);
         let pixels = native.read_rgba_texture(&color, 0, 0)?;
+        if index >= 11 {
+            let bits = index - 11;
+            if bits == 16 {
+                for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+                    let expected = match i % 8 {
+                        0..=1 => [128, 0, 255, 0],
+                        2..=3 => [0, 192, 255, 0],
+                        _ => [128, 192, 64, 255],
+                    };
+                    assert_eq!(pixel, expected, "pipeline transition pixel {i}");
+                }
+                std::println!("FL9_1 color mask transitions: 64/64 pixels matched");
+                continue;
+            }
+            let mut expected = match bits {
+                17 => [0, 0, 255, 0],
+                18 => [128, 0, 128, 0],
+                _ => [0, 0, 255, 0],
+            };
+            let source = [128, 192, 64, 255];
+            if bits < 16 {
+                for channel in 0..4 {
+                    if bits & (1 << channel) != 0 {
+                        expected[channel] = source[channel];
+                    }
+                }
+            }
+            assert!(
+                pixels.chunks_exact(4).all(|pixel| pixel == expected),
+                "mask {bits:#x}: expected {expected:?}, got {:?}",
+                &pixels[..4]
+            );
+            std::println!("FL9_1 color mask {bits:#x}: 64/64 pixels {expected:?}");
+            continue;
+        }
         if index == 10 {
             for (i, pixel) in pixels.chunks_exact(4).enumerate() {
                 let expected = if i % 8 < 4 {

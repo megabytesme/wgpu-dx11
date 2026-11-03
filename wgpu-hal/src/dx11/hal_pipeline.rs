@@ -9,11 +9,12 @@ use windows::{
             ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC,
             D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
             D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
-            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS_EQUAL,
-            D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
-            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
-            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
+            D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
+            D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
+            D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC,
+            D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO,
+            D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
+            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP,
         },
         Dxgi::Common::{
             DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
@@ -21,6 +22,24 @@ use windows::{
         },
     },
 };
+
+fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
+    if mask.bits() & !wgt::ColorWrites::ALL.bits() != 0 {
+        return None;
+    }
+    let mut native = 0;
+    for (channel, flag) in [
+        (wgt::ColorWrites::RED, D3D11_COLOR_WRITE_ENABLE_RED),
+        (wgt::ColorWrites::GREEN, D3D11_COLOR_WRITE_ENABLE_GREEN),
+        (wgt::ColorWrites::BLUE, D3D11_COLOR_WRITE_ENABLE_BLUE),
+        (wgt::ColorWrites::ALPHA, D3D11_COLOR_WRITE_ENABLE_ALPHA),
+    ] {
+        if mask.contains(channel) {
+            native |= flag.0 as u8;
+        }
+    }
+    Some(native)
+}
 
 fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::DeviceError> {
     use windows::Win32::{
@@ -115,6 +134,20 @@ pub struct RenderPipeline {
 mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
+
+    #[test]
+    fn color_write_masks_map_all_channels_and_reject_unknown_bits() {
+        for bits in 0..16 {
+            assert_eq!(
+                color_write_mask(wgt::ColorWrites::from_bits_retain(bits)),
+                Some(bits as u8)
+            );
+        }
+        assert_eq!(
+            color_write_mask(wgt::ColorWrites::from_bits_retain(16)),
+            None
+        );
+    }
 
     #[test]
     fn optional_viewport_shader_errors_distinguish_device_failure() {
@@ -674,7 +707,7 @@ impl RenderPipeline {
                     && blend != ADDITIVE_BLEND
                     && blend != VIGNETTE_BLEND
             })
-            || target.write_mask != wgt::ColorWrites::ALL
+            || color_write_mask(target.write_mask).is_none()
         {
             return Err(invalid());
         }
@@ -895,21 +928,34 @@ impl RenderPipeline {
                     return Err(invalid());
                 }
             }
-            if target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
+            let blend_enabled = target.blend == Some(wgt::BlendState::ALPHA_BLENDING)
                 || target.blend == Some(INVERT_BLEND)
                 || target.blend == Some(ADDITIVE_BLEND)
-                || target.blend == Some(VIGNETTE_BLEND)
-            {
+                || target.blend == Some(VIGNETTE_BLEND);
+            if blend_enabled || target.write_mask != wgt::ColorWrites::ALL {
                 let mut desc = D3D11_BLEND_DESC::default();
                 desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
-                    BlendEnable: true.into(),
-                    SrcBlend: D3D11_BLEND_SRC_ALPHA,
-                    DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
+                    BlendEnable: blend_enabled.into(),
+                    SrcBlend: if blend_enabled {
+                        D3D11_BLEND_SRC_ALPHA
+                    } else {
+                        D3D11_BLEND_ONE
+                    },
+                    DestBlend: if blend_enabled {
+                        D3D11_BLEND_INV_SRC_ALPHA
+                    } else {
+                        D3D11_BLEND_ZERO
+                    },
                     BlendOp: D3D11_BLEND_OP_ADD,
                     SrcBlendAlpha: D3D11_BLEND_ONE,
-                    DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
+                    DestBlendAlpha: if blend_enabled {
+                        D3D11_BLEND_INV_SRC_ALPHA
+                    } else {
+                        D3D11_BLEND_ZERO
+                    },
                     BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                    RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+                    RenderTargetWriteMask: color_write_mask(target.write_mask)
+                        .ok_or_else(invalid)?,
                 };
                 if target.blend == Some(INVERT_BLEND) {
                     desc.RenderTarget[0].SrcBlend = D3D11_BLEND_INV_DEST_COLOR;

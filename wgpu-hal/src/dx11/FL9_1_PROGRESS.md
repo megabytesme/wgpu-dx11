@@ -294,3 +294,20 @@ tests independently passed. The core zero-adapter isolation test passed, and
 --features dx11` passed with ten existing warnings. The first build exposed
 three test-closure lifetime errors; these were corrected before the passing
 run. No public D3D11 execution is claimed.
+
+The selected-entry shader load validation was checkpointed as `7a7f249f5`.
+Microsoft's required FL9_1 driver capabilities guarantee Always and LessEqual
+depth comparisons, but do not establish the other six. The existence of the
+D3D11 comparison enum or success on the RTX would not prove historical
+support; a portable query or emulation remains to be investigated.
+
+Private pipelines now map every combination of RGBA write channels, including
+zero, to an explicit native state when necessary. FL9_1's required
+`D3DPMISCCAPS_COLORWRITEENABLE` guarantees per-channel writes for its one
+render target; this is distinct from independent masks across render targets.
+Strict FL9_1 hardware tests verified all 16 masks over 64 pixels each, a
+three-region masked pipeline transition, preserved depth writes with color
+disabled, and masked additive blending. A synthetic test rejects unknown mask
+bits. An independent review found no descriptor or lifetime defect. The full
+strict 163-test suite passed before the final stronger transition assertion;
+the focused hardware test passed again after that test-only improvement.

@@ -30,7 +30,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   static or dynamic uniform slots, and shader-aware pair validation; restricted
   Naga/FXC shaders.
 - Triangle-list passes with one interleaved vertex buffer, bounds-checked
-  scissors, replace/alpha/crosshair/additive/vignette blending, and splitting
+  scissors, per-channel color write masks, replace/alpha/crosshair/additive/
+  vignette blending, and splitting
   at FL9 draw limits. Checked uniform shaders currently reject reachable
   dynamic indexing.
 - Restricted 16-bit, zero-base indexed draws validate GPU index contents at
