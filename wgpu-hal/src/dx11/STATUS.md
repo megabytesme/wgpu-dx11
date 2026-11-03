@@ -23,10 +23,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   other translated finite maximum LODs are checked against each used view's mip
   count. Nearest and linear mipmap filters have patterned GPU coverage;
   explicit-LOD sampling and
-  historical driver behavior remain unverified. Reachable texture sample bias
-  is rejected for the current FL9_1 shader profiles, including on higher-level
-  devices, because the tested compiler emitted an unclamped legacy instruction
-  with a narrower defined bias range.
+  historical driver behavior remain unverified. The current FL9_1 shader
+  profiles, including on higher-level devices, accept finite literal texture
+  biases in [-3, 3] without an offset. All sampling pairs used by a selected
+  entry containing bias require equal min/mag filters and anisotropy 1; dynamic,
+  out-of-range and helper-argument biases remain rejected. Nine strict GPU
+  executions checked 64 pixels each, including linear mip blending; direct and
+  indexed draws rejected incompatible samplers.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.

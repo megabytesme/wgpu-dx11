@@ -235,11 +235,16 @@ For normalized LOD ranges, patterned single-mip GPU tests cover both nearest
 and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
 and historical FL9_1 driver behavior remain unverified. The current compiler
 uses FL9_1 profiles even on higher-level devices; a selected entry point that
-can reach `textureSampleBias` is conservatively rejected, including through
-helper functions. Unrelated entries remain usable.
-The tested FXC emitted an unclamped legacy `texldb`, for which Microsoft
-documents undefined behavior outside [-3, 3] at ps_2_0. This restriction is
-not a general solution for valid biased sampling.
+can reach `textureSampleBias` is accepted only for finite literal biases in
+[-3, 3] without a sampling offset. Dynamic biases, out-of-range values and
+biases passed through helper arguments are rejected, even when the argument is
+a literal. All sampling pairs used by a selected entry containing bias must use
+equal min/mag filters and anisotropy 1; normal view and LOD checks still apply.
+Unrelated entries remain usable. The tested FXC emitted an unclamped legacy
+`texldb`, for which Microsoft documents undefined behavior outside [-3, 3] at
+ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a
+fractional linear-mipmap blend; direct and indexed draws rejected incompatible
+samplers. This restricted implementation does not cover all valid biased sampling.
 
 The backend does not expose a public adapter. In particular, the wgpu downlevel
 anisotropy flag does not describe this private maximum of 2 by itself; public

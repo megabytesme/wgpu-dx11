@@ -398,11 +398,13 @@ impl BindGroup {
         let mut native_samplers = alloc::vec::Vec::new();
         let mut samplers_wrap = alloc::vec::Vec::new();
         let mut samplers_lod = alloc::vec::Vec::new();
+        let mut samplers_bias_compatible = alloc::vec::Vec::new();
         for index in sampler_indices {
             let sampler = desc.samplers[index];
             native_samplers.push(sampler.raw_for(owner)?);
             samplers_wrap.push(sampler.wraps());
             samplers_lod.push(sampler.lod());
+            samplers_bias_compatible.push(sampler.bias_compatible());
         }
         let sampling = super::sampling::SamplingResources {
             textures: dimensions
@@ -411,6 +413,7 @@ impl BindGroup {
                 .collect(),
             samplers_wrap,
             samplers_lod,
+            samplers_bias_compatible,
         };
         let resources = GroupResources {
             uniforms: native_uniforms,

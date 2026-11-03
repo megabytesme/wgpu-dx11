@@ -39,6 +39,13 @@ mod tests {
             @fragment fn negative() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -16.0); }
             @fragment fn dynamic() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), value.x); }
             @fragment fn helper() -> @location(0) vec4f { return biased(image, smp, value.x); }
+            @fragment fn helper_literal() -> @location(0) vec4f { return biased(image, smp, 1.0); }
+            @fragment fn min_bias() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -3.0); }
+            @fragment fn max_bias() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 3.0); }
+            @fragment fn fractional() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 0.5); }
+            @fragment fn too_small() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -3.01); }
+            @fragment fn too_large() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 3.01); }
+            @fragment fn biased_offset() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 1.0, vec2i(1, 0)); }
             @fragment fn normal() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5)); }
             @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
         "#).unwrap();
@@ -57,7 +64,14 @@ mod tests {
         for (index, entry) in module.entry_points.iter().enumerate() {
             let uses_bias = matches!(
                 entry.name.as_str(),
-                "positive" | "negative" | "dynamic" | "helper"
+                "positive"
+                    | "negative"
+                    | "dynamic"
+                    | "helper"
+                    | "helper_literal"
+                    | "too_small"
+                    | "too_large"
+                    | "biased_offset"
             );
             for level in FeatureLevel::ALL_DESCENDING {
                 let profile = selected_shader_profile(entry.stage).unwrap();
@@ -264,7 +278,7 @@ mod tests {
                 &info,
                 &entry.function,
                 info.get_entry_point(index),
-                |_, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+                |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
             );
             assert_eq!(has_load, entry.name == "unsafe_load", "{}", entry.name);
         }
@@ -750,7 +764,16 @@ mod tests {
                 },
                 checks,
             );
-            for entry in ["positive", "negative", "dynamic", "helper"] {
+            for entry in [
+                "positive",
+                "negative",
+                "dynamic",
+                "helper",
+                "helper_literal",
+                "too_small",
+                "too_large",
+                "biased_offset",
+            ] {
                 assert!(
                     matches!(
                         shader.compile(naga::ShaderStage::Fragment, entry),
@@ -783,6 +806,20 @@ mod tests {
             assert!(shader
                 .compile_with_bindings(naga::ShaderStage::Fragment, "normal", &bindings)
                 .is_ok());
+            for entry in ["min_bias", "max_bias", "fractional"] {
+                assert!(shader
+                    .uses_sample_bias(naga::ShaderStage::Fragment, entry)
+                    .unwrap());
+                assert!(
+                    shader
+                        .compile_with_bindings(naga::ShaderStage::Fragment, entry, &bindings)
+                        .is_ok(),
+                    "{entry}"
+                );
+            }
+            assert!(!shader
+                .uses_sample_bias(naga::ShaderStage::Fragment, "normal")
+                .unwrap());
         }
         let uniform_module = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> color: vec4f; @fragment fn fs() -> @location(0) vec4f { return color; }").unwrap();
         let uniform_info = naga::valid::Validator::new(
@@ -961,7 +998,7 @@ fn reachable_expression<F>(
     predicate: F,
 ) -> bool
 where
-    F: Fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
+    F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
 {
     fn block_contains<F>(
         module: &naga::Module,
@@ -972,7 +1009,12 @@ where
         depth: usize,
     ) -> bool
     where
-        F: Fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
+        F: Fn(
+            &naga::Module,
+            &naga::Function,
+            &naga::valid::FunctionInfo,
+            &naga::Expression,
+        ) -> bool,
     {
         if depth >= 256 {
             return true;
@@ -1040,12 +1082,17 @@ where
         depth: usize,
     ) -> bool
     where
-        F: Fn(&naga::Module, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
+        F: Fn(
+            &naga::Module,
+            &naga::Function,
+            &naga::valid::FunctionInfo,
+            &naga::Expression,
+        ) -> bool,
     {
         function
             .expressions
             .iter()
-            .any(|(_, expression)| predicate(module, function_info, expression))
+            .any(|(_, expression)| predicate(module, function, function_info, expression))
             || block_contains(
                 module,
                 module_info,
@@ -1084,15 +1131,37 @@ fn has_unsupported_sample_bias(
     matches!(
         profile,
         ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-    ) && reachable_expression(module, info, function, function_info, |_, _, expression| {
-        matches!(
-            expression,
-            naga::Expression::ImageSample {
-                level: naga::SampleLevel::Bias(_),
+    ) && reachable_expression(
+        module,
+        info,
+        function,
+        function_info,
+        |_, function, _, expression| {
+            let naga::Expression::ImageSample {
+                level: naga::SampleLevel::Bias(bias),
+                offset,
                 ..
+            } = *expression
+            else {
+                return false;
+            };
+            if offset.is_some() {
+                return true;
             }
-        )
-    })
+            let value = match function.expressions[bias] {
+                naga::Expression::Literal(naga::Literal::F32(value)) => Some(value),
+                naga::Expression::Unary {
+                    op: naga::UnaryOperator::Negate,
+                    expr,
+                } => match function.expressions[expr] {
+                    naga::Expression::Literal(naga::Literal::F32(value)) => Some(-value),
+                    _ => None,
+                },
+                _ => None,
+            };
+            !value.is_some_and(|value| value.is_finite() && (-3.0..=3.0).contains(&value))
+        },
+    )
 }
 
 fn has_unsupported_dynamic_access(
@@ -1107,7 +1176,7 @@ fn has_unsupported_dynamic_access(
         module_info,
         function,
         function_info,
-        |module, info, expression| {
+        |module, _, info, expression| {
             let naga::Expression::Access { base, .. } = *expression else {
                 return false;
             };
@@ -1632,6 +1701,35 @@ impl ShaderModule {
         })
     }
 
+    pub(super) fn uses_sample_bias(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+    ) -> Result<bool, crate::PipelineError> {
+        let index = self
+            .shader
+            .module
+            .entry_points
+            .iter()
+            .position(|candidate| candidate.stage == stage && candidate.name == entry)
+            .ok_or(crate::PipelineError::EntryPoint(stage))?;
+        Ok(reachable_expression(
+            &self.shader.module,
+            &self.shader.info,
+            &self.shader.module.entry_points[index].function,
+            self.shader.info.get_entry_point(index),
+            |_, _, _, expression| {
+                matches!(
+                    expression,
+                    naga::Expression::ImageSample {
+                        level: naga::SampleLevel::Bias(_),
+                        ..
+                    }
+                )
+            },
+        ))
+    }
+
     pub(super) fn compile_with_bindings(
         &self,
         stage: naga::ShaderStage,
@@ -1748,7 +1846,7 @@ impl ShaderModule {
                 &self.shader.info,
                 &self.shader.module.entry_points[entry_index].function,
                 entry_info,
-                |_, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+                |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
             )
         {
             return Err(crate::PipelineError::Linkage(

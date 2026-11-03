@@ -2065,6 +2065,14 @@ impl RenderPipeline {
                 fragment.entry_point,
                 &fragment_bindings,
             )?);
+            if fragment
+                .module
+                .uses_sample_bias(naga::ShaderStage::Fragment, fragment.entry_point)?
+            {
+                for pair in &mut sampling_pairs {
+                    pair.requires_bias_compatible = true;
+                }
+            }
         }
         let full_npot = if sampling_pairs.is_empty() {
             super::capabilities::Query::Unavailable(0)

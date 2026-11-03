@@ -1122,3 +1122,21 @@ valid mip count; its focused hardware test passed.
 The rerun passed 246 tests with two filtered and three older shader cases
 skipping GPU execution internally. HAL Clippy passed with ten existing test
 warnings; ordinary core D3D11 enumeration remained empty.
+Checkpoint: `2206731ded87a5cdc1c9bb3c557191027c10397b`.
+
+Next investigation: finite literal textureSampleBias within the documented
+legacy instruction range. Preserve selected-entry validation, reject dynamic
+or out-of-range biases and account for anisotropic and LOD semantics before
+allowing it; hardware execution and compiler evidence are required.
+
+Selected FL9 shader entries now accept offset-free finite literal sample biases
+in [-3,3]. Used pairs conservatively require equal min/mag filters and
+anisotropy 1; dynamic values, helper arguments and offsets still reject. The
+strict RTX test passed nine 64-pixel GPU renders, including fractional linear
+mip filtering, with invalid shader and direct/indexed sampler checks. A core
+fixture produced 64/64 blue pixels using a literal bias. The full strict suite
+passed 249 tests before the final test-only linear/indexed additions; those
+passed in the updated focused test. Three older shader cases skip hardware
+internally. HAL Clippy retained ten pre-existing test warnings, the DX12 HAL
+compiled, and ordinary core adapter enumeration remained empty. An independent
+review found no concrete defect. Historical driver behavior remains unverified.

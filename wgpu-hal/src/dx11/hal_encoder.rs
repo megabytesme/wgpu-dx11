@@ -157,6 +157,8 @@ impl RenderState {
                 || bound.resources.sampling.textures.len() != bound.resources.textures.len()
                 || bound.resources.sampling.samplers_wrap.len() != bound.resources.samplers.len()
                 || bound.resources.sampling.samplers_lod.len() != bound.resources.samplers.len()
+                || bound.resources.sampling.samplers_bias_compatible.len()
+                    != bound.resources.samplers.len()
                 || bound.ranges.len() != bound.resources.uniforms.len()
             {
                 return false;
@@ -3849,6 +3851,10 @@ mod sampler_lod_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/biased_sampling.rs"]
 mod biased_sampling_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/bias_mips.rs"]
+mod bias_mip_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/mip_transfers.rs"]

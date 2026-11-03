@@ -11,6 +11,7 @@ pub struct Sampler {
     owner: Arc<NativeDevice>,
     raw: ID3D11SamplerState,
     wraps: bool,
+    bias_compatible: bool,
     lod: super::sampling::SamplerLod,
 }
 crate::impl_dyn_resource!(Sampler);
@@ -109,6 +110,10 @@ fn requires_power_of_two(address_modes: &[wgt::AddressMode; 3]) -> bool {
         .any(|mode| *mode != wgt::AddressMode::ClampToEdge)
 }
 
+fn bias_compatible(desc: &crate::SamplerDescriptor) -> bool {
+    desc.anisotropy_clamp == 1 && desc.min_filter == desc.mag_filter
+}
+
 fn sampler_lod(
     desc: &crate::SamplerDescriptor,
     native: &D3D11_SAMPLER_DESC,
@@ -144,6 +149,7 @@ impl Sampler {
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
             lod,
             wraps: requires_power_of_two(&desc.address_modes),
+            bias_compatible: bias_compatible(desc),
         })
     }
 
@@ -160,6 +166,10 @@ impl Sampler {
 
     pub(super) fn wraps(&self) -> bool {
         self.wraps
+    }
+
+    pub(super) fn bias_compatible(&self) -> bool {
+        self.bias_compatible
     }
 
     pub(super) fn lod(&self) -> super::sampling::SamplerLod {
@@ -185,6 +195,26 @@ mod tests {
             anisotropy_clamp: 1,
             border_color: None,
         }
+    }
+
+    #[test]
+    fn biased_sampling_requires_equal_isotropic_filters() {
+        let mut desc = descriptor();
+        for mode in [wgt::FilterMode::Nearest, wgt::FilterMode::Linear] {
+            desc.min_filter = mode;
+            desc.mag_filter = mode;
+            desc.anisotropy_clamp = 1;
+            assert!(bias_compatible(&desc));
+            desc.anisotropy_clamp = 2;
+            assert!(!bias_compatible(&desc));
+        }
+        desc.anisotropy_clamp = 1;
+        desc.min_filter = wgt::FilterMode::Nearest;
+        desc.mag_filter = wgt::FilterMode::Linear;
+        assert!(!bias_compatible(&desc));
+        desc.min_filter = wgt::FilterMode::Linear;
+        desc.mag_filter = wgt::FilterMode::Nearest;
+        assert!(!bias_compatible(&desc));
     }
 
     #[test]
@@ -413,6 +443,7 @@ mod tests {
             },
             texture_slot: 0,
             sampler_slot: 0,
+            requires_bias_compatible: false,
         };
         for size in [[3, 4], [4, 3]] {
             for mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
@@ -426,6 +457,7 @@ mod tests {
                         }],
                         samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
                         samplers_lod: alloc::vec![SamplerLod::Unchanged],
+                        samplers_bias_compatible: alloc::vec![true],
                     };
                     assert!(!compatible(
                         &[pair],

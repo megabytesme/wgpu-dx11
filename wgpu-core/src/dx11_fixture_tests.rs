@@ -371,6 +371,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     if rgba_mips {
         render_triangle(&global, device, queue, VertexCase::SampledMips);
+        render_triangle(&global, device, queue, VertexCase::SampledMipsBias);
         render_triangle(&global, device, queue, VertexCase::SampledMipSuffix);
         render_triangle(&global, device, queue, VertexCase::SampledMipsNoCopySrc);
         render_triangle(
@@ -1022,6 +1023,7 @@ enum VertexCase {
     Baseline,
     FractionalSamplerLod,
     SampledMips,
+    SampledMipsBias,
     SampledMipSuffix,
     SampledMipsNoCopySrc,
     SampledMipsNoCopySrcUninitialized,
@@ -1056,7 +1058,9 @@ fn render_triangle(
     let sampled_mip_suffix = case == VertexCase::SampledMipSuffix || combined.is_some();
     let uninitialized_mip = case == VertexCase::SampledMipsNoCopySrcUninitialized;
     let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip;
-    let sampled_mips = case == VertexCase::SampledMips || sampled_mip_suffix || no_copy_src;
+    let sampled_mips = matches!(case, VertexCase::SampledMips | VertexCase::SampledMipsBias)
+        || sampled_mip_suffix
+        || no_copy_src;
     let uniform_size = match case {
         VertexCase::Uniform4 => Some(4),
         VertexCase::Uniform5 => Some(5),
@@ -1395,7 +1399,9 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
-    let source = if sampled_mips && !sampled_mip_suffix {
+    let source = if case == VertexCase::SampledMipsBias {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
+    } else if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
     } else if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: f32; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"

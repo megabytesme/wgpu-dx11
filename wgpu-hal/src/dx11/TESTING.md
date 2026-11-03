@@ -418,10 +418,14 @@ faithfully translated remain rejected. Mipmapped sampling checks the actual view
 against the sampler translation; explicit-LOD sampling and historical FL9_1 drivers
 remain unverified.
 
-With strict hardware mode, the following filter passed two cases: a CPU
-selected-entry analysis test and a physical RTX 3090 Ti FL9_1 test that rejects
-both direct and helper-function bias at pipeline creation while an unrelated
-entry renders 64 expected pixels.
+With strict hardware mode, the following filter runs CPU analysis and physical
+RTX 3090 Ti FL9_1 tests. A bounded-bias mip test passed nine executions with
+64 checked pixels each, covering literal biases -3, -1, -0.5, 0, 0.5, 1 and 3,
+varying derivatives, a minimum-LOD clamp and a fractional linear-mipmap blend.
+Negative linkage tests cover
+dynamic, out-of-range, helper-argument and offset biases; draw validation
+rejects incompatible anisotropic or mixed-filter sampling pairs for both
+direct and indexed draws.
 
 ```powershell
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 bias -- --nocapture --test-threads=1
@@ -430,8 +434,11 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 bia
 The tested FXC emits an unclamped `texldb`; Microsoft's [instruction
 reference](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/texldb---ps)
 defines ps_2_0 bias values outside [-3, 3] as undefined. The backend currently
-uses FL9_1 shader profiles even on higher-level devices, so the same rejection
-applies there; biased sampling remains unsupported.
+uses FL9_1 shader profiles even on higher-level devices. It accepts finite
+literal biases in [-3, 3] without an offset, while requiring equal min/mag
+filters and anisotropy 1 for every sampling pair used by the selected entry.
+View and LOD compatibility checks still apply; general biased sampling and
+historical-driver behavior remain unverified.
 
 ### FL9_1 texture transfers
 

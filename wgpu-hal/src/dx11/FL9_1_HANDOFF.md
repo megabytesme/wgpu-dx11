@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 246 tests; older
+operations are safe. The latest completed strict suite passed 249 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -104,6 +104,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `34794bb52b7389492ffcbd989c09d4de8121c95f` | dx11: support suffix FL9_1 mip views |
 | `4a4b6eec90c12a8d3ba35629311ab1d58e052284` | dx11: support upload-only sampled mip textures |
 | `68c6a804d13cada3d1cb0feccef6bbb3d1d58d7f` | dx11: support FL9_1 color attachment mip views |
+| `2206731ded87a5cdc1c9bb3c557191027c10397b` | Render and sample FL9_1 mip textures |
 
 ## What is and is not usable
 
@@ -294,9 +295,11 @@ historical-driver semantics are not established.
 Equal min/mag, anisotropy-1 samplers can normalize finite LOD clamps on the
 one-mip path; pair validation checks the actual sampled view mip count.
 
-Current FL9_1 shader profiles reject reachable textureSampleBias, including
-helper calls, because legacy texldb has a narrower documented bias range.
-A future semantics-preserving lowering is needed before accepting it.
+Current FL9_1 shader profiles accept offset-free literal textureSampleBias in
+[-3, 3] with equal min/mag filtering and anisotropy 1 for every used pair in
+the selected entry. Dynamic or out-of-range biases and helper arguments remain
+rejected. Wider bias support needs semantics-preserving lowering, and older
+drivers remain unverified.
 
 POT RGBA8/BGRA8 mip chains support initialization, transfers and sampled
 suffix views including the smallest resource mip. View-relative LOD selection

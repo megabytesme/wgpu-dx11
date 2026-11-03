@@ -12,6 +12,7 @@ pub(super) struct SamplingPair {
     pub sampler: naga::ResourceBinding,
     pub texture_slot: usize,
     pub sampler_slot: usize,
+    pub requires_bias_compatible: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -48,6 +49,7 @@ pub(super) struct SamplingResources {
     pub textures: Vec<TextureInfo>,
     pub samplers_wrap: Vec<bool>,
     pub samplers_lod: Vec<SamplerLod>,
+    pub samplers_bias_compatible: Vec<bool>,
 }
 
 impl SamplingResources {
@@ -55,6 +57,8 @@ impl SamplingResources {
         self.textures.extend_from_slice(&other.textures);
         self.samplers_wrap.extend_from_slice(&other.samplers_wrap);
         self.samplers_lod.extend_from_slice(&other.samplers_lod);
+        self.samplers_bias_compatible
+            .extend_from_slice(&other.samplers_bias_compatible);
     }
 }
 
@@ -103,6 +107,7 @@ pub(super) fn relationships(
             sampler,
             texture_slot: find(texture, ShaderBindingKind::Texture2dFloat)?,
             sampler_slot: find(sampler, ShaderBindingKind::Sampler)?,
+            requires_bias_compatible: false,
         });
     }
     pairs.sort_unstable_by_key(|pair| {
@@ -123,14 +128,16 @@ pub(super) fn compatible(
     full_npot: Query<bool>,
 ) -> bool {
     pairs.iter().all(|pair| {
-        let (Some(texture), Some(&wraps), Some(&lod)) = (
+        let (Some(texture), Some(&wraps), Some(&lod), Some(&bias_compatible)) = (
             resources.textures.get(pair.texture_slot),
             resources.samplers_wrap.get(pair.sampler_slot),
             resources.samplers_lod.get(pair.sampler_slot),
+            resources.samplers_bias_compatible.get(pair.sampler_slot),
         ) else {
             return false;
         };
         texture.size[0] != 0
+            && (!pair.requires_bias_compatible || bias_compatible)
             && texture.size[1] != 0
             && texture.mip_levels <= texture.size[0].max(texture.size[1]).ilog2() + 1
             && lod.compatible(texture.mip_levels)
@@ -204,7 +211,59 @@ mod tests {
             ],
             samplers_wrap: alloc::vec![true, false],
             samplers_lod: alloc::vec![SamplerLod::Unchanged; 2],
+            samplers_bias_compatible: alloc::vec![true; 2],
         }
+    }
+
+    #[test]
+    fn biased_pairs_check_current_sampler_and_ignore_unused_samplers() {
+        let (module, info, bindings) = fixture();
+        let mut pairs = relationships(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "valid",
+            &bindings,
+        )
+        .unwrap();
+        let mut actual = resources();
+        actual.samplers_bias_compatible[0] = false;
+        assert!(compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        for pair in &mut pairs {
+            pair.requires_bias_compatible = true;
+        }
+        assert!(!compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        actual.samplers_bias_compatible[0] = true;
+        assert!(compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        actual.samplers_bias_compatible.push(false);
+        assert!(compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        actual.samplers_bias_compatible.clear();
+        assert!(!compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
     }
 
     #[test]
@@ -266,6 +325,7 @@ mod tests {
                 }],
                 samplers_wrap: alloc::vec![],
                 samplers_lod: alloc::vec![],
+                samplers_bias_compatible: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![TextureInfo {
@@ -274,16 +334,19 @@ mod tests {
                 }],
                 samplers_wrap: alloc::vec![],
                 samplers_lod: alloc::vec![],
+                samplers_bias_compatible: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![true],
                 samplers_lod: alloc::vec![SamplerLod::Unchanged],
+                samplers_bias_compatible: alloc::vec![true],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![false],
                 samplers_lod: alloc::vec![SamplerLod::Unchanged],
+                samplers_bias_compatible: alloc::vec![true],
             },
         ] {
             combined.append(&group);
@@ -598,6 +661,7 @@ mod tests {
             },
             texture_slot: 100,
             sampler_slot: 0,
+            requires_bias_compatible: false,
         };
         assert!(!compatible(
             &[pair],

@@ -35,10 +35,10 @@ fn fl91_sample_bias_rejects_selected_entry_only() -> windows::core::Result<()> {
             return textureSample(tex, smp, input.uv);
         }
         @fragment fn fs_bias(input: Out) -> @location(0) vec4f {
-            return textureSampleBias(tex, smp, input.uv, 0.5);
+            return textureSampleBias(tex, smp, input.uv, 4.0);
         }
         fn sample_bias(uv: vec2f) -> vec4f {
-            return textureSampleBias(tex, smp, uv, 0.5);
+            return textureSampleBias(tex, smp, uv, 4.0);
         }
         @fragment fn fs_bias_helper(input: Out) -> @location(0) vec4f {
             return sample_bias(input.uv);
