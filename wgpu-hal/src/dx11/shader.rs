@@ -358,6 +358,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fl91_vertex_index_entry_inputs_are_rejected_by_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Inputs {
+                @location(0) p: vec2f,
+                @builtin(vertex_index) id: u32,
+            }
+            fn position(p: vec2f, id: u32) -> vec4f {
+                return vec4f(p.x + f32(id) * 0.001, p.y, 0.5, 1.0);
+            }
+            @vertex fn direct_used(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
+                return position(p, id);
+            }
+            @vertex fn direct_unused(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
+                return vec4f(p, 0.5, 1.0);
+            }
+            @vertex fn struct_used(input: Inputs) -> @builtin(position) vec4f {
+                return position(input.p, input.id);
+            }
+            @vertex fn struct_unused(input: Inputs) -> @builtin(position) vec4f {
+                return vec4f(input.p, 0.5, 1.0);
+            }
+            @vertex fn safe(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                return vec4f(p, 0.5, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let compile = |entry, profile| {
+            compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Vertex,
+                entry,
+                profile,
+                &[],
+            )
+        };
+        for entry in [
+            "direct_used",
+            "direct_unused",
+            "struct_used",
+            "struct_unused",
+        ] {
+            let error = compile(entry, ShaderProfile::VertexLevel9_1).unwrap_err();
+            let NagaCompileError::Compilation(error) = error else {
+                panic!("unexpected {entry} error: {error:?}");
+            };
+            std::println!("{entry}: {}", error.message);
+            assert!(!error.message.is_empty());
+        }
+        assert!(compile("safe", ShaderProfile::VertexLevel9_1)
+            .unwrap()
+            .starts_with(b"DXBC"));
+        assert!(compile("direct_used", ShaderProfile::Vertex5_0)
+            .unwrap()
+            .starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn fl91_viewport_transform_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             "struct Out { @builtin(position) pos: vec4f, @location(0) c: vec4f } @vertex fn main(@location(0) p: vec3f) -> Out { return Out(vec4f(p, 1.), vec4f(1.)); }",

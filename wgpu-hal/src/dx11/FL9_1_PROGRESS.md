@@ -464,3 +464,11 @@ from textured depth rendering. The first build exposed a missing unwrap of the
 mapped-range result; after correction the test passed. Targeted fixture Clippy
 and `cargo check --offline -p wgpu --no-default-features --features
 std,dx12,wgsl` passed. This fixture does not provide a usable public adapter.
+
+An index-translation audit found that rebasing changes the shader-visible
+`vertex_index`. The backend's Naga-to-D3DCompile test rejects direct and
+structure-member `vertex_index` entry inputs, used or unused, on the installed
+FL9_1 compiler with X4555. An unrelated selected entry and the shader-model-5
+control compile. A separate installed FXC executable produced the same
+diagnostic. Future translation must explicitly preserve or reject this semantic
+rather than relying on a compiler's current behavior.
