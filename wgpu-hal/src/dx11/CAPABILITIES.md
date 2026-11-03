@@ -408,10 +408,13 @@ constant budgets. FXC compiles 32 referenced pixel float4 constants and rejects
 33 with X5200. A vertex shader with a dynamically indexed `float4[255]` compiles;
 arrays of 256 and 257 fail with X4507 at constant register index 256. The
 forced-FL9_1 RTX 3090 Ti also accepts `CreateVertexShader` for the 255-element
-profile. This is compiler and shader-object evidence, not execution: the private
-WGSL path rejects runtime integer indexing, so near-limit shader execution is
-not verified. Instruction pressure and compiler packing can impose earlier
-limits on ordinary shaders. FXC errors fail pipeline creation.
+profile. A strict forced-FL9_1 WGSL render now reads constant register c254
+through a static uniform-array index and verifies that changing its value moves
+the triangle in readback. This establishes execution of that register on the
+RTX, not dynamic indexing or historical-driver behavior; the private WGSL path
+still rejects runtime integer indexing. Instruction pressure and compiler
+packing can impose earlier limits on ordinary shaders. FXC errors fail pipeline
+creation.
 
 Ranges use four-byte-aligned offsets and nonzero sizes of at most 64 KiB;
 the logical size need not be a multiple of 16. At bind replay the exact range

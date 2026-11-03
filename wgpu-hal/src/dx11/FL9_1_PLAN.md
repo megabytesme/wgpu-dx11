@@ -10,10 +10,12 @@ below is met. This plan does not claim WebGPU conformance.
 1. Preserve the tested private backend; continue uniform layout and real
    constant-budget testing. FXC and the forced-FL9_1 RTX accept a dynamically
    indexed vertex constant array of 255 float4s and reject 256 at index 256;
-   pixel FXC accepts 32 and rejects 33 at register 32. Near-limit vertex
-   execution remains unverified because private WGSL rejects runtime integer
-   indexing. Investigate asymmetric matrices, arrays, nested structures and
-   FXC instruction pressure with checked shader translation.
+   pixel FXC accepts 32 and rejects 33 at register 32. Forced-FL9_1 GPU
+   execution now verifies that WGSL access to vertex constant c254 changes
+   rendered geometry. Runtime integer indexing remains rejected, so dynamic
+   near-limit indexing is still unavailable. Continue investigating matrix,
+   array and nested-structure layouts and FXC instruction pressure with checked
+   shader translation.
 2. Implement depth/stencil textures, views, initialization, render-pass
    attachments and depth state incrementally. Verify overlapping geometry in
    both draw orders on forced FL9_1, and independent load/clear/store behavior.
@@ -36,7 +38,11 @@ below is met. This plan does not claim WebGPU conformance.
    whose index span exceeds the native FL9_1 window. Strict private readback
    compares both index formats against equivalent triangle lists across front
    face and cull settings; the controlled core fixture verifies both formats.
-   Broader instance semantics and indirect draws remain unavailable.
+   Broader instance semantics and indirect draws remain unavailable. Microsoft
+   marks native `DrawInstancedIndirect` and `DrawIndexedInstancedIndirect` as
+   unsupported at 9_1; wgpu-core's `INDIRECT_EXECUTION` flag is also coupled to
+   compute support and GPU argument validation, so the public validation path
+   cannot currently expose a private CPU-staging emulation independently.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport

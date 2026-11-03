@@ -146,6 +146,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   interfaces are conservatively rejected for selected FL9 entries in both
   checked and unchecked modes. Earlier RTX integer-shader results are
   superseded by explicit rejection tests with float-only GPU controls.
+- The forced-FL9_1 private shader path also executes a static WGSL read of the
+  final tested vertex constant slot (c254). Changing only that uniform moves the
+  triangle; readback distinguishes 17 baseline green pixels and 4 shifted red
+  pixels. Runtime integer-indexed uniform arrays remain rejected.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
   vertex- or instance-rate streams, winding and face
   culling, bounds-checked scissors, per-channel color write masks,

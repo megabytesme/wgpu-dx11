@@ -112,6 +112,304 @@ fn fl91_vertex_constant_profile_boundary_creates_on_hardware() -> windows::core:
 }
 
 #[test]
+fn fl91_last_vertex_constant_changes_rendered_geometry() -> windows::core::Result<()> {
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|error| panic!("{error}"))
+    else {
+        std::println!("SKIP: no hardware adapter");
+        return Ok(());
+    };
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {:?}; requested FL9_1; actual {:?}",
+        adapter.identity(),
+        native.feature_level()
+    );
+    let device = Device::new(native.clone());
+    let queue = Queue::new(native.clone());
+    let shader_source = r#"
+        @group(0) @binding(7) var<uniform> constants: array<vec4f, 255>;
+        @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
+            return vec4f(position + constants[254].xy, 0.5, 1.0);
+        }
+        @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }
+        @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }
+    "#;
+    let module = naga::front::wgsl::parse_str(shader_source).unwrap();
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&module)
+    .unwrap();
+    let shader = unsafe {
+        device
+            .create_shader_module(
+                &crate::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                },
+                crate::ShaderInput::Naga(crate::NagaShader {
+                    module: Cow::Owned(module),
+                    info,
+                    debug_source: None,
+                }),
+            )
+            .unwrap()
+    };
+    let uniform_size = 255 * 16;
+    let group_entries = [wgt::BindGroupLayoutEntry {
+        binding: 7,
+        visibility: wgt::ShaderStages::VERTEX,
+        count: None,
+        ty: wgt::BindingType::Buffer {
+            ty: wgt::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: NonZeroU64::new(uniform_size),
+        },
+    }];
+    let group_layout = unsafe {
+        device
+            .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                label: None,
+                flags: crate::BindGroupLayoutFlags::empty(),
+                entries: &group_entries,
+            })
+            .unwrap()
+    };
+    let pipeline_layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[Some(&group_layout)],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let create_buffer = |size, usage| unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size,
+                usage,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    let base_constants = create_buffer(
+        uniform_size,
+        wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+    );
+    let shifted_constants = create_buffer(
+        uniform_size,
+        wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+    );
+    let base_data = vec![0u8; uniform_size as usize];
+    let mut shifted_data = vec![0u8; uniform_size as usize];
+    shifted_data[254 * 16..254 * 16 + 4].copy_from_slice(&1.25f32.to_ne_bytes());
+    native.write_byte_buffer(&base_constants, 0, &base_data)?;
+    native.write_byte_buffer(&shifted_constants, 0, &shifted_data)?;
+    let make_group = |buffer: &super::super::buffer::NativeBuffer| unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &group_layout,
+                buffers: &[crate::BufferBinding::new_unchecked(
+                    buffer,
+                    0,
+                    NonZeroU64::new(uniform_size),
+                )],
+                textures: &[],
+                samplers: &[],
+                entries: &[crate::BindGroupEntry {
+                    binding: 7,
+                    resource_index: 0,
+                    count: 1,
+                }],
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
+    let base_group = make_group(&base_constants);
+    let shifted_group = make_group(&shifted_constants);
+    let attributes = [wgt::VertexAttribute {
+        format: wgt::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layouts = [Some(crate::VertexBufferLayout {
+        array_stride: 8,
+        step_mode: wgt::VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let constants = naga::back::PipelineConstants::default();
+    let stage = |entry_point| crate::ProgrammableStage {
+        module: &shader,
+        entry_point,
+        constants: &constants,
+        zero_initialize_workgroup_memory: false,
+    };
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let make_pipeline = |fragment_entry| unsafe {
+        device.create_render_pipeline(&crate::RenderPipelineDescriptor {
+            label: None,
+            layout: &pipeline_layout,
+            vertex_processor: crate::VertexProcessor::Standard {
+                vertex_buffers: &vertex_layouts,
+                vertex_stage: stage("vs"),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment_stage: Some(stage(fragment_entry)),
+            color_targets: &targets,
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let green_pipeline = make_pipeline("green").unwrap();
+    let red_pipeline = make_pipeline("red").unwrap();
+    let vertex_buffer = create_buffer(24, wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST);
+    let vertex_data: Vec<_> = [-0.75f32, -0.75, 0.75, -0.75, 0.0, 0.75]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    native.write_byte_buffer(&vertex_buffer, 0, &vertex_data)?;
+    let extent = wgt::Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let target = unsafe {
+        device
+            .create_texture(&crate::TextureDescriptor {
+                label: None,
+                size: extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Rgba8Unorm,
+                usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                memory_flags: crate::MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+            .unwrap()
+    };
+    let view = unsafe {
+        device
+            .create_texture_view(
+                &target,
+                &crate::TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage: wgt::TextureUses::COLOR_TARGET,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+            .unwrap()
+    };
+    let colors = [Some(crate::ColorAttachment {
+        target: crate::Attachment {
+            view: &view,
+            usage: wgt::TextureUses::COLOR_TARGET,
+        },
+        depth_slice: None,
+        resolve_target: None,
+        ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+        clear_value: wgt::Color::BLACK,
+    })];
+    let pass = crate::RenderPassDescriptor {
+        label: None,
+        extent,
+        sample_count: 1,
+        color_attachments: &colors,
+        depth_stencil_attachment: None,
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let mut encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let command = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.begin_render_pass(&pass).unwrap();
+        encoder.set_bind_group(&pipeline_layout, 0, &base_group, &[]);
+        encoder.set_render_pipeline(&green_pipeline);
+        encoder.set_vertex_buffer(
+            0,
+            crate::BufferBinding::new_unchecked(&vertex_buffer, 0, None),
+        );
+        encoder.draw(0, 3, 0, 1);
+        encoder.set_bind_group(&pipeline_layout, 0, &shifted_group, &[]);
+        encoder.set_render_pipeline(&red_pipeline);
+        encoder.draw(0, 3, 0, 1);
+        encoder.end_render_pass();
+        encoder.end_encoding().unwrap()
+    };
+    unsafe {
+        device.destroy_bind_group(base_group);
+        device.destroy_bind_group(shifted_group);
+        device.destroy_buffer(base_constants);
+        device.destroy_buffer(shifted_constants);
+        device.destroy_buffer(vertex_buffer);
+    }
+    let fence = native.create_native_fence();
+    unsafe { queue.submit(&[&command], &[], (&fence, 1)).unwrap() };
+    assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+    let pixels = native.read_rgba_texture(&target, 0, 0)?;
+    let mut green_count = 0u64;
+    let mut green_x = 0u64;
+    let mut red_count = 0u64;
+    let mut red_x = 0u64;
+    for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+        match pixel {
+            [0, 255, 0, 255] => {
+                green_count += 1;
+                green_x += (index % 8) as u64;
+            }
+            [255, 0, 0, 255] => {
+                red_count += 1;
+                red_x += (index % 8) as u64;
+            }
+            [0, 0, 0, 255] => {}
+            _ => panic!("unexpected pixel at {index}: {pixel:?}"),
+        }
+    }
+    assert!(green_count > 0, "baseline geometry was not rendered");
+    assert!(red_count > 0, "slot-254 geometry was not rendered");
+    assert!(
+        red_x * green_count > green_x * red_count,
+        "slot-254 uniform did not shift the rendered geometry right"
+    );
+    std::println!(
+        "PASS: FL9_1 vertex constant c254 shifted geometry; green {green_count} pixels, red {red_count} pixels"
+    );
+    unsafe {
+        encoder.reset_all([command].into_iter());
+        device.destroy_render_pipeline(green_pipeline);
+        device.destroy_render_pipeline(red_pipeline);
+        device.destroy_texture_view(view);
+        device.destroy_texture(target);
+        device.destroy_pipeline_layout(pipeline_layout);
+        device.destroy_bind_group_layout(group_layout);
+        device.destroy_shader_module(shader);
+    }
+    Ok(())
+}
+
+#[test]
 fn fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch() -> windows::core::Result<()> {
     sparse_uniform_ranges(false)
 }
