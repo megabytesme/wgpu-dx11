@@ -577,6 +577,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
         VertexCase::ActiveStencil,
+        VertexCase::DepthOnlyPrepass,
         VertexCase::NeverDepth(false),
         VertexCase::NeverDepth(true),
         VertexCase::DepthBias(1_048_576),
@@ -1694,6 +1695,7 @@ enum VertexCase {
     Overlapping,
     NoopStencil,
     ActiveStencil,
+    DepthOnlyPrepass,
     NeverDepth(bool),
     DepthBias(i32),
     Snorm,
@@ -1725,6 +1727,7 @@ fn render_triangle(
     };
     let overlapping = case == VertexCase::Overlapping;
     let active_stencil = case == VertexCase::ActiveStencil;
+    let depth_only_prepass = case == VertexCase::DepthOnlyPrepass;
     let point_index = match case {
         VertexCase::PointIndexed(format) => Some(format),
         _ => None,
@@ -2480,6 +2483,17 @@ fn render_triangle(
         global.bind_group_drop(invalid_group);
         global.bind_group_layout_drop(invalid_group_layout);
     }
+    let depth_prepass_pipeline = if depth_only_prepass {
+        let fragment = pipeline_descriptor.fragment.take();
+        pipeline_descriptor.fragment = None;
+        let (pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        pipeline_descriptor.fragment = fragment;
+        assert!(error.is_none(), "depth-only prepass pipeline: {error:?}");
+        Some(pipeline)
+    } else {
+        None
+    };
     let (pipeline_id, error) =
         global.device_create_render_pipeline(device, &pipeline_descriptor, None);
     assert!(error.is_none(), "render pipeline creation: {error:?}");
@@ -2688,6 +2702,44 @@ fn render_triangle(
         }),
         store_op: wgt::StoreOp::Store,
     })];
+    if let Some(depth_prepass_pipeline) = depth_prepass_pipeline {
+        let depth_prepass_attachment = render::RenderPassDepthStencilAttachment {
+            view: depth_view,
+            depth: render::PassChannel {
+                load_op: Some(wgt::LoadOp::Clear(Some(1.0))),
+                store_op: Some(wgt::StoreOp::Store),
+                read_only: false,
+            },
+            stencil: render::PassChannel {
+                load_op: Some(wgt::LoadOp::Clear(Some(0))),
+                store_op: Some(wgt::StoreOp::Store),
+                read_only: false,
+            },
+        };
+        let (mut prepass, error) = global.command_encoder_begin_render_pass(
+            encoder,
+            &render::RenderPassDescriptor {
+                label: None,
+                color_attachments: Cow::Borrowed(&[]),
+                depth_stencil_attachment: Some(depth_prepass_attachment),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            },
+        );
+        assert!(error.is_none(), "depth-only core render pass: {error:?}");
+        global
+            .render_pass_set_pipeline(&mut prepass, depth_prepass_pipeline)
+            .unwrap();
+        global
+            .render_pass_set_vertex_buffer(&mut prepass, 0, Some(vertices), 0, None)
+            .unwrap();
+        global
+            .render_pass_set_bind_group(&mut prepass, 0, Some(group), &[])
+            .unwrap();
+        global.render_pass_draw(&mut prepass, 6, 1, 0, 0).unwrap();
+        global.render_pass_end(&mut prepass).unwrap();
+    }
     let (mut pass, error) = global.command_encoder_begin_render_pass(
         encoder,
         &render::RenderPassDescriptor {
@@ -2696,7 +2748,11 @@ fn render_triangle(
             depth_stencil_attachment: Some(render::RenderPassDepthStencilAttachment {
                 view: depth_view,
                 depth: render::PassChannel {
-                    load_op: Some(wgt::LoadOp::Clear(Some(1.0))),
+                    load_op: Some(if depth_only_prepass {
+                        wgt::LoadOp::Load
+                    } else {
+                        wgt::LoadOp::Clear(Some(1.0))
+                    }),
                     store_op: Some(wgt::StoreOp::Store),
                     read_only: false,
                 },
@@ -2750,6 +2806,8 @@ fn render_triangle(
             .unwrap();
     } else if point_input {
         global.render_pass_draw(&mut pass, 2, 1, 1, 0).unwrap();
+    } else if depth_only_prepass {
+        global.render_pass_draw(&mut pass, 3, 1, 6, 0).unwrap();
     } else {
         global
             .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
@@ -2769,7 +2827,7 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, bias_pipeline)
             .unwrap();
     }
-    if !point_input {
+    if !point_input && !depth_only_prepass {
         global
             .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
             .unwrap();
@@ -2848,6 +2906,18 @@ fn render_triangle(
     for y in 0..8 {
         for x in 0..8 {
             let offset = y * 256 + x * 4;
+            if depth_only_prepass {
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    if x < 4 {
+                        &[0, 0, 255, 255]
+                    } else {
+                        &[0, 255, 0, 255]
+                    },
+                    "depth-only prepass pixel ({x}, {y})"
+                );
+                continue;
+            }
             if premultiplied_blend {
                 let expected = if x < 4 {
                     [128u8, 0, 64, 192]
@@ -2899,6 +2969,9 @@ fn render_triangle(
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.render_pipeline_drop(pipeline_id);
+    if let Some(depth_prepass_pipeline) = depth_prepass_pipeline {
+        global.render_pipeline_drop(depth_prepass_pipeline);
+    }
     if let Some(stencil_test_pipeline) = stencil_test_pipeline {
         global.render_pipeline_drop(stencil_test_pipeline);
     }
