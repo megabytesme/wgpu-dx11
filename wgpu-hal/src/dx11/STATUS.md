@@ -101,14 +101,16 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Short uniform ranges use a zero-padded native constant buffer and preserve the
   declared byte range, including non-multiples of 16. This stages through a CPU
   map and can stall; odd-sized GPU copies remain unverified on historical
-  drivers. Selected integer uniform bitcasts and a precision-sensitive fragment
-  comparison have GPU regression coverage, not general integer shader coverage.
+  drivers. Runtime integer expressions and integer-containing uniforms or
+  interfaces are conservatively rejected for selected FL9 entries in both
+  checked and unchecked modes. Earlier RTX integer-shader results are
+  superseded by explicit rejection tests with float-only GPU controls.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
   vertex- or instance-rate streams, winding and face
   culling, bounds-checked scissors, per-channel color write masks,
   restricted replace/alpha/crosshair/additive/vignette blending, and splitting
-  at FL9 draw limits. Checked shaders allow proven value-vector dynamic reads;
-  dynamic vector-pointer indexing remains rejected. Stores through aggregates
+  at FL9 draw limits. Runtime integer-based vector indexing is rejected in both
+  shader modes; proven static literal indices remain supported. Stores through aggregates
   containing two-row matrices are conservatively rejected in both shader modes.
 - The private vertex-input subset includes `Snorm16x2` and `Snorm16x4`, with
   driver-checked input-assembler support and four-byte attribute alignment.

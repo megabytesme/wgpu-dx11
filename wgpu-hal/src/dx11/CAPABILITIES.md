@@ -335,17 +335,17 @@ entry-point minimum sizes and group/pipeline compatibility are checked. Dynamic
 offsets are consumed in ascending logical binding order and checked against the
 logical source-buffer size before recording. A range extending to the buffer end
 allows only offset zero. Four-byte alignment is the private HAL minimum; a future
-public adapter must enforce its reported wgpu alignment through core. Checked
-shaders using uniforms permit dynamic access to proven value vectors;
-checked dynamic vector-pointer indexing is rejected regardless of uniform use.
-Uniform-pointer indexing, dynamic arrays with uniforms, matrices and unknown
-provenance remain restricted. Matrix-containing aggregate stores are rejected
+public adapter must enforce its reported wgpu alignment through core. For the
+selected FL9 shader entry, checked and unchecked compilation rejects runtime
+integer values, operations, conversions and bitcasts, integer-containing
+uniforms or interfaces, switches, and non-folded global initializers and
+overrides. This also rejects runtime integer-based vector indexing. Proven
+static literal indices and float-only paths remain available. Matrix-containing aggregate stores are rejected
 in checked and unchecked shaders because Naga's current HLSL special lowering
 can lose writes or omit an index clamp. The conservative guard also rejects
 unrelated stores to such aggregates and shaders exceeding its analysis budget.
-The tested FXC rejects a potentially negative value index in the pixel profile;
-other compiler versions may differ. General checked
-uniform indexing and broad public adapter exposure remain unsupported. GPU coverage exercises multiple
+General dynamic uniform indexing and broad public adapter exposure remain
+unsupported. GPU coverage exercises multiple
 range bindings, pipeline transitions, a matrix and padded structure, and sampled
 texture coexistence. A checked forced-FL9_1 GPU test also verifies nested
 structures, an asymmetric `mat3x2<f32>` and a `vec4<f32>` array with distinct
@@ -358,9 +358,12 @@ odd-sized buffer copy remains unverified. The controlled core fixture enables
 `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED` to test these ranges and rendered with a
 dynamic offset. Without this flag core rejected its short uniform shader. The
 fixture flag is not a public adapter capability; normal enumeration remains
-disabled. Separate GPU regressions verify selected integer-uniform bitcasts in
-vertex and fragment shaders and a fragment comparison of 2^24 and 2^24+1. They
-do not establish general integer shader semantics or historical GPU support.
+disabled. Three earlier RTX GPU results for integer-uniform bitcasts and a
+comparison around 2^24 are superseded: the original integer entry points now
+fail linkage, and the updated tests render float-only controls. An FXC probe
+showed the embedded legacy pixel shader rounding 16777217 to 16777216 and a
+legacy vertex shader lowering a bitcast to numeric float arithmetic. Modern
+forced-FL9 execution does not establish historical-driver integer semantics.
 
 The private layout accepts up to eight sampled textures and sixteen samplers.
 These are binding capacities, not a promise that every shader using them

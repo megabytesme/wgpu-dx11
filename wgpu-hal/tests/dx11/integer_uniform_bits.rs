@@ -6,17 +6,17 @@ use alloc::{borrow::Cow, sync::Arc, vec, vec::Vec};
 use core::{num::NonZeroU64, time::Duration};
 
 #[test]
-fn fl91_integer_uniform_bitcast_preserves_bits() -> windows::core::Result<()> {
+fn fl91_fragment_integer_uniform_bitcast_is_rejected() -> windows::core::Result<()> {
     integer_uniform(false, false)
 }
 
 #[test]
-fn fl91_integer_uniform_comparison_preserves_precision() -> windows::core::Result<()> {
+fn fl91_integer_uniform_comparison_is_rejected() -> windows::core::Result<()> {
     integer_uniform(true, false)
 }
 
 #[test]
-fn fl91_vertex_integer_uniform_bitcast_preserves_bits() -> windows::core::Result<()> {
+fn fl91_vertex_integer_uniform_bitcast_is_rejected() -> windows::core::Result<()> {
     integer_uniform(false, true)
 }
 
@@ -57,6 +57,7 @@ fn integer_uniform(precision: bool, vertex_stage: bool) -> windows::core::Result
             let same = bits.x == 16777217u;
             return select(vec4f(0.0, 1.0, 0.0, 1.0), vec4f(1.0, 0.0, 0.0, 1.0), same);
         }
+        @fragment fn fs_safe() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }
         "#,
     )
     .unwrap();
@@ -128,31 +129,45 @@ fn integer_uniform(precision: bool, vertex_stage: bool) -> windows::core::Result
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let pipeline = unsafe {
-        device
-            .create_render_pipeline(&crate::RenderPipelineDescriptor {
-                label: None,
-                layout: &layout,
-                vertex_processor: crate::VertexProcessor::Standard {
-                    vertex_buffers: &vertices_layout,
-                    vertex_stage: stage(if vertex_stage { "vs_bits" } else { "vs" }),
-                },
-                primitive: wgt::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgt::MultisampleState::default(),
-                fragment_stage: Some(stage(if vertex_stage {
-                    "fs_color"
-                } else if precision {
-                    "fs_precision"
-                } else {
-                    "fs"
-                })),
-                color_targets: &targets,
-                multiview_mask: None,
-                cache: None,
-            })
-            .expect("integer uniform bitcast pipeline must compile for baseline")
+    let create_pipeline = |vertex_entry, fragment_entry| unsafe {
+        device.create_render_pipeline(&crate::RenderPipelineDescriptor {
+            label: None,
+            layout: &layout,
+            vertex_processor: crate::VertexProcessor::Standard {
+                vertex_buffers: &vertices_layout,
+                vertex_stage: stage(vertex_entry),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment_stage: Some(stage(fragment_entry)),
+            color_targets: &targets,
+            multiview_mask: None,
+            cache: None,
+        })
     };
+    let rejected = create_pipeline(
+        if vertex_stage { "vs_bits" } else { "vs" },
+        if vertex_stage {
+            "fs_color"
+        } else if precision {
+            "fs_precision"
+        } else {
+            "fs"
+        },
+    );
+    let expected_stage = if vertex_stage {
+        wgt::ShaderStages::VERTEX
+    } else {
+        wgt::ShaderStages::FRAGMENT
+    };
+    assert!(
+        matches!(rejected, Err(crate::PipelineError::Linkage(stage, ref message))
+        if stage == expected_stage && message == "D3D11 FL9 runtime integer semantics are not implemented safely"),
+        "integer case must fail the selected-stage guard: {rejected:?}"
+    );
+    let pipeline = create_pipeline("vs", "fs_safe")
+        .expect("unused integer entries must not reject the float-only pipeline");
     let create_buffer = |size, usage| unsafe {
         device
             .create_buffer(&crate::BufferDescriptor {
@@ -292,11 +307,7 @@ fn integer_uniform(precision: bool, vertex_stage: bool) -> windows::core::Result
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
     assert_eq!(pixels.len(), 8 * 8 * 4);
     for (index, pixel) in pixels.chunks_exact(4).enumerate() {
-        let expected = if index % 8 < 4 {
-            [0, 255, 0, 255]
-        } else {
-            [255, 0, 0, 255]
-        };
+        let expected = [0, 255, 0, 255];
         assert_eq!(
             pixel, expected,
             "precision={precision}, vertex_stage={vertex_stage}, pixel {index}: {pixel:?}"
@@ -315,6 +326,6 @@ fn integer_uniform(precision: bool, vertex_stage: bool) -> windows::core::Result
         device.destroy_bind_group_layout(group_layout);
         device.destroy_shader_module(shader);
     }
-    std::println!("PASS: FL9_1 integer uniform precision={precision}, vertex_stage={vertex_stage}, 64/64 pixels matched");
+    std::println!("PASS: FL9_1 integer shader rejected; float-only control precision={precision}, vertex_stage={vertex_stage}: 64/64 pixels matched");
     Ok(())
 }

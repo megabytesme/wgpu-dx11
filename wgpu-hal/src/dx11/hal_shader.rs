@@ -58,6 +58,205 @@ mod tests {
         (module, info)
     }
 
+    fn integer_semantics_module() -> (naga::Module, naga::valid::ModuleInfo) {
+        let module = naga::front::wgsl::parse_str(r#"
+            @group(0) @binding(7) var<uniform> bits: vec4u;
+            @group(0) @binding(8) var<uniform> value: vec4f;
+            struct Mixed { color: vec4f, number: vec4u }
+            @group(0) @binding(9) var<uniform> mixed: Mixed;
+            fn from_helper(x: u32) -> f32 { return f32(x); }
+            @fragment fn bitcast_uniform() -> @location(0) vec4f { return vec4f(bitcast<f32>(bits.x)); }
+            @fragment fn compare_uniform() -> @location(0) vec4f { return select(vec4f(0.0), vec4f(1.0), bits.x == 16777217u); }
+            @fragment fn compare_float() -> @location(0) vec4f { return select(vec4f(0.0), vec4f(1.0), i32(value.x) == 16777217i); }
+            @fragment fn helper() -> @location(0) vec4f { return vec4f(from_helper(u32(value.x))); }
+            @fragment fn mixed_uniform() -> @location(0) vec4f { return mixed.color; }
+            @fragment fn dynamic_index() -> @location(0) vec4f { return vec4f(vec4f(0.1, 0.2, 0.3, 0.4)[u32(value.x)]); }
+            @fragment fn static_index() -> @location(0) vec4f { return vec4f(value[2]); }
+            @fragment fn constant_math() -> @location(0) vec4f { return vec4f(f32(1u + 2u)); }
+            @fragment fn float_safe() -> @location(0) vec4f { return value; }
+            @vertex fn integer_input(@location(0) x: vec4u) -> @builtin(position) vec4f { return vec4f(x); }
+        "#).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        (module, info)
+    }
+
+    #[test]
+    fn integer_guard_checks_selected_entry_and_level9_profile() {
+        let (module, info) = integer_semantics_module();
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            let expected = !matches!(
+                entry.name.as_str(),
+                "static_index" | "constant_math" | "float_safe"
+            );
+            let profile = selected_shader_profile(entry.stage).unwrap();
+            assert_eq!(
+                has_unsafe_integer_semantics(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index),
+                    profile
+                ),
+                expected,
+                "{}",
+                entry.name
+            );
+            assert!(!has_unsafe_integer_semantics(
+                &module,
+                &info,
+                &entry.function,
+                info.get_entry_point(index),
+                ShaderProfile::Pixel5_0
+            ));
+        }
+        let index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.name == "float_safe")
+            .unwrap();
+        let entry = &module.entry_points[index];
+        assert!(has_unsafe_integer_semantics_with_budget(
+            &module,
+            &info,
+            &entry.function,
+            info.get_entry_point(index),
+            ShaderProfile::PixelLevel9_1,
+            0
+        ));
+        let mut function = entry.function.clone();
+        function.body.push(
+            naga::Statement::Block(naga::Block::new()),
+            naga::Span::UNDEFINED,
+        );
+        function.body.push(
+            naga::Statement::Block(naga::Block::new()),
+            naga::Span::UNDEFINED,
+        );
+        assert!(reachable_function(
+            &module,
+            &info,
+            &function,
+            info.get_entry_point(index),
+            Some(&core::cell::Cell::new(1)),
+            |_, _, _| false
+        ));
+        let ty = module
+            .types
+            .iter()
+            .find(|(_, ty)| {
+                matches!(
+                    ty.inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Quad,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            ..
+                        }
+                    }
+                )
+            })
+            .unwrap()
+            .0;
+        let mut shared = naga::Function::default();
+        let value = shared.expressions.append(
+            naga::Expression::Literal(naga::Literal::F32(1.0)),
+            naga::Span::UNDEFINED,
+        );
+        shared.expressions.append(
+            naga::Expression::Compose {
+                ty,
+                components: alloc::vec![value; 4],
+            },
+            naga::Span::UNDEFINED,
+        );
+        assert!(!charge_compose_components(
+            &shared,
+            &core::cell::Cell::new(3)
+        ));
+        assert!(charge_compose_components(
+            &shared,
+            &core::cell::Cell::new(4)
+        ));
+    }
+
+    #[test]
+    fn integer_guard_rejects_unfolded_global_initializers_only_when_selected() {
+        let mut module = naga::front::wgsl::parse_str(
+            r#"
+            const k: f32 = 1.0;
+            var<private> value: f32 = 1.0;
+            @fragment fn from_const() -> @location(0) vec4f { return vec4f(k); }
+            @fragment fn from_private() -> @location(0) vec4f { return vec4f(value); }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(0.0); }
+        "#,
+        )
+        .unwrap();
+        let constant = module
+            .constants
+            .iter()
+            .find(|(_, c)| c.name.as_deref() == Some("k"))
+            .unwrap()
+            .0;
+        let entry = module
+            .entry_points
+            .iter_mut()
+            .find(|entry| entry.name == "from_const")
+            .unwrap();
+        let literal = entry
+            .function
+            .expressions
+            .iter()
+            .find(|(_, expression)| matches!(expression, naga::Expression::Literal(naga::Literal::F32(value)) if *value == 1.0))
+            .unwrap()
+            .0;
+        entry.function.expressions[literal] = naga::Expression::Constant(constant);
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let bits = module.global_expressions.append(
+            naga::Expression::Literal(naga::Literal::U32(0x3f800000)),
+            naga::Span::UNDEFINED,
+        );
+        let cast = module.global_expressions.append(
+            naga::Expression::As {
+                expr: bits,
+                kind: naga::ScalarKind::Float,
+                convert: None,
+            },
+            naga::Span::UNDEFINED,
+        );
+        module.constants[constant].init = cast;
+        let global = module
+            .global_variables
+            .iter()
+            .find(|(_, v)| v.name.as_deref() == Some("value"))
+            .unwrap()
+            .0;
+        module.global_variables[global].init = Some(cast);
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            assert_eq!(
+                has_unsafe_integer_semantics(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index),
+                    ShaderProfile::PixelLevel9_1
+                ),
+                entry.name != "safe",
+                "{}",
+                entry.name
+            );
+        }
+    }
+
     #[test]
     fn sample_bias_guard_uses_selected_entry_and_shader_profile() {
         let (module, info) = sample_bias_module();
@@ -821,6 +1020,44 @@ mod tests {
                 .uses_sample_bias(naga::ShaderStage::Fragment, "normal")
                 .unwrap());
         }
+        let (integer_module, integer_info) = integer_semantics_module();
+        for checks in [
+            wgt::ShaderRuntimeChecks::checked(),
+            wgt::ShaderRuntimeChecks::unchecked(),
+        ] {
+            let shader = ShaderModule::new(
+                native.clone(),
+                crate::NagaShader {
+                    module: Cow::Owned(integer_module.clone()),
+                    info: integer_info.clone(),
+                    debug_source: None,
+                },
+                checks,
+            );
+            for entry in [
+                "bitcast_uniform",
+                "compare_uniform",
+                "compare_float",
+                "helper",
+                "mixed_uniform",
+                "dynamic_index",
+            ] {
+                assert!(
+                    matches!(shader.compile(naga::ShaderStage::Fragment, entry),
+                    Err(crate::PipelineError::Linkage(stage, message)) if stage == wgt::ShaderStages::FRAGMENT
+                        && message == "D3D11 FL9 runtime integer semantics are not implemented safely"),
+                    "{entry}"
+                );
+            }
+            assert!(shader
+                .compile(naga::ShaderStage::Fragment, "constant_math")
+                .is_ok());
+            assert!(
+                matches!(shader.compile(naga::ShaderStage::Vertex, "integer_input"),
+                Err(crate::PipelineError::Linkage(stage, message)) if stage == wgt::ShaderStages::VERTEX
+                    && message == "D3D11 FL9 runtime integer semantics are not implemented safely")
+            );
+        }
         let uniform_module = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> color: vec4f; @fragment fn fs() -> @location(0) vec4f { return color; }").unwrap();
         let uniform_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -868,7 +1105,7 @@ mod tests {
             .compile_with_bindings(naga::ShaderStage::Fragment, "safe", &uniform_mapping)
             .is_ok());
         assert!(
-            matches!(checked_indexed.compile_with_bindings(naga::ShaderStage::Fragment, "dynamic", &uniform_mapping), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 dynamic pointer or uniform indexing is not implemented")
+            matches!(checked_indexed.compile_with_bindings(naga::ShaderStage::Fragment, "dynamic", &uniform_mapping), Err(crate::PipelineError::Linkage(_, message)) if message == "D3D11 FL9 runtime integer semantics are not implemented safely")
         );
         let (matrix_module, matrix_info) = matrix_store_module();
         for checks in [
@@ -1000,55 +1237,116 @@ fn reachable_expression<F>(
 where
     F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo, &naga::Expression) -> bool,
 {
+    reachable_function(
+        module,
+        module_info,
+        function,
+        function_info,
+        None,
+        |module, function, info| {
+            function
+                .expressions
+                .iter()
+                .any(|(_, expression)| predicate(module, function, info, expression))
+        },
+    )
+}
+
+fn reachable_function<F>(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    budget: Option<&core::cell::Cell<usize>>,
+    predicate: F,
+) -> bool
+where
+    F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo) -> bool,
+{
     fn block_contains<F>(
         module: &naga::Module,
         module_info: &naga::valid::ModuleInfo,
         block: &naga::Block,
         visited: &mut Vec<naga::Handle<naga::Function>>,
         predicate: &F,
+        budget: Option<&core::cell::Cell<usize>>,
         depth: usize,
     ) -> bool
     where
-        F: Fn(
-            &naga::Module,
-            &naga::Function,
-            &naga::valid::FunctionInfo,
-            &naga::Expression,
-        ) -> bool,
+        F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo) -> bool,
     {
         if depth >= 256 {
             return true;
         }
+        if let Some(budget) = budget {
+            let Some(remaining) = budget.get().checked_sub(block.len()) else {
+                return true;
+            };
+            budget.set(remaining);
+        }
         block.iter().any(|statement| match statement {
-            naga::Statement::Block(block) => {
-                block_contains(module, module_info, block, visited, predicate, depth + 1)
-            }
+            naga::Statement::Block(block) => block_contains(
+                module,
+                module_info,
+                block,
+                visited,
+                predicate,
+                budget,
+                depth + 1,
+            ),
             naga::Statement::If { accept, reject, .. } => {
-                block_contains(module, module_info, accept, visited, predicate, depth + 1)
-                    || block_contains(module, module_info, reject, visited, predicate, depth + 1)
-            }
-            naga::Statement::Switch { cases, .. } => cases.iter().any(|case| {
                 block_contains(
                     module,
                     module_info,
-                    &case.body,
+                    accept,
                     visited,
                     predicate,
+                    budget,
+                    depth + 1,
+                ) || block_contains(
+                    module,
+                    module_info,
+                    reject,
+                    visited,
+                    predicate,
+                    budget,
                     depth + 1,
                 )
-            }),
+            }
+            naga::Statement::Switch { cases, .. } => {
+                budget.is_some()
+                    || cases.iter().any(|case| {
+                        block_contains(
+                            module,
+                            module_info,
+                            &case.body,
+                            visited,
+                            predicate,
+                            budget,
+                            depth + 1,
+                        )
+                    })
+            }
             naga::Statement::Loop {
                 body, continuing, ..
             } => {
-                block_contains(module, module_info, body, visited, predicate, depth + 1)
-                    || block_contains(
-                        module,
-                        module_info,
-                        continuing,
-                        visited,
-                        predicate,
-                        depth + 1,
-                    )
+                block_contains(
+                    module,
+                    module_info,
+                    body,
+                    visited,
+                    predicate,
+                    budget,
+                    depth + 1,
+                ) || block_contains(
+                    module,
+                    module_info,
+                    continuing,
+                    visited,
+                    predicate,
+                    budget,
+                    depth + 1,
+                )
             }
             naga::Statement::Call { function, .. } => {
                 if visited.contains(function) {
@@ -1065,7 +1363,7 @@ where
                         &module_info[*function],
                         visited,
                         predicate,
-                        depth + 1,
+                        (budget, depth + 1),
                     )
                 }
             }
@@ -1079,26 +1377,20 @@ where
         function_info: &naga::valid::FunctionInfo,
         visited: &mut Vec<naga::Handle<naga::Function>>,
         predicate: &F,
-        depth: usize,
+        walk: (Option<&core::cell::Cell<usize>>, usize),
     ) -> bool
     where
-        F: Fn(
-            &naga::Module,
-            &naga::Function,
-            &naga::valid::FunctionInfo,
-            &naga::Expression,
-        ) -> bool,
+        F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo) -> bool,
     {
-        function
-            .expressions
-            .iter()
-            .any(|(_, expression)| predicate(module, function, function_info, expression))
+        let (budget, depth) = walk;
+        predicate(module, function, function_info)
             || block_contains(
                 module,
                 module_info,
                 &function.body,
                 visited,
                 predicate,
+                budget,
                 depth,
             )
     }
@@ -1109,7 +1401,7 @@ where
         function_info,
         &mut Vec::new(),
         &predicate,
-        0,
+        (budget, 0),
     )
 }
 
@@ -1119,6 +1411,297 @@ fn selected_shader_profile(stage: naga::ShaderStage) -> Option<ShaderProfile> {
         naga::ShaderStage::Fragment => Some(ShaderProfile::PixelLevel9_1),
         _ => None,
     }
+}
+
+fn type_may_contain_integer<'a>(
+    module: &'a naga::Module,
+    root: &'a naga::TypeInner,
+    budget: &core::cell::Cell<usize>,
+) -> bool {
+    enum Work<'a> {
+        Inspect(&'a naga::TypeInner),
+        Enter(naga::Handle<naga::Type>),
+        Exit(naga::Handle<naga::Type>),
+    }
+    let mut stack = alloc::vec![Work::Inspect(root)];
+    let mut active = alloc::collections::BTreeSet::new();
+    let mut complete = alloc::collections::BTreeSet::new();
+    while let Some(work) = stack.pop() {
+        let Some(remaining) = budget.get().checked_sub(1) else {
+            return true;
+        };
+        budget.set(remaining);
+        let inner = match work {
+            Work::Inspect(inner) => inner,
+            Work::Enter(handle) => {
+                if complete.contains(&handle) {
+                    continue;
+                }
+                if !active.insert(handle) {
+                    return true;
+                }
+                if handle.index() >= module.types.len() {
+                    return true;
+                }
+                let ty = &module.types[handle];
+                stack.push(Work::Exit(handle));
+                stack.push(Work::Inspect(&ty.inner));
+                continue;
+            }
+            Work::Exit(handle) => {
+                active.remove(&handle);
+                complete.insert(handle);
+                continue;
+            }
+        };
+        match inner {
+            naga::TypeInner::Scalar(scalar)
+            | naga::TypeInner::Atomic(scalar)
+            | naga::TypeInner::Vector { scalar, .. }
+            | naga::TypeInner::Matrix { scalar, .. }
+            | naga::TypeInner::CooperativeMatrix { scalar, .. }
+            | naga::TypeInner::ValuePointer { scalar, .. } => {
+                if !matches!(
+                    scalar.kind,
+                    naga::ScalarKind::Float | naga::ScalarKind::Bool
+                ) {
+                    return true;
+                }
+            }
+            naga::TypeInner::Array {
+                size: naga::ArraySize::Pending(_),
+                ..
+            }
+            | naga::TypeInner::BindingArray {
+                size: naga::ArraySize::Pending(_),
+                ..
+            } => return true,
+            naga::TypeInner::Pointer { base, .. }
+            | naga::TypeInner::Array { base, .. }
+            | naga::TypeInner::BindingArray { base, .. } => stack.push(Work::Enter(*base)),
+            naga::TypeInner::Struct { members, .. } => {
+                if members.len() > budget.get() {
+                    return true;
+                }
+                for member in members {
+                    stack.push(Work::Enter(member.ty));
+                }
+            }
+            naga::TypeInner::Image {
+                class: naga::ImageClass::Sampled { kind, .. },
+                ..
+            } => {
+                if *kind != naga::ScalarKind::Float {
+                    return true;
+                }
+            }
+            naga::TypeInner::Sampler { .. } => {}
+            _ => return true,
+        }
+    }
+    false
+}
+
+fn global_initializer_is_simple(
+    module: &naga::Module,
+    root: naga::Handle<naga::Expression>,
+    budget: &core::cell::Cell<usize>,
+) -> bool {
+    enum Work {
+        Enter(naga::Handle<naga::Expression>),
+        Exit(naga::Handle<naga::Expression>),
+    }
+    let mut stack = alloc::vec![Work::Enter(root)];
+    let mut active = alloc::collections::BTreeSet::new();
+    let mut complete = alloc::collections::BTreeSet::new();
+    while let Some(work) = stack.pop() {
+        let Some(remaining) = budget.get().checked_sub(1) else {
+            return false;
+        };
+        budget.set(remaining);
+        let handle = match work {
+            Work::Exit(handle) => {
+                active.remove(&handle);
+                complete.insert(handle);
+                continue;
+            }
+            Work::Enter(handle) => handle,
+        };
+        if complete.contains(&handle) {
+            continue;
+        }
+        if !active.insert(handle) {
+            return false;
+        }
+        let Ok(expression) = module.global_expressions.try_get(handle) else {
+            return false;
+        };
+        stack.push(Work::Exit(handle));
+        match expression {
+            naga::Expression::Literal(_) | naga::Expression::ZeroValue(_) => {}
+            naga::Expression::Constant(constant) => {
+                let Ok(constant) = module.constants.try_get(*constant) else {
+                    return false;
+                };
+                stack.push(Work::Enter(constant.init));
+            }
+            naga::Expression::Compose { components, .. } => {
+                if components.len() > budget.get() {
+                    return false;
+                }
+                stack.extend(components.iter().copied().map(Work::Enter));
+            }
+            naga::Expression::Splat { value, .. } => stack.push(Work::Enter(*value)),
+            naga::Expression::Swizzle { vector, .. } => stack.push(Work::Enter(*vector)),
+            naga::Expression::AccessIndex { base, .. } => stack.push(Work::Enter(*base)),
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn charge_compose_components(function: &naga::Function, budget: &core::cell::Cell<usize>) -> bool {
+    for (_, expression) in function.expressions.iter() {
+        if let naga::Expression::Compose { components, .. } = expression {
+            let Some(remaining) = budget.get().checked_sub(components.len()) else {
+                return false;
+            };
+            budget.set(remaining);
+        }
+    }
+    true
+}
+
+fn has_unsafe_integer_semantics(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    profile: ShaderProfile,
+) -> bool {
+    has_unsafe_integer_semantics_with_budget(module, info, function, function_info, profile, 65536)
+}
+
+fn has_unsafe_integer_semantics_with_budget(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    profile: ShaderProfile,
+    limit: usize,
+) -> bool {
+    if !matches!(
+        profile,
+        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+    ) {
+        return false;
+    }
+    let budget = core::cell::Cell::new(limit);
+    let Some(remaining) = budget.get().checked_sub(module.global_variables.len()) else {
+        return true;
+    };
+    budget.set(remaining);
+    let Some(remaining) = budget.get().checked_sub(function.arguments.len()) else {
+        return true;
+    };
+    budget.set(remaining);
+    for ty in function
+        .arguments
+        .iter()
+        .map(|arg| arg.ty)
+        .chain(function.result.iter().map(|result| result.ty))
+    {
+        if type_may_contain_integer(module, &module.types[ty].inner, &budget) {
+            return true;
+        }
+    }
+    for (handle, global) in module.global_variables.iter() {
+        if !function_info[handle].is_empty() {
+            if global.space == naga::AddressSpace::Uniform
+                && type_may_contain_integer(module, &module.types[global.ty].inner, &budget)
+            {
+                return true;
+            }
+            if global
+                .init
+                .is_some_and(|init| !global_initializer_is_simple(module, init, &budget))
+            {
+                return true;
+            }
+        }
+    }
+    reachable_function(
+        module,
+        info,
+        function,
+        function_info,
+        Some(&budget),
+        |module, function, info| {
+            let Some(remaining) = budget.get().checked_sub(function.arguments.len()) else {
+                return true;
+            };
+            budget.set(remaining);
+            for ty in function
+                .arguments
+                .iter()
+                .map(|arg| arg.ty)
+                .chain(function.result.iter().map(|result| result.ty))
+            {
+                if type_may_contain_integer(module, &module.types[ty].inner, &budget) {
+                    return true;
+                }
+            }
+            let Some(remaining) = budget.get().checked_sub(function.expressions.len()) else {
+                return true;
+            };
+            budget.set(remaining);
+            if !charge_compose_components(function, &budget) {
+                return true;
+            }
+            let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+            function.expressions.iter().any(|(handle, expression)| {
+                let integer = |handle: naga::Handle<naga::Expression>| {
+                    type_may_contain_integer(
+                        module,
+                        info[handle].ty.inner_with(&module.types),
+                        &budget,
+                    )
+                };
+                let integer_operation = match *expression {
+                    naga::Expression::Binary { left, right, .. } => integer(left) || integer(right),
+                    naga::Expression::Unary { expr, .. } | naga::Expression::As { expr, .. } => {
+                        integer(expr) || integer(handle)
+                    }
+                    naga::Expression::Math {
+                        arg,
+                        arg1,
+                        arg2,
+                        arg3,
+                        ..
+                    } => {
+                        integer(handle)
+                            || integer(arg)
+                            || [arg1, arg2, arg3].into_iter().flatten().any(&integer)
+                    }
+                    naga::Expression::Select { accept, reject, .. } => {
+                        integer(accept) || integer(reject)
+                    }
+                    naga::Expression::Constant(constant) => {
+                        module.constants.try_get(constant).map_or(true, |constant| {
+                            !global_initializer_is_simple(module, constant.init, &budget)
+                        })
+                    }
+                    naga::Expression::Override(_) => true,
+                    naga::Expression::ImageSample {
+                        offset: Some(offset),
+                        ..
+                    } => !global_initializer_is_simple(module, offset, &budget),
+                    _ => false,
+                };
+                integer_operation || (!kinds.is_const(handle) && integer(handle))
+            })
+        },
+    )
 }
 
 fn has_unsupported_sample_bias(
@@ -1777,6 +2360,18 @@ impl ShaderModule {
             return Err(crate::PipelineError::Linkage(
                 stages,
                 "D3D11 FL9 texture sample bias is not implemented safely".into(),
+            ));
+        }
+        if has_unsafe_integer_semantics(
+            &self.shader.module,
+            &self.shader.info,
+            &self.shader.module.entry_points[entry_index].function,
+            entry_info,
+            profile,
+        ) {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 runtime integer semantics are not implemented safely".into(),
             ));
         }
         if requests_checks

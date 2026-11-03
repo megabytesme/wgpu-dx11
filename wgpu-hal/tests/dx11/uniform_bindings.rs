@@ -317,7 +317,7 @@ fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()
             rejected,
             Err(crate::PipelineError::Linkage(stage, message))
                 if stage == wgt::ShaderStages::FRAGMENT
-                    && message == "checked D3D11 dynamic pointer or uniform indexing is not implemented"
+                    && message == "D3D11 FL9 runtime integer semantics are not implemented safely"
         ));
     }
     let pipeline_result = unsafe {
@@ -337,43 +337,34 @@ fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()
             cache: None,
         })
     };
-    let pipeline = match pipeline_result {
-        Ok(pipeline) => pipeline,
-        Err(crate::PipelineError::Linkage(stage, message))
-            if matches!(
-                dynamic_vector,
-                LocalVectorIndex::Negative
-                    | LocalVectorIndex::Mutable
-                    | LocalVectorIndex::MutableOutOfBounds
-            ) =>
-        {
-            assert_eq!(stage, wgt::ShaderStages::FRAGMENT);
-            if dynamic_vector == LocalVectorIndex::Negative {
-                assert!(
-                    message.contains("Compilation(") && message.contains("X3548"),
-                    "{message}"
-                );
-            } else {
+    if dynamic_vector != LocalVectorIndex::Disabled {
+        match pipeline_result {
+            Err(crate::PipelineError::Linkage(stage, message)) => {
+                assert_eq!(stage, wgt::ShaderStages::FRAGMENT);
                 assert_eq!(
                     message,
-                    "checked D3D11 dynamic pointer or uniform indexing is not implemented"
+                    "D3D11 FL9 runtime integer semantics are not implemented safely"
+                );
+                std::println!(
+                    "PASS: {dynamic_vector:?} rejected with fragment linkage error: {message}"
                 );
             }
-            std::println!("PASS: rejected {dynamic_vector:?}: {message}");
-            std::println!("SKIP: {dynamic_vector:?} GPU execution; pipeline was rejected");
-            unsafe {
-                device.destroy_pipeline_layout(layout);
-                device.destroy_pipeline_layout(changed_layout);
-                device.destroy_pipeline_layout(expanded_layout);
-                device.destroy_bind_group_layout(group_layout);
-                device.destroy_bind_group_layout(empty_layout);
-                device.destroy_bind_group_layout(extra_layout);
-                device.destroy_shader_module(shader);
-            }
-            return Ok(());
+            other => panic!("{dynamic_vector:?} must reject runtime integer indexing: {other:?}"),
         }
-        Err(error) => panic!("pipeline creation failed: {error:?}"),
-    };
+        std::println!("SKIP: {dynamic_vector:?} GPU rendering; the original shader was rejected");
+        unsafe {
+            device.destroy_pipeline_layout(layout);
+            device.destroy_pipeline_layout(changed_layout);
+            device.destroy_pipeline_layout(expanded_layout);
+            device.destroy_bind_group_layout(group_layout);
+            device.destroy_bind_group_layout(empty_layout);
+            device.destroy_bind_group_layout(extra_layout);
+            device.destroy_shader_module(shader);
+        }
+        return Ok(());
+    }
+    let pipeline =
+        pipeline_result.unwrap_or_else(|error| panic!("pipeline creation failed: {error:?}"));
     let expanded_pipeline = unsafe {
         device
             .create_render_pipeline(&crate::RenderPipelineDescriptor {
@@ -632,23 +623,10 @@ fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
     for (index, pixel) in pixels.chunks_exact(4).enumerate() {
         let first = index % 8 < 2;
-        let expected: [u8; 4] = match (dynamic_vector, first) {
-            (LocalVectorIndex::Disabled | LocalVectorIndex::UniformCopy, true) => [64, 128, 0, 255],
-            (LocalVectorIndex::InBounds, true) => [128, 128, 0, 255],
-            (LocalVectorIndex::OutOfBounds | LocalVectorIndex::Negative, true) => {
-                [191, 128, 0, 255]
-            }
-            (LocalVectorIndex::Mutable, true) => [32, 128, 0, 255],
-            (LocalVectorIndex::MutableOutOfBounds, true) => [32, 191, 128, 255],
-            (LocalVectorIndex::Disabled | LocalVectorIndex::InBounds, false) => [0, 128, 191, 255],
-            (
-                LocalVectorIndex::OutOfBounds
-                | LocalVectorIndex::Negative
-                | LocalVectorIndex::UniformCopy,
-                false,
-            ) => [191, 128, 191, 255],
-            (LocalVectorIndex::Mutable, false) => [223, 128, 191, 255],
-            (LocalVectorIndex::MutableOutOfBounds, false) => [223, 191, 128, 255],
+        let expected: [u8; 4] = if first {
+            [64, 128, 0, 255]
+        } else {
+            [0, 128, 191, 255]
         };
         for (&actual, expected) in pixel.iter().zip(expected) {
             assert!(
@@ -657,7 +635,7 @@ fn multiple_groups(dynamic_vector: LocalVectorIndex) -> windows::core::Result<()
             );
         }
     }
-    std::println!("PASS: groups 0/2, same binding and dynamic buffer, direct/indexed draws, local vector indexing {dynamic_vector:?}; 64/64 pixels matched");
+    std::println!("PASS: groups 0/2, same binding and dynamic buffer, direct/indexed draws; 64/64 pixels matched");
     Ok(())
 }
 

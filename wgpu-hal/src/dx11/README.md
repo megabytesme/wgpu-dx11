@@ -68,9 +68,12 @@ support thirteen static or dynamic uniform slots in total, including alongside
 sampled textures and samplers. Shader-profile constant and instruction limits can be lower than the
 layout slot count. When no minimum binding size is
 provided, each draw checks the bound range against the shader's required size.
-Dynamic offsets are checked and captured at binding time. Checked uniform shaders reject dynamic
-indexing in reachable functions; other checked buffer/storage bindings remain
-unsupported.
+Dynamic offsets are checked and captured at binding time. For selected FL9
+shader entries, both checked and unchecked modes conservatively reject runtime
+integer values, operations, conversions and bitcasts, including dynamic indexing;
+proven static literal indices remain supported. Integer-containing uniforms and
+interfaces, switches and non-folded global initializers or overrides are also
+rejected. Other checked buffer/storage bindings remain unsupported.
 Each group bind creates scratch buffers and each draw stages the bound ranges;
 this avoids D3D11's partial-update restriction but may stall substantially.
 

@@ -132,11 +132,11 @@ exercises a split boundary, and checks a nonzero-offset pipeline transition.
 The separate FXC diagnostic does not establish flat interpolation execution.
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
-fl91_checked_ -- --nocapture --test-threads=1` tests selected checked shaders
-with uniforms and dynamic local-vector access. On the tested FXC, negative
-indices and dynamic vector stores fail compilation and explicitly skip GPU
-execution; the other cases validate every output pixel. Checked dynamic pointer
-indexing remains rejected at pipeline creation. Matrix-store analysis tests use
+fl91_checked_ -- --nocapture --test-threads=1` includes six original
+runtime local-vector-index shaders. Each now requires an explicit fragment
+linkage rejection and reports that GPU rendering was skipped. The separate
+no-index multi-group control still renders and checks all 64 pixels. Earlier
+runtime-index GPU output is historical and superseded by the guard. Matrix-store analysis tests use
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 matrix_ -- --nocapture` and cover checked/unchecked stores, helper provenance,
 shared type graphs and fail-closed work limits; this does not fix shared Naga.
@@ -684,10 +684,21 @@ GPU test passed on the RTX 3090 Ti at requested and selected FL9_1. It verified
 the exact bytes and zero padding for a 5-byte dynamic range after a GPU copy
 and for a 5-byte range ending exactly at the end of a 65-byte native source.
 
-The `integer_uniform` hardware filter passed three GPU cases, each checking all
-64 pixels: uniform bitcasts in the vertex and fragment stages and a fragment
-comparison distinguishing 2^24 from 2^24+1. These cases do not prove general
-integer shader behavior or behavior on historical hardware.
+The `integer_uniform` hardware filter now checks rejection of three original
+integer entry points: vertex and fragment uniform bitcasts and a fragment
+comparison around 2^24. Each test instead renders a float-only control and checks
+64 pixels. Previous RTX output for the integer shaders is historical and
+superseded. An FXC probe found that the embedded legacy pixel shader rounded
+16777217 to 16777216, while a legacy vertex shader lowered a bitcast to numeric
+float arithmetic. Forced FL9 execution on the RTX does not establish historical
+driver integer behavior.
+
+The selected FL9 shader profile guard applies to checked and unchecked modes.
+It rejects runtime integer values, operations, conversions and bitcasts,
+integer-containing uniforms or interfaces, switches, and non-folded global
+initializers and overrides. Proven static literal indices and float-only shader
+paths remain available; analysis limits fail closed. These restrictions do not
+establish general integer shader support or enable public adapter exposure.
 
 ### FL9_1 depth attachments
 

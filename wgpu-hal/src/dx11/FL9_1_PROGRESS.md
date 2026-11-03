@@ -1238,6 +1238,7 @@ paths. The full strict suite passed 257 tests with two filtered; three older
 shader tests skip GPU execution internally. HAL Clippy passed with ten existing
 test warnings and core's zero-adapter isolation test passed. Independent review
 found no concrete defect; future side effects or queries require re-audit.
+Checkpoint: `8045637708e23b1d4de8c54f1ddde3d54bf0c6c8`.
 
 Integer vertex input audit: although R8G8B8A8_UINT is a required FL9_1 IA
 format, an FXC 10.1 `vs_4_0_level_9_1` probe of uint packing plus `asfloat`
@@ -1257,3 +1258,18 @@ same issue. Modern RTX forced-FL9 readback cannot validate this legacy stream.
 Prioritize a selected-entry fail-closed guard for unsafe runtime integer
 operations and bitcasts before public exposure; do not treat earlier RTX
 integer-uniform tests as proof of historical-device correctness.
+
+The selected FL9 shader profile now rejects runtime integer values and
+operations, conversions and bitcasts, integer-bearing used uniforms and
+interfaces, switches, and unproven initializer/override forms in both checked
+and unchecked modes. Literal/static indices and float-only shaders remain in
+the supported subset. Two synthetic guard tests passed, including bounded
+analysis and a defensive post-validation IR mutation. Three former integer
+GPU tests now assert exact linkage rejection and each render 64/64 float-only
+control pixels; six runtime-index rendering cases explicitly reject and skip
+GPU execution. The full strict private suite passed 259 tests with two filtered.
+The controlled core fixture and unsafe public-wgpu fixture still rendered
+successfully, the latter producing 32 red/32 green pixels. HAL Clippy passed
+with ten existing test warnings and ordinary core D3D11 enumeration stayed
+empty. Independent review found no concrete bypass within the current subset;
+the guard remains conservative and does not establish general integer support.

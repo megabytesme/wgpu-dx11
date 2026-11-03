@@ -25,7 +25,7 @@ for their checkpoint status. Swapchain locking does not resolve DXGI window-call
 reentrancy or presentation completion in `wait_for_idle`. Do not infer full
 FL9_1 or historical-device compatibility from
 modern GPU tests. Keep public adapter enumeration gated until core-valid
-operations are safe. The latest completed strict suite passed 257 tests; older
+operations are safe. The latest completed strict suite passed 259 tests; older
 tests may skip internally, so use focused strict tests for hardware evidence.
 
 ## Verified checkpoints
@@ -110,6 +110,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `b431ff5d013dc9050f729b00a92973f961676ff1` | Dual-use FL9_1 mip views |
 | `07eaee830f8600b1b56391089ab3df03a20bcddf` | Disjoint native mip sampling |
 | `3e0fdcb9f9e8330e7cb900a021303d0e6d22c878` | Disjoint clone-backed mip sampling |
+| `8045637708e23b1d4de8c54f1ddde3d54bf0c6c8` | Emulate Never depth comparison |
 
 ## What is and is not usable
 
@@ -154,10 +155,9 @@ before they can cause device loss. The D3D11 fixture omits the flag; ordinary
 adapter exposure remains gated.
 Private read-only D24S8 passes require load/store of both aspects, no sampled
 aliases and no depth or stencil writes. Keep the public read-only flag off.
-Checked shaders permit dynamic access to proven value vectors. Dynamic vector
-pointers, uniform-pointer indexing and unknown provenance remain restricted.
-The tested FXC rejected a negative-index case before GPU execution; successful
-read cases do not prove that case or historical drivers.
+Runtime integer-based vector indexing is now rejected by the conservative
+integer guard in checked and unchecked shaders. Earlier dynamic-index GPU
+results are historical; static literal indexing and float-only controls remain.
 Nonindexed triangle strips use parity-preserving, rebased batches. Indexed strip
 restart is not a guaranteed FL9_x native operation and remains rejected pending
 a separate translation; accepting a strip index format in a private pipeline
@@ -294,10 +294,13 @@ with only instance-rate streams and shader instance_index remain unsupported.
 Short uniform ranges are staged with exact GPU source bytes and zero-padded
 native buffers. The unsafe core fixture sets BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
 and passes 4/5/12/20-byte rendering; no public flag is currently exposed.
-Selected integer-uniform tests pass on the RTX, but general integer vertex and
-historical-driver semantics are not established. FXC's embedded legacy shader
-can round a runtime integer comparison against 16777217 to 16777216; this is a
-known unresolved shader validation blocker even when the RTX result looks right.
+Earlier RTX integer-uniform results are superseded. FXC's embedded legacy shader
+can round a runtime integer comparison against 16777217 to 16777216, so selected
+FL9 shaders now reject runtime integer values and operations, integer-bearing
+uniforms and interfaces, and unproven initializers. Three affected tests assert
+linkage rejection and still render float-only controls; six runtime-index GPU
+renders are skipped after their expected rejection. General integer semantics
+and historical-driver behavior remain unresolved.
 
 Equal min/mag, anisotropy-1 samplers can normalize finite LOD clamps on the
 one-mip path; pair validation checks the actual sampled view mip count.
