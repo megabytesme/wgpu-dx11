@@ -52,7 +52,11 @@ pub(super) enum NativeCommand {
         rasterizer: ID3D11RasterizerState,
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
     },
-    SetUniformGroup(Arc<UniformBinding>),
+    SetUniformGroup {
+        uniform: Arc<UniformBinding>,
+        slot: u32,
+        visibility: wgt::ShaderStages,
+    },
     SetTexture {
         slot: u32,
         texture: ID3D11ShaderResourceView,
@@ -192,7 +196,11 @@ impl CommandBuffer {
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
                     }
-                    NativeCommand::SetUniformGroup(uniform) => uniform.execute(context)?,
+                    NativeCommand::SetUniformGroup {
+                        uniform,
+                        slot,
+                        visibility,
+                    } => uniform.execute(context, *slot, *visibility)?,
                     NativeCommand::SetTexture { slot, texture } => {
                         context.PSSetShaderResources(*slot, Some(&[Some(texture.clone())]));
                     }

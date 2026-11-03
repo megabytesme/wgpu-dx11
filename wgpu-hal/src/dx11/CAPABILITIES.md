@@ -64,7 +64,7 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private device creates single-mip, single-layer, single-sample RGBA8 2D textures; BGRA8 is limited to a wrapped swapchain backbuffer. | Transfer, view, clear and draw readback tests. Per-format capabilities and numeric limits can restrict usage and dimensions, but must match creation, copies, initialization and view behavior. All other formats and dimensions need implementation or validation. |
 | Mips, arrays, NPOT / sampling | FL9 conditional NPOT is more restrictive than unconditional support. Private textures have one mip and no arrays; sampled RGBA8 uses checked fragment bindings. | Sampling tests and optional full-NPOT query. `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` covers one restriction but not the NPOT/address-mode pairing; core needs a draw/bind-time texture-sampler compatibility rule or emulation. |
 | Samplers | Independent point/linear min/mag, clamp/wrap/mirror and anisotropy up to 2 are implemented in the private HAL. Border addressing and comparison samplers are rejected; FL9_1 finite maximum LOD translation requires a single-mip view. | Patterned FL9_1 GPU readback covers filter and address modes and sampler switching. Anisotropy 2 creates and samples but visual anisotropic quality is unverified. Public feature/limit representation remains incomplete. |
-| Bind groups / registers | Group 0 supports up to eight fragment sampled textures and sixteen filtering samplers with compact independent registers, plus the restricted uniform at binding 0. Each draw checks only texture/sampler relationships used by the selected shader entry points. | Sparse three-texture and eight-texture GPU tests cover selected relationships; FXC limits distinct sampled texture/sampler relationships. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
+| Bind groups / registers | Group 0 supports up to eight fragment sampled textures, sixteen filtering samplers, and up to thirteen static uniform bindings with compact independent registers. Each draw checks only texture/sampler relationships used by the selected shader entry points. | Sparse multi-uniform and sampled-texture GPU tests cover selected configurations; FXC limits distinct sampled relationships and constants. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
 | Vertex / index formats | Native FL9 has wider IA support than the HAL. Private pipelines accept a single interleaved vertex buffer and a restricted float/unorm format set. Indexed draws use u16, zero base vertex, replay-time index checks and FL9 index limits. | Indexed and non-indexed readback and rejected-index tests. Limits and downlevel flags cover only part of this; core currently permits other valid vertex formats, buffer slots, u32 index format and zero/nonzero base vertex semantics. Add emulation or explicit validation. |
 | Shader stages / WGSL | FL9_1 uses `vs_4_0_level_9_1` and `ps_4_0_level_9_1`. These profiles restrict shader instructions, registers and flow control; vertex textures are rejected by the private shader path. The pixel profile has 64 arithmetic and 32 texture instructions; the vertex profile has 256 instructions. | Naga/FXC and restricted shader GPU tests. WGSL validation and feature bits do not represent arbitrary FXC instruction pressure or every translation restriction. Shader creation and pipeline validation need conservative diagnostics or emulation; successful Naga validation is insufficient. |
 | Pipeline / raster / blending | Private graphics pipeline requires default triangle-list primitive state, one buffer and target, no depth, one sample and a small set of blend states. Hardware supports more configurations, format permitting. | Pipeline and readback tests. Single-target/sample limits and format flags are expressible, but allowed blend operations, vertex combinations, shader restrictions and all-write-mask requirement are not fully captured by existing limits. FL9_1 does not guarantee separate alpha blending; current private alpha/inversion configurations passed on RTX but need portable hardware validation or a fallback before being advertised. |
@@ -122,11 +122,37 @@ validation or emulation must be resolved before any such capability is exposed.
 
 Group 0 assigns textures and filtering samplers independently in ascending
 logical binding order to compact fragment-stage `t` and `s` registers. An
-optional uniform remains at `b0`. Layout identity and the same register map are
+Uniforms are independently sorted into `b0` through `b12`; `b13` is reserved
+for the disabled texel-load proof. The same slot is used for a uniform in both
+stages, and visibility is checked per stage. Layout identity and the same register map are
 used by shader translation and command recording. Bind groups retain the native
 views and samplers; recording rejects render-target feedback. Group resources
 are rebound when changed, and incompatible pipeline layouts cannot draw with
 an old group. Render-pass boundaries clear context state.
+
+## Private uniform-buffer contract
+
+The thirteen slots are a private layout allocation limit, not a claim that a
+shader can use thirteen arbitrary buffers. The D3D11 API has fourteen application
+constant-buffer slots per stage, while FL9_1 shader profiles have smaller legacy
+constant budgets. A local FXC pixel-profile test compiles 32 referenced float4
+constants and rejects 33 with X5200; instruction pressure and compiler packing
+can impose earlier limits. FXC errors fail pipeline creation. A vertex probe
+referencing only element 256 compiles; this does not establish a 257-constant
+budget because the compiler can remap sparsely referenced constants. The full
+vertex budget and near-limit GPU execution have not been measured here.
+
+Static ranges use four-byte-aligned offsets, a nonzero size divisible by 16, and
+at most 64 KiB. At bind replay each range is copied from the authoritative GPU
+buffer to a CPU-readable staging buffer and uploaded to a separate native
+constant buffer. This preserves subrange isolation and queued GPU writes but can
+stall once per binding. D3D11.1 offset binding is not used; its range granularity
+and runtime requirements differ. Group 0, vertex/fragment visibility, selected
+entry-point minimum sizes and group/pipeline compatibility are checked. Dynamic
+offsets, multiple groups, general checked uniform dynamic indexing, and broad
+public adapter exposure remain unsupported. GPU coverage exercises multiple
+range bindings, pipeline transitions, a matrix and padded structure, and sampled
+texture coexistence; it does not establish every WGSL layout or shader operation.
 
 The private layout accepts up to eight sampled textures and sixteen samplers.
 These are binding capacities, not a promise that every shader using them

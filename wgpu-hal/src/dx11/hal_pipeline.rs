@@ -82,7 +82,7 @@ pub struct RenderPipeline {
     pub(super) group: Option<super::hal_bind_group::GroupKind>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) full_npot: super::capabilities::Query<bool>,
-    pub(super) required_uniform_size: u64,
+    pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     pub(super) vertex_stride: u32,
     pub(super) vertex_extent: u32,
 }
@@ -623,29 +623,63 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
-        let mut required_uniform_size = 0;
-        if let Some(minimum) = desc.layout.group.and_then(|group| group.minimum) {
-            for module in [vertex_stage.module, fragment.module] {
-                let required = module.required_uniform_size()?.unwrap_or(0);
-                if minimum != 0 && required > minimum {
+        let mut required_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
+        for (stage, module, entry, visibility) in [
+            (
+                naga::ShaderStage::Vertex,
+                vertex_stage.module,
+                vertex_stage.entry_point,
+                wgt::ShaderStages::VERTEX,
+            ),
+            (
+                naga::ShaderStage::Fragment,
+                fragment.module,
+                fragment.entry_point,
+                wgt::ShaderStages::FRAGMENT,
+            ),
+        ] {
+            for (binding, size) in module.required_uniform_sizes(stage, entry)? {
+                let group = desc.layout.group.ok_or_else(invalid)?;
+                let (slot, uniform) = group
+                    .uniforms
+                    .iter()
+                    .enumerate()
+                    .find_map(|(slot, item)| {
+                        item.filter(|u| {
+                            binding.group == 0
+                                && u.binding == binding.binding
+                                && u.visibility.contains(visibility)
+                        })
+                        .map(|u| (slot, u))
+                    })
+                    .ok_or_else(invalid)?;
+                if uniform.minimum != 0 && size > uniform.minimum {
                     return Err(invalid());
                 }
-                required_uniform_size = required_uniform_size.max(required);
+                required_uniform_sizes[slot] = required_uniform_sizes[slot].max(size);
             }
         }
-        let bindings = desc
+        let vertex_bindings = desc
             .layout
             .group
-            .map_or_else(alloc::vec::Vec::new, |group| group.shader_bindings());
+            .map_or_else(alloc::vec::Vec::new, |group| {
+                group.stage_bindings(wgt::ShaderStages::VERTEX)
+            });
+        let fragment_bindings = desc
+            .layout
+            .group
+            .map_or_else(alloc::vec::Vec::new, |group| {
+                group.stage_bindings(wgt::ShaderStages::FRAGMENT)
+            });
         let mut sampling_pairs = vertex_stage.module.sampling_relationships(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
-            &bindings,
+            &vertex_bindings,
         )?;
         sampling_pairs.extend(fragment.module.sampling_relationships(
             naga::ShaderStage::Fragment,
             fragment.entry_point,
-            &bindings,
+            &fragment_bindings,
         )?);
         let full_npot = if sampling_pairs.is_empty() {
             super::capabilities::Query::Unavailable(0)
@@ -655,12 +689,12 @@ impl RenderPipeline {
         let vertex_code = vertex_stage.module.compile_with_bindings(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
-            &bindings,
+            &vertex_bindings,
         )?;
         let pixel_code = fragment.module.compile_with_bindings(
             naga::ShaderStage::Fragment,
             fragment.entry_point,
-            &bindings,
+            &fragment_bindings,
         )?;
         let mut input_desc = alloc::vec::Vec::with_capacity(buffer.attributes.len());
         let mut vertex_extent = 0u32;
@@ -781,7 +815,7 @@ impl RenderPipeline {
             group: desc.layout.group,
             sampling_pairs: Arc::new(sampling_pairs),
             full_npot,
-            required_uniform_size,
+            required_uniform_sizes,
             vertex_stride: buffer.array_stride as u32,
             vertex_extent,
         })

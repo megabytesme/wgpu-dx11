@@ -14,6 +14,11 @@ fn hal_encoder_records_uniform_and_sampled_triangle_on_level_9() -> windows::cor
 }
 
 #[test]
+fn fl91_two_uniforms_with_sampled_textures() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 52)
+}
+
+#[test]
 fn hal_encoder_draws_interleaved_normalized_vertex_attributes() -> windows::core::Result<()> {
     sampled_triangle(true, true, false, false, false, 0, None)
 }
@@ -297,8 +302,8 @@ fn sampled_triangle_variant(
     overlay_shader: Option<&str>,
     variant: u8,
 ) -> windows::core::Result<()> {
-    let sampler_case =
-        (30..=39).contains(&variant) || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51);
+    let sampler_case = (30..=39).contains(&variant)
+        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52);
     let conditional_npot = (20..=24).contains(&variant);
     let sparse = (1..=4).contains(&variant);
     let multi_resource = variant >= 10;
@@ -348,6 +353,9 @@ fn sampled_triangle_variant(
         } else {
             alloc::string::String::new()
         };
+        if variant == 52 {
+            wgsl.push_str("@group(0) @binding(300) var<uniform> tint: vec4f; ");
+        }
         for index in 0..count {
             wgsl.push_str(&alloc::format!(
                 "@group(0) @binding({}) var t{}: texture_2d<f32>; ",
@@ -382,8 +390,9 @@ fn sampled_triangle_variant(
                 39 => "vec2f(1.625, 1.625)",
                 _ => "vec2f(0.5)",
             };
+            let tint = if variant == 52 { " * tint" } else { "" };
             wgsl.push_str(&alloc::format!(
-                "return textureSample(t0,s0,{uv}) * color * in.color; }}"
+                "return textureSample(t0,s0,{uv}) * color * in.color{tint}; }}"
             ));
         } else if count == 3 {
             let samplers = if shared_sampler {
@@ -566,6 +575,18 @@ fn sampled_triangle_variant(
             });
         }
         entries.reverse();
+    }
+    if variant == 52 {
+        entries.push(wgt::BindGroupLayoutEntry {
+            binding: 300,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: core::num::NonZeroU64::new(16),
+            },
+            count: None,
+        });
     }
     if combined {
         let mut invalid_entries = entries.clone();
@@ -800,7 +821,7 @@ fn sampled_triangle_variant(
     assert_eq!(pipeline.group, Some(group_layout.kind));
     let mapped = pipeline.group.unwrap();
     assert_eq!(
-        mapped.minimum,
+        mapped.uniforms[0].map(|uniform| uniform.minimum),
         combined.then_some(if multi { 0 } else { 16 })
     );
     assert_eq!(
@@ -1228,7 +1249,13 @@ fn sampled_triangle_variant(
         device
             .create_buffer(&crate::BufferDescriptor {
                 label: None,
-                size: if overlay_shader.is_some() { 64 } else { 16 },
+                size: if overlay_shader.is_some() {
+                    64
+                } else if variant == 52 {
+                    32
+                } else {
+                    16
+                },
                 usage: wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
                 memory_flags: crate::MemoryFlags::empty(),
             })
@@ -1247,9 +1274,33 @@ fn sampled_triangle_variant(
     if overlay_shader.is_some() {
         color_bytes.resize(64, 0);
     }
+    if variant == 52 {
+        color_bytes.extend(
+            [0.25f32, 0.5, 0.75, 1.0]
+                .iter()
+                .flat_map(|v| v.to_ne_bytes()),
+        );
+    }
     native.write_byte_buffer(&uniform, 0, &color_bytes)?;
-    let uniform_bindings = [crate::BufferBinding::new_unchecked(&uniform, 0, None)];
-    let buffer_bindings: &[_] = if combined { &uniform_bindings } else { &[] };
+    let uniform_bindings = [
+        crate::BufferBinding::new_unchecked(
+            &uniform,
+            0,
+            if variant == 52 {
+                core::num::NonZeroU64::new(16)
+            } else {
+                None
+            },
+        ),
+        crate::BufferBinding::new_unchecked(&uniform, 16, core::num::NonZeroU64::new(16)),
+    ];
+    let buffer_bindings: &[_] = if variant == 52 {
+        &uniform_bindings
+    } else if combined {
+        &uniform_bindings[..1]
+    } else {
+        &[]
+    };
     let mut group_entries: alloc::vec::Vec<_> = (0..if two {
         5
     } else if combined {
@@ -1286,6 +1337,13 @@ fn sampled_triangle_variant(
                 count: 1,
             });
         }
+    }
+    if variant == 52 {
+        group_entries.push(crate::BindGroupEntry {
+            binding: 300,
+            resource_index: 1,
+            count: 1,
+        });
     }
     if sparse {
         let index = usize::from(combined);
@@ -1933,6 +1991,7 @@ fn sampled_triangle_variant(
             39 => [0, 0, 255, 255],
             51 => [90, 140, 110, 255],
             50 => [64, 128, 191, 255],
+            52 => [64, 128, 191, 255],
             _ => unreachable!(),
         };
         for (&observed, &want) in actual.iter().zip(&expected) {

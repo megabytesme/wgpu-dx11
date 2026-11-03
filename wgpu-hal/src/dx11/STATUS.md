@@ -17,8 +17,8 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
   up to 2. On 9_1/9_2, translated finite maximum LODs require single-mip views.
-- Group-0 layouts with up to eight sampled textures and sixteen samplers,
-  an optional restricted uniform, and shader-aware pair validation; restricted
+- Group-0 layouts with up to eight sampled textures, sixteen samplers and thirteen
+  static uniform slots, and shader-aware pair validation; restricted
   Naga/FXC shaders.
 - Triangle-list passes with one interleaved vertex buffer, bounds-checked
   scissors, replace/alpha/crosshair/additive/vignette blending, and splitting

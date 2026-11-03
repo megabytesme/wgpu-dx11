@@ -37,8 +37,8 @@ struct RenderState {
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
     sampling_resources: Option<super::sampling::SamplingResources>,
     full_npot: super::capabilities::Query<bool>,
-    bound_uniform_size: u64,
-    required_uniform_size: u64,
+    bound_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
+    required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     vertex: Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>,
     vertex_layout: Option<(u32, u32)>,
     index: Option<Arc<super::hal_index::IndexBinding>>,
@@ -332,15 +332,23 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             }
         }
-        render.bound_uniform_size = group
-            .resources
-            .uniform
-            .as_ref()
-            .map_or(0, |uniform| uniform.len());
+        render.bound_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
+        for (slot, uniform) in group.resources.uniforms.iter().enumerate() {
+            render.bound_uniform_sizes[slot] = uniform.len();
+        }
         render.bound_group = Some(group.kind);
         render.sampling_resources = Some(group.resources.sampling.clone());
-        if let Some(uniform) = &group.resources.uniform {
-            self.record(NativeCommand::SetUniformGroup(uniform.clone()));
+        for (slot, uniform) in group.resources.uniforms.iter().enumerate() {
+            let Some(layout) = group.kind.uniforms.get(slot).and_then(|layout| *layout) else {
+                self.reject();
+                return;
+            };
+            let visibility = layout.visibility;
+            self.record(NativeCommand::SetUniformGroup {
+                uniform: uniform.clone(),
+                slot: slot as u32,
+                visibility,
+            });
         }
         for (slot, texture) in group.resources.textures.iter().enumerate() {
             self.record(NativeCommand::SetTexture {
@@ -459,8 +467,8 @@ impl crate::CommandEncoder for CommandEncoder {
             sampling_pairs: Arc::new(Vec::new()),
             sampling_resources: None,
             full_npot: super::capabilities::Query::Unavailable(0),
-            bound_uniform_size: 0,
-            required_uniform_size: 0,
+            bound_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
+            required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
             vertex: None,
             vertex_layout: None,
             index: None,
@@ -500,7 +508,7 @@ impl crate::CommandEncoder for CommandEncoder {
             .filter(|group| *group != super::hal_bind_group::GroupKind::EMPTY);
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.full_npot = pipeline.full_npot;
-        render.required_uniform_size = pipeline.required_uniform_size;
+        render.required_uniform_sizes = pipeline.required_uniform_sizes;
         render.vertex_layout = Some((pipeline.vertex_stride, pipeline.vertex_extent));
         self.record(NativeCommand::SetPipeline {
             vertex: pipeline.vertex.clone(),
@@ -662,7 +670,11 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         if !render.pipeline
             || (render.required_group.is_some() && render.required_group != render.bound_group)
-            || render.bound_uniform_size < render.required_uniform_size
+            || render
+                .bound_uniform_sizes
+                .iter()
+                .zip(render.required_uniform_sizes)
+                .any(|(&bound, required)| bound < required)
             || !render.sampling_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
@@ -721,7 +733,11 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         if !render.pipeline
             || (render.required_group.is_some() && render.required_group != render.bound_group)
-            || render.bound_uniform_size < render.required_uniform_size
+            || render
+                .bound_uniform_sizes
+                .iter()
+                .zip(render.required_uniform_sizes)
+                .any(|(&bound, required)| bound < required)
             || !render.sampling_compatible(self.device.feature_level())
             || first_instance != 0
             || instance_count != 1
@@ -1615,6 +1631,10 @@ mod tests {
 #[cfg(test)]
 #[path = "../../tests/dx11/texture_transfers.rs"]
 mod texture_transfer_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/uniform_bindings.rs"]
+mod uniform_binding_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/textured_render.rs"]

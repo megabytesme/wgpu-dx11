@@ -8,17 +8,25 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11SamplerState, ID3D11ShaderResou
 
 pub(super) const MAX_TEXTURES: usize = 8;
 pub(super) const MAX_SAMPLERS: usize = 16;
+pub(super) const MAX_UNIFORMS: usize = 13;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct UniformLayout {
+    pub binding: u32,
+    pub minimum: u64,
+    pub visibility: wgt::ShaderStages,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct GroupKind {
-    pub minimum: Option<u64>,
+    pub uniforms: [Option<UniformLayout>; MAX_UNIFORMS],
     pub textures: [Option<u32>; MAX_TEXTURES],
     pub samplers: [Option<u32>; MAX_SAMPLERS],
 }
 
 impl GroupKind {
     pub(super) const EMPTY: Self = Self {
-        minimum: None,
+        uniforms: [None; MAX_UNIFORMS],
         textures: [None; MAX_TEXTURES],
         samplers: [None; MAX_SAMPLERS],
     };
@@ -26,13 +34,14 @@ impl GroupKind {
     pub(super) fn shader_bindings(self) -> alloc::vec::Vec<super::shader::ShaderBinding> {
         use super::shader::{ShaderBinding, ShaderBindingKind};
         let mut bindings = alloc::vec::Vec::new();
-        if self.minimum.is_some() {
+        for (slot, uniform) in self.uniforms.into_iter().enumerate() {
+            let Some(uniform) = uniform else { continue };
             bindings.push(ShaderBinding {
                 binding: naga::ResourceBinding {
                     group: 0,
-                    binding: 0,
+                    binding: uniform.binding,
                 },
-                slot: 0,
+                slot: slot as u32,
                 kind: ShaderBindingKind::Uniform,
             });
         }
@@ -55,6 +64,22 @@ impl GroupKind {
         }
         bindings
     }
+
+    pub(super) fn stage_bindings(
+        self,
+        stage: wgt::ShaderStages,
+    ) -> alloc::vec::Vec<super::shader::ShaderBinding> {
+        self.shader_bindings()
+            .into_iter()
+            .filter(|binding| {
+                binding.kind != super::shader::ShaderBindingKind::Uniform
+                    || self.uniforms.iter().flatten().any(|uniform| {
+                        uniform.binding == binding.binding.binding
+                            && uniform.visibility.contains(stage)
+                    })
+            })
+            .collect()
+    }
 }
 
 fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> bool {
@@ -71,11 +96,12 @@ fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> 
 }
 
 fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate::DeviceError> {
-    if entries.len() > MAX_TEXTURES + MAX_SAMPLERS + 1 {
+    if entries.len() > MAX_TEXTURES + MAX_SAMPLERS + MAX_UNIFORMS {
         return Err(crate::DeviceError::Unexpected);
     }
     let mut textures = alloc::vec::Vec::new();
     let mut samplers = alloc::vec::Vec::new();
+    let mut uniforms = alloc::vec::Vec::new();
     let mut kind = GroupKind::EMPTY;
     for (index, entry) in entries.iter().enumerate() {
         if entry.count.is_some()
@@ -100,18 +126,22 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
                 ty: wgt::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
                 min_binding_size,
-            } if entry.binding == 0
-                && entry.visibility
-                    == (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
-                && kind.minimum.is_none()
+            } if !entry.visibility.is_empty()
+                && (wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT)
+                    .contains(entry.visibility)
                 && min_binding_size.map_or(0, |v| v.get()) <= 65536 =>
             {
-                kind.minimum = Some(min_binding_size.map_or(0, |v| v.get()));
+                uniforms.push(UniformLayout {
+                    binding: entry.binding,
+                    minimum: min_binding_size.map_or(0, |v| v.get()),
+                    visibility: entry.visibility,
+                });
             }
             _ => return Err(crate::DeviceError::Unexpected),
         }
     }
-    if textures.len() > MAX_TEXTURES
+    if uniforms.len() > MAX_UNIFORMS
+        || textures.len() > MAX_TEXTURES
         || samplers.len() > MAX_SAMPLERS
         || textures.is_empty() != samplers.is_empty()
     {
@@ -119,6 +149,10 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     }
     textures.sort_unstable();
     samplers.sort_unstable();
+    uniforms.sort_unstable_by_key(|entry| entry.binding);
+    for (slot, uniform) in uniforms.into_iter().enumerate() {
+        kind.uniforms[slot] = Some(uniform);
+    }
     for (slot, binding) in textures.into_iter().enumerate() {
         kind.textures[slot] = Some(binding);
     }
@@ -139,7 +173,7 @@ impl crate::DynBindGroupLayout for BindGroupLayout {}
 
 #[derive(Clone, Debug)]
 pub(super) struct GroupResources {
-    pub uniform: Option<Arc<UniformBinding>>,
+    pub uniforms: alloc::vec::Vec<Arc<UniformBinding>>,
     pub textures: alloc::vec::Vec<ID3D11ShaderResourceView>,
     pub samplers: alloc::vec::Vec<ID3D11SamplerState>,
     pub sampling: super::sampling::SamplingResources,
@@ -191,15 +225,14 @@ impl BindGroup {
         let kind = desc.layout.kind;
         let textures: alloc::vec::Vec<_> = kind.textures.into_iter().flatten().collect();
         let samplers: alloc::vec::Vec<_> = kind.samplers.into_iter().flatten().collect();
-        if desc.buffers.len() != usize::from(kind.minimum.is_some())
+        let uniforms: alloc::vec::Vec<_> = kind.uniforms.into_iter().flatten().collect();
+        if desc.buffers.len() != uniforms.len()
             || desc.textures.len() != textures.len()
             || desc.samplers.len() != samplers.len()
         {
             return Err(crate::DeviceError::Unexpected);
         }
-        if desc.entries.len()
-            != textures.len() + samplers.len() + usize::from(kind.minimum.is_some())
-        {
+        if desc.entries.len() != textures.len() + samplers.len() + uniforms.len() {
             return Err(crate::DeviceError::Unexpected);
         }
         let indices = |bindings: &[u32]| -> Result<alloc::vec::Vec<usize>, crate::DeviceError> {
@@ -221,20 +254,17 @@ impl BindGroup {
             }
             Ok(indices)
         };
-        if kind.minimum.is_some()
-            && !desc
-                .entries
-                .iter()
-                .any(|entry| entry.binding == 0 && entry.resource_index == 0 && entry.count == 1)
-        {
-            return Err(crate::DeviceError::Unexpected);
-        }
+        let uniform_numbers: alloc::vec::Vec<_> = uniforms.iter().map(|u| u.binding).collect();
+        let uniform_indices = indices(&uniform_numbers)?;
         let texture_indices = indices(&textures)?;
         let sampler_indices = indices(&samplers)?;
         let mut expected = alloc::vec::Vec::new();
-        if kind.minimum.is_some() {
-            expected.push((0, 0));
-        }
+        expected.extend(
+            uniform_numbers
+                .iter()
+                .zip(&uniform_indices)
+                .map(|(&binding, &index)| (binding, index as u32)),
+        );
         expected.extend(
             textures
                 .iter()
@@ -250,22 +280,21 @@ impl BindGroup {
         if !entries_match(desc.entries, &expected) {
             return Err(crate::DeviceError::Unexpected);
         }
-        let uniform = if let Some(minimum) = kind.minimum {
-            let binding = &desc.buffers[0];
+        let mut native_uniforms = alloc::vec::Vec::new();
+        for (uniform, index) in uniforms.iter().zip(uniform_indices) {
+            let binding = &desc.buffers[index];
             let length = owner
                 .uniform_binding_length(binding.buffer, binding.offset, binding.size)
                 .map_err(super::hal_device::device_error)?;
-            if length < minimum {
+            if length < uniform.minimum {
                 return Err(crate::DeviceError::Unexpected);
             }
-            Some(Arc::new(
+            native_uniforms.push(Arc::new(
                 owner
                     .prepare_uniform_binding(binding.buffer, binding.offset, length)
                     .map_err(super::hal_device::device_error)?,
-            ))
-        } else {
-            None
-        };
+            ));
+        }
         let mut views = alloc::vec::Vec::new();
         let mut dimensions = alloc::vec::Vec::new();
         for index in texture_indices {
@@ -297,7 +326,7 @@ impl BindGroup {
             samplers_wrap,
         };
         let resources = GroupResources {
-            uniform,
+            uniforms: native_uniforms,
             textures: views,
             samplers: native_samplers,
             sampling,
@@ -316,6 +345,63 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
+
+    #[test]
+    fn sparse_uniform_allocation_respects_visibility_and_reservation() {
+        let uniform = |binding, visibility| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            count: None,
+            ty: wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        };
+        let entries = [
+            uniform(42, wgt::ShaderStages::FRAGMENT),
+            uniform(3, wgt::ShaderStages::VERTEX),
+            uniform(17, wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT),
+        ];
+        let kind = group_kind(&entries).unwrap();
+        assert_eq!(
+            kind,
+            group_kind(&[entries[2], entries[1], entries[0]]).unwrap()
+        );
+        let vertex = kind.stage_bindings(wgt::ShaderStages::VERTEX);
+        let fragment = kind.stage_bindings(wgt::ShaderStages::FRAGMENT);
+        assert_eq!(
+            vertex
+                .iter()
+                .map(|b| (b.binding.binding, b.slot))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(3, 0), (17, 1)]
+        );
+        assert_eq!(
+            fragment
+                .iter()
+                .map(|b| (b.binding.binding, b.slot))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(17, 1), (42, 2)]
+        );
+        let all: alloc::vec::Vec<_> = (0..MAX_UNIFORMS as u32)
+            .map(|binding| uniform(binding, wgt::ShaderStages::FRAGMENT))
+            .collect();
+        assert_eq!(
+            group_kind(&all)
+                .unwrap()
+                .shader_bindings()
+                .last()
+                .unwrap()
+                .slot,
+            12
+        );
+        let mut too_many = all;
+        too_many.push(uniform(100, wgt::ShaderStages::FRAGMENT));
+        assert!(group_kind(&too_many).is_err());
+        assert!(group_kind(&[entries[0], entries[0]]).is_err());
+        assert!(group_kind(&[uniform(1, wgt::ShaderStages::COMPUTE)]).is_err());
+    }
 
     #[test]
     fn sparse_pair_layout_validation_is_order_independent_and_fail_closed() {
@@ -509,7 +595,7 @@ mod tests {
         };
         let group = unsafe { device.create_bind_group(&desc).unwrap() };
         assert!(
-            group.resources.uniform.is_none()
+            group.resources.uniforms.is_empty()
                 && group.resources.textures.is_empty()
                 && group.resources.samplers.is_empty()
         );

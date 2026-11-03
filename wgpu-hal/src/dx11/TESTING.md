@@ -246,3 +246,17 @@ The third samples a padded upload with a nonzero source offset. FL9_x readback
 rejects native diagnostic textures bound only as shader resources.
 The layout test is CPU-only. Direct private HAL calls reject empty transfer
 regions; wgpu-core filters validated empty copies before dispatching to HAL.
+
+### FL9_1 uniform bindings
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sparse_uniform_allocation -- --nocapture
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 level9_constant_budgets_and_multiple_buffers_compile -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_uniform_ranges -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_two_uniforms_with_sampled_textures -- --nocapture --test-threads=1
+```
+
+The first two are CPU/compiler tests. The hardware tests verify sparse static
+ranges, GPU-upload ordering, vertex/fragment use, a padded matrix structure,
+pipeline and group transitions, and coexistence with sampled textures.

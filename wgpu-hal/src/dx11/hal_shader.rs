@@ -25,6 +25,49 @@ mod tests {
     use alloc::borrow::Cow;
     use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;
 
+    #[test]
+    fn unused_entry_point_resource_does_not_conflict_with_layout_mapping() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn plain() -> @location(0) vec4f { return vec4f(1.0); } @fragment fn textured() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let uniform = ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        };
+        let plain = used_shader_bindings(&module, info.get_entry_point(0), &[uniform]);
+        assert!(plain.is_empty());
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "plain",
+            ShaderProfile::PixelLevel9_1,
+            &plain
+        )
+        .is_ok());
+        let textured = used_shader_bindings(&module, info.get_entry_point(1), &[uniform]);
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "textured",
+            ShaderProfile::PixelLevel9_1,
+            &textured
+        )
+        .is_err());
+    }
+
     fn input() -> crate::NagaShader {
         let module = naga::front::wgsl::parse_str("@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }").unwrap();
         let info = naga::valid::Validator::new(
@@ -214,6 +257,24 @@ mod tests {
 crate::impl_dyn_resource!(ShaderModule);
 impl crate::DynShaderModule for ShaderModule {}
 
+fn used_shader_bindings(
+    module: &naga::Module,
+    info: &naga::valid::FunctionInfo,
+    bindings: &[ShaderBinding],
+) -> Vec<ShaderBinding> {
+    bindings
+        .iter()
+        .copied()
+        .filter(|binding| {
+            module.global_variables.iter().any(|(handle, global)| {
+                !info[handle].is_empty()
+                    && global.binding == Some(binding.binding)
+                    && shader_binding_kind(module, global) == Some(binding.kind)
+            })
+        })
+        .collect()
+}
+
 // Initially permit checked uniform shaders only when every reachable function
 // uses constant indexing. This conservative restriction covers uniform
 // arrays passed through helpers as well as direct global accesses.
@@ -292,8 +353,11 @@ impl ShaderModule {
         self.compile_with_bindings(stage, entry, &[])
     }
 
-    /// Statically laid-out size of uniform group 0 binding 0, if present.
-    pub(super) fn required_uniform_size(&self) -> Result<Option<u64>, crate::PipelineError> {
+    pub(super) fn required_uniform_sizes(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+    ) -> Result<Vec<(naga::ResourceBinding, u64)>, crate::PipelineError> {
         let mut layouter = naga::proc::Layouter::default();
         layouter
             .update(self.shader.module.to_ctx())
@@ -303,23 +367,27 @@ impl ShaderModule {
                     format!("D3D11 uniform layout failed: {error}"),
                 )
             })?;
-        for (_, global) in self.shader.module.global_variables.iter() {
-            if global.binding
-                == Some(naga::ResourceBinding {
-                    group: 0,
-                    binding: 0,
-                })
-            {
-                if global.space != naga::AddressSpace::Uniform {
-                    return Err(crate::PipelineError::Linkage(
+        let index = self
+            .shader
+            .module
+            .entry_points
+            .iter()
+            .position(|candidate| candidate.stage == stage && candidate.name == entry)
+            .ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let info = self.shader.info.get_entry_point(index);
+        let mut sizes = Vec::new();
+        for (handle, global) in self.shader.module.global_variables.iter() {
+            if global.space == naga::AddressSpace::Uniform && !info[handle].is_empty() {
+                let binding = global.binding.ok_or_else(|| {
+                    crate::PipelineError::Linkage(
                         wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
-                        "D3D11 binding is not a uniform buffer".into(),
-                    ));
-                }
-                return Ok(Some(u64::from(layouter[global.ty].size)));
+                        "D3D11 uniform lacks binding".into(),
+                    )
+                })?;
+                sizes.push((binding, u64::from(layouter[global.ty].size)));
             }
         }
-        Ok(None)
+        Ok(sizes)
     }
 
     pub(super) fn sampling_relationships(
@@ -449,18 +517,7 @@ impl ShaderModule {
             naga::ShaderStage::Fragment => ShaderProfile::PixelLevel9_1,
             _ => unreachable!(),
         };
-        // A stage's module may omit bindings declared in its pipeline layout.
-        let present: Vec<_> = bindings
-            .iter()
-            .copied()
-            .filter(|binding| {
-                self.shader
-                    .module
-                    .global_variables
-                    .iter()
-                    .any(|(_, global)| global.binding == Some(binding.binding))
-            })
-            .collect();
+        let present = used_shader_bindings(&self.shader.module, entry_info, bindings);
         compile_naga_with_bindings(
             &self.shader.module,
             &self.shader.info,

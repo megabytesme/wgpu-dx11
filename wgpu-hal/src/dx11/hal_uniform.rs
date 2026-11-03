@@ -1,4 +1,4 @@
-//! Fixed uniform binding materialized as a D3D11 constant buffer.
+//! Uniform ranges materialized as D3D11 constant buffers.
 //!
 //! Ordinary logical buffers remain copyable/updatable in arbitrary checked
 //! ranges. At binding time the requested aligned range is staged to the CPU,
@@ -84,10 +84,15 @@ impl UniformBinding {
         u64::from(self.source_box.right - self.source_box.left)
     }
 
-    /// Copy the source range and bind slot b0 on both graphics stages.
+    /// Copy the source range and bind it to the requested stages and slot.
     /// The caller holds the owning device's immediate-context lock.
     #[allow(dead_code)]
-    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+    pub(super) fn execute(
+        &self,
+        context: &ID3D11DeviceContext,
+        slot: u32,
+        visibility: wgt::ShaderStages,
+    ) -> Result<()> {
         unsafe {
             context.CopySubresourceRegion(
                 &self.staging,
@@ -107,8 +112,12 @@ impl UniformBinding {
             }
             context.UpdateSubresource(&self.constant, 0, None, mapped.pData, 0, 0);
             context.Unmap(&self.staging, 0);
-            context.VSSetConstantBuffers(0, Some(&[Some(self.constant.clone())]));
-            context.PSSetConstantBuffers(0, Some(&[Some(self.constant.clone())]));
+            if visibility.contains(wgt::ShaderStages::VERTEX) {
+                context.VSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
+            }
+            if visibility.contains(wgt::ShaderStages::FRAGMENT) {
+                context.PSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
+            }
         }
         Ok(())
     }
@@ -182,7 +191,11 @@ mod tests {
                 native.write_byte_buffer(&source, 20, &data[20..24])?;
             }
             let context = native.immediate_context();
-            binding.execute(&context)?;
+            binding.execute(
+                &context,
+                0,
+                wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+            )?;
             unsafe {
                 use windows::core::Interface;
                 let mut vertex = [None];

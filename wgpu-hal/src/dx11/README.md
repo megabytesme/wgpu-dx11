@@ -57,10 +57,11 @@ Restricted RGBA8 buffer-to-texture and texture-to-buffer copies are recorded
 and replayed in queue order. They use staging and synchronous CPU mapping on
 D3D11, so these paths may stall; unsupported subresources and layouts fail.
 
-A private uniform-range prototype stages an ordinary logical buffer range and
-updates a separate constant buffer in full before binding. A single fixed
-uniform group is supported with validated shader layout, either alone or
-together with one or two 2D textures and samplers. When no minimum binding size is
+A private uniform-range prototype stages each ordinary logical buffer range and
+updates a separate constant buffer in full before binding. Group 0 supports up
+to thirteen static uniform slots, including alongside sampled textures and
+samplers. Shader-profile constant and instruction limits can be lower than the
+layout slot count. When no minimum binding size is
 provided, each draw checks the bound range against the shader's required size;
 dynamic offsets remain unsupported. Checked uniform shaders reject dynamic
 indexing in reachable functions; other checked buffer/storage bindings remain
