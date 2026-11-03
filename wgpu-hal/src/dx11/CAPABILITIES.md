@@ -402,12 +402,14 @@ Historical FL9 drivers remain unverified, and public enumeration remains empty.
 The thirteen slots are a private layout allocation limit, not a claim that a
 shader can use thirteen arbitrary buffers. The D3D11 API has fourteen application
 constant-buffer slots per stage, while FL9_1 shader profiles have smaller legacy
-constant budgets. A local FXC pixel-profile test compiles 32 referenced float4
-constants and rejects 33 with X5200; instruction pressure and compiler packing
-can impose earlier limits. FXC errors fail pipeline creation. A vertex probe
-referencing only element 256 compiles; this does not establish a 257-constant
-budget because the compiler can remap sparsely referenced constants. The full
-vertex budget and near-limit GPU execution have not been measured here.
+constant budgets. FXC compiles 32 referenced pixel float4 constants and rejects
+33 with X5200. A vertex shader with a dynamically indexed `float4[255]` compiles;
+arrays of 256 and 257 fail with X4507 at constant register index 256. The
+forced-FL9_1 RTX 3090 Ti also accepts `CreateVertexShader` for the 255-element
+profile. This is compiler and shader-object evidence, not execution: the private
+WGSL path rejects runtime integer indexing, so near-limit shader execution is
+not verified. Instruction pressure and compiler packing can impose earlier
+limits on ordinary shaders. FXC errors fail pipeline creation.
 
 Ranges use four-byte-aligned offsets and nonzero sizes of at most 64 KiB;
 the logical size need not be a multiple of 16. At bind replay the exact range

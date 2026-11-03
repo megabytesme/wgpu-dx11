@@ -813,6 +813,7 @@ unverified; ordinary public adapter enumeration remains disabled.
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sparse_uniform_allocation -- --nocapture
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 level9_constant_budgets_and_multiple_buffers_compile -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_constant_profile_boundary_creates_on_hardware -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_uniform_ranges -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_two_uniforms_with_sampled_textures -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent -- --nocapture --test-threads=1
@@ -823,8 +824,14 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 int
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
-The first two are CPU/compiler tests. The hardware tests verify sparse static
-ranges, GPU-upload ordering, vertex/fragment use, padded and nested matrix
+The first two are CPU/compiler tests. The profile-boundary hardware diagnostic
+asks FXC to compile a vertex shader with a dynamically indexed 255-element
+constant array, then creates that shader on the explicitly forced-FL9_1 device.
+Its companion compiler test confirms 256 and 257 elements fail at register
+index 256. The diagnostic does not draw the shader: the private WGSL path
+rejects runtime integer indexing, so it does not establish near-limit GPU
+execution. The remaining hardware tests verify sparse static ranges,
+GPU-upload ordering, vertex/fragment use, padded and nested matrix
 structures, array stride, pipeline and group transitions, and coexistence with
 sampled textures. The multi-group test binds one group at two indices with
 different dynamic offsets, switches pipeline register plans, tests layout

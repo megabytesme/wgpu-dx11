@@ -428,3 +428,16 @@ core suite passed 70 tests on the RTX 3090 Ti forced to FL9_1. This does not
 simulate actual device removal. The follow-up audit must cover teardown and
 failure recovery while preserving the existing public adapter and presentation
 gates. Checkpoint: `da035664154d080ecb80a3518cbfa6e4eecbe4d8`.
+
+The current uniform-limit follow-up replaces a sparse vertex constant probe
+with a dynamically indexed 255-element `float4` array. FXC accepts 255 and
+rejects 256/257 at constant index 256; 32 pixel constants compile and 33 fail
+at register 32. The forced-FL9_1 RTX accepted native shader-object creation for
+the 255-element vertex profile. This shader was not drawn because private WGSL
+rejects runtime integer indexing. The near-limit execution gate remains open.
+The focused strict `constant` filter passed 8 tests (284 filtered). The complete
+strict HAL suite passed 290 tests with two filtered. The targeted HAL build and
+Clippy passed; Clippy retained ten existing warnings. Core's zero-D3D11-adapter
+test passed 1/1. Formatting and `git diff --check` passed. Commit this bounded
+finding, then continue the loss/teardown and public-contract audit without
+enabling ordinary adapter or HWND surface exposure.

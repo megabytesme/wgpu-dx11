@@ -8,8 +8,12 @@ below is met. This plan does not claim WebGPU conformance.
 ## Ordered work and gates
 
 1. Preserve the tested private backend; continue uniform layout and real
-   constant-budget testing. Investigate asymmetric matrices, arrays, nested
-   structures and FXC instruction pressure with checked shader translation.
+   constant-budget testing. FXC and the forced-FL9_1 RTX accept a dynamically
+   indexed vertex constant array of 255 float4s and reject 256 at index 256;
+   pixel FXC accepts 32 and rejects 33 at register 32. Near-limit vertex
+   execution remains unverified because private WGSL rejects runtime integer
+   indexing. Investigate asymmetric matrices, arrays, nested structures and
+   FXC instruction pressure with checked shader translation.
 2. Implement depth/stencil textures, views, initialization, render-pass
    attachments and depth state incrementally. Verify overlapping geometry in
    both draw orders on forced FL9_1, and independent load/clear/store behavior.

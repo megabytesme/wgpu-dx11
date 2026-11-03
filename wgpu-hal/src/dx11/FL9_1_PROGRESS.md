@@ -1719,3 +1719,28 @@ Checkpoint: `da035664154d080ecb80a3518cbfa6e4eecbe4d8` (`dx11: classify
 driver-internal failures as device loss`). Device teardown, loss during live
 presentation and debug-layer diagnostics remain unaudited; public adapter and
 surface exposure remain gated.
+
+The prior vertex constant probe referenced only one statically selected array
+element and did not measure the profile range. It now compiles a dynamically
+indexed `float4` constant array: FXC accepts length 255 and rejects lengths 256
+and 257 with X4507 at constant register index 256. FXC accepts 32 referenced
+pixel constants and rejects 33 with X5200 at register 32. With strict hardware
+required, the RTX 3090 Ti opened at requested/actual FL9_1 and accepted native
+`CreateVertexShader` for the 255-element bytecode. This test creates but does
+not execute that shader; the private WGSL path rejects runtime integer indexing,
+so near-limit GPU execution remains an explicit gap. The first two attempts at
+static all-element reductions exceeded the vs_2_0 instruction budget and were
+replaced with a dynamic-index compiler probe rather than weakening the profile.
+
+The strict `constant` HAL filter passed 8 tests (284 filtered), including the
+profile compiler boundary, native shader creation, constant depth-bias and
+sample-bias renders, and uniform materialization. `fl91_vertex_constant_profile_boundary_creates_on_hardware`
+reported the physical NVIDIA RTX 3090 Ti (vendor 0x10de, device 0x2203) and
+requested/actual FL9_1. The complete strict private D3D11 HAL suite then passed
+290 tests with two filtered in 73.84 seconds; it included the new shader-object
+creation test. The focused strict shader-object test was rerun after adding its
+explicit PASS line and passed. `cargo build -p wgpu-hal` passed; HAL Clippy
+passed with the same ten existing warnings. Core's
+`requesting_dx11_does_not_expose_a_stub_adapter` passed 1/1. Rust formatting
+and `git diff --check` passed. The public adapter and HWND surface gates are
+unchanged.

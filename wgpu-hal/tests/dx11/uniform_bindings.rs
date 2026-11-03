@@ -21,14 +21,25 @@ fn level9_constant_budgets_and_multiple_buffers_compile() {
         source.push_str("; }");
         let result = compile_hlsl(&source, "main", ShaderProfile::PixelLevel9_1);
         std::println!(
-            "{count} pixel constants: {:?}",
+            "{count} referenced pixel constants: {:?}",
             result.as_ref().map(|_| ()).map_err(|e| &e.message)
         );
         assert_eq!(result.is_ok(), count <= 32);
     }
     for count in [255, 256, 257] {
-        let source = alloc::format!("cbuffer C : register(b0) {{ float4 c[{count}]; }}; float4 main(float4 p : POSITION) : SV_Position {{ return p + c[{}]; }}", count - 1);
-        assert!(compile_hlsl(&source, "main", ShaderProfile::VertexLevel9_1).is_ok());
+        let source = alloc::format!(
+            "cbuffer C : register(b0) {{ float4 c[{count}]; }}; float4 main(float4 p : POSITION) : SV_Position {{ return c[(int)p.x]; }}"
+        );
+        let result = compile_hlsl(&source, "main", ShaderProfile::VertexLevel9_1);
+        std::println!(
+            "vertex profile array length {count}: {:?}",
+            result.as_ref().map(|_| ()).map_err(|e| &e.message)
+        );
+        assert_eq!(
+            result.is_ok(),
+            count == 255,
+            "{count} vertex constants: {result:?}"
+        );
     }
     let module = naga::front::wgsl::parse_str("@group(0) @binding(3) var<uniform> a: vec4f; @group(0) @binding(42) var<uniform> b: vec4f; @fragment fn main() -> @location(0) vec4f { return a + b; }").unwrap();
     let info = naga::valid::Validator::new(
@@ -62,6 +73,42 @@ fn level9_constant_budgets_and_multiple_buffers_compile() {
         &mappings
     )
     .is_ok());
+}
+
+#[test]
+fn fl91_vertex_constant_profile_boundary_creates_on_hardware() -> windows::core::Result<()> {
+    use super::super::shader::{compile_hlsl, ShaderProfile};
+
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|error| panic!("{error}"))
+    else {
+        std::println!("SKIP: no hardware adapter");
+        return Ok(());
+    };
+    let native = adapter.open_device(&[FeatureLevel::L9_1])?;
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {:?}; requested FL9_1; actual {:?}",
+        adapter.identity(),
+        native.feature_level()
+    );
+
+    let source = "cbuffer C : register(b0) { float4 c[255]; }; float4 main(float4 p : POSITION) : SV_Position { return c[(int)p.x]; }";
+    let bytecode = compile_hlsl(source, "main", ShaderProfile::VertexLevel9_1)
+        .expect("the FL9_1 profile accepts 255 dynamically indexed vertex constants");
+    let mut shader = None;
+    unsafe {
+        native.raw_device().CreateVertexShader(
+            &bytecode,
+            None::<&windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage>,
+            Some(&mut shader),
+        )?;
+    }
+    assert!(shader.is_some());
+    std::println!("PASS: FXC and D3D11 accepted the 255-element vertex constant array");
+    Ok(())
 }
 
 #[test]
