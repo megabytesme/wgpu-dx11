@@ -97,4 +97,7 @@ regression passed on the NVIDIA adapter.
 The broader validation suite had 86 passes and three pre-existing adapter-error
 message mismatches because the fork's DX11 backend is absent from the expected
 strings. The suite passed with those three tests filtered. The core fix and its
-tests are awaiting final regression and checkpoint.
+tests were checkpointed as `8949812c55514e106e7803e00d7e25801e516d44`.
+The stale expected strings now include the actual DX11 diagnostic. The full
+unfiltered `cargo test --offline -p wgpu-test --test wgpu-validation --
+--test-threads=1` suite passed 89/89 tests.

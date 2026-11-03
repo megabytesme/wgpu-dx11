@@ -62,7 +62,8 @@ mod request_adapter_error {
             metal not requested, \
             dx12 not requested, \
             gl not requested, \
-            webgpu not requested"
+            webgpu not requested, \
+            dx11 not requested"
         );
     }
 
@@ -78,7 +79,8 @@ mod request_adapter_error {
             metal not requested, \
             dx12 not requested, \
             gl not requested, \
-            webgpu not requested"
+            webgpu not requested, \
+            dx11 not requested"
         );
     }
 
@@ -96,7 +98,8 @@ mod request_adapter_error {
             metal support not compiled in, \
             dx12 not requested, \
             gl not requested, \
-            webgpu not requested"
+            webgpu not requested, \
+            dx11 not requested"
         );
 
         #[cfg(not(target_family = "wasm"))]
@@ -108,7 +111,8 @@ mod request_adapter_error {
             metal not requested, \
             dx12 not requested, \
             gl not requested, \
-            webgpu support not compiled in"
+            webgpu support not compiled in, \
+            dx11 not requested"
         );
     }
 }
