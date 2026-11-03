@@ -17,6 +17,29 @@ pub struct Adapter {
 
 #[cfg(feature = "dx11-test-fixture")]
 impl Adapter {
+    /// Query the format prerequisites for the controlled copy-only RGBA8 mip test.
+    pub fn test_fixture_copy_only_rgba8_mip_supported(&self) -> Result<bool, crate::DeviceError> {
+        use windows::Win32::Graphics::{
+            Direct3D11::{
+                D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+            },
+            Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        };
+        let AdapterInner::Fixture(native) = &self.inner;
+        let support = unsafe {
+            native
+                .raw_device()
+                .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)
+        }
+        .map_err(super::hal_device::device_error)?;
+        let required = (D3D11_FORMAT_SUPPORT_MIP.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_TEXTURE2D.0) as u32;
+        Ok(support & required == required)
+    }
+
     /// Constructs a non-enumerated adapter for a controlled core test.
     ///
     /// # Safety

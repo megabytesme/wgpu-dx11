@@ -29,6 +29,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.
+- POT RGBA8 and BGRA8 copy-only textures support multiple initialized mips when
+  the device reports the required format bits. Strict RTX FL9_1 tests exercised
+  four levels, partial uploads, cross-resource copies, readback, metadata views
+  and resource retention; a core fixture checked all 43 mip-chain pixels.
+  Sampled or attachment mip views, NPOT mip chains and self-copies remain
+  unsupported. FL9 sampled views must include the smallest resource mip, and
+  historical GPU behavior is unverified.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and Always/LessEqual depth tests with
   optional writes. Private read-only passes require load/store on both aspects,

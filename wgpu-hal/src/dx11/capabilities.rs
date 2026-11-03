@@ -5,8 +5,9 @@ use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
         D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
-        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
-        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_MIP,
+        D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+        D3D11_FORMAT_SUPPORT_TEXTURE2D,
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -91,7 +92,8 @@ pub(super) struct DriverCapabilities {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BackendCapabilities {
-    pub texture_mip_levels: u32,
+    pub sampled_texture_mip_levels: u32,
+    pub pot_copy_only_mip_chains: bool,
     pub rgba8_single_mip_transfers: bool,
     pub bgra8_single_mip_transfers: bool,
     pub texture_zero_initialized: bool,
@@ -131,7 +133,8 @@ pub(super) struct BackendCapabilities {
 
 impl BackendCapabilities {
     pub const CURRENT: Self = Self {
-        texture_mip_levels: 1,
+        sampled_texture_mip_levels: 1,
+        pot_copy_only_mip_chains: true,
         rgba8_single_mip_transfers: true,
         bgra8_single_mip_transfers: true,
         texture_zero_initialized: true,
@@ -260,16 +263,33 @@ impl Capabilities {
             || extent[0] > self.hardware.texture_2d_dimension
             || extent[1] > self.hardware.texture_2d_dimension
             || layers != self.backend.texture_array_layers
-            || mips != self.backend.texture_mip_levels
+            || mips == 0
             || samples != self.backend.sample_count
         {
             return Err(UnsupportedShape);
+        }
+        if mips > 1 {
+            if !self.backend.pot_copy_only_mip_chains
+                || !extent[0].is_power_of_two()
+                || !extent[1].is_power_of_two()
+                || mips > extent[0].max(extent[1]).ilog2() + 1
+            {
+                return Err(UnsupportedShape);
+            }
+            if usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST) {
+                return Err(UnsupportedUsage);
+            }
         }
         let Query::Value(bits) = query else {
             return Err(DriverQueryUnavailable);
         };
         let required = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
             | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
+            | if mips > 1 {
+                D3D11_FORMAT_SUPPORT_MIP.0 as u32
+            } else {
+                0
+            }
             | if usage.intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC) {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
@@ -397,6 +417,94 @@ mod tests {
     }
 
     #[test]
+    fn copy_only_pot_mips_require_matching_backend_shape_and_driver() {
+        use TextureRejection::*;
+        let caps = model(FeatureLevel::L9_1);
+        let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+        let rgba = wgt::TextureFormat::Rgba8Unorm;
+        let bgra = wgt::TextureFormat::Bgra8Unorm;
+        let check = |caps: &Capabilities, format, usage, size, layers, mips, samples| {
+            caps.check_private_texture_2d(format, usage, size, layers, mips, samples)
+        };
+        assert_eq!(caps.backend.sampled_texture_mip_levels, 1);
+        assert!(caps.backend.pot_copy_only_mip_chains);
+        for format in [rgba, bgra] {
+            assert_eq!(check(&caps, format, copy, [8, 4], 1, 4, 1), Ok(()));
+            assert_eq!(check(&caps, format, copy, [1, 8], 1, 4, 1), Ok(()));
+            assert_eq!(
+                check(&caps, format, copy, [8, 4], 1, 5, 1),
+                Err(UnsupportedShape)
+            );
+            assert_eq!(
+                check(&caps, format, copy, [1, 1], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
+            assert_eq!(
+                check(&caps, format, copy, [8, 3], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
+            assert_eq!(
+                check(&caps, format, copy, [0, 4], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
+            assert_eq!(
+                check(&caps, format, copy, [8, 4], 2, 2, 1),
+                Err(UnsupportedShape)
+            );
+            assert_eq!(
+                check(&caps, format, copy, [8, 4], 1, 2, 4),
+                Err(UnsupportedShape)
+            );
+            assert_eq!(
+                check(&caps, format, copy, [8, 4], 1, 0, 1),
+                Err(UnsupportedShape)
+            );
+            for usage in [
+                wgt::TextureUses::COPY_SRC,
+                wgt::TextureUses::COPY_DST,
+                copy | wgt::TextureUses::RESOURCE,
+                copy | wgt::TextureUses::COLOR_TARGET,
+            ] {
+                assert_eq!(
+                    check(&caps, format, usage, [8, 4], 1, 2, 1),
+                    Err(UnsupportedUsage)
+                );
+            }
+        }
+        let mut restricted = caps;
+        restricted.backend.pot_copy_only_mip_chains = false;
+        assert_eq!(
+            check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 1, 1), Ok(()));
+        restricted = caps;
+        restricted.driver.rgba8 = Query::Unavailable(-1);
+        assert_eq!(
+            check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
+            Err(DriverQueryUnavailable)
+        );
+        restricted.driver.rgba8 = Query::Value(!(D3D11_FORMAT_SUPPORT_MIP.0 as u32));
+        assert_eq!(
+            check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 1, 1), Ok(()));
+        restricted = caps;
+        restricted.driver.bgra8 = Query::Unavailable(-1);
+        assert_eq!(
+            check(&restricted, bgra, copy, [8, 4], 1, 2, 1),
+            Err(DriverQueryUnavailable)
+        );
+        restricted.driver.bgra8 = Query::Value(!(D3D11_FORMAT_SUPPORT_MIP.0 as u32));
+        assert_eq!(
+            check(&restricted, bgra, copy, [8, 4], 1, 2, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert!(!caps.public_adapter_supported());
+    }
+
+    #[test]
     fn texture_support_requires_backend_shape_usage_and_driver_support() {
         let caps = model(FeatureLevel::L9_1);
         let check = |caps: &Capabilities, format, usage, w, h, layers, mips, samples| {
@@ -469,7 +577,6 @@ mod tests {
             (0, 8, 1, 1, 1),
             (2049, 8, 1, 1, 1),
             (8, 8, 2, 1, 1),
-            (8, 8, 1, 2, 1),
             (8, 8, 1, 1, 4),
         ] {
             assert_eq!(

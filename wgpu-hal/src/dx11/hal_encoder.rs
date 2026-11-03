@@ -3850,6 +3850,10 @@ mod sampler_lod_tests;
 mod biased_sampling_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/mip_transfers.rs"]
+mod mip_transfer_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/overlapping_vertex_attributes.rs"]
 mod overlapping_vertex_attribute_tests;
 

@@ -50,8 +50,7 @@ fn texture_box(
     size: &crate::CopyExtent,
     dimensions: [u32; 2],
 ) -> Result<D3D11_BOX> {
-    if base.mip_level != 0
-        || base.array_layer != 0
+    if base.array_layer != 0
         || base.origin.z != 0
         || base.aspect != crate::FormatAspects::COLOR
         || size.depth != 1
@@ -79,6 +78,8 @@ fn texture_box(
 pub(super) struct TextureToTexture {
     source: ID3D11Texture2D,
     destination: ID3D11Texture2D,
+    source_subresource: u32,
+    destination_subresource: u32,
     source_box: D3D11_BOX,
     destination_origin: [u32; 2],
 }
@@ -88,12 +89,12 @@ impl TextureToTexture {
         unsafe {
             context.CopySubresourceRegion(
                 &self.destination,
-                0,
+                self.destination_subresource,
                 self.destination_origin[0],
                 self.destination_origin[1],
                 0,
                 &self.source,
-                0,
+                self.source_subresource,
                 Some(&self.source_box),
             );
         }
@@ -107,6 +108,7 @@ pub(super) struct BufferToTexture {
     source: ID3D11Buffer,
     staging: ID3D11Buffer,
     texture: ID3D11Texture2D,
+    destination_subresource: u32,
     source_box: D3D11_BOX,
     destination_box: D3D11_BOX,
     row_pitch: u32,
@@ -117,6 +119,7 @@ pub(super) struct BufferToTexture {
 #[derive(Debug)]
 pub(super) struct TextureToBuffer {
     texture: ID3D11Texture2D,
+    source_subresource: u32,
     staging: ID3D11Texture2D,
     destination: ID3D11Buffer,
     source_box: D3D11_BOX,
@@ -136,8 +139,10 @@ impl NativeDevice {
         if self.texture_desc(source)?.Format != self.texture_desc(destination)?.Format {
             return Err(invalid());
         }
-        let (source, src_size) = self.texture_copy_texture_source(source)?;
-        let (destination, dst_size) = self.texture_copy_destination(destination)?;
+        let (source, src_size, source_subresource) =
+            self.texture_copy_texture_source(source, region.src_base.mip_level)?;
+        let (destination, dst_size, destination_subresource) =
+            self.texture_copy_destination(destination, region.dst_base.mip_level)?;
         if source.as_raw() == destination.as_raw() {
             return Err(invalid());
         }
@@ -146,6 +151,8 @@ impl NativeDevice {
         Ok(TextureToTexture {
             source,
             destination,
+            source_subresource,
+            destination_subresource,
             source_box,
             destination_origin: [destination_box.left, destination_box.top],
         })
@@ -162,7 +169,8 @@ impl NativeDevice {
         let size = &region.size;
         let layout = &region.buffer_layout;
         self.validate_texture_readback_source(texture)?;
-        let (source, dimensions) = self.texture_copy_texture_source(texture)?;
+        let (source, dimensions, source_subresource) =
+            self.texture_copy_texture_source(texture, base.mip_level)?;
         let source_box = texture_box(base, size, dimensions)?;
         let (offset, pitch, row_bytes, total) = copy_layout(layout, size.width, size.height)?;
         let native_destination =
@@ -188,6 +196,7 @@ impl NativeDevice {
         }
         Ok(TextureToBuffer {
             texture: source,
+            source_subresource,
             staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             destination: native_destination,
             source_box,
@@ -208,7 +217,8 @@ impl NativeDevice {
         let base = &region.texture_base;
         let size = &region.size;
         let layout = &region.buffer_layout;
-        let (destination, dimensions) = self.texture_copy_destination(texture)?;
+        let (destination, dimensions, destination_subresource) =
+            self.texture_copy_destination(texture, base.mip_level)?;
         let destination_box = texture_box(base, size, dimensions)?;
         let (offset, pitch, _row_bytes, total) = copy_layout(layout, size.width, size.height)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
@@ -228,6 +238,7 @@ impl NativeDevice {
             source: native_source,
             staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             texture: destination,
+            destination_subresource,
             source_box: D3D11_BOX {
                 left: offset,
                 right: end,
@@ -254,7 +265,7 @@ impl TextureToBuffer {
                 0,
                 0,
                 &self.texture,
-                0,
+                self.source_subresource,
                 Some(&self.source_box),
             );
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
@@ -311,7 +322,7 @@ impl BufferToTexture {
             }
             context.UpdateSubresource(
                 &self.texture,
-                0,
+                self.destination_subresource,
                 Some(&self.destination_box),
                 mapped.pData,
                 self.row_pitch,
@@ -383,7 +394,8 @@ mod tests {
         assert!(texture_box(&base, &size, [6, 4]).is_err());
         base.origin.x = 2;
         base.mip_level = 1;
-        assert!(texture_box(&base, &size, [6, 4]).is_err());
+        assert!(texture_box(&base, &size, [6, 4]).is_ok());
+        assert!(texture_box(&base, &size, [3, 2]).is_err());
         base.mip_level = 0;
         base.array_layer = 1;
         assert!(texture_box(&base, &size, [6, 4]).is_err());

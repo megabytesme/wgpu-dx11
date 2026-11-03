@@ -245,7 +245,8 @@ impl NativeDevice {
     pub(super) fn texture_copy_texture_source(
         &self,
         texture: &NativeTexture,
-    ) -> Result<(ID3D11Texture2D, [u32; 2])> {
+        mip: u32,
+    ) -> Result<(ID3D11Texture2D, [u32; 2], u32)> {
         self.check_texture_owner(texture)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.GetDesc(&mut desc) };
@@ -254,19 +255,22 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
-            || desc.MipLevels != 1
+            || (desc.MipLevels > 1
+                && texture.usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST))
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
         }
-        Ok((texture.raw.clone(), [desc.Width, desc.Height]))
+        let (width, height, index, _) = subresource_layout(texture, mip, 0)?;
+        Ok((texture.raw.clone(), [width, height], index))
     }
 
     pub(super) fn texture_copy_destination(
         &self,
         texture: &NativeTexture,
-    ) -> Result<(ID3D11Texture2D, [u32; 2])> {
+        mip: u32,
+    ) -> Result<(ID3D11Texture2D, [u32; 2], u32)> {
         self.check_texture_owner(texture)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.GetDesc(&mut desc) };
@@ -275,13 +279,15 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
             )
-            || desc.MipLevels != 1
+            || (desc.MipLevels > 1
+                && texture.usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST))
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
         }
-        Ok((texture.raw.clone(), [desc.Width, desc.Height]))
+        let (width, height, index, _) = subresource_layout(texture, mip, 0)?;
+        Ok((texture.raw.clone(), [width, height], index))
     }
 
     /// Validate and retain a 2D sampled view for fragment-stage binding.

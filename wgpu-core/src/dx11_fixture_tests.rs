@@ -68,6 +68,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         )
     }
     .is_err());
+    let rgba_mips = fixture
+        .test_fixture_copy_only_rgba8_mip_supported()
+        .expect("query copy-only RGBA8 mip prerequisites");
     let rgba_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba8Unorm)
     };
@@ -222,6 +225,15 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.texture_drop(texture);
     }
     copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Rgba8Unorm);
+    if rgba_mips {
+        copy_only_mip_chain(&global, device, queue);
+    } else {
+        assert!(
+            !required,
+            "strict mode requires copy-only RGBA8 mip support"
+        );
+        std::println!("SKIP: copy-only RGBA8 mip format support unavailable");
+    }
     if !bgra_caps.is_empty() {
         copy_only_texture_view(&global, device, queue, wgt::TextureFormat::Bgra8Unorm);
     }
@@ -366,6 +378,210 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.queues.is_empty());
     assert!(hub.devices.is_empty());
     assert!(hub.adapters.is_empty());
+}
+
+fn copy_only_mip_chain(global: &Global, device: crate::id::DeviceId, queue: crate::id::QueueId) {
+    let (texture, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 8,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 4,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUsages::COPY_SRC | wgt::TextureUsages::COPY_DST,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(error.is_none(), "copy-only mip texture: {error:?}");
+    for range in [
+        wgt::ImageSubresourceRange::default(),
+        wgt::ImageSubresourceRange {
+            base_mip_level: 1,
+            mip_level_count: Some(1),
+            ..Default::default()
+        },
+    ] {
+        let (view, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor {
+                range,
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(error.is_none(), "copy-only mip view: {error:?}");
+        global.texture_view_drop(view);
+    }
+    let create_buffer = |size, usage| {
+        let (buffer, error) = global.device_create_buffer(
+            device,
+            &wgt::BufferDescriptor {
+                label: None,
+                size,
+                usage,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(error.is_none(), "mip test buffer: {error:?}");
+        buffer
+    };
+    let upload = create_buffer(
+        512,
+        wgt::BufferUsages::COPY_SRC | wgt::BufferUsages::COPY_DST,
+    );
+    let readback = create_buffer(
+        2048,
+        wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ,
+    );
+    let mut pattern = vec![0u8; 512];
+    for y in 0..2 {
+        for x in 0..4 {
+            let offset = y * 256 + x * 4;
+            pattern[offset..offset + 4].copy_from_slice(&[
+                (x * 37 + 1) as u8,
+                (y * 89 + 2) as u8,
+                (x * 11 + y * 13 + 3) as u8,
+                255,
+            ]);
+        }
+    }
+    global
+        .queue_write_buffer(queue, upload, 0, &pattern)
+        .unwrap();
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "mip encoder: {error:?}");
+    let mip1 = wgt::TexelCopyTextureInfo {
+        texture,
+        mip_level: 1,
+        origin: wgt::Origin3d::ZERO,
+        aspect: wgt::TextureAspect::All,
+    };
+    global
+        .command_encoder_copy_buffer_to_texture(
+            encoder,
+            &wgt::TexelCopyBufferInfo {
+                buffer: upload,
+                layout: wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(2),
+                },
+            },
+            &mip1,
+            &wgt::Extent3d {
+                width: 4,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        )
+        .unwrap();
+    for (mip, width, height, offset) in [
+        (0, 8, 4, 0),
+        (1, 4, 2, 1024),
+        (2, 2, 1, 1536),
+        (3, 1, 1, 1792),
+    ] {
+        global
+            .command_encoder_copy_texture_to_buffer(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: mip,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyBufferInfo {
+                    buffer: readback,
+                    layout: wgt::TexelCopyBufferLayout {
+                        offset,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(height),
+                    },
+                },
+                &wgt::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .unwrap();
+    }
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(error.is_none(), "mip command finish: {error:?}");
+    global.queue_submit(queue, &[command]).expect("mip submit");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            readback,
+            0,
+            Some(2048),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| sender.send(result).unwrap())),
+            },
+        )
+        .unwrap();
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .unwrap();
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap()
+        .unwrap();
+    let (pointer, length) = global
+        .buffer_get_mapped_range(readback, 0, Some(2048))
+        .unwrap();
+    let actual = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
+    for (mip, width, height, offset) in [
+        (0, 8usize, 4usize, 0usize),
+        (1, 4, 2, 1024),
+        (2, 2, 1, 1536),
+        (3, 1, 1, 1792),
+    ] {
+        for y in 0..height {
+            let row = &actual[offset + y * 256..offset + y * 256 + width * 4];
+            if mip == 1 {
+                assert_eq!(
+                    row,
+                    &pattern[y * 256..y * 256 + width * 4],
+                    "mip {mip} row {y}"
+                );
+            } else {
+                assert!(
+                    row.iter().all(|&byte| byte == 0),
+                    "mip {mip} row {y}: {row:?}"
+                );
+            }
+        }
+    }
+    global.buffer_unmap(readback).unwrap();
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.buffer_drop(upload);
+    global.buffer_drop(readback);
+    global.texture_drop(texture);
+    std::println!(
+        "PASS: copy-only mip chain upload and zero initialization, all 43 pixels matched"
+    );
 }
 
 fn copy_only_texture_view(

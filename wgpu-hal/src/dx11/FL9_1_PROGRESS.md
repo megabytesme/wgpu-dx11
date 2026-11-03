@@ -1017,3 +1017,22 @@ The complete strict suite passed 237 cases, two filtered, with three documented
 internal shader skips; HAL Clippy passed with ten existing warnings and ordinary
 core enumeration remained empty. Conservatively rejected bounded bias and
 historical-device behavior remain future work.
+Checkpoint: `1f48812f7`.
+
+A restricted POT RGBA8/BGRA8 copy-only mip chain is implemented, requiring
+COPY_SRC|COPY_DST, one layer/sample and positive native format MIP support.
+Every mip is zero-initialized; upload, readback and cross-resource copies carry
+checked native subresource indices. Metadata-only views can select valid mip
+ranges. Strict `mip` tests passed six cases, including RTX FL9_1 RGBA/BGRA
+four-level initialization, padded partial uploads, cross-mip copies and full
+readback: two format cases executed and passed, none skipped. The controlled
+core fixture checked 43 pixels over four mip levels. Missing format support now
+skips explicitly in normal mode and fails strict mode; query errors in the core
+fixture remain failures. Three independent reviews found no concrete transfer,
+initialization or ownership defect. The complete strict suite passed 241 cases,
+two filtered, with three documented internal shader skips; two new Clippy test
+warnings were corrected and the focused capability test passed afterward.
+Clippy then had the existing ten warnings, and ordinary core enumeration stayed
+empty. Sampling/rendering mips, NPOT mips, same-resource copies and historical
+drivers remain unverified or unsupported; FL9 SRVs must include the smallest
+mip, blocking arbitrary core-valid sampled views.

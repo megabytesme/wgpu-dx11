@@ -72,6 +72,27 @@ fn transient_texture_usage_valid(usage: wgt::TextureUses, depth: bool) -> bool {
     usage.contains(required) && (attachment | wgt::TextureUses::TRANSIENT).contains(usage)
 }
 
+fn metadata_view_range_valid(
+    range: &wgt::ImageSubresourceRange,
+    format: wgt::TextureFormat,
+    mip_levels: u32,
+    array_layers: u32,
+) -> bool {
+    fn valid_range(base: u32, count: Option<u32>, total: u32) -> bool {
+        base < total
+            && count.is_none_or(|count| {
+                count != 0 && base.checked_add(count).is_some_and(|end| end <= total)
+            })
+    }
+    format.aspect_specific_format(range.aspect) == Some(format)
+        && valid_range(range.base_mip_level, range.mip_level_count, mip_levels)
+        && valid_range(
+            range.base_array_layer,
+            range.array_layer_count,
+            array_layers,
+        )
+}
+
 crate::impl_dyn_resource!(Device);
 
 impl crate::Device for Device {
@@ -163,7 +184,12 @@ impl crate::Device for Device {
                     wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
                 ))
             || desc.size.depth_or_array_layers != 1
-            || desc.mip_level_count != 1
+            || desc.mip_level_count == 0
+            || (desc.mip_level_count > 1
+                && (depth
+                    || desc.usage != (wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST)
+                    || !desc.size.width.is_power_of_two()
+                    || !desc.size.height.is_power_of_two()))
             || desc.sample_count != 1
             || desc.size.width == 0
             || desc.size.height == 0
@@ -208,8 +234,8 @@ impl crate::Device for Device {
         }
         use windows::Win32::Graphics::{
             Direct3D11::{
-                D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
-                D3D11_FORMAT_SUPPORT_TEXTURE2D,
+                D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
             Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM},
         };
@@ -222,6 +248,11 @@ impl crate::Device for Device {
             unsafe { self.native.raw_device().CheckFormatSupport(format) }.map_err(device_error)?;
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0)
             as u32
+            | if desc.mip_level_count > 1 {
+                D3D11_FORMAT_SUPPORT_MIP.0 as u32
+            } else {
+                0
+            }
             | if desc
                 .usage
                 .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC)
@@ -238,7 +269,7 @@ impl crate::Device for Device {
             .create_color_texture_inner(
                 desc.size.width,
                 desc.size.height,
-                1,
+                desc.mip_level_count,
                 1,
                 desc.usage
                     .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
@@ -254,9 +285,17 @@ impl crate::Device for Device {
             .try_reserve_exact(byte_count)
             .map_err(|_| DeviceError::OutOfMemory)?;
         zeroes.resize(byte_count, 0);
-        self.native
-            .write_rgba_texture(&texture, 0, 0, &zeroes)
-            .map_err(device_error)?;
+        for mip in 0..desc.mip_level_count {
+            let width = (desc.size.width >> mip).max(1) as usize;
+            let height = (desc.size.height >> mip).max(1) as usize;
+            let mip_bytes = width
+                .checked_mul(height)
+                .and_then(|v| v.checked_mul(4))
+                .ok_or(DeviceError::OutOfMemory)?;
+            self.native
+                .write_rgba_texture(&texture, mip, 0, &zeroes[..mip_bytes])
+                .map_err(device_error)?;
+        }
         texture.set_usage(desc.usage);
         Ok(texture)
     }
@@ -305,10 +344,14 @@ impl crate::Device for Device {
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, is_depth)
             || !texture.supports_usage(desc.usage)
-            || !desc
-                .range
-                .is_full_resource(format, native.MipLevels, native.ArraySize)
-            || native.MipLevels != 1
+            || (if desc.usage.is_empty() {
+                !metadata_view_range_valid(&desc.range, format, native.MipLevels, native.ArraySize)
+            } else {
+                native.MipLevels != 1
+                    || !desc
+                        .range
+                        .is_full_resource(format, native.MipLevels, native.ArraySize)
+            })
             || native.ArraySize != 1
             || native.SampleDesc.Count != 1
             || (resource && native.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 == 0)
@@ -565,6 +608,129 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, FeatureLevel, Queue};
     use crate::{DynCommandBuffer, DynDevice, DynQueue};
     use alloc::vec;
+
+    #[test]
+    fn metadata_texture_view_ranges_check_bounds_and_aspect() {
+        let format = wgt::TextureFormat::Rgba8Unorm;
+        let mut range = wgt::ImageSubresourceRange::default();
+        assert!(metadata_view_range_valid(&range, format, 4, 1));
+        range.base_mip_level = 1;
+        range.mip_level_count = Some(2);
+        assert!(metadata_view_range_valid(&range, format, 4, 1));
+        range.mip_level_count = None;
+        assert!(metadata_view_range_valid(&range, format, 4, 1));
+        range.mip_level_count = Some(0);
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+        range.mip_level_count = Some(u32::MAX);
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+        range.mip_level_count = Some(4);
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+        range.mip_level_count = None;
+        range.base_mip_level = 4;
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+        range.base_mip_level = 0;
+        range.base_array_layer = 1;
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+        range.base_array_layer = 0;
+        range.array_layer_count = Some(0);
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+        range.array_layer_count = Some(1);
+        range.aspect = wgt::TextureAspect::DepthOnly;
+        assert!(!metadata_view_range_valid(&range, format, 4, 1));
+    }
+
+    #[test]
+    fn fl91_copy_only_mips_start_zeroed_and_have_metadata_views() -> windows::core::Result<()> {
+        use windows::Win32::Graphics::{
+            Direct3D11::D3D11_FORMAT_SUPPORT_MIP, Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        };
+        let adapters = enumerate_native_adapters()?;
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
+        let support = unsafe {
+            native
+                .raw_device()
+                .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)
+        };
+        if !matches!(&support, Ok(flags) if flags & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0) {
+            assert!(
+                !required,
+                "strict mode requires RGBA8 mip support: {support:?}"
+            );
+            std::println!("SKIP: RGBA8 mip support unavailable: {support:?}");
+            return Ok(());
+        }
+        let device = Device::new(native.clone());
+        let desc = TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 8,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 4,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST,
+            memory_flags: MemoryFlags::empty(),
+            view_formats: vec![],
+        };
+        let mut invalid = desc.clone();
+        invalid.size.width = 3;
+        assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
+        invalid = desc.clone();
+        invalid.mip_level_count = 5;
+        assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
+        invalid = desc.clone();
+        invalid.usage |= wgt::TextureUses::RESOURCE;
+        assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
+        invalid = desc.clone();
+        invalid.usage = wgt::TextureUses::COPY_DST;
+        assert!(unsafe { crate::Device::create_texture(&device, &invalid) }.is_err());
+        let texture = unsafe { crate::Device::create_texture(&device, &desc) }.unwrap();
+        for mip in 0..4 {
+            let data = native.read_rgba_texture(&texture, mip, 0)?;
+            assert_eq!(
+                data.len(),
+                ((8u32 >> mip).max(1) * (4u32 >> mip).max(1) * 4) as usize
+            );
+            assert!(data.iter().all(|&byte| byte == 0), "mip {mip}");
+        }
+        let view_desc = TextureViewDescriptor {
+            label: None,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            dimension: wgt::TextureViewDimension::D2,
+            usage: wgt::TextureUses::empty(),
+            range: wgt::ImageSubresourceRange {
+                base_mip_level: 1,
+                mip_level_count: Some(2),
+                ..Default::default()
+            },
+        };
+        let view =
+            unsafe { crate::Device::create_texture_view(&device, &texture, &view_desc) }.unwrap();
+        assert!(view.shader_resource().is_none());
+        assert!(view.render_target().is_none());
+        assert!(native.sampled_view(&view).is_err());
+        unsafe {
+            crate::Device::destroy_texture(&device, texture);
+            crate::Device::destroy_texture_view(&device, view);
+        }
+        std::println!("PASS: four zero-initialized FL9_1 mip levels and metadata view");
+        Ok(())
+    }
 
     #[test]
     fn transient_staging_initializes_device_buffers_through_queue() -> windows::core::Result<()> {

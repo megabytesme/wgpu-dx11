@@ -465,6 +465,33 @@ verified 12 upload/copy/readback pixels each for RGBA8 and BGRA8 copy-only views
 and rejected incompatible view usages. Neither result establishes historical
 driver behavior or general public adapter support.
 
+### Copy-only POT mip transfers
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_copy_only_mip_transfers_and_views -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_copy_only_mips_start_zeroed_and_have_metadata_views -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 metadata_texture_view_ranges_check_bounds_and_aspect -- --nocapture
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The first two tests execute GPU work; the third is CPU-only. Strict execution on
+the RTX 3090 Ti at requested and actual FL9_1 verified RGBA8 and BGRA8 four-level
+initialization, padded partial uploads, copies between mip levels of different
+textures, readback, metadata views and resource retention. The core fixture
+verified all 43 pixels in its RGBA8 mip chain. Each format requires a positive
+`CheckFormatSupport` result including `D3D11_FORMAT_SUPPORT_MIP` and the other
+required texture, sampling and render-target bits. Missing format support is a
+SKIP in normal mode and a failure in strict mode for these GPU tests. The
+initialization and transfer tests also skip failed format queries in normal mode
+and fail in strict mode; the core fixture propagates query errors as failures in
+either mode.
+
+These tests do not exercise sampled or attachment mip views. FL9 shader-resource
+views must include the smallest resource mip; NPOT mip chains, self-copies and
+general mip sampling remain unsupported. Historical FL9 GPU behavior is
+unverified.
+
 ### FL9_1 uniform bindings
 
 ```powershell
