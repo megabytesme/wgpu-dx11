@@ -3054,7 +3054,12 @@ impl Device {
             }
 
             let mut required_features = wgt::Features::empty();
-            let mut required_downlevel_flags = wgt::DownlevelFlags::empty();
+            let mut required_downlevel_flags =
+                if entry.visibility.contains(wgt::ShaderStages::COMPUTE) {
+                    wgt::DownlevelFlags::COMPUTE_SHADERS
+                } else {
+                    wgt::DownlevelFlags::empty()
+                };
             let (array_feature, writable_storage) = match entry.ty {
                 Bt::Buffer {
                     ty: wgt::BufferBindingType::Uniform,

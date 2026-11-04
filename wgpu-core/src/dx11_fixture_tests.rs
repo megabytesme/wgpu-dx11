@@ -551,6 +551,59 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.bind_group_layout_drop(layout);
     }
     std::println!("PASS: unsupported storage-buffer stages rejected by core validation");
+    for (binding, ty, label) in [
+        (
+            5,
+            wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            "uniform buffer",
+        ),
+        (
+            6,
+            wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+            "sampler",
+        ),
+        (
+            7,
+            wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            "sampled texture",
+        ),
+    ] {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgt::ShaderStages::COMPUTE,
+                    ty,
+                    count: None,
+                }]),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
+                        crate::device::MissingDownlevelFlags(flags)
+                    ),
+                    ..
+                }) if *flags == wgt::DownlevelFlags::COMPUTE_SHADERS
+            ),
+            "compute-visible {label} must be rejected before HAL: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+    }
+    std::println!("PASS: compute-visible uniform and sampled layouts rejected by core validation");
     for (view_dimension, required_flag) in [
         (
             wgt::TextureViewDimension::D2Array,
