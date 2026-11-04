@@ -1086,3 +1086,14 @@ the latest `FL9_1_PROGRESS.md` checkpoint. Continue with the remaining core/HAL
 audit, production-shaped non-enumerated adapter validation and lifetime/device
 loss review. Keep ordinary enumeration disabled; HWND Present reentrancy is
 still unresolved.
+
+Latest core-projection validation: a test-only, non-enumerated `ExposedAdapter`
+uses the selected RTX 3090 Ti's unmodified FL9_1 capability projection to
+request a core device and create every advertised RGBA8/BGRA8 usage subset,
+plus projected sampled R8/RG and D24S8 views. Strict core fixture passed
+81/81, DX12 passed 77/77 and zero-adapter isolation passed 1/1. This verifies
+core request/resource compatibility for the exact projection; it does not
+enable public adapter enumeration or surface exposure. Full commands and the
+hardware identity are in `FL9_1_PROGRESS.md`. Continue the exhaustive
+core/HAL operation audit, device lifetime/device-loss review, and truthful
+production adapter report. HWND `Present` reentrancy remains unresolved.

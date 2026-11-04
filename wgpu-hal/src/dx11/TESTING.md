@@ -256,6 +256,20 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### Exact FL9_1 capability projection through core
+
+The strict fixture includes a test-only adapter constructed from the selected
+physical D3D11 device and its unmodified FL9_1 capability projection. It
+requests a core device, creates all projected RGBA8/BGRA8 usage combinations
+and views, and checks the additional projected sampled and depth formats. The
+test does not add the fixture adapter to ordinary HAL enumeration or enable a
+public D3D11 adapter.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+```
+
 The fixture also performs its existing GPU rendering and readbacks; the
 unsupported-format case itself is CPU-side validation, not a GPU execution.
 

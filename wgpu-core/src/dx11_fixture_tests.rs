@@ -193,6 +193,223 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
 }
 
 #[test]
+fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!("Hardware: {identity:?}; requested and actual FL9_1; projection overrides: none");
+
+    let global = unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 unmodified projection fixture",
+            hal::dx11::Instance,
+        )
+    };
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    assert!(features.is_empty());
+    assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
+    assert_eq!(
+        capabilities
+            .downlevel
+            .limits
+            .unrestricted_npot_texture_sampling,
+        fixture.test_fixture_unrestricted_npot_sampling()
+    );
+
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let exposed = hal::ExposedAdapter::<hal::dx11::Api> {
+        adapter: fixture,
+        info,
+        features,
+        capabilities: capabilities.clone(),
+    };
+    let adapter_id = unsafe { global.create_adapter_from_hal(exposed.into(), None) };
+    assert_eq!(global.adapter_features(adapter_id), features);
+    assert_eq!(
+        global.adapter_limits(adapter_id).max_texture_dimension_2d,
+        capabilities.limits.max_texture_dimension_2d
+    );
+    assert_eq!(
+        global.adapter_downlevel_capabilities(adapter_id),
+        capabilities.downlevel
+    );
+
+    let descriptor = crate::device::DeviceDescriptor {
+        required_features: features,
+        required_limits: capabilities.limits.clone(),
+        ..Default::default()
+    };
+    let (device, queue) = global
+        .adapter_request_device(adapter_id, &descriptor, None, None)
+        .expect("request device with unmodified selected-device projection");
+
+    let texture_desc = |format, usage| wgt::TextureDescriptor {
+        label: None,
+        size: wgt::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgt::TextureDimension::D2,
+        format,
+        usage,
+        view_formats: Vec::new(),
+    };
+    for format in [
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureFormat::Bgra8Unorm,
+    ] {
+        let format_features = global.adapter_get_texture_format_features(adapter_id, format);
+        let supported_usages = [
+            wgt::TextureUsages::COPY_SRC,
+            wgt::TextureUsages::COPY_DST,
+            wgt::TextureUsages::TEXTURE_BINDING,
+            wgt::TextureUsages::RENDER_ATTACHMENT,
+        ];
+        for mask in 1..(1 << supported_usages.len()) {
+            let usage = supported_usages
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| mask & (1 << index) != 0)
+                .fold(wgt::TextureUsages::empty(), |usage, (_, bit)| usage | *bit);
+            assert!(
+                format_features.allowed_usages.contains(usage),
+                "projection must include tested usage {usage:?} for {format:?}"
+            );
+            let (texture, error) =
+                global.device_create_texture(device, &texture_desc(format, usage), None);
+            assert!(
+                error.is_none(),
+                "core-accepted projected usage {usage:?} for {format:?} must create through HAL: {error:?}"
+            );
+            let view_usage = usage
+                & (wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT);
+            if !view_usage.is_empty() {
+                let (view, error) = global.texture_create_view(
+                    texture,
+                    &crate::resource::TextureViewDescriptor {
+                        usage: Some(view_usage),
+                        ..Default::default()
+                    },
+                    None,
+                );
+                assert!(
+                    error.is_none(),
+                    "projected view usage {view_usage:?} for {format:?} must create through HAL: {error:?}"
+                );
+                global.texture_view_drop(view);
+            }
+            global.texture_drop(texture);
+        }
+    }
+
+    for (format, usage) in [
+        (
+            wgt::TextureFormat::R8Unorm,
+            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+        ),
+        (
+            wgt::TextureFormat::Rg8Snorm,
+            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+        ),
+        (
+            wgt::TextureFormat::Rgba8Snorm,
+            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+        ),
+    ] {
+        let format_features = global.adapter_get_texture_format_features(adapter_id, format);
+        if !format_features.allowed_usages.contains(usage) {
+            assert!(
+                !required,
+                "strict projection requires {format:?} usage {usage:?}"
+            );
+            std::println!("SKIP: selected device does not project {format:?}");
+            continue;
+        }
+        let (texture, error) =
+            global.device_create_texture(device, &texture_desc(format, usage), None);
+        assert!(
+            error.is_none(),
+            "selected-device projected {format:?} usage must create through core and HAL: {error:?}"
+        );
+        let (view, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor {
+                usage: Some(wgt::TextureUsages::TEXTURE_BINDING),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "selected-device projected {format:?} sampled view must create through core and HAL: {error:?}"
+        );
+        global.texture_view_drop(view);
+        global.texture_drop(texture);
+    }
+
+    let depth_features = global
+        .adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Depth24PlusStencil8);
+    let depth_usage = wgt::TextureUsages::RENDER_ATTACHMENT;
+    if depth_features.allowed_usages.contains(depth_usage) {
+        let (texture, error) = global.device_create_texture(
+            device,
+            &texture_desc(wgt::TextureFormat::Depth24PlusStencil8, depth_usage),
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "projected D24S8 attachment must create through core and HAL: {error:?}"
+        );
+        let (view, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor {
+                usage: Some(depth_usage),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "projected D24S8 view must create through core and HAL: {error:?}"
+        );
+        global.texture_view_drop(view);
+        global.texture_drop(texture);
+    } else {
+        assert!(!required, "strict projection requires a D24S8 attachment");
+        std::println!("SKIP: selected device does not project D24S8 attachments");
+    }
+
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!(
+        "PASS: unmodified selected-device limits, downlevel and format projection requested a core device and created all projected RGBA8/BGRA8 usage combinations; ordinary enumeration remained empty"
+    );
+}
+
+#[test]
 fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");

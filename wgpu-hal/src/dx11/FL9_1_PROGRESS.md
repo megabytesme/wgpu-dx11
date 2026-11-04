@@ -3974,3 +3974,47 @@ cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --featu
 Ordinary D3D11 enumeration remains disabled. The production adapter review,
 remaining core/HAL audit, lifetime/device-loss review, and HWND Present
 reentrancy blocker remain open.
+
+## Checkpoint — request a core device from the unmodified FL9_1 projection
+
+The controlled fixture now has a second route that uses the selected physical
+device's exact D3D11 capability projection without test overrides. It builds a
+test-only `ExposedAdapter` from the selected RTX 3090 Ti device, confirms the
+normal HAL enumeration remains empty, asks core for a device using the exact
+projected features and limits, and creates each of the 15 nonempty RGBA8 and
+BGRA8 usage subsets advertised by the projection. It creates sampled and
+render-target views where those usages apply, plus the projected R8_UNORM,
+R8G8_SNORM, R8G8B8A8_SNORM and D24S8 resource/view shapes. This is a
+test-injected, non-enumerated adapter: it exercises core request and resource
+validation against the unmodified projection, but does not enable production
+adapter exposure or HWND surfaces.
+
+On 2026-11-04, strict execution used NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, software=false), explicitly requested and confirmed FL9_1.
+The new exact-projection test passed, and the complete strict controlled core
+fixture passed 81/81 with no hardware skips. The existing full core fixture
+render/readback cases also ran in that suite. Targeted DX12 core regression
+passed 77/77, and the zero-D3D11-adapter isolation test passed 1/1. Core
+Clippy passed with three warnings in pre-existing fixture code (a nested `if`
+and two needless references); none point into the new test. Targeted rustfmt
+and `git diff --check` passed. The developer prompt continues to emit its
+existing `Error: Unknown error` banner.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+The production capability report still needs a full audit against every
+core-valid operation. Device-loss/lifetime review remains open, and HWND
+`Present` lock/reentrancy still blocks public presentation and normal D3D11
+adapter exposure.
