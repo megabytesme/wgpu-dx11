@@ -138,6 +138,7 @@ pub(super) enum NativeCommand {
         sample_mask: u32,
         depth_state: Option<ID3D11DepthStencilState>,
     },
+    SetBlendConstant([f32; 4]),
     SetVertexShader(ID3D11VertexShader),
     SetUniformGroup {
         uniform: Arc<UniformBinding>,
@@ -466,6 +467,9 @@ impl CommandBuffer {
     /// The caller must hold the owning device's immediate-context mutex.
     pub(super) fn replay(&self, context: &ID3D11DeviceContext) -> Result<()> {
         let mut active_depth_state = None;
+        let mut active_blend_state = None;
+        let mut active_sample_mask = u32::MAX;
+        let mut blend_constant = [1.0; 4];
         let mut stencil_reference = 0;
         for command in &self.commands {
             unsafe {
@@ -514,6 +518,9 @@ impl CommandBuffer {
                     } => {
                         let target = target.as_ref().map(RenderTarget::resolve).transpose()?;
                         active_depth_state = None;
+                        active_blend_state = None;
+                        active_sample_mask = u32::MAX;
+                        blend_constant = [1.0; 4];
                         stencil_reference = 0;
                         context.ClearState();
                         if let Some(target) = &target {
@@ -585,8 +592,14 @@ impl CommandBuffer {
                         depth_state,
                     } => {
                         active_depth_state = depth_state.clone();
+                        active_blend_state = blend.clone();
+                        active_sample_mask = *sample_mask;
                         context.RSSetState(Some(rasterizer));
-                        context.OMSetBlendState(blend.as_ref(), None, *sample_mask);
+                        context.OMSetBlendState(
+                            active_blend_state.as_ref(),
+                            Some(&blend_constant),
+                            active_sample_mask,
+                        );
                         context
                             .OMSetDepthStencilState(active_depth_state.as_ref(), stencil_reference);
                         context.IASetInputLayout(input.as_ref());
@@ -603,6 +616,14 @@ impl CommandBuffer {
                         });
                         context.VSSetShader(Some(vertex), None);
                         context.PSSetShader(Some(fragment), None);
+                    }
+                    NativeCommand::SetBlendConstant(value) => {
+                        blend_constant = *value;
+                        context.OMSetBlendState(
+                            active_blend_state.as_ref(),
+                            Some(&blend_constant),
+                            active_sample_mask,
+                        );
                     }
                     NativeCommand::SetVertexShader(vertex) => {
                         context.VSSetShader(Some(vertex), None)

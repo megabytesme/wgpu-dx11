@@ -10,10 +10,14 @@ use windows::{
     Win32::Graphics::{
         Direct3D11::{
             ID3D11BlendState, ID3D11ClassLinkage, ID3D11DepthStencilState, ID3D11InputLayout,
-            ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND_DESC,
-            D3D11_BLEND_INV_DEST_ALPHA, D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_INV_SRC_COLOR, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
-            D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
+            ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND,
+            D3D11_BLEND_BLEND_FACTOR, D3D11_BLEND_DESC, D3D11_BLEND_DEST_ALPHA,
+            D3D11_BLEND_DEST_COLOR, D3D11_BLEND_INV_BLEND_FACTOR, D3D11_BLEND_INV_DEST_ALPHA,
+            D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
+            D3D11_BLEND_ONE, D3D11_BLEND_OP, D3D11_BLEND_OP_ADD, D3D11_BLEND_OP_MAX,
+            D3D11_BLEND_OP_MIN, D3D11_BLEND_OP_REV_SUBTRACT, D3D11_BLEND_OP_SUBTRACT,
+            D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_SRC_COLOR, D3D11_BLEND_ZERO,
+            D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
             D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
             D3D11_COMPARISON_FUNC, D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT,
             D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
@@ -277,17 +281,6 @@ fn format_blendable(support: windows::core::Result<u32>) -> Result<bool, crate::
     }
 }
 
-fn source_alpha_blend_factor(
-    blend: Option<wgt::BlendState>,
-    mask: wgt::ColorWrites,
-) -> windows::Win32::Graphics::Direct3D11::D3D11_BLEND {
-    if blend == Some(wgt::BlendState::ALPHA_BLENDING) && !mask.contains(wgt::ColorWrites::ALPHA) {
-        D3D11_BLEND_SRC_ALPHA
-    } else {
-        D3D11_BLEND_ONE
-    }
-}
-
 fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::DeviceError> {
     if error.code() == windows::Win32::Foundation::E_INVALIDARG {
         None
@@ -304,6 +297,7 @@ fn depth_only_shader_error(error: super::shader::ShaderCompileError) -> crate::P
     }
 }
 
+#[cfg(test)]
 pub(super) const INVERT_BLEND: wgt::BlendState = wgt::BlendState {
     color: wgt::BlendComponent {
         src_factor: wgt::BlendFactor::OneMinusDst,
@@ -317,6 +311,7 @@ pub(super) const INVERT_BLEND: wgt::BlendState = wgt::BlendState {
     },
 };
 
+#[cfg(test)]
 pub(super) const ADDITIVE_BLEND: wgt::BlendState = wgt::BlendState {
     color: wgt::BlendComponent {
         src_factor: wgt::BlendFactor::One,
@@ -330,6 +325,7 @@ pub(super) const ADDITIVE_BLEND: wgt::BlendState = wgt::BlendState {
     },
 };
 
+#[cfg(test)]
 pub(super) const VIGNETTE_BLEND: wgt::BlendState = wgt::BlendState {
     color: wgt::BlendComponent {
         src_factor: wgt::BlendFactor::Zero,
@@ -353,92 +349,98 @@ fn blend_target_desc(
         mask.intersects(wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE);
     let alpha = mask.contains(wgt::ColorWrites::ALPHA);
     let enabled = mask_bits != 0 && blend.is_some_and(|value| value != wgt::BlendState::REPLACE);
-    if enabled
-        && !matches!(
-            blend,
-            Some(
-                wgt::BlendState::ALPHA_BLENDING
-                    | wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING
-                    | INVERT_BLEND
-                    | ADDITIVE_BLEND
-                    | VIGNETTE_BLEND
-            )
-        )
-    {
-        return None;
-    }
-    if enabled
-        && rgb
-        && alpha
-        && !separate_alpha
-        && blend != Some(ADDITIVE_BLEND)
-        && blend != Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING)
-    {
-        return None;
-    }
-    let (mut src, mut dst, mut src_alpha, mut dst_alpha) = match blend
-        .filter(|value| enabled || *value == wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING)
-    {
-        Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING) => (
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_INV_SRC_ALPHA,
-        ),
-        Some(wgt::BlendState::ALPHA_BLENDING) => (
-            D3D11_BLEND_SRC_ALPHA,
-            D3D11_BLEND_INV_SRC_ALPHA,
-            source_alpha_blend_factor(blend, mask),
-            D3D11_BLEND_INV_SRC_ALPHA,
-        ),
-        Some(INVERT_BLEND) => (
-            D3D11_BLEND_INV_DEST_COLOR,
-            D3D11_BLEND_INV_SRC_COLOR,
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_ZERO,
-        ),
-        Some(ADDITIVE_BLEND) => (
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_ONE,
-        ),
-        Some(VIGNETTE_BLEND) => (
-            D3D11_BLEND_ZERO,
-            D3D11_BLEND_INV_SRC_COLOR,
-            D3D11_BLEND_ZERO,
-            D3D11_BLEND_ONE,
-        ),
-        None => (
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_ZERO,
-            D3D11_BLEND_ONE,
-            D3D11_BLEND_ZERO,
-        ),
-        _ => return None,
+    let state = if enabled {
+        blend?
+    } else {
+        wgt::BlendState::REPLACE
     };
-    if enabled && !alpha {
-        (src_alpha, dst_alpha) = match blend {
-            Some(wgt::BlendState::ALPHA_BLENDING) => {
-                (D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA)
-            }
-            Some(INVERT_BLEND) => (D3D11_BLEND_INV_DEST_ALPHA, D3D11_BLEND_INV_SRC_ALPHA),
-            Some(VIGNETTE_BLEND) => (D3D11_BLEND_ZERO, D3D11_BLEND_INV_SRC_ALPHA),
-            _ => (src_alpha, dst_alpha),
-        };
-    } else if enabled && !rgb {
-        (src, dst) = (src_alpha, dst_alpha);
+    if enabled && rgb && alpha && !separate_alpha && state.color != state.alpha {
+        return None;
     }
+
+    let color_component = if rgb || !alpha {
+        state.color
+    } else {
+        state.alpha
+    };
+    let alpha_component = if alpha || !rgb {
+        state.alpha
+    } else {
+        state.color
+    };
+    let color = blend_component_desc(color_component, false)?;
+    let alpha = blend_component_desc(alpha_component, true)?;
     Some(D3D11_RENDER_TARGET_BLEND_DESC {
         BlendEnable: enabled.into(),
-        SrcBlend: src,
-        DestBlend: dst,
-        BlendOp: D3D11_BLEND_OP_ADD,
-        SrcBlendAlpha: src_alpha,
-        DestBlendAlpha: dst_alpha,
-        BlendOpAlpha: D3D11_BLEND_OP_ADD,
+        SrcBlend: color.0,
+        DestBlend: color.1,
+        BlendOp: color.2,
+        SrcBlendAlpha: alpha.0,
+        DestBlendAlpha: alpha.1,
+        BlendOpAlpha: alpha.2,
         RenderTargetWriteMask: mask_bits,
     })
+}
+
+fn blend_component_desc(
+    component: wgt::BlendComponent,
+    alpha: bool,
+) -> Option<(D3D11_BLEND, D3D11_BLEND, D3D11_BLEND_OP)> {
+    use wgt::BlendFactor as F;
+
+    let factor = |factor| match factor {
+        F::Zero => Some(D3D11_BLEND_ZERO),
+        F::One => Some(D3D11_BLEND_ONE),
+        F::Src => Some(if alpha {
+            D3D11_BLEND_SRC_ALPHA
+        } else {
+            D3D11_BLEND_SRC_COLOR
+        }),
+        F::OneMinusSrc => Some(if alpha {
+            D3D11_BLEND_INV_SRC_ALPHA
+        } else {
+            D3D11_BLEND_INV_SRC_COLOR
+        }),
+        F::SrcAlpha => Some(D3D11_BLEND_SRC_ALPHA),
+        F::OneMinusSrcAlpha => Some(D3D11_BLEND_INV_SRC_ALPHA),
+        F::Dst => Some(if alpha {
+            D3D11_BLEND_DEST_ALPHA
+        } else {
+            D3D11_BLEND_DEST_COLOR
+        }),
+        F::OneMinusDst => Some(if alpha {
+            D3D11_BLEND_INV_DEST_ALPHA
+        } else {
+            D3D11_BLEND_INV_DEST_COLOR
+        }),
+        F::DstAlpha => Some(D3D11_BLEND_DEST_ALPHA),
+        F::OneMinusDstAlpha => Some(D3D11_BLEND_INV_DEST_ALPHA),
+        F::Constant => Some(D3D11_BLEND_BLEND_FACTOR),
+        F::OneMinusConstant => Some(D3D11_BLEND_INV_BLEND_FACTOR),
+        F::SrcAlphaSaturated | F::Src1 | F::OneMinusSrc1 | F::Src1Alpha | F::OneMinusSrc1Alpha => {
+            None
+        }
+    };
+    let operation = match component.operation {
+        wgt::BlendOperation::Add => D3D11_BLEND_OP_ADD,
+        wgt::BlendOperation::Subtract => D3D11_BLEND_OP_SUBTRACT,
+        wgt::BlendOperation::ReverseSubtract => D3D11_BLEND_OP_REV_SUBTRACT,
+        wgt::BlendOperation::Min => D3D11_BLEND_OP_MIN,
+        wgt::BlendOperation::Max => D3D11_BLEND_OP_MAX,
+    };
+    Some((
+        factor(component.src_factor)?,
+        factor(component.dst_factor)?,
+        operation,
+    ))
+}
+
+fn native_blend_desc(target: D3D11_RENDER_TARGET_BLEND_DESC) -> D3D11_BLEND_DESC {
+    let mut desc = D3D11_BLEND_DESC::default();
+    for target_desc in desc.RenderTarget.iter_mut().take(4) {
+        *target_desc = target;
+    }
+    desc
 }
 
 #[doc(hidden)]
@@ -480,6 +482,142 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fl91_blend_factors_and_operations_translate_without_promotion() {
+        use super::*;
+        use wgt::BlendFactor as F;
+
+        let component = |factor, operation| wgt::BlendComponent {
+            src_factor: factor,
+            dst_factor: factor,
+            operation,
+        };
+        for (factor, color, alpha) in [
+            (F::Zero, D3D11_BLEND_ZERO, D3D11_BLEND_ZERO),
+            (F::One, D3D11_BLEND_ONE, D3D11_BLEND_ONE),
+            (F::Src, D3D11_BLEND_SRC_COLOR, D3D11_BLEND_SRC_ALPHA),
+            (
+                F::OneMinusSrc,
+                D3D11_BLEND_INV_SRC_COLOR,
+                D3D11_BLEND_INV_SRC_ALPHA,
+            ),
+            (F::SrcAlpha, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_SRC_ALPHA),
+            (
+                F::OneMinusSrcAlpha,
+                D3D11_BLEND_INV_SRC_ALPHA,
+                D3D11_BLEND_INV_SRC_ALPHA,
+            ),
+            (F::Dst, D3D11_BLEND_DEST_COLOR, D3D11_BLEND_DEST_ALPHA),
+            (
+                F::OneMinusDst,
+                D3D11_BLEND_INV_DEST_COLOR,
+                D3D11_BLEND_INV_DEST_ALPHA,
+            ),
+            (F::DstAlpha, D3D11_BLEND_DEST_ALPHA, D3D11_BLEND_DEST_ALPHA),
+            (
+                F::OneMinusDstAlpha,
+                D3D11_BLEND_INV_DEST_ALPHA,
+                D3D11_BLEND_INV_DEST_ALPHA,
+            ),
+            (
+                F::Constant,
+                D3D11_BLEND_BLEND_FACTOR,
+                D3D11_BLEND_BLEND_FACTOR,
+            ),
+            (
+                F::OneMinusConstant,
+                D3D11_BLEND_INV_BLEND_FACTOR,
+                D3D11_BLEND_INV_BLEND_FACTOR,
+            ),
+        ] {
+            assert_eq!(
+                blend_component_desc(component(factor, wgt::BlendOperation::Add), false)
+                    .unwrap()
+                    .0,
+                color
+            );
+            assert_eq!(
+                blend_component_desc(component(factor, wgt::BlendOperation::Add), true)
+                    .unwrap()
+                    .0,
+                alpha
+            );
+        }
+        for factor in [
+            F::SrcAlphaSaturated,
+            F::Src1,
+            F::OneMinusSrc1,
+            F::Src1Alpha,
+            F::OneMinusSrc1Alpha,
+        ] {
+            assert!(
+                blend_component_desc(component(factor, wgt::BlendOperation::Add), false).is_none()
+            );
+            assert!(
+                blend_component_desc(component(factor, wgt::BlendOperation::Add), true).is_none()
+            );
+        }
+
+        for (operation, native) in [
+            (wgt::BlendOperation::Add, D3D11_BLEND_OP_ADD),
+            (wgt::BlendOperation::Subtract, D3D11_BLEND_OP_SUBTRACT),
+            (
+                wgt::BlendOperation::ReverseSubtract,
+                D3D11_BLEND_OP_REV_SUBTRACT,
+            ),
+            (wgt::BlendOperation::Min, D3D11_BLEND_OP_MIN),
+            (wgt::BlendOperation::Max, D3D11_BLEND_OP_MAX),
+        ] {
+            assert_eq!(
+                blend_component_desc(component(F::One, operation), false)
+                    .unwrap()
+                    .2,
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn fl91_custom_blending_respects_separate_alpha_contract_and_native_slots() {
+        use super::*;
+        let custom = wgt::BlendState {
+            color: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::Constant,
+                dst_factor: wgt::BlendFactor::OneMinusConstant,
+                operation: wgt::BlendOperation::Add,
+            },
+            alpha: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::Constant,
+                dst_factor: wgt::BlendFactor::OneMinusConstant,
+                operation: wgt::BlendOperation::Add,
+            },
+        };
+        let target = blend_target_desc(Some(custom), wgt::ColorWrites::ALL, false).unwrap();
+        assert_eq!(target.SrcBlend, D3D11_BLEND_BLEND_FACTOR);
+        assert_eq!(target.DestBlend, D3D11_BLEND_INV_BLEND_FACTOR);
+        assert_eq!(target.SrcBlendAlpha, D3D11_BLEND_BLEND_FACTOR);
+        assert_eq!(target.DestBlendAlpha, D3D11_BLEND_INV_BLEND_FACTOR);
+
+        let mut distinct_alpha = custom;
+        distinct_alpha.alpha.operation = wgt::BlendOperation::Max;
+        assert!(blend_target_desc(Some(distinct_alpha), wgt::ColorWrites::ALL, false).is_none());
+        assert!(blend_target_desc(Some(distinct_alpha), wgt::ColorWrites::ALL, true).is_some());
+        assert!(blend_target_desc(
+            Some(wgt::BlendState::ALPHA_BLENDING),
+            wgt::ColorWrites::ALL,
+            false
+        )
+        .is_none());
+
+        let native = native_blend_desc(target);
+        assert!(native.RenderTarget[..4]
+            .iter()
+            .all(|target| target.BlendEnable.as_bool()));
+        assert!(native.RenderTarget[4..]
+            .iter()
+            .all(|target| !target.BlendEnable.as_bool()));
+    }
+
     #[test]
     fn fl91_zero_sample_mask_uses_equivalent_nonzero_native_mask() {
         use super::native_sample_mask;
@@ -781,12 +919,14 @@ mod tests {
                 .unwrap();
                 assert_eq!(desc.BlendEnable.as_bool(), bits != 0);
                 assert_eq!(desc.RenderTargetWriteMask, color_write_mask(mask).unwrap());
-                assert_eq!(desc.SrcBlend, D3D11_BLEND_ONE);
-                assert_eq!(desc.DestBlend, D3D11_BLEND_INV_SRC_ALPHA);
-                assert_eq!(desc.SrcBlendAlpha, D3D11_BLEND_ONE);
-                assert_eq!(desc.DestBlendAlpha, D3D11_BLEND_INV_SRC_ALPHA);
-                assert_eq!(desc.BlendOp, D3D11_BLEND_OP_ADD);
-                assert_eq!(desc.BlendOpAlpha, D3D11_BLEND_OP_ADD);
+                if bits != 0 {
+                    assert_eq!(desc.SrcBlend, D3D11_BLEND_ONE);
+                    assert_eq!(desc.DestBlend, D3D11_BLEND_INV_SRC_ALPHA);
+                    assert_eq!(desc.SrcBlendAlpha, D3D11_BLEND_ONE);
+                    assert_eq!(desc.DestBlendAlpha, D3D11_BLEND_INV_SRC_ALPHA);
+                    assert_eq!(desc.BlendOp, D3D11_BLEND_OP_ADD);
+                    assert_eq!(desc.BlendOpAlpha, D3D11_BLEND_OP_ADD);
+                }
             }
         }
         let mut other = wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING;
@@ -848,25 +988,28 @@ mod tests {
     }
 
     #[test]
-    fn alpha_mask_uses_coupled_blend_only_when_alpha_is_not_written() {
+    fn blend_masks_use_the_written_component_equation() {
         use super::*;
-        let blend = Some(wgt::BlendState::ALPHA_BLENDING);
-        assert_eq!(
-            source_alpha_blend_factor(blend, wgt::ColorWrites::RED),
-            D3D11_BLEND_SRC_ALPHA
-        );
-        assert_eq!(
-            source_alpha_blend_factor(blend, wgt::ColorWrites::ALL),
-            D3D11_BLEND_ONE
-        );
-        assert_eq!(
-            source_alpha_blend_factor(Some(ADDITIVE_BLEND), wgt::ColorWrites::RED),
-            D3D11_BLEND_ONE
-        );
-        assert_eq!(
-            source_alpha_blend_factor(None, wgt::ColorWrites::RED),
-            D3D11_BLEND_ONE
-        );
+        let rgb_only = blend_target_desc(
+            Some(wgt::BlendState::ALPHA_BLENDING),
+            wgt::ColorWrites::RED,
+            false,
+        )
+        .unwrap();
+        assert_eq!(rgb_only.SrcBlend, D3D11_BLEND_SRC_ALPHA);
+        assert_eq!(rgb_only.SrcBlendAlpha, D3D11_BLEND_SRC_ALPHA);
+        assert_eq!(rgb_only.DestBlendAlpha, D3D11_BLEND_INV_SRC_ALPHA);
+
+        let alpha_only = blend_target_desc(
+            Some(wgt::BlendState::ALPHA_BLENDING),
+            wgt::ColorWrites::ALPHA,
+            false,
+        )
+        .unwrap();
+        assert_eq!(alpha_only.SrcBlend, D3D11_BLEND_ONE);
+        assert_eq!(alpha_only.DestBlend, D3D11_BLEND_INV_SRC_ALPHA);
+        assert_eq!(alpha_only.SrcBlendAlpha, D3D11_BLEND_ONE);
+        assert_eq!(alpha_only.DestBlendAlpha, D3D11_BLEND_INV_SRC_ALPHA);
     }
     use super::*;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
@@ -2312,16 +2455,6 @@ impl RenderPipeline {
                     wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
                 )
             })
-            || target.is_some_and(|target| {
-                target.blend.is_some_and(|blend| {
-                    blend != wgt::BlendState::ALPHA_BLENDING
-                        && blend != wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING
-                        && blend != wgt::BlendState::REPLACE
-                        && blend != INVERT_BLEND
-                        && blend != ADDITIVE_BLEND
-                        && blend != VIGNETTE_BLEND
-                })
-            })
             || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
         {
             return Err(invalid());
@@ -2655,8 +2788,7 @@ impl RenderPipeline {
             }
             if let Some(target_desc) = blend_desc {
                 if target_desc.BlendEnable.as_bool() || target_desc.RenderTargetWriteMask != 0x0f {
-                    let mut desc = D3D11_BLEND_DESC::default();
-                    desc.RenderTarget[0] = target_desc;
+                    let desc = native_blend_desc(target_desc);
                     owner
                         .raw_device()
                         .CreateBlendState(&desc, Some(&mut blend))

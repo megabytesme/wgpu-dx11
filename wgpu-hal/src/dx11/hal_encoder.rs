@@ -1055,10 +1055,11 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn set_blend_constants(&mut self, color: &[f32; 4]) {
-        // Accepted blend states do not use constant factors; revisit if they do.
         if self.render.is_none() {
             self.reject();
+            return;
         }
+        self.record(NativeCommand::SetBlendConstant(*color));
     }
 
     unsafe fn draw(
@@ -4383,6 +4384,10 @@ mod depth_bias_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/premultiplied_blend.rs"]
 mod premultiplied_blend_tests;
+
+#[cfg(test)]
+#[path = "../../tests/dx11/blend_state.rs"]
+mod blend_state_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/point_vertex.rs"]

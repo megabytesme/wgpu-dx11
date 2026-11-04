@@ -929,7 +929,12 @@ fn sampled_triangle_variant(
             color_targets: &targets,
             ..desc
         };
-        assert!(unsafe { device.create_render_pipeline(&unsupported_desc) }.is_err());
+        let diagnostic_pipeline = unsafe {
+            device
+                .create_render_pipeline(&unsupported_desc)
+                .expect("diagnostic RTX path accepts the custom separate-alpha equation")
+        };
+        unsafe { device.destroy_render_pipeline(diagnostic_pipeline) };
     }
     assert_eq!(
         pipeline.bindings.groups().first().copied().flatten(),

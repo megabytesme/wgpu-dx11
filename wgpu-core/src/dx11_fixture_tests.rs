@@ -893,6 +893,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     for case in [
         VertexCase::Baseline,
         VertexCase::ZeroSampleMask,
+        VertexCase::ConstantBlend,
         VertexCase::NonFiltering,
         VertexCase::UnfilterableFloat,
         VertexCase::VertexVisibleBindings,
@@ -2014,6 +2015,7 @@ enum VertexCase {
     Baseline,
     ZeroSampleMask,
     PremultipliedBlend,
+    ConstantBlend,
     NonFiltering,
     UnfilterableFloat,
     VertexVisibleBindings,
@@ -2059,6 +2061,7 @@ fn render_triangle(
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let premultiplied_blend = case == VertexCase::PremultipliedBlend;
+    let constant_blend = case == VertexCase::ConstantBlend;
     let zero_sample_mask = case == VertexCase::ZeroSampleMask;
     let non_filtering = matches!(
         case,
@@ -2775,6 +2778,17 @@ fn render_triangle(
     if premultiplied_blend {
         targets[0].as_mut().unwrap().blend = Some(wgt::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
     }
+    if constant_blend {
+        let component = wgt::BlendComponent {
+            src_factor: wgt::BlendFactor::Constant,
+            dst_factor: wgt::BlendFactor::OneMinusConstant,
+            operation: wgt::BlendOperation::Add,
+        };
+        targets[0].as_mut().unwrap().blend = Some(wgt::BlendState {
+            color: component,
+            alpha: component,
+        });
+    }
     if active_stencil {
         targets[0].as_mut().unwrap().write_mask = wgt::ColorWrites::empty();
     }
@@ -3338,6 +3352,19 @@ fn render_triangle(
             if dynamic_uniform { &[256] } else { &[] },
         )
         .unwrap();
+    if constant_blend {
+        global
+            .render_pass_set_blend_constant(
+                &mut pass,
+                wgt::Color {
+                    r: 0.25,
+                    g: 0.5,
+                    b: 0.75,
+                    a: 0.25,
+                },
+            )
+            .unwrap();
+    }
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
     if let (Some(format), Some(indices)) = (index_format, index_buffer) {
         global
@@ -3524,6 +3551,21 @@ fn render_triangle(
                     assert!(
                         actual.abs_diff(expected) <= 1,
                         "pixel ({x}, {y}): {:?}",
+                        &pixels[offset..offset + 4]
+                    );
+                }
+                continue;
+            }
+            if constant_blend {
+                let expected = if x < 4 {
+                    [64u8, 0, 64, 255]
+                } else {
+                    [0u8, 128, 64, 255]
+                };
+                for (actual, expected) in pixels[offset..offset + 4].iter().zip(expected) {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "constant-blend pixel ({x}, {y}): {:?}",
                         &pixels[offset..offset + 4]
                     );
                 }
