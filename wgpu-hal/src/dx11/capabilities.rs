@@ -202,6 +202,8 @@ pub(super) struct BackendCapabilities {
     pub uniform_binding_sizes_unaligned_16: bool,
     pub compute: bool,
     pub storage: bool,
+    pub vertex_index_input: bool,
+    pub instance_index_input: bool,
     pub vertex_texture_sampling: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
@@ -264,6 +266,8 @@ impl BackendCapabilities {
         uniform_binding_sizes_unaligned_16: true,
         compute: false,
         storage: false,
+        vertex_index_input: false,
+        instance_index_input: false,
         vertex_texture_sampling: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
@@ -729,6 +733,8 @@ mod tests {
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(!caps.backend.vertex_index_input);
+            assert!(!caps.backend.instance_index_input);
             assert!(!caps.backend.src_alpha_saturated_blend);
             assert!(!caps.backend.vertex_texture_sampling);
             assert!(!caps.backend.depth_stencil_mip_levels);

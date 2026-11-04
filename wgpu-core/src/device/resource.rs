@@ -5074,7 +5074,33 @@ impl Device {
                         )
                         .map_err(stage_err)?;
 
-                    if let Some(interface) = vertex_shader_module.interface.interface() {
+                    let interface = vertex_shader_module.interface.interface();
+                    if !self.downlevel.limits.vertex_index_input
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_vertex_index(&_vertex_entry_point_name)
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedVertexIndexInput,
+                        );
+                    }
+                    if !self.downlevel.limits.instance_index_input
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_instance_index(&_vertex_entry_point_name)
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedInstanceIndexInput,
+                        );
+                    }
+
+                    if let Some(interface) = interface {
                         sampling_pairs.extend(
                             interface
                                 .sampling_pairs_used(stage.to_naga(), &_vertex_entry_point_name)

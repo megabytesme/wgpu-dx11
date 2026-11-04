@@ -9,6 +9,8 @@ use crate::{
 const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabilities {
     flags: wgpu::DownlevelFlags::empty(),
     limits: wgpu::DownlevelLimits {
+        vertex_index_input: false,
+        instance_index_input: false,
         max_sampled_textures_per_vertex_stage: 0,
         unrestricted_npot_texture_sampling: false,
         max_texture_repeat_per_primitive: 0,

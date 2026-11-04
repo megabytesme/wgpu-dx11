@@ -1620,13 +1620,42 @@ impl Interface {
         stage: naga::ShaderStage,
         entry_point_name: &str,
     ) -> Result<bool, StageError> {
+        self.entry_point_uses_input_builtin(stage, entry_point_name, BuiltIn::FrontFacing)
+    }
+
+    pub(crate) fn entry_point_uses_vertex_index(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        self.entry_point_uses_input_builtin(
+            naga::ShaderStage::Vertex,
+            entry_point_name,
+            BuiltIn::VertexIndex,
+        )
+    }
+
+    pub(crate) fn entry_point_uses_instance_index(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        self.entry_point_uses_input_builtin(
+            naga::ShaderStage::Vertex,
+            entry_point_name,
+            BuiltIn::InstanceIndex,
+        )
+    }
+
+    fn entry_point_uses_input_builtin(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        builtin: BuiltIn,
+    ) -> Result<bool, StageError> {
         let key = (stage, entry_point_name.to_string());
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(entry_point
-            .inputs
-            .contains(&Varying::BuiltIn(BuiltIn::FrontFacing)))
+        Ok(entry_point.inputs.contains(&Varying::BuiltIn(builtin)))
     }
 
     pub(crate) fn entry_point_uses_fragment_position(
@@ -2470,6 +2499,70 @@ mod tests {
             .unwrap());
         assert!(interface
             .entry_point_uses_front_facing(naga::ShaderStage::Fragment, "missing")
+            .is_err());
+    }
+
+    #[test]
+    fn vertex_builtin_detection_uses_selected_entry_point_declarations() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Input {
+                @location(0) position: vec2f,
+                @builtin(vertex_index) vertex_id: u32,
+                @builtin(instance_index) instance_id: u32,
+            }
+            @vertex fn vertex_direct(
+                @location(0) position: vec2f,
+                @builtin(vertex_index) vertex_id: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(position, f32(vertex_id), 1.0);
+            }
+            @vertex fn instance_direct(
+                @location(0) position: vec2f,
+                @builtin(instance_index) instance_id: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(position, f32(instance_id), 1.0);
+            }
+            @vertex fn structured(input: Input) -> @builtin(position) vec4f {
+                return vec4f(input.position, f32(input.vertex_id + input.instance_id), 1.0);
+            }
+            @vertex fn unused_vertex_index(
+                @location(0) position: vec2f,
+                @builtin(vertex_index) vertex_id: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(position, 0.0, 1.0);
+            }
+            @vertex fn unused_instance_index(
+                @location(0) position: vec2f,
+                @builtin(instance_index) instance_id: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(position, 0.0, 1.0);
+            }
+            @vertex fn safe(@location(0) position: vec2f) -> @builtin(position) vec4f {
+                return vec4f(position, 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+
+        for entry in ["vertex_direct", "structured", "unused_vertex_index"] {
+            assert!(interface.entry_point_uses_vertex_index(entry).unwrap());
+        }
+        for entry in ["instance_direct", "structured", "unused_instance_index"] {
+            assert!(interface.entry_point_uses_instance_index(entry).unwrap());
+        }
+        assert!(!interface.entry_point_uses_vertex_index("safe").unwrap());
+        assert!(!interface.entry_point_uses_instance_index("safe").unwrap());
+        assert!(interface.entry_point_uses_vertex_index("missing").is_err());
+        assert!(interface
+            .entry_point_uses_instance_index("missing")
             .is_err());
     }
 

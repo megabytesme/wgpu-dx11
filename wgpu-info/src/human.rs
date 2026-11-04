@@ -281,6 +281,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         shader_model: _,
         limits: wgpu::DownlevelLimits {
             max_sampled_textures_per_vertex_stage,
+            vertex_index_input,
+            instance_index_input,
             unrestricted_npot_texture_sampling,
             max_texture_repeat_per_primitive,
             src_alpha_saturated_blend,
@@ -296,6 +298,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         output,
         "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"
     )?;
+    writeln!(output, "\t\tVertex index input: {vertex_index_input}")?;
+    writeln!(output, "\t\tInstance index input: {instance_index_input}")?;
     writeln!(
         output,
         "\t\tUnrestricted NPOT texture sampling: {unrestricted_npot_texture_sampling}"

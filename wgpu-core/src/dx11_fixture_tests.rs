@@ -79,6 +79,8 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                 flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
                 limits: wgt::DownlevelLimits {
+                    vertex_index_input: false,
+                    instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: max_texture_repeat,
@@ -397,6 +399,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
                 limits: wgt::DownlevelLimits {
+                    vertex_index_input: false,
+                    instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: max_texture_repeat,
@@ -3279,6 +3283,59 @@ fn render_triangle(
         }
         global.shader_module_drop(fragment_position_shader);
         std::println!("PASS: unsupported fragment position is selected-use gated");
+
+        let (vertex_builtin_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                "@vertex fn vertex_index(@location(0) p: vec2f, @builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @vertex fn instance_index(@location(0) p: vec2f, @builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); } @vertex fn safe(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); }",
+            )),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "vertex-builtin shader: {shader_error:?}"
+        );
+        let mut vertex_builtin_descriptor = pipeline_descriptor.clone();
+        vertex_builtin_descriptor.vertex.stage.module = vertex_builtin_shader;
+        vertex_builtin_descriptor.fragment = None;
+        vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("vertex_index"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedVertexIndexInput)
+            ),
+            "FL9_1 core validation must reject vertex_index before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+
+        vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("instance_index"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedInstanceIndexInput)
+            ),
+            "FL9_1 core validation must reject instance_index before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+
+        vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("safe"));
+        let (safe_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            error.is_none(),
+            "safe entry point should remain usable: {error:?}"
+        );
+        global.render_pipeline_drop(safe_pipeline);
+        global.shader_module_drop(vertex_builtin_shader);
+        std::println!("PASS: unsupported vertex builtins are selected-entry gated");
 
         let (vertex_texture_shader, shader_error) = global.device_create_shader_module(
             device,

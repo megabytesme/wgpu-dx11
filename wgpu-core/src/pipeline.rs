@@ -781,6 +781,10 @@ pub enum CreateRenderPipelineError {
     TooManyBuffersAndAccelerationStructuresInVertexStage { given: u32, limit: u32 },
     #[error("The number of sampled textures used by the vertex stage {given} exceeds the downlevel limit {limit}")]
     TooManySampledTexturesInVertexStage { given: u32, limit: u32 },
+    #[error("Vertex `@builtin(vertex_index)` is not supported by this downlevel adapter")]
+    UnsupportedVertexIndexInput,
+    #[error("Vertex `@builtin(instance_index)` is not supported by this downlevel adapter")]
+    UnsupportedInstanceIndexInput,
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
     UnsupportedDepthBiasWithFragmentDepth,
     #[error("Fragment `@builtin(front_facing)` is not supported by this downlevel adapter")]
@@ -872,6 +876,8 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManyBindGroupsPlusVertexBuffers { .. }
             | Self::TooManyBuffersAndAccelerationStructuresInVertexStage { .. }
             | Self::TooManySampledTexturesInVertexStage { .. }
+            | Self::UnsupportedVertexIndexInput
+            | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentFrontFacing
             | Self::UnsupportedFragmentPosition

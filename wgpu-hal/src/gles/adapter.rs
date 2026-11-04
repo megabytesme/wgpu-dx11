@@ -964,6 +964,8 @@ impl super::Adapter {
         }
 
         let downlevel_defaults = wgt::DownlevelLimits {
+            vertex_index_input: true,
+            instance_index_input: true,
             max_sampled_textures_per_vertex_stage: unsafe {
                 gl.get_parameter_i32(glow::MAX_VERTEX_TEXTURE_IMAGE_UNITS)
             }
