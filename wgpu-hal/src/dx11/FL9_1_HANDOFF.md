@@ -635,3 +635,19 @@ Resume the core/HAL contract audit at render passes, texture/view usages and
 resource lifetime/error paths. Keep both public D3D11 enumeration and public
 surface exposure closed; this test fixture still injects limits and is not a
 production adapter capability report.
+
+## Latest checkpoint — texture-view dimension validation — `c844eab6e`
+
+Core now gates `D2Array`, `Cube` and `CubeArray` sampled layouts and texture
+views with explicit downlevel flags. This prevents the private D3D11 HAL's
+unsupported view shapes from reaching HAL, including a one-layer `D2Array`
+view that `max_texture_array_layers = 1` alone cannot reject. The RTX 3090 Ti
+strict FL9_1 fixture observed the expected core errors; the full fixture core
+suite passed 70/70, the strict private HAL suite passed 315/315, wgpu-types
+passed 55/55, combined backend HAL checks, core/HAL Clippy, zero-adapter
+isolation and a DX12 regression passed. Exact commands and existing warning
+details are in `FL9_1_PROGRESS.md`.
+
+Resume at texture descriptor and render-pass validation. Public adapter
+enumeration and public surface exposure remain disabled; the controlled core
+fixture still injects capabilities and is not production adapter reporting.

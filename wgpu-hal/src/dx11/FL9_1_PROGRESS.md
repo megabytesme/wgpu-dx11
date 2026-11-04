@@ -2314,3 +2314,32 @@ unrelated file was not changed. The VS developer-shell banner still prints
 Next continue auditing core-legal operations that the private HAL rejects,
 especially render-pass, texture/view and resource-lifetime boundaries. Public
 D3D11 adapter enumeration and public surface exposure remain disabled.
+
+## Checkpoint — texture-view dimensions rejected before HAL — `c844eab6e` — 2026-11-04
+
+The audit found that the D3D11 HAL only creates `D2` views, while core could
+forward `D2Array`, `Cube` and `CubeArray` layouts/views to it. A one-layer
+`D2Array` view is legal as a descriptor shape even when the texture-array
+limit is one, so the limit did not close this path. Added explicit
+`TEXTURE_2D_ARRAYS` and `CUBE_TEXTURES` downlevel flags and require the
+appropriate flag for sampled layout dimensions and resolved texture-view
+dimensions. D3D11 leaves both flags absent. GLES, Vulkan and Metal now report
+their existing array/cube support; public D3D11 enumeration remains closed.
+
+The strict core fixture on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, requested and actual FL9_1) verified that 2D-array, cube and
+cube-array layouts fail at core validation, and that a one-layer `D2Array`
+view fails before HAL. The fixture-enabled core library suite passed 70/70,
+including the GPU render fixture and zero-adapter isolation; the strict private
+D3D11 suite passed 315/315 (two filtered). `wgpu-types` passed 55/55, the
+combined DX11/DX12/Vulkan/GLES HAL check passed, core and HAL Clippy passed,
+the standalone zero-adapter test passed 1/1 and the DX12 pipeline descriptor
+regression passed 2/2. HAL Clippy retained ten existing warnings; workspace
+format checking still reports the existing unrelated line-wrap in
+`wgpu-core/src/instance.rs:1511`. Targeted rustfmt and `git diff --check`
+passed. The VS developer-shell banner still prints `vError: Unknown error`
+while builds succeed.
+
+Next audit texture creation and render-pass attachment shapes, particularly
+dimensions, format usages and core-valid resolve/load/store combinations.
+Keep public adapter enumeration and surface exposure disabled.
