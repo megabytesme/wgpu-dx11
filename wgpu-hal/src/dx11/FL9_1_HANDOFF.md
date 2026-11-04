@@ -1074,3 +1074,15 @@ render/readback behavior, not texel-load execution. See the latest checkpoint
 in `FL9_1_PROGRESS.md`. Continue the remaining core/HAL audit and truthful
 non-enumerated adapter projection; ordinary enumeration and surface exposure
 remain disabled.
+
+Latest capability-audit fix: HAL mip creation now matches the format projection
+for every nonempty subset of `RESOURCE`, `COLOR_TARGET`, `COPY_SRC` and
+`COPY_DST`. The RTX 3090 Ti forced-FL9_1 sampled-mip test passed 74 cases with
+no skips, including actual sample/readback of resource-only and
+resource-plus-copy-source chains and staged readback of copy-source-only chains.
+The controlled core fixture created all three previously mismatched usage
+shapes. CPU tests cover all fifteen combinations and backend/query gates. See
+the latest `FL9_1_PROGRESS.md` checkpoint. Continue with the remaining core/HAL
+audit, production-shaped non-enumerated adapter validation and lifetime/device
+loss review. Keep ordinary enumeration disabled; HWND Present reentrancy is
+still unresolved.

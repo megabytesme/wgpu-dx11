@@ -397,16 +397,11 @@ pub(super) enum TextureRejection {
 }
 
 pub(super) fn supported_mip_texture_usage(usage: wgt::TextureUses) -> bool {
-    let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
-    let upload_sample = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
-    let sampled_target = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
-    usage == wgt::TextureUses::COPY_DST
-        || usage == copy
-        || usage == upload_sample
-        || usage == (copy | wgt::TextureUses::RESOURCE)
-        || (usage.contains(wgt::TextureUses::COLOR_TARGET)
-            && (copy | wgt::TextureUses::COLOR_TARGET).contains(usage))
-        || (usage.contains(sampled_target) && (copy | sampled_target).contains(usage))
+    let supported = wgt::TextureUses::COPY_SRC
+        | wgt::TextureUses::COPY_DST
+        | wgt::TextureUses::RESOURCE
+        | wgt::TextureUses::COLOR_TARGET;
+    !usage.is_empty() && supported.contains(usage)
 }
 
 pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
@@ -557,35 +552,22 @@ impl Capabilities {
             {
                 return Err(UnsupportedShape);
             }
-            let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
-            if usage == copy || usage == wgt::TextureUses::COPY_DST {
-                if !self.backend.pot_copy_only_mip_chains {
-                    return Err(UnsupportedShape);
-                }
-            } else if usage == (wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE)
-                || usage == (copy | wgt::TextureUses::RESOURCE)
-            {
-                if !self.backend.pot_full_chain_sampled_mips {
-                    return Err(UnsupportedShape);
-                }
-            } else if usage.contains(wgt::TextureUses::COLOR_TARGET)
-                && (copy | wgt::TextureUses::COLOR_TARGET).contains(usage)
-            {
+            if usage.contains(wgt::TextureUses::COLOR_TARGET) {
                 if !self.backend.pot_color_attachment_mips {
                     return Err(UnsupportedShape);
                 }
-            } else if usage.contains(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE)
-                && (copy | wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE)
-                    .contains(usage)
-            {
-                if !self.backend.pot_sampled_attachment_mips
-                    || !self.backend.pot_full_chain_sampled_mips
-                    || !self.backend.pot_color_attachment_mips
+                if usage.contains(wgt::TextureUses::RESOURCE)
+                    && (!self.backend.pot_sampled_attachment_mips
+                        || !self.backend.pot_full_chain_sampled_mips)
                 {
                     return Err(UnsupportedShape);
                 }
-            } else {
-                return Err(UnsupportedUsage);
+            } else if usage.contains(wgt::TextureUses::RESOURCE) {
+                if !self.backend.pot_full_chain_sampled_mips {
+                    return Err(UnsupportedShape);
+                }
+            } else if !self.backend.pot_copy_only_mip_chains {
+                return Err(UnsupportedShape);
             }
         }
         let Query::Value(bits) = query else {
@@ -1284,7 +1266,11 @@ mod tests {
         let caps = model(FeatureLevel::L9_1);
         let usage = wgt::TextureUses::COPY_DST;
         assert!(supported_mip_texture_usage(usage));
-        assert!(!supported_mip_texture_usage(wgt::TextureUses::COPY_SRC));
+        assert!(supported_mip_texture_usage(wgt::TextureUses::COPY_SRC));
+        assert!(supported_mip_texture_usage(wgt::TextureUses::RESOURCE));
+        assert!(supported_mip_texture_usage(
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_SRC
+        ));
         assert!(!supported_mip_texture_usage(
             usage | wgt::TextureUses::STORAGE_READ_ONLY
         ));
@@ -1347,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_only_pot_mips_require_matching_backend_shape_and_driver() {
+    fn pot_mips_require_matching_backend_shape_and_driver() {
         use TextureRejection::*;
         let caps = model(FeatureLevel::L9_1);
         let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
@@ -1362,6 +1348,26 @@ mod tests {
         assert!(caps.backend.pot_color_attachment_mips);
         assert!(caps.backend.pot_sampled_attachment_mips);
         for format in [rgba, bgra] {
+            let usage_bits = [
+                wgt::TextureUses::COPY_SRC,
+                wgt::TextureUses::COPY_DST,
+                wgt::TextureUses::RESOURCE,
+                wgt::TextureUses::COLOR_TARGET,
+            ];
+            for bits in 1..(1 << usage_bits.len()) {
+                let usage = usage_bits.iter().enumerate().fold(
+                    wgt::TextureUses::empty(),
+                    |usage, (index, flag)| {
+                        if bits & (1 << index) != 0 {
+                            usage | *flag
+                        } else {
+                            usage
+                        }
+                    },
+                );
+                assert!(supported_mip_texture_usage(usage), "{usage:?}");
+                assert_eq!(check(&caps, format, usage, [8, 4], 1, 4, 1), Ok(()));
+            }
             for usage in [
                 wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
                 wgt::TextureUses::RESOURCE
@@ -1454,8 +1460,8 @@ mod tests {
                 Err(UnsupportedShape)
             );
             for usage in [
-                wgt::TextureUses::COPY_SRC,
-                wgt::TextureUses::RESOURCE,
+                wgt::TextureUses::COPY_SRC | wgt::TextureUses::STORAGE_READ_ONLY,
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::STORAGE_READ_ONLY,
                 copy | wgt::TextureUses::RESOURCE
                     | wgt::TextureUses::COLOR_TARGET
                     | wgt::TextureUses::STORAGE_READ_ONLY,
@@ -1485,6 +1491,18 @@ mod tests {
         restricted.backend.pot_copy_only_mip_chains = false;
         assert_eq!(
             check(&restricted, rgba, copy, [8, 4], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert_eq!(
+            check(
+                &restricted,
+                rgba,
+                wgt::TextureUses::COPY_SRC,
+                [8, 4],
+                1,
+                2,
+                1
+            ),
             Err(UnsupportedShape)
         );
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 1, 1), Ok(()));
@@ -1517,22 +1535,18 @@ mod tests {
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 4, 1), Ok(()));
         restricted = caps;
         restricted.backend.pot_full_chain_sampled_mips = false;
-        assert_eq!(
-            check(&restricted, rgba, upload_sample, [8, 4], 1, 4, 1),
-            Err(UnsupportedShape)
-        );
-        assert_eq!(
-            check(
-                &restricted,
-                rgba,
-                copy | wgt::TextureUses::RESOURCE,
-                [8, 4],
-                1,
-                4,
-                1
-            ),
-            Err(UnsupportedShape)
-        );
+        for usage in [
+            wgt::TextureUses::RESOURCE,
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_SRC,
+            upload_sample,
+            copy | wgt::TextureUses::RESOURCE,
+        ] {
+            assert_eq!(
+                check(&restricted, rgba, usage, [8, 4], 1, 4, 1),
+                Err(UnsupportedShape),
+                "{usage:?}"
+            );
+        }
         assert_eq!(check(&restricted, rgba, copy, [8, 4], 1, 4, 1), Ok(()));
         restricted = caps;
         restricted.driver.rgba8 = Query::Unavailable(-1);

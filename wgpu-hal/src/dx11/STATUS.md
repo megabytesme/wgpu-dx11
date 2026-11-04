@@ -230,6 +230,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   permits disjoint subresource input/output; the [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
   warns against simultaneous texture and render-target binding. Historical FL9
   drivers remain unverified, and public adapter enumeration remains disabled.
+- POT RGBA8/BGRA8 mip chains now accept every nonempty combination of
+  `RESOURCE`, `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`, gated by the matching
+  backend path and queried format bits. Strict FL9_1 tests sample zero-initialized
+  `RESOURCE` and `RESOURCE|COPY_SRC` chains into 64 checked pixels each, and copy
+  the `COPY_SRC`-only mip-0 subresource through staging for both formats. The
+  controlled core fixture creates the three combinations previously rejected by
+  HAL. Historical driver behavior remains unverified.
 - A restricted D24S8 attachment path provides zero initialization, independent
   depth/stencil clears, depth-only draws and all seven native depth comparisons
   other than Never, with optional writes. A strict FL9_1 test checked both

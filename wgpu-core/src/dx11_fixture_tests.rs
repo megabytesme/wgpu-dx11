@@ -1050,6 +1050,31 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     std::println!("PASS: single-mip format capabilities gate multi-mip creation in core");
 
+    let rgba8_mip_caps =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Rgba8Unorm);
+    if rgba8_mip_caps
+        .flags
+        .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY)
+    {
+        std::println!("SKIP: RGBA8 mip-usage regression requires queried mip support");
+    } else {
+        for usage in [
+            wgt::TextureUsages::TEXTURE_BINDING,
+            wgt::TextureUsages::COPY_SRC,
+            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_SRC,
+        ] {
+            let mut mip_desc = texture_desc(wgt::TextureFormat::Rgba8Unorm, usage);
+            mip_desc.mip_level_count = 4;
+            let (texture, error) = global.device_create_texture(device, &mip_desc, None);
+            assert!(
+                error.is_none(),
+                "reported POT mip usage {usage:?} must reach supported HAL creation: {error:?}"
+            );
+            global.texture_drop(texture);
+        }
+        std::println!("PASS: projected RGBA8 POT mips create with RESOURCE, COPY_SRC and both");
+    }
+
     let (texture, error) = global.device_create_texture(
         device,
         &texture_desc(

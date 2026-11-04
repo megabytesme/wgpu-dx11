@@ -985,7 +985,7 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sam
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
-The strict private test executed 68 GPU cases without skips on the RTX 3090 Ti
+The strict private test executed 74 GPU cases without skips on the RTX 3090 Ti
 at requested and actual FL9_1. RGBA8 and BGRA8 readbacks cover selected mip
 levels, nearest and linear mip filtering, fractional LOD and used versus unused
 sampler relationships. For each format, a same-pass pipeline and bind-group
@@ -1006,6 +1006,16 @@ a single mip; when a finite maximum was raised, a used multi-mip view requires
 the original maximum to reach the last mip and anisotropy 1. NPOT mip chains
 remain unsupported;
 historical FL9 GPU behavior is unverified.
+
+The same strict test samples zero-initialized POT chains with `RESOURCE` alone
+and `RESOURCE | COPY_SRC` into 64 transparent pixels for each format. It also
+reads back all 256 zero bytes from mip 0 of a `COPY_SRC`-only chain for RGBA8
+and BGRA8.
+The core fixture creates all three usage shapes through the projected adapter
+path. CPU capability tests cover every nonempty usage subset of `RESOURCE`,
+`COLOR_TARGET`, `COPY_SRC` and `COPY_DST`; the physical tests exercise the
+previously rejected resource-only and source-only shapes alongside existing
+upload, sampled, attachment and copy combinations.
 
 ### Non-suffix sampled mip views
 

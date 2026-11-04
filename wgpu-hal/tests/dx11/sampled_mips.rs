@@ -911,6 +911,130 @@ fn fl91_sampled_pot_mip_chains() -> windows::core::Result<()> {
             executed += 1;
         }
         unsafe { encoder.reset_all(upload_commands.into_iter()) };
+
+        let resource_only = create_texture(format, 8, 4, wgt::TextureUses::RESOURCE);
+        let resource_copy_source = create_texture(
+            format,
+            8,
+            4,
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_SRC,
+        );
+        let resource_only_view =
+            create_view(&device, &resource_only, format, wgt::TextureUses::RESOURCE);
+        let resource_copy_source_view = create_view(
+            &device,
+            &resource_copy_source,
+            format,
+            wgt::TextureUses::RESOURCE,
+        );
+        let resource_only_sampler = create_sampler(wgt::MipmapFilterMode::Nearest, 0.0..f32::MAX);
+        for texture_view in [&resource_only_view, &resource_copy_source_view] {
+            let texture_bindings = [
+                crate::TextureBinding {
+                    view: texture_view,
+                    usage: wgt::TextureUses::RESOURCE,
+                },
+                crate::TextureBinding {
+                    view: &single_view,
+                    usage: wgt::TextureUses::RESOURCE,
+                },
+            ];
+            let samplers = [&resource_only_sampler, &normalized];
+            let group = unsafe {
+                device
+                    .create_bind_group(&crate::BindGroupDescriptor {
+                        label: None,
+                        layout: &group_layout,
+                        buffers: &[],
+                        textures: &texture_bindings,
+                        samplers: &samplers,
+                        entries: &entries,
+                        acceleration_structures: &[],
+                        external_textures: &[],
+                    })
+                    .unwrap()
+            };
+            let command = unsafe {
+                encoder.begin_encoding(None).unwrap();
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_render_pipeline(&pipelines[0]);
+                encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                encoder.set_bind_group(&layout, 0, &group, &[]);
+                encoder.draw(0, 3, 0, 1);
+                encoder.end_render_pass();
+                let command = encoder.end_encoding().expect("sample-only mip usage");
+                device.destroy_bind_group(group);
+                command
+            };
+            fence_value += 1;
+            unsafe {
+                queue
+                    .submit(&[&command], &[], (&fence, fence_value))
+                    .unwrap()
+            };
+            assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+            let pixels = native.read_rgba_texture(&target, 0, 0)?;
+            assert_eq!(pixels.len(), 8 * 8 * 4);
+            for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+                assert_eq!(
+                    pixel,
+                    &[0, 0, 0, 0],
+                    "{format:?} resource mip pixel {index}"
+                );
+            }
+            unsafe { encoder.reset_all([command].into_iter()) };
+            executed += 1;
+        }
+        unsafe {
+            device.destroy_sampler(resource_only_sampler);
+            device.destroy_texture_view(resource_only_view);
+            device.destroy_texture_view(resource_copy_source_view);
+            device.destroy_texture(resource_only);
+            device.destroy_texture(resource_copy_source);
+        }
+
+        let copy_source_only = create_texture(format, 8, 4, wgt::TextureUses::COPY_SRC);
+        let copy_source_readback = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: 256,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        let read = crate::BufferTextureCopy {
+            buffer_layout: wgt::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(32),
+                rows_per_image: Some(8),
+            },
+            texture_base: crate::TextureCopyBase {
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: crate::FormatAspects::COLOR,
+            },
+            size: crate::CopyExtent {
+                width: 8,
+                height: 8,
+                depth: 1,
+            },
+        };
+        let copy =
+            native.prepare_texture_to_buffer(&copy_source_only, &copy_source_readback, &read)?;
+        copy.execute(&native.immediate_context())?;
+        assert_eq!(
+            native.read_byte_buffer(&copy_source_readback, 0, 256)?,
+            vec![0; 256]
+        );
+        unsafe {
+            device.destroy_buffer(copy_source_readback);
+            device.destroy_texture(copy_source_only);
+        }
+        executed += 1;
+
         let first_sampler = create_sampler(wgt::MipmapFilterMode::Nearest, 0.0..32.0);
         let second_sampler = create_sampler(wgt::MipmapFilterMode::Linear, 0.0..f32::MAX);
         let first_samplers = [&first_sampler, &normalized];

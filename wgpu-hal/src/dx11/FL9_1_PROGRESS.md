@@ -3937,3 +3937,40 @@ This does not remove the experimental texel-load proof and does not enable
 public D3D11 enumeration. The remaining mission gates are the core/HAL contract
 audit, production capability projection, device loss/lifetime review and the
 documented HWND Present reentrancy blocker.
+
+## Checkpoint — complete the projected POT mip-usage matrix
+
+The core/HAL audit found that format projection could permit POT RGBA8/BGRA8
+mips for `RESOURCE`-only, `COPY_SRC`-only and `RESOURCE | COPY_SRC` textures,
+while the private HAL rejected those usage shapes. Since format capabilities do
+not carry usage-specific mip ceilings, the HAL now accepts every nonempty
+combination of its four projected uses (`RESOURCE`, `COLOR_TARGET`, `COPY_SRC`,
+`COPY_DST`). Backend mip-family switches and the actual MIP, shader-sample and
+render-target format queries still gate the request.
+
+CPU capability tests cover all fifteen nonempty usage combinations and retain
+shape, backend-family, and driver-query rejection coverage. The strict FL9_1
+sampled-mip test passed 74 GPU cases, zero skips, on NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, software=false). New hardware cases sampled zero-initialized
+`RESOURCE` and `RESOURCE | COPY_SRC` mip chains into 64 transparent pixels per
+format, and copied/read back a 256-byte zeroed `COPY_SRC`-only mip subresource
+for RGBA8 and BGRA8. The strict controlled core fixture successfully created
+all three formerly mismatched descriptors through the projected adapter path.
+The complete strict private HAL suite passed 337/337. No historical FL9 GPU
+claim is made.
+
+Commands:
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 dx11::capabilities::tests:: -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_sampled_pot_mip_chains -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+Ordinary D3D11 enumeration remains disabled. The production adapter review,
+remaining core/HAL audit, lifetime/device-loss review, and HWND Present
+reentrancy blocker remain open.
