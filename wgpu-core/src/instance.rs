@@ -867,6 +867,11 @@ impl Adapter {
             caps.contains(Tfc::MULTISAMPLE_RESOLVE),
         );
 
+        flags.set(
+            wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY,
+            caps.contains(Tfc::SINGLE_MIP_ONLY),
+        );
+
         wgt::TextureFormatFeatures {
             allowed_usages,
             flags,

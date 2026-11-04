@@ -1957,6 +1957,8 @@ bitflags::bitflags! {
         const STORAGE_ATOMIC = 1 << 9;
         /// If not present, the texture can't be blended into the render target.
         const BLENDABLE = 1 << 10;
+        /// Textures of this format are limited to one mip level on this adapter.
+        const SINGLE_MIP_ONLY = 1 << 11;
     }
 }
 

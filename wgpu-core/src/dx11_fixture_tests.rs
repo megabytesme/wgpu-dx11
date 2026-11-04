@@ -297,8 +297,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let bc1_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc1RgbaUnorm)
     };
-    let bc1_required =
-        hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST;
+    let bc1_required = hal::TextureFormatCapabilities::SAMPLED
+        | hal::TextureFormatCapabilities::COPY_DST
+        | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY;
     let bc1_supported = bc1_caps.contains(bc1_required);
     assert_eq!(bc1_supported, bc1_caps == bc1_required);
     if required {
@@ -336,6 +337,16 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     } else {
         wgt::Features::empty()
     };
+    let one_mip_format_caps = [
+        wgt::TextureFormat::R8Unorm,
+        wgt::TextureFormat::Rg8Snorm,
+        wgt::TextureFormat::Rgba8Snorm,
+    ]
+    .map(|format| {
+        (format, unsafe {
+            hal::Adapter::texture_format_capabilities(&fixture, format)
+        })
+    });
     assert!(unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba16Float)
     }
@@ -400,6 +411,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         depth_core.allowed_usages,
         wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT
     );
+    assert_eq!(
+        depth_core.flags,
+        wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+    );
     let bc1_core =
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc1RgbaUnorm);
     if bc1_supported {
@@ -407,7 +422,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             bc1_core.allowed_usages,
             wgt::TextureUsages::COPY_DST | wgt::TextureUsages::TEXTURE_BINDING
         );
-        assert!(bc1_core.flags.is_empty());
+        assert_eq!(
+            bc1_core.flags,
+            wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+        );
     } else {
         assert!(bc1_core.allowed_usages.is_empty());
         assert!(bc1_core.flags.is_empty());
@@ -416,6 +434,34 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc2RgbaUnorm);
     assert!(bc2_core.allowed_usages.is_empty());
     assert!(bc2_core.flags.is_empty());
+    for (format, hal_caps) in one_mip_format_caps {
+        if required {
+            assert!(
+                !hal_caps.is_empty(),
+                "strict mode requires queried single-mip support for {format:?}"
+            );
+        }
+        let core_caps = global.adapter_get_texture_format_features(adapter_id, format);
+        if hal_caps.is_empty() {
+            assert!(core_caps.allowed_usages.is_empty());
+            assert!(core_caps.flags.is_empty());
+        } else {
+            assert_eq!(
+                hal_caps,
+                hal::TextureFormatCapabilities::SAMPLED
+                    | hal::TextureFormatCapabilities::COPY_DST
+                    | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY
+            );
+            assert_eq!(
+                core_caps.allowed_usages,
+                wgt::TextureUsages::COPY_DST | wgt::TextureUsages::TEXTURE_BINDING
+            );
+            assert_eq!(
+                core_caps.flags,
+                wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+            );
+        }
+    }
     std::println!(
         "Core format capability projection: RGBA8 {rgba_core:?}; D24S8 {depth_core:?}; BC1 {bc1_core:?}"
     );
@@ -661,6 +707,48 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     );
     global.texture_drop(depth_mip_texture);
     std::println!("PASS: multi-mip depth attachment rejected by core validation");
+
+    for format in [
+        wgt::TextureFormat::R8Unorm,
+        wgt::TextureFormat::Rg8Snorm,
+        wgt::TextureFormat::Rgba8Snorm,
+        wgt::TextureFormat::Bc1RgbaUnorm,
+    ] {
+        let format_caps = global.adapter_get_texture_format_features(adapter_id, format);
+        if !format_caps
+            .flags
+            .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY)
+        {
+            continue;
+        }
+        let usage = wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST;
+        let single_mip_desc = texture_desc(format, usage);
+        let (single_mip_texture, error) =
+            global.device_create_texture(device, &single_mip_desc, None);
+        assert!(
+            error.is_none(),
+            "reported single-mip format must allow a one-mip texture: {format:?}: {error:?}"
+        );
+        global.texture_drop(single_mip_texture);
+
+        let mut multi_mip_desc = single_mip_desc;
+        multi_mip_desc.mip_level_count = 2;
+        let (multi_mip_texture, error) =
+            global.device_create_texture(device, &multi_mip_desc, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(crate::resource::CreateTextureError::InvalidMipLevelCountForFormat {
+                    format: rejected,
+                    requested: 2,
+                    maximum: 1,
+                }) if *rejected == format
+            ),
+            "multi-mip {format:?} texture must be rejected by core before HAL: {error:?}"
+        );
+        global.texture_drop(multi_mip_texture);
+    }
+    std::println!("PASS: single-mip format capabilities gate multi-mip creation in core");
 
     let (texture, error) = global.device_create_texture(
         device,

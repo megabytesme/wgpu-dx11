@@ -150,11 +150,18 @@ impl crate::Adapter for Adapter {
                     return if matches!(caps.driver.depth24_stencil8, Query::Value(bits) if bits & required == required)
                     {
                         crate::TextureFormatCapabilities::DEPTH_STENCIL_ATTACHMENT
+                            | crate::TextureFormatCapabilities::SINGLE_MIP_ONLY
                     } else {
                         crate::TextureFormatCapabilities::empty()
                     };
                 }
-                if format == wgt::TextureFormat::Bc1RgbaUnorm {
+                if matches!(
+                    format,
+                    wgt::TextureFormat::R8Unorm
+                        | wgt::TextureFormat::Rg8Snorm
+                        | wgt::TextureFormat::Rgba8Snorm
+                        | wgt::TextureFormat::Bc1RgbaUnorm
+                ) {
                     let supported = caps
                         .check_private_texture_2d(
                             format,
@@ -168,6 +175,7 @@ impl crate::Adapter for Adapter {
                     return if supported {
                         crate::TextureFormatCapabilities::SAMPLED
                             | crate::TextureFormatCapabilities::COPY_DST
+                            | crate::TextureFormatCapabilities::SINGLE_MIP_ONLY
                     } else {
                         crate::TextureFormatCapabilities::empty()
                     };

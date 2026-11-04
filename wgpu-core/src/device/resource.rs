@@ -1859,6 +1859,18 @@ impl Device {
             .describe_format_features(desc.format)
             .map_err(|error| CreateTextureError::MissingFeatures(desc.format, error))?;
 
+        if desc.mip_level_count > 1
+            && format_features
+                .flags
+                .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY)
+        {
+            return Err(CreateTextureError::InvalidMipLevelCountForFormat {
+                format: desc.format,
+                requested: desc.mip_level_count,
+                maximum: 1,
+            });
+        }
+
         if desc.sample_count > 1 {
             // <https://www.w3.org/TR/2025/CRD-webgpu-20251120/#:~:text=If%20descriptor%2EsampleCount%20%3E%201>
             //

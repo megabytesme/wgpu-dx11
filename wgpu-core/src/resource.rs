@@ -1855,6 +1855,12 @@ pub enum CreateTextureError {
         "Texture descriptor mip level count {requested} is invalid, maximum allowed is {maximum}"
     )]
     InvalidMipLevelCount { requested: u32, maximum: u32 },
+    #[error("Texture format {format:?} supports at most {maximum} mip level(s), but {requested} were requested")]
+    InvalidMipLevelCountForFormat {
+        format: wgt::TextureFormat,
+        requested: u32,
+        maximum: u32,
+    },
     #[error(
         "Texture usages {0:?} are not allowed on a texture of type {1:?}{downlevel_suffix}",
         downlevel_suffix = if *.2 { " due to downlevel restrictions" } else { "" }
@@ -1915,6 +1921,7 @@ impl WebGpuError for CreateTextureError {
             | Self::InvalidDepthDimension(_, _)
             | Self::InvalidCompressedDimension(_, _)
             | Self::InvalidMipLevelCount { .. }
+            | Self::InvalidMipLevelCountForFormat { .. }
             | Self::InvalidFormatUsages(_, _, _)
             | Self::InvalidViewFormat(_, _)
             | Self::InvalidDimensionUsages(_, _)

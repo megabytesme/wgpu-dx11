@@ -1958,6 +1958,8 @@ bitflags!(
         const COPY_SRC = 1 << 15;
         /// Format can be copied to.
         const COPY_DST = 1 << 16;
+        /// Format is implemented only for textures with a single mip level.
+        const SINGLE_MIP_ONLY = 1 << 17;
     }
 );
 
