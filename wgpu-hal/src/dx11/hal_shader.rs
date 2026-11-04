@@ -8,7 +8,7 @@ use super::{
         ShaderBindingKind, ShaderProfile,
     },
 };
-use alloc::{format, sync::Arc, vec::Vec};
+use alloc::{format, string::ToString, sync::Arc, vec::Vec};
 
 /// Naga module retained until pipeline creation; no adapter exposes it yet.
 #[doc(hidden)]
@@ -2449,41 +2449,58 @@ impl ShaderModule {
         entry: &str,
         bindings: &[ShaderBinding],
     ) -> Result<Vec<u8>, crate::PipelineError> {
-        self.compile_with_viewport(stage, entry, bindings, false)
+        let constants = naga::back::PipelineConstants::default();
+        self.compile_with_bindings_and_constants(stage, entry, bindings, &constants)
     }
 
-    pub(super) fn compile_with_viewport(
+    pub(super) fn compile_with_bindings_and_constants(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+        bindings: &[ShaderBinding],
+        constants: &naga::back::PipelineConstants,
+    ) -> Result<Vec<u8>, crate::PipelineError> {
+        self.compile_with_viewport_and_constants(stage, entry, bindings, false, constants)
+    }
+
+    pub(super) fn compile_with_viewport_and_constants(
         &self,
         stage: naga::ShaderStage,
         entry: &str,
         bindings: &[ShaderBinding],
         viewport_transform: bool,
+        constants: &naga::back::PipelineConstants,
     ) -> Result<Vec<u8>, crate::PipelineError> {
         let stages = match stage {
             naga::ShaderStage::Vertex => wgt::ShaderStages::VERTEX,
             naga::ShaderStage::Fragment => wgt::ShaderStages::FRAGMENT,
             _ => return Err(crate::PipelineError::EntryPoint(stage)),
         };
+        let (module, info) = naga::back::pipeline_constants::process_overrides(
+            &self.shader.module,
+            &self.shader.info,
+            Some((stage, entry)),
+            constants,
+        )
+        .map_err(|error| crate::PipelineError::PipelineConstants(stages, error.to_string()))?;
         let requests_checks = self.checks.bounds_checks
             || self.checks.force_loop_bounding
             || self.checks.ray_query_initialization_tracking
             || self.checks.task_shader_dispatch_tracking
             || self.checks.mesh_shader_primitive_indices_clamp
             || self.checks.int_div_checks;
-        let entry_index = self
-            .shader
-            .module
+        let entry_index = module
             .entry_points
             .iter()
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
-        let entry_info = self.shader.info.get_entry_point(entry_index);
+        let entry_info = info.get_entry_point(entry_index);
         let profile =
             selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
         if has_unsupported_sample_bias(
-            &self.shader.module,
-            &self.shader.info,
-            &self.shader.module.entry_points[entry_index].function,
+            &module,
+            &info,
+            &module.entry_points[entry_index].function,
             entry_info,
             profile,
         ) {
@@ -2493,9 +2510,9 @@ impl ShaderModule {
             ));
         }
         if has_unsafe_integer_semantics(
-            &self.shader.module,
-            &self.shader.info,
-            &self.shader.module.entry_points[entry_index].function,
+            &module,
+            &info,
+            &module.entry_points[entry_index].function,
             entry_info,
             profile,
         ) {
@@ -2505,41 +2522,31 @@ impl ShaderModule {
             ));
         }
         if requests_checks
-            && self
-                .shader
-                .module
-                .global_variables
-                .iter()
-                .any(|(handle, global)| {
-                    !entry_info[handle].is_empty()
-                        && global.binding.is_some()
-                        && !matches!(
-                            shader_binding_kind(&self.shader.module, global),
-                            Some(
-                                ShaderBindingKind::Uniform
-                                    | ShaderBindingKind::Texture2dFloat
-                                    | ShaderBindingKind::Sampler
-                            )
+            && module.global_variables.iter().any(|(handle, global)| {
+                !entry_info[handle].is_empty()
+                    && global.binding.is_some()
+                    && !matches!(
+                        shader_binding_kind(&module, global),
+                        Some(
+                            ShaderBindingKind::Uniform
+                                | ShaderBindingKind::Texture2dFloat
+                                | ShaderBindingKind::Sampler
                         )
-                })
+                    )
+            })
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
                 "checked D3D11 buffer and storage bindings are not implemented".into(),
             ));
         }
-        let uses_uniform = self
-            .shader
-            .module
-            .global_variables
-            .iter()
-            .any(|(handle, global)| {
-                !entry_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
-            });
+        let uses_uniform = module.global_variables.iter().any(|(handle, global)| {
+            !entry_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
+        });
         if has_unsafe_matrix_store(
-            &self.shader.module,
-            &self.shader.info,
-            &self.shader.module.entry_points[entry_index].function,
+            &module,
+            &info,
+            &module.entry_points[entry_index].function,
             entry_info,
         ) {
             return Err(crate::PipelineError::Linkage(
@@ -2549,9 +2556,9 @@ impl ShaderModule {
         }
         if requests_checks
             && has_unsupported_dynamic_access(
-                &self.shader.module,
-                &self.shader.info,
-                &self.shader.module.entry_points[entry_index].function,
+                &module,
+                &info,
+                &module.entry_points[entry_index].function,
                 entry_info,
                 uses_uniform,
             )
@@ -2567,9 +2574,9 @@ impl ShaderModule {
         // is independently tested; include helpers reachable from this entry.
         if requests_checks
             && reachable_expression(
-                &self.shader.module,
-                &self.shader.info,
-                &self.shader.module.entry_points[entry_index].function,
+                &module,
+                &info,
+                &module.entry_points[entry_index].function,
                 entry_info,
                 |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
             )
@@ -2579,10 +2586,10 @@ impl ShaderModule {
                 "checked D3D11 texture loads are not implemented".into(),
             ));
         }
-        let present = used_shader_bindings(&self.shader.module, entry_info, bindings);
+        let present = used_shader_bindings(&module, entry_info, bindings);
         compile_naga_with_viewport(
-            &self.shader.module,
-            &self.shader.info,
+            &module,
+            &info,
             stage,
             entry,
             profile,

@@ -1289,6 +1289,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::PipelineConstant,
+        VertexCase::PipelineConstantDefault,
         VertexCase::FractionalViewport,
         VertexCase::ViewportOutsideTarget,
         VertexCase::NpotClampedPairs,
@@ -2413,6 +2415,8 @@ fn copy_only_texture_view(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum VertexCase {
     Baseline,
+    PipelineConstant,
+    PipelineConstantDefault,
     ZeroSampleMask,
     PremultipliedBlend,
     ConstantBlend,
@@ -2472,6 +2476,10 @@ fn render_triangle(
     );
     let unfilterable_float = matches!(case, VertexCase::UnfilterableFloat | VertexCase::Bc1);
     let bc1 = case == VertexCase::Bc1;
+    let pipeline_constant = matches!(
+        case,
+        VertexCase::PipelineConstant | VertexCase::PipelineConstantDefault
+    );
     let viewport_outside_target = case == VertexCase::ViewportOutsideTarget;
     let fractional_viewport = case == VertexCase::FractionalViewport;
     let npot_valid_pairs = case == VertexCase::NpotClampedPairs;
@@ -3201,7 +3209,9 @@ fn render_triangle(
         global.bind_group_drop(invalid_group);
         global.sampler_drop(linear);
     }
-    let source = if npot_valid_pairs {
+    let source = if pipeline_constant {
+        "override tint: f32 = 0.25; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return vec4f(tint, 0.0, 0.0, 1.0); }"
+    } else if npot_valid_pairs {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var repeat_smp: sampler; @group(0) @binding(13) var npot_image: texture_2d<f32>; @group(0) @binding(51) var clamp_smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, repeat_smp, in.uv) + textureSample(npot_image, clamp_smp, in.uv); }"
     } else if case == VertexCase::SampledMipsBias {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
@@ -3374,6 +3384,42 @@ fn render_triangle(
         multiview_mask: None,
         cache: None,
     };
+    if pipeline_constant {
+        if case == VertexCase::PipelineConstant {
+            let mut constants = naga::back::PipelineConstants::default();
+            constants.insert(alloc::string::String::from("tint"), 0.75);
+            pipeline_descriptor
+                .fragment
+                .as_mut()
+                .unwrap()
+                .stage
+                .constants = constants;
+
+            let mut invalid_descriptor = pipeline_descriptor.clone();
+            let mut invalid_constants = naga::back::PipelineConstants::default();
+            invalid_constants.insert(alloc::string::String::from("missing"), 0.5);
+            invalid_descriptor
+                .fragment
+                .as_mut()
+                .unwrap()
+                .stage
+                .constants = invalid_constants;
+            let (invalid_pipeline, error) =
+                global.device_create_render_pipeline(device, &invalid_descriptor, None);
+            assert!(
+                matches!(
+                    error.as_ref(),
+                    Some(pipeline::CreateRenderPipelineError::PipelineConstants { stage, .. })
+                        if *stage == wgt::ShaderStages::FRAGMENT
+                ),
+                "unknown FL9_1 pipeline override must fail as a fragment validation error: {error:?}"
+            );
+            global.render_pipeline_drop(invalid_pipeline);
+            std::println!(
+                "PASS: invalid pipeline constant overrides return a fragment validation error"
+            );
+        }
+    }
     if zero_sample_mask {
         pipeline_descriptor.multisample.mask = 0;
     }
@@ -4475,6 +4521,19 @@ fn render_triangle(
                 );
                 continue;
             }
+            if pipeline_constant {
+                let expected_red = if case == VertexCase::PipelineConstant {
+                    191
+                } else {
+                    64
+                };
+                match &pixels[offset..offset + 4] {
+                    [red, 0, 0, 255] if *red == expected_red => line_red_pixels += 1,
+                    [0, 0, 255, 255] => {}
+                    other => panic!("unexpected pipeline-constant pixel ({x}, {y}): {other:?}"),
+                }
+                continue;
+            }
             if special_topology.is_some() {
                 match &pixels[offset..offset + 4] {
                     [0, 0, 255, 255] => {}
@@ -4576,6 +4635,20 @@ fn render_triangle(
         );
         std::println!(
             "PASS: core {case:?} through FL9_1 fixture: {line_red_pixels} red pixels, remaining pixels clear"
+        );
+    } else if pipeline_constant {
+        let expected_red = if case == VertexCase::PipelineConstant {
+            191
+        } else {
+            64
+        };
+        assert!(
+            line_red_pixels >= 8,
+            "pipeline override rendered only {line_red_pixels} red pixels"
+        );
+        std::println!(
+            "PASS: core FL9_1 pipeline constant {:?} rendered {line_red_pixels} pixels at red={expected_red}",
+            case
         );
     } else {
         std::println!("PASS: core textured depth test ({case:?}): 64 pixels matched");

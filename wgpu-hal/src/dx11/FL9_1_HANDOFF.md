@@ -1013,3 +1013,20 @@ before drawing; those skips are not counted as GPU work. HAL/GLES compilation,
 wgpu-info and wgpu-test checks, core Clippy, targeted formatting and diff
 checks passed. Full commands are in `FL9_1_PROGRESS.md`. Continue the core/HAL
 audit. Public D3D11 enumeration and HWND surface exposure remain disabled.
+
+## Current checkpoint — pipeline override constants
+
+The private HAL resolves `ProgrammableStage.constants` through Naga's
+`process_overrides` for the selected entry point before safety analysis,
+binding discovery, HLSL and FXC. Both ordinary and viewport-remapped vertex
+variants receive the same constants. The strict controlled core fixture
+rendered the explicit value 0.75 as red 191 and the WGSL default 0.25 as red
+64 across 64 pixels; an unknown override returned a fragment pipeline-constant
+validation error. Strict HAL passed 337/337, controlled core passed 78/78,
+DX12 passed 75/75 and zero-adapter isolation passed 1/1. Hardware was the RTX
+3090 Ti at requested and actual FL9_1. Exact commands and the existing Visual
+Studio prompt banner are in `FL9_1_PROGRESS.md`.
+
+Next continue uniform matrix/array/nested-structure investigation and the
+core/HAL contract audit. Public D3D11 enumeration and HWND surface exposure
+remain disabled; the mission is not complete.

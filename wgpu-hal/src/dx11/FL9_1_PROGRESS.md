@@ -3750,3 +3750,56 @@ git diff --check
 Normal D3D11 adapter enumeration and HWND surface exposure remain disabled.
 The next audit should continue with other core-valid layout and render shapes
 that the HAL rejects, followed by the production capability projection.
+
+## Checkpoint — pipeline override constants
+
+The private D3D11 pipeline no longer rejects nonempty `ProgrammableStage`
+constant maps. Shader compilation now resolves overrides with Naga's
+`process_overrides` for the selected stage and entry point before entry-point
+analysis, resource mapping, HLSL generation and FXC compilation. The ordinary
+and viewport-remapped vertex shader paths share the same values. Invalid and
+unknown overrides return the existing stage-specific pipeline-constant error.
+
+The strict controlled core fixture rendered with an explicit fragment override
+(`tint = 0.75`, readback red 191) and the WGSL default (`tint = 0.25`, readback
+red 64); each expected value appeared in all 64 checked pixels. An unknown
+override was rejected as a fragment pipeline-constant validation error. This
+also verifies that override resolution precedes the private backend's selected
+entry safety checks, rather than treating `Expression::Override` as an unsafe
+runtime expression.
+
+Rust 1.93.1/MSVC verification on 2026-11-04:
+
+- Strict private D3D11 HAL suite: 337/337 passed with
+  `WGPU_DX11_REQUIRE_HARDWARE=1`; real hardware cases explicitly selected the
+  NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false) at requested and
+  actual FL9_1.
+- Strict controlled core suite: 78/78 passed. The core fixture used the same
+  RTX 3090 Ti at requested and actual FL9_1 and performed the override
+  readbacks above.
+- Core DX12 regression suite: 75/75 passed.
+- Ordinary D3D11 zero-adapter isolation test: 1/1 passed.
+- HAL test compilation with `dx11,gles`, core Clippy, HAL Clippy, targeted
+  rustfmt and `git diff --check` passed.
+- Visual Studio's developer prompt printed its existing `Error: Unknown
+  error` banner; all listed commands exited successfully.
+
+Commands (run after entering the Visual Studio developer environment; strict
+hardware commands set `WGPU_DX11_REQUIRE_HARDWARE=1`):
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 check --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/hal_shader.rs
+git diff --check
+```
+
+Code changes are limited to `hal_shader.rs`, `hal_pipeline.rs` and the
+controlled core fixture. Normal D3D11 adapter enumeration and public HWND
+surface exposure remain disabled. Continue plan item 1 with uniform matrix,
+array and nested-structure coverage, then resume the core/HAL contract audit.

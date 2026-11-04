@@ -2563,8 +2563,6 @@ impl RenderPipeline {
         if !Arc::ptr_eq(owner, &desc.layout.owner)
             || !vertex_stage.module.belongs_to(owner)
             || fragment.is_some_and(|stage| !stage.module.belongs_to(owner))
-            || !vertex_stage.constants.is_empty()
-            || fragment.is_some_and(|stage| !stage.constants.is_empty())
             || (wgt::PrimitiveState {
                 front_face: wgt::FrontFace::default(),
                 cull_mode: None,
@@ -2766,17 +2764,19 @@ impl RenderPipeline {
         } else {
             super::capabilities::query_full_npot(owner)
         };
-        let vertex_code = vertex_stage.module.compile_with_bindings(
+        let vertex_code = vertex_stage.module.compile_with_bindings_and_constants(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
             &vertex_bindings,
+            vertex_stage.constants,
         )?;
         // Keep the original shader available when the remap exceeds FL9 limits.
-        let vertex_viewport_code = match vertex_stage.module.compile_with_viewport(
+        let vertex_viewport_code = match vertex_stage.module.compile_with_viewport_and_constants(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
             &vertex_bindings,
             true,
+            vertex_stage.constants,
         ) {
             Ok(code) => Some(code),
             Err(crate::PipelineError::Device(error)) => {
@@ -2788,10 +2788,11 @@ impl RenderPipeline {
             }
         };
         let pixel_code = if let Some(fragment) = fragment {
-            fragment.module.compile_with_bindings(
+            fragment.module.compile_with_bindings_and_constants(
                 naga::ShaderStage::Fragment,
                 fragment.entry_point,
                 &fragment_bindings,
+                fragment.constants,
             )?
         } else {
             super::shader::compile_hlsl(
