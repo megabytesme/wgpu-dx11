@@ -12,6 +12,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         max_sampled_textures_per_vertex_stage: 0,
         unrestricted_npot_texture_sampling: false,
         max_texture_repeat_per_primitive: 0,
+        src_alpha_saturated_blend: false,
     },
     shader_model: wgpu::ShaderModel::Sm2,
 };

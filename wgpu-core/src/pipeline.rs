@@ -723,6 +723,11 @@ pub enum ColorStateError {
         factor: wgt::BlendFactor,
         target: u32,
     },
+    #[error("Blend factor {factor:?} is not supported on downlevel render target {target}")]
+    UnsupportedBlendFactorOnDownlevelAdapter {
+        factor: wgt::BlendFactor,
+        target: u32,
+    },
     #[error(
         "Blend factor {factor:?} for render target {target} is not valid. Blend factor must be `one` when using min/max blend operations."
     )]

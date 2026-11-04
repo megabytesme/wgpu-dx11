@@ -191,6 +191,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 max_sampled_textures_per_vertex_stage: 16,
                 unrestricted_npot_texture_sampling: true,
                 max_texture_repeat_per_primitive: u32::MAX,
+                src_alpha_saturated_blend: true,
             },
             shader_model: wgt::ShaderModel::Sm5,
         },

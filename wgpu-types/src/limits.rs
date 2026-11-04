@@ -1056,6 +1056,10 @@ pub struct DownlevelLimits {
     /// `u32::MAX` means no finite limit is modeled. Core rejects repeating address modes when
     /// this value is finite because it cannot prove the coordinate range used by a draw.
     pub max_texture_repeat_per_primitive: u32,
+    /// Whether `BlendFactor::SrcAlphaSaturated` is supported.
+    ///
+    /// Direct3D feature levels 9_1 through 9_3 do not support this blend factor.
+    pub src_alpha_saturated_blend: bool,
 }
 
 impl Default for DownlevelLimits {
@@ -1064,6 +1068,7 @@ impl Default for DownlevelLimits {
             max_sampled_textures_per_vertex_stage: 16,
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
+            src_alpha_saturated_blend: true,
         }
     }
 }
@@ -1076,6 +1081,7 @@ impl DownlevelLimits {
             && (!required.unrestricted_npot_texture_sampling
                 || self.unrestricted_npot_texture_sampling)
             && self.max_texture_repeat_per_primitive >= required.max_texture_repeat_per_primitive
+            && (!required.src_alpha_saturated_blend || self.src_alpha_saturated_blend)
     }
 }
 
@@ -1085,7 +1091,7 @@ impl DownlevelLimits {
 pub struct DownlevelCapabilities {
     /// Combined boolean flags.
     pub flags: DownlevelFlags,
-    /// Additional limits
+    /// Additional limits and individual downlevel capabilities.
     pub limits: DownlevelLimits,
     /// Which collections of features shaders support. Defined in terms of D3D's shader models.
     pub shader_model: ShaderModel,
@@ -1113,6 +1119,7 @@ impl DownlevelCapabilities {
                 >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
             && self.limits.unrestricted_npot_texture_sampling
             && self.limits.max_texture_repeat_per_primitive == u32::MAX
+            && self.limits.src_alpha_saturated_blend
             && self.shader_model >= ShaderModel::Sm5
     }
 }
@@ -1383,11 +1390,13 @@ mod tests {
             max_sampled_textures_per_vertex_stage: 4,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
+            src_alpha_saturated_blend: false,
         };
         let required = DownlevelLimits {
             max_sampled_textures_per_vertex_stage: 3,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
+            src_alpha_saturated_blend: false,
         };
         assert!(available.check_limits(&required));
 
@@ -1399,6 +1408,25 @@ mod tests {
             unrestricted_npot_texture_sampling: true,
             ..required
         }));
+    }
+
+    #[test]
+    fn source_alpha_saturated_blend_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            src_alpha_saturated_blend: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            src_alpha_saturated_blend: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+
+        let capabilities = DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        };
+        assert!(!capabilities.is_webgpu_compliant());
     }
 
     fn side_by_side(left: &str, right: &str) -> String {

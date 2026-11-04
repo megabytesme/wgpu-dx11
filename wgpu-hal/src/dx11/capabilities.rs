@@ -24,6 +24,7 @@ pub(super) struct HardwareGuarantees {
     pub max_vertex_index: u32,
     pub max_primitives_per_draw: u32,
     pub max_texture_repeat_per_primitive: u32,
+    pub src_alpha_saturated_blend: bool,
     pub conditional_npot: bool,
     pub separate_alpha_blend: bool,
     pub depth_bias: bool,
@@ -63,6 +64,7 @@ impl HardwareGuarantees {
             max_vertex_index,
             max_primitives_per_draw,
             max_texture_repeat_per_primitive,
+            src_alpha_saturated_blend: level.as_raw() >= L10_0.as_raw(),
             conditional_npot: level.as_raw() < L10_0.as_raw(),
             separate_alpha_blend: level != L9_1,
             depth_bias: true,
@@ -146,6 +148,7 @@ pub(super) struct DriverCapabilities {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BackendCapabilities {
     pub depth_stencil_mip_levels: bool,
+    pub src_alpha_saturated_blend: bool,
     pub pot_full_chain_sampled_mips: bool,
     pub pot_copy_only_mip_chains: bool,
     pub pot_color_attachment_mips: bool,
@@ -206,6 +209,7 @@ pub(super) struct BackendCapabilities {
 impl BackendCapabilities {
     pub const CURRENT: Self = Self {
         depth_stencil_mip_levels: false,
+        src_alpha_saturated_blend: false,
         pot_full_chain_sampled_mips: true,
         pot_copy_only_mip_chains: true,
         pot_color_attachment_mips: true,
@@ -544,6 +548,10 @@ mod tests {
                 depth_stencil_mip_levels
             );
             assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
+            assert_eq!(
+                caps.hardware.src_alpha_saturated_blend,
+                level.as_raw() >= FeatureLevel::L10_0.as_raw()
+            );
             assert!(caps.hardware.r8_unorm_sampled_texture);
             assert!(caps.hardware.rg8_snorm_sampled_texture);
             assert!(caps.hardware.rgba8_snorm_sampled_texture);
@@ -557,6 +565,7 @@ mod tests {
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(!caps.backend.src_alpha_saturated_blend);
             assert!(!caps.backend.vertex_texture_sampling);
             assert!(!caps.backend.depth_stencil_mip_levels);
             assert!(caps.hardware.depth_bias);
@@ -605,6 +614,7 @@ mod tests {
         assert_eq!(fl9.hardware.max_primitives_per_draw, 65_535);
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
+        assert!(!fl9.hardware.src_alpha_saturated_blend);
         assert!(!fl9.hardware.two_sided_stencil);
         assert!(!fl9.hardware.vertex_texture_sampling);
         assert!(!fl9.backend.vertex_texture_sampling);

@@ -970,6 +970,7 @@ impl super::Adapter {
             .max(0) as u32,
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
+            src_alpha_saturated_blend: true,
         };
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };
 

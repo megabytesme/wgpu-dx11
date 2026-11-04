@@ -87,7 +87,10 @@ below is met. This plan does not claim WebGPU conformance.
    equations unless the latter are explicitly established. Strict forced-9_1
    readback covered custom constant factors, while CPU translation tests cover
    every supported factor/operation pair. Continue auditing other core-valid
-   render-state combinations and shader limitations.
+   render-state combinations and shader limitations. Core now models the
+   10Level9 `SRC_ALPHA_SAT` restriction as a downlevel capability and rejects
+   all factor positions before HAL; continue the vertex-format and attachment
+   audit before preparing the public capability snapshot.
    Raster depth comparison now maps all seven native D3D11 comparison functions;
    `Never` keeps its validated-draw and stencil-depth-fail emulation. A strict
    forced-FL9_1 render verifies pass and fail pixels for all eight wgpu compare

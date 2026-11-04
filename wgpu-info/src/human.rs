@@ -283,6 +283,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             max_sampled_textures_per_vertex_stage,
             unrestricted_npot_texture_sampling,
             max_texture_repeat_per_primitive,
+            src_alpha_saturated_blend,
         },
         flags,
     } = downlevel;
@@ -297,6 +298,10 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(
         output,
         "\t\tMaximum texture repeats per primitive: {max_texture_repeat_per_primitive}"
+    )?;
+    writeln!(
+        output,
+        "\t\tSource-alpha-saturated blending: {src_alpha_saturated_blend}"
     )?;
     let max_downlevel_flag_width = wgpu::DownlevelFlags::max_debug_print_width();
     for bit in wgpu::DownlevelFlags::all().iter() {

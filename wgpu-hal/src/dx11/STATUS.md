@@ -280,6 +280,12 @@ contract is derived from Microsoft's static 10Level9 requirements.
   pixels. Other factor mappings are CPU-tested, not each independently
   rendered. This still does not establish historical-device behavior or public
   adapter safety.
+- The 10Level9 device contract excludes `D3D11_BLEND_SRC_ALPHA_SAT` at FL9_1,
+  9_2 and 9_3. `DownlevelLimits::src_alpha_saturated_blend` records this
+  capability separately from format blendability and separate-alpha equations.
+  Core rejects the factor in either color or alpha source/destination slots
+  before the HAL is called. The FL9_1 fixture checks all four slots on the
+  RTX 3090 Ti. The HAL still does not implement this factor at higher levels.
 - Nonindexed point-list draws support the restricted vertex- and instance-rate
   streams, including sparse slots, nonzero offsets and `first_instance`. FL9_1
   point batches rebase vertex bindings and contain at most 65,535 points.

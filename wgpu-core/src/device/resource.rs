@@ -4828,6 +4828,16 @@ impl Device {
                     if let Some(blend_mode) = cs.blend {
                         for component in [&blend_mode.color, &blend_mode.alpha] {
                             for factor in [component.src_factor, component.dst_factor] {
+                                if factor == wgt::BlendFactor::SrcAlphaSaturated
+                                    && !self.downlevel.limits.src_alpha_saturated_blend
+                                {
+                                    break 'error Some(
+                                        ColorStateError::UnsupportedBlendFactorOnDownlevelAdapter {
+                                            factor,
+                                            target: i as u32,
+                                        },
+                                    );
+                                }
                                 if factor.ref_second_blend_source() {
                                     self.require_features(wgt::Features::DUAL_SOURCE_BLENDING)?;
                                     if i == 0 {

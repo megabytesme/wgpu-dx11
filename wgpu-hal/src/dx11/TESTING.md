@@ -25,6 +25,22 @@ cargo test --offline -p wgpu-types downlevel_limits_check_minimum_capabilities -
 These tests are synthetic/CPU-only. They do not claim that the RTX validates
 behavior at or beyond the FL9_1 repeat cap.
 
+The source-alpha-saturated blend capability is false in the controlled FL9_1
+core fixture. Its hardware test constructs pipelines with the factor in each
+color/alpha source/destination slot and checks that core returns the specific
+unsupported-factor validation error before HAL pipeline creation. The wgpu-types
+test verifies downlevel requirement matching and that the missing capability
+prevents WebGPU-compliance reporting:
+
+```powershell
+cargo test --offline -p wgpu-types source_alpha_saturated_blend_is_a_downlevel_capability -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+Microsoft documents this as a static 10Level9 restriction, not a per-format
+blendability query: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
+
 ## 1. HAL tests and GPU readback
 
 ### Focused FL9_1 hardware test

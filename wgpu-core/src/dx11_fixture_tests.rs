@@ -80,6 +80,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: u32::MAX,
+                    src_alpha_saturated_blend: false,
                 },
                 ..Default::default()
             },
@@ -359,6 +360,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: u32::MAX,
+                    src_alpha_saturated_blend: false,
                 },
                 ..Default::default()
             },
@@ -3065,6 +3067,51 @@ fn render_triangle(
             "FL9_1 core validation must reject separate RGB/alpha blending before HAL: {blend_error:?}"
         );
         global.render_pipeline_drop(invalid_blend_pipeline);
+        pipeline_descriptor.fragment.as_mut().unwrap().targets = Cow::Borrowed(&targets);
+
+        for alpha_component in [false, true] {
+            for destination_factor in [false, true] {
+                let mut blend = wgt::BlendState::REPLACE;
+                let component = if alpha_component {
+                    &mut blend.alpha
+                } else {
+                    &mut blend.color
+                };
+                if destination_factor {
+                    component.dst_factor = wgt::BlendFactor::SrcAlphaSaturated;
+                } else {
+                    component.src_factor = wgt::BlendFactor::SrcAlphaSaturated;
+                }
+                let mut target = targets[0].clone().unwrap();
+                target.blend = Some(blend);
+                target.write_mask = if alpha_component {
+                    wgt::ColorWrites::ALPHA
+                } else {
+                    wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE
+                };
+                pipeline_descriptor.fragment.as_mut().unwrap().targets =
+                    Cow::Owned(vec![Some(target)]);
+                let (invalid_pipeline, error) =
+                    global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+                assert!(
+                    matches!(
+                        error.as_ref(),
+                        Some(pipeline::CreateRenderPipelineError::ColorState(
+                            0,
+                            pipeline::ColorStateError::UnsupportedBlendFactorOnDownlevelAdapter {
+                                factor: wgt::BlendFactor::SrcAlphaSaturated,
+                                target: 0,
+                            }
+                        ))
+                    ),
+                    "FL9_1 core validation must reject source-alpha-saturated blending before HAL: {error:?}"
+                );
+                global.render_pipeline_drop(invalid_pipeline);
+            }
+        }
+        std::println!(
+            "PASS: unsupported source-alpha-saturated factors rejected by core validation"
+        );
         pipeline_descriptor.fragment.as_mut().unwrap().targets = Cow::Borrowed(&targets);
 
         let asymmetric = wgt::StencilState {
