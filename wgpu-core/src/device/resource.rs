@@ -3090,10 +3090,15 @@ impl Device {
                         false => WritableStorage::Yes,
                     },
                 ),
-                Bt::Sampler { .. } => (
-                    Some(wgt::Features::TEXTURE_BINDING_ARRAY),
-                    WritableStorage::No,
-                ),
+                Bt::Sampler(sampler_type) => {
+                    if sampler_type == wgt::SamplerBindingType::Comparison {
+                        required_downlevel_flags |= wgt::DownlevelFlags::COMPARISON_SAMPLERS;
+                    }
+                    (
+                        Some(wgt::Features::TEXTURE_BINDING_ARRAY),
+                        WritableStorage::No,
+                    )
+                }
                 Bt::Texture {
                     multisampled: true,
                     sample_type: TextureSampleType::Float { filterable: true },

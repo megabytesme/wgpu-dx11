@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### Validation
 
+- Reject comparison-sampler layouts when comparison samplers are unavailable.
 - Reject compute-visible bind-group layouts when compute shaders are unavailable.
 - Reject alpha-to-coverage when a render pipeline uses only one sample.
 - Add `DownlevelFlags::TWO_SIDED_STENCIL` so adapters can report whether front and back stencil states may differ.

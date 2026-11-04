@@ -2767,6 +2767,32 @@ fn render_triangle(
     };
     let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
     assert!(error.is_none(), "sampler creation: {error:?}");
+    let (comparison_layout, comparison_layout_error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
+                count: None,
+            }]),
+        },
+        None,
+    );
+    assert!(
+        matches!(
+            comparison_layout_error.as_ref(),
+            Some(binding_model::CreateBindGroupLayoutError::Entry {
+                error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                ),
+                ..
+            }) if *flags == wgt::DownlevelFlags::COMPARISON_SAMPLERS
+        ),
+        "FL9_1 core validation must reject comparison-sampler layouts before HAL: {comparison_layout_error:?}"
+    );
+    global.bind_group_layout_drop(comparison_layout);
     let comparison_desc = resource::SamplerDescriptor {
         compare: Some(wgt::CompareFunction::LessEqual),
         ..sampler_desc.clone()
