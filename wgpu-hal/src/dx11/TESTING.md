@@ -1009,17 +1009,16 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 stencil -- --nocapture --test-threads=1
 ```
 
-This filter passed three tests: two CPU-only mapping/classifier tests and one
-physical RTX 3090 Ti test at requested and selected FL9_1. The GPU test verifies
-one-sided Replace writes followed by Equal comparisons, correct and incorrect
-stencil references, and a Never-depth draw whose depth-fail operation writes
-stencil while color/depth writes remain suppressed. It checks the resulting
-8x8 color target after subsequent stencil tests; the HAL cannot directly read
-stencil storage. It also preserves the previous masked Equal/Keep no-op
-regression and rejects active asymmetric front/back state. Microsoft documents
-the FL9_1 two-sided-stencil restriction in the linked 10Level9 device table in
-`CAPABILITIES.md`. These tests do not establish behavior on historical FL9_1
-hardware.
+This filter contains two CPU-only mapping/classifier tests and one GPU test. The
+physical RTX 3090 Ti test explicitly requests and confirms FL9_1. It verifies
+one-sided reference and Equal behavior, masked no-op behavior, and all eight
+stencil operations in each of the native pass, stencil-fail and depth-fail
+branches. Boundary inputs cover saturating and wrapping arithmetic. Each of 24
+cases reads back an 8x8 color target after a later Equal test; the HAL cannot
+directly read stencil storage. The test also rejects active asymmetric
+front/back state. Microsoft documents the FL9_1 two-sided-stencil restriction
+in the linked 10Level9 device table in `CAPABILITIES.md`. These results do not
+establish behavior on historical FL9_1 hardware.
 
 ### FL9_1 default buffer bind flags
 

@@ -3,7 +3,8 @@
 ## Current position — 2026-11-04
 
 Branch: `uwp-dx11`. The autonomous FL9_1 completion mission remains active.
-Recent verified code checkpoints are `340147803` (native FL9_1 depth
+Recent verified code checkpoints are `5fe21f035` (all native stencil
+operation outcomes at forced FL9_1), `340147803` (native FL9_1 depth
 comparisons), `f99cae113` (general single-target blend translation),
 `8eff9020a` (single-sample output masks) and `1eb21620c` (core rejects NPOT
 mip chains when the downlevel capability is absent). Ordinary
@@ -20,6 +21,11 @@ See CAPABILITIES.md and STATUS.md for the detailed implementation matrix.
 ## Latest validation
 
 - Rust 1.93.1, MSVC, Windows 11, bounded Cargo jobs (8).
+- At `5fe21f035`, the strict focused stencil GPU test passed 1/1 and the full
+  strict private HAL suite passed 322/322. The RTX 3090 Ti was requested and
+  selected at FL9_1. All eight operations in all three stencil outcomes matched
+  1,536 checked output pixels. HAL check, core zero-adapter isolation, HAL
+  Clippy, rustfmt and `git diff --check` passed.
 - At `8eff9020a`, strict D3D11 HAL tests passed 318/318; the fixture-enabled
   core suite passed 70/70, the core DX12 suite passed 67/67, and the ordinary
   zero-adapter isolation test passed. The RTX 3090 Ti (`0x10de:0x2203`, driver
@@ -33,6 +39,55 @@ See CAPABILITIES.md and STATUS.md for the detailed implementation matrix.
   warnings because WGSL is disabled. No HAL code changed for this checkpoint.
 - No public D3D11 adapter, public HWND render, or historical FL9_1 hardware
   result is available.
+
+## Checkpoint — FL9_1 stencil operation outcome coverage — `5fe21f035`
+
+The existing D24S8 test now exercises each of the eight wgpu stencil
+operations in all three native outcome slots: stencil/depth pass, stencil
+comparison failure, and depth-test failure. Boundary values distinguish
+clamped from wrapping increment/decrement; Replace uses different references
+for successful and failed stencil comparisons. A subsequent Equal pipeline
+draws blue only when the resulting stencil value matches the expected value.
+All 24 cases matched all 64 pixels. The HAL does not expose direct stencil
+storage readback, so this is an indirect validation through actual GPU tests.
+
+The focused strict test passed 1/1 on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, software=false), with FL9_1 requested and selected. The full
+strict D3D11 HAL suite passed 322/322, including the 24 stencil cases. The HAL
+check passed, the ordinary core zero-D3D11-adapter isolation test passed 1/1,
+and HAL Clippy completed with ten pre-existing warnings outside the changed
+test. Rustfmt and `git diff --check` passed. The first attempt without
+initializing the Visual Studio environment failed because `link.exe` was not
+on PATH; rerunning after `VsDevCmd.bat` succeeded. Cargo used Rust 1.93.1 and
+`CARGO_BUILD_JOBS=8`.
+
+Microsoft defines the eight native operation behaviors in the
+[`D3D11_STENCIL_OP` reference](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ne-d3d11-d3d11_stencil_op).
+The 10Level9 device table documents the FL9_1 two-sided-stencil restriction;
+this backend continues to reject asymmetric front/back states. Modern hardware
+forced to FL9_1 does not establish behavior on historical drivers.
+
+Commands, run from an initialized Visual Studio 2022 Build Tools environment
+with Rust 1.93.1 and `CARGO_BUILD_JOBS=8`:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_stencil_operations_match_expected_values -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11
+rustfmt --edition 2021 --check wgpu-hal/tests/dx11/stencil_noop.rs
+git diff --check
+```
+
+The six existing checked runtime-integer shader subcases still log `SKIP`
+after the backend rejects their unsupported integer semantics; those skips are
+not part of the stencil execution claim.
+
+Code checkpoint: `5fe21f035` (`dx11: test FL9_1 stencil operation outcomes`).
+Continue the core-valid descriptor/command audit before constructing a truthful
+public capability snapshot. Keep normal adapter enumeration and public HWND
+surface exposure disabled.
 
 ## Review findings and decisions
 

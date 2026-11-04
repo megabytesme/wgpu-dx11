@@ -199,16 +199,18 @@ current side-effect-free, read-only-resource and no-query subset. Future shader
 side effects or query support require revisiting it.
 Stencil state maps all eight WGSL operations and comparison functions to the
 native D3D11 depth-stencil descriptor, with the low eight bits of the masks.
-This describes translation, not evidence that every mapped state works on all
-FL9_1 drivers; the strict hardware test executes Replace and Equal. Only
-identical active front/back states are supported; the general public
+The strict forced-FL9_1 hardware test executes every operation in each native
+pass, stencil-fail and depth-fail slot with boundary values for saturating and
+wrapping arithmetic. Subsequent Equal tests verify all 24 resulting states via
+full 8x8 color readback. The DSV itself cannot be read back through this HAL,
+and this RTX result does not establish behavior on historical FL9_1 drivers.
+Only identical active front/back states are supported; the general public
 `depth_stencil` capability remains false. The reference is retained in command
 replay, rebound when either the reference or pipeline changes, and reset at each
 render pass. Strict readback verifies Replace writes indirectly by using a later
 Equal comparison, including a wrong-reference rejection and state transitions.
-The DSV itself still cannot be read back through this HAL, so tests do not claim
-direct inspection of stencil storage. Always-passing, non-writing stencil
-states continue to canonicalize to disabled stencil.
+These tests do not claim direct inspection of stencil storage. Always-passing,
+non-writing stencil states continue to canonicalize to disabled stencil.
 
 Depth comparison Never remains draw suppression only when stencil is inert. If
 active stencil must observe the depth-fail branch, the backend uses Always,

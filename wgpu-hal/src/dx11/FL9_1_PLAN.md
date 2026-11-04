@@ -96,9 +96,11 @@ below is met. This plan does not claim WebGPU conformance.
    bias to the native rasterizer with the required zero clamp; strict readback
    verifies positive/negative slope effects. Solid points and lines remain
    rejected for nonzero bias because bias has no effect on them. Historical
-   FL9_1 drivers remain unverified. Next continue auditing core-valid
-   attachment, viewport and render-state combinations before building the
-   truthful public capability snapshot.
+   FL9_1 drivers remain unverified. All eight stencil operations are now
+   verified on pass, stencil-fail and depth-fail outcomes with strict FL9_1
+   readback; asymmetric front/back states remain rejected. Next continue
+   auditing core-valid attachment, viewport and render-state combinations
+   before building the truthful public capability snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

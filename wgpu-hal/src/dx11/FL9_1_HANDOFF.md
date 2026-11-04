@@ -11,16 +11,16 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-Latest code checkpoints: `6f7f1297891ac3477ed7055ded00934da1c46c2a` adds native
-finite slope-scaled bias for FL9_1 triangle pipelines, and
-`1a362ec6108de9accb52e2f1978a174d1f923106` records the hardware guarantees
-separately from the D24S8 implementation. Zero-clamp, solid point/line and
-selected `frag_depth` restrictions remain. Five constant-bias and two
-sloped-triangle GPU images passed on the RTX 3090 Ti at requested and actual
-FL9_1; the full private suite passed 322/322. Exact commands and the expected
-FXC diagnostic are in FL9_1_PROGRESS.md. Continue with the public HAL/core
-capability boundary and truthful capability snapshot in FL9_1_PLAN.md. Do not
-enable normal enumeration or public HWND presentation.
+Latest code checkpoint: `5fe21f035` verifies all eight native stencil
+operations in pass, stencil-fail and depth-fail outcomes. Twenty-four full
+8x8 color readbacks passed on the RTX 3090 Ti at requested and actual FL9_1;
+the full strict private suite passed 322/322. The test uses later Equal draws
+because this HAL cannot read DSV stencil storage directly. The prior
+`6f7f12978` checkpoint adds finite slope-scaled triangle bias, while
+`1a362ec61` separates FL9_1 hardware guarantees from backend implementation.
+Exact commands and remaining restrictions are in FL9_1_PROGRESS.md. Continue
+the public HAL/core capability-boundary audit and truthful capability snapshot
+in FL9_1_PLAN.md. Do not enable normal enumeration or public HWND presentation.
 
 The indexed TriangleStrip checkpoint `f1b8c09a7` and strict core-fixture
 coverage `c46c4a908` are followed by static boundary execution tests for vertex
@@ -54,8 +54,9 @@ DXGI may synchronously send messages to the HWND's window procedure during
 that call. See the latest section of FL9_1_PROGRESS.md and the Microsoft
 threading references there. Do not drop either lock without a replacement
 serialization design. Continue independent private FL9_1 work while keeping
-public D3D11 enumeration disabled; next investigate native stencil operations
-and reference transitions.
+public D3D11 enumeration disabled; the next planned task is the remaining
+core-valid descriptor and command audit before constructing the public
+capability snapshot.
 
 ## Verified checkpoints
 
@@ -161,6 +162,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `340147803` | dx11: support native FL9_1 depth comparisons |
 | `6f7f1297891ac3477ed7055ded00934da1c46c2a` | dx11: support FL9_1 slope depth bias |
 | `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c` | dx11: verify FL9_1 depth clamp core gate |
+| `5fe21f035` | Strict FL9_1 tests for all stencil operation outcomes |
 | `1a362ec6108de9accb52e2f1978a174d1f923106` | dx11: model raster depth-bias capabilities |
 
 ## What is and is not usable

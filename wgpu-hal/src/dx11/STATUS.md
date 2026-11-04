@@ -135,11 +135,13 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   stencil uses Always plus remapped depth-fail operations and disabled
   color/depth writes; inert-stencil
   Never still suppresses validated draws. Replace/Equal writes and reference
-  transitions are indirectly verified through strict GPU readback, including
-  the depth-fail path. Private read-only passes require load/store on both
-  aspects, no depth or stencil writes and no sampled alias. Aspect-specific
-  views and depth copies remain unsupported; broad public depth-stencil
-  capability is still false.
+  transitions are indirectly verified through strict GPU readback. All eight
+  stencil operations now pass boundary-value checks when used on native pass,
+  stencil-fail and depth-fail branches (24 full-image cases); the DSV is not
+  directly readable through the HAL. Private read-only passes require
+  load/store on both aspects, no depth or stencil writes and no sampled alias.
+  Aspect-specific views and depth copies remain unsupported; broad public
+  depth-stencil capability is still false.
 - D24S8 triangle pipelines accept signed constant and finite slope-scaled depth
   bias with zero clamp. Core's controlled fixture verifies nonzero clamp is
   rejected by `DEPTH_BIAS_CLAMP` before HAL. Nonzero bias on points or solid
