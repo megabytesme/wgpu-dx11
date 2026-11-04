@@ -28,6 +28,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
     });
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let vertex_format_mask = fixture.test_fixture_vertex_format_mask();
     let open = unsafe { fixture.open_test_fixture() };
     let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
     info.name = identity.name.clone();
@@ -81,6 +82,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: u32::MAX,
                     src_alpha_saturated_blend: false,
+                    vertex_format_mask,
                 },
                 ..Default::default()
             },
@@ -203,6 +205,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
     let driver_unrestricted_npot = fixture.test_fixture_unrestricted_npot_sampling();
+    let vertex_format_mask = fixture.test_fixture_vertex_format_mask();
     std::println!(
         "Driver unrestricted NPOT sampling: {driver_unrestricted_npot}; core test fixture forces the conditional-NPOT validation path"
     );
@@ -361,6 +364,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: u32::MAX,
                     src_alpha_saturated_blend: false,
+                    vertex_format_mask,
                 },
                 ..Default::default()
             },
@@ -3000,6 +3004,28 @@ fn render_triangle(
         pipeline_descriptor.multisample.mask = 0;
     }
     if case == VertexCase::Baseline {
+        let mut unsupported_format_descriptor = pipeline_descriptor.clone();
+        let mut unsupported_buffers = unsupported_format_descriptor.vertex.buffers.to_vec();
+        let mut unsupported_buffer = unsupported_buffers[0].clone().unwrap();
+        let mut unsupported_attributes = unsupported_buffer.attributes.to_vec();
+        unsupported_attributes[0].format = wgt::VertexFormat::Unorm16x2;
+        unsupported_buffer.attributes = Cow::Owned(unsupported_attributes);
+        unsupported_buffers[0] = Some(unsupported_buffer);
+        unsupported_format_descriptor.vertex.buffers = Cow::Owned(unsupported_buffers);
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &unsupported_format_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedVertexFormatOnDownlevelAdapter {
+                    format: wgt::VertexFormat::Unorm16x2,
+                })
+            ),
+            "FL9_1 core validation must reject an unreported vertex format before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        std::println!("PASS: unsupported vertex formats rejected by core downlevel capability");
+
         let (vertex_texture_shader, shader_error) = global.device_create_shader_module(
             device,
             &pipeline::ShaderModuleDescriptor {

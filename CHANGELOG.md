@@ -54,6 +54,7 @@ Bottom level categories:
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
 - Require stage-specific downlevel support before creating storage-buffer layouts.
 - Gate unsupported texture binding dimensions and 2D-array storage layouts with device limits and downlevel capabilities.
+- Add a downlevel vertex-format mask so adapters can report input formats individually and core rejects unsupported attributes before HAL.
 
 #### Hal
 

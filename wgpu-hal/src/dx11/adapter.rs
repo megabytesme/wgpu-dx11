@@ -30,6 +30,12 @@ impl Adapter {
         super::capabilities::Capabilities::query(native).unrestricted_npot_texture_sampling()
     }
 
+    /// Returns the selected device's implemented and driver-supported vertex-format mask.
+    pub fn test_fixture_vertex_format_mask(&self) -> u64 {
+        let AdapterInner::Fixture(native) = &self.inner;
+        super::capabilities::Capabilities::query(native).vertex_input_format_mask()
+    }
+
     /// Query the format prerequisites for the controlled copy-only RGBA8 mip test.
     pub fn test_fixture_copy_only_rgba8_mip_supported(&self) -> Result<bool, crate::DeviceError> {
         self.test_fixture_mip_supported(

@@ -781,6 +781,8 @@ pub enum CreateRenderPipelineError {
     TooManyBuffersAndAccelerationStructuresInVertexStage { given: u32, limit: u32 },
     #[error("The number of sampled textures used by the vertex stage {given} exceeds the downlevel limit {limit}")]
     TooManySampledTexturesInVertexStage { given: u32, limit: u32 },
+    #[error("Vertex format {format:?} is not supported by this downlevel adapter")]
+    UnsupportedVertexFormatOnDownlevelAdapter { format: wgt::VertexFormat },
     #[error("The total number of vertex attributes {given} exceeds the limit {limit}")]
     TooManyVertexAttributes { given: u32, limit: u32 },
     #[error("Vertex attribute location {given} must be less than limit {limit}")]
@@ -864,6 +866,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManyBindGroupsPlusVertexBuffers { .. }
             | Self::TooManyBuffersAndAccelerationStructuresInVertexStage { .. }
             | Self::TooManySampledTexturesInVertexStage { .. }
+            | Self::UnsupportedVertexFormatOnDownlevelAdapter { .. }
             | Self::TooManyVertexAttributes { .. }
             | Self::VertexAttributeLocationTooLarge { .. }
             | Self::VertexStrideTooLarge { .. }

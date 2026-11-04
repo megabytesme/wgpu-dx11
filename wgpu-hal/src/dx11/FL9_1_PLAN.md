@@ -45,8 +45,11 @@ below is met. This plan does not claim WebGPU conformance.
    cannot currently expose a private CPU-staging emulation independently.
    R8_UNORM is implemented as a queried single-mip sampled/upload format. Its
    2D upload and nearest sampling pass on forced FL9_1; color-target,
-   copy-source, readback and mip-chain uses remain unsupported. Continue adding
-   narrowly verified required formats and usage combinations.
+   copy-source, readback and mip-chain uses remain unsupported. The required
+   FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
+   the previously mapped formats, with a core per-format downlevel mask and
+   strict GPU verification; other baseline formats are rejected before HAL.
+   Continue adding narrowly verified required formats and usage combinations.
 4. Resolve core/HAL contract mismatches before exposure: negative and
    out-of-target viewports work for shaders with a remapped variant, but the
    variant can exceed FL9 compiler limits and those draws still fail; viewport

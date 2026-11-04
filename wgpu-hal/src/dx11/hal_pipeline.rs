@@ -22,31 +22,56 @@ use windows::{
             D3D11_COMPARISON_FUNC, D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT,
             D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
             D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
-            D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
-            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP,
-            D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR,
-            D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP,
-            D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO,
+            D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
+            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR,
+            D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT,
+            D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE,
+            D3D11_STENCIL_OP_ZERO,
         },
         Dxgi::Common::{
-            DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_SNORM,
-            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT,
-            DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_SINT,
+            DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SINT, DXGI_FORMAT_R16G16_SNORM,
+            DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
+            DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
         },
     },
 };
 
+pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 10] = [
+    (wgt::VertexFormat::Uint8x4, DXGI_FORMAT_R8G8B8A8_UINT, 4),
+    (wgt::VertexFormat::Unorm8x4, DXGI_FORMAT_R8G8B8A8_UNORM, 4),
+    (wgt::VertexFormat::Sint16x2, DXGI_FORMAT_R16G16_SINT, 4),
+    (wgt::VertexFormat::Snorm16x2, DXGI_FORMAT_R16G16_SNORM, 4),
+    (
+        wgt::VertexFormat::Sint16x4,
+        DXGI_FORMAT_R16G16B16A16_SINT,
+        8,
+    ),
+    (
+        wgt::VertexFormat::Snorm16x4,
+        DXGI_FORMAT_R16G16B16A16_SNORM,
+        8,
+    ),
+    (wgt::VertexFormat::Float32, DXGI_FORMAT_R32_FLOAT, 4),
+    (wgt::VertexFormat::Float32x2, DXGI_FORMAT_R32G32_FLOAT, 8),
+    (
+        wgt::VertexFormat::Float32x3,
+        DXGI_FORMAT_R32G32B32_FLOAT,
+        12,
+    ),
+    (
+        wgt::VertexFormat::Float32x4,
+        DXGI_FORMAT_R32G32B32A32_FLOAT,
+        16,
+    ),
+];
+
 fn vertex_format(format: wgt::VertexFormat) -> Option<(DXGI_FORMAT, u32)> {
-    Some(match format {
-        wgt::VertexFormat::Float32 => (DXGI_FORMAT_R32_FLOAT, 4),
-        wgt::VertexFormat::Float32x2 => (DXGI_FORMAT_R32G32_FLOAT, 8),
-        wgt::VertexFormat::Float32x3 => (DXGI_FORMAT_R32G32B32_FLOAT, 12),
-        wgt::VertexFormat::Float32x4 => (DXGI_FORMAT_R32G32B32A32_FLOAT, 16),
-        wgt::VertexFormat::Unorm8x4 => (DXGI_FORMAT_R8G8B8A8_UNORM, 4),
-        wgt::VertexFormat::Snorm16x2 => (DXGI_FORMAT_R16G16_SNORM, 4),
-        wgt::VertexFormat::Snorm16x4 => (DXGI_FORMAT_R16G16B16A16_SNORM, 8),
-        _ => return None,
-    })
+    VERTEX_FORMATS
+        .iter()
+        .find(|(supported, _, _)| *supported == format)
+        .map(|(_, dxgi, size)| (*dxgi, *size))
 }
 
 fn color_write_mask(mask: wgt::ColorWrites) -> Option<u8> {
@@ -269,6 +294,20 @@ impl VertexSlotAllocator {
 fn format_blendable(support: windows::core::Result<u32>) -> Result<bool, crate::DeviceError> {
     match support {
         Ok(bits) => Ok(bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0),
+        Err(error) => match viewport_shader_fatal_error(&error) {
+            Some(error @ (crate::DeviceError::OutOfMemory | crate::DeviceError::Lost)) => {
+                Err(error)
+            }
+            _ => Ok(false),
+        },
+    }
+}
+
+fn format_vertex_buffer_supported(
+    support: windows::core::Result<u32>,
+) -> Result<bool, crate::DeviceError> {
+    match support {
+        Ok(bits) => Ok(bits & D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER.0 as u32 != 0),
         Err(error) => match viewport_shader_fatal_error(&error) {
             Some(error @ (crate::DeviceError::OutOfMemory | crate::DeviceError::Lost)) => {
                 Err(error)
@@ -784,19 +823,55 @@ mod tests {
     }
 
     #[test]
-    fn vertex_formats_map_signed_normalized_words_without_expanding_other_formats() {
-        use super::{vertex_format, DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SNORM};
+    fn vertex_formats_map_the_fl91_required_input_set() {
+        use super::{
+            vertex_format, DXGI_FORMAT_R16G16B16A16_SINT, DXGI_FORMAT_R16G16B16A16_SNORM,
+            DXGI_FORMAT_R16G16_SINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_UINT,
+        };
 
-        assert_eq!(
-            vertex_format(wgt::VertexFormat::Snorm16x2),
-            Some((DXGI_FORMAT_R16G16_SNORM, 4))
-        );
-        assert_eq!(
-            vertex_format(wgt::VertexFormat::Snorm16x4),
-            Some((DXGI_FORMAT_R16G16B16A16_SNORM, 8))
-        );
+        for (format, dxgi, size) in [
+            (wgt::VertexFormat::Uint8x4, DXGI_FORMAT_R8G8B8A8_UINT, 4),
+            (wgt::VertexFormat::Sint16x2, DXGI_FORMAT_R16G16_SINT, 4),
+            (
+                wgt::VertexFormat::Sint16x4,
+                DXGI_FORMAT_R16G16B16A16_SINT,
+                8,
+            ),
+            (wgt::VertexFormat::Snorm16x2, DXGI_FORMAT_R16G16_SNORM, 4),
+            (
+                wgt::VertexFormat::Snorm16x4,
+                DXGI_FORMAT_R16G16B16A16_SNORM,
+                8,
+            ),
+        ] {
+            assert_eq!(vertex_format(format), Some((dxgi, size)));
+        }
         assert_eq!(vertex_format(wgt::VertexFormat::Unorm16x2), None);
-        assert_eq!(vertex_format(wgt::VertexFormat::Sint16x2), None);
+        assert_eq!(vertex_format(wgt::VertexFormat::Float16x2), None);
+        assert_eq!(vertex_format(wgt::VertexFormat::Uint8x2), None);
+    }
+
+    #[test]
+    fn vertex_format_support_query_is_conservative_and_propagates_device_loss() {
+        use super::{format_vertex_buffer_supported, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER};
+
+        assert!(
+            format_vertex_buffer_supported(Ok(D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER.0 as u32))
+                .unwrap()
+        );
+        assert!(!format_vertex_buffer_supported(Ok(0)).unwrap());
+        assert!(
+            !format_vertex_buffer_supported(Err(windows::core::Error::from_hresult(
+                windows::Win32::Foundation::E_INVALIDARG,
+            )))
+            .unwrap()
+        );
+        assert_eq!(
+            format_vertex_buffer_supported(Err(windows::core::Error::from_hresult(
+                windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED,
+            ))),
+            Err(crate::DeviceError::Lost)
+        );
     }
 
     #[test]
@@ -2741,6 +2816,19 @@ impl RenderPipeline {
             let mut vertex_extent = 0u32;
             for attribute in layout.attributes {
                 let (format, size) = vertex_format(attribute.format).ok_or_else(invalid)?;
+                if !format_vertex_buffer_supported(unsafe {
+                    owner.raw_device().CheckFormatSupport(format)
+                })
+                .map_err(crate::PipelineError::Device)?
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        wgt::ShaderStages::VERTEX,
+                        alloc::format!(
+                            "D3D11 input format {:?} is unavailable on this device",
+                            attribute.format
+                        ),
+                    ));
+                }
                 let offset = u32::try_from(attribute.offset).map_err(|_| invalid())?;
                 let end = offset.checked_add(size).ok_or_else(invalid)?;
                 if offset % 4 != 0

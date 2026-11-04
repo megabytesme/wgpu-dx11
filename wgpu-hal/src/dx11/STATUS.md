@@ -44,6 +44,16 @@ NPOT `WRAP` rule, but mirror still repeats and is constrained by the draw limit.
 The RTX forced to FL9_1 does not simulate the historical driver behavior; this
 contract is derived from Microsoft's static 10Level9 requirements.
 
+Vertex-format support is now reported as a per-format `DownlevelLimits` mask.
+For the FL9_1 private fixture, the mask intersects the feature-level minimum,
+the selected driver's `IA_VERTEX_BUFFER` query and the formats actually mapped
+by the HAL. Core rejects unreported attributes before HAL. The private input
+layout now maps `Uint8x4`, `Sint16x2` and `Sint16x4` in addition to its previous
+formats; direct integer-vector-to-float conversion is the only newly accepted
+runtime integer shader operation. The forced-FL9_1 RTX test exercises all three
+formats in one draw and validates every pixel. No public adapter reports this
+mask yet, and other layout and draw restrictions remain.
+
 ## Implemented private HAL paths
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted

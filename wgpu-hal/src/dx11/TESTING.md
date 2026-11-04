@@ -85,6 +85,46 @@ Microsoft lists both IA formats as required at FL9_1, but historical devices
 have not been tested here. The private backend still requires four-byte
 attribute alignment and does not thereby support SNORM texture formats.
 
+The additional FL9_1-required integer IA mappings and their narrowly supported
+shader conversion are checked with:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_integer_vertex_formats_render -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_the_fl91_required_input_set -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 integer_guard_checks_selected_entry_and_level9_profile -- --nocapture --test-threads=1
+```
+
+The hardware test requests and asserts FL9_1, checks the driver's
+`IA_VERTEX_BUFFER` bit for `R8G8B8A8_UINT`, `R16G16_SINT` and
+`R16G16B16A16_SINT`, and verifies the capability projection includes them. A
+single draw converts three input vectors directly to float, combines them into
+yellow, and checks all 64 pixels. Integer arithmetic and other runtime integer
+operations remain rejected by the shader guard. The static mapping and guard
+tests are CPU-only.
+
+The per-format mask's generic limit semantics and the D3D11 feature-level,
+driver-query and backend intersections have CPU coverage:
+
+```powershell
+cargo test --offline -p wgpu-types --lib vertex_format_masks_are_subset_capabilities -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 feature_level_guarantees_are_specific_and_do_not_promote_backend -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_format_projection_intersects_level_driver_and_backend -- --nocapture --test-threads=1
+```
+
+The controlled core fixture obtains its mask from the selected FL9_1 device,
+then replaces a baseline vertex format with unsupported `Unorm16x2` and checks
+that core rejects pipeline creation before HAL. Run it in strict hardware mode
+with:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The fixture also performs its existing GPU rendering and readbacks; the
+unsupported-format case itself is CPU-side validation, not a GPU execution.
+
 With strict hardware mode enabled, run the zero-stride tests with:
 
 ```powershell

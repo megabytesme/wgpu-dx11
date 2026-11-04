@@ -75,6 +75,7 @@ mod tests {
             @fragment fn constant_math() -> @location(0) vec4f { return vec4f(f32(1u + 2u)); }
             @fragment fn float_safe() -> @location(0) vec4f { return value; }
             @vertex fn integer_input(@location(0) x: vec4u) -> @builtin(position) vec4f { return vec4f(x); }
+            @vertex fn integer_math_input(@location(0) x: vec4u) -> @builtin(position) vec4f { return vec4f(x + vec4u(1u)); }
         "#).unwrap();
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -91,7 +92,7 @@ mod tests {
         for (index, entry) in module.entry_points.iter().enumerate() {
             let expected = !matches!(
                 entry.name.as_str(),
-                "static_index" | "constant_math" | "float_safe"
+                "static_index" | "constant_math" | "float_safe" | "integer_input"
             );
             let profile = selected_shader_profile(entry.stage).unwrap();
             assert_eq!(
@@ -1075,11 +1076,14 @@ mod tests {
             assert!(shader
                 .compile(naga::ShaderStage::Fragment, "constant_math")
                 .is_ok());
-            assert!(
-                matches!(shader.compile(naga::ShaderStage::Vertex, "integer_input"),
+            assert!(shader
+                .compile(naga::ShaderStage::Vertex, "integer_input")
+                .is_ok());
+            assert!(matches!(
+                shader.compile(naga::ShaderStage::Vertex, "integer_math_input"),
                 Err(crate::PipelineError::Linkage(stage, message)) if stage == wgt::ShaderStages::VERTEX
-                    && message == "D3D11 FL9 runtime integer semantics are not implemented safely")
-            );
+                    && message == "D3D11 FL9 runtime integer semantics are not implemented safely"
+            ));
         }
         let uniform_module = naga::front::wgsl::parse_str("@group(0) @binding(2) var<uniform> color: vec4f; @fragment fn fs() -> @location(0) vec4f { return color; }").unwrap();
         let uniform_info = naga::valid::Validator::new(
@@ -1628,15 +1632,18 @@ fn has_unsafe_integer_semantics_with_budget(
         return true;
     };
     budget.set(remaining);
-    for ty in function
-        .arguments
-        .iter()
-        .map(|arg| arg.ty)
-        .chain(function.result.iter().map(|result| result.ty))
-    {
-        if type_may_contain_integer(module, &module.types[ty].inner, &budget) {
+    for (index, argument) in function.arguments.iter().enumerate() {
+        if type_may_contain_integer(module, &module.types[argument.ty].inner, &budget)
+            && !(matches!(profile, ShaderProfile::VertexLevel9_1)
+                && is_supported_integer_vertex_argument(module, function, index))
+        {
             return true;
         }
+    }
+    if function.result.as_ref().is_some_and(|result| {
+        type_may_contain_integer(module, &module.types[result.ty].inner, &budget)
+    }) {
+        return true;
     }
     for (handle, global) in module.global_variables.iter() {
         if !function_info[handle].is_empty() {
@@ -1664,15 +1671,18 @@ fn has_unsafe_integer_semantics_with_budget(
                 return true;
             };
             budget.set(remaining);
-            for ty in function
-                .arguments
-                .iter()
-                .map(|arg| arg.ty)
-                .chain(function.result.iter().map(|result| result.ty))
-            {
-                if type_may_contain_integer(module, &module.types[ty].inner, &budget) {
+            for (index, argument) in function.arguments.iter().enumerate() {
+                if type_may_contain_integer(module, &module.types[argument.ty].inner, &budget)
+                    && !(matches!(profile, ShaderProfile::VertexLevel9_1)
+                        && is_supported_integer_vertex_argument(module, function, index))
+                {
                     return true;
                 }
+            }
+            if function.result.as_ref().is_some_and(|result| {
+                type_may_contain_integer(module, &module.types[result.ty].inner, &budget)
+            }) {
+                return true;
             }
             let Some(remaining) = budget.get().checked_sub(function.expressions.len()) else {
                 return true;
@@ -1692,8 +1702,20 @@ fn has_unsafe_integer_semantics_with_budget(
                 };
                 let integer_operation = match *expression {
                     naga::Expression::Binary { left, right, .. } => integer(left) || integer(right),
-                    naga::Expression::Unary { expr, .. } | naga::Expression::As { expr, .. } => {
-                        integer(expr) || integer(handle)
+                    naga::Expression::Unary { expr, .. } => integer(expr) || integer(handle),
+                    naga::Expression::As {
+                        expr,
+                        kind,
+                        convert,
+                    } => {
+                        let supported_vertex_conversion =
+                            matches!(profile, ShaderProfile::VertexLevel9_1)
+                                && kind == naga::ScalarKind::Float
+                                && convert == Some(4)
+                                && is_supported_integer_vertex_argument_expression(
+                                    module, function, expr,
+                                );
+                        !supported_vertex_conversion && (integer(expr) || integer(handle))
                     }
                     naga::Expression::Math {
                         arg,
@@ -1721,10 +1743,55 @@ fn has_unsafe_integer_semantics_with_budget(
                     } => !global_initializer_is_simple(module, offset, &budget),
                     _ => false,
                 };
-                integer_operation || (!kinds.is_const(handle) && integer(handle))
+                integer_operation
+                    || (!kinds.is_const(handle)
+                        && integer(handle)
+                        && !(matches!(profile, ShaderProfile::VertexLevel9_1)
+                            && is_supported_integer_vertex_argument_expression(
+                                module, function, handle,
+                            )))
             })
         },
     )
+}
+
+fn is_supported_integer_vertex_argument(
+    module: &naga::Module,
+    function: &naga::Function,
+    index: usize,
+) -> bool {
+    let Some(argument) = function.arguments.get(index) else {
+        return false;
+    };
+    if !matches!(
+        argument.binding.as_ref(),
+        Some(naga::Binding::Location { .. })
+    ) {
+        return false;
+    }
+    matches!(
+        module.types[argument.ty].inner,
+        naga::TypeInner::Vector {
+            size: naga::VectorSize::Bi | naga::VectorSize::Quad,
+            scalar: naga::Scalar {
+                kind: naga::ScalarKind::Sint | naga::ScalarKind::Uint,
+                width: 4,
+            },
+        }
+    )
+}
+
+fn is_supported_integer_vertex_argument_expression(
+    module: &naga::Module,
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    match function.expressions[expression] {
+        naga::Expression::FunctionArgument(index) => {
+            is_supported_integer_vertex_argument(module, function, index as usize)
+        }
+        _ => false,
+    }
 }
 
 fn has_unsupported_sample_bias(

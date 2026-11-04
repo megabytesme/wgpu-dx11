@@ -4722,6 +4722,25 @@ impl Device {
                         self.require_features(wgt::Features::VERTEX_ATTRIBUTE_64BIT)?;
                     }
 
+                    if !self
+                        .downlevel
+                        .limits
+                        .supports_vertex_format(attribute.format)
+                        && !matches!(
+                            attribute.format,
+                            wgt::VertexFormat::Float64
+                                | wgt::VertexFormat::Float64x2
+                                | wgt::VertexFormat::Float64x3
+                                | wgt::VertexFormat::Float64x4
+                        )
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedVertexFormatOnDownlevelAdapter {
+                                format: attribute.format,
+                            },
+                        );
+                    }
+
                     let previous = io.varyings.insert(
                         attribute.shader_location,
                         validation::InterfaceVar::vertex_attribute(attribute.format),

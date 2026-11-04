@@ -5,9 +5,9 @@ use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
         D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
-        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_MIP,
-        D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
-        D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
+        D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM,
@@ -25,6 +25,7 @@ pub(super) struct HardwareGuarantees {
     pub max_primitives_per_draw: u32,
     pub max_texture_repeat_per_primitive: u32,
     pub src_alpha_saturated_blend: bool,
+    pub vertex_input_formats: u64,
     pub conditional_npot: bool,
     pub separate_alpha_blend: bool,
     pub depth_bias: bool,
@@ -57,6 +58,13 @@ impl HardwareGuarantees {
             L10_0 | L10_1 => (8192, 8, u32::MAX, u32::MAX, 8192),
             L11_0 | L11_1 => (16384, 8, u32::MAX, u32::MAX, 16384),
         };
+        let vertex_input_formats = fl91_vertex_formats()
+            | if level.as_raw() >= L9_3.as_raw() {
+                vertex_format_bit(wgt::VertexFormat::Float16x2)
+                    | vertex_format_bit(wgt::VertexFormat::Float16x4)
+            } else {
+                0
+            };
         Self {
             level,
             texture_2d_dimension,
@@ -65,6 +73,7 @@ impl HardwareGuarantees {
             max_primitives_per_draw,
             max_texture_repeat_per_primitive,
             src_alpha_saturated_blend: level.as_raw() >= L10_0.as_raw(),
+            vertex_input_formats,
             conditional_npot: level.as_raw() < L10_0.as_raw(),
             separate_alpha_blend: level != L9_1,
             depth_bias: true,
@@ -143,6 +152,7 @@ pub(super) struct DriverCapabilities {
     pub rg8_snorm: Query<u32>,
     pub rgba8_snorm: Query<u32>,
     pub bc1_unorm: Query<u32>,
+    pub vertex_input_formats: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,6 +169,7 @@ pub(super) struct BackendCapabilities {
     pub rg8_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
     pub bc1_sampled_upload: bool,
+    pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
     pub sample_count: u32,
@@ -220,6 +231,7 @@ impl BackendCapabilities {
         rg8_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
         bc1_sampled_upload: true,
+        vertex_input_formats: fl91_vertex_formats(),
         texture_zero_initialized: true,
         texture_array_layers: 1,
         sample_count: 1,
@@ -319,6 +331,19 @@ impl Capabilities {
         let raw = device.raw_device();
         let format =
             |value: DXGI_FORMAT| Query::from_result(unsafe { raw.CheckFormatSupport(value) });
+        let vertex_input_formats = super::hal_pipeline::VERTEX_FORMATS.iter().fold(
+            0,
+            |mask, (vertex_format, dxgi_format, _)| {
+                if matches!(
+                    unsafe { raw.CheckFormatSupport(*dxgi_format) },
+                    Ok(flags) if flags & D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER.0 as u32 != 0
+                ) {
+                    mask | vertex_format_bit(*vertex_format)
+                } else {
+                    mask
+                }
+            },
+        );
         let mut shadow = D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT::default();
         let comparison_shadow = unsafe {
             raw.CheckFeatureSupport(
@@ -347,6 +372,7 @@ impl Capabilities {
                 rg8_snorm: format(DXGI_FORMAT_R8G8_SNORM),
                 rgba8_snorm: format(DXGI_FORMAT_R8G8B8A8_SNORM),
                 bc1_unorm: format(DXGI_FORMAT_BC1_UNORM),
+                vertex_input_formats,
             },
             backend: BackendCapabilities::CURRENT,
         }
@@ -486,9 +512,32 @@ impl Capabilities {
         matches!(self.driver.rgba8, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
     }
 
+    pub fn vertex_input_format_mask(&self) -> u64 {
+        self.hardware.vertex_input_formats
+            & self.driver.vertex_input_formats
+            & self.backend.vertex_input_formats
+    }
+
     pub fn public_adapter_supported(&self) -> bool {
         false
     }
+}
+
+const fn vertex_format_bit(format: wgt::VertexFormat) -> u64 {
+    1u64 << format as u32
+}
+
+const fn fl91_vertex_formats() -> u64 {
+    vertex_format_bit(wgt::VertexFormat::Uint8x4)
+        | vertex_format_bit(wgt::VertexFormat::Unorm8x4)
+        | vertex_format_bit(wgt::VertexFormat::Sint16x2)
+        | vertex_format_bit(wgt::VertexFormat::Snorm16x2)
+        | vertex_format_bit(wgt::VertexFormat::Sint16x4)
+        | vertex_format_bit(wgt::VertexFormat::Snorm16x4)
+        | vertex_format_bit(wgt::VertexFormat::Float32)
+        | vertex_format_bit(wgt::VertexFormat::Float32x2)
+        | vertex_format_bit(wgt::VertexFormat::Float32x3)
+        | vertex_format_bit(wgt::VertexFormat::Float32x4)
 }
 
 #[cfg(test)]
@@ -509,6 +558,7 @@ mod tests {
                 rg8_snorm: Query::Value(u32::MAX),
                 rgba8_snorm: Query::Value(u32::MAX),
                 bc1_unorm: Query::Value(u32::MAX),
+                vertex_input_formats: u64::MAX,
             },
             backend: BackendCapabilities::CURRENT,
         }
@@ -548,6 +598,22 @@ mod tests {
                 depth_stencil_mip_levels
             );
             assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
+            assert!(
+                caps.hardware.vertex_input_formats & fl91_vertex_formats() == fl91_vertex_formats()
+            );
+            if level.as_raw() < FeatureLevel::L9_3.as_raw() {
+                assert_eq!(
+                    caps.hardware.vertex_input_formats
+                        & vertex_format_bit(wgt::VertexFormat::Float16x2),
+                    0
+                );
+            } else {
+                assert_ne!(
+                    caps.hardware.vertex_input_formats
+                        & vertex_format_bit(wgt::VertexFormat::Float16x2),
+                    0
+                );
+            }
             assert_eq!(
                 caps.hardware.src_alpha_saturated_blend,
                 level.as_raw() >= FeatureLevel::L10_0.as_raw()
@@ -657,6 +723,33 @@ mod tests {
         assert_eq!(
             Query::<bool>::from_result(Err(error)),
             Query::Unavailable(windows::Win32::Foundation::E_INVALIDARG.0)
+        );
+    }
+
+    #[test]
+    fn vertex_format_projection_intersects_level_driver_and_backend() {
+        let mut fl91 = model(FeatureLevel::L9_1);
+        let baseline = fl91_vertex_formats();
+        assert_eq!(fl91.vertex_input_format_mask(), baseline);
+        assert_eq!(
+            fl91.vertex_input_format_mask() & vertex_format_bit(wgt::VertexFormat::Float16x2),
+            0
+        );
+
+        fl91.driver.vertex_input_formats &= !vertex_format_bit(wgt::VertexFormat::Sint16x2);
+        assert_eq!(
+            fl91.vertex_input_format_mask(),
+            baseline & !vertex_format_bit(wgt::VertexFormat::Sint16x2)
+        );
+
+        let fl93 = model(FeatureLevel::L9_3);
+        assert_ne!(
+            fl93.hardware.vertex_input_formats & vertex_format_bit(wgt::VertexFormat::Float16x2),
+            0
+        );
+        assert_eq!(
+            fl93.vertex_input_format_mask() & vertex_format_bit(wgt::VertexFormat::Float16x2),
+            0
         );
     }
 

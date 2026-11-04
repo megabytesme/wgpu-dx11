@@ -6,7 +6,7 @@ use core::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 #[cfg(doc)]
-use crate::{Features, TextureFormat};
+use crate::{Features, TextureFormat, VertexFormat};
 
 /// Invoke a macro for each of the limits.
 ///
@@ -1060,6 +1060,13 @@ pub struct DownlevelLimits {
     ///
     /// Direct3D feature levels 9_1 through 9_3 do not support this blend factor.
     pub src_alpha_saturated_blend: bool,
+    /// Bit mask of vertex formats supported by the adapter.
+    ///
+    /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
+    /// downlevel backends report format-specific vertex input support, which cannot be described
+    /// by the vertex attribute count alone. The 64-bit vertex formats are still separately gated
+    /// by [`Features::VERTEX_ATTRIBUTE_64BIT`].
+    pub vertex_format_mask: u64,
 }
 
 impl Default for DownlevelLimits {
@@ -1069,11 +1076,30 @@ impl Default for DownlevelLimits {
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
             src_alpha_saturated_blend: true,
+            vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
 }
 
 impl DownlevelLimits {
+    /// Returns the mask of vertex formats required by the WebGPU baseline.
+    #[must_use]
+    pub const fn webgpu_vertex_format_mask() -> u64 {
+        let format_count = crate::VertexFormat::Unorm8x4Bgra as u32 + 1;
+        let all_formats = (1u64 << format_count) - 1;
+        let float64_start = crate::VertexFormat::Float64 as u32;
+        let float64_count = crate::VertexFormat::Float64x4 as u32 - float64_start + 1;
+        let float64_formats = ((1u64 << float64_count) - 1) << float64_start;
+        all_formats & !float64_formats
+    }
+
+    /// Returns whether a particular vertex format is supported by the adapter.
+    #[must_use]
+    pub const fn supports_vertex_format(&self, format: crate::VertexFormat) -> bool {
+        let bit = format as u32;
+        bit < u64::BITS && self.vertex_format_mask & (1u64 << bit) != 0
+    }
+
     /// Returns whether `self` satisfies the minimum downlevel limits in `required`.
     #[must_use]
     pub fn check_limits(&self, required: &Self) -> bool {
@@ -1082,6 +1108,7 @@ impl DownlevelLimits {
                 || self.unrestricted_npot_texture_sampling)
             && self.max_texture_repeat_per_primitive >= required.max_texture_repeat_per_primitive
             && (!required.src_alpha_saturated_blend || self.src_alpha_saturated_blend)
+            && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
 
@@ -1120,6 +1147,8 @@ impl DownlevelCapabilities {
             && self.limits.unrestricted_npot_texture_sampling
             && self.limits.max_texture_repeat_per_primitive == u32::MAX
             && self.limits.src_alpha_saturated_blend
+            && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
+                == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
     }
 }
@@ -1391,12 +1420,14 @@ mod tests {
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             src_alpha_saturated_blend: false,
+            vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
             max_sampled_textures_per_vertex_stage: 3,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             src_alpha_saturated_blend: false,
+            vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
 
@@ -1408,6 +1439,31 @@ mod tests {
             unrestricted_npot_texture_sampling: true,
             ..required
         }));
+    }
+
+    #[test]
+    fn vertex_format_masks_are_subset_capabilities() {
+        let position = crate::VertexFormat::Float32x3;
+        let color = crate::VertexFormat::Unorm8x4;
+        let available = DownlevelLimits {
+            vertex_format_mask: (1 << position as u32) | (1 << color as u32),
+            ..DownlevelLimits::default()
+        };
+        let required = DownlevelLimits {
+            vertex_format_mask: 1 << color as u32,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.supports_vertex_format(position));
+        assert!(available.check_limits(&required));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+
+        let mut compliant = DownlevelCapabilities::default();
+        assert!(compliant.is_webgpu_compliant());
+        compliant.limits.vertex_format_mask &= !(1 << crate::VertexFormat::Unorm8x4 as u32);
+        assert!(!compliant.is_webgpu_compliant());
+        assert!(!compliant
+            .limits
+            .supports_vertex_format(crate::VertexFormat::Unorm8x4));
     }
 
     #[test]

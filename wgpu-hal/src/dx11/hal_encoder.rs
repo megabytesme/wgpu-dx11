@@ -4498,6 +4498,9 @@ mod overlapping_vertex_attribute_tests;
 mod stencil_noop_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/integer_vertex.rs"]
+mod integer_vertex_tests;
+#[cfg(test)]
 #[path = "../../tests/dx11/snorm_vertex.rs"]
 mod snorm_vertex_tests;
 

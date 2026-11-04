@@ -192,6 +192,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 unrestricted_npot_texture_sampling: true,
                 max_texture_repeat_per_primitive: u32::MAX,
                 src_alpha_saturated_blend: true,
+                vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
             },
             shader_model: wgt::ShaderModel::Sm5,
         },
