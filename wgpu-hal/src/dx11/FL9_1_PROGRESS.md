@@ -2343,3 +2343,30 @@ while builds succeed.
 Next audit texture creation and render-pass attachment shapes, particularly
 dimensions, format usages and core-valid resolve/load/store combinations.
 Keep public adapter enumeration and surface exposure disabled.
+
+## Checkpoint — texture-layout dimension validation — `8c072d4f7` — 2026-11-04
+
+The continued layout audit found that the private HAL accepts only D2 sampled
+views, while core could forward D1/D3 sampled binding layouts even when the
+device's corresponding texture-dimension limit was zero. Core now rejects
+those layouts with a validation error based on the requested device limits.
+The audit also found that storage-texture `D2Array` layouts did not pass
+through the array downlevel check applied to sampled textures; they now require
+`TEXTURE_2D_ARRAYS` before format validation. The existing array/cube view
+flags and texture creation checks remain unchanged.
+
+The strict controlled core fixture passed on the RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, requested and actual FL9_1). It reported the expected
+core errors for D1/D3 layouts, storage-texture D2Array, sampled array/cube
+layouts and a one-layer D2Array view, then completed all existing GPU readback
+cases. The full fixture-enabled core library suite passed 70/70, including
+zero-adapter isolation. The core DX12 library suite passed 67/67. Core Clippy,
+targeted rustfmt and `git diff --check` passed. The DX12-only feature build
+emitted fifteen existing warnings because WGSL-dependent code was compiled
+without the WGSL feature; no new failures were reported. The Visual Studio
+developer-shell banner continues to print `vError: Unknown error` while Rust
+builds and tests succeed.
+
+Continue the texture descriptor/render-pass audit, then return to the broader
+core-valid command inventory. Public D3D11 adapter enumeration and surface
+exposure remain disabled.

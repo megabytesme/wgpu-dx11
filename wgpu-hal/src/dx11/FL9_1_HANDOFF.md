@@ -651,3 +651,18 @@ details are in `FL9_1_PROGRESS.md`.
 Resume at texture descriptor and render-pass validation. Public adapter
 enumeration and public surface exposure remain disabled; the controlled core
 fixture still injects capabilities and is not production adapter reporting.
+
+## Latest checkpoint — texture layout dimension validation — `8c072d4f7`
+
+Core now rejects D1/D3 texture binding layouts when the requested device limit
+for that dimension is zero, and storage-texture D2Array layouts require the
+same `TEXTURE_2D_ARRAYS` flag as sampled array layouts. The strict forced-FL9_1
+core fixture verified these validation errors on the RTX 3090 Ti and completed
+its GPU readback cases. The fixture-enabled core suite passed 70/70; the core
+DX12 suite passed 67/67; Clippy and targeted formatting checks passed. The
+DX12-only suite had fifteen existing no-WGSL feature warnings. Exact commands
+are recorded in `FL9_1_PROGRESS.md`.
+
+Continue auditing texture descriptors and render-pass validation. The D3D11
+fixture still injects restricted capabilities; normal adapter enumeration and
+public surface exposure remain disabled.
