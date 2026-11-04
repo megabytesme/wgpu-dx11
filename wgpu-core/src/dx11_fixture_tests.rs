@@ -86,6 +86,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
                     fragment_front_facing: false,
+                    fragment_position: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -403,6 +404,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
                     fragment_front_facing: false,
+                    fragment_position: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -3220,6 +3222,63 @@ fn render_triangle(
         global.render_pipeline_drop(safe_pipeline);
         global.shader_module_drop(front_facing_shader);
         std::println!("PASS: unsupported fragment front_facing is selected-entry gated");
+
+        let (fragment_position_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                "@fragment fn uses_position(@builtin(position) position: vec4f) -> @location(0) vec4f { return vec4f(position.x, 0.0, 0.0, 1.0); } @fragment fn unused_position(@builtin(position) position: vec4f) -> @location(0) vec4f { return vec4f(1.0); } @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }",
+            )),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "fragment-position shader: {shader_error:?}"
+        );
+        let mut fragment_position_descriptor = pipeline_descriptor.clone();
+        fragment_position_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .module = fragment_position_shader;
+        fragment_position_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("uses_position"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &fragment_position_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedFragmentPosition)
+            ),
+            "FL9_1 core validation must reject used fragment position before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+
+        for entry in ["unused_position", "safe"] {
+            fragment_position_descriptor
+                .fragment
+                .as_mut()
+                .unwrap()
+                .stage
+                .entry_point = Some(Cow::Borrowed(entry));
+            let (safe_pipeline, error) =
+                global.device_create_render_pipeline(device, &fragment_position_descriptor, None);
+            assert!(
+                error.is_none(),
+                "unused fragment position entry {entry:?} must not restrict the pipeline: {error:?}"
+            );
+            global.render_pipeline_drop(safe_pipeline);
+        }
+        global.shader_module_drop(fragment_position_shader);
+        std::println!("PASS: unsupported fragment position is selected-use gated");
 
         let (vertex_texture_shader, shader_error) = global.device_create_shader_module(
             device,

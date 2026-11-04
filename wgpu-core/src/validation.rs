@@ -285,6 +285,7 @@ struct EntryPointMeshInfo {
 struct EntryPoint {
     inputs: Vec<Varying>,
     outputs: Vec<Varying>,
+    fragment_position_used: bool,
     resources: Vec<naga::Handle<Resource>>,
     #[allow(unused)]
     spec_constants: Vec<SpecializationConstant>,
@@ -310,6 +311,192 @@ pub struct Interface {
     resources: naga::Arena<Resource>,
     entry_points: FastHashMap<(naga::ShaderStage, String), EntryPoint>,
     pub(crate) immediate_size: u32,
+}
+
+fn collect_call_arguments(
+    block: &naga::Block,
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    arguments: &mut FastHashMap<naga::Handle<naga::Expression>, (usize, usize)>,
+) {
+    for statement in block.iter() {
+        match statement {
+            naga::Statement::Call {
+                function,
+                arguments: call_arguments,
+                ..
+            } => {
+                for (index, &argument) in call_arguments.iter().enumerate() {
+                    let use_count = arguments.entry(argument).or_default();
+                    use_count.0 += 1;
+                    if function_parameter_uses_fragment_position(
+                        module,
+                        *function,
+                        module_info,
+                        index,
+                    ) {
+                        use_count.1 += 1;
+                    }
+                }
+            }
+            naga::Statement::Block(block) => {
+                collect_call_arguments(block, module, module_info, arguments)
+            }
+            naga::Statement::If { accept, reject, .. } => {
+                collect_call_arguments(accept, module, module_info, arguments);
+                collect_call_arguments(reject, module, module_info, arguments);
+            }
+            naga::Statement::Switch { cases, .. } => {
+                for case in cases {
+                    collect_call_arguments(&case.body, module, module_info, arguments);
+                }
+            }
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => {
+                collect_call_arguments(body, module, module_info, arguments);
+                collect_call_arguments(continuing, module, module_info, arguments);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn root_function_argument(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> Option<u32> {
+    match function.expressions[expression] {
+        naga::Expression::FunctionArgument(index) => Some(index),
+        naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+            root_function_argument(function, base)
+        }
+        _ => None,
+    }
+}
+
+fn function_parameter_uses_fragment_position(
+    module: &naga::Module,
+    function_handle: naga::Handle<naga::Function>,
+    module_info: &naga::valid::ModuleInfo,
+    argument_index: usize,
+) -> bool {
+    let function = &module.functions[function_handle];
+    let info = &module_info[function_handle];
+    let Some(argument) = function.arguments.get(argument_index) else {
+        return false;
+    };
+    let mut call_arguments = FastHashMap::default();
+    collect_call_arguments(&function.body, module, module_info, &mut call_arguments);
+    if matches!(
+        &module.types[argument.ty].inner,
+        naga::TypeInner::Struct { .. }
+    ) {
+        return function.expressions.iter().any(|(handle, expression)| {
+            let (call_count, uses_position_count) =
+                call_arguments.get(&handle).copied().unwrap_or_default();
+            let direct_use = info[handle].ref_count.saturating_sub(call_count) > 0;
+            match *expression {
+                naga::Expression::FunctionArgument(index) if index as usize == argument_index => {
+                    uses_position_count > 0
+                }
+                naga::Expression::AccessIndex { base, index }
+                    if root_function_argument(function, base) == Some(argument_index as u32) =>
+                {
+                    let naga::TypeInner::Struct { members, .. } =
+                        info[base].ty.inner_with(&module.types)
+                    else {
+                        return false;
+                    };
+                    members.get(index as usize).is_some_and(|member| {
+                        matches!(
+                            member.binding,
+                            Some(naga::Binding::BuiltIn(naga::BuiltIn::Position { .. }))
+                        ) && (direct_use || uses_position_count > 0)
+                    })
+                }
+                _ => false,
+            }
+        });
+    }
+    function.expressions.iter().any(|(handle, expression)| {
+        let naga::Expression::FunctionArgument(index) = expression else {
+            return false;
+        };
+        if *index as usize != argument_index {
+            return false;
+        }
+        let (call_count, uses_position_count) =
+            call_arguments.get(&handle).copied().unwrap_or_default();
+        info[handle].ref_count.saturating_sub(call_count) > 0 || uses_position_count > 0
+    })
+}
+
+fn type_contains_fragment_position(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    match &module.types[ty].inner {
+        naga::TypeInner::Struct { members, .. } => members.iter().any(|member| {
+            matches!(
+                member.binding,
+                Some(naga::Binding::BuiltIn(naga::BuiltIn::Position { .. }))
+            ) || type_contains_fragment_position(module, member.ty)
+        }),
+        _ => false,
+    }
+}
+
+fn entry_point_uses_fragment_position(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    info: &naga::valid::FunctionInfo,
+    module_info: &naga::valid::ModuleInfo,
+) -> bool {
+    let mut call_arguments = FastHashMap::default();
+    collect_call_arguments(
+        &entry_point.function.body,
+        module,
+        module_info,
+        &mut call_arguments,
+    );
+
+    entry_point
+        .function
+        .expressions
+        .iter()
+        .any(|(handle, expression)| {
+            let (call_count, uses_position_count) =
+                call_arguments.get(&handle).copied().unwrap_or_default();
+            let uses_position = uses_position_count > 0;
+            if info[handle].ref_count.saturating_sub(call_count) == 0 && !uses_position {
+                return false;
+            }
+
+            match *expression {
+                naga::Expression::FunctionArgument(index) => entry_point
+                    .function
+                    .arguments
+                    .get(index as usize)
+                    .is_some_and(|argument| {
+                        matches!(
+                            argument.binding,
+                            Some(naga::Binding::BuiltIn(naga::BuiltIn::Position { .. }))
+                        ) || (uses_position && type_contains_fragment_position(module, argument.ty))
+                    }),
+                naga::Expression::AccessIndex { base, index } => {
+                    let naga::TypeInner::Struct { members, .. } =
+                        info[base].ty.inner_with(&module.types)
+                    else {
+                        return false;
+                    };
+                    members.get(index as usize).is_some_and(|member| {
+                        matches!(
+                            member.binding,
+                            Some(naga::Binding::BuiltIn(naga::BuiltIn::Position { .. }))
+                        )
+                    })
+                }
+                _ => false,
+            }
+        })
 }
 
 #[derive(Debug)]
@@ -1219,7 +1406,11 @@ impl Interface {
         list.push(varying);
     }
 
-    pub fn new(module: &naga::Module, info: &naga::valid::ModuleInfo, limits: wgt::Limits) -> Self {
+    pub fn new(
+        module: &naga::Module,
+        module_info: &naga::valid::ModuleInfo,
+        limits: wgt::Limits,
+    ) -> Self {
         let mut resources = naga::Arena::new();
         let mut resource_mapping = FastHashMap::default();
         for (var_handle, var) in module.global_variables.iter() {
@@ -1269,8 +1460,16 @@ impl Interface {
         let mut entry_points = FastHashMap::default();
         entry_points.reserve(module.entry_points.len());
         for (index, entry_point) in module.entry_points.iter().enumerate() {
-            let info = info.get_entry_point(index);
-            let mut ep = EntryPoint::default();
+            let info = module_info.get_entry_point(index);
+            let mut ep = EntryPoint {
+                fragment_position_used: entry_point_uses_fragment_position(
+                    module,
+                    entry_point,
+                    info,
+                    module_info,
+                ),
+                ..Default::default()
+            };
             for arg in entry_point.function.arguments.iter() {
                 Self::populate(&mut ep.inputs, arg.binding.as_ref(), arg.ty, &module.types);
             }
@@ -1428,6 +1627,18 @@ impl Interface {
         Ok(entry_point
             .inputs
             .contains(&Varying::BuiltIn(BuiltIn::FrontFacing)))
+    }
+
+    pub(crate) fn entry_point_uses_fragment_position(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.fragment_position_used)
     }
 
     pub fn finalize_entry_point_name(
@@ -2259,6 +2470,87 @@ mod tests {
             .unwrap());
         assert!(interface
             .entry_point_uses_front_facing(naga::ShaderStage::Fragment, "missing")
+            .is_err());
+    }
+
+    #[test]
+    fn fragment_position_detection_uses_the_selected_fragment_entry_point() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct PositionInput { @builtin(position) position: vec4f, @location(0) color: vec4f }
+            fn read_position(position: vec4f) -> f32 { return position.x; }
+            fn read_position_struct(input: PositionInput) -> vec4f { return input.position; }
+            fn ignore_position_struct(input: PositionInput) -> vec4f { return input.color; }
+            fn forward_position_struct(input: PositionInput) -> vec4f { return read_position_struct(input); }
+            fn forward_ignored_struct(input: PositionInput) -> vec4f { return ignore_position_struct(input); }
+            fn forward_position(position: vec4f) -> f32 { return read_position(position); }
+            @fragment fn direct(@builtin(position) position: vec4f) -> @location(0) vec4f {
+                return position;
+            }
+            @fragment fn helper(@builtin(position) position: vec4f) -> @location(0) vec4f {
+                return vec4f(read_position(position), 0.0, 0.0, 1.0);
+            }
+            @fragment fn helper_struct(input: PositionInput) -> @location(0) vec4f {
+                return read_position_struct(input);
+            }
+            @fragment fn helper_struct_forwarded(input: PositionInput) -> @location(0) vec4f {
+                return forward_position_struct(input);
+            }
+            @fragment fn helper_struct_forwarded_unused(input: PositionInput) -> @location(0) vec4f {
+                return forward_ignored_struct(input);
+            }
+            @fragment fn helper_forwarded(@builtin(position) position: vec4f) -> @location(0) vec4f {
+                return vec4f(forward_position(position), 0.0, 0.0, 1.0);
+            }
+            @fragment fn helper_unused(input: PositionInput) -> @location(0) vec4f {
+                return ignore_position_struct(input);
+            }
+            @fragment fn structured(input: PositionInput) -> @location(0) vec4f {
+                return input.position;
+            }
+            @fragment fn unused_direct(@builtin(position) position: vec4f) -> @location(0) vec4f {
+                return vec4f(1.0);
+            }
+            @fragment fn unused_struct(input: PositionInput) -> @location(0) vec4f {
+                return input.color;
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+
+        for entry in [
+            "direct",
+            "helper",
+            "helper_struct",
+            "helper_struct_forwarded",
+            "helper_forwarded",
+            "structured",
+        ] {
+            assert!(interface
+                .entry_point_uses_fragment_position(naga::ShaderStage::Fragment, entry)
+                .unwrap());
+        }
+        for entry in [
+            "unused_direct",
+            "unused_struct",
+            "helper_unused",
+            "helper_struct_forwarded_unused",
+            "safe",
+        ] {
+            assert!(!interface
+                .entry_point_uses_fragment_position(naga::ShaderStage::Fragment, entry)
+                .unwrap());
+        }
+        assert!(interface
+            .entry_point_uses_fragment_position(naga::ShaderStage::Fragment, "missing")
             .is_err());
     }
 }

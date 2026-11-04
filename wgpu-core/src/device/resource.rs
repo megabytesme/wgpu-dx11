@@ -5262,6 +5262,23 @@ impl Device {
                     }
                 }
 
+                if !self.downlevel.limits.fragment_position {
+                    let uses_fragment_position = match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_fragment_position(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    };
+                    if uses_fragment_position {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedFragmentPosition,
+                        );
+                    }
+                }
+
                 if desc
                     .depth_stencil
                     .as_ref()

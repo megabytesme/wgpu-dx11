@@ -58,6 +58,7 @@ Bottom level categories:
 - Allow adapters to report single-mip-only texture formats and reject unsupported mip chains before HAL texture creation.
 - Add `DownlevelLimits::viewport_rectangles_outside_target` and reject out-of-target viewports when an adapter cannot preserve clipped viewport behavior.
 - Add `DownlevelLimits::depth_bias_with_fragment_depth` so adapters can reject depth-biased pipelines only when the selected fragment entry point writes fragment depth.
+- Add `DownlevelLimits::fragment_position` so adapters can reject fragment `@builtin(position)` use when their shader profile cannot provide it.
 
 #### Hal
 

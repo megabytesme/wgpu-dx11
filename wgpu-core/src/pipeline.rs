@@ -785,6 +785,8 @@ pub enum CreateRenderPipelineError {
     UnsupportedDepthBiasWithFragmentDepth,
     #[error("Fragment `@builtin(front_facing)` is not supported by this downlevel adapter")]
     UnsupportedFragmentFrontFacing,
+    #[error("Fragment `@builtin(position)` input is not supported by this downlevel adapter")]
+    UnsupportedFragmentPosition,
     #[error("Vertex format {format:?} is not supported by this downlevel adapter")]
     UnsupportedVertexFormatOnDownlevelAdapter { format: wgt::VertexFormat },
     #[error("The total number of vertex attributes {given} exceeds the limit {limit}")]
@@ -872,6 +874,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManySampledTexturesInVertexStage { .. }
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentFrontFacing
+            | Self::UnsupportedFragmentPosition
             | Self::UnsupportedVertexFormatOnDownlevelAdapter { .. }
             | Self::TooManyVertexAttributes { .. }
             | Self::VertexAttributeLocationTooLarge { .. }
