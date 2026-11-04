@@ -1735,6 +1735,13 @@ impl Device {
             });
         }
 
+        if mips > 1
+            && desc.usage.contains(wgt::TextureUsages::RENDER_ATTACHMENT)
+            && desc.format.is_depth_stencil_format()
+        {
+            self.require_downlevel_flags(wgt::DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP)?;
+        }
+
         if mips > 1 && has_non_power_of_two_mip_dimension(desc.dimension, desc.size) {
             self.require_downlevel_flags(wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES)?;
         }

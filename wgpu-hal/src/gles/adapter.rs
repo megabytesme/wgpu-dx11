@@ -395,6 +395,7 @@ impl super::Adapter {
 
         let mut downlevel_flags = wgt::DownlevelFlags::empty()
             | wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
+            | wgt::DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP
             | wgt::DownlevelFlags::COMPARISON_SAMPLERS
             | wgt::DownlevelFlags::SHADER_F16_IN_F32
             | wgt::DownlevelFlags::MSL2_1

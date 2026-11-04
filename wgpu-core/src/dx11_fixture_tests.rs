@@ -622,6 +622,26 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     );
     global.texture_drop(npot_mip_texture);
     std::println!("PASS: NPOT mip chain rejected by core validation");
+
+    let mut depth_mip_texture_desc = texture_desc(
+        wgt::TextureFormat::Depth24PlusStencil8,
+        wgt::TextureUsages::RENDER_ATTACHMENT,
+    );
+    depth_mip_texture_desc.mip_level_count = 2;
+    let (depth_mip_texture, error) =
+        global.device_create_texture(device, &depth_mip_texture_desc, None);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(crate::resource::CreateTextureError::MissingDownlevelFlags(
+                crate::device::MissingDownlevelFlags(flags)
+            )) if *flags == wgt::DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP
+        ),
+        "multi-mip depth attachments unsupported at FL9_1 must fail core validation before HAL: {error:?}"
+    );
+    global.texture_drop(depth_mip_texture);
+    std::println!("PASS: multi-mip depth attachment rejected by core validation");
+
     let (texture, error) = global.device_create_texture(
         device,
         &texture_desc(

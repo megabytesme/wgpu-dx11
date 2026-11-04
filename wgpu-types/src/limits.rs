@@ -1257,6 +1257,12 @@ bitflags::bitflags! {
 
         /// Supports cube texture views and sampling.
         const CUBE_TEXTURES = 1 << 30;
+
+        /// Supports depth/stencil attachment textures with multiple mip levels.
+        ///
+        /// D3D11 feature levels 9_1 through 9_3 require resources bound as
+        /// depth/stencil attachments to have exactly one mip level.
+        const DEPTH_TEXTURE_MULTI_MIP = 1 << 31;
     }
 }
 
@@ -1313,6 +1319,10 @@ mod tests {
             .contains(DownlevelFlags::TEXTURE_2D_ARRAYS | DownlevelFlags::CUBE_TEXTURES));
         assert!(DownlevelFlags::compliant()
             .contains(DownlevelFlags::TEXTURE_2D_ARRAYS | DownlevelFlags::CUBE_TEXTURES));
+        assert!(DownlevelCapabilities::default()
+            .flags
+            .contains(DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP));
+        assert!(DownlevelFlags::compliant().contains(DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP));
     }
 
     fn side_by_side(left: &str, right: &str) -> String {

@@ -28,6 +28,7 @@ pub(super) struct HardwareGuarantees {
     pub depth_bias: bool,
     pub slope_scaled_depth_bias: bool,
     pub depth_bias_clamp: bool,
+    pub depth_stencil_mip_levels: bool,
     pub geometry_shader: bool,
     pub compute_shader: bool,
     pub two_sided_stencil: bool,
@@ -59,6 +60,7 @@ impl HardwareGuarantees {
             depth_bias: true,
             slope_scaled_depth_bias: true,
             depth_bias_clamp: level.as_raw() >= L10_0.as_raw(),
+            depth_stencil_mip_levels: level.as_raw() >= L10_0.as_raw(),
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
             two_sided_stencil: level != L9_1,
@@ -134,6 +136,7 @@ pub(super) struct DriverCapabilities {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BackendCapabilities {
+    pub depth_stencil_mip_levels: bool,
     pub pot_full_chain_sampled_mips: bool,
     pub pot_copy_only_mip_chains: bool,
     pub pot_color_attachment_mips: bool,
@@ -192,6 +195,7 @@ pub(super) struct BackendCapabilities {
 
 impl BackendCapabilities {
     pub const CURRENT: Self = Self {
+        depth_stencil_mip_levels: false,
         pot_full_chain_sampled_mips: true,
         pot_copy_only_mip_chains: true,
         pot_color_attachment_mips: true,
@@ -494,21 +498,34 @@ mod tests {
     #[test]
     fn feature_level_guarantees_are_specific_and_do_not_promote_backend() {
         let expected = [
-            (FeatureLevel::L9_1, 2048, 1, false, false, false),
-            (FeatureLevel::L9_2, 2048, 1, false, false, true),
-            (FeatureLevel::L9_3, 4096, 4, false, false, true),
-            (FeatureLevel::L10_0, 8192, 8, true, false, true),
-            (FeatureLevel::L10_1, 8192, 8, true, false, true),
-            (FeatureLevel::L11_0, 16384, 8, true, true, true),
-            (FeatureLevel::L11_1, 16384, 8, true, true, true),
+            (FeatureLevel::L9_1, 2048, 1, false, false, false, false),
+            (FeatureLevel::L9_2, 2048, 1, false, false, false, true),
+            (FeatureLevel::L9_3, 4096, 4, false, false, false, true),
+            (FeatureLevel::L10_0, 8192, 8, true, false, true, true),
+            (FeatureLevel::L10_1, 8192, 8, true, false, true, true),
+            (FeatureLevel::L11_0, 16384, 8, true, true, true, true),
+            (FeatureLevel::L11_1, 16384, 8, true, true, true, true),
         ];
-        for (level, dimension, targets, geometry, compute, two_sided_stencil) in expected {
+        for (
+            level,
+            dimension,
+            targets,
+            geometry,
+            compute,
+            depth_stencil_mip_levels,
+            two_sided_stencil,
+        ) in expected
+        {
             let caps = model(level);
             assert_eq!(caps.hardware.level, level);
             assert_eq!(caps.hardware.texture_2d_dimension, dimension);
             assert_eq!(caps.hardware.render_targets, targets);
             assert_eq!(caps.hardware.geometry_shader, geometry);
             assert_eq!(caps.hardware.compute_shader, compute);
+            assert_eq!(
+                caps.hardware.depth_stencil_mip_levels,
+                depth_stencil_mip_levels
+            );
             assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
             assert!(caps.hardware.r8_unorm_sampled_texture);
             assert!(caps.hardware.rg8_snorm_sampled_texture);
@@ -519,6 +536,7 @@ mod tests {
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(!caps.backend.depth_stencil_mip_levels);
             assert!(caps.hardware.depth_bias);
             assert!(caps.hardware.slope_scaled_depth_bias);
             assert_eq!(
