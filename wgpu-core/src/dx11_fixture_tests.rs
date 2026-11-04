@@ -3127,6 +3127,22 @@ fn render_triangle(
         pipeline_descriptor.multisample.mask = 0;
     }
     if case == VertexCase::Baseline {
+        let mut invalid_alpha_to_coverage = pipeline_descriptor.clone();
+        invalid_alpha_to_coverage
+            .multisample
+            .alpha_to_coverage_enabled = true;
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &invalid_alpha_to_coverage, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::AlphaToCoverageRequiresMultisampling)
+            ),
+            "alpha-to-coverage with one sample must fail core validation before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        std::println!("PASS: single-sample alpha-to-coverage rejected by core validation");
+
         let mut unsupported_format_descriptor = pipeline_descriptor.clone();
         let mut unsupported_buffers = unsupported_format_descriptor.vertex.buffers.to_vec();
         let mut unsupported_buffer = unsupported_buffers[0].clone().unwrap();

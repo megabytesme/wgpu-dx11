@@ -5050,6 +5050,11 @@ impl Device {
             if sc == 0 || sc > 32 || !sc.is_power_of_two() {
                 return Err(pipeline::CreateRenderPipelineError::InvalidSampleCount(sc));
             }
+            if desc.multisample.alpha_to_coverage_enabled && sc == 1 {
+                return Err(
+                    pipeline::CreateRenderPipelineError::AlphaToCoverageRequiresMultisampling,
+                );
+            }
             sc
         };
 
