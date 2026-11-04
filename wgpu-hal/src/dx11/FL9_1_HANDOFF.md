@@ -1059,7 +1059,7 @@ requests 2, 3 and 16 on the RTX 3090 Ti at requested/actual FL9_1. Full
 zero-adapter isolation passed. Cross-backend HAL tests compiled `dx11,gles,vulkan`;
 wgpu-info/wgpu-test checks and affected Clippy also passed. Exact commands,
 warning notes and the lack of visual anisotropy-quality evidence are recorded
-in `FL9_1_PROGRESS.md`.
+in `FL9_1_PROGRESS.md`. Code commit: `0b38756c1`.
 
 The checkpoint is ready for commit. Resume with the remaining core/HAL contract
 audit and truthful production adapter projection. Do not enable ordinary

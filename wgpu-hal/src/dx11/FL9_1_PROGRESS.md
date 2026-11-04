@@ -3836,6 +3836,7 @@ The next reviewed mismatch is sampler anisotropy: core models the downlevel
 flag as support up to 16, while the FL9_1 HAL accepts at most 2. A truthful
 numeric downlevel limit is needed so core can clamp requests consistently
 before HAL. Public D3D11 enumeration and HWND surface exposure remain gated.
+Code checkpoint: `3e725d3f4` (`dx11: verify unchecked FL9_1 shader indexing rejection`).
 
 ## Checkpoint — numeric sampler-anisotropy capability
 
@@ -3902,3 +3903,4 @@ Clippy run pointed out a clamp idiom, which was corrected and Clippy rerun clean
 The next work remains the core/HAL capability audit and a truthful production
 adapter contract. HWND `Present` reentrancy remains a separately documented
 blocker; public D3D11 enumeration and surface exposure stay disabled.
+Code checkpoint: `0b38756c1` (`core: honor downlevel sampler anisotropy limits`).
