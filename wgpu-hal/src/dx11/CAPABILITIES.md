@@ -17,8 +17,14 @@ minimum. For FL9_1, the baseline includes 2048 2D dimensions, one render target,
 shaders, and conditional NPOT textures. These are minimum guarantees, not
 assertions that larger sizes work on every device. Level 9_1 has no guaranteed
 separate alpha blending, hardware instancing, geometry or compute shader stage,
-or native UAV storage. Other feature levels have different documented minima;
-this model does not enable their additional execution paths.
+or native UAV storage. The model also records constant and slope-scaled raster
+depth bias as hardware guarantees, and `DepthBiasClamp` as unavailable at 9.x
+but guaranteed from 10.0. The implementation facts remain separate: the
+current private D24S8 path supports constant and slope-scaled bias on triangles,
+but not clamp or bias with selected `frag_depth` output. Modeling higher-level
+hardware guarantees does not enable higher-level execution paths. Other feature
+levels have different documented minima; this model does not enable their
+additional execution paths.
 Microsoft's required-format table maps legacy L8 to R8_UNORM, V8U8 to
 R8G8_SNORM, and Q8W8V8U8 to R8G8B8A8_SNORM. Each requires 2D texture and
 shader-sample support beginning at FL9_1. It also requires DXT1 / BC1_UNORM

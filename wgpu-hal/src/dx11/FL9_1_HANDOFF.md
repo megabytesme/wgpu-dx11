@@ -11,14 +11,16 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-Latest checkpoint: `6f7f1297891ac3477ed7055ded00934da1c46c2a` adds native
-finite slope-scaled bias for FL9_1 triangle pipelines, retaining zero-clamp,
-solid point/line and selected `frag_depth` restrictions. Five constant-bias
-and two sloped-triangle GPU images passed on the RTX 3090 Ti at requested and
-actual FL9_1; the full private suite passed 322/322. Exact commands and the
-expected FXC diagnostic are in FL9_1_PROGRESS.md. Continue with the public
-HAL/core capability boundary and truthful capability snapshot in
-FL9_1_PLAN.md. Do not enable normal enumeration or public HWND presentation.
+Latest code checkpoints: `6f7f1297891ac3477ed7055ded00934da1c46c2a` adds native
+finite slope-scaled bias for FL9_1 triangle pipelines, and
+`1a362ec6108de9accb52e2f1978a174d1f923106` records the hardware guarantees
+separately from the D24S8 implementation. Zero-clamp, solid point/line and
+selected `frag_depth` restrictions remain. Five constant-bias and two
+sloped-triangle GPU images passed on the RTX 3090 Ti at requested and actual
+FL9_1; the full private suite passed 322/322. Exact commands and the expected
+FXC diagnostic are in FL9_1_PROGRESS.md. Continue with the public HAL/core
+capability boundary and truthful capability snapshot in FL9_1_PLAN.md. Do not
+enable normal enumeration or public HWND presentation.
 
 The indexed TriangleStrip checkpoint `f1b8c09a7` and strict core-fixture
 coverage `c46c4a908` are followed by static boundary execution tests for vertex
@@ -159,6 +161,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `340147803` | dx11: support native FL9_1 depth comparisons |
 | `6f7f1297891ac3477ed7055ded00934da1c46c2a` | dx11: support FL9_1 slope depth bias |
 | `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c` | dx11: verify FL9_1 depth clamp core gate |
+| `1a362ec6108de9accb52e2f1978a174d1f923106` | dx11: model raster depth-bias capabilities |
 
 ## What is and is not usable
 

@@ -192,6 +192,18 @@ from the same module succeeded with nonzero bias. These results do not establish
 bias arithmetic precision on historical FL9 hardware, nor a public adapter
 contract.
 
+Run the CPU-only capability mapping test across all seven recognized feature
+levels with:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 feature_level_guarantees_are_specific_and_do_not_promote_backend -- --nocapture --test-threads=1
+```
+
+It distinguishes the FL9.x lack of `DepthBiasClamp` from the constant and slope
+bias hardware guarantees, then separately asserts the private backend's
+D24S8-triangle implementation and its clamp/`frag_depth` restrictions. This
+does not claim execution support for FL9_2 through FL11_1.
+
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 fl91_read_only_depth_preserves_depth_and_rejects_writes -- --nocapture` checks
 the private read-only D24S8 path. It validates depth preservation, rejects

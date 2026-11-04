@@ -146,4 +146,6 @@ snapshot without enabling ordinary DXGI enumeration. Keep the public adapter
 and HWND surface gates closed until every core-legal operation in that snapshot
 is implemented or rejected. Latest code checkpoint `6f7f12978` completed the
 native FL9_1 slope-scaled triangle depth-bias path; its capability and test
-record is in FL9_1_PROGRESS.md.
+record is in FL9_1_PROGRESS.md. Checkpoint `1a362ec6108de9accb52e2f1978a174d1f923106`
+then recorded hardware bias guarantees separately from backend support across
+all seven feature-level identities.

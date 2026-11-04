@@ -2648,3 +2648,28 @@ Code checkpoint: `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c`
 `20f69046714e7f9ffb061df3825d0eaf52bdfabf` (`docs: record FL9_1 depth clamp
 core validation`). Resume with the public HAL/core capability-boundary audit
 in FL9_1_PLAN.md.
+
+## Checkpoint — raster depth-bias capability facts — `1a362ec6108de9accb52e2f1978a174d1f923106`
+
+`HardwareGuarantees` now records native constant and slope-scaled depth bias
+for the recognized levels and records `DepthBiasClamp` only from FL10_0.
+`BackendCapabilities` independently records the implemented D24S8 triangle
+constant/slope paths and the absent clamp and biased-`frag_depth` paths. Tests
+assert the feature-level distinction across all seven identities and ensure
+the FL9_1 backend implementation is not promoted when a higher level is
+modeled. The strict hardware diagnostic prints those facts from the selected
+device level, separate from driver queries.
+
+The targeted capability-model test passed 1/1. The complete strict private
+D3D11 suite passed 322/322 on the RTX 3090 Ti explicitly requested and selected
+at FL9_1. Its indexed-render diagnostic showed `depth_bias=true`,
+`slope_scaled_depth_bias=true`, `depth_bias_clamp=false`, with the backend
+reporting D24S8 triangle constant/slope support and clamp/biased-fragment-depth
+support false. The D3D11 HAL check passed; HAL Clippy passed with ten existing
+warnings outside the changed capability file; targeted rustfmt and
+`git diff --check` passed. The six expected dynamic-index GPU skips described
+in the earlier depth-bias checkpoint remain. Public enumeration remains empty.
+
+Code checkpoint: `1a362ec6108de9accb52e2f1978a174d1f923106`
+(`dx11: model raster depth-bias capabilities`). Documentation checkpoint
+follows.
