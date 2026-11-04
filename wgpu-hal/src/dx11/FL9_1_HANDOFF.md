@@ -969,3 +969,11 @@ core Clippy, targeted rustfmt and `git diff --check` passed. Full details and
 reproduction commands are in `FL9_1_PROGRESS.md`. Resume the audit at
 core-valid pipeline/render state and the production capability projection.
 Keep normal D3D11 adapter enumeration and HWND surface exposure disabled.
+
+The current working core patch extends the existing `COMPUTE_SHADERS`
+downlevel gate to compute-visible uniform, sampler and sampled-texture layout
+entries. The strict fixture checks these classes before HAL; full core passed
+78/78, DX12 passed 75/75, Clippy passed, and the physical FL9_1 render/readback
+fixture still passed. Exact commands are in `FL9_1_PROGRESS.md`. Run final
+format/diff checks, commit the code and journal, then continue the core/HAL
+audit. The private HAL suite is unchanged and most recently passed 337/337.

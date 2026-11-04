@@ -3561,3 +3561,43 @@ assertion, and the Unreleased validation changelog. The HAL was unchanged, so
 its most recent full strict suite result remains the 337/337 recorded in the
 capability-projection checkpoint. This does not enable D3D11 enumeration or
 multisampling. Continue auditing the public core/HAL contract.
+
+## Checkpoint — gate compute-stage bind-group layouts
+
+Core now requires `DownlevelFlags::COMPUTE_SHADERS` for every bind-group-layout
+entry whose visibility includes the compute stage, regardless of resource
+type. Before this, core gated compute-visible storage buffers but let uniform,
+sampler and sampled-texture layouts reach the FL9_1 HAL, which only accepts
+vertex/fragment bindings. The controlled fixture verifies all three new
+resource classes fail with the missing-compute-capability validation error;
+the existing storage tests continue covering storage buffers.
+
+Rust 1.93.1/MSVC verification:
+
+- Strict fixture-enabled core suite: 78/78 passed. The RTX 3090 Ti
+  (`0x10de:0x2203`, software=false) was requested and selected at FL9_1. The
+  controlled integration case exercised core validation plus the existing
+  checked GPU render/readback paths.
+- Focused strict fixture: 1/1 passed.
+- Core DX12 suite: 75/75 passed.
+- Core Clippy passed.
+- Targeted rustfmt and `git diff --check` passed.
+- The ordinary D3D11 zero-adapter isolation test remains part of the fixture
+  suite and passed; normal enumeration remains disabled.
+
+Commands, run from the MSVC developer prompt (`WGPU_DX11_REQUIRE_HARDWARE=1`
+for the two fixture commands):
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+The core validation gate is shared and leaves adapters with compute support
+unchanged. No HAL code changed, so the last full strict HAL suite remains
+337/337. Continue auditing valid core requests against the private HAL before
+considering public enumeration.
