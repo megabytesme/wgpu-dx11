@@ -81,6 +81,16 @@ below is met. This plan does not claim WebGPU conformance.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`
    for NPOT spatial dimensions when more than one mip is requested; the D3D11
    implementation remains POT-only even when the runtime reports full NPOT.
+   The private single-target blend path now translates ordinary wgpu factors
+   and all five operations, including blend constants; it rejects FL9_1
+   `SRC_ALPHA_SAT`, dual-source factors and full-channel distinct RGB/alpha
+   equations unless the latter are explicitly established. Strict forced-9_1
+   readback covered custom constant factors, while CPU translation tests cover
+   every supported factor/operation pair. Continue auditing other core-valid
+   render-state combinations and shader limitations.
+   Next evaluate core-valid depth comparison functions beyond the currently
+   implemented Always/LessEqual/Never subset. Confirm the 10Level9 contract and
+   test actual forced-FL9_1 output before widening that subset.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

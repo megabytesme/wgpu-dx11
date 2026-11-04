@@ -267,6 +267,23 @@ those modes with both RGB and alpha writes. Some older full-channel blend tests
 explicitly opt into a test-only RTX diagnostic and do not establish portability;
 they can fail on hardware that lacks separate alpha support.
 
+Custom single-target blend factors and operations are translated independently
+of those preset tests. CPU tests verify every ordinary factor's RGB/alpha
+mapping and rejection of `SrcAlphaSaturated` and dual-source factors. The strict
+`fl91_custom_constant_blend_and_updates_match_readback` test uses constant and
+inverse-constant factors with two blend-constant values, then exercises Add,
+Subtract, ReverseSubtract, Min and Max in the same render pass; all 64 pixels
+are checked. The controlled core fixture also renders a custom constant blend
+and checks all 64 pixels through core command recording. These tests ran on an
+RTX 3090 Ti explicitly requested and selected at FL9_1; historical drivers and
+every nonconstant factor's visual output remain unverified.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_custom -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
 Read the printed result, not just libtest's final line:
 
 - `PASS`: the hardware device and all operations completed with the expected pixels.

@@ -702,3 +702,23 @@ The HAL was unchanged; its last strict private suite passed 318 tests under
 `8eff9020a`. See `FL9_1_PROGRESS.md` for exact commands. Continue auditing
 custom blend-state validation and public adapter gaps; keep both public gates
 closed.
+
+## Latest checkpoint — general single-target blending — `f99cae113`
+
+The HAL now translates standard single-target wgpu blend factors and all five
+blend operations, including blend constants recorded and rebound in command
+order. It rejects `SrcAlphaSaturated`, dual-source factors and differing
+full-channel RGB/alpha equations unless separate-alpha support is established;
+the production FL9_1 model still does not establish it. The strict D3D11 HAL
+suite passed 321/321 on an RTX 3090 Ti at requested and actual FL9_1. The new
+GPU case checked constant-factor changes and Add/Subtract/ReverseSubtract/Min/
+Max, matching all 64 pixels. The controlled core suite passed 71/71 with a
+64-pixel custom blend render, the core DX12 suite passed 68/68, and the ordinary
+zero-adapter test passed. Clippy and targeted formatting/diff checks passed;
+ten existing HAL Clippy warnings remain. See `FL9_1_PROGRESS.md` for commands,
+driver identity and failure history.
+
+Continue the core/HAL render-state audit, with depth comparison functions as a
+candidate. Public adapter enumeration and public surface exposure remain
+disabled. The HWND `Present` reentrancy issue, historical FL9_1 hardware and
+production capability-reporting gaps remain unresolved.

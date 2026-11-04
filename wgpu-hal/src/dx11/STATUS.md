@@ -195,9 +195,9 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   uniform arrays remain rejected.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
   vertex- or instance-rate streams, winding and face
-  culling, bounds-checked scissors, per-channel color write masks,
-  restricted replace/straight-alpha/premultiplied-alpha/crosshair/additive/vignette blending, and splitting
-  at FL9 draw limits. Runtime integer-based vector indexing is rejected in both
+  culling, bounds-checked scissors, per-channel color write masks, translated
+  single-target blend factors/operations and splitting at FL9 draw limits.
+  Runtime integer-based vector indexing is rejected in both
   shader modes; proven static literal indices remain supported. Stores through aggregates
   containing two-row matrices are conservatively rejected in both shader modes.
 - The private vertex-input subset includes `Snorm16x2` and `Snorm16x4`, with
@@ -222,6 +222,19 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   both RGB and alpha are written; RGB-only and alpha-only cases use coupled
   factors and remain accepted. A test-only opt-in retains nonportable
   diagnostics.
+- Standard blend factors and all five blend operations now translate through
+  one path, including per-channel constant blend factors. `SRC_ALPHA_SAT` and
+  dual-source factors remain rejected for FL9_1. Command replay retains blend
+  factor state across pipeline binds and updates it when `set_blend_constants`
+  is recorded. The D3D11 blend descriptor mirrors its first target into the
+  first four native slots to satisfy the FL9_1 `BlendEnable` rule while the
+  backend binds only one render target. A forced-FL9_1 hardware draw exercised
+  constant and inverse-constant factors with two factor values plus Add,
+  Subtract, ReverseSubtract, Min and Max; all 64 readback pixels matched. The
+  controlled core fixture matched the custom constant-add output across 64
+  pixels. Other factor mappings are CPU-tested, not each independently
+  rendered. This still does not establish historical-device behavior or public
+  adapter safety.
 - Nonindexed point-list draws support the restricted vertex- and instance-rate
   streams, including sparse slots, nonzero offsets and `first_instance`. FL9_1
   point batches rebase vertex bindings and contain at most 65,535 points.

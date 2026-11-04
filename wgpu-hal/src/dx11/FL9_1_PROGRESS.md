@@ -3,10 +3,10 @@
 ## Current position — 2026-11-04
 
 Branch: `uwp-dx11`. The autonomous FL9_1 completion mission remains active.
-Recent verified code checkpoints are `8eff9020a` (single-sample output masks)
-and `1eb21620c` (core rejects NPOT mip chains when the downlevel capability is
-absent). Ordinary public D3D11 adapter enumeration and public surface exposure
-remain disabled.
+Recent verified code checkpoints are `f99cae113` (general single-target blend
+translation), `8eff9020a` (single-sample output masks) and `1eb21620c` (core
+rejects NPOT mip chains when the downlevel capability is absent). Ordinary
+public D3D11 adapter enumeration and public surface exposure remain disabled.
 
 The private renderer now has extensive forced-FL9_1 coverage for depth/stencil,
 texture formats and mip views, static and dynamic uniform ranges, sampled
@@ -2456,3 +2456,62 @@ cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx1
 rustfmt --edition 2021 --check wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs
 git diff --check
 ```
+
+## Checkpoint — general single-target blend translation — `f99cae113` — 2026-11-04
+
+The custom blend audit found that the HAL accepted only a fixed set of named
+blend presets even though core permits ordinary custom single-target blend
+equations. The HAL now translates the ordinary non-dual-source blend factors
+and all five operations, maps `Src`/`Dst` differently for RGB and alpha
+components, and records/rebinds blend constants in command order. It rejects
+`SrcAlphaSaturated`, all dual-source factors and differing full-channel RGB/
+alpha equations unless separate-alpha support is established. That capability
+remains unavailable in the production FL9_1 model. The native descriptor
+mirrors target zero into the first four native slots so their `BlendEnable`
+bits satisfy the Microsoft FL9_1 rule while only one target is bound.
+
+An initial full-suite run exposed three stale assertions that expected the old
+translator to reject a custom diagnostic equation or expected inactive blend
+fields to retain preset values. After updating those tests to assert the new
+contract, the full strict HAL suite passed 321/321. Its GPU blend test executed
+constant and inverse-constant factors with changing blend constants, then Add,
+Subtract, ReverseSubtract, Min and Max. All 64 pixels matched. The RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) was selected as hardware and the device
+was explicitly requested and confirmed at FL9_1.
+
+The controlled core fixture passed 71/71, including the custom constant-blend
+render and 64-pixel readback through core command recording; the fixture still
+injects restricted test capabilities. The core DX12 suite passed 68/68 with
+fifteen existing warnings from the no-WGSL feature configuration. The ordinary
+zero-D3D11-adapter isolation test passed 1/1. `cargo check` for the D3D11 HAL
+passed. HAL Clippy passed with ten existing warnings and no new warnings; core
+Clippy passed cleanly. Targeted rustfmt and `git diff --check` passed. The
+Visual Studio developer-shell banner continues to print `vError: Unknown
+error` even though the MSVC environment initializes and builds succeed.
+
+The change does not establish historical FL9_1 behavior and does not enable a
+public adapter. All factors are CPU-translation tested, but GPU readback uses
+constant factors and `One` factors; other factor visual results remain
+unverified. Full-channel separate-alpha equations remain gated. See Microsoft's
+[10Level9 blend-state restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+and [`OMSetBlendState` blend-factor behavior](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-omsetblendstate).
+
+Commands:
+
+```text
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11
+cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt --edition 2021 --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/command.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/tests/dx11/blend_state.rs wgpu-hal/tests/dx11/textured_render.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+Code checkpoint: `f99cae113` (`dx11: generalize FL9_1 blend-state translation`).
+Next continue the core/HAL render-state audit; depth comparison functions are a
+small candidate for verification and expansion. Keep adapter enumeration and
+public surface exposure disabled, and preserve the separate-alpha restriction.
