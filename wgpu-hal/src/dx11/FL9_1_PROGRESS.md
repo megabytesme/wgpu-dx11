@@ -2240,3 +2240,30 @@ enabling ordinary enumeration. Identify every core-legal operation that such
 a report would permit but HAL rejects; implement narrow validation or keep
 that capability out of the report. Public adapter and HWND surface exposure
 remain gated.
+
+## Core capability-validation checkpoints — 2026-11-04
+
+`96eacac49c26596a021672c5d405bb99fdbc56b1` adds
+`DownlevelFlags::TWO_SIDED_STENCIL`. Core rejects differing front/back stencil
+face state when the flag is absent, and the controlled FL9_1 fixture verifies
+the missing-flag error before HAL. GLES, Vulkan and compliant/default flag sets
+report support. Core format-feature projection for RGBA8, D24S8, BC1 and an
+unsupported BC format is also checked against the fixture's manually limited
+HAL report. This does not create a production adapter capability report.
+
+`3c9a7fca156b45aad8fcfb4c99db39d36f5f8bed` honors the existing
+`COMPARISON_SAMPLERS` flag during core sampler creation. The fixture verifies a
+comparison sampler returns `MissingDownlevelFlags` before HAL. The strict
+fixture-enabled core library suite passed 70/70; its GPU fixture ran on the
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual
+FL9_1, and all exercised image/readback checks passed. The regular core
+zero-adapter isolation test passed 1/1. Core Clippy, targeted rustfmt and
+`git diff --check` passed. The first shell attempt lacked `link.exe`; rerunning
+inside Visual Studio 2022 Build Tools' `VsDevCmd.bat` succeeded. No HAL or
+non-D3D11 code path failures were observed.
+
+Next audit sampler/layout, blend, render-pass, and resource validation paths
+for other core-legal requests that can reach an unsupported D3D11 HAL case.
+Prioritize cases that can panic, issue invalid native commands, or fail only
+after resource creation. Public enumeration and surface exposure remain
+disabled.

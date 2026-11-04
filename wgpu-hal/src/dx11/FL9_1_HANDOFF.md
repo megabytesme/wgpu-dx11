@@ -591,3 +591,20 @@ The test still injects hand-chosen limits/features and therefore does not
 validate a production adapter capability report. Next audit and model that
 core/HAL boundary without enabling ordinary adapter enumeration or surface
 exposure.
+
+## Current core validation fixes
+
+`96eacac49c26596a021672c5d405bb99fdbc56b1` adds a core-visible
+`TWO_SIDED_STENCIL` downlevel flag. The FL9_1 controlled fixture omits the flag
+and confirms differing front/back stencil descriptors fail before HAL. GLES
+and Vulkan report their existing two-sided stencil support.
+
+`3c9a7fca156b45aad8fcfb4c99db39d36f5f8bed` implements the existing
+`COMPARISON_SAMPLERS` downlevel check in core. On the forced-FL9_1 fixture, a
+comparison sampler now returns the missing-flag validation error before the
+private HAL rejects it. The full fixture-enabled core suite passed 70/70; the
+GPU fixture ran on the RTX 3090 Ti at requested/actual FL9_1. The core
+zero-adapter test passed 1/1 and core Clippy and formatting passed. Public
+enumeration remains empty. Continue the core/HAL contract audit; next check
+blend, sampler/layout and resource restrictions that lack a sufficiently
+narrow core validation path.
