@@ -977,3 +977,11 @@ entries. The strict fixture checks these classes before HAL; full core passed
 fixture still passed. Exact commands are in `FL9_1_PROGRESS.md`. Run final
 format/diff checks, commit the code and journal, then continue the core/HAL
 audit. The private HAL suite is unchanged and most recently passed 337/337.
+
+The current working patch also gates comparison-sampler bind-group layouts on
+`COMPARISON_SAMPLERS`, closing the layout-creation path that previously reached
+the HAL even though comparison-sampler object creation was already rejected.
+Focused strict fixture, full core 78/78, DX12 75/75, Clippy, rustfmt and diff
+checks passed; details are in `FL9_1_PROGRESS.md`. Commit this code and journal,
+then resume the audit at remaining bind-group layout shapes. Keep public D3D11
+enumeration and HWND surface exposure disabled.

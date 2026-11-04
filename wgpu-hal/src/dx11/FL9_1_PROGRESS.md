@@ -3601,3 +3601,39 @@ The core validation gate is shared and leaves adapters with compute support
 unchanged. No HAL code changed, so the last full strict HAL suite remains
 337/337. Continue auditing valid core requests against the private HAL before
 considering public enumeration.
+
+## Checkpoint — gate comparison-sampler layouts
+
+Core now requires `DownlevelFlags::COMPARISON_SAMPLERS` when creating a bind
+group layout containing a comparison sampler. The HAL supports only filtering
+and non-filtering samplers; before this check, core allowed the layout and the
+private HAL returned an unexpected error. The controlled fixture now verifies
+that comparison-layout rejection occurs in core, in addition to the existing
+comparison-sampler object creation rejection.
+
+Rust 1.93.1/MSVC verification:
+
+- Strict fixture-enabled core suite: 78/78 passed. The RTX 3090 Ti
+  (`0x10de:0x2203`, software=false) was requested and selected at FL9_1; its
+  core fixture performed the existing checked render/readback work.
+- Focused strict fixture: 1/1 passed.
+- Core DX12 suite: 75/75 passed.
+- Core Clippy passed.
+- Targeted rustfmt and `git diff --check` passed.
+- Ordinary D3D11 zero-adapter isolation remains covered by the passing core
+  suite; enumeration remains disabled.
+
+Commands, run from the MSVC developer prompt (`WGPU_DX11_REQUIRE_HARDWARE=1`
+for the fixture commands):
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+No HAL source changed. Public D3D11 enumeration and surface exposure remain
+gated; continue auditing core-valid layout and render operations.
