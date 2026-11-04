@@ -25,6 +25,9 @@ pub(super) struct HardwareGuarantees {
     pub max_primitives_per_draw: u32,
     pub conditional_npot: bool,
     pub separate_alpha_blend: bool,
+    pub depth_bias: bool,
+    pub slope_scaled_depth_bias: bool,
+    pub depth_bias_clamp: bool,
     pub geometry_shader: bool,
     pub compute_shader: bool,
     pub two_sided_stencil: bool,
@@ -53,6 +56,9 @@ impl HardwareGuarantees {
             max_primitives_per_draw,
             conditional_npot: level.as_raw() < L10_0.as_raw(),
             separate_alpha_blend: level != L9_1,
+            depth_bias: true,
+            slope_scaled_depth_bias: true,
+            depth_bias_clamp: level.as_raw() >= L10_0.as_raw(),
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
             two_sided_stencil: level != L9_1,
@@ -172,6 +178,10 @@ pub(super) struct BackendCapabilities {
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub d24s8_stencil_operations: bool,
+    pub d24s8_triangle_constant_depth_bias: bool,
+    pub d24s8_triangle_slope_depth_bias: bool,
+    pub d24s8_depth_bias_clamp: bool,
+    pub fragment_depth_with_bias: bool,
     pub two_sided_stencil: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
@@ -226,6 +236,10 @@ impl BackendCapabilities {
         depth_stencil: false,
         d24s8_depth_attachment: true,
         d24s8_stencil_operations: true,
+        d24s8_triangle_constant_depth_bias: true,
+        d24s8_triangle_slope_depth_bias: true,
+        d24s8_depth_bias_clamp: false,
+        fragment_depth_with_bias: false,
         two_sided_stencil: false,
         instancing: false,
         instancing_without_instance_inputs: true,
@@ -505,6 +519,16 @@ mod tests {
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(caps.hardware.depth_bias);
+            assert!(caps.hardware.slope_scaled_depth_bias);
+            assert_eq!(
+                caps.hardware.depth_bias_clamp,
+                level.as_raw() >= FeatureLevel::L10_0.as_raw()
+            );
+            assert!(caps.backend.d24s8_triangle_constant_depth_bias);
+            assert!(caps.backend.d24s8_triangle_slope_depth_bias);
+            assert!(!caps.backend.d24s8_depth_bias_clamp);
+            assert!(!caps.backend.fragment_depth_with_bias);
             assert!(caps.backend.dynamic_uniform_offsets);
             assert!(caps.backend.uniform_binding_sizes_unaligned_16);
             assert!(!caps.public_adapter_supported());
