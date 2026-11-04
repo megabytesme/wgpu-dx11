@@ -4374,6 +4374,10 @@ mod texture_transfer_tests;
 mod depth_render_tests;
 
 #[cfg(test)]
+#[path = "../../tests/dx11/depth_comparison.rs"]
+mod depth_comparison_tests;
+
+#[cfg(test)]
 #[path = "../../tests/dx11/depth_never.rs"]
 mod depth_never_tests;
 

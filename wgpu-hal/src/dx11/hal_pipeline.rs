@@ -85,14 +85,11 @@ fn stencil_is_noop(stencil: &wgt::StencilState) -> bool {
             || (stencil.front.is_read_only() && stencil.back.is_read_only()))
 }
 
-fn depth_comparison(
-    compare: Option<wgt::CompareFunction>,
-) -> Option<(D3D11_COMPARISON_FUNC, bool)> {
-    match compare.unwrap_or(wgt::CompareFunction::Always) {
-        wgt::CompareFunction::Always => Some((D3D11_COMPARISON_ALWAYS, false)),
-        wgt::CompareFunction::LessEqual => Some((D3D11_COMPARISON_LESS_EQUAL, false)),
-        wgt::CompareFunction::Never => Some((D3D11_COMPARISON_ALWAYS, true)),
-        _ => None,
+fn depth_comparison(compare: Option<wgt::CompareFunction>) -> (D3D11_COMPARISON_FUNC, bool) {
+    let compare = compare.unwrap_or(wgt::CompareFunction::Always);
+    match compare {
+        wgt::CompareFunction::Never => (D3D11_COMPARISON_ALWAYS, true),
+        _ => (stencil_comparison(compare), false),
     }
 }
 
@@ -701,27 +698,45 @@ mod tests {
     }
 
     #[test]
-    fn depth_comparison_never_is_suppressed_not_native() {
+    fn depth_comparison_maps_all_native_functions_and_preserves_never_emulation() {
         use super::{depth_comparison, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS_EQUAL};
         use wgt::CompareFunction as C;
-        assert_eq!(
-            depth_comparison(None),
-            Some((D3D11_COMPARISON_ALWAYS, false))
-        );
+        assert_eq!(depth_comparison(None), (D3D11_COMPARISON_ALWAYS, false));
         assert_eq!(
             depth_comparison(Some(C::Always)),
-            Some((D3D11_COMPARISON_ALWAYS, false))
+            (D3D11_COMPARISON_ALWAYS, false)
         );
         assert_eq!(
             depth_comparison(Some(C::LessEqual)),
-            Some((D3D11_COMPARISON_LESS_EQUAL, false))
+            (D3D11_COMPARISON_LESS_EQUAL, false)
         );
         assert_eq!(
             depth_comparison(Some(C::Never)),
-            Some((D3D11_COMPARISON_ALWAYS, true))
+            (D3D11_COMPARISON_ALWAYS, true)
         );
-        for compare in [C::Less, C::Equal, C::Greater, C::NotEqual, C::GreaterEqual] {
-            assert_eq!(depth_comparison(Some(compare)), None);
+        for (compare, native) in [
+            (
+                C::Less,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_LESS,
+            ),
+            (
+                C::Equal,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_EQUAL,
+            ),
+            (
+                C::Greater,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_GREATER,
+            ),
+            (
+                C::NotEqual,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NOT_EQUAL,
+            ),
+            (
+                C::GreaterEqual,
+                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_GREATER_EQUAL,
+            ),
+        ] {
+            assert_eq!(depth_comparison(Some(compare)), (native, false));
         }
     }
 
@@ -2501,8 +2516,7 @@ impl RenderPipeline {
                         .validate_no_fragment_depth(fragment.entry_point)?;
                 }
             }
-            let (comparison, suppress_draws) =
-                depth_comparison(state.depth_compare).ok_or_else(invalid)?;
+            let (comparison, suppress_draws) = depth_comparison(state.depth_compare);
             depth_never = suppress_draws && !stencil_enable;
             let emulate_never_with_stencil = suppress_draws && stencil_enable;
             let comparison = if emulate_never_with_stencil {

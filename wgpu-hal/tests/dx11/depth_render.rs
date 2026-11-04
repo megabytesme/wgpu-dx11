@@ -261,9 +261,19 @@ fn fl91_depth_test_preserves_near_geometry_and_loads_depth() -> windows::core::R
     let make_pipeline = |depth_state, mask, blend| {
         make_pipeline_with_primitive(depth_state, mask, blend, wgt::PrimitiveState::default())
     };
-    let mut unsupported = depth.clone();
-    unsupported.depth_compare = Some(wgt::CompareFunction::Less);
-    assert!(make_pipeline(unsupported, wgt::ColorWrites::ALL, None).is_err());
+    for comparison in [
+        wgt::CompareFunction::Less,
+        wgt::CompareFunction::Equal,
+        wgt::CompareFunction::Greater,
+        wgt::CompareFunction::NotEqual,
+        wgt::CompareFunction::GreaterEqual,
+    ] {
+        let mut state = depth.clone();
+        state.depth_compare = Some(comparison);
+        let pipeline = make_pipeline(state, wgt::ColorWrites::ALL, None)
+            .unwrap_or_else(|error| panic!("{comparison:?} pipeline creation: {error:?}"));
+        unsafe { device.destroy_render_pipeline(pipeline) };
+    }
     let mut unsupported_stencil = depth.clone();
     unsupported_stencil.stencil.front.compare = wgt::CompareFunction::Never;
     assert!(make_pipeline(unsupported_stencil, wgt::ColorWrites::ALL, None).is_err());
