@@ -23,6 +23,7 @@ pub(super) struct HardwareGuarantees {
     pub render_targets: u32,
     pub max_vertex_index: u32,
     pub max_primitives_per_draw: u32,
+    pub max_texture_repeat_per_primitive: u32,
     pub conditional_npot: bool,
     pub separate_alpha_blend: bool,
     pub depth_bias: bool,
@@ -42,20 +43,26 @@ pub(super) struct HardwareGuarantees {
 impl HardwareGuarantees {
     pub fn for_level(level: FeatureLevel) -> Self {
         use FeatureLevel::*;
-        let (texture_2d_dimension, render_targets, max_vertex_index, max_primitives_per_draw) =
-            match level {
-                L9_1 => (2048, 1, 65_534, 65_535),
-                L9_2 => (2048, 1, 1_048_575, 1_048_575),
-                L9_3 => (4096, 4, 1_048_575, 1_048_575),
-                L10_0 | L10_1 => (8192, 8, u32::MAX, u32::MAX),
-                L11_0 | L11_1 => (16384, 8, u32::MAX, u32::MAX),
-            };
+        let (
+            texture_2d_dimension,
+            render_targets,
+            max_vertex_index,
+            max_primitives_per_draw,
+            max_texture_repeat_per_primitive,
+        ) = match level {
+            L9_1 => (2048, 1, 65_534, 65_535, 128),
+            L9_2 => (2048, 1, 1_048_575, 1_048_575, 2048),
+            L9_3 => (4096, 4, 1_048_575, 1_048_575, 8192),
+            L10_0 | L10_1 => (8192, 8, u32::MAX, u32::MAX, 8192),
+            L11_0 | L11_1 => (16384, 8, u32::MAX, u32::MAX, 16384),
+        };
         Self {
             level,
             texture_2d_dimension,
             render_targets,
             max_vertex_index,
             max_primitives_per_draw,
+            max_texture_repeat_per_primitive,
             conditional_npot: level.as_raw() < L10_0.as_raw(),
             separate_alpha_blend: level != L9_1,
             depth_bias: true,
@@ -506,18 +513,19 @@ mod tests {
     #[test]
     fn feature_level_guarantees_are_specific_and_do_not_promote_backend() {
         let expected = [
-            (FeatureLevel::L9_1, 2048, 1, false, false, false, false),
-            (FeatureLevel::L9_2, 2048, 1, false, false, false, true),
-            (FeatureLevel::L9_3, 4096, 4, false, false, false, true),
-            (FeatureLevel::L10_0, 8192, 8, true, false, true, true),
-            (FeatureLevel::L10_1, 8192, 8, true, false, true, true),
-            (FeatureLevel::L11_0, 16384, 8, true, true, true, true),
-            (FeatureLevel::L11_1, 16384, 8, true, true, true, true),
+            (FeatureLevel::L9_1, 2048, 1, 128, false, false, false, false),
+            (FeatureLevel::L9_2, 2048, 1, 2048, false, false, false, true),
+            (FeatureLevel::L9_3, 4096, 4, 8192, false, false, false, true),
+            (FeatureLevel::L10_0, 8192, 8, 8192, true, false, true, true),
+            (FeatureLevel::L10_1, 8192, 8, 8192, true, false, true, true),
+            (FeatureLevel::L11_0, 16384, 8, 16384, true, true, true, true),
+            (FeatureLevel::L11_1, 16384, 8, 16384, true, true, true, true),
         ];
         for (
             level,
             dimension,
             targets,
+            max_repeat,
             geometry,
             compute,
             depth_stencil_mip_levels,
@@ -528,6 +536,7 @@ mod tests {
             assert_eq!(caps.hardware.level, level);
             assert_eq!(caps.hardware.texture_2d_dimension, dimension);
             assert_eq!(caps.hardware.render_targets, targets);
+            assert_eq!(caps.hardware.max_texture_repeat_per_primitive, max_repeat);
             assert_eq!(caps.hardware.geometry_shader, geometry);
             assert_eq!(caps.hardware.compute_shader, compute);
             assert_eq!(

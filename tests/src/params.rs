@@ -11,6 +11,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
     limits: wgpu::DownlevelLimits {
         max_sampled_textures_per_vertex_stage: 0,
         unrestricted_npot_texture_sampling: false,
+        max_texture_repeat_per_primitive: 0,
     },
     shader_model: wgpu::ShaderModel::Sm2,
 };
@@ -73,6 +74,11 @@ impl TestParameters {
 
     pub fn downlevel_flags(mut self, downlevel_flags: DownlevelFlags) -> Self {
         self.required_downlevel_caps.flags |= downlevel_flags;
+        self
+    }
+
+    pub fn downlevel_limits(mut self, limits: wgpu::DownlevelLimits) -> Self {
+        self.required_downlevel_caps.limits = limits;
         self
     }
 
@@ -150,6 +156,14 @@ impl TestInfo {
             test.params.required_downlevel_caps.flags - adapter.downlevel_caps.flags;
         if !missing_downlevel_flags.is_empty() {
             unsupported_reasons.push("Downlevel Flags");
+        }
+
+        if !adapter
+            .downlevel_caps
+            .limits
+            .check_limits(&test.params.required_downlevel_caps.limits)
+        {
+            unsupported_reasons.push("Downlevel Limits");
         }
 
         if test.params.required_downlevel_caps.shader_model > adapter.downlevel_caps.shader_model {

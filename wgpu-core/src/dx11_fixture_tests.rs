@@ -79,6 +79,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                 limits: wgt::DownlevelLimits {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
+                    max_texture_repeat_per_primitive: u32::MAX,
                 },
                 ..Default::default()
             },
@@ -357,6 +358,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 limits: wgt::DownlevelLimits {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
+                    max_texture_repeat_per_primitive: u32::MAX,
                 },
                 ..Default::default()
             },

@@ -2377,6 +2377,11 @@ pub enum CreateSamplerError {
         filter_mode: wgt::MipmapFilterMode,
         anisotropic_clamp: u16,
     },
+    #[error("Address mode {address_mode:?} may exceed the downlevel texture repeat limit of {maximum} per primitive")]
+    TextureRepeatLimitExceeded {
+        address_mode: wgt::AddressMode,
+        maximum: u32,
+    },
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
     #[error(transparent)]
@@ -2400,7 +2405,8 @@ impl WebGpuError for CreateSamplerError {
             | Self::InvalidLodMaxClamp { .. }
             | Self::InvalidAnisotropy(_)
             | Self::InvalidFilterModeWithAnisotropy { .. }
-            | Self::InvalidMipmapFilterModeWithAnisotropy { .. } => ErrorType::Validation,
+            | Self::InvalidMipmapFilterModeWithAnisotropy { .. }
+            | Self::TextureRepeatLimitExceeded { .. } => ErrorType::Validation,
         }
     }
 }

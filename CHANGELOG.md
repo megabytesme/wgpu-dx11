@@ -48,6 +48,7 @@ Bottom level categories:
 
 - Add `DownlevelFlags::TWO_SIDED_STENCIL` so adapters can report whether front and back stencil states may differ.
 - Add `DownlevelLimits::unrestricted_npot_texture_sampling` and validate FL9_x NPOT/repeat compatibility against the sampling pairs used by each render pipeline.
+- Add a downlevel per-primitive texture-repeat limit and reject Repeat/MirrorRepeat samplers when core cannot guarantee the device's finite limit.
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
 - Require stage-specific downlevel support before creating storage-buffer layouts.

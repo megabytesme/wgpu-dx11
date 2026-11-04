@@ -534,6 +534,54 @@ fn has_non_power_of_two_mip_dimension(
     }
 }
 
+fn validate_texture_repeat_limit(
+    address_modes: [wgt::AddressMode; 3],
+    maximum: u32,
+) -> Result<(), resource::CreateSamplerError> {
+    let repeated_mode = (maximum != u32::MAX).then(|| {
+        address_modes.into_iter().find(|mode| {
+            matches!(
+                mode,
+                wgt::AddressMode::Repeat | wgt::AddressMode::MirrorRepeat
+            )
+        })
+    });
+    if let Some(Some(address_mode)) = repeated_mode {
+        Err(resource::CreateSamplerError::TextureRepeatLimitExceeded {
+            address_mode,
+            maximum,
+        })
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod sampler_repeat_limit_tests {
+    use super::validate_texture_repeat_limit;
+    use wgt::AddressMode;
+
+    #[test]
+    fn finite_repeat_limit_rejects_repeat_and_mirror_repeat_only() {
+        for mode in [AddressMode::Repeat, AddressMode::MirrorRepeat] {
+            assert!(matches!(
+                validate_texture_repeat_limit(
+                    [AddressMode::ClampToEdge, mode, AddressMode::ClampToEdge],
+                    128,
+                ),
+                Err(
+                    crate::resource::CreateSamplerError::TextureRepeatLimitExceeded {
+                        address_mode,
+                        maximum: 128,
+                    }
+                ) if address_mode == mode
+            ));
+        }
+        assert!(validate_texture_repeat_limit([AddressMode::ClampToEdge; 3], 128).is_ok());
+        assert!(validate_texture_repeat_limit([AddressMode::Repeat; 3], u32::MAX).is_ok());
+    }
+}
+
 #[cfg(test)]
 mod npot_mipmap_tests {
     use super::has_non_power_of_two_mip_dimension;
@@ -2527,6 +2575,11 @@ impl Device {
         desc: &resource::SamplerDescriptor,
     ) -> Result<Arc<Sampler>, resource::CreateSamplerError> {
         self.check_is_valid()?;
+
+        validate_texture_repeat_limit(
+            desc.address_modes,
+            self.downlevel.limits.max_texture_repeat_per_primitive,
+        )?;
 
         if desc
             .address_modes

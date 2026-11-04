@@ -1051,6 +1051,11 @@ pub struct DownlevelLimits {
     /// report unrestricted NPOT sampling. The restriction applies only to texture/sampler pairs
     /// used by the selected shader entry point.
     pub unrestricted_npot_texture_sampling: bool,
+    /// Maximum number of times texture coordinates may repeat over one primitive.
+    ///
+    /// `u32::MAX` means no finite limit is modeled. Core rejects repeating address modes when
+    /// this value is finite because it cannot prove the coordinate range used by a draw.
+    pub max_texture_repeat_per_primitive: u32,
 }
 
 impl Default for DownlevelLimits {
@@ -1058,7 +1063,19 @@ impl Default for DownlevelLimits {
         Self {
             max_sampled_textures_per_vertex_stage: 16,
             unrestricted_npot_texture_sampling: true,
+            max_texture_repeat_per_primitive: u32::MAX,
         }
+    }
+}
+
+impl DownlevelLimits {
+    /// Returns whether `self` satisfies the minimum downlevel limits in `required`.
+    #[must_use]
+    pub fn check_limits(&self, required: &Self) -> bool {
+        self.max_sampled_textures_per_vertex_stage >= required.max_sampled_textures_per_vertex_stage
+            && (!required.unrestricted_npot_texture_sampling
+                || self.unrestricted_npot_texture_sampling)
+            && self.max_texture_repeat_per_primitive >= required.max_texture_repeat_per_primitive
     }
 }
 
@@ -1095,6 +1112,7 @@ impl DownlevelCapabilities {
             && self.limits.max_sampled_textures_per_vertex_stage
                 >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
             && self.limits.unrestricted_npot_texture_sampling
+            && self.limits.max_texture_repeat_per_primitive == u32::MAX
             && self.shader_model >= ShaderModel::Sm5
     }
 }
@@ -1353,6 +1371,34 @@ mod tests {
         capabilities.limits.max_sampled_textures_per_vertex_stage = 16;
         capabilities.limits.unrestricted_npot_texture_sampling = false;
         assert!(!capabilities.is_webgpu_compliant());
+
+        capabilities.limits.unrestricted_npot_texture_sampling = true;
+        capabilities.limits.max_texture_repeat_per_primitive = 128;
+        assert!(!capabilities.is_webgpu_compliant());
+    }
+
+    #[test]
+    fn downlevel_limits_check_minimum_capabilities() {
+        let available = DownlevelLimits {
+            max_sampled_textures_per_vertex_stage: 4,
+            unrestricted_npot_texture_sampling: false,
+            max_texture_repeat_per_primitive: 128,
+        };
+        let required = DownlevelLimits {
+            max_sampled_textures_per_vertex_stage: 3,
+            unrestricted_npot_texture_sampling: false,
+            max_texture_repeat_per_primitive: 128,
+        };
+        assert!(available.check_limits(&required));
+
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_texture_repeat_per_primitive: 129,
+            ..required.clone()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            unrestricted_npot_texture_sampling: true,
+            ..required
+        }));
     }
 
     fn side_by_side(left: &str, right: &str) -> String {
