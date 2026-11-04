@@ -6,6 +6,11 @@ CTS conformance. Do not expose an adapter using placeholder capabilities to make
 a test pass: many restrictions, including specific binding layouts, cannot be
 expressed by `Limits` alone.
 
+The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
+attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
+before reaching HAL. This validates the core boundary; it does not execute a
+multi-mip depth texture on the GPU.
+
 ## 1. HAL tests and GPU readback
 
 ### Focused FL9_1 hardware test

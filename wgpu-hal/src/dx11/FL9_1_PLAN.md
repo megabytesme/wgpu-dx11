@@ -98,9 +98,12 @@ below is met. This plan does not claim WebGPU conformance.
    rejected for nonzero bias because bias has no effect on them. Historical
    FL9_1 drivers remain unverified. All eight stencil operations are now
    verified on pass, stencil-fail and depth-fail outcomes with strict FL9_1
-   readback; asymmetric front/back states remain rejected. Next continue
-   auditing core-valid attachment, viewport and render-state combinations
-   before building the truthful public capability snapshot.
+   readback; asymmetric front/back states remain rejected. Core now gates
+   multi-mip depth/stencil attachments through a dedicated downlevel flag,
+   matching the FL9_x D3D11 requirement that depth/stencil-bound resources use
+   one mip. Next continue auditing core-valid attachment, viewport and
+   render-state combinations before building the truthful public capability
+   snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
@@ -146,8 +149,9 @@ and does not represent the public adapter contract. Next audit the public
 HAL/core adapter capability boundary and build a truthful, testable capability
 snapshot without enabling ordinary DXGI enumeration. Keep the public adapter
 and HWND surface gates closed until every core-legal operation in that snapshot
-is implemented or rejected. Latest code checkpoint `6f7f12978` completed the
-native FL9_1 slope-scaled triangle depth-bias path; its capability and test
-record is in FL9_1_PROGRESS.md. Checkpoint `1a362ec6108de9accb52e2f1978a174d1f923106`
-then recorded hardware bias guarantees separately from backend support across
-all seven feature-level identities.
+is implemented or rejected. Latest code checkpoints `983eea619` and
+`834cd9856` add core validation and cross-backend reporting for multi-mip
+depth/stencil attachments. The earlier `6f7f12978` added native FL9_1
+slope-scaled triangle depth bias; checkpoint
+`1a362ec6108de9accb52e2f1978a174d1f923106` modeled hardware bias guarantees
+separately from backend support across all seven feature-level identities.

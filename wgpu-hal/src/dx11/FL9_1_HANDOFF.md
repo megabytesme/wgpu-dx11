@@ -11,10 +11,16 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-Latest code checkpoint: `5fe21f035` verifies all eight native stencil
-operations in pass, stencil-fail and depth-fail outcomes. Twenty-four full
-8x8 color readbacks passed on the RTX 3090 Ti at requested and actual FL9_1;
-the full strict private suite passed 322/322. The test uses later Equal draws
+Latest related code checkpoints are `983eea619` and `834cd9856`. The first
+adds a core downlevel gate for multi-mip depth/stencil render attachments,
+matching the FL9_x D3D11 requirement; the second preserves this shared flag in
+Vulkan's explicit capability list. The strict controlled core fixture rejected
+the descriptor before HAL on the RTX 3090 Ti at requested and actual FL9_1; its
+full fixture suite passed 71/71 and the full strict private HAL suite passed
+322/322. The prior `5fe21f035`
+checkpoint verifies all eight native stencil operations in pass, stencil-fail
+and depth-fail outcomes. Twenty-four full 8x8 color readbacks passed on the RTX
+3090 Ti at requested and actual FL9_1; the stencil test uses later Equal draws
 because this HAL cannot read DSV stencil storage directly. The prior
 `6f7f12978` checkpoint adds finite slope-scaled triangle bias, while
 `1a362ec61` separates FL9_1 hardware guarantees from backend implementation.
@@ -164,6 +170,8 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c` | dx11: verify FL9_1 depth clamp core gate |
 | `5fe21f035` | Strict FL9_1 tests for all stencil operation outcomes |
 | `1a362ec6108de9accb52e2f1978a174d1f923106` | dx11: model raster depth-bias capabilities |
+| `983eea619` | core: gate multi-mip depth attachments by capability |
+| `834cd9856` | hal: report multi-mip depth support on Vulkan |
 
 ## What is and is not usable
 

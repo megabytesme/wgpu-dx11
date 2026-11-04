@@ -3,7 +3,9 @@
 ## Current position — 2026-11-04
 
 Branch: `uwp-dx11`. The autonomous FL9_1 completion mission remains active.
-Recent verified code checkpoints are `5fe21f035` (all native stencil
+Recent verified code checkpoints include `834cd9856` (Vulkan reports the
+shared multi-mip depth capability), `983eea619` (core gates multi-mip depth
+attachments), `5fe21f035` (all native stencil
 operation outcomes at forced FL9_1), `340147803` (native FL9_1 depth
 comparisons), `f99cae113` (general single-target blend translation),
 `8eff9020a` (single-sample output masks) and `1eb21620c` (core rejects NPOT
@@ -37,6 +39,15 @@ See CAPABILITIES.md and STATUS.md for the detailed implementation matrix.
   adapter isolation passed 1/1. Core Clippy, targeted rustfmt and
   `git diff --check` passed. The DX12-only test configuration emitted existing
   warnings because WGSL is disabled. No HAL code changed for this checkpoint.
+- At `983eea619`, the strict controlled core fixture passed 1/1 on the RTX
+  3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual
+  FL9_1, including early rejection of a two-mip D24S8 render attachment. The
+  full fixture-enabled core suite passed 71/71; the strict private HAL suite
+  passed 322/322; the ordinary zero-adapter test passed 1/1; the core DX12
+  suite passed 68/68; the focused wgpu-types flag test passed 1/1; combined
+  D3D11+GLES and Vulkan HAL checks passed; core and Vulkan HAL Clippy passed;
+  D3D11+GLES HAL Clippy passed with ten existing warnings; targeted rustfmt
+  and `git diff --check` passed.
 - No public D3D11 adapter, public HWND render, or historical FL9_1 hardware
   result is available.
 
@@ -2730,3 +2741,49 @@ Code checkpoint: `1a362ec6108de9accb52e2f1978a174d1f923106`
 `ae7a75b16a10dc5e98d3d4e7b38a9eace300d1a1`
 (`docs: record FL9_1 raster bias capability model`). Continue with the
 public HAL/core capability-boundary audit in FL9_1_PLAN.md.
+
+## Checkpoint — core gates multi-mip depth attachments — `983eea619`
+
+Microsoft's 10Level9 device-method table states that a resource created with
+`D3D11_BIND_DEPTH_STENCIL` must have one mip at FL9_1, FL9_2 and FL9_3. Core
+format features do not describe this mip-count/usage combination, while the
+private D3D11 HAL creates D24S8 only as a single-mip depth attachment. Added
+`DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP` and require it when a depth/stencil
+texture with more than one mip is also a render attachment. The private D3D11
+capability model records no implementation support at any modeled feature
+level; hardware guarantees are separately modeled as absent through FL9_3 and
+present from FL10_0. GLES and Vulkan explicitly report support; DX12 and Metal
+retain the capability from their default downlevel reports.
+
+The controlled core fixture omits the flag and verifies a two-mip D24S8
+attachment returns `MissingDownlevelFlags(DEPTH_TEXTURE_MULTI_MIP)` before HAL.
+This is core validation evidence, not an attempted native multi-mip DSV call.
+Strict fixture execution completed on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with FL9_1 requested and selected.
+The existing fixture then completed its texture/depth/topology rendering and
+readbacks. Normal D3D11 enumeration remains empty.
+
+Validation used Rust 1.93.1, MSVC and `CARGO_BUILD_JOBS=8`. The fixture-enabled
+core suite passed 71/71; strict private HAL suite passed 322/322; ordinary
+zero-adapter isolation passed 1/1; core DX12 suite passed 68/68; the focused
+wgpu-types capability test passed 1/1; combined D3D11+GLES HAL check and core
+Clippy passed. HAL Clippy completed with ten existing warnings in unrelated
+D3D11 fence/device/test-support code. A plain PowerShell test invocation first
+failed because MSVC `link.exe` was not initialized; rerunning under
+`VsDevCmd.bat` succeeded. A test build during implementation also caught a
+missing initializer for the newly modeled backend field; it was fixed before
+the successful runs.
+
+Code checkpoints: `983eea619` (`core: gate multi-mip depth attachments by
+capability`), followed by `834cd9856` (`hal: report multi-mip depth support on
+Vulkan`). Cross-backend checks used:
+
+```text
+cargo check --offline -p wgpu-hal --no-default-features --features dx11,gles
+cargo check --offline -p wgpu-hal --no-default-features --features vulkan
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features vulkan
+```
+
+Documentation checkpoint is recorded in the following commit.
+Continue the core/HAL audit before constructing the public capability
+snapshot; do not enable enumeration or surface exposure.

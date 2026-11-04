@@ -7,6 +7,14 @@ Feature level 9_1 is a target for restricted compatibility work; it is not
 evidence of full WebGPU conformance. See [CAPABILITIES.md](CAPABILITIES.md)
 for the internal capability model, FL9_1 inventory and validation gaps.
 
+Core gates multi-mip depth/stencil attachment textures on
+`DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device
+rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+require a single mip for depth/stencil-bound resources at FL9_1 through FL9_3;
+the controlled FL9_1 core fixture verifies the descriptor is rejected before
+the private HAL. D24S8 remains single-mip in the private implementation, and
+normal adapter enumeration remains disabled.
+
 ## Implemented private HAL paths
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted
