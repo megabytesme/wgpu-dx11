@@ -3692,3 +3692,51 @@ Public D3D11 adapter enumeration and HWND surface exposure remain disabled.
 After this checkpoint, continue the core/HAL layout and rendering audit and
 finish the broader capability projection; these individual gates do not make
 the production adapter ready for enumeration.
+
+## Checkpoint — gate unsupported sampled texture layout types
+
+The D3D11 projection now reports depth, signed-integer and unsigned-integer
+sampled texture layout types as unavailable. Core rejects these BGL entries
+before HAL, whose private layout mapper currently represents only float
+sampled textures. Core also rejects vertex-only texture or sampler layouts
+when the projected per-vertex sampled-texture limit is zero. Fragment-visible
+resources with additional vertex visibility remain accepted because the HAL
+can represent that layout shape; actual vertex-stage sampling continues to
+fail at selected-entry pipeline validation.
+
+Rust 1.93.1/MSVC verification:
+
+- `wgpu-types` library tests passed 67/67; with serde passed 68/68.
+- Strict fixture-enabled core suite passed 78/78 on the RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), forced and confirmed FL9_1. It exercised
+  core rejection for depth, signed/unsigned integer and vertex-only sampled
+  layouts, verified shared fragment/vertex visibility remains accepted, then
+  completed existing textured depth renders and readback.
+- Core DX12 suite passed 75/75.
+- Strict physical D3D11 projection tests passed 4/4; the hardware case reported
+  RTX 3090 Ti, vendor `0x10de`, device `0x2203`, software=false, requested
+  FL9_1 and actual `L9_1`.
+- HAL test compilation with `dx11,gles`, `wgpu-info` check, `wgpu-test` test
+  check, core fixture Clippy, targeted rustfmt and `git diff --check` passed.
+- The Visual Studio developer prompt continues to print its existing
+  `Error: Unknown error` banner while commands complete normally.
+
+Commands (run from the Visual Studio developer prompt):
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-types --lib
+cargo +1.93 test --offline -j16 -p wgpu-types --lib --features serde
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
+cargo +1.93 check --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo +1.93 check --offline -j16 -p wgpu-info
+cargo +1.93 check --offline -j16 -p wgpu-test --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check tests/src/params.rs wgpu-core/src/binding_model.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/gles/adapter.rs wgpu-hal/src/noop/mod.rs wgpu-info/src/human.rs wgpu-types/src/limits.rs
+git diff --check
+```
+
+Normal D3D11 adapter enumeration and HWND surface exposure remain disabled.
+The next audit should continue with other core-valid layout and render shapes
+that the HAL rejects, followed by the production capability projection.
