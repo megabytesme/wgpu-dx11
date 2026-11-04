@@ -970,16 +970,33 @@ mod tests {
         let checked_resource = ShaderModule::new(
             native.clone(),
             crate::NagaShader {
-                module: Cow::Owned(resource_module),
-                info: resource_info,
+                module: Cow::Owned(resource_module.clone()),
+                info: resource_info.clone(),
                 debug_source: None,
             },
             wgt::ShaderRuntimeChecks::checked(),
         );
         assert!(
-            matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "checked D3D11 texture loads are not implemented")
+            matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "D3D11 texture loads are not implemented")
         );
         assert!(checked_resource
+            .compile(naga::ShaderStage::Fragment, "safe")
+            .is_ok());
+        let unchecked_resource = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(resource_module),
+                info: resource_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::unchecked(),
+        );
+        assert!(matches!(
+            unchecked_resource.compile(naga::ShaderStage::Fragment, "fs"),
+            Err(crate::PipelineError::Linkage(_, message))
+                if message == "D3D11 texture loads are not implemented"
+        ));
+        assert!(unchecked_resource
             .compile(naga::ShaderStage::Fragment, "safe")
             .is_ok());
         let (bias_module, bias_info) = sample_bias_module();
@@ -2592,18 +2609,16 @@ impl ShaderModule {
         // address modes are checked against used pairs before drawing.
         // Keep explicit texel loads fail-closed until their FL9 bounds behavior
         // is independently tested; include helpers reachable from this entry.
-        if requests_checks
-            && reachable_expression(
-                &module,
-                &info,
-                &module.entry_points[entry_index].function,
-                entry_info,
-                |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
-            )
-        {
+        if reachable_expression(
+            &module,
+            &info,
+            &module.entry_points[entry_index].function,
+            entry_info,
+            |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+        ) {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "checked D3D11 texture loads are not implemented".into(),
+                "D3D11 texture loads are not implemented".into(),
             ));
         }
         let present = used_shader_bindings(&module, entry_info, bindings);

@@ -1065,3 +1065,12 @@ The checkpoint is ready for commit. Resume with the remaining core/HAL contract
 audit and truthful production adapter projection. Do not enable ordinary
 D3D11 enumeration. HWND `Present` reentrancy remains unresolved; no public
 surface exposure until safe scheduling and synchronization are established.
+
+Latest hardening: reachable FL9_1 `textureLoad` now fails closed regardless of
+`ShaderRuntimeChecks`, while safe sibling entry points remain compilable. The
+focused forced-FL9_1 shader test and the full strict private HAL suite (337/337)
+passed on the RTX 3090 Ti. This verifies compiler rejection and prior suite
+render/readback behavior, not texel-load execution. See the latest checkpoint
+in `FL9_1_PROGRESS.md`. Continue the remaining core/HAL audit and truthful
+non-enumerated adapter projection; ordinary enumeration and surface exposure
+remain disabled.

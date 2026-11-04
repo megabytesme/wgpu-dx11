@@ -3904,3 +3904,36 @@ The next work remains the core/HAL capability audit and a truthful production
 adapter contract. HWND `Present` reentrancy remains a separately documented
 blocker; public D3D11 enumeration and surface exposure stay disabled.
 Code checkpoint: `0b38756c1` (`core: honor downlevel sampler anisotropy limits`).
+
+## Checkpoint — reject selected-entry texture loads in both runtime-check modes
+
+The private FL9_1 shader compiler now rejects a reachable Naga `ImageLoad`
+unconditionally. Previously this fail-closed restriction applied only when
+shader runtime checks were enabled, despite the unsupported-operation comment
+and FXC's existing rejection evidence. The native bounds proof remains an
+isolated experiment and does not establish production texture-load semantics.
+The hardware shader-module test verifies the selected load entry is rejected
+and a safe sibling entry still compiles with both checked and unchecked runtime
+checks.
+
+Verification used the Rust 1.93.1 Visual Studio x64 environment. The focused
+strict shader test passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+software=false), with requested and actual FL9_1. This checks shader compilation
+and shader-object creation, not a texture-load draw. The complete strict
+private D3D11 suite passed 337/337 with `WGPU_DX11_REQUIRE_HARDWARE=1`,
+including its existing rendering/readback cases. The Visual Studio prompt
+continues to print its known `Error: Unknown error` startup banner.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 hal_module_compiles_and_creates_level_9_shaders -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11
+```
+
+This does not remove the experimental texel-load proof and does not enable
+public D3D11 enumeration. The remaining mission gates are the core/HAL contract
+audit, production capability projection, device loss/lifetime review and the
+documented HWND Present reentrancy blocker.
