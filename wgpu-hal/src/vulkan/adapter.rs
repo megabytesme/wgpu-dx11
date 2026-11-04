@@ -684,6 +684,7 @@ impl PhysicalDeviceFeatures {
         let mut dl_flags = Df::COMPUTE_SHADERS
             | Df::BASE_VERTEX
             | Df::READ_ONLY_DEPTH_STENCIL
+            | Df::DEPTH_TEXTURE_MULTI_MIP
             | Df::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
             | Df::COMPARISON_SAMPLERS
             | Df::VERTEX_STORAGE
