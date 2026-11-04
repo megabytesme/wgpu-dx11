@@ -2,7 +2,54 @@
 
 ## Current position — 2026-11-04
 
-## Checkpoint — controlled core fixture honors FL9_1 repeat cap — `70e31a0f1`
+## Documentation checkpoint — repeat-cap behavior reconciled — `e5fe9207c611234c1669da48892ec12b80ebcfab`
+
+Updated `CAPABILITIES.md`, `TESTING.md` and `STATUS.md` to separate the private
+HAL's conditional NPOT relationship checks from the core fixture's finite
+FL9_1 repeat limit. The fixture rejects Repeat/MirrorRepeat sampler creation
+at the documented limit of 128; synthetic core tests still cover selected-
+entry NPOT relationship validation where those sampler modes are permitted.
+This documentation-only checkpoint records the implementation in
+`70e31a0f175803ced62134e10cd3f11cc8553886`.
+
+## Checkpoint — selected fragment `front_facing` gate — `77ac0b78330c4ba330682c89526daa2833f2b1c6`
+
+Core now represents whether fragment entry points may declare
+`@builtin(front_facing)` in `DownlevelLimits::fragment_front_facing`. The
+controlled FL9_1 profile sets this false because the tested
+`ps_4_0_level_9_1` FXC profile rejects the input. Core inspects the selected
+fragment entry point and rejects the incompatible pipeline before HAL, while a
+safe sibling entry point in the same module remains usable. This is documented
+as a compiler/backend limitation, not a fundamental hardware restriction.
+Ordinary D3D11 adapter enumeration remains disabled.
+
+Verification used Rust 1.93.1/MSVC and `CARGO_BUILD_JOBS=32`:
+
+- `cargo test --offline -p wgpu-types --lib -- --test-threads=1`: 62/62 passed.
+- CPU interface selection test passed; the strict fixture-enabled core suite
+  passed 76/76 with `WGPU_DX11_REQUIRE_HARDWARE=1`. The focused fixture log
+  identified NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false),
+  requested/actual FL9_1, and logged the selected-entry rejection and safe
+  sibling-pipeline success. Normal adapter isolation passed in the suite.
+- Strict private HAL suite: 333/333 passed. The pre-existing FXC negative test
+  confirmed the front-facing shader diagnostic; strict mode prevented hardware
+  cases from silently skipping.
+- Core DX12 regression: 73/73 passed.
+- HAL `dx11,gles`, `wgpu-info --all-targets`, and `wgpu-test --all-targets`
+  checks passed. Clippy passed for wgpu-types, fixture-enabled core, HAL
+  `dx11,gles`, and wgpu-info.
+- Targeted rustfmt and `git diff --check` passed. Workspace-wide
+  `cargo fmt --all -- --check` reports pre-existing formatting differences in
+  `naga/src/back/hlsl/writer.rs` and `wgpu-core/src/instance.rs`; neither file
+  is part of this checkpoint and neither was reformatted.
+
+The Visual Studio setup banner still prints `Error: Unknown error`, but all
+MSVC-backed commands completed. This checkpoint narrows an observed shader
+profile gap; it does not complete public adapter validation. Continue the
+selected-entry shader and render contract audit, then build a capability
+snapshot without enabling ordinary enumeration.
+
+## Checkpoint — controlled core fixture honors FL9_1 repeat cap — `70e31a0f175803ced62134e10cd3f11cc8553886`
 
 The controlled core fixtures now derive `max_texture_repeat_per_primitive`
 from the selected D3D feature level instead of setting `u32::MAX`. Forced

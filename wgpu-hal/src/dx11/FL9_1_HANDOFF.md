@@ -11,8 +11,25 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The latest code checkpoint is `70e31a0f1` (`core: honor FL9_1 repeat limits in
-fixtures`). Both controlled core fixtures derive the documented per-primitive
+The latest code checkpoint is `77ac0b78330c4ba330682c89526daa2833f2b1c6`
+(`dx11: gate FL9_1 front-facing shaders in core`). Core now reports the
+`fragment_front_facing` downlevel capability and rejects a selected fragment
+entry point declaring `@builtin(front_facing)` before HAL when unavailable.
+The tested FL9_1 FXC profile rejects that input; the limit records this as a
+compiler/backend restriction, not a proven hardware impossibility. A safe
+sibling entry point in the same shader module still creates successfully.
+The strict core fixture suite passed 76/76 on the RTX 3090 Ti at requested and
+actual FL9_1; the strict private HAL suite passed 333/333, core DX12 passed
+73/73, and relevant Clippy/build checks passed. See FL9_1_PROGRESS.md for
+exact commands and the workspace-wide formatting caveat. The public adapter
+and HWND surface gates remain closed.
+
+The documentation-only checkpoint `e5fe9207c611234c1669da48892ec12b80ebcfab`
+reconciles the capability/testing/status pages with the corrected repeat-cap
+fixture. It does not change code or test behavior.
+
+The preceding code checkpoint is `70e31a0f175803ced62134e10cd3f11cc8553886`
+(`core: honor FL9_1 repeat limits in fixtures`). Both controlled core fixtures derive the documented per-primitive
 repeat limit from their selected FL9_1 device instead of advertising
 `u32::MAX`. The strict fixture rejects Repeat and MirrorRepeat sampler
 creation at the 128 limit, then runs the remaining rendering cases with
