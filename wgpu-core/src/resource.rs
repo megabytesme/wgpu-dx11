@@ -2375,6 +2375,8 @@ pub enum CreateSamplerError {
     },
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
+    #[error(transparent)]
+    MissingDownlevelFlags(#[from] MissingDownlevelFlags),
 }
 
 crate::impl_resource_type!(Sampler);
@@ -2388,6 +2390,7 @@ impl WebGpuError for CreateSamplerError {
         match self {
             Self::Device(e) => e.webgpu_error_type(),
             Self::MissingFeatures(e) => e.webgpu_error_type(),
+            Self::MissingDownlevelFlags(e) => e.webgpu_error_type(),
 
             Self::InvalidLodMinClamp(_)
             | Self::InvalidLodMaxClamp { .. }

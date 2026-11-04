@@ -2526,7 +2526,9 @@ impl Device {
             1
         };
 
-        //TODO: check for wgt::DownlevelFlags::COMPARISON_SAMPLERS
+        if desc.compare.is_some() {
+            self.require_downlevel_flags(wgt::DownlevelFlags::COMPARISON_SAMPLERS)?;
+        }
 
         let hal_desc = hal::SamplerDescriptor {
             label: desc.label.to_hal(self.instance_flags),

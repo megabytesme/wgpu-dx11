@@ -153,8 +153,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   each sampling pair used by the selected entry has a NonFiltering sampler.
   Two strict RTX images and a 64-pixel core case covered this subset; invalid
   filtering pairs were rejected, while unused incompatible pairs were allowed.
-  No additional unfilterable formats or comparison samplers are supported;
-  historical drivers remain unverified and public enumeration stays disabled.
+  No additional unfilterable formats or comparison samplers are supported.
+  Core now rejects comparison sampler creation when the adapter omits
+  `DownlevelFlags::COMPARISON_SAMPLERS`; the controlled FL9_1 fixture verifies
+  rejection before HAL. Historical drivers remain unverified and public
+  enumeration stays disabled.
 - Sampled texture and sampler bindings accept `FRAGMENT` and
   `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.
   Actual vertex-stage sampling remains rejected. Two strict RTX images covered

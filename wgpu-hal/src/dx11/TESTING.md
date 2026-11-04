@@ -590,7 +590,9 @@ NonFiltering layout, as were comparison samplers. The controlled core case
 checked 64 pixels and returned `WrongSamplerFiltering` for a linear sampler.
 CPU tests check sampler-class identity, the non-filtering mask, logical binding
 order and the original descriptor's filter class. The initial strict baseline
-rejected the NonFiltering layout. Comparison samplers remain unsupported;
+rejected the NonFiltering layout. The controlled core fixture also verifies
+comparison-sampler creation returns the missing `COMPARISON_SAMPLERS` downlevel
+flag before calling the D3D11 HAL. Comparison samplers remain unsupported;
 historical drivers remain unverified, and normal public D3D11 adapter enumeration
 remains disabled.
 

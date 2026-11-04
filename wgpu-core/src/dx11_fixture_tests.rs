@@ -2314,6 +2314,22 @@ fn render_triangle(
     };
     let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
     assert!(error.is_none(), "sampler creation: {error:?}");
+    let comparison_desc = resource::SamplerDescriptor {
+        compare: Some(wgt::CompareFunction::LessEqual),
+        ..sampler_desc.clone()
+    };
+    let (comparison_sampler, comparison_error) =
+        global.device_create_sampler(device, &comparison_desc, None);
+    assert!(
+        matches!(
+            comparison_error,
+            Some(resource::CreateSamplerError::MissingDownlevelFlags(
+                crate::device::MissingDownlevelFlags(flags)
+            )) if flags == wgt::DownlevelFlags::COMPARISON_SAMPLERS
+        ),
+        "FL9_1 core validation must reject comparison samplers before HAL: {comparison_error:?}"
+    );
+    global.sampler_drop(comparison_sampler);
     let mut group_entries = vec![
         wgt::BindGroupLayoutEntry {
             binding: 7,
