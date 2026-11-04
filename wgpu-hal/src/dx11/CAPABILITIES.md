@@ -237,7 +237,9 @@ Triangle pipelines support signed constant and finite slope-scaled D24S8 depth
 bias with zero clamp. Nonzero bias is rejected for point lists and lines, which
 are unaffected in the solid-fill state, and for a selected fragment entry
 writing `frag_depth`; unused depth-writing entries do not cause rejection.
-Nonzero clamp is rejected because FL9_1 requires `DepthBiasClamp = 0`. A strict
+Nonzero clamp is rejected because FL9_1 requires `DepthBiasClamp = 0`; core's
+`DEPTH_BIAS_CLAMP` downlevel gate now has a controlled-fixture regression proving
+this descriptor is rejected before HAL. A strict
 FL9_1 RTX test checked five constant-bias and two sloped-triangle complete
 images; the two slope cases verified that positive bias preserved the nearer
 red depth and negative bias let the later green depth pass across all 64

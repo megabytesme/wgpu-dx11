@@ -141,8 +141,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   views and depth copies remain unsupported; broad public depth-stencil
   capability is still false.
 - D24S8 triangle pipelines accept signed constant and finite slope-scaled depth
-  bias with zero clamp. Nonzero bias on points or solid lines, nonzero clamp and
-  bias with a selected fragment-depth output are rejected. Five strict FL9_1 RTX
+  bias with zero clamp. Core's controlled fixture verifies nonzero clamp is
+  rejected by `DEPTH_BIAS_CLAMP` before HAL. Nonzero bias on points or solid
+  lines, nonzero clamp and bias with a selected fragment-depth output are
+  rejected. Five strict FL9_1 RTX
   constant-bias images and two slope-bias images each checked all 64 pixels;
   the controlled core fixture checks positive and negative constant bias. FXC
   rejected a direct-only zero-bias `frag_depth` entry with X4530, while a

@@ -2625,3 +2625,23 @@ git diff --check
 ```
 
 Documentation checkpoint remains to be committed after this journal update.
+
+## Checkpoint — core rejects unavailable FL9_1 depth-bias clamp — `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c`
+
+The controlled FL9_1 core fixture now sets a nonzero `DepthBiasState::clamp`
+while its downlevel capabilities omit `DEPTH_BIAS_CLAMP`. It verifies that
+core returns `CreateRenderPipelineError::MissingDownlevelFlags` for exactly
+that flag before reaching the private HAL, then restores the descriptor and
+continues the existing GPU tests. This confirms the HAL's native FL9_1 clamp
+restriction has a corresponding safe core rejection path; normal adapter
+enumeration remains disabled.
+
+The full fixture-enabled core library suite passed 71/71 with strict hardware
+required. A rerun of the focused hardware fixture passed 1/1 on the NVIDIA RTX
+3090 Ti at explicitly requested and actual FL9_1 and printed the new rejection
+result; all existing depth, texture, transfer, topology and readback checks
+still passed. Core Clippy and targeted rustfmt passed. The fixture suite and
+this focused case use the test-only adapter, not production adapter reports.
+
+Code checkpoint: `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c`
+(`dx11: verify FL9_1 depth clamp core gate`). Documentation checkpoint follows.

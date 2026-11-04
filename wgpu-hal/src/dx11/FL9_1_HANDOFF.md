@@ -158,6 +158,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `0c0ff00ba` | dx11: execute FL9_1 pixel constant boundary |
 | `340147803` | dx11: support native FL9_1 depth comparisons |
 | `6f7f1297891ac3477ed7055ded00934da1c46c2a` | dx11: support FL9_1 slope depth bias |
+| `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c` | dx11: verify FL9_1 depth clamp core gate |
 
 ## What is and is not usable
 
