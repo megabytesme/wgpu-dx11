@@ -6,7 +6,7 @@ use alloc::{borrow::Cow, sync::Arc, vec, vec::Vec};
 use core::time::Duration;
 
 #[test]
-fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
+fn fl91_stencil_operations_match_expected_values() -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -539,6 +539,136 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
     }
     unsafe {
         encoder.reset_all([depth_fail_commands].into_iter());
+    }
+
+    let operations = [
+        (wgt::StencilOperation::Keep, 0x35, 0x35),
+        (wgt::StencilOperation::Zero, 0x35, 0),
+        (wgt::StencilOperation::Replace, 0x35, 0xa6),
+        (wgt::StencilOperation::Invert, 0x35, 0xca),
+        (wgt::StencilOperation::IncrementClamp, 0xfe, 0xff),
+        (wgt::StencilOperation::DecrementClamp, 1, 0),
+        (wgt::StencilOperation::IncrementWrap, 0xff, 0),
+        (wgt::StencilOperation::DecrementWrap, 0, 0xff),
+    ];
+    let mut fence_value = 7;
+    for (operation, initial, pass_result) in operations {
+        for outcome in 0..3 {
+            let reference = if outcome == 1 { initial ^ 0xff } else { 0xa6 };
+            let expected = if outcome == 1 && operation == wgt::StencilOperation::Replace {
+                reference
+            } else {
+                pass_result
+            };
+            let (
+                compare,
+                fail_op,
+                depth_fail_op,
+                pass_op,
+                depth_compare,
+                depth_clear,
+                vertex_start,
+            ) = match outcome {
+                0 => (
+                    wgt::CompareFunction::Always,
+                    wgt::StencilOperation::Keep,
+                    wgt::StencilOperation::Keep,
+                    operation,
+                    wgt::CompareFunction::Always,
+                    0.5,
+                    0,
+                ),
+                1 => (
+                    wgt::CompareFunction::Equal,
+                    operation,
+                    wgt::StencilOperation::Keep,
+                    wgt::StencilOperation::Keep,
+                    wgt::CompareFunction::Always,
+                    0.5,
+                    0,
+                ),
+                _ => (
+                    wgt::CompareFunction::Always,
+                    wgt::StencilOperation::Keep,
+                    operation,
+                    wgt::StencilOperation::Keep,
+                    wgt::CompareFunction::Less,
+                    0.5,
+                    3,
+                ),
+            };
+            let face = wgt::StencilFaceState {
+                compare,
+                fail_op,
+                depth_fail_op,
+                pass_op,
+            };
+            let pipeline = make_pipeline_with_depth(
+                wgt::StencilState {
+                    front: face,
+                    back: face,
+                    read_mask: 0xff,
+                    write_mask: 0xff,
+                },
+                false,
+                depth_compare,
+            )
+            .unwrap();
+            let commands = unsafe {
+                encoder.begin_encoding(None).unwrap();
+                let pass = crate::RenderPassDescriptor {
+                    label: None,
+                    extent,
+                    sample_count: 1,
+                    color_attachments: &colors,
+                    depth_stencil_attachment: Some(crate::DepthStencilAttachment {
+                        target: crate::Attachment {
+                            view: &depth_view,
+                            usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                        },
+                        depth_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                        stencil_ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+                        clear_value: (depth_clear, initial),
+                    }),
+                    multiview_mask: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                };
+                encoder.begin_render_pass(&pass).unwrap();
+                encoder.set_render_pipeline(&pipeline);
+                encoder.set_stencil_reference(reference);
+                encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+                encoder.draw(vertex_start, 3, 0, 1);
+                encoder.set_render_pipeline(&equal_test);
+                encoder.set_stencil_reference(expected);
+                encoder.draw(6, 3, 0, 1);
+                encoder.end_render_pass();
+                encoder.end_encoding().unwrap()
+            };
+            unsafe {
+                queue
+                    .submit(&[&commands], &[], (&fence, fence_value))
+                    .unwrap()
+            };
+            assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+            let pixels = native.read_rgba_texture(&color, 0, 0)?;
+            assert_eq!(pixels.len(), 8 * 8 * 4);
+            for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+                assert_eq!(
+                    pixel,
+                    [0, 0, 255, 255],
+                    "operation={operation:?}, outcome={outcome}, pixel={index}"
+                );
+            }
+            unsafe {
+                encoder.reset_all([commands].into_iter());
+                device.destroy_render_pipeline(pipeline);
+            }
+            fence_value += 1;
+        }
+    }
+
+    unsafe {
         device.destroy_buffer(vertex);
         device.destroy_texture_view(depth_view);
         device.destroy_texture_view(color_view);
@@ -553,6 +683,8 @@ fn fl91_noop_stencil_matches_ignore() -> windows::core::Result<()> {
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
     }
-    std::println!("PASS: FL9_1 stencil reference, Replace, Equal and masked no-op rendering");
+    std::println!(
+        "PASS: FL9_1 stencil reference, Equal, masked no-op, and all eight operations on pass, stencil-fail, and depth-fail paths"
+    );
     Ok(())
 }
