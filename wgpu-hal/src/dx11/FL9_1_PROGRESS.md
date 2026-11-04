@@ -2864,3 +2864,65 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,st
 ```
 
 The core feature and test checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling pairs`). Documentation and this journal are recorded separately.
+
+## Checkpoint — source-alpha-saturated blend validation — `e001cfcd0`
+
+The core/HAL audit found that D3D11 10Level9 rejects `SRC_ALPHA_SAT` at FL9_1,
+9_2 and 9_3, but core only gated separate-alpha and dual-source blending. A
+blendable render-target format cannot represent this individual-factor
+restriction. `DownlevelLimits::src_alpha_saturated_blend` now records the
+capability, participates in minimum-capability checks and WebGPU-compliance
+reporting, and is displayed by `wgpu-info`. Core rejects the factor in color or
+alpha source/destination slots before HAL. The D3D11 model records 9_x as
+unsupported and 10_0+ as guaranteed by hardware while keeping backend support
+false at every level; no higher-level execution path was enabled. GLES and noop
+report the baseline capability.
+
+Verification used Rust 1.93.1, MSVC, `CARGO_BUILD_JOBS=32` and one Cargo process
+at a time:
+
+- `cargo test --offline -p wgpu-types --lib -- --test-threads=1`: 58/58 passed.
+- Strict fixture-enabled core suite: 74/74 passed, including all four factor
+  placements rejected by core and the existing GPU rendering/readback cases.
+- Strict private D3D11 HAL suite: 323/323 passed with `WGPU_DX11_REQUIRE_HARDWARE=1`.
+- Core zero-D3D11-adapter isolation: 1/1 passed; core DX12 suite: 71/71 passed.
+- D3D11+GLES HAL, wgpu-info and wgpu-test checks passed. Core, wgpu-test and
+  wgpu-info Clippy passed. HAL Clippy passed with ten existing warnings;
+  wgpu-types Clippy passed with fourteen existing unused-serde-import warnings.
+- Targeted rustfmt and `git diff --check` passed.
+
+The commands ran in an initialized Visual Studio 2022 MSVC shell with
+`CARGO_BUILD_JOBS=32`:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-types --lib -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11,gles
+cargo check --offline -p wgpu-info
+cargo check --offline -p wgpu-test
+cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo clippy --offline -p wgpu-types --tests
+cargo clippy --offline -p wgpu-test --tests
+cargo clippy --offline -p wgpu-info
+rustfmt --edition 2021 --check wgpu-types/src/limits.rs wgpu-core/src/pipeline.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/gles/adapter.rs wgpu-hal/src/noop/mod.rs tests/src/params.rs wgpu-info/src/human.rs
+git diff --check
+```
+
+The strict tests selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+software=false), requested and selected FL9_1. The fixture does not print the
+driver version in this run; prior baseline notes record `32.0.16.2101`. The
+four unsupported blend descriptors themselves are validation-only and were
+rejected before HAL; the rest of the fixture and private HAL suite performed
+real GPU work. The first fixture attempt exposed that its test descriptor also
+triggered the existing separate-alpha gate; RGB-only and alpha-only write masks
+isolated the new check, after which the strict suite passed.
+
+Next continue auditing core-valid vertex formats and attachment/viewport state.
+The independent read-only audit found that core accepts baseline vertex
+formats which `hal_pipeline.rs::vertex_format` does not translate; this needs a
+precise format gate or implementation before public capability reporting.
+Public D3D11 enumeration and surface exposure remain disabled.

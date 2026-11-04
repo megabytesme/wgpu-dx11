@@ -790,3 +790,26 @@ gaps remain unresolved.
 Core now validates statically used sampled/depth texture count for the selected vertex entry point against a separate downlevel limit before HAL pipeline creation. The controlled FL9_1 fixture reports zero and confirms the precise rejection; it then completes strict hardware rendering and readback. The RTX 3090 Ti was explicitly requested and selected at FL9_1. The fixture-enabled core suite passed 72/72, strict private D3D11 HAL suite 322/322, core DX12 suite 69/69, the sampled-texture analysis unit test 1/1, and the focused wgpu-types compliance test 1/1. Core and backend checks, Clippy, formatting and diff checks passed; ten existing HAL Clippy warnings remain. Exact commands and details are in `FL9_1_PROGRESS.md`.
 
 Code commit: `68cccdf111f36553e36f8328ec80ec3195786c80`. Continue auditing the remaining core/HAL capability boundary. Production D3D11 adapter enumeration and public surface exposure stay disabled.
+
+## Latest checkpoint — `SRC_ALPHA_SAT` validation — `e001cfcd0`
+
+The core/HAL mismatch for source-alpha-saturated blending is closed through a
+new `DownlevelLimits::src_alpha_saturated_blend` capability. Core rejects its
+use in all four blend-factor positions on the strict FL9_1 fixture before HAL.
+The capability participates in compliance reporting and appears in wgpu-info.
+Static feature-level tests mark it absent through 9_3 and guaranteed from
+10_0; backend implementation remains false for every feature level. This does
+not add a higher-level execution path.
+
+Verification: wgpu-types 58/58, fixture-enabled core 74/74 (strict physical
+RTX 3090 Ti at requested/actual FL9_1), strict private D3D11 HAL 323/323, core
+DX12 71/71, zero-adapter isolation 1/1, changed crate checks and targeted
+Clippy/rustfmt/diff checks passed. HAL Clippy has ten existing warnings and
+wgpu-types has fourteen existing unused-serde-import warnings. Full commands
+and the one corrected test setup are in `FL9_1_PROGRESS.md`.
+
+Continue the core/HAL audit. The next concrete gap is that core accepts vertex
+attribute formats outside the private HAL's translation table; determine
+whether to implement the FL9_1 formats or add narrow pre-HAL validation. Keep
+normal D3D11 enumeration and public surface exposure closed. Historical FL9_1
+hardware and safe HWND Present reentrancy remain unverified.
