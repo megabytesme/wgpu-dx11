@@ -286,6 +286,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             sampled_depth_textures,
             sampled_sint_textures,
             sampled_uint_textures,
+            multisampled_texture_bindings,
             max_sampled_textures_per_vertex_stage,
             vertex_index_input,
             instance_index_input,
@@ -306,6 +307,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tSampled depth textures: {sampled_depth_textures}")?;
     writeln!(output, "\t\tSampled signed-integer textures: {sampled_sint_textures}")?;
     writeln!(output, "\t\tSampled unsigned-integer textures: {sampled_uint_textures}")?;
+    writeln!(output, "\t\tMultisampled texture bindings: {multisampled_texture_bindings}")?;
     writeln!(
         output,
         "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"

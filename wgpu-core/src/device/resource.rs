@@ -3144,6 +3144,14 @@ impl Device {
                     });
                 }
                 Bt::Texture {
+                    multisampled: true, ..
+                } if !self.downlevel.limits.multisampled_texture_bindings => {
+                    return Err(CreateBindGroupLayoutError::Entry {
+                        binding: entry.binding,
+                        error: BindGroupLayoutEntryError::MultisampledTextureBindingsUnavailable,
+                    });
+                }
+                Bt::Texture {
                     multisampled,
                     view_dimension,
                     ..

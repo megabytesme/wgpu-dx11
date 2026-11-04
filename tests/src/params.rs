@@ -15,6 +15,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         sampled_depth_textures: false,
         sampled_sint_textures: false,
         sampled_uint_textures: false,
+        multisampled_texture_bindings: false,
         vertex_index_input: false,
         instance_index_input: false,
         max_sampled_textures_per_vertex_stage: 0,

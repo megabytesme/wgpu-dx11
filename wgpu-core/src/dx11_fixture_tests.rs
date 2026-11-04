@@ -85,6 +85,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     sampled_depth_textures: false,
                     sampled_sint_textures: false,
                     sampled_uint_textures: false,
+                    multisampled_texture_bindings: false,
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
@@ -674,6 +675,35 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.bind_group_layout_drop(layout);
     }
     std::println!("PASS: depth and integer sampled-texture layouts rejected by core validation");
+    let (multisampled_layout, multisampled_error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                binding: 9,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: true,
+                },
+                count: None,
+            }]),
+        },
+        None,
+    );
+    assert!(
+        matches!(
+            multisampled_error.as_ref(),
+            Some(binding_model::CreateBindGroupLayoutError::Entry {
+                error: binding_model::BindGroupLayoutEntryError::MultisampledTextureBindingsUnavailable,
+                ..
+            })
+        ),
+        "unfilterable multisampled texture layout must fail core validation before HAL: {multisampled_error:?}"
+    );
+    global.bind_group_layout_drop(multisampled_layout);
+    std::println!("PASS: multisampled texture layouts rejected by core validation");
     for (binding, ty) in [
         (
             10,

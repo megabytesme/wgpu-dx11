@@ -690,14 +690,15 @@ bind-group layout entry whose visibility bitset is empty, but the current HAL
 layout representation requires every resource entry to target a supported
 stage. Core rejects this layout shape before HAL for the FL9_1 projection.
 
-The projection also reports `sampled_depth_textures`, `sampled_sint_textures`
-and `sampled_uint_textures` as false. The private layout mapper supports only
-float sampled textures; attachment-only D24S8 does not provide a depth-sampling
-path, and the implemented sampled formats provide no signed- or unsigned-
-integer sample class. Core rejects those layout types before HAL. A
-vertex-only texture or sampler layout is also rejected when the separate
-vertex sampled-texture limit is zero; fragment-visible layouts remain valid,
-and actual vertex shader sampling remains rejected at pipeline validation.
+The projection also reports `sampled_depth_textures`, `sampled_sint_textures`,
+`sampled_uint_textures` and `multisampled_texture_bindings` as false. The
+private layout mapper supports only float sampled textures; attachment-only
+D24S8 does not provide a depth-sampling path, and the implemented sampled
+formats provide no signed- or unsigned-integer sample class. The renderer is
+single-sample-only. Core rejects those layout types before HAL. A vertex-only
+texture or sampler layout is also rejected when the separate vertex
+sampled-texture limit is zero; fragment-visible layouts remain valid, and
+actual vertex shader sampling remains rejected at pipeline validation.
 
 The projection withholds `Features::TEXTURE_COMPRESSION_BC`: wgpu's BC feature
 guarantees the BCn family, while this backend currently implements only BC1.

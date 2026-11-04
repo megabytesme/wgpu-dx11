@@ -42,6 +42,8 @@ pub enum BindGroupLayoutEntryError {
     SampledTextureTypeUnavailable(wgt::TextureSampleType),
     #[error("Vertex-only sampled resource visibility is unavailable on this downlevel adapter")]
     VertexOnlySampledResourceUnavailable,
+    #[error("Multisampled texture bindings are unavailable on this downlevel adapter")]
+    MultisampledTextureBindingsUnavailable,
     #[error("Cube dimension is not expected for texture storage")]
     StorageTextureCube,
     #[error("Atomic storage textures are not allowed by baseline webgpu, they require the native only feature TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES")]

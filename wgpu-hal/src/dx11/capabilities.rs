@@ -345,6 +345,7 @@ impl Capabilities {
                 sampled_depth_textures: false,
                 sampled_sint_textures: false,
                 sampled_uint_textures: false,
+                multisampled_texture_bindings: false,
                 vertex_index_input: self.backend.vertex_index_input,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
@@ -783,6 +784,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.sampled_depth_textures);
         assert!(!exposed.downlevel.limits.sampled_sint_textures);
         assert!(!exposed.downlevel.limits.sampled_uint_textures);
+        assert!(!exposed.downlevel.limits.multisampled_texture_bindings);
         assert_eq!(
             exposed.downlevel.flags,
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED

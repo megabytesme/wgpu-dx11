@@ -970,6 +970,7 @@ impl super::Adapter {
             sampled_depth_textures: true,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
+            multisampled_texture_bindings: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: unsafe {
