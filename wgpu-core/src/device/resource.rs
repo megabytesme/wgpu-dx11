@@ -517,6 +517,60 @@ impl Device {
     }
 }
 
+fn has_non_power_of_two_mip_dimension(
+    dimension: wgt::TextureDimension,
+    size: wgt::Extent3d,
+) -> bool {
+    let width_is_npot = !size.width.is_power_of_two();
+    match dimension {
+        wgt::TextureDimension::D1 => width_is_npot,
+        wgt::TextureDimension::D2 => width_is_npot || !size.height.is_power_of_two(),
+        wgt::TextureDimension::D3 => {
+            width_is_npot
+                || !size.height.is_power_of_two()
+                || !size.depth_or_array_layers.is_power_of_two()
+        }
+    }
+}
+
+#[cfg(test)]
+mod npot_mipmap_tests {
+    use super::has_non_power_of_two_mip_dimension;
+    use wgt::{Extent3d, TextureDimension};
+
+    fn extent(width: u32, height: u32, depth_or_array_layers: u32) -> Extent3d {
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers,
+        }
+    }
+
+    #[test]
+    fn checks_spatial_dimensions_but_not_array_layers() {
+        assert!(!has_non_power_of_two_mip_dimension(
+            TextureDimension::D1,
+            extent(8, 1, 1)
+        ));
+        assert!(has_non_power_of_two_mip_dimension(
+            TextureDimension::D1,
+            extent(6, 1, 1)
+        ));
+        assert!(!has_non_power_of_two_mip_dimension(
+            TextureDimension::D2,
+            extent(8, 4, 3)
+        ));
+        assert!(has_non_power_of_two_mip_dimension(
+            TextureDimension::D2,
+            extent(8, 6, 1)
+        ));
+        assert!(has_non_power_of_two_mip_dimension(
+            TextureDimension::D3,
+            extent(8, 4, 3)
+        ));
+    }
+}
+
 impl Device {
     pub(crate) fn new(
         raw_device: Box<dyn hal::DynDevice>,
@@ -1679,6 +1733,10 @@ impl Device {
                 requested: mips,
                 maximum: max_levels_allowed,
             });
+        }
+
+        if mips > 1 && has_non_power_of_two_mip_dimension(desc.dimension, desc.size) {
+            self.require_downlevel_flags(wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES)?;
         }
 
         {

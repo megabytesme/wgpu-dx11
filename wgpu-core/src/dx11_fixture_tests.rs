@@ -603,6 +603,25 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         usage,
         view_formats: Vec::new(),
     };
+    let mut npot_mip_texture_desc = texture_desc(
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureUsages::TEXTURE_BINDING,
+    );
+    npot_mip_texture_desc.size.width = 6;
+    npot_mip_texture_desc.mip_level_count = 2;
+    let (npot_mip_texture, error) =
+        global.device_create_texture(device, &npot_mip_texture_desc, None);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(crate::resource::CreateTextureError::MissingDownlevelFlags(
+                crate::device::MissingDownlevelFlags(flags)
+            )) if *flags == wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
+        ),
+        "unsupported NPOT mip chains must fail core validation before HAL: {error:?}"
+    );
+    global.texture_drop(npot_mip_texture);
+    std::println!("PASS: NPOT mip chain rejected by core validation");
     let (texture, error) = global.device_create_texture(
         device,
         &texture_desc(
