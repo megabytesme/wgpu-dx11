@@ -182,3 +182,12 @@ capability for R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8;
 POT multi-mip descriptors are rejected before HAL creation while one-mip
 sampled-upload cases remain available. This closes the format-specific gap
 left by the separate NPOT-mipmap and depth-attachment gates.
+
+Per-format projection is centralized in
+`Capabilities::texture_format_capabilities`, which intersects positive
+selected-device format queries with feature-level shape checks and implemented
+backend paths. The test-only core adapter delegates to this internal method;
+it remains outside ordinary adapter enumeration. Projection tests cover
+missing/negative queries and unsupported backend paths. Next continue the
+descriptor and render-pass audit for core-valid requests the private HAL cannot
+execute, without treating this helper as a public adapter report.

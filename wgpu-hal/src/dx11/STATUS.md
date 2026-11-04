@@ -21,6 +21,12 @@ current D3D11 one-mip formats are R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM,
 BC1_UNORM and D24S8. This closes the POT multi-mip gap that device-wide NPOT
 and depth-attachment flags cannot express.
 
+The internal per-format projection now resides in `Capabilities` and combines
+the actual device's format query with the selected feature level and implemented
+backend paths. The test-only core adapter calls this same projection, while
+normal D3D11 enumeration remains empty. This is a tested building block, not a
+public adapter capability report.
+
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;

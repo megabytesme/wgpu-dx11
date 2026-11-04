@@ -68,6 +68,24 @@ with `InvalidMipLevelCountForFormat`, before HAL texture creation. The existing
 BC1 core render case separately confirms its one-mip upload and sampling path
 still works.
 
+### Per-format capability projection
+
+`Capabilities::texture_format_capabilities` is the production internal
+projection used by the non-enumerated core fixture. CPU tests verify that
+queried support, feature-level shape and backend implementation all intersect,
+and that missing/negative queries report no format capability:
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11,dx11-test-fixture format_projection -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+```
+
+The hardware fixture requested and selected FL9_1 on the RTX 3090 Ti and
+printed its RGBA8, D24S8 and BC1 core format projections. It also asserted
+normal D3D11 HAL enumeration is empty. These checks do not constitute a public
+adapter contract.
+
 ## 1. HAL tests and GPU readback
 
 ### Focused FL9_1 hardware test

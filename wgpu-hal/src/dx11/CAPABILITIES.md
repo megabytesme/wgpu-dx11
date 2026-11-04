@@ -452,13 +452,17 @@ validation or emulation must be resolved before any such capability is exposed.
 
 The nondefault `dx11-test-fixture` feature provides an unsafe, non-enumerated
 adapter solely for a controlled core integration test. Normal `Adapter::open`
-still fails. The fixture reports driver-queried RGBA8 and BGRA8 color and copy
-capabilities and D24S8 attachment capability, and no surface capabilities. The
-fixture checks transient texture and view creation and invalid usage or format
-rejection, but does not exercise a transient render pass through core. Its
-test-only limits and format report are not a general adapter contract. The
-fixture verifies core buffer operations and an offscreen triangle, not ordinary
-public adapter selection or presentation.
+still fails. Format projection is centralized in the internal
+`Capabilities::texture_format_capabilities` method: it intersects the selected
+device's positive `CheckFormatSupport` results with feature-level shape limits
+and backend implementation switches. The fixture delegates to this same
+method for RGBA8, BGRA8, sampled-upload formats and D24S8, but no normal adapter
+enumeration consumes it. The method is not a complete public adapter report.
+The fixture supplies test-only limits and no surface capabilities; it checks
+transient texture/view creation and invalid usage or format rejection, but does
+not exercise transient render passes through core. It verifies core buffer
+operations and an offscreen triangle, not ordinary public adapter selection or
+presentation.
 
 ## Logical binding translation
 

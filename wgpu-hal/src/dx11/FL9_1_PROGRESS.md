@@ -3098,3 +3098,35 @@ Public D3D11 adapter enumeration and public HWND surface exposure remain
 disabled. Next continue the core/HAL texture descriptor and render-pass audit;
 do not treat this focused validation repair as completion of public adapter
 readiness.
+
+## Checkpoint — reusable per-format capability projection
+
+Moved the fixture's duplicated format-capability mapping into
+`Capabilities::texture_format_capabilities`. It derives D24S8, color-target,
+copy, sampled and sampled-upload flags from the selected device's successful
+format query and the backend's implemented paths. The fixture now delegates to
+this production internal method. Missing and negative queries produce no
+capabilities, and the method remains unused by ordinary D3D11 enumeration.
+RGBA8/BGRA8 transfers are gated by their backend implementation switches.
+Code commit: `7b3b5be08` (`dx11: centralize FL9_1 format capability projection`).
+
+Baseline: the previous fixture-only blend-query test passed 1/1. An initial
+attempt outside the MSVC developer shell failed at link because `link.exe` was
+not on PATH; rerunning with `VsDevCmd.bat` resolved the environment issue.
+Verification on Rust 1.93.1/MSVC (`CARGO_BUILD_JOBS=32`, one Cargo process):
+
+- D3D11 `format_projection` tests passed 4/4, synthetic/CPU-only.
+- `cargo check -p wgpu-hal --no-default-features --features dx11,gles` passed.
+- Strict fixture-enabled core suite passed 75/75 on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1. It reported
+  RGBA8, D24S8 and BC1 format projections and completed existing GPU
+  render/readback cases. Its ordinary D3D11 zero-adapter isolation test passed.
+- Strict private D3D11 HAL suite passed 329/329 on the RTX 3090 Ti at forced
+  FL9_1; no tests were skipped.
+- Core DX12 regression suite passed 72/72.
+- HAL Clippy passed with ten existing warnings in untouched code.
+- Targeted rustfmt and `git diff --check` passed.
+
+The capability projection did not enable public enumeration and is not a full
+adapter report. The public adapter and surface gates remain closed. The modern
+RTX forced to FL9_1 does not substitute for historical hardware testing.

@@ -833,3 +833,20 @@ Documentation for this checkpoint is pending its own docs commit. Resume by
 checking `git status`; then continue the core/HAL format-usage and texture
 descriptor audit. Public D3D11 enumeration and public surface exposure remain
 closed; the mission is still partially complete.
+
+## Latest checkpoint — reusable per-format capability projection
+
+The fixture's duplicated per-format mapping is now in
+`Capabilities::texture_format_capabilities`. It intersects queried device
+support, actual feature-level shape checks and backend implementation flags.
+The controlled core adapter calls this same internal projection; ordinary
+D3D11 enumeration remains empty, and the helper is not a public capability
+report. CPU tests exercise positive, unavailable and negative query cases.
+Code checkpoint: `7b3b5be08` (`dx11: centralize FL9_1 format capability projection`).
+
+Verification: four projection tests passed; strict controlled core tests passed
+75/75 on the physical RTX 3090 Ti at requested/actual FL9_1; strict private
+HAL tests passed 329/329 at forced FL9_1; core DX12 passed 72/72; HAL build and
+Clippy passed (ten existing warnings). Exact commands are in
+`FL9_1_PROGRESS.md`. Continue the core/HAL texture descriptor and render-pass
+audit; public adapter and HWND surface exposure remain gated.
