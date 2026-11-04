@@ -999,14 +999,17 @@ enumeration and HWND surface exposure disabled; next continue auditing core
 validity against HAL layout/render support and complete the adapter capability
 projection.
 
-The current sampled-layout patch projects depth, signed-integer and
-unsigned-integer sampled texture layout types as unavailable and rejects those
-types in core before HAL. It also rejects vertex-only sampled texture/sampler
-layouts when the D3D11 vertex sample limit is zero, while preserving valid
-fragment-visible layouts with extra vertex visibility. `wgpu-types` passed
-67/67, serde 68/68, strict core fixture 78/78 on forced RTX FL9_1, DX12 75/75,
-and strict D3D11 projection 4/4 with physical hardware details in
-`FL9_1_PROGRESS.md`. HAL/GLES compilation, wgpu-info and wgpu-test checks, core
-Clippy, targeted formatting and diff checks passed. Commit this checkpoint,
-then continue the core/HAL audit. Public D3D11 enumeration and HWND surface
-exposure remain disabled.
+The current sampled-layout patch projects depth, signed-integer,
+unsigned-integer and multisampled texture binding types as unavailable and
+rejects them in core before HAL. It also rejects vertex-only sampled
+texture/sampler layouts when the D3D11 vertex sample limit is zero, while
+preserving fragment-visible layouts with extra vertex visibility. `wgpu-types`
+passed 68/68; serde passed 70/70 including old-shape deserialization defaults;
+strict core fixture passed 78/78 on forced RTX FL9_1; DX12 passed 75/75; strict
+D3D11 projection passed 4/4; and the full strict HAL suite passed 337/337.
+The HAL run logged 144 physical adapter identities and six explicit skips for
+nested render checks whose unsupported dynamic-indexing shaders were rejected
+before drawing; those skips are not counted as GPU work. HAL/GLES compilation,
+wgpu-info and wgpu-test checks, core Clippy, targeted formatting and diff
+checks passed. Full commands are in `FL9_1_PROGRESS.md`. Continue the core/HAL
+audit. Public D3D11 enumeration and HWND surface exposure remain disabled.
