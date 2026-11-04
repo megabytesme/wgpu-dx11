@@ -643,3 +643,27 @@ Tests should continue to cover rejected legal-looking requests at core
 validation boundaries and ensure HAL is never called for unsupported
 combinations. Merely choosing generous limits would still expose unsupported
 paths, including methods that currently panic.
+
+### Vertex shader system-value inputs
+
+The current private HAL does not implement vertex `vertex_index` or
+`instance_index` inputs. `BackendCapabilities` records both as unavailable, and
+the controlled FL9_1 core profile reports
+`DownlevelLimits::vertex_index_input = false` and
+`DownlevelLimits::instance_index_input = false`; core rejects the selected
+entry-point declaration before HAL. The `vs_4_0_level_9_1` FXC test rejects
+the backend-generated `SV_VertexID` interface with FXC X4555 whether its
+WGSL value is used or unused. This is observed compiler output; it does not
+prove an inherent hardware restriction. `instance_index` is currently a
+backend implementation restriction; its profile-specific FXC behavior has not
+been verified. Microsoft describes SV system-value semantics as Direct3D 10
+additions, while 10Level9 exposes D3D9-era shader behavior; this mapping does
+not claim that these semantics are impossible on every implementation.
+
+`primitive_index` is separately gated by optional
+`Features::PRIMITIVE_INDEX`; a future D3D11 adapter must not advertise that
+feature while the HAL rejects it. The public capability projection and normal
+adapter enumeration remain disabled. [Microsoft HLSL semantics](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics)
+and [10Level9 device rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+are references for the hardware model, not substitutes for the tested FXC
+profile.

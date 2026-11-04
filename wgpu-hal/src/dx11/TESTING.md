@@ -63,6 +63,30 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### Vertex system-value input validation
+
+The controlled FL9_1 core fixture sets `vertex_index_input` and
+`instance_index_input` false. It verifies that the selected vertex entry point
+is rejected before HAL when it declares either input, and that another safe
+entry point in the same module remains usable. CPU interface tests cover direct
+and structure-member declarations, unused declarations, safe sibling entries
+and missing entry names. A separate D3DCompile test verifies that compiling the
+backend-generated `SV_VertexID` interface for `vs_4_0_level_9_1` fails with
+FXC X4555, whether the WGSL value is used or unused. FXC acceptance of
+`instance_index` has not been established; the backend currently rejects it.
+
+```powershell
+cargo test --offline -p wgpu-types --lib vertex_builtins_are_downlevel_capabilities -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std vertex_builtin_detection_uses_selected_entry_point_declarations -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_index_entry_inputs_are_rejected_by_fxc -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The fixture exercises core validation on the forced-FL9_1 adapter; it does not
+draw using either unsupported input. These restrictions are recorded as
+profile/backend limitations, not hardware guarantees.
+
 ### Out-of-target viewport validation
 
 The FL9_1 fixture reports

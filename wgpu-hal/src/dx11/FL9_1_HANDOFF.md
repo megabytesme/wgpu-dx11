@@ -921,3 +921,17 @@ pipeline creation. Strict RTX FL9_1 fixture passed 75/75, private HAL passed
 isolation passed 1/1. Clippy, builds, formatting and diff checks passed with
 the existing warnings recorded in `FL9_1_PROGRESS.md`. Continue with the
 production adapter capability contract; do not enable normal D3D11 enumeration.
+
+## Current checkpoint — vertex system-value input gates
+
+Code commit `d85e51e7b` adds core selected-entry gates for vertex
+`vertex_index` and `instance_index` inputs through two new
+`DownlevelLimits` booleans. The controlled FL9_1 fixture rejects either before
+HAL and permits a safe sibling entry. FXC X4555 confirms failure for generated
+`SV_VertexID` entry interfaces at `vs_4_0_level_9_1`; `instance_index` FXC
+acceptance remains unverified. Strict core and private HAL suites passed on
+the physical RTX 3090 Ti at requested/actual FL9_1, with the counts and exact
+commands in `FL9_1_PROGRESS.md`. Targeted cross-backend checks, Clippy,
+formatting and DX12 regressions passed. The documentation checkpoint for this
+change is still uncommitted. Public enumeration remains closed. Next continue
+the core/HAL contract audit and build the testable capability snapshot.

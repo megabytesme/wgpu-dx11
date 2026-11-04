@@ -212,3 +212,13 @@ entries remain usable. Continue auditing shader and render-state combinations,
 then design a truthful production adapter capability snapshot.
 The public adapter and HWND surface must stay gated until the snapshot covers
 every operation it permits.
+
+The selected-entry audit now also covers vertex system-value inputs. The
+controlled FL9_1 profile reports `vertex_index_input` and `instance_index_input`
+as unavailable; core rejects declarations before HAL and permits safe sibling
+entries. The backend-generated `SV_VertexID` interface fails to compile with
+FXC X4555 under the tested FL9_1 vertex profile. This records the
+compiler/backend boundary, not a hardware guarantee. `instance_index` remains
+a backend restriction whose FXC acceptance is unverified. Continue the
+core/HAL audit and build a testable production capability snapshot without
+enabling normal enumeration.

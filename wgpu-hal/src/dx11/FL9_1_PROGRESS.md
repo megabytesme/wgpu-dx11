@@ -2,6 +2,70 @@
 
 ## Current position — 2026-11-04
 
+## Checkpoint — vertex system-value input gates — `d85e51e7b`
+
+Core now has `DownlevelLimits::vertex_index_input` and
+`instance_index_input`. The controlled FL9_1 fixture reports both false and
+rejects selected vertex entry points declaring either input before HAL; a
+safe sibling entry remains usable. HAL already rejects both inputs. The
+existing D3DCompile test confirms backend-generated `vertex_index` entry
+interfaces fail under `vs_4_0_level_9_1`, whether the WGSL value is used or
+unused. Its diagnostic is FXC X4555 for `SV_VertexID`; this establishes the
+current generated-HLSL/profile boundary, not a universal hardware limitation.
+The `instance_index` FXC boundary remains unverified and is documented only
+as a backend restriction. Normal D3D11 enumeration remains disabled.
+
+Verification used the pinned `1.93` toolchain (rustc 1.93.1) and MSVC. The
+explicit `+1.93.1` alias is installed without a rustup manifest, so it failed
+before compilation; `+1.93` is the repository-pinned alias. Visual Studio's
+developer prompt printed `Error: Unknown error` in its banner, but all MSVC
+commands below completed:
+
+- wgpu-types full library suite: 64/64 passed. Clippy passed with 14 existing
+  unused-serde-import warnings.
+- Fixture-enabled core suite with `WGPU_DX11_REQUIRE_HARDWARE=1`: 78/78
+  passed, including the real hardware fixture and zero-adapter isolation.
+  The fixture selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+  software=false), requested FL9_1 and selected L9_1. The new gate logged its
+  selected-entry rejection and safe sibling acceptance.
+- Private D3D11 HAL suite with strict hardware mode: 333/333 passed. The
+  focused FXC test separately passed and reported X4555 for direct-used,
+  direct-unused, structure-used and structure-unused `vertex_index` inputs.
+- HAL zero-adapter isolation test: 1/1 passed.
+- Core DX12 regression suite: 75/75 passed with `dx12,std,wgsl`.
+- HAL `dx11,gles` check and Clippy passed; fixture-enabled core Clippy passed;
+  `wgpu-info` check and `wgpu-test --tests` check passed.
+- Targeted rustfmt and `git diff --check` passed.
+
+Cargo ran inside the Visual Studio MSVC developer prompt with
+`CARGO_BUILD_JOBS=4` (the full strict fixture used `2`). Reproduction commands:
+
+```powershell
+cargo +1.93 test --offline -j 4 -p wgpu-types --lib vertex_builtins_are_downlevel_capabilities -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j 4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std vertex_builtin_detection_uses_selected_entry_point_declarations -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j 4 -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_index_entry_inputs_are_rejected_by_fxc -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j 2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --test-threads=1
+cargo +1.93 test --offline -j 4 -p wgpu-hal --lib --no-default-features --features dx11 incomplete_instance_exposes_no_adapters_and_rejects_unsupported_handles -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j 4 -p wgpu-hal --lib --no-default-features --features dx11 -- --test-threads=1
+cargo +1.93 test --offline -j 4 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j 4 -p wgpu-types --lib -- --test-threads=1
+cargo +1.93 check --offline -j 4 -p wgpu-hal --no-default-features --features dx11,gles
+cargo +1.93 check --offline -j 4 -p wgpu-info
+cargo +1.93 check --offline -j 4 -p wgpu-test --tests
+cargo +1.93 clippy --offline -j 4 -p wgpu-types --lib --tests
+cargo +1.93 clippy --offline -j 4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j 4 -p wgpu-hal --no-default-features --features dx11,gles
+cargo +1.93 clippy --offline -j 4 -p wgpu-info
+cargo +1.93 clippy --offline -j 4 -p wgpu-test --tests
+rustfmt --edition 2021 --check tests/src/params.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-core/src/pipeline.rs wgpu-core/src/validation.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/gles/adapter.rs wgpu-hal/src/noop/mod.rs wgpu-info/src/human.rs wgpu-types/src/limits.rs
+git diff --check
+```
+
+`WGPU_DX11_REQUIRE_HARDWARE=1` was set for the full core fixture and HAL
+suite. An initial DX12 command omitted `std,wgsl` and failed to compile the
+test target; rerunning with those required features passed. No source change
+was needed to correct that command issue.
+
 ## Documentation checkpoint — repeat-cap behavior reconciled — `e5fe9207c611234c1669da48892ec12b80ebcfab`
 
 Updated `CAPABILITIES.md`, `TESTING.md` and `STATUS.md` to separate the private
