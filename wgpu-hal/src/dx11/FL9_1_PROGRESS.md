@@ -3169,3 +3169,59 @@ substitute for historical hardware. Next address the audited core/HAL mismatch
 for nonzero depth bias with a selected fragment entry point that writes
 `frag_depth`, using entry-point-specific validation and keeping adapter
 enumeration closed.
+
+## Checkpoint — selected-entry depth-bias validation — `8f81fdc8f`
+
+Core now represents whether depth bias can be combined with a selected fragment
+entry point writing `frag_depth` as
+`DownlevelLimits::depth_bias_with_fragment_depth`. The controlled FL9_1 fixture
+sets it false. A new `Interface` query reuses Naga-derived selected-entry
+outputs; core rejects the unsupported combination before HAL and treats an
+opaque shader interface conservatively. The private D3D11 capability model
+already records this backend path as unavailable. Ordinary D3D11 adapter
+enumeration remains empty.
+
+The strict fixture created a WGSL module with both a color-only and a
+color-plus-depth fragment entry. It verified: nonzero bias plus selected depth
+output returns the specific core validation error; selecting the color entry
+from that same module creates a biased pipeline; selecting the depth entry with
+zero bias creates a pipeline. These compile through the actual D3D11 HAL on
+physical hardware, but do not execute a depth-writing draw.
+
+Verification used Rust 1.93.1 in the Visual Studio developer shell with
+`CARGO_BUILD_JOBS=32`, one Cargo process at a time:
+
+- `wgpu-types` full library tests: 61/61 passed; 14 existing unused-serde-import warnings.
+- Strict fixture-enabled core suite: 75/75 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false), requested FL9_1 and actual L9_1. Existing rendering/readback assertions passed; the new pipeline selection checks passed. The fixture also asserts ordinary D3D11 enumeration remains empty.
+- Focused strict fixture rerun after correcting the case to use triangle topology: 1/1 passed. The initial test attempt ran inside the helper's point-list case and correctly failed the pre-existing depth-bias/topology validation; the test was scoped to the baseline triangle case and then passed.
+- Core's zero-D3D11-adapter isolation test: 1/1 passed.
+- Core DX12 regression: 72/72 passed.
+- Strict private D3D11 HAL suite: 330/330 passed on the RTX 3090 Ti at requested/actual FL9_1, including actual GPU readback cases. A small set of shader tests intentionally logs `SKIP` for rendering after verifying expected safe shader rejection; these do not count as executed GPU draws.
+- HAL `dx11,gles` check, `wgpu-info` check and `wgpu-test --tests` check passed.
+- Core fixture Clippy, wgpu-types Clippy, wgpu-info Clippy and HAL `dx11,gles` Clippy passed. HAL retained ten existing warnings in untouched code; wgpu-types retained fourteen existing unused-serde-import warnings.
+- Targeted rustfmt and `git diff --check` passed.
+
+Exact commands:
+
+```text
+cargo test --offline -p wgpu-types --lib -- --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11,gles
+cargo check --offline -p wgpu-info
+cargo check --offline -p wgpu-test --tests
+cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+cargo clippy --offline -p wgpu-types --tests
+cargo clippy --offline -p wgpu-info
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11,gles
+rustfmt --edition 2021 --check wgpu-types/src/limits.rs wgpu-core/src/validation.rs wgpu-core/src/device/resource.rs wgpu-core/src/pipeline.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/gles/adapter.rs wgpu-hal/src/noop/mod.rs wgpu-info/src/human.rs tests/src/params.rs
+git diff --check
+```
+
+The RTX result is a compiler/validation check at forced FL9_1, not a
+depth-writing GPU render or a historical-driver claim. Next continue the
+public adapter contract audit; the public capability snapshot and HWND
+presentation gates remain unresolved.

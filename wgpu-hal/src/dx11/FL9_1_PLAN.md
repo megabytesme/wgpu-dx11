@@ -200,3 +200,9 @@ it. The per-format RGBA8/BGRA8 mip projection now honors missing driver MIP
 support and disabled backend mip paths; the strict RTX fixture reports MIP
 support for both formats at FL9_1. Public adapter and HWND surface exposure
 remain gated.
+
+The selected-entry depth-bias mismatch is now represented in core's
+`DownlevelLimits` and covered by the controlled fixture. Next audit remaining
+core-valid depth/stencil and render-pass combinations, then continue designing
+a truthful production adapter capability snapshot. The public adapter and HWND
+surface must stay gated until the snapshot covers every operation it permits.

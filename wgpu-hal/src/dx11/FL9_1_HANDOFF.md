@@ -862,3 +862,16 @@ missing MIP support; the RTX reports it for both formats at forced FL9_1. See
 permits nonzero depth bias with a selected fragment entry point that writes
 `frag_depth`, while HAL rejects that pipeline. Gate it narrowly on selected-entry
 analysis. Keep ordinary D3D11 enumeration disabled.
+
+## Current checkpoint — selected-entry depth-bias validation
+
+Code checkpoint `8f81fdc8f` adds `DownlevelLimits::depth_bias_with_fragment_depth`,
+a selected-entry output query on the validated core interface, and a specific
+pre-HAL pipeline rejection when the capability is absent. The controlled FL9_1
+fixture checks biased depth output rejection, an unused depth-writing entry
+being harmless when the color entry is selected, and zero-bias depth output
+pipeline creation. Strict RTX FL9_1 fixture passed 75/75, private HAL passed
+330/330, wgpu-types passed 61/61, core DX12 passed 72/72, and zero-adapter
+isolation passed 1/1. Clippy, builds, formatting and diff checks passed with
+the existing warnings recorded in `FL9_1_PROGRESS.md`. Continue with the
+production adapter capability contract; do not enable normal D3D11 enumeration.

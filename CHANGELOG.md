@@ -57,6 +57,7 @@ Bottom level categories:
 - Add a downlevel vertex-format mask so adapters can report input formats individually and core rejects unsupported attributes before HAL.
 - Allow adapters to report single-mip-only texture formats and reject unsupported mip chains before HAL texture creation.
 - Add `DownlevelLimits::viewport_rectangles_outside_target` and reject out-of-target viewports when an adapter cannot preserve clipped viewport behavior.
+- Add `DownlevelLimits::depth_bias_with_fragment_depth` so adapters can reject depth-biased pipelines only when the selected fragment entry point writes fragment depth.
 
 #### Hal
 

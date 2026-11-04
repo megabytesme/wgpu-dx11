@@ -278,7 +278,11 @@ stencil-remapping emulation.
 Triangle pipelines support signed constant and finite slope-scaled D24S8 depth
 bias with zero clamp. Nonzero bias is rejected for point lists and lines, which
 are unaffected in the solid-fill state, and for a selected fragment entry
-writing `frag_depth`; unused depth-writing entries do not cause rejection.
+writing `frag_depth`. Core represents this implementation boundary with
+`DownlevelLimits::depth_bias_with_fragment_depth` and checks only the selected
+fragment entry point; an entry point with no available core interface is
+rejected conservatively when the adapter lacks the capability. Unselected
+depth-writing entries do not cause rejection.
 Nonzero clamp is rejected because FL9_1 requires `DepthBiasClamp = 0`; core's
 `DEPTH_BIAS_CLAMP` downlevel gate now has a controlled-fixture regression proving
 this descriptor is rejected before HAL. A strict

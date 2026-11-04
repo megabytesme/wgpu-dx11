@@ -30,6 +30,14 @@ backend paths. The test-only core adapter calls this same projection, while
 normal D3D11 enumeration remains empty. This is a tested building block, not a
 public adapter capability report.
 
+Core's controlled FL9_1 capability snapshot now also marks
+`DownlevelLimits::depth_bias_with_fragment_depth` unavailable. A pipeline with
+nonzero depth bias and a selected fragment entry point that writes
+`frag_depth` is rejected before HAL; selecting a different entry point from the
+same module remains allowed. The capability is represented separately from
+the native `DEPTH_BIAS_CLAMP` flag because this is a backend implementation
+restriction, not a feature-level guarantee.
+
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;

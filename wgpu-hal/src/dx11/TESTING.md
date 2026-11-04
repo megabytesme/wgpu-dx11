@@ -320,6 +320,15 @@ from the same module succeeded with nonzero bias. These results do not establish
 bias arithmetic precision on historical FL9 hardware, nor a public adapter
 contract.
 
+The controlled core fixture reports
+`DownlevelLimits::depth_bias_with_fragment_depth = false`. It verifies that a
+selected `frag_depth` entry plus nonzero bias returns
+`UnsupportedDepthBiasWithFragmentDepth` before HAL, that another selected color
+entry in the same module still creates with bias, and that the depth-writing
+entry still creates with zero bias. The latter two cases also exercise D3D11
+pipeline compilation at forced FL9_1. This is validation coverage, not a
+depth-writing GPU draw.
+
 Run the CPU-only capability mapping test across all seven recognized feature
 levels with:
 
