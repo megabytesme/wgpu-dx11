@@ -3637,3 +3637,58 @@ git diff --check
 
 No HAL source changed. Public D3D11 enumeration and surface exposure remain
 gated; continue auditing core-valid layout and render operations.
+
+## Checkpoint — gate empty bind-group visibility
+
+The FL9_1 projection now reports `DownlevelLimits::empty_binding_visibility =
+false`, and core rejects a bind-group-layout entry with an empty shader-stage
+set before calling the HAL. This closes another legal-WebGPU-layout/HAL-rejection
+mismatch. The limit defaults to true for existing backends, participates in
+limit checks and the WebGPU-compliance predicate, and has serde defaulting for
+older serialized capability values. GLES and noop explicitly report support;
+the private DX11 projection reports unsupported. `wgpu-info` prints the new
+limit. The changelog records the new validation behavior.
+
+Rust 1.93.1/MSVC checks:
+
+- `wgpu-types` library tests passed 66/66; with serde passed 67/67.
+- Strict fixture-enabled core suite passed 78/78. The RTX 3090 Ti
+  (`0x10de:0x2203`, software=false) executed at requested/actual FL9_1; the
+  fixture specifically verified empty visibility is rejected by core before
+  HAL and retained the existing render/readback checks.
+- Full private HAL suite passed 337/337. Strict hardware mode produced 144
+  physical-adapter reports across the suite, all selecting the RTX 3090 Ti at
+  FL9_1. The suite reported no skipped or failed cases.
+- Core DX12 suite passed 75/75. The ordinary D3D11 zero-adapter isolation test
+  passed 1/1.
+- HAL test compilation with `dx11,gles`, `wgpu-info` check, `wgpu-test` test
+  check, and core fixture Clippy passed.
+- Targeted rustfmt and `git diff --check` passed. Whole-workspace
+  `cargo fmt --all -- --check` reports pre-existing differences in untouched
+  `naga/src/back/hlsl/writer.rs` and `wgpu-core/src/instance.rs`.
+- The Visual Studio developer prompt continues to print its existing
+  `Error: Unknown error` banner while the invoked commands complete normally.
+
+Commands (run from the Visual Studio developer prompt; strict commands set
+`WGPU_DX11_REQUIRE_HARDWARE=1`):
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-types --lib
+cargo +1.93 test --offline -j16 -p wgpu-types --lib --features serde
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
+cargo +1.93 check --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo +1.93 check --offline -j16 -p wgpu-info
+cargo +1.93 check --offline -j16 -p wgpu-test --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check tests/src/params.rs wgpu-core/src/binding_model.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/gles/adapter.rs wgpu-hal/src/noop/mod.rs wgpu-info/src/human.rs wgpu-types/src/limits.rs
+git diff --check
+```
+
+Public D3D11 adapter enumeration and HWND surface exposure remain disabled.
+After this checkpoint, continue the core/HAL layout and rendering audit and
+finish the broader capability projection; these individual gates do not make
+the production adapter ready for enumeration.

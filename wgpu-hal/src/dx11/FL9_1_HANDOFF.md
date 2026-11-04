@@ -985,3 +985,16 @@ Focused strict fixture, full core 78/78, DX12 75/75, Clippy, rustfmt and diff
 checks passed; details are in `FL9_1_PROGRESS.md`. Commit this code and journal,
 then resume the audit at remaining bind-group layout shapes. Keep public D3D11
 enumeration and HWND surface exposure disabled.
+
+The current empty-visibility patch adds a `DownlevelLimits` capability and a
+core BGL validation gate because the private HAL rejects empty visibility.
+`wgpu-types` passed 66/66 and serde passed 67/67; strict core passed 78/78,
+DX12 passed 75/75, the zero-adapter test passed 1/1, and the strict private HAL
+suite passed 337/337 with 144 hardware identity reports on the RTX 3090 Ti at
+forced FL9_1. Core Clippy, HAL/GLES compile, `wgpu-info`, `wgpu-test`, targeted
+rustfmt and `git diff --check` passed. Whole-workspace rustfmt still reports
+pre-existing differences in untouched Naga and core files. Full commands and
+the new capability description are in `FL9_1_PROGRESS.md`. Keep public adapter
+enumeration and HWND surface exposure disabled; next continue auditing core
+validity against HAL layout/render support and complete the adapter capability
+projection.
