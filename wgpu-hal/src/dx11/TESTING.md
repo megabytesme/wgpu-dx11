@@ -11,6 +11,20 @@ attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a
 multi-mip depth texture on the GPU.
 
+The core sampler-repeat validator is CPU-tested against a synthetic finite
+repeat limit, including both `Repeat` and `MirrorRepeat`, unaffected clamp
+modes, and the unbounded sentinel. The D3D11 capability model separately checks
+the static repeat guarantees for all seven recognized feature levels:
+
+```powershell
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std sampler_repeat_limit -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 feature_level_guarantees_are_specific_and_do_not_promote_backend -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-types downlevel_limits_check_minimum_capabilities -- --nocapture
+```
+
+These tests are synthetic/CPU-only. They do not claim that the RTX validates
+behavior at or beyond the FL9_1 repeat cap.
+
 ## 1. HAL tests and GPU readback
 
 ### Focused FL9_1 hardware test

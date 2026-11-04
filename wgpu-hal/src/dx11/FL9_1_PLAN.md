@@ -109,9 +109,15 @@ below is met. This plan does not claim WebGPU conformance.
    pairs using the currently bound views and samplers. A strict core fixture
    rejects a used NPOT/repeat pair before submission and reads 64 yellow pixels
    from POT/repeat plus NPOT/clamp pairs despite an unused incompatible
-   cross-pair; the RTX's positive full-NPOT query is separately reported.
-   Next continue auditing core-valid attachment, viewport and render-state
-   combinations before building the truthful public capability snapshot.
+   cross-pair; the RTX's positive full-NPOT query is separately reported. The
+   fixed 10Level9 repeat cap is now modeled separately (128 at FL9_1) and core
+   rejects Repeat and MirrorRepeat sampler creation whenever the reported cap
+   is finite, because it cannot prove interpolated coordinate ranges for every
+   draw. Synthetic tests cover both modes and the unrestricted sentinel; the
+   RTX forced to 9_1 does not validate legacy overflow behavior. Test selection
+   now checks downlevel limit requirements as well as flags. Next continue
+   auditing core-valid attachment, viewport and render-state combinations
+   before building the truthful public capability snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

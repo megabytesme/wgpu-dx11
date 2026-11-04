@@ -2,6 +2,41 @@
 
 ## Current position — 2026-11-04
 
+## Checkpoint — finite texture-repeat limit in core — `d3e7db9a1`
+
+Microsoft's 10Level9 `Draw`/`DrawIndexed` contract limits repeats over one
+primitive to 128 at FL9_1 (2048 at 9_2, 8192 at 9_3/10_x, 16384 at 11_x).
+The D3D11 feature-level model records those static guarantees. A new
+`DownlevelLimits::max_texture_repeat_per_primitive` carries a reported bound;
+core rejects `Repeat` and `MirrorRepeat` sampler creation for finite bounds,
+because it cannot prove interpolated coordinates remain within the limit for
+all possible draw data. This is intentionally stricter than the native bound:
+core does not yet have a coordinate-range validator or semantics-preserving
+shader emulation. The bound is not an optional driver query. The FL9_1 core
+fixture keeps its test-only unbounded setting so private repeat-render tests
+continue exercising HAL behavior; this setting is not a public capability
+projection.
+
+The test harness now compares required `DownlevelLimits` when deciding whether
+a conformance test can run. The minimum test profile requests no texture-repeat
+capacity; a test needing unbounded repeat can request `u32::MAX`. Ordinary
+D3D11 adapter enumeration remains disabled.
+
+Validation on Rust 1.93.1 / Windows MSVC with `CARGO_BUILD_JOBS=32`:
+
+- `cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std sampler_repeat_limit -- --nocapture --test-threads=1`: 1 passed, CPU-only.
+- `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 feature_level_guarantees_are_specific_and_do_not_promote_backend -- --nocapture --test-threads=1`: 1 passed, all seven feature-level identities checked.
+- `cargo test --offline -p wgpu-types downlevel_limits_check_minimum_capabilities -- --nocapture`: 1 passed.
+- Strict `fl91_core_buffer_and_offscreen_render_on_hardware`: 1 Rust test passed with many readback cases. NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false), requested and actual FL9_1. The physical full-NPOT query was true; synthetic fixture validation forced the conditional path. NPOT/repeat rejection and valid sampled/readback output passed. This does not validate historical repeat overflow behavior.
+- Core D3D11 zero-adapter isolation: 1 passed. Core DX12 regression suite: 71 passed.
+- Strict private D3D11 HAL suite: 323 passed, 0 failed, including existing texture, sampler, draw, transfer and synchronization GPU tests. No dedicated over-limit GPU experiment was run because the modern driver does not reproduce legacy FL9_1 behavior.
+- `cargo check -p wgpu-hal --no-default-features --features dx11,gles`, `cargo check -p wgpu-info`, `cargo check -p wgpu-test`, targeted `rustfmt --check`, and `git diff --check` passed.
+- Core and wgpu-test Clippy passed. HAL Clippy passed with 10 pre-existing warnings; wgpu-types Clippy passed with 14 pre-existing unused-serde-import warnings. A first test-package Clippy call lacked the MSVC environment and failed to find `cl.exe`/`link.exe`; rerunning after `VsDevCmd.bat` passed. An early core assertion used `assert_eq!` on a non-`PartialEq` error and was corrected to `matches!` before the passing test.
+
+The fixture did not print a driver version during this run; the prior hardware
+baseline recorded NVIDIA driver `32.0.16.2101`. No historical FL9_1 hardware
+was tested. See CAPABILITIES.md for the hardware/backend/public-contract split.
+
 Branch: `uwp-dx11`. The autonomous FL9_1 completion mission remains active.
 Recent verified code checkpoints include `834cd9856` (Vulkan reports the
 shared multi-mip depth capability), `983eea619` (core gates multi-mip depth

@@ -24,7 +24,11 @@ current private D24S8 path supports constant and slope-scaled bias on triangles,
 but not clamp or bias with selected `frag_depth` output. Modeling higher-level
 hardware guarantees does not enable higher-level execution paths. Other feature
 levels have different documented minima; this model does not enable their
-additional execution paths.
+additional execution paths. The 10Level9 [`Draw`/`DrawIndexed` contract](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
+also caps texture repeats per primitive at 128 for FL9_1, 2048 for FL9_2,
+8192 for FL9_3/10_x, and 16384 for FL11_x, matching the [resource limit
+table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-resources-limits).
+This is a static feature-level limit, not an optional driver query.
 Microsoft's required-format table maps legacy L8 to R8_UNORM, V8U8 to
 R8G8_SNORM, and Q8W8V8U8 to R8G8B8A8_SNORM. Each requires 2D texture and
 shader-sample support beginning at FL9_1. It also requires DXT1 / BC1_UNORM
@@ -395,12 +399,13 @@ disabled.
 | Category | Native and driver contract | Private backend and coverage |
 | --- | --- | --- |
 | Address modes | Clamp, wrap and mirror are available; `MIRROR_ONCE` is not the same as mirrored repeat and is unsupported. Ordinary border addressing is not generally available at 9_1/9_2. | Clamp, repeat and mirrored repeat map independently on U/V/W. Patterned GPU tests cover repeat, mirror and mixed U/V. Border addressing is rejected before native creation; all wgpu border colors may be carried only when no border addressing is used. |
+| Repeat range | FL9_1 limits texture repeats to 128 over one primitive (`Draw`/`DrawIndexed`). No runtime query raises this feature-level guarantee. | Private HAL repeat sampling is exercised within controlled shaders. Core now rejects Repeat and MirrorRepeat sampler descriptors whenever the reported limit is finite, because it cannot prove interpolated coordinates stay within the native range for every draw. The modern RTX forced to FL9_1 does not validate historical behavior beyond the documented limit. |
 | Min/mag filtering | Point and linear filters can be specified independently. | All four min/mag combinations map to D3D11 filters. GPU readback exercises both magnification and minification with contrasting texels; filter outputs differ. |
 | Mipmap filtering | Point and linear mip filters exist. | Both are tested with sampled full-chain POT textures; suffix and restricted clone-backed non-suffix views passed on the RTX. General mipmap behavior remains unavailable. |
 | LOD | FL9_1 native MinLOD must be integral and MaxLOD must be FLT_MAX. | A normalized minimum requires a one-mip view. When only a finite maximum is raised and the minimum is preserved, a used multi-mip view requires the original maximum to reach its last mip and anisotropy 1. Anisotropic sampling with a raised finite maximum remains one-mip-only. Other unrepresentable mixed-filter and anisotropic ranges are rejected. FL9 does not specify whether clamping precedes min/mag selection. FXC rejects `SampleLevel` for the tested pixel profile with X4532; explicit-LOD sampling is not claimed. |
 | Anisotropy | FL9_1 native maximum is 2; an upper limit alone is not a visual-quality guarantee. | The private backend accepts 1 or 2, requiring linear min, mag and mip filters for 2. Native creation and a sampled GPU output passed; anisotropic quality on minified textures is unverified. Values above 2 are rejected even on a modern GPU forced to 9_1. |
 | Comparison / border | Comparison filtering is not generally supported at 9_1; ordinary border addressing is not normally allowed. Optional 9_x shadow support is separate. | Comparison and border addressing remain rejected. On the RTX forced to 9_1, ordinary border sampler creation returned E_INVALIDARG. No optional wgpu border or comparison feature is advertised. |
-| NPOT | FL9_x permits a single-mip 2D NPOT texture only when `AddressU/V/W` are not `D3D11_TEXTURE_ADDRESS_WRAP`; full NPOT is an optional driver query. `MIRROR` is distinct from `WRAP`. | The HAL and core reject only used NPOT/repeat pairs unless full NPOT is positively reported. Clamp and mirrored-repeat modes remain valid under the conditional rule. Core checks the selected shader entry point's Naga sampling pairs against current bound texture views and sampler descriptors before command submission. Strict fixture tests use the real FL9_1 device while synthetically reporting conditional NPOT to core. |
+| NPOT | FL9_x permits a single-mip 2D NPOT texture only when `AddressU/V/W` are not `D3D11_TEXTURE_ADDRESS_WRAP`; full NPOT is an optional driver query. `MIRROR` is distinct from `WRAP`. | The HAL and core reject only used NPOT/repeat pairs unless full NPOT is positively reported. Clamp and mirrored-repeat modes remain valid under this conditional-NPOT rule, but MirrorRepeat is still subject to the separate finite per-primitive repeat limit above. Core checks the selected shader entry point's Naga sampling pairs against current bound texture views and sampler descriptors before command submission. Strict fixture tests use the real FL9_1 device while synthetically reporting conditional NPOT to core. |
 
 For normalized LOD ranges, patterned single-mip GPU tests cover both nearest
 and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling

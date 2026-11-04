@@ -35,6 +35,15 @@ NPOT/clamp renders 64 expected yellow pixels despite an unused incompatible
 cross-pair. The driver itself reports unrestricted NPOT support at forced
 FL9_1, so the restrictive behavior is verified synthetically.
 
+Core also models the fixed 10Level9 maximum texture-repeat count per primitive:
+128 at FL9_1, 2048 at FL9_2, 8192 at FL9_3/10_x and 16384 at FL11_x. Since
+wgpu-core cannot prove the interpolated coordinate range for every draw, sampler
+creation rejects `Repeat` and `MirrorRepeat` whenever this limit is finite.
+This is independent of conditional-NPOT validation: clamp and mirror avoid the
+NPOT `WRAP` rule, but mirror still repeats and is constrained by the draw limit.
+The RTX forced to FL9_1 does not simulate the historical driver behavior; this
+contract is derived from Microsoft's static 10Level9 requirements.
+
 ## Implemented private HAL paths
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted

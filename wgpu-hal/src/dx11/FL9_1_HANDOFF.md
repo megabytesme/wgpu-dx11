@@ -11,7 +11,20 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The newest code checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
+The newest code checkpoint is `d3e7db9a1` (`dx11: model FL9 repeat limits in
+core`). The feature-level model records Microsoft's static texture-repeat
+limits, including 128 for FL9_1. Core rejects Repeat and MirrorRepeat samplers
+for any finite reported limit because it cannot prove per-draw coordinate
+ranges. CPU-only tests cover this conservative validation; the RTX 3090 Ti
+forced to FL9_1 cannot establish historical repeat overflow behavior. The
+strict private HAL suite passed 323/323, the controlled core fixture passed
+with physical output validation, core zero-adapter isolation passed, and the
+core DX12 regression suite passed 71/71. The fixture still uses a synthetic
+unbounded repeat limit to preserve private repeat rendering tests; no ordinary
+adapter is exposed. Exact commands and warning details are in
+FL9_1_PROGRESS.md.
+
+The prior core NPOT checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
 pairs`). Core retains selected-entry Naga sampling relationships and validates
 current bound texture/sampler descriptors at draw encoding. A strict fixture
 on the RTX 3090 Ti requested and selected FL9_1; the physical driver reports
