@@ -2370,3 +2370,46 @@ builds and tests succeed.
 Continue the texture descriptor/render-pass audit, then return to the broader
 core-valid command inventory. Public D3D11 adapter enumeration and surface
 exposure remain disabled.
+
+## Checkpoint — FL9_1 single-sample output masks — `8eff9020a` — 2026-11-04
+
+The core/HAL audit found that core permits a single-sample pipeline with a
+zero sample mask, while the private HAL previously rejected every non-default
+multisample descriptor and hard-coded the native mask to all ones. The pipeline
+now retains the WebGPU mask and passes it to the output merger. For FL9_1 only,
+a native zero mask is translated to `0xffff_fffe`: sample zero remains masked,
+all other bits are irrelevant for the supported single-sample target, and the
+native mask is nonzero as required by the downlevel context. Multisampling and
+alpha-to-coverage remain rejected. A core-fixture render case verified that
+all 64 pixels retain the blue clear color with `mask = 0`.
+
+Rust 1.93.1/MSVC verification on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) requested and selected FL9_1. The focused strict HAL translation
+test passed 1/1; the focused strict core fixture passed 1/1 and printed that all
+64 pixels matched; the complete strict private D3D11 suite passed 318/318; the
+complete fixture-enabled core library suite passed 70/70, including the
+zero-adapter isolation test; and the core DX12 library suite passed 67/67.
+The non-test D3D11 HAL `cargo check` passed. HAL and core Clippy passed, with
+ten existing HAL warnings and no core warnings. Targeted rustfmt and
+`git diff --check` passed. The Visual Studio developer-shell banner continues
+to print `vError: Unknown error` despite successful compiler initialization.
+
+Code checkpoint: `8eff9020a` (`dx11: honor single-sample masks at FL9_1`).
+Public adapter enumeration and public surface exposure remain disabled. The
+controlled core fixture still injects restricted capabilities and is not a
+production-adapter report. Continue auditing texture creation and render-pass
+validation; keep historical FL9_1 hardware and the public integration path
+listed as unverified.
+
+Commands for the focused checks were:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std -- --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11
+```
+
+The focused unit and fixture selectors, both Clippy commands, and targeted
+format commands are recorded in the session checkpoint; the full commands
+above include the corresponding suites and ordinary library check.

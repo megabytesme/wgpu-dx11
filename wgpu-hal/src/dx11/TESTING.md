@@ -1062,6 +1062,22 @@ vertex fetches. Replay scans GPU-authoritative index bytes through staging,
 which preserves command ordering but can stall the CPU; native strip-cut
 support is not used.
 
+### Single-sample output mask
+
+```powershell
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_zero_sample_mask_uses_equivalent_nonzero_native_mask -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The first test checks production mask translation, including high-only `u64`
+masks. The strict core fixture requested and selected FL9_1 on the RTX 3090 Ti;
+its `mask = 0` pipeline preserved all 64 blue clear pixels. FL9_1 forbids a
+zero native `SampleMask`, so the backend passes `0xffff_fffe`; with one active
+sample this retains the zero-mask result. Multisampling and alpha-to-coverage
+remain unsupported. See [OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
+and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpumultisamplestate).
+
 ### Storage buffer validation boundary
 
 The controlled core fixture verifies that a buffer with `STORAGE | COPY_SRC |

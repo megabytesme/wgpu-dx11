@@ -141,6 +141,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   a direct-only zero-bias `frag_depth` entry with X4530, while a structured
   color-and-depth zero-bias entry compiled. FL9 historical bias precision remains
   unverified; public adapter enumeration remains disabled.
+- Single-sample pipeline masks reach the D3D11 output merger. Because FL9_1
+  rejects a zero native `SampleMask`, a zero wgpu mask is translated to
+  `0xffff_fffe`, which masks sample zero while satisfying the native nonzero
+  requirement. A strict controlled core render preserved all 64 clear-color
+  pixels; multisampling and alpha-to-coverage remain unsupported.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled

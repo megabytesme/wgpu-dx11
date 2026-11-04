@@ -666,3 +666,23 @@ are recorded in `FL9_1_PROGRESS.md`.
 Continue auditing texture descriptors and render-pass validation. The D3D11
 fixture still injects restricted capabilities; normal adapter enumeration and
 public surface exposure remain disabled.
+
+## Latest checkpoint — single-sample output masks — `8eff9020a`
+
+The private D3D11 pipeline now forwards `MultisampleState::mask` to
+`OMSetBlendState` while still rejecting multisampling and alpha-to-coverage.
+At FL9_1, a zero WebGPU mask is translated to `0xffff_fffe`, which masks the
+only supported sample while meeting the nonzero native argument requirement.
+The controlled core fixture rendered with a zero mask and verified that all
+64 pixels remained the blue clear color.
+
+The strict private suite passed 318 tests; the fixture-enabled core suite passed
+70 and includes the zero-adapter isolation regression; the core DX12 suite
+passed 67. The focused strict fixture and mask translation tests each passed
+1/1. HAL build/check and Clippy passed (ten existing HAL Clippy warnings); core
+Clippy, targeted formatting and `git diff --check` passed. Hardware was an RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1.
+See `FL9_1_PROGRESS.md` for exact commands. Next continue the core/HAL audit at
+texture descriptor and render-pass validation. The fixture's injected
+capabilities do not validate a production adapter, and historical FL9_1
+hardware is untested.

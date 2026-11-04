@@ -76,6 +76,8 @@ below is met. This plan does not claim WebGPU conformance.
    fixture leaves those flags absent and verifies rejection before HAL. D1/D3
    binding layouts are rejected when their texture dimension limits are zero,
    and storage-texture D2Array layouts now share the array downlevel gate.
+   Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
+   equivalent nonzero FL9_1 native mask. Multisampling remains gated.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
