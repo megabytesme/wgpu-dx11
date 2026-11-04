@@ -2671,5 +2671,7 @@ warnings outside the changed capability file; targeted rustfmt and
 in the earlier depth-bias checkpoint remain. Public enumeration remains empty.
 
 Code checkpoint: `1a362ec6108de9accb52e2f1978a174d1f923106`
-(`dx11: model raster depth-bias capabilities`). Documentation checkpoint
-follows.
+(`dx11: model raster depth-bias capabilities`). Documentation checkpoint:
+`ae7a75b16a10dc5e98d3d4e7b38a9eace300d1a1`
+(`docs: record FL9_1 raster bias capability model`). Continue with the
+public HAL/core capability-boundary audit in FL9_1_PLAN.md.
