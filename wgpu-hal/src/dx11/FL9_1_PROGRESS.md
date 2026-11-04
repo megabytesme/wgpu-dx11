@@ -2567,4 +2567,60 @@ rustfmt --edition 2021 --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx
 git diff --check
 ```
 
-Docs checkpoint remains to be recorded after the documentation-only commit.
+## Checkpoint — FL9_1 slope-scaled triangle depth bias — `6f7f1297891ac3477ed7055ded00934da1c46c2a`
+
+The native rasterizer path now carries both the signed constant bias and finite
+`slope_scale` from `DepthBiasState` into `D3D11_RASTERIZER_DESC`. FL9_1's
+required zero `DepthBiasClamp` remains enforced. Nonzero bias on points and
+solid lines is rejected because Microsoft documents that bias has no effect on
+those primitives (except wireframe lines, which this backend does not create).
+Selected fragment entries writing `frag_depth` still reject either bias term.
+
+The strict forced-FL9_1 RTX 3090 Ti test passed five complete constant-bias
+images and two slope-scaled images. In the sloped tests, the first red triangle
+writes a varying depth; positive slope bias prevents the second green triangle
+from replacing it, and negative slope bias lets green replace it. All 64 pixels
+matched in each case. Synthetic pipeline tests cover triangle acceptance,
+point/line rejection, non-finite slope, clamp rejection and topology-specific
+translation. The existing controlled core fixture still validates the positive
+and negative constant-bias cases, but the new slope cases exercise the private
+HAL path only.
+
+The complete strict private D3D11 suite passed 322/322; six unsafe runtime
+integer-index GPU subcases reported their expected rejection and skip. The
+focused hardware test passed 1/1, the D3D11 HAL check passed, the ordinary core
+zero-adapter test passed 1/1, and the strict controlled core fixture passed
+1/1, including its depth-bias, topology and texture readbacks. HAL Clippy passed
+with ten existing warnings outside the changed files. Targeted rustfmt and
+`git diff --check` passed. The core DX12 suite was not rerun because only the
+private D3D11 path and its test changed. MSVC initialization continued to print
+the existing `vError: Unknown error` banner while compiling successfully.
+
+The first new GPU assertion mistakenly expected the target clear color after a
+depth-failing second draw; observed red correctly showed that the first draw's
+color remained. The expectation was corrected and the strict test passed.
+FXC's diagnostic for the existing direct-only `frag_depth` shader remains an
+expected `X4530` because the profile requires all four `SV_Target0` components.
+Microsoft documents that clamp is unsupported at FL9_x and describes the
+slope-bias equation and primitive behavior in [D3D11 depth bias](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-output-merger-stage-depth-bias)
+and [10Level9 rasterizer restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
+Modern hardware forced to FL9_1 does not establish historical bias precision.
+
+Code checkpoint: `6f7f1297891ac3477ed7055ded00934da1c46c2a`
+(`dx11: support FL9_1 slope depth bias`). Public adapter enumeration remains
+disabled.
+
+Commands:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_triangle_depth_bias_and_pipeline_transition -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11
+rustfmt --edition 2021 --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/tests/dx11/depth_bias.rs
+git diff --check
+```
+
+Documentation checkpoint remains to be committed after this journal update.

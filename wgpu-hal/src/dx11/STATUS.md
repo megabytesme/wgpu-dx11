@@ -140,13 +140,14 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   aspects, no depth or stencil writes and no sampled alias. Aspect-specific
   views and depth copies remain unsupported; broad public depth-stencil
   capability is still false.
-- D24S8 triangle pipelines accept signed constant depth bias with zero slope
-  scale and clamp. Nonzero bias with a selected fragment-depth output and
-  nonzero point-list bias are rejected. Five strict FL9_1 RTX images and two
-  64-pixel core renders exercised the restricted constant-bias path. FXC rejected
-  a direct-only zero-bias `frag_depth` entry with X4530, while a structured
-  color-and-depth zero-bias entry compiled. FL9 historical bias precision remains
-  unverified; public adapter enumeration remains disabled.
+- D24S8 triangle pipelines accept signed constant and finite slope-scaled depth
+  bias with zero clamp. Nonzero bias on points or solid lines, nonzero clamp and
+  bias with a selected fragment-depth output are rejected. Five strict FL9_1 RTX
+  constant-bias images and two slope-bias images each checked all 64 pixels;
+  the controlled core fixture checks positive and negative constant bias. FXC
+  rejected a direct-only zero-bias `frag_depth` entry with X4530, while a
+  structured color-and-depth zero-bias entry compiled. FL9 historical bias
+  precision remains unverified; public adapter enumeration remains disabled.
 - Single-sample pipeline masks reach the D3D11 output merger. Because FL9_1
   rejects a zero native `SampleMask`, a zero wgpu mask is translated to
   `0xffff_fffe`, which masks sample zero while satisfying the native nonzero

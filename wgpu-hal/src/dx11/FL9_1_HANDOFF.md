@@ -11,6 +11,15 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
+Latest checkpoint: `6f7f1297891ac3477ed7055ded00934da1c46c2a` adds native
+finite slope-scaled bias for FL9_1 triangle pipelines, retaining zero-clamp,
+solid point/line and selected `frag_depth` restrictions. Five constant-bias
+and two sloped-triangle GPU images passed on the RTX 3090 Ti at requested and
+actual FL9_1; the full private suite passed 322/322. Exact commands and the
+expected FXC diagnostic are in FL9_1_PROGRESS.md. Continue with the public
+HAL/core capability boundary and truthful capability snapshot in
+FL9_1_PLAN.md. Do not enable normal enumeration or public HWND presentation.
+
 The indexed TriangleStrip checkpoint `f1b8c09a7` and strict core-fixture
 coverage `c46c4a908` are followed by static boundary execution tests for vertex
 c254 and pixel c31. At forced FL9_1 on the RTX 3090 Ti, the test verifies that
@@ -148,6 +157,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `6cac808c9` | dx11: verify FL9_1 final vertex constant execution |
 | `0c0ff00ba` | dx11: execute FL9_1 pixel constant boundary |
 | `340147803` | dx11: support native FL9_1 depth comparisons |
+| `6f7f1297891ac3477ed7055ded00934da1c46c2a` | dx11: support FL9_1 slope depth bias |
 
 ## What is and is not usable
 

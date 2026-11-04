@@ -92,9 +92,13 @@ below is met. This plan does not claim WebGPU conformance.
    `Never` keeps its validated-draw and stencil-depth-fail emulation. A strict
    forced-FL9_1 render verifies pass and fail pixels for all eight wgpu compare
    functions. The 10Level9 `LessEqual` restriction is for comparison samplers,
-   not raster depth state. Historical FL9_1 drivers remain unverified. Next
-   continue auditing core-valid attachment, viewport and render-state
-   combinations before building the truthful public capability snapshot.
+   not raster depth state. FL9_1 triangle pipelines also pass finite slope-scale
+   bias to the native rasterizer with the required zero clamp; strict readback
+   verifies positive/negative slope effects. Solid points and lines remain
+   rejected for nonzero bias because bias has no effect on them. Historical
+   FL9_1 drivers remain unverified. Next continue auditing core-valid
+   attachment, viewport and render-state combinations before building the
+   truthful public capability snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
@@ -140,4 +144,6 @@ and does not represent the public adapter contract. Next audit the public
 HAL/core adapter capability boundary and build a truthful, testable capability
 snapshot without enabling ordinary DXGI enumeration. Keep the public adapter
 and HWND surface gates closed until every core-legal operation in that snapshot
-is implemented or rejected.
+is implemented or rejected. Latest code checkpoint `6f7f12978` completed the
+native FL9_1 slope-scaled triangle depth-bias path; its capability and test
+record is in FL9_1_PROGRESS.md.
