@@ -1251,6 +1251,12 @@ bitflags::bitflags! {
         /// Without this flag, pipelines that write both RGB and alpha and specify
         /// different blend components are rejected during validation.
         const SEPARATE_ALPHA_BLEND = 1 << 28;
+
+        /// Supports 2D texture array views and sampling.
+        const TEXTURE_2D_ARRAYS = 1 << 29;
+
+        /// Supports cube texture views and sampling.
+        const CUBE_TEXTURES = 1 << 30;
     }
 }
 
@@ -1302,6 +1308,11 @@ mod tests {
             .flags
             .contains(DownlevelFlags::SEPARATE_ALPHA_BLEND));
         assert!(DownlevelFlags::compliant().contains(DownlevelFlags::SEPARATE_ALPHA_BLEND));
+        assert!(DownlevelCapabilities::default()
+            .flags
+            .contains(DownlevelFlags::TEXTURE_2D_ARRAYS | DownlevelFlags::CUBE_TEXTURES));
+        assert!(DownlevelFlags::compliant()
+            .contains(DownlevelFlags::TEXTURE_2D_ARRAYS | DownlevelFlags::CUBE_TEXTURES));
     }
 
     fn side_by_side(left: &str, right: &str) -> String {

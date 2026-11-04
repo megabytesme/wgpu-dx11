@@ -461,6 +461,52 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.bind_group_layout_drop(layout);
     }
     std::println!("PASS: unsupported storage-buffer stages rejected by core validation");
+    for (view_dimension, required_flag) in [
+        (
+            wgt::TextureViewDimension::D2Array,
+            wgt::DownlevelFlags::TEXTURE_2D_ARRAYS,
+        ),
+        (
+            wgt::TextureViewDimension::Cube,
+            wgt::DownlevelFlags::CUBE_TEXTURES,
+        ),
+        (
+            wgt::TextureViewDimension::CubeArray,
+            wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
+        ),
+    ] {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgt::ShaderStages::FRAGMENT,
+                    ty: wgt::BindingType::Texture {
+                        sample_type: wgt::TextureSampleType::Float { filterable: true },
+                        view_dimension,
+                        multisampled: false,
+                    },
+                    count: None,
+                }]),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
+                        crate::device::MissingDownlevelFlags(flags)
+                    ),
+                    ..
+                }) if *flags == required_flag
+            ),
+            "unsupported {view_dimension:?} layout must fail before HAL: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+    }
+    std::println!("PASS: unsupported texture-array and cube layouts rejected by core validation");
     for hlsl in [
         None,
         Some(Cow::Borrowed("float4 main() : SV_Target { return 1; }")),
@@ -496,6 +542,35 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         usage,
         view_formats: Vec::new(),
     };
+    let (texture, error) = global.device_create_texture(
+        device,
+        &texture_desc(
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureUsages::TEXTURE_BINDING,
+        ),
+        None,
+    );
+    assert!(error.is_none(), "array-view source texture: {error:?}");
+    let (array_view, error) = global.texture_create_view(
+        texture,
+        &crate::resource::TextureViewDescriptor {
+            dimension: Some(wgt::TextureViewDimension::D2Array),
+            ..Default::default()
+        },
+        None,
+    );
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(crate::resource::CreateTextureViewError::MissingDownlevelFlags(
+                crate::device::MissingDownlevelFlags(flags)
+            )) if *flags == wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
+        ),
+        "unsupported D2Array view must fail core validation before HAL: {error:?}"
+    );
+    global.texture_view_drop(array_view);
+    global.texture_drop(texture);
+    std::println!("PASS: one-layer D2Array view rejected by core validation");
     for (format, usage) in [
         (
             wgt::TextureFormat::Rgba16Float,

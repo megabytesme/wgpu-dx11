@@ -50,6 +50,7 @@ Bottom level categories:
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
 - Require stage-specific downlevel support before creating storage-buffer layouts.
+- Gate 2D array, cube and cube-array binding layouts and views with downlevel capabilities.
 
 #### Hal
 

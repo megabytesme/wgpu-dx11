@@ -2029,6 +2029,14 @@ impl Device {
                 wgt::TextureDimension::D3 => TextureViewDimension::D3,
             });
 
+        let required_downlevel_flags = match resolved_dimension {
+            TextureViewDimension::D2Array => wgt::DownlevelFlags::TEXTURE_2D_ARRAYS,
+            TextureViewDimension::Cube => wgt::DownlevelFlags::CUBE_TEXTURES,
+            TextureViewDimension::CubeArray => wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
+            _ => wgt::DownlevelFlags::empty(),
+        };
+        self.require_downlevel_flags(required_downlevel_flags)?;
+
         let resolved_mip_level_count = desc.range.mip_level_count.unwrap_or_else(|| {
             texture
                 .desc
@@ -2931,6 +2939,12 @@ impl Device {
                     view_dimension,
                     ..
                 } => {
+                    required_downlevel_flags |= match view_dimension {
+                        TextureViewDimension::D2Array => wgt::DownlevelFlags::TEXTURE_2D_ARRAYS,
+                        TextureViewDimension::Cube => wgt::DownlevelFlags::CUBE_TEXTURES,
+                        TextureViewDimension::CubeArray => wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
+                        _ => wgt::DownlevelFlags::empty(),
+                    };
                     if multisampled && view_dimension != TextureViewDimension::D2 {
                         return Err(CreateBindGroupLayoutError::Entry {
                             binding: entry.binding,

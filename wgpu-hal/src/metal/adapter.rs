@@ -1336,6 +1336,12 @@ impl super::CapabilitiesQuery {
             wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE,
             self.fragment_rw_storage,
         );
+        downlevel
+            .flags
+            .set(wgt::DownlevelFlags::TEXTURE_2D_ARRAYS, true);
+        downlevel
+            .flags
+            .set(wgt::DownlevelFlags::CUBE_TEXTURES, true);
         downlevel.flags.set(
             wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
             self.texture_cube_array,

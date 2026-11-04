@@ -665,6 +665,12 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 met
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+The same strict controlled fixture checks that `D2Array`, `Cube` and
+`CubeArray` bind-group layouts are rejected with their missing downlevel flags,
+and that a one-layer `D2Array` view returns a core validation error before the
+HAL is called. This covers a dimension restriction that
+`max_texture_array_layers = 1` cannot express by itself.
+
 The first two tests execute GPU work; the third is CPU-only. Strict execution on
 the RTX 3090 Ti at requested and actual FL9_1 verified RGBA8 and BGRA8 four-level
 initialization, padded partial uploads, copies between mip levels of different

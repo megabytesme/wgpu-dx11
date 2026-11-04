@@ -412,6 +412,14 @@ impl super::Adapter {
             wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
             supports_cube_array,
         );
+        downlevel_flags.set(
+            wgt::DownlevelFlags::TEXTURE_2D_ARRAYS,
+            supported((3, 0), (3, 0)),
+        );
+        downlevel_flags.set(
+            wgt::DownlevelFlags::CUBE_TEXTURES,
+            supported((2, 0), (2, 0)),
+        );
         downlevel_flags.set(wgt::DownlevelFlags::COMPUTE_SHADERS, supports_compute);
         downlevel_flags.set(
             wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE,

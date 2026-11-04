@@ -688,6 +688,8 @@ impl PhysicalDeviceFeatures {
             | Df::COMPARISON_SAMPLERS
             | Df::VERTEX_STORAGE
             | Df::FRAGMENT_STORAGE
+            | Df::TEXTURE_2D_ARRAYS
+            | Df::CUBE_TEXTURES
             | Df::DEPTH_TEXTURE_AND_BUFFER_COPIES
             | Df::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
             | Df::UNRESTRICTED_INDEX_BUFFER
