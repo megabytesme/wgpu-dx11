@@ -114,7 +114,7 @@ fn fl91_viewport_perspective_clip_w() -> windows::core::Result<()> {
 }
 
 #[test]
-fn fl91_viewport_fractional_rounding() -> windows::core::Result<()> {
+fn fl91_viewport_fractional_coordinates() -> windows::core::Result<()> {
     sampled_triangle(true, true, false, true, false, 17, None)
 }
 
@@ -2190,7 +2190,7 @@ fn sampled_triangle_variant(
                 12 => (4., 0.),
                 13 => (0., -4.),
                 14 => (0., 4.),
-                17 => (-3.6, 0.),
+                17 => (-3.6, 0.4),
                 22 => (-2047., 0.),
                 _ => (-20., 0.),
             };
@@ -2206,7 +2206,7 @@ fn sampled_triangle_variant(
                     } else {
                         8.
                     },
-                    h: 8.,
+                    h: if effect == 17 { 7.4 } else { 8. },
                 },
                 0.0..1.0,
             );
@@ -2426,7 +2426,9 @@ fn sampled_triangle_variant(
         assert_eq!(actual, &[0, 255, 255, 255]);
     } else if effect == 2 {
         assert_eq!(actual, &[0, 0, 0, 255]);
-    } else if matches!(effect, 4 | 7 | 8 | 10 | 11 | 13 | 15 | 16 | 17 | 19 | 22) {
+    } else if effect == 17 {
+        assert_eq!(actual, &[0, 255, 0, 255]);
+    } else if matches!(effect, 4 | 7 | 8 | 10 | 11 | 13 | 15 | 16 | 19 | 22) {
         assert_eq!(actual, &[0, 0, 255, 255]);
     } else if invert {
         assert_eq!(
@@ -2459,7 +2461,8 @@ fn sampled_triangle_variant(
         for (index, pixel) in pixels.chunks_exact(4).enumerate() {
             let (x, y) = (index % 8, index / 8);
             let covered = match effect {
-                11 | 16 | 17 | 19 => x < 4,
+                11 | 16 | 19 => x < 4,
+                17 => x < 5,
                 12 => x >= 4,
                 13 => y < 4,
                 14 => y >= 4,

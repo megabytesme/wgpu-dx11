@@ -1045,6 +1045,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::FractionalViewport,
         VertexCase::NpotRepeat,
         VertexCase::ViewportOutsideTarget,
         VertexCase::NpotValidPairs,
@@ -2210,6 +2211,7 @@ enum VertexCase {
     NpotRepeat,
     NpotValidPairs,
     ViewportOutsideTarget,
+    FractionalViewport,
 }
 
 fn render_triangle(
@@ -2230,6 +2232,7 @@ fn render_triangle(
     let bc1 = case == VertexCase::Bc1;
     let npot_repeat = case == VertexCase::NpotRepeat;
     let viewport_outside_target = case == VertexCase::ViewportOutsideTarget;
+    let fractional_viewport = case == VertexCase::FractionalViewport;
     let npot_valid_pairs = case == VertexCase::NpotValidPairs;
     let sampled_visibility = if case == VertexCase::VertexVisibleBindings {
         wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
@@ -3813,6 +3816,10 @@ fn render_triangle(
         global
             .render_pass_set_viewport(&mut pass, -1.0, 0.0, 8.0, 8.0, 0.0, 1.0)
             .unwrap();
+    } else if fractional_viewport {
+        global
+            .render_pass_set_viewport(&mut pass, 0.6, 0.6, 4.8, 4.8, 0.0, 1.0)
+            .unwrap();
     }
     if constant_blend {
         global
@@ -3898,6 +3905,7 @@ fn render_triangle(
         && !depth_only_prepass
         && special_topology.is_none()
         && triangle_strip_index_format.is_none()
+        && !fractional_viewport
     {
         global
             .render_pass_draw(&mut pass, 3, instance_count, 6, first_instance)
@@ -4112,6 +4120,23 @@ fn render_triangle(
                         actual.abs_diff(expected) <= 1,
                         "constant-blend pixel ({x}, {y}): {:?}",
                         &pixels[offset..offset + 4]
+                    );
+                }
+                continue;
+            }
+            if fractional_viewport {
+                if (1..3).contains(&x) && (1..5).contains(&y) {
+                    assert!(
+                        &pixels[offset..offset + 4] == [255, 0, 0, 255]
+                            || &pixels[offset..offset + 4] == [0, 255, 0, 255],
+                        "fractional viewport interior pixel ({x}, {y}): {:?}",
+                        &pixels[offset..offset + 4]
+                    );
+                } else {
+                    assert_eq!(
+                        &pixels[offset..offset + 4],
+                        &[0, 0, 255, 255],
+                        "fractional viewport exterior pixel ({x}, {y})"
                     );
                 }
                 continue;

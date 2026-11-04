@@ -53,9 +53,11 @@ below is met. This plan does not claim WebGPU conformance.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex
-   shader can exceed FL9 compiler limits. The private HAL still exercises the
-   remap when available; viewport interpolation and historical-driver
-   precision need more coverage. DXGI device-loss classification is
+   shader can exceed FL9 compiler limits. The private HAL's fractional
+   viewport remap is now readback-tested, including the core path with
+   contained geometry; the native FL9_1 viewport stays integer-bounded and
+   the shader transform preserves logical fractional coordinates.
+   Historical-driver precision remains unverified. DXGI device-loss classification is
    centralized and covered for reset, removal, driver-internal and OOM codes;
    continue auditing mapping,
    teardown and remaining device-loss panic paths. Empty compute
