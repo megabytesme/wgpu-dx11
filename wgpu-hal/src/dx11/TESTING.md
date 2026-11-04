@@ -1052,3 +1052,18 @@ restart splitting after base-vertex resolution, winding reset per run, the
 vertex fetches. Replay scans GPU-authoritative index bytes through staging,
 which preserves command ordering but can stall the CPU; native strip-cut
 support is not used.
+
+### Storage buffer validation boundary
+
+The controlled core fixture verifies that a buffer with `STORAGE | COPY_SRC |
+COPY_DST` can use the ordinary ordered upload/copy/readback path, with all 64
+bytes checked. The same test verifies that storage-buffer layouts visible to
+vertex, fragment or compute shaders fail at core validation with the missing
+`VERTEX_STORAGE`, `FRAGMENT_STORAGE`, `FRAGMENT_WRITABLE_STORAGE` or
+`COMPUTE_SHADERS` flags before the private HAL is called. This is not shader
+storage support.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```

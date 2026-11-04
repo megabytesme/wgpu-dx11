@@ -49,6 +49,7 @@ Bottom level categories:
 - Add `DownlevelFlags::TWO_SIDED_STENCIL` so adapters can report whether front and back stencil states may differ.
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
+- Require stage-specific downlevel support before creating storage-buffer layouts.
 
 #### Hal
 

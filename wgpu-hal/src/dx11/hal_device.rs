@@ -112,9 +112,14 @@ impl crate::Device for Device {
             | wgt::BufferUses::VERTEX
             | wgt::BufferUses::INDEX
             | wgt::BufferUses::UNIFORM
+            | wgt::BufferUses::STORAGE_READ_ONLY
+            | wgt::BufferUses::STORAGE_READ_WRITE
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
+        let storage = wgt::BufferUses::STORAGE_READ_ONLY | wgt::BufferUses::STORAGE_READ_WRITE;
+        let non_storage = supported & !storage;
         if !supported.contains(desc.usage)
+            || (desc.usage.intersects(storage) && !desc.usage.intersects(non_storage))
             || (self.native.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw()
                 && desc
                     .usage

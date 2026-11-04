@@ -67,7 +67,10 @@ below is met. This plan does not claim WebGPU conformance.
    require `SEPARATE_ALPHA_BLEND`; the FL9_1 fixture checks this while
    preserving the masked-channel emulation path. Continue mapping core-valid
    render state and format combinations to explicit downlevel or format
-   capabilities before considering production enumeration.
+   capabilities before considering production enumeration. Storage-buffer
+   layouts now require the matching vertex, fragment or compute downlevel flag.
+   The HAL accepts core-internal storage usage bits only alongside another
+   supported buffer role; it still does not implement shader storage access.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

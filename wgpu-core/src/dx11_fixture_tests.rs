@@ -1,7 +1,7 @@
 use alloc::{borrow::Cow, boxed::Box, sync::Arc, vec, vec::Vec};
 use core::{num::NonZeroU64, time::Duration};
 
-use crate::{device::HostMap, global::Global, resource::BufferMapOperation};
+use crate::{binding_model, device::HostMap, global::Global, resource::BufferMapOperation};
 
 #[test]
 fn fl91_core_mapped_write_flush_failure_cleans_up() {
@@ -407,6 +407,60 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let (device, queue) = global
         .adapter_request_device(adapter_id, &descriptor, None, None)
         .expect("controlled core adapter device request");
+    for (visibility, read_only, required_flags) in [
+        (
+            wgt::ShaderStages::VERTEX,
+            true,
+            wgt::DownlevelFlags::VERTEX_STORAGE,
+        ),
+        (
+            wgt::ShaderStages::FRAGMENT,
+            true,
+            wgt::DownlevelFlags::FRAGMENT_STORAGE,
+        ),
+        (
+            wgt::ShaderStages::FRAGMENT,
+            false,
+            wgt::DownlevelFlags::FRAGMENT_STORAGE | wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE,
+        ),
+        (
+            wgt::ShaderStages::COMPUTE,
+            true,
+            wgt::DownlevelFlags::COMPUTE_SHADERS,
+        ),
+    ] {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility,
+                    ty: wgt::BindingType::Buffer {
+                        ty: wgt::BufferBindingType::Storage { read_only },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }]),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
+                        crate::device::MissingDownlevelFlags(flags)
+                    ),
+                    ..
+                }) if *flags == required_flags
+            ),
+            "storage layout for {visibility:?} must be rejected by core before HAL: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+    }
+    std::println!("PASS: unsupported storage-buffer stages rejected by core validation");
     for hlsl in [
         None,
         Some(Cow::Borrowed("float4 main() : SV_Target { return 1; }")),
@@ -623,7 +677,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         assert!(error.is_none(), "buffer creation: {error:?}");
         id
     };
-    let source = create(wgt::BufferUsages::COPY_SRC | wgt::BufferUsages::COPY_DST);
+    let source = create(
+        wgt::BufferUsages::COPY_SRC | wgt::BufferUsages::COPY_DST | wgt::BufferUsages::STORAGE,
+    );
     let readback = create(wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ);
     let expected: Vec<u8> = (0u8..64).map(|value| value * 3 + 7).collect();
     global
@@ -677,7 +733,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(length, 64);
     let actual = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
     assert_eq!(actual, expected.as_slice());
-    std::println!("PASS: core queue upload, GPU copy, fence and mapped readback: 64/64 bytes");
+    std::println!("PASS: storage/copy buffer upload, GPU copy, fence and readback: 64/64 bytes");
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,

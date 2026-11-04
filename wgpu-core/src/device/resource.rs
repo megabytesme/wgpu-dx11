@@ -3068,6 +3068,18 @@ impl Device {
                     required_downlevel_flags |= wgt::DownlevelFlags::VERTEX_STORAGE;
                 }
             }
+            if let Bt::Buffer {
+                ty: wgt::BufferBindingType::Storage { .. },
+                ..
+            } = entry.ty
+            {
+                if entry.visibility.contains(wgt::ShaderStages::FRAGMENT) {
+                    required_downlevel_flags |= wgt::DownlevelFlags::FRAGMENT_STORAGE;
+                }
+                if entry.visibility.contains(wgt::ShaderStages::COMPUTE) {
+                    required_downlevel_flags |= wgt::DownlevelFlags::COMPUTE_SHADERS;
+                }
+            }
             if writable_storage == WritableStorage::Yes
                 && entry.visibility.contains(wgt::ShaderStages::FRAGMENT)
             {

@@ -17,6 +17,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   remain unverified; synchronous window callbacks can deadlock on reentry.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
+  Core-internal storage usage bits can accompany a supported transfer buffer,
+  but no storage-buffer shader binding is implemented. Core requires the
+  relevant stage downlevel flags and the controlled fixture confirms unsupported
+  vertex, fragment and compute storage layouts are rejected before HAL.
 - RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
