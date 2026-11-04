@@ -194,6 +194,15 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
     }
 }
 
+fn native_sample_mask(mask: u64, level: FeatureLevel) -> u32 {
+    let native_mask = mask as u32;
+    if level == FeatureLevel::L9_1 && native_mask == 0 {
+        !1
+    } else {
+        native_mask
+    }
+}
+
 fn validate_sampling_pairs(
     plan: &super::hal_bind_group::BindingPlan,
     pairs: &[super::sampling::SamplingPair],
@@ -457,6 +466,7 @@ pub struct RenderPipeline {
     pub(super) depth_write: bool,
     pub(super) stencil_write: bool,
     pub(super) depth_never: bool,
+    pub(super) sample_mask: u32,
     pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
@@ -470,6 +480,25 @@ pub struct RenderPipeline {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fl91_zero_sample_mask_uses_equivalent_nonzero_native_mask() {
+        use super::native_sample_mask;
+        use crate::dx11::FeatureLevel;
+
+        assert_eq!(native_sample_mask(0, FeatureLevel::L9_1), u32::MAX - 1);
+        assert_eq!(native_sample_mask(1, FeatureLevel::L9_1), 1);
+        assert_eq!(
+            native_sample_mask(0x8000_0000, FeatureLevel::L9_1),
+            0x8000_0000
+        );
+        assert_eq!(
+            native_sample_mask(1 << 32, FeatureLevel::L9_1),
+            u32::MAX - 1
+        );
+        assert_eq!(native_sample_mask(u64::MAX, FeatureLevel::L9_1), u32::MAX);
+        assert_eq!(native_sample_mask(0, FeatureLevel::L9_2), 0);
+    }
+
     #[test]
     fn sampling_pair_validation_reports_the_selected_stage() {
         use super::super::{
@@ -2267,7 +2296,8 @@ impl RenderPipeline {
                 strip_index_format: None,
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
-            || desc.multisample != wgt::MultisampleState::default()
+            || desc.multisample.count != 1
+            || desc.multisample.alpha_to_coverage_enabled
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
             || vertex_buffers.iter().flatten().any(|buffer| {
@@ -2653,6 +2683,7 @@ impl RenderPipeline {
                 .is_some_and(|state| state.depth_write_enabled.unwrap_or(false)),
             stencil_write,
             depth_never,
+            sample_mask: native_sample_mask(desc.multisample.mask, owner.feature_level()),
             target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),

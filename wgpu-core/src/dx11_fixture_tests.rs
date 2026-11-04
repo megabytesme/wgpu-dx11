@@ -873,6 +873,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::ZeroSampleMask,
         VertexCase::NonFiltering,
         VertexCase::UnfilterableFloat,
         VertexCase::VertexVisibleBindings,
@@ -1992,6 +1993,7 @@ fn copy_only_texture_view(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum VertexCase {
     Baseline,
+    ZeroSampleMask,
     PremultipliedBlend,
     NonFiltering,
     UnfilterableFloat,
@@ -2038,6 +2040,7 @@ fn render_triangle(
 ) {
     use crate::{binding_model, command as render, pipeline, resource};
     let premultiplied_blend = case == VertexCase::PremultipliedBlend;
+    let zero_sample_mask = case == VertexCase::ZeroSampleMask;
     let non_filtering = matches!(
         case,
         VertexCase::NonFiltering | VertexCase::UnfilterableFloat | VertexCase::Bc1
@@ -2820,6 +2823,9 @@ fn render_triangle(
         multiview_mask: None,
         cache: None,
     };
+    if zero_sample_mask {
+        pipeline_descriptor.multisample.mask = 0;
+    }
     if case == VertexCase::Baseline {
         let mut alpha_target = targets[0].clone().unwrap();
         alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
@@ -3470,6 +3476,14 @@ fn render_triangle(
                         &[0, 255, 0, 255]
                     },
                     "depth-only prepass pixel ({x}, {y})"
+                );
+                continue;
+            }
+            if zero_sample_mask {
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[0, 0, 255, 255],
+                    "zero sample mask pixel ({x}, {y})"
                 );
                 continue;
             }

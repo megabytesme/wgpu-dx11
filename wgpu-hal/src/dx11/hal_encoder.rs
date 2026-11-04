@@ -924,6 +924,7 @@ impl crate::CommandEncoder for CommandEncoder {
             topology: pipeline.topology,
             rasterizer: pipeline.rasterizer.clone(),
             blend: pipeline.blend.clone(),
+            sample_mask: pipeline.sample_mask,
             depth_state: pipeline.depth_state.clone(),
         });
     }

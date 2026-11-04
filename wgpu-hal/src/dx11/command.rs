@@ -135,6 +135,7 @@ pub(super) enum NativeCommand {
         topology: wgt::PrimitiveTopology,
         rasterizer: ID3D11RasterizerState,
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
+        sample_mask: u32,
         depth_state: Option<ID3D11DepthStencilState>,
     },
     SetVertexShader(ID3D11VertexShader),
@@ -580,11 +581,12 @@ impl CommandBuffer {
                         topology,
                         rasterizer,
                         blend,
+                        sample_mask,
                         depth_state,
                     } => {
                         active_depth_state = depth_state.clone();
                         context.RSSetState(Some(rasterizer));
-                        context.OMSetBlendState(blend.as_ref(), None, u32::MAX);
+                        context.OMSetBlendState(blend.as_ref(), None, *sample_mask);
                         context
                             .OMSetDepthStencilState(active_depth_state.as_ref(), stencil_reference);
                         context.IASetInputLayout(input.as_ref());
