@@ -2926,3 +2926,64 @@ The independent read-only audit found that core accepts baseline vertex
 formats which `hal_pipeline.rs::vertex_format` does not translate; this needs a
 precise format gate or implementation before public capability reporting.
 Public D3D11 enumeration and surface exposure remain disabled.
+
+## Checkpoint — FL9_1 vertex format reporting and input validation — `cd82e503d3954a86467c2d42f1ca39a6cbb3c66d`
+
+Audited Microsoft's required DXGI format table and the existing mismatch
+between core's accepted baseline vertex attributes and the private D3D11
+input-layout mappings. Added `DownlevelLimits::vertex_format_mask`, with
+baseline defaults preserved for existing adapters and the 64-bit formats still
+controlled by their feature. Core now rejects attributes missing from that
+per-format mask before HAL; the D3D11 capability fixture fills the mask from
+the selected FL9_1 level, per-device `CheckFormatSupport(IA_VERTEX_BUFFER)`
+results and the implemented HAL map. Ordinary D3D11 enumeration remains empty.
+
+The private HAL now maps FL9_1-required `R8G8B8A8_UINT`, `R16G16_SINT` and
+`R16G16B16A16_SINT` input formats in addition to the already supported float,
+unorm and signed-normalized formats. The existing shader guard remains closed
+to runtime integer math; it allows only direct integer vector vertex inputs
+converted to float in the FL9_1 vertex shader. The Naga-to-FXC pipeline and
+GPU test exercise the actual native layouts. Synthetic capability tests check
+feature-level minima, driver/backend intersections and negative format-query
+results. Microsoft's required-format table also identifies `R16G16_FLOAT` and
+`R16G16B16A16_FLOAT` IA support beginning at FL9_3; this is recorded as a
+hardware minimum only and does not enable those formats in the private HAL.
+
+Verification used the pinned Rust 1.93.1 toolchain in the Visual Studio 2022
+MSVC shell, with one Cargo process at a time and `CARGO_BUILD_JOBS=32`:
+
+- Baseline strict `fl91_snorm16_vertex_formats_render`: 1/1 passed before the
+  edit on the RTX 3090 Ti at requested/actual FL9_1.
+- D3D11 HAL build: `cargo check --offline -p wgpu-hal --no-default-features --features dx11` passed.
+- wgpu-types unit suite: 59/59 passed.
+- Capability identity, mask projection, native mapping/query and integer
+  shader-guard tests: each focused CPU test passed 1/1.
+- Strict new `fl91_integer_vertex_formats_render`: 1/1 physical GPU test
+  passed. Adapter NVIDIA GeForce RTX 3090 Ti, vendor/device `0x10de:0x2203`,
+  software=false, driver `32.0.16.2101`; requested and actual feature level
+  FL9_1. The driver reported `IA_VERTEX_BUFFER` flags `0x2` for each new
+  format. The projected mask was `0x0000000078c30104`; all 64 RGBA8 pixels
+  matched the expected yellow output.
+- Full strict private D3D11 HAL suite: 326/326 Rust tests passed. This includes
+  real GPU rendering/readback cases; a small set of negative shader probes
+  intentionally reports unsupported execution as `SKIP` after checking safe
+  rejection and is not counted as GPU execution.
+- Full strict fixture-enabled core suite: 74/74 passed, including physical
+  rendering/readback; the new `Unorm16x2` pipeline case was rejected by core
+  before HAL. Core zero-D3D11-adapter isolation: 1/1 passed.
+- Core DX12 regression suite: 71/71 passed. HAL D3D11+GLES check, wgpu-test
+  check, wgpu-info Clippy, core Clippy and `rustfmt --check` on changed Rust
+  files passed.
+- HAL Clippy passed with ten existing warnings in unchanged D3D11 support and
+  test code. wgpu-types Clippy and tests emitted fourteen existing unused
+  serde-import warnings under the no-serde default feature configuration.
+  `git diff --check` and the staged diff check passed.
+
+An initial chained shell invocation of the non-D3D11 checks returned exit code
+1 without diagnostics; each check was rerun separately and passed. No test or
+build failure remains. Public D3D11 adapter and surface exposure remain gated.
+
+Next audit the remaining core-valid render-pass attachment, vertex-layout and
+pipeline descriptors against the actual HAL, then prioritize the public-core
+integration blockers. Keep the historical-driver and Present reentrancy gaps
+explicit; this modern-GPU result does not validate old FL9_1 hardware.

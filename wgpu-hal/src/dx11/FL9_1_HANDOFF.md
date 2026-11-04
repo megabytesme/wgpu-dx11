@@ -11,18 +11,17 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The newest code checkpoint is `d3e7db9a1` (`dx11: model FL9 repeat limits in
-core`). The feature-level model records Microsoft's static texture-repeat
-limits, including 128 for FL9_1. Core rejects Repeat and MirrorRepeat samplers
-for any finite reported limit because it cannot prove per-draw coordinate
-ranges. CPU-only tests cover this conservative validation; the RTX 3090 Ti
-forced to FL9_1 cannot establish historical repeat overflow behavior. The
-strict private HAL suite passed 323/323, the controlled core fixture passed
-with physical output validation, core zero-adapter isolation passed, and the
-core DX12 regression suite passed 71/71. The fixture still uses a synthetic
-unbounded repeat limit to preserve private repeat rendering tests; no ordinary
-adapter is exposed. Exact commands and warning details are in
-FL9_1_PROGRESS.md.
+The latest code checkpoint is `cd82e503d3954a86467c2d42f1ca39a6cbb3c66d`
+(`dx11: report and validate FL9_1 vertex input formats`). Core receives a
+per-format downlevel mask and rejects unsupported attributes before HAL. The
+private implementation adds three FL9_1-required integer IA formats under a
+restricted direct integer-vector-to-float shader rule. At requested and actual
+FL9_1 on the RTX 3090 Ti, 64/64 output pixels matched. The strict HAL suite
+passed 326/326, fixture-enabled core passed 74/74, core zero-adapter isolation
+passed, and DX12 passed 71/71. The previous `d3e7db9a1` checkpoint models the
+static FL9 repeat limit; the fixture still uses a synthetic unbounded repeat
+limit so private repeat rendering tests can exercise the HAL. Exact commands
+and warnings are in FL9_1_PROGRESS.md. Public enumeration remains disabled.
 
 The prior core NPOT checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
 pairs`). Core retains selected-entry Naga sampling relationships and validates
