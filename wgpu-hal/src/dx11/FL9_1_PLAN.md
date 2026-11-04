@@ -175,3 +175,8 @@ depth/stencil attachments. The earlier `6f7f12978` added native FL9_1
 slope-scaled triangle depth bias; checkpoint
 `1a362ec6108de9accb52e2f1978a174d1f923106` modeled hardware bias guarantees
 separately from backend support across all seven feature-level identities.
+The controlled core fixture now validates the per-format `SINGLE_MIP_ONLY`
+capability for R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8;
+POT multi-mip descriptors are rejected before HAL creation while one-mip
+sampled-upload cases remain available. This closes the format-specific gap
+left by the separate NPOT-mipmap and depth-attachment gates.

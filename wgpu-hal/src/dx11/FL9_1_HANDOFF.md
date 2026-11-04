@@ -812,3 +812,21 @@ attribute formats outside the private HAL's translation table; determine
 whether to implement the FL9_1 formats or add narrow pre-HAL validation. Keep
 normal D3D11 enumeration and public surface exposure closed. Historical FL9_1
 hardware and safe HWND Present reentrancy remain unverified.
+
+## Current checkpoint — per-format mip validation — `53484db82`
+
+The working tree's latest code commit adds `SINGLE_MIP_ONLY` format metadata
+from HAL through `TextureFormatFeatures` and core rejects oversized mip chains
+before HAL. D3D11 reports its single-mip sampled/upload formats and D24S8.
+Strict FL9_1 testing on the RTX 3090 Ti verified the metadata projection,
+accepted one-mip creation, rejected POT two-mip descriptors before HAL, and
+retained BC1 sampled readback. The complete strict private HAL suite passed
+326/326, fixture-enabled core passed 74/74, zero-adapter isolation passed
+1/1, DX12 core passed 71/71 and wgpu-types passed 59/59. Rust 1.93.1/MSVC
+builds and Clippy passed with the recorded pre-existing warnings. Exact
+commands and caveats are in `FL9_1_PROGRESS.md`.
+
+Documentation for this checkpoint is pending its own docs commit. Resume by
+checking `git status`; then continue the core/HAL format-usage and texture
+descriptor audit. Public D3D11 enumeration and public surface exposure remain
+closed; the mission is still partially complete.

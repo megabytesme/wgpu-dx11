@@ -2987,3 +2987,71 @@ Next audit the remaining core-valid render-pass attachment, vertex-layout and
 pipeline descriptors against the actual HAL, then prioritize the public-core
 integration blockers. Keep the historical-driver and Present reentrancy gaps
 explicit; this modern-GPU result does not validate old FL9_1 hardware.
+
+## Checkpoint — per-format single-mip validation — `53484db82`
+
+Added an opt-in `SINGLE_MIP_ONLY` bit to HAL and wgpu-types format capability
+flags. Core projects the bit and rejects a texture descriptor with more than
+one mip before invoking HAL. The D3D11 fixture reports the bit for queried
+single-mip sampled/upload formats (R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM and
+BC1_UNORM) and D24S8. This closes a validation gap that device-wide NPOT mip
+and depth-attachment flags did not express for POT sampled textures. Other HALs
+leave the opt-in bit unset. The core fixture verifies one-mip creation and
+pre-HAL rejection of POT 8×8 two-mip descriptors for every supported sampled
+upload format; the existing BC1 render case still performs GPU upload,
+sampling and readback.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 MSVC environment with
+`CARGO_BUILD_JOBS=32`, one Cargo process at a time:
+
+- Baseline before editing: strict core FL9_1 fixture 1/1 and focused BC1 HAL
+  tests 3/3. The physical adapter was NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1; BC1 sampling
+  matched 256/256 pixels.
+- wgpu-types suite: 59/59 passed.
+- Strict controlled core fixture: 1/1 passed after the change. It reported
+  `SINGLE_MIP_ONLY` for D24S8 and BC1, verified all queried single-mip sampled
+  formats, accepted their one-mip descriptors, rejected their POT two-mip
+  descriptors in core, and completed existing render/readback cases including
+  BC1 at 64/64 pixels. Hardware remained the RTX 3090 Ti at requested/actual
+  FL9_1. This run did not print the driver version.
+- Focused BC1 HAL tests: 3/3 passed, including 256/256 GPU output pixels.
+- Full strict private D3D11 HAL suite: 326/326 passed. Full strict
+  fixture-enabled core suite: 74/74 passed. Zero-adapter isolation: 1/1 passed.
+  Core DX12 regression suite: 71/71 passed.
+- `cargo check` passed for HAL with `dx11,gles` and core with `dx11,std,wgsl`.
+  Core, HAL and wgpu-types Clippy passed. HAL retained ten existing warnings
+  in untouched code; wgpu-types retained fourteen existing serde-import
+  warnings under the default no-serde test configuration.
+- Targeted `rustfmt` checks on changed Rust files and `git diff --check`
+  passed. The formatter's unrelated change to the existing zero-adapter test
+  was restored before staging. The strict core fixture was rerun after the
+  final assertion change.
+
+Commands run (inside the initialized MSVC shell; `WGPU_DX11_REQUIRE_HARDWARE=1`
+for both strict hardware suites):
+
+```text
+cargo test --offline -p wgpu-types --lib -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11,gles
+cargo check --offline -p wgpu-core --no-default-features --features dx11,std,wgsl
+cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo clippy --offline -p wgpu-types --tests
+rustfmt --edition 2021 --check wgpu-hal/src/lib.rs wgpu-types/src/texture/format.rs wgpu-core/src/resource.rs wgpu-core/src/device/resource.rs wgpu-hal/src/dx11/adapter.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+`wgpu-core/src/instance.rs` was included in the successful formatter run, then
+its unrelated pre-existing formatting change was reverted. Its new mapping
+block was inspected and `git diff --check` passed.
+
+Code commit: `53484db82` (`dx11: validate single-mip texture format limits`).
+Public D3D11 adapter enumeration and public HWND surface exposure remain
+disabled. Next continue the core/HAL texture descriptor and render-pass audit;
+do not treat this focused validation repair as completion of public adapter
+readiness.

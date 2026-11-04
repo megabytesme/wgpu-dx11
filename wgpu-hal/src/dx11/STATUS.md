@@ -15,6 +15,12 @@ the controlled FL9_1 core fixture verifies the descriptor is rejected before
 the private HAL. D24S8 remains single-mip in the private implementation, and
 normal adapter enumeration remains disabled.
 
+Per-format `SINGLE_MIP_ONLY` metadata is also projected through
+`TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
+current D3D11 one-mip formats are R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM,
+BC1_UNORM and D24S8. This closes the POT multi-mip gap that device-wide NPOT
+and depth-attachment flags cannot express.
+
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;

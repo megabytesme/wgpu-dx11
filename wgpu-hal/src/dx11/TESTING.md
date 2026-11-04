@@ -41,6 +41,13 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 Microsoft documents this as a static 10Level9 restriction, not a per-format
 blendability query: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
 
+Single-mip-only format metadata is checked through the strict controlled core
+fixture. Queried sampled-upload formats can create one-mip textures; a POT
+8×8, two-mip descriptor for each reported single-mip format must fail in core
+with `InvalidMipLevelCountForFormat`, before HAL texture creation. The existing
+BC1 core render case separately confirms its one-mip upload and sampling path
+still works.
+
 ## 1. HAL tests and GPU readback
 
 ### Focused FL9_1 hardware test
