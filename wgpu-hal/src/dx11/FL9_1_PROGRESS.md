@@ -2267,3 +2267,20 @@ for other core-legal requests that can reach an unsupported D3D11 HAL case.
 Prioritize cases that can panic, issue invalid native commands, or fail only
 after resource creation. Public enumeration and surface exposure remain
 disabled.
+
+`73ef1a6ada7a4db1fa8515de35745a7b7abd8720` adds
+`DownlevelFlags::SEPARATE_ALPHA_BLEND` and core validation for render targets
+that write both RGB and alpha with different blend equations. The controlled
+FL9_1 core fixture confirms full-channel `ALPHA_BLENDING` fails with the
+missing flag before HAL, while RGB-only alpha blending remains accepted by the
+existing masked-channel implementation. GLES, Vulkan and default/compliant
+capability sets report the flag; the FL9_1 D3D11 fixture leaves it absent.
+
+Verification on Rust 1.93.1/MSVC: strict fixture-enabled core tests passed
+70/70 (the controlled GPU fixture used the RTX 3090 Ti at requested/actual
+FL9_1); core zero-adapter isolation passed 1/1; wgpu-types tests passed 55/55;
+the combined DX11/DX12/Vulkan/GLES HAL check passed; core Clippy passed; DX12
+pipeline descriptor regression passed 2/2; targeted rustfmt and
+`git diff --check` passed. The wgpu-types test build emitted 14 existing
+unused-serde-import warnings with serde disabled. Continue the core/HAL audit;
+do not enable adapter enumeration based only on these targeted validations.

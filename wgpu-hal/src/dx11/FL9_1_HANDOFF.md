@@ -608,3 +608,14 @@ zero-adapter test passed 1/1 and core Clippy and formatting passed. Public
 enumeration remains empty. Continue the core/HAL contract audit; next check
 blend, sampler/layout and resource restrictions that lack a sufficiently
 narrow core validation path.
+
+`73ef1a6ada7a4db1fa8515de35745a7b7abd8720` adds a
+`SEPARATE_ALPHA_BLEND` downlevel flag and requires it when a pipeline writes
+both RGB and alpha using different blend equations. The forced-FL9_1 core
+fixture verifies full-channel straight-alpha blending is rejected before HAL
+and RGB-only masked blending remains accepted. Strict fixture-enabled core
+tests passed 70/70 on the RTX 3090 Ti at requested/actual FL9_1; wgpu-types
+tests passed 55/55, combined backend HAL check passed, core Clippy passed,
+zero-adapter isolation passed 1/1 and DX12 pipeline tests passed 2/2. Continue
+auditing public core/HAL contract mismatches and preserve the closed public
+adapter gate.
