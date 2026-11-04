@@ -2644,4 +2644,7 @@ still passed. Core Clippy and targeted rustfmt passed. The fixture suite and
 this focused case use the test-only adapter, not production adapter reports.
 
 Code checkpoint: `a281a4c3f2c9e5efa91be992c5cbd401b9cec33c`
-(`dx11: verify FL9_1 depth clamp core gate`). Documentation checkpoint follows.
+(`dx11: verify FL9_1 depth clamp core gate`). Documentation checkpoint:
+`20f69046714e7f9ffb061df3825d0eaf52bdfabf` (`docs: record FL9_1 depth clamp
+core validation`). Resume with the public HAL/core capability-boundary audit
+in FL9_1_PLAN.md.
