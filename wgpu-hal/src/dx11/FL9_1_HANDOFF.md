@@ -1032,3 +1032,18 @@ matrices, stride-sensitive arrays, padding and bounded ranges. Runtime integer
 indexing remains unavailable. Resume the core/HAL capability audit and the
 production adapter projection. Public D3D11 enumeration and HWND surface
 exposure remain disabled; the mission is not complete.
+
+The latest working-tree audit makes the FL9_1 shader-module test fail closed
+under `WGPU_DX11_REQUIRE_HARDWARE=1`, reports the selected GPU, asserts actual
+FL9_1, and verifies runtime integer uniform indexing is rejected even when
+shader runtime checks are unchecked. This is shader compilation/object
+creation only, not a draw. Its focused strict test and HAL Clippy passed on the
+RTX 3090 Ti. The code and progress entry are being checkpointed before further
+work.
+
+Next address the core/HAL sampler anisotropy mismatch: core currently assumes
+the boolean `ANISOTROPIC_FILTERING` flag permits 16, but FL9_1 D3D11 permits at
+most 2 and the private HAL rejects larger values. Add a numeric downlevel cap,
+preserve old serialized defaults, project 2 for FL9_1, and test the core clamp
+and native descriptor. Continue the capability and adapter contract audit;
+ordinary enumeration and HWND surface exposure remain disabled.

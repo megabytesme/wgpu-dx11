@@ -3809,3 +3809,30 @@ surface exposure remain disabled. Existing GPU tests already cover nested
 uniform structures, an asymmetric matrix, stride-sensitive arrays and bounded
 ranges. Runtime integer indexing remains unavailable. Continue the core/HAL
 contract audit and production capability projection.
+
+## Current checkpoint — strict shader audit and unchecked runtime indexing
+
+The FL9_1 shader-module compiler test now fails instead of silently returning
+success when `WGPU_DX11_REQUIRE_HARDWARE=1` and no physical adapter is found. It
+prints the selected physical adapter and asserts the actual device level is
+FL9_1. The existing dynamic uniform-indexing case now runs under both checked
+and unchecked `ShaderRuntimeChecks`: literal indexing compiles in each mode,
+while runtime integer indexing is rejected in each mode by the backend's
+unconditional FL9_1 safety guard. This test creates native shader objects; it
+does not issue a draw or count as rendering evidence.
+
+On 2026-11-04, the focused strict test passed 1/1 using the NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, software=false), requested FL9_1 and actual FL9_1.
+HAL Clippy, targeted rustfmt and `git diff --check` passed. The Visual Studio
+developer prompt emitted its existing `Error: Unknown error` banner, but the
+commands exited successfully. Exact test command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 hal_module_compiles_and_creates_level_9_shaders -- --nocapture --test-threads=1
+```
+
+The next reviewed mismatch is sampler anisotropy: core models the downlevel
+flag as support up to 16, while the FL9_1 HAL accepts at most 2. A truthful
+numeric downlevel limit is needed so core can clamp requests consistently
+before HAL. Public D3D11 enumeration and HWND surface exposure remain gated.

@@ -903,11 +903,20 @@ mod tests {
 
     #[test]
     fn hal_module_compiles_and_creates_level_9_shaders() -> windows::core::Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+            assert!(!required, "strict mode requires a physical D3D11 adapter");
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested FL9_1; actual {:?}",
+            adapter.identity(),
+            native.feature_level()
+        );
         let device = Device::new(native.clone());
         let desc = ShaderModuleDescriptor {
             label: None,
@@ -1119,21 +1128,32 @@ mod tests {
         )
         .validate(&indexed)
         .unwrap();
-        let checked_indexed = ShaderModule::new(
-            native.clone(),
-            crate::NagaShader {
-                module: Cow::Owned(indexed),
-                info: indexed_info,
-                debug_source: None,
-            },
+        for checks in [
             wgt::ShaderRuntimeChecks::checked(),
-        );
-        assert!(checked_indexed
-            .compile_with_bindings(naga::ShaderStage::Fragment, "safe", &uniform_mapping)
-            .is_ok());
-        assert!(
-            matches!(checked_indexed.compile_with_bindings(naga::ShaderStage::Fragment, "dynamic", &uniform_mapping), Err(crate::PipelineError::Linkage(_, message)) if message == "D3D11 FL9 runtime integer semantics are not implemented safely")
-        );
+            wgt::ShaderRuntimeChecks::unchecked(),
+        ] {
+            let indexed_shader = ShaderModule::new(
+                native.clone(),
+                crate::NagaShader {
+                    module: Cow::Owned(indexed.clone()),
+                    info: indexed_info.clone(),
+                    debug_source: None,
+                },
+                checks,
+            );
+            assert!(indexed_shader
+                .compile_with_bindings(naga::ShaderStage::Fragment, "safe", &uniform_mapping)
+                .is_ok());
+            assert!(matches!(
+                indexed_shader.compile_with_bindings(
+                    naga::ShaderStage::Fragment,
+                    "dynamic",
+                    &uniform_mapping
+                ),
+                Err(crate::PipelineError::Linkage(_, message))
+                    if message == "D3D11 FL9 runtime integer semantics are not implemented safely"
+            ));
+        }
         let (matrix_module, matrix_info) = matrix_store_module();
         for checks in [
             wgt::ShaderRuntimeChecks::checked(),
