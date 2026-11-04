@@ -3022,6 +3022,12 @@ impl Device {
                     maximum: self.limits.max_bindings_per_bind_group,
                 });
             }
+            if entry.visibility.is_empty() && !self.downlevel.limits.empty_binding_visibility {
+                return Err(CreateBindGroupLayoutError::Entry {
+                    binding: entry.binding,
+                    error: BindGroupLayoutEntryError::EmptyVisibilityUnavailable,
+                });
+            }
 
             use wgt::BindingType as Bt;
 

@@ -339,6 +339,7 @@ impl Capabilities {
             flags,
             shader_model: wgt::ShaderModel::Sm2,
             limits: wgt::DownlevelLimits {
+                empty_binding_visibility: false,
                 texture_1d: false,
                 texture_3d: false,
                 vertex_index_input: self.backend.vertex_index_input,
@@ -775,6 +776,7 @@ mod tests {
         assert_eq!(exposed.limits.max_color_attachment_bytes_per_sample, 8);
         assert_eq!(exposed.limits.max_buffer_size, u64::from(u32::MAX));
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
+        assert!(!exposed.downlevel.limits.empty_binding_visibility);
         assert_eq!(
             exposed.downlevel.flags,
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED

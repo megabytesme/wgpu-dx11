@@ -79,6 +79,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                 flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
                 limits: wgt::DownlevelLimits {
+                    empty_binding_visibility: false,
                     texture_1d: false,
                     texture_3d: false,
                     vertex_index_input: false,
@@ -604,6 +605,35 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.bind_group_layout_drop(layout);
     }
     std::println!("PASS: compute-visible uniform and sampled layouts rejected by core validation");
+    let (invisible_layout, invisible_error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgt::ShaderStages::empty(),
+                ty: wgt::BindingType::Buffer {
+                    ty: wgt::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }]),
+        },
+        None,
+    );
+    assert!(
+        matches!(
+            invisible_error.as_ref(),
+            Some(binding_model::CreateBindGroupLayoutError::Entry {
+                error: binding_model::BindGroupLayoutEntryError::EmptyVisibilityUnavailable,
+                ..
+            })
+        ),
+        "empty-visibility layout must fail core validation before HAL: {invisible_error:?}"
+    );
+    global.bind_group_layout_drop(invisible_layout);
+    std::println!("PASS: empty-visibility bind-group entries rejected by core validation");
     for (view_dimension, required_flag) in [
         (
             wgt::TextureViewDimension::D2Array,

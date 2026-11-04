@@ -964,6 +964,7 @@ impl super::Adapter {
         }
 
         let downlevel_defaults = wgt::DownlevelLimits {
+            empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
             vertex_index_input: true,

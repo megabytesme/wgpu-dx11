@@ -280,6 +280,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     let wgpu::DownlevelCapabilities {
         shader_model: _,
         limits: wgpu::DownlevelLimits {
+            empty_binding_visibility,
             texture_1d,
             texture_3d,
             max_sampled_textures_per_vertex_stage,
@@ -296,6 +297,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         },
         flags,
     } = downlevel;
+    writeln!(output, "\t\tEmpty binding visibility: {empty_binding_visibility}")?;
     writeln!(output, "\t\tTexture 1D: {texture_1d}")?;
     writeln!(output, "\t\tTexture 3D: {texture_3d}")?;
     writeln!(

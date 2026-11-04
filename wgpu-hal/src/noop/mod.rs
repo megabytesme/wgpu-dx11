@@ -188,6 +188,7 @@ pub const CAPABILITIES: crate::Capabilities = {
         downlevel: wgt::DownlevelCapabilities {
             flags: wgt::DownlevelFlags::all(),
             limits: wgt::DownlevelLimits {
+                empty_binding_visibility: true,
                 texture_1d: true,
                 texture_3d: true,
                 vertex_index_input: true,

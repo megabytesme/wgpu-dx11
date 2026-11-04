@@ -1040,6 +1040,12 @@ impl Limits {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DownlevelLimits {
+    /// Whether bind-group layout entries may have no shader-stage visibility.
+    ///
+    /// This can be unavailable when a backend's resource-layout representation requires
+    /// every entry to be visible to at least one supported shader stage.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub empty_binding_visibility: bool,
     /// Whether textures with [`TextureDimension::D1`] can be created.
     ///
     /// This can be unavailable even when `max_texture_dimension_1d` is non-zero
@@ -1116,6 +1122,7 @@ fn default_true() -> bool {
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
+            empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
             vertex_index_input: true,
@@ -1156,6 +1163,7 @@ impl DownlevelLimits {
     #[must_use]
     pub fn check_limits(&self, required: &Self) -> bool {
         (!required.texture_1d || self.texture_1d)
+            && (!required.empty_binding_visibility || self.empty_binding_visibility)
             && (!required.texture_3d || self.texture_3d)
             && (!required.vertex_index_input || self.vertex_index_input)
             && (!required.instance_index_input || self.instance_index_input)
@@ -1204,6 +1212,7 @@ impl DownlevelCapabilities {
     #[must_use]
     pub fn is_webgpu_compliant(&self) -> bool {
         self.flags.contains(DownlevelFlags::compliant())
+            && self.limits.empty_binding_visibility
             && self.limits.texture_1d
             && self.limits.texture_3d
             && self.limits.vertex_index_input
@@ -1486,6 +1495,7 @@ mod tests {
     #[test]
     fn downlevel_limits_check_minimum_capabilities() {
         let available = DownlevelLimits {
+            empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
             vertex_index_input: false,
@@ -1501,6 +1511,7 @@ mod tests {
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
+            empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
             vertex_index_input: false,
@@ -1525,6 +1536,24 @@ mod tests {
             unrestricted_npot_texture_sampling: true,
             ..required
         }));
+    }
+
+    #[test]
+    fn empty_binding_visibility_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            empty_binding_visibility: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            empty_binding_visibility: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
     }
 
     #[test]

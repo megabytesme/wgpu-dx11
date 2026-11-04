@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### Validation
 
+- Gate bind-group layouts with empty shader visibility on downlevel support.
 - Reject comparison-sampler layouts when comparison samplers are unavailable.
 - Reject compute-visible bind-group layouts when compute shaders are unavailable.
 - Reject alpha-to-coverage when a render pipeline uses only one sample.

@@ -685,6 +685,11 @@ limits do not mean these resource shapes are implemented by this backend.
 Other unsupported shader, storage, query and multisample paths remain absent
 from projected flags or format usages.
 
+The projection reports `empty_binding_visibility = false`. WebGPU permits a
+bind-group layout entry whose visibility bitset is empty, but the current HAL
+layout representation requires every resource entry to target a supported
+stage. Core rejects this layout shape before HAL for the FL9_1 projection.
+
 The projection withholds `Features::TEXTURE_COMPRESSION_BC`: wgpu's BC feature
 guarantees the BCn family, while this backend currently implements only BC1.
 The private core fixture adds the aggregate feature locally when it specifically
