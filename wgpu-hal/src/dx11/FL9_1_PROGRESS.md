@@ -3524,3 +3524,40 @@ not rerun for this core-only validation change. Code commit: `e8c7240da`
 capability documentation record the verified checkpoint. Next continue the
 production adapter capability audit; ordinary D3D11 enumeration and public
 HWND surface exposure remain gated.
+
+## Checkpoint — reject single-sample alpha-to-coverage
+
+Core now returns a validation error when `alpha_to_coverage_enabled` is true
+with sample count one. This is the WebGPU multisample-state rule and prevents
+the descriptor from reaching the private HAL, which only supports one-sample
+pipelines and otherwise returned an unexpected HAL error. The controlled
+fixture asserts the specific core error before continuing its GPU rendering.
+
+Rust 1.93.1/MSVC verification:
+
+- Strict fixture-enabled core suite: 78/78 passed. Its FL9_1 render/readback
+  integration test ran on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+  software=false), requested FL9_1 and actual L9_1. The test exercised the
+  new validation assertion and retained its existing checked GPU output.
+- Core DX12 suite: 75/75 passed.
+- Core Clippy passed.
+- Targeted rustfmt check and `git diff --check` passed.
+- The Visual Studio developer prompt printed its existing `Error: Unknown
+  error` banner, but each build/test command exited successfully.
+
+Commands, run from the MSVC developer prompt (`WGPU_DX11_REQUIRE_HARDWARE=1`
+for the first command):
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/pipeline.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+The code change is limited to core validation, its controlled fixture
+assertion, and the Unreleased validation changelog. The HAL was unchanged, so
+its most recent full strict suite result remains the 337/337 recorded in the
+capability-projection checkpoint. This does not enable D3D11 enumeration or
+multisampling. Continue auditing the public core/HAL contract.

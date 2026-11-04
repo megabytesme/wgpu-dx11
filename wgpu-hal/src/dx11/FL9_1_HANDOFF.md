@@ -960,3 +960,12 @@ commands in `FL9_1_PROGRESS.md`. Targeted cross-backend checks, Clippy,
 formatting and DX12 regressions passed. The documentation checkpoint for this
 change is still uncommitted. Public enumeration remains closed. Next continue
 the core/HAL contract audit and build the testable capability snapshot.
+
+Code commit `1bc5ba21f` rejects alpha-to-coverage when the multisample count is
+one. This is required by WebGPU and avoids passing an invalid descriptor to the
+single-sample-only D3D11 HAL. Its strict controlled core suite passed 78/78 on
+the RTX 3090 Ti at requested/actual FL9_1; the DX12 core suite passed 75/75;
+core Clippy, targeted rustfmt and `git diff --check` passed. Full details and
+reproduction commands are in `FL9_1_PROGRESS.md`. Resume the audit at
+core-valid pipeline/render state and the production capability projection.
+Keep normal D3D11 adapter enumeration and HWND surface exposure disabled.
