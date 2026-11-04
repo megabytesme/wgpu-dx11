@@ -156,21 +156,21 @@ fn stencil_state(
     ))
 }
 
-fn constant_depth_bias(
+fn native_depth_bias(
     bias: &wgt::DepthBiasState,
     topology: wgt::PrimitiveTopology,
-) -> Option<i32> {
-    if bias.slope_scale != 0.0
-        || bias.clamp != 0.0
-        || (bias.constant != 0
-            && !matches!(
-                topology,
-                wgt::PrimitiveTopology::TriangleList | wgt::PrimitiveTopology::TriangleStrip
-            ))
+) -> Option<(i32, f32)> {
+    let triangle = matches!(
+        topology,
+        wgt::PrimitiveTopology::TriangleList | wgt::PrimitiveTopology::TriangleStrip
+    );
+    if bias.clamp != 0.0
+        || !bias.slope_scale.is_finite()
+        || ((bias.constant != 0 || bias.slope_scale != 0.0) && !triangle)
     {
         return None;
     }
-    Some(bias.constant)
+    Some((bias.constant, bias.slope_scale))
 }
 
 fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
@@ -668,32 +668,75 @@ mod tests {
     }
 
     #[test]
-    fn constant_depth_bias_accepts_only_unclamped_triangle_states() {
-        use super::constant_depth_bias;
+    fn depth_bias_accepts_unclamped_triangle_states() {
+        use super::native_depth_bias;
         use wgt::{DepthBiasState, PrimitiveTopology as T};
 
         for topology in [T::TriangleList, T::TriangleStrip] {
             for value in [i32::MIN, -1, 0, 1, i32::MAX] {
                 let bias = DepthBiasState {
                     constant: value,
-                    slope_scale: -0.0,
+                    slope_scale: 0.0,
                     clamp: -0.0,
                 };
-                assert_eq!(constant_depth_bias(&bias, topology), Some(value));
+                assert_eq!(native_depth_bias(&bias, topology), Some((value, 0.0)));
+            }
+            for value in [-1.0, -0.5, 0.5, 1.0] {
+                let bias = DepthBiasState {
+                    constant: 0,
+                    slope_scale: value,
+                    clamp: 0.0,
+                };
+                assert_eq!(native_depth_bias(&bias, topology), Some((0, value)));
             }
         }
-        let mut bias = DepthBiasState::default();
-        assert_eq!(constant_depth_bias(&bias, T::PointList), Some(0));
-        bias.constant = 1;
-        assert_eq!(constant_depth_bias(&bias, T::PointList), None);
-        bias.constant = 0;
-        for value in [1.0, -1.0, f32::NAN, f32::INFINITY] {
-            bias.slope_scale = value;
-            assert_eq!(constant_depth_bias(&bias, T::TriangleList), None);
-            bias.slope_scale = 0.0;
-            bias.clamp = value;
-            assert_eq!(constant_depth_bias(&bias, T::TriangleList), None);
-            bias.clamp = 0.0;
+        let bias = DepthBiasState::default();
+        for topology in [T::PointList, T::LineList, T::LineStrip] {
+            assert_eq!(native_depth_bias(&bias, topology), Some((0, 0.0)));
+            assert_eq!(
+                native_depth_bias(
+                    &DepthBiasState {
+                        constant: 1,
+                        ..bias
+                    },
+                    topology
+                ),
+                None
+            );
+            assert_eq!(
+                native_depth_bias(
+                    &DepthBiasState {
+                        slope_scale: 1.0,
+                        ..bias
+                    },
+                    topology
+                ),
+                None
+            );
+        }
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(
+                native_depth_bias(
+                    &DepthBiasState {
+                        slope_scale: value,
+                        ..bias
+                    },
+                    T::TriangleList
+                ),
+                None
+            );
+        }
+        for value in [0.5, -0.5, f32::NAN, f32::INFINITY] {
+            assert_eq!(
+                native_depth_bias(
+                    &DepthBiasState {
+                        clamp: value,
+                        ..bias
+                    },
+                    T::TriangleList
+                ),
+                None
+            );
         }
     }
 
@@ -2499,7 +2542,7 @@ impl RenderPipeline {
             }
         }
         let mut depth_never = false;
-        let mut depth_bias = 0;
+        let mut depth_bias = (0, 0.0);
         let mut stencil_write = false;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if state.format != wgt::TextureFormat::Depth24PlusStencil8 {
@@ -2508,8 +2551,8 @@ impl RenderPipeline {
             let (stencil_enable, stencil_read_mask, stencil_write_mask, mut face) =
                 stencil_state(&state.stencil).ok_or_else(invalid)?;
             depth_bias =
-                constant_depth_bias(&state.bias, desc.primitive.topology).ok_or_else(invalid)?;
-            if depth_bias != 0 {
+                native_depth_bias(&state.bias, desc.primitive.topology).ok_or_else(invalid)?;
+            if depth_bias.0 != 0 || depth_bias.1 != 0.0 {
                 if let Some(fragment) = fragment {
                     fragment
                         .module
@@ -2738,7 +2781,8 @@ impl RenderPipeline {
                 Some(wgt::Face::Back) => D3D11_CULL_BACK,
             },
             FrontCounterClockwise: (desc.primitive.front_face == wgt::FrontFace::Ccw).into(),
-            DepthBias: depth_bias,
+            DepthBias: depth_bias.0,
+            SlopeScaledDepthBias: depth_bias.1,
             DepthClipEnable: true.into(),
             ScissorEnable: true.into(),
             ..Default::default()

@@ -10,7 +10,7 @@ use windows::Win32::Graphics::{
 };
 
 #[test]
-fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<()> {
+fn fl91_triangle_depth_bias_and_pipeline_transition() -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -152,15 +152,24 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
     let zero = make_pipeline(bias(0), true, wgt::PrimitiveTopology::TriangleList).unwrap();
     let positive =
         make_pipeline(bias(1_048_576), true, wgt::PrimitiveTopology::TriangleList).unwrap();
-    assert!(make_pipeline(
+    let slope_positive = make_pipeline(
         wgt::DepthBiasState {
             slope_scale: 1.0,
             ..bias(0)
         },
         true,
-        wgt::PrimitiveTopology::TriangleList
+        wgt::PrimitiveTopology::TriangleList,
     )
-    .is_err());
+    .expect("positive FL9_1 slope depth bias");
+    let slope_negative = make_pipeline(
+        wgt::DepthBiasState {
+            slope_scale: -1.0,
+            ..bias(0)
+        },
+        true,
+        wgt::PrimitiveTopology::TriangleList,
+    )
+    .expect("negative FL9_1 slope depth bias");
     assert!(make_pipeline(
         wgt::DepthBiasState {
             clamp: 0.5,
@@ -170,8 +179,23 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
         wgt::PrimitiveTopology::TriangleList
     )
     .is_err());
-    assert!(make_pipeline(bias(1), true, wgt::PrimitiveTopology::PointList).is_err());
-    let make_depth_entry_pipeline = |entry, constant| unsafe {
+    for topology in [
+        wgt::PrimitiveTopology::PointList,
+        wgt::PrimitiveTopology::LineList,
+        wgt::PrimitiveTopology::LineStrip,
+    ] {
+        assert!(make_pipeline(bias(1), true, topology).is_err());
+        assert!(make_pipeline(
+            wgt::DepthBiasState {
+                slope_scale: 1.0,
+                ..bias(0)
+            },
+            true,
+            topology
+        )
+        .is_err());
+    }
+    let make_depth_entry_pipeline = |entry, bias| unsafe {
         device.create_render_pipeline(&crate::RenderPipelineDescriptor {
             label: None,
             layout: &layout,
@@ -185,7 +209,7 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgt::CompareFunction::LessEqual),
                 stencil: wgt::StencilState::default(),
-                bias: bias(constant),
+                bias,
             }),
             multisample: wgt::MultisampleState::default(),
             fragment_stage: Some(stage(entry)),
@@ -197,14 +221,26 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
     for entry in ["direct_depth", "structured_depth"] {
         assert!(
             matches!(
-                make_depth_entry_pipeline(entry, 1),
+                make_depth_entry_pipeline(entry, bias(1)),
                 Err(crate::PipelineError::Linkage(stage, message))
                     if stage == wgt::ShaderStages::FRAGMENT
                         && message == "D3D11 depth bias with frag_depth is not implemented"
             ),
             "biased {entry} must be rejected by the selected-entry guard"
         );
-        match make_depth_entry_pipeline(entry, 0) {
+        assert!(matches!(
+            make_depth_entry_pipeline(
+                entry,
+                wgt::DepthBiasState {
+                    slope_scale: 1.0,
+                    ..bias(0)
+                }
+            ),
+            Err(crate::PipelineError::Linkage(stage, message))
+                if stage == wgt::ShaderStages::FRAGMENT
+                    && message == "D3D11 depth bias with frag_depth is not implemented"
+        ));
+        match make_depth_entry_pipeline(entry, bias(0)) {
             Ok(pipeline) => {
                 std::println!("PASS: zero-bias {entry} pipeline compiled");
                 unsafe { device.destroy_render_pipeline(pipeline) };
@@ -281,6 +317,19 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
             }
         }
     }
+    for (depth_values, color_value) in [
+        ([0.25f32, 0.75, 0.25], [1.0f32, 0.0, 0.0, 1.0]),
+        ([0.25f32, 0.75, 0.25], [0.0f32, 1.0, 0.0, 1.0]),
+    ] {
+        for (index, [x, y]) in [[-1.0f32, -1.0], [3.0, -1.0], [-1.0, 3.0]]
+            .into_iter()
+            .enumerate()
+        {
+            for value in [x, y, depth_values[index]].into_iter().chain(color_value) {
+                data.extend_from_slice(&value.to_ne_bytes());
+            }
+        }
+    }
     let vertex = unsafe {
         device
             .create_buffer(&crate::BufferDescriptor {
@@ -302,7 +351,7 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
         ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
         clear_value: wgt::Color::BLACK,
     })];
-    let pass = crate::RenderPassDescriptor {
+    let mut pass = crate::RenderPassDescriptor {
         label: None,
         extent,
         sample_count: 1,
@@ -362,6 +411,35 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
         }
         unsafe { encoder.reset_all([commands].into_iter()) };
     }
+    pass.depth_stencil_attachment.as_mut().unwrap().clear_value = (1.0, 0);
+    for (run, (pipeline, expected)) in [
+        (&slope_positive, [255, 0, 0, 255]),
+        (&slope_negative, [0, 255, 0, 255]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let commands = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(&zero);
+            encoder.set_vertex_buffer(0, crate::BufferBinding::new_unchecked(&vertex, 0, None));
+            encoder.draw(6, 3, 0, 1);
+            encoder.set_render_pipeline(pipeline);
+            encoder.draw(9, 3, 0, 1);
+            encoder.end_render_pass();
+            encoder.end_encoding().unwrap()
+        };
+        let value = 10 + run as u64;
+        unsafe { queue.submit(&[&commands], &[], (&fence, value)).unwrap() };
+        assert!(native.wait_native_fence(&fence, value, Some(Duration::from_secs(5)))?);
+        let pixels = native.read_rgba_texture(&color, 0, 0)?;
+        assert_eq!(pixels.len(), 8 * 8 * 4);
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            assert_eq!(pixel, expected, "slope bias case {run}, pixel {index}");
+        }
+        unsafe { encoder.reset_all([commands].into_iter()) };
+    }
     unsafe {
         device.destroy_buffer(vertex);
         device.destroy_texture_view(color_view);
@@ -372,9 +450,11 @@ fn fl91_constant_depth_bias_and_pipeline_transition() -> windows::core::Result<(
         device.destroy_render_pipeline(negative_no_write);
         device.destroy_render_pipeline(zero);
         device.destroy_render_pipeline(positive);
+        device.destroy_render_pipeline(slope_positive);
+        device.destroy_render_pipeline(slope_negative);
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
     }
-    std::println!("PASS: 5 FL9_1 constant depth-bias full-image executions");
+    std::println!("PASS: 5 constant and 2 slope FL9_1 depth-bias full-image executions");
     Ok(())
 }
