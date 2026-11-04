@@ -2284,3 +2284,33 @@ pipeline descriptor regression passed 2/2; targeted rustfmt and
 `git diff --check` passed. The wgpu-types test build emitted 14 existing
 unused-serde-import warnings with serde disabled. Continue the core/HAL audit;
 do not enable adapter enumeration based only on these targeted validations.
+
+## Checkpoint — storage-buffer validation boundary — 2026-11-04
+
+`58fbd32b4db44ce1e6432bfa941464899b695e7b` closes a core/HAL mismatch found
+during the continuing adapter-contract audit. Core adds storage access bits to
+some otherwise ordinary buffer allocations. The D3D11 HAL now accepts those
+bits only alongside another supported buffer role; FL9_1 still receives its
+single vertex or index native bind and no shader storage binding is implemented.
+Core now requires `VERTEX_STORAGE`, `FRAGMENT_STORAGE` and `COMPUTE_SHADERS` for
+storage-buffer layouts visible to those stages; fragment-writable bindings also
+require `FRAGMENT_WRITABLE_STORAGE`. The strict controlled fixture verifies all
+four missing-flag cases are rejected before HAL, then uploads, copies and reads
+back 64/64 bytes from a `STORAGE | COPY_SRC | COPY_DST` buffer.
+
+Verification used Rust 1.93.1/MSVC and `WGPU_DX11_REQUIRE_HARDWARE=1` on the
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with requested and actual
+FL9_1. The focused core fixture and full fixture-enabled core library suite
+passed; the latter was 70/70, including the ordinary zero-adapter test. The
+strict private D3D11 suite passed 315/315 (two filtered). The D3D11 HAL build,
+combined DX11/DX12/Vulkan/GLES HAL check, core and HAL Clippy, standalone core
+zero-adapter test (1/1), and DX12 pipeline descriptor test (2/2) passed.
+`git diff --check` and targeted rustfmt passed. HAL Clippy reported ten
+pre-existing warnings. Workspace `cargo fmt --check` remains blocked by a
+pre-existing line-wrap discrepancy in `wgpu-core/src/instance.rs:1511`; that
+unrelated file was not changed. The VS developer-shell banner still prints
+`vError: Unknown error` even though MSVC builds and links succeed.
+
+Next continue auditing core-legal operations that the private HAL rejects,
+especially render-pass, texture/view and resource-lifetime boundaries. Public
+D3D11 adapter enumeration and public surface exposure remain disabled.

@@ -619,3 +619,19 @@ tests passed 55/55, combined backend HAL check passed, core Clippy passed,
 zero-adapter isolation passed 1/1 and DX12 pipeline tests passed 2/2. Continue
 auditing public core/HAL contract mismatches and preserve the closed public
 adapter gate.
+
+## Current checkpoint — `58fbd32b4`
+
+Core now rejects storage-buffer layouts when the corresponding vertex,
+fragment or compute downlevel flag is missing. The private HAL accepts core
+storage-use bits only when another supported buffer usage is present and does
+not implement shader storage binding. Strict RTX 3090 Ti FL9_1 tests verified
+the stage-specific rejections and a 64-byte storage/copy buffer upload, GPU
+copy, fence and readback. Full fixture-enabled core tests passed 70/70, and the
+strict private D3D11 suite passed 315/315. Exact checks and the known formatting
+and Clippy warnings are recorded in `FL9_1_PROGRESS.md`.
+
+Resume the core/HAL contract audit at render passes, texture/view usages and
+resource lifetime/error paths. Keep both public D3D11 enumeration and public
+surface exposure closed; this test fixture still injects limits and is not a
+production adapter capability report.
