@@ -3,9 +3,10 @@
 ## Current position — 2026-11-04
 
 Branch: `uwp-dx11`. The autonomous FL9_1 completion mission remains active.
-Recent verified code checkpoints are `f99cae113` (general single-target blend
-translation), `8eff9020a` (single-sample output masks) and `1eb21620c` (core
-rejects NPOT mip chains when the downlevel capability is absent). Ordinary
+Recent verified code checkpoints are `340147803` (native FL9_1 depth
+comparisons), `f99cae113` (general single-target blend translation),
+`8eff9020a` (single-sample output masks) and `1eb21620c` (core rejects NPOT
+mip chains when the downlevel capability is absent). Ordinary
 public D3D11 adapter enumeration and public surface exposure remain disabled.
 
 The private renderer now has extensive forced-FL9_1 coverage for depth/stencil,
@@ -2515,3 +2516,55 @@ Code checkpoint: `f99cae113` (`dx11: generalize FL9_1 blend-state translation`).
 Next continue the core/HAL render-state audit; depth comparison functions are a
 small candidate for verification and expansion. Keep adapter enumeration and
 public surface exposure disabled, and preserve the separate-alpha restriction.
+
+## Checkpoint — native FL9_1 raster depth comparisons — `340147803` — 2026-11-04
+
+The pipeline previously rejected Less, Equal, Greater, NotEqual and
+GreaterEqual depth comparisons despite the D3D11 depth-stencil descriptor
+using the complete `D3D11_COMPARISON_FUNC` enum. The similarly worded FL9_1
+LessEqual restriction in Microsoft's 10Level9 material concerns comparison
+sampler filtering, not raster depth state. The HAL now maps all seven native
+functions. Never retains the prior validated-draw suppression and active
+stencil depth-fail remapping.
+
+The new strict hardware test renders eight scissored regions with an expected
+pass and fail depth for each comparison. It verifies all 128 RGBA pixels: 64
+green pixels where depth passes, 64 blue clear pixels where it fails. Never's
+two regions remain blue through the existing suppression path. Device creation
+explicitly requested and asserted FL9_1 on the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver previously recorded as `32.0.16.2101`).
+Historical FL9_1 implementations remain untested.
+
+The pre-change strict `fl91_depth_test_preserves_near_geometry_and_loads_depth`
+test passed 1/1. The first full post-change suite found one stale assertion that
+expected Less pipeline creation to fail (321 passed, 1 failed); the assertion
+was replaced with creation checks for the newly supported comparisons. The
+rerun passed the complete strict D3D11 suite 322/322. The full controlled
+fixture-enabled core suite passed 71/71, including its hardware fixture. Its
+focused hardware fixture passed 1/1 and logged its texture, buffer, depth and
+topology readbacks. Ordinary D3D11 adapter isolation passed 1/1.
+
+`cargo check` and HAL Clippy passed. Clippy reported ten pre-existing warnings
+in fence, HAL device tests, swapchain test ordering and the texel-load fixture;
+none were in the changed files. Rustfmt check and `git diff --check` passed.
+The Visual Studio developer-shell banner still prints `vError: Unknown error`
+while initializing MSVC successfully. The core DX12 suite was not rerun because
+this checkpoint changes only the private D3D11 pipeline/test path and docs.
+
+Commands:
+
+```text
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_test_preserves_near_geometry_and_loads_depth -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_comparison_functions_match_expected_fragments -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo check --offline -p wgpu-hal --no-default-features --features dx11
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11
+rustfmt --edition 2021 --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/tests/dx11/depth_comparison.rs wgpu-hal/tests/dx11/depth_render.rs
+git diff --check
+```
+
+Docs checkpoint remains to be recorded after the documentation-only commit.

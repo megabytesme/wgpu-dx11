@@ -147,6 +147,7 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 | `c46c4a908` | docs: record FL9_1 indexed triangle-strip checkpoint |
 | `6cac808c9` | dx11: verify FL9_1 final vertex constant execution |
 | `0c0ff00ba` | dx11: execute FL9_1 pixel constant boundary |
+| `340147803` | dx11: support native FL9_1 depth comparisons |
 
 ## What is and is not usable
 
@@ -156,8 +157,8 @@ nondefault unsafe fixture injects a restricted device into public wgpu and core
 for closed offscreen tests; it is not a general adapter or public example.
 The private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders,
 sampled RGBA8 and BGRA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
-triangle rendering with front/back culling, D24S8 Always/LessEqual depth
-testing and channel masks.
+triangle rendering with front/back culling, D24S8 native depth comparisons
+(all except emulated Never) and channel masks.
 This is not a general capability report or WebGPU conformance claim. The
 capability matrix in CAPABILITIES.md specifies the tested subset and gaps.
 
@@ -174,8 +175,8 @@ vertex layouts, resource shapes and bindings need implementation or safe
 validation. Private HAL errors can currently surface as device loss. Clipped
 viewport emulation can exceed the FXC instruction budget, and the tested FXC
 profile rejects fragment-position and front-facing inputs. Stencil operations,
-read-only depth with sampled aliases, depth comparisons other than Always/LessEqual,
-broader formats and mipmaps remain incomplete. FL9_1 does not guarantee
+read-only depth with sampled aliases, broader formats and mipmaps remain
+incomplete. `Never` depth comparison remains emulated. FL9_1 does not guarantee
 separate-alpha blending; the default path now rejects modes that require it,
 while masked-channel equivalents remain supported. Native compute and UAV storage are not
 FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
@@ -703,7 +704,7 @@ The HAL was unchanged; its last strict private suite passed 318 tests under
 custom blend-state validation and public adapter gaps; keep both public gates
 closed.
 
-## Latest checkpoint — general single-target blending — `f99cae113`
+## Checkpoint — general single-target blending — `f99cae113`
 
 The HAL now translates standard single-target wgpu blend factors and all five
 blend operations, including blend constants recorded and rebound in command
@@ -718,7 +719,18 @@ zero-adapter test passed. Clippy and targeted formatting/diff checks passed;
 ten existing HAL Clippy warnings remain. See `FL9_1_PROGRESS.md` for commands,
 driver identity and failure history.
 
-Continue the core/HAL render-state audit, with depth comparison functions as a
-candidate. Public adapter enumeration and public surface exposure remain
-disabled. The HWND `Present` reentrancy issue, historical FL9_1 hardware and
-production capability-reporting gaps remain unresolved.
+## Latest checkpoint — native FL9_1 depth comparisons — `340147803`
+
+All seven non-Never wgpu comparisons now map to their D3D11 depth-stencil
+comparison functions. Never keeps its validated-draw and stencil-depth-fail
+emulation. A strict RTX 3090 Ti test explicitly created an FL9_1 device and
+verified both pass/fail samples for every comparison in 128 output pixels.
+The full private HAL suite passed 322/322; the controlled core fixture passed
+71/71 and the ordinary zero-adapter test passed. Ten pre-existing HAL Clippy
+warnings remain. Exact commands and results are in `FL9_1_PROGRESS.md`.
+
+Next continue the core/HAL render-state audit and build a truthful capability
+snapshot without enabling ordinary adapter enumeration. Public adapter
+enumeration and public surface exposure remain disabled. The HWND `Present`
+reentrancy issue, historical FL9_1 hardware and production capability-reporting
+gaps remain unresolved.

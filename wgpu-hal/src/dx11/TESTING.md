@@ -973,18 +973,21 @@ rejection, and coexistence with a uniform in another group.
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_never_preserves_color_depth_and_validation -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_depth_comparison_functions_match_expected_fragments -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
-The strict RTX FL9_1 test passed both Never depth-write variants, each checking
-32 green and 32 blue pixels; two controlled core variants each checked 64
-depth-dependent pixels. Inert-stencil Never draws are suppressed after
-validation within the current side-effect-free, read-only-resource and no-query
-subset. Active stencil uses the separate Always-based depth-fail remapping
-documented above. Native FL9_1 depth guarantees cover Always and LessEqual;
-other native depth comparisons remain unsupported. Future shader side effects
-or query support require reviewing draw suppression. Historical hardware
-remains unverified.
+The strict RTX FL9_1 comparison test passed all eight wgpu depth functions.
+Seven use native D3D11 depth comparisons, each checked with passing and failing
+depths; all 128 pixels matched (64 green, 64 blue). Never retains its two
+existing depth-write variants, each checking 32 green and 32 blue pixels; two
+controlled core variants each checked 64 depth-dependent pixels. Inert-stencil
+Never draws are suppressed after validation within the current side-effect-free,
+read-only-resource and no-query subset. Active stencil uses the separate
+Always-based depth-fail remapping documented above. The documented FL9_1
+LessEqual restriction applies to comparison samplers, not raster depth state.
+Future shader side effects or query support require reviewing draw suppression.
+Historical hardware remains unverified.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

@@ -123,8 +123,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   warns against simultaneous texture and render-target binding. Historical FL9
   drivers remain unverified, and public adapter enumeration remains disabled.
 - A restricted D24S8 attachment path provides zero initialization, independent
-  depth/stencil clears, depth-only draws and native Always/LessEqual depth tests
-  with optional writes. Equal front/back stencil states map native comparisons,
+  depth/stencil clears, depth-only draws and all seven native depth comparisons
+  other than Never, with optional writes. A strict FL9_1 test checked both
+  passing and failing depths for every comparison across 128 pixels. Never
+  retains its existing validated-draw/stencil remapping. Equal front/back
+  stencil states map native comparisons,
   operations and references; asymmetric states are rejected because FL9_1 does
   not support two-sided stencil. Core represents this restriction with
   `DownlevelFlags::TWO_SIDED_STENCIL`; the controlled fixture verifies an

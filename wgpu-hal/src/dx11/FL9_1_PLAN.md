@@ -88,9 +88,13 @@ below is met. This plan does not claim WebGPU conformance.
    readback covered custom constant factors, while CPU translation tests cover
    every supported factor/operation pair. Continue auditing other core-valid
    render-state combinations and shader limitations.
-   Next evaluate core-valid depth comparison functions beyond the currently
-   implemented Always/LessEqual/Never subset. Confirm the 10Level9 contract and
-   test actual forced-FL9_1 output before widening that subset.
+   Raster depth comparison now maps all seven native D3D11 comparison functions;
+   `Never` keeps its validated-draw and stencil-depth-fail emulation. A strict
+   forced-FL9_1 render verifies pass and fail pixels for all eight wgpu compare
+   functions. The 10Level9 `LessEqual` restriction is for comparison samplers,
+   not raster depth state. Historical FL9_1 drivers remain unverified. Next
+   continue auditing core-valid attachment, viewport and render-state
+   combinations before building the truthful public capability snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
