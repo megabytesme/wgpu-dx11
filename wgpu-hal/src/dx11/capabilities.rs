@@ -595,12 +595,20 @@ impl Capabilities {
             | Caps::COPY_DST
             | Caps::SAMPLED
             | Caps::SAMPLED_LINEAR;
-        let blend_query = if format == wgt::TextureFormat::Rgba8Unorm {
+        let format_query = if format == wgt::TextureFormat::Rgba8Unorm {
             self.driver.rgba8
         } else {
             self.driver.bgra8
         };
-        if matches!(blend_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
+        if !matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0)
+            || !self.backend.pot_copy_only_mip_chains
+            || !self.backend.pot_full_chain_sampled_mips
+            || !self.backend.pot_color_attachment_mips
+            || !self.backend.pot_sampled_attachment_mips
+        {
+            result |= Caps::SINGLE_MIP_ONLY;
+        }
+        if matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
         {
             result |= Caps::COLOR_ATTACHMENT_BLEND;
         }
@@ -865,6 +873,17 @@ mod tests {
         let rgba_without_blend = caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm);
         assert!(rgba_without_blend.contains(FormatCaps::COLOR_ATTACHMENT));
         assert!(!rgba_without_blend.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        assert!(rgba_without_blend.contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.driver.rgba8 = Query::Value(
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+                | D3D11_FORMAT_SUPPORT_MIP.0) as u32,
+        );
+        assert!(!caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .contains(FormatCaps::SINGLE_MIP_ONLY));
 
         caps.backend.rgba8_single_mip_transfers = false;
         assert!(caps
@@ -875,6 +894,41 @@ mod tests {
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
             .is_empty());
+    }
+
+    #[test]
+    fn color_format_projection_limits_mips_to_positive_driver_and_backend_support() {
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0) as u32;
+        for format in [
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureFormat::Bgra8Unorm,
+        ] {
+            let mut caps = model(FeatureLevel::L9_1);
+            if format == wgt::TextureFormat::Rgba8Unorm {
+                caps.driver.rgba8 = Query::Value(required);
+            } else {
+                caps.driver.bgra8 = Query::Value(required);
+            }
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+            if format == wgt::TextureFormat::Rgba8Unorm {
+                caps.driver.rgba8 = Query::Value(required | D3D11_FORMAT_SUPPORT_MIP.0 as u32);
+            } else {
+                caps.driver.bgra8 = Query::Value(required | D3D11_FORMAT_SUPPORT_MIP.0 as u32);
+            }
+            assert!(!caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+            caps.backend.pot_sampled_attachment_mips = false;
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SINGLE_MIP_ONLY));
+        }
     }
 
     #[test]

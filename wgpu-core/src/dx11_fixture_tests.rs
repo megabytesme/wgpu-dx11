@@ -277,6 +277,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             | hal::TextureFormatCapabilities::SAMPLED
             | hal::TextureFormatCapabilities::SAMPLED_LINEAR
     );
+    let rgba_mips = fixture
+        .test_fixture_copy_only_rgba8_mip_supported()
+        .expect("query RGBA8 mip prerequisites");
+    assert_eq!(
+        rgba_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY),
+        !rgba_mips
+    );
     let bgra_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bgra8Unorm)
     };
@@ -295,6 +302,18 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             .test_fixture_bgra8_mip_supported()
             .expect("query BGRA8 mip prerequisites")
     };
+    if !bgra_caps.is_empty() {
+        assert_eq!(
+            bgra_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY),
+            !bgra_mips
+        );
+    }
+    std::println!(
+        "Color-format mip projection: RGBA8 driver_mips={rgba_mips}, single_mip_only={}; BGRA8 available={}, driver_mips={bgra_mips}, single_mip_only={}",
+        rgba_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY),
+        !bgra_caps.is_empty(),
+        bgra_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY),
+    );
     let bc1_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc1RgbaUnorm)
     };
@@ -711,6 +730,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     std::println!("PASS: multi-mip depth attachment rejected by core validation");
 
     for format in [
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureFormat::Bgra8Unorm,
         wgt::TextureFormat::R8Unorm,
         wgt::TextureFormat::Rg8Snorm,
         wgt::TextureFormat::Rgba8Snorm,
