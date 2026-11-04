@@ -11,7 +11,20 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The latest code checkpoint is `95fb67e22` (`dx11: preserve fractional viewport
+The latest code checkpoint is `70e31a0f1` (`core: honor FL9_1 repeat limits in
+fixtures`). Both controlled core fixtures derive the documented per-primitive
+repeat limit from their selected FL9_1 device instead of advertising
+`u32::MAX`. The strict fixture rejects Repeat and MirrorRepeat sampler
+creation at the 128 limit, then runs the remaining rendering cases with
+clamp-to-edge POT/NPOT resources. The focused physical fixture test and full
+75-test core suite passed under strict hardware mode on the RTX 3090 Ti at
+requested/actual FL9_1; HAL/core Clippy, formatting and diff checks passed.
+Private HAL repeat support and synthetic conditional-NPOT analysis remain
+covered separately. This is still a reduced test profile, not the pending
+public capability snapshot. See FL9_1_PROGRESS.md for the initial correction
+and exact test results. Public enumeration and surface exposure stay closed.
+
+The preceding code checkpoint is `95fb67e22` (`dx11: preserve fractional viewport
 mapping at FL9_1`). The private HAL uses integral native viewport bounds and a
 vertex remap based on the original fractional viewport. Strict RTX 3090 Ti
 readback passed through both the HAL test and controlled core fixture at
@@ -38,8 +51,11 @@ zero-adapter isolation passed 1/1. Exact commands and pre-existing lint
 warnings are recorded in FL9_1_PROGRESS.md. Public enumeration remains
 disabled.
 
-The prior core NPOT checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
-pairs`). Core retains selected-entry Naga sampling relationships and validates
+The historical core NPOT checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
+pairs`). That checkpoint preceded the finite-repeat fixture correction in
+`70e31a0f1` and used an unbounded test-only repeat limit to reach draw-time NPOT
+pair validation. The current FL9_1 core fixture correctly reports 128 and
+rejects Repeat/MirrorRepeat sampler creation. Core retains selected-entry Naga sampling relationships and validates
 current bound texture/sampler descriptors at draw encoding. A strict fixture
 on the RTX 3090 Ti requested and selected FL9_1; the physical driver reports
 full NPOT support, while the fixture synthetically forced the conservative

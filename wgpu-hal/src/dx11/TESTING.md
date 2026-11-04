@@ -636,12 +636,15 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 ```
 
 This test forces FL9_1 on the physical RTX 3090 Ti and logs the actual positive
-full-NPOT driver query, then injects the conservative false capability into its
-test-only core adapter. A used NPOT/repeat pair must fail during command-buffer
-encoding, before submission. A separate GPU case samples POT/repeat and
-NPOT/clamp pairs from one bind group; its unused NPOT/repeat cross-pair is
-present in the layout, and all 64 output pixels must be yellow. The fixture
-does not expose an ordinary D3D11 adapter.
+full-NPOT driver query. Its test-only core adapter reports the feature-level
+repeat limit of 128, so both Repeat and MirrorRepeat sampler creation must fail
+with `TextureRepeatLimitExceeded`. The GPU case samples POT and NPOT textures
+with clamp-to-edge and checks all 64 output pixels. Core's selected-entry
+conditional-NPOT relationship logic is covered separately by the synthetic
+`npot_repeat_validation_uses_the_bound_relationship` unit test, since a
+faithful finite repeat limit rejects those samplers earlier. Private HAL
+hardware tests exercise pair-aware NPOT/wrap behavior. The fixture does not
+expose an ordinary D3D11 adapter.
 
 ### FL9_1 sampler translation and patterned sampling
 

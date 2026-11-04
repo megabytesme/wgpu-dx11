@@ -2,6 +2,35 @@
 
 ## Current position — 2026-11-04
 
+## Checkpoint — controlled core fixture honors FL9_1 repeat cap — `70e31a0f1`
+
+The controlled core fixtures now derive `max_texture_repeat_per_primitive`
+from the selected D3D feature level instead of setting `u32::MAX`. Forced
+FL9_1 reports the documented finite limit of 128, and the strict core fixture
+verifies that both Repeat and MirrorRepeat samplers fail at creation with
+`TextureRepeatLimitExceeded`. Its texture readback case now samples POT and
+NPOT resources using clamp-to-edge. Private HAL tests retain bounded repeat
+coverage; synthetic core tests retain coverage for conditional NPOT
+relationship validation where repeat samplers are permitted. This fixture is
+still a reduced test profile, not a public capability snapshot.
+
+Verification used Rust 1.93.1/MSVC and `CARGO_BUILD_JOBS=32`:
+
+- Strict focused core fixture with `--nocapture`: passed on NVIDIA GeForce RTX
+  3090 Ti (`0x10de:0x2203`, software=false), requested and actual FL9_1. It
+  logged `texture repeat limit: 128`, rejected both sampler modes, and matched
+  all 64 pixels in each remaining render/readback case.
+- Full strict fixture-enabled core suite: 75/75 passed, including normal
+  D3D11 adapter isolation. The physical fixture ran with
+  `WGPU_DX11_REQUIRE_HARDWARE=1`.
+- HAL and fixture-enabled core Clippy passed. Targeted rustfmt and
+  `git diff --check` passed.
+
+The first compile attempt used an unqualified `resource` module in the new
+fixture assertion; the path was corrected to `crate::resource` before the
+passing runs. The RTX test does not demonstrate the historical repeat
+overflow boundary. Public adapter enumeration remains disabled.
+
 ## Checkpoint — fractional FL9_1 viewport mapping — `95fb67e22`
 
 The private HAL now keeps the logical fractional viewport values when building
@@ -100,9 +129,9 @@ because it cannot prove interpolated coordinates remain within the limit for
 all possible draw data. This is intentionally stricter than the native bound:
 core does not yet have a coordinate-range validator or semantics-preserving
 shader emulation. The bound is not an optional driver query. The FL9_1 core
-fixture keeps its test-only unbounded setting so private repeat-render tests
-continue exercising HAL behavior; this setting is not a public capability
-projection.
+fixture kept its test-only unbounded setting so the prior NPOT draw test could
+exercise selected-entry validation. That permissive setup was removed by
+`70e31a0f1`; it was never a public capability projection.
 
 The test harness now compares required `DownlevelLimits` when deciding whether
 a conformance test can run. The minimum test profile requests no texture-repeat

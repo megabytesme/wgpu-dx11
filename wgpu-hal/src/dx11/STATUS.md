@@ -51,12 +51,14 @@ validated sampling relationships are retained on the pipeline, while bind
 groups retain the current view dimensions and sampler address modes. Repeat
 addressing of an NPOT texture is rejected during command encoding unless the
 adapter positively reports unrestricted NPOT support; clamp and mirrored
-repeat do not trigger this D3D11 `WRAP` restriction. A strict RTX 3090 Ti
-fixture synthetically disables the optional capability and verifies that a
-used NPOT/repeat pair is rejected before submission, while POT/repeat plus
-NPOT/clamp renders 64 expected yellow pixels despite an unused incompatible
-cross-pair. The driver itself reports unrestricted NPOT support at forced
-FL9_1, so the restrictive behavior is verified synthetically.
+repeat do not trigger this D3D11 `WRAP` restriction. The strict RTX 3090 Ti
+core fixture reports FL9_1's finite repeat limit of 128 and verifies that
+Repeat and MirrorRepeat sampler creation are rejected; it renders POT and
+NPOT clamp sampling. Private HAL tests and a synthetic core unit test retain
+coverage of selected-pair conditional-NPOT behavior where repeat samplers are
+permitted. The driver itself reports unrestricted NPOT support at forced
+FL9_1, so the restrictive optional-capability behavior is verified
+synthetically.
 
 Core also models the fixed 10Level9 maximum texture-repeat count per primitive:
 128 at FL9_1, 2048 at FL9_2, 8192 at FL9_3/10_x and 16384 at FL11_x. Since
