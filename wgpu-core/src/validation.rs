@@ -1416,6 +1416,20 @@ impl Interface {
             .contains(&Varying::BuiltIn(BuiltIn::FragDepth)))
     }
 
+    pub(crate) fn entry_point_uses_front_facing(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point
+            .inputs
+            .contains(&Varying::BuiltIn(BuiltIn::FrontFacing)))
+    }
+
     pub fn finalize_entry_point_name(
         &self,
         stage: naga::ShaderStage,
@@ -2209,6 +2223,42 @@ mod tests {
             .is_empty());
         assert!(interface
             .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
+            .is_err());
+    }
+
+    #[test]
+    fn front_facing_detection_uses_the_selected_fragment_entry_point() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct FaceInput { @builtin(front_facing) front: bool }
+            @fragment fn direct(@builtin(front_facing) front: bool) -> @location(0) vec4f {
+                return select(vec4f(0.0), vec4f(1.0), front);
+            }
+            @fragment fn structured(input: FaceInput) -> @location(0) vec4f {
+                return select(vec4f(0.0), vec4f(1.0), input.front);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+
+        for entry in ["direct", "structured"] {
+            assert!(interface
+                .entry_point_uses_front_facing(naga::ShaderStage::Fragment, entry)
+                .unwrap());
+        }
+        assert!(!interface
+            .entry_point_uses_front_facing(naga::ShaderStage::Fragment, "safe")
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_front_facing(naga::ShaderStage::Fragment, "missing")
             .is_err());
     }
 }

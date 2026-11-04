@@ -1069,6 +1069,11 @@ pub struct DownlevelLimits {
     ///
     /// Adapters that cannot preserve this combination reject the pipeline during validation.
     pub depth_bias_with_fragment_depth: bool,
+    /// Whether fragment entry points may declare `@builtin(front_facing)`.
+    ///
+    /// This can be unavailable when the shader backend cannot compile the corresponding input
+    /// for its selected shader model.
+    pub fragment_front_facing: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1087,6 +1092,7 @@ impl Default for DownlevelLimits {
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
             depth_bias_with_fragment_depth: true,
+            fragment_front_facing: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -1122,6 +1128,7 @@ impl DownlevelLimits {
             && (!required.viewport_rectangles_outside_target
                 || self.viewport_rectangles_outside_target)
             && (!required.depth_bias_with_fragment_depth || self.depth_bias_with_fragment_depth)
+            && (!required.fragment_front_facing || self.fragment_front_facing)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -1163,6 +1170,7 @@ impl DownlevelCapabilities {
             && self.limits.src_alpha_saturated_blend
             && self.limits.viewport_rectangles_outside_target
             && self.limits.depth_bias_with_fragment_depth
+            && self.limits.fragment_front_facing
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
@@ -1438,6 +1446,7 @@ mod tests {
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
+            fragment_front_facing: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
@@ -1447,6 +1456,7 @@ mod tests {
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
+            fragment_front_facing: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
@@ -1487,6 +1497,24 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             depth_bias_with_fragment_depth: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn fragment_front_facing_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            fragment_front_facing: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            fragment_front_facing: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));

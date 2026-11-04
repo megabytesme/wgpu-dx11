@@ -973,6 +973,7 @@ impl super::Adapter {
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
             depth_bias_with_fragment_depth: true,
+            fragment_front_facing: true,
             vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };

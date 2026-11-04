@@ -85,6 +85,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
+                    fragment_front_facing: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -401,6 +402,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
+                    fragment_front_facing: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -3163,6 +3165,61 @@ fn render_triangle(
         );
         global.render_pipeline_drop(invalid_pipeline);
         std::println!("PASS: unsupported vertex formats rejected by core downlevel capability");
+
+        let (front_facing_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                "@fragment fn face(@builtin(front_facing) input: bool) -> @location(0) vec4f { return select(vec4f(0.0), vec4f(1.0), input); } @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }",
+            )),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "front-facing shader: {shader_error:?}"
+        );
+        let mut front_facing_descriptor = pipeline_descriptor.clone();
+        front_facing_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .module = front_facing_shader;
+        front_facing_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("face"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &front_facing_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedFragmentFrontFacing)
+            ),
+            "FL9_1 core validation must reject front_facing before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+
+        front_facing_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("safe"));
+        let (safe_pipeline, error) =
+            global.device_create_render_pipeline(device, &front_facing_descriptor, None);
+        assert!(
+            error.is_none(),
+            "an unselected front_facing entry must not restrict the pipeline: {error:?}"
+        );
+        global.render_pipeline_drop(safe_pipeline);
+        global.shader_module_drop(front_facing_shader);
+        std::println!("PASS: unsupported fragment front_facing is selected-entry gated");
 
         let (vertex_texture_shader, shader_error) = global.device_create_shader_module(
             device,

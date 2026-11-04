@@ -38,6 +38,14 @@ same module remains allowed. The capability is represented separately from
 the native `DEPTH_BIAS_CLAMP` flag because this is a backend implementation
 restriction, not a feature-level guarantee.
 
+The controlled FL9_1 core fixture also reports
+`DownlevelLimits::fragment_front_facing = false`: the tested `ps_4_0_level_9_1`
+FXC profile rejects a fragment entry point declaring `@builtin(front_facing)`.
+Core uses Naga's selected entry-point interface to reject that pipeline before
+HAL, while another safe entry point in the same module remains usable. This is
+a current compiler/backend limitation; it is not classified as impossible on
+FL9_1 hardware.
+
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;

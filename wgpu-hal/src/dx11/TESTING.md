@@ -41,6 +41,23 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 Microsoft documents this as a static 10Level9 restriction, not a per-format
 blendability query: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
 
+### Fragment front-facing input validation
+
+The tested `ps_4_0_level_9_1` FXC profile rejects fragment
+`@builtin(front_facing)`. The controlled FL9_1 capability profile reports
+`DownlevelLimits::fragment_front_facing = false`, so core rejects a pipeline
+using that input before HAL. The same fixture verifies that a safe selected
+entry point in the same shader module still creates successfully. A CPU-only
+interface test checks direct, structure-member and selected-entry detection.
+This records a current compiler/backend limitation, not a hardware guarantee.
+
+```powershell
+cargo test --offline -p wgpu-types --lib fragment_front_facing -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std front_facing_detection -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
 ### Out-of-target viewport validation
 
 The FL9_1 fixture reports

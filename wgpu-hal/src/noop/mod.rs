@@ -194,6 +194,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 src_alpha_saturated_blend: true,
                 viewport_rectangles_outside_target: true,
                 depth_bias_with_fragment_depth: true,
+                fragment_front_facing: true,
                 vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
             },
             shader_model: wgt::ShaderModel::Sm5,

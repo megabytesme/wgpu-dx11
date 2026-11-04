@@ -5245,6 +5245,23 @@ impl Device {
                     )
                     .map_err(stage_err)?;
 
+                if !self.downlevel.limits.fragment_front_facing {
+                    let uses_front_facing = match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_front_facing(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    };
+                    if uses_front_facing {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedFragmentFrontFacing,
+                        );
+                    }
+                }
+
                 if desc
                     .depth_stencil
                     .as_ref()

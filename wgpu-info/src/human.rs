@@ -286,6 +286,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             src_alpha_saturated_blend,
             viewport_rectangles_outside_target,
             depth_bias_with_fragment_depth,
+            fragment_front_facing,
             vertex_format_mask,
         },
         flags,
@@ -314,6 +315,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         output,
         "\t\tDepth bias with fragment depth output: {depth_bias_with_fragment_depth}"
     )?;
+    writeln!(output, "\t\tFragment front-facing input: {fragment_front_facing}")?;
     writeln!(output, "\t\tVertex format mask: {vertex_format_mask:#018x}")?;
     let max_downlevel_flag_width = wgpu::DownlevelFlags::max_debug_print_width();
     for bit in wgpu::DownlevelFlags::all().iter() {
