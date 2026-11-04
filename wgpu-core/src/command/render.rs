@@ -3045,6 +3045,21 @@ fn set_viewport(
         }
         .into());
     }
+    if !state
+        .pass
+        .base
+        .device
+        .downlevel
+        .limits
+        .viewport_rectangles_outside_target
+        && viewport_extends_outside_target(rect, state.info.extent)
+    {
+        return Err(RenderCommandError::ViewportOutsideRenderTarget {
+            rect,
+            extent: state.info.extent,
+        }
+        .into());
+    }
     if !(0.0..=1.0).contains(&depth_min)
         || !(0.0..=1.0).contains(&depth_max)
         || depth_min > depth_max
@@ -3065,6 +3080,13 @@ fn set_viewport(
             .set_viewport(&r, depth_min..depth_max);
     }
     Ok(())
+}
+
+fn viewport_extends_outside_target(rect: Rect<f32>, extent: wgt::Extent3d) -> bool {
+    rect.x < 0.0
+        || rect.y < 0.0
+        || f64::from(rect.x) + f64::from(rect.w) > f64::from(extent.width)
+        || f64::from(rect.y) + f64::from(rect.h) > f64::from(extent.height)
 }
 
 fn set_scissor(state: &mut State, rect: Rect<u32>) -> Result<(), RenderPassErrorInner> {
@@ -4646,4 +4668,44 @@ pub(crate) const fn get_dst_stride_of_indirect_args(
         0
     };
     extra + get_src_stride_of_indirect_args(family)
+}
+
+#[cfg(test)]
+mod viewport_tests {
+    use super::*;
+
+    #[test]
+    fn viewport_target_bounds_cover_all_edges() {
+        let extent = wgt::Extent3d {
+            width: 8,
+            height: 6,
+            depth_or_array_layers: 1,
+        };
+        let rect = |x, y, w, h| Rect { x, y, w, h };
+
+        assert!(!viewport_extends_outside_target(
+            rect(0.0, 0.0, 8.0, 6.0),
+            extent
+        ));
+        assert!(!viewport_extends_outside_target(
+            rect(2.0, 1.0, 3.0, 4.0),
+            extent
+        ));
+        assert!(viewport_extends_outside_target(
+            rect(-0.5, 0.0, 4.0, 4.0),
+            extent
+        ));
+        assert!(viewport_extends_outside_target(
+            rect(0.0, -0.5, 4.0, 4.0),
+            extent
+        ));
+        assert!(viewport_extends_outside_target(
+            rect(1.0, 0.0, 7.5, 4.0),
+            extent
+        ));
+        assert!(viewport_extends_outside_target(
+            rect(0.0, 1.0, 4.0, 5.5),
+            extent
+        ));
+    }
 }

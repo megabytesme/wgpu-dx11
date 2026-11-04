@@ -82,6 +82,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: u32::MAX,
                     src_alpha_saturated_blend: false,
+                    viewport_rectangles_outside_target: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -375,6 +376,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: u32::MAX,
                     src_alpha_saturated_blend: false,
+                    viewport_rectangles_outside_target: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -1021,6 +1023,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     for case in [
         VertexCase::Baseline,
         VertexCase::NpotRepeat,
+        VertexCase::ViewportOutsideTarget,
         VertexCase::NpotValidPairs,
         VertexCase::ZeroSampleMask,
         VertexCase::ConstantBlend,
@@ -2183,6 +2186,7 @@ enum VertexCase {
     Bc1,
     NpotRepeat,
     NpotValidPairs,
+    ViewportOutsideTarget,
 }
 
 fn render_triangle(
@@ -2202,6 +2206,7 @@ fn render_triangle(
     let unfilterable_float = matches!(case, VertexCase::UnfilterableFloat | VertexCase::Bc1);
     let bc1 = case == VertexCase::Bc1;
     let npot_repeat = case == VertexCase::NpotRepeat;
+    let viewport_outside_target = case == VertexCase::ViewportOutsideTarget;
     let npot_valid_pairs = case == VertexCase::NpotValidPairs;
     let sampled_visibility = if case == VertexCase::VertexVisibleBindings {
         wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
@@ -3710,6 +3715,11 @@ fn render_triangle(
             if dynamic_uniform { &[256] } else { &[] },
         )
         .unwrap();
+    if viewport_outside_target {
+        global
+            .render_pass_set_viewport(&mut pass, -1.0, 0.0, 8.0, 8.0, 0.0, 1.0)
+            .unwrap();
+    }
     if constant_blend {
         global
             .render_pass_set_blend_constant(
@@ -3841,6 +3851,42 @@ fn render_triangle(
             "NPOT compatibility must fail before HAL draw: {error:?}"
         );
         std::println!("PASS: core rejected the used NPOT/repeat pair before HAL draw");
+        global.command_buffer_drop(command);
+        global.command_encoder_drop(encoder);
+        global.render_pipeline_drop(pipeline_id);
+        global.pipeline_layout_drop(layout);
+        global.shader_module_drop(shader);
+        global.bind_group_drop(group);
+        global.bind_group_layout_drop(group_layout);
+        global.sampler_drop(sampler);
+        global.texture_view_drop(sample_view);
+        if disjoint_format.is_none() {
+            global.texture_drop(sampled);
+        }
+        global.texture_view_drop(depth_view);
+        global.texture_drop(depth);
+        global.texture_view_drop(view);
+        global.texture_drop(target);
+        global.buffer_drop(vertices);
+        if let Some(indices) = index_buffer {
+            global.buffer_drop(indices);
+        }
+        if let Some(buffer) = auxiliary_vertices {
+            global.buffer_drop(buffer);
+        }
+        if let Some(buffer) = uniform {
+            global.buffer_drop(buffer);
+        }
+        global.buffer_drop(readback);
+        return;
+    }
+    if viewport_outside_target {
+        let error = error.expect("out-of-target viewport must fail core validation");
+        assert!(
+            std::format!("{error:?}").contains("ViewportOutsideRenderTarget"),
+            "out-of-target viewport must be rejected before HAL: {error:?}"
+        );
+        std::println!("PASS: core rejected an out-of-target viewport before HAL execution");
         global.command_buffer_drop(command);
         global.command_encoder_drop(encoder);
         global.render_pipeline_drop(pipeline_id);

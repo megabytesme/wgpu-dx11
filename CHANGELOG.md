@@ -56,6 +56,7 @@ Bottom level categories:
 - Gate unsupported texture binding dimensions and 2D-array storage layouts with device limits and downlevel capabilities.
 - Add a downlevel vertex-format mask so adapters can report input formats individually and core rejects unsupported attributes before HAL.
 - Allow adapters to report single-mip-only texture formats and reject unsupported mip chains before HAL texture creation.
+- Add `DownlevelLimits::viewport_rectangles_outside_target` and reject out-of-target viewports when an adapter cannot preserve clipped viewport behavior.
 
 #### Hal
 

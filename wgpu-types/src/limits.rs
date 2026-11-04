@@ -1060,6 +1060,11 @@ pub struct DownlevelLimits {
     ///
     /// Direct3D feature levels 9_1 through 9_3 do not support this blend factor.
     pub src_alpha_saturated_blend: bool,
+    /// Whether viewport rectangles may extend beyond the active render target.
+    ///
+    /// This is false on backends that cannot preserve clipped viewport semantics for every
+    /// shader, such as when clipping requires an optional shader variant.
+    pub viewport_rectangles_outside_target: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1076,6 +1081,7 @@ impl Default for DownlevelLimits {
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
             src_alpha_saturated_blend: true,
+            viewport_rectangles_outside_target: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -1108,6 +1114,8 @@ impl DownlevelLimits {
                 || self.unrestricted_npot_texture_sampling)
             && self.max_texture_repeat_per_primitive >= required.max_texture_repeat_per_primitive
             && (!required.src_alpha_saturated_blend || self.src_alpha_saturated_blend)
+            && (!required.viewport_rectangles_outside_target
+                || self.viewport_rectangles_outside_target)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -1147,6 +1155,7 @@ impl DownlevelCapabilities {
             && self.limits.unrestricted_npot_texture_sampling
             && self.limits.max_texture_repeat_per_primitive == u32::MAX
             && self.limits.src_alpha_saturated_blend
+            && self.limits.viewport_rectangles_outside_target
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
@@ -1420,6 +1429,7 @@ mod tests {
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             src_alpha_saturated_blend: false,
+            viewport_rectangles_outside_target: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
@@ -1427,6 +1437,7 @@ mod tests {
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             src_alpha_saturated_blend: false,
+            viewport_rectangles_outside_target: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
@@ -1439,6 +1450,24 @@ mod tests {
             unrestricted_npot_texture_sampling: true,
             ..required
         }));
+    }
+
+    #[test]
+    fn viewport_rectangles_outside_target_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            viewport_rectangles_outside_target: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            viewport_rectangles_outside_target: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
     }
 
     #[test]

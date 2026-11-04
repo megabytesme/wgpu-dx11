@@ -130,6 +130,11 @@ pub enum RenderCommandError {
     InvalidViewportRectSize { w: f32, h: f32, max: u32 },
     #[error("Viewport has invalid rect {rect:?} for device's requested `max_texture_dimension_2d` limit; origin is non-finite or less than -2 * `max_texture_dimension_2d` ({min}), or rect extends past 2 * `max_texture_dimension_2d` - 1 ({max})")]
     InvalidViewportRectPosition { rect: Rect<f32>, min: f32, max: f32 },
+    #[error("Viewport {rect:?} extends outside render target {extent:?}, which is unsupported by this downlevel adapter")]
+    ViewportOutsideRenderTarget {
+        rect: Rect<f32>,
+        extent: wgt::Extent3d,
+    },
     #[error("Viewport minDepth {0} and/or maxDepth {1} are not in [0, 1]")]
     InvalidViewportDepth(f32, f32),
     #[error("Scissor {0:?} is not contained in the render target {1:?}")]
@@ -157,6 +162,7 @@ impl WebGpuError for RenderCommandError {
             | Self::IncompatibleStencilAccess(..)
             | Self::InvalidViewportRectSize { .. }
             | Self::InvalidViewportRectPosition { .. }
+            | Self::ViewportOutsideRenderTarget { .. }
             | Self::InvalidViewportDepth(..)
             | Self::InvalidScissorRect(..)
             | Self::Unimplemented(..) => ErrorType::Validation,

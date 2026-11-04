@@ -284,6 +284,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             unrestricted_npot_texture_sampling,
             max_texture_repeat_per_primitive,
             src_alpha_saturated_blend,
+            viewport_rectangles_outside_target,
             vertex_format_mask,
         },
         flags,
@@ -303,6 +304,10 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(
         output,
         "\t\tSource-alpha-saturated blending: {src_alpha_saturated_blend}"
+    )?;
+    writeln!(
+        output,
+        "\t\tViewports may extend outside render targets: {viewport_rectangles_outside_target}"
     )?;
     writeln!(output, "\t\tVertex format mask: {vertex_format_mask:#018x}")?;
     let max_downlevel_flag_width = wgpu::DownlevelFlags::max_debug_print_width();
