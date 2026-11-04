@@ -967,6 +967,9 @@ impl super::Adapter {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            sampled_depth_textures: true,
+            sampled_sint_textures: true,
+            sampled_uint_textures: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: unsafe {

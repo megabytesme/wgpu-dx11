@@ -283,6 +283,9 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             empty_binding_visibility,
             texture_1d,
             texture_3d,
+            sampled_depth_textures,
+            sampled_sint_textures,
+            sampled_uint_textures,
             max_sampled_textures_per_vertex_stage,
             vertex_index_input,
             instance_index_input,
@@ -300,6 +303,9 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tEmpty binding visibility: {empty_binding_visibility}")?;
     writeln!(output, "\t\tTexture 1D: {texture_1d}")?;
     writeln!(output, "\t\tTexture 3D: {texture_3d}")?;
+    writeln!(output, "\t\tSampled depth textures: {sampled_depth_textures}")?;
+    writeln!(output, "\t\tSampled signed-integer textures: {sampled_sint_textures}")?;
+    writeln!(output, "\t\tSampled unsigned-integer textures: {sampled_uint_textures}")?;
     writeln!(
         output,
         "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"

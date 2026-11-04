@@ -342,6 +342,9 @@ impl Capabilities {
                 empty_binding_visibility: false,
                 texture_1d: false,
                 texture_3d: false,
+                sampled_depth_textures: false,
+                sampled_sint_textures: false,
+                sampled_uint_textures: false,
                 vertex_index_input: self.backend.vertex_index_input,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
@@ -777,6 +780,9 @@ mod tests {
         assert_eq!(exposed.limits.max_buffer_size, u64::from(u32::MAX));
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
         assert!(!exposed.downlevel.limits.empty_binding_visibility);
+        assert!(!exposed.downlevel.limits.sampled_depth_textures);
+        assert!(!exposed.downlevel.limits.sampled_sint_textures);
+        assert!(!exposed.downlevel.limits.sampled_uint_textures);
         assert_eq!(
             exposed.downlevel.flags,
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED

@@ -38,6 +38,10 @@ use crate::{
 pub enum BindGroupLayoutEntryError {
     #[error("An empty shader-stage visibility set is unavailable on this downlevel adapter")]
     EmptyVisibilityUnavailable,
+    #[error("Sampled texture type {0:?} is unavailable on this downlevel adapter")]
+    SampledTextureTypeUnavailable(wgt::TextureSampleType),
+    #[error("Vertex-only sampled resource visibility is unavailable on this downlevel adapter")]
+    VertexOnlySampledResourceUnavailable,
     #[error("Cube dimension is not expected for texture storage")]
     StorageTextureCube,
     #[error("Atomic storage textures are not allowed by baseline webgpu, they require the native only feature TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES")]

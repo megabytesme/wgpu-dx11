@@ -82,6 +82,9 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     empty_binding_visibility: false,
                     texture_1d: false,
                     texture_3d: false,
+                    sampled_depth_textures: false,
+                    sampled_sint_textures: false,
+                    sampled_uint_textures: false,
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
@@ -634,6 +637,115 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     );
     global.bind_group_layout_drop(invisible_layout);
     std::println!("PASS: empty-visibility bind-group entries rejected by core validation");
+    for sample_type in [
+        wgt::TextureSampleType::Depth,
+        wgt::TextureSampleType::Sint,
+        wgt::TextureSampleType::Uint,
+    ] {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgt::ShaderStages::FRAGMENT,
+                    ty: wgt::BindingType::Texture {
+                        sample_type,
+                        view_dimension: wgt::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                }]),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::SampledTextureTypeUnavailable(
+                        actual
+                    ),
+                    ..
+                }) if *actual == sample_type
+            ),
+            "unsupported sampled type {sample_type:?} must fail core validation before HAL: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+    }
+    std::println!("PASS: depth and integer sampled-texture layouts rejected by core validation");
+    for (binding, ty) in [
+        (
+            10,
+            wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+        ),
+        (
+            11,
+            wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+        ),
+    ] {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgt::ShaderStages::VERTEX,
+                    ty,
+                    count: None,
+                }]),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::VertexOnlySampledResourceUnavailable,
+                    ..
+                })
+            ),
+            "vertex-only sampled layout binding {binding} must fail core validation before HAL: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+    }
+    std::println!("PASS: vertex-only sampled layouts rejected by core validation");
+    let shared_visibility = wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT;
+    let (shared_layout, shared_error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Owned(vec![
+                wgt::BindGroupLayoutEntry {
+                    binding: 12,
+                    visibility: shared_visibility,
+                    ty: wgt::BindingType::Texture {
+                        sample_type: wgt::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgt::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgt::BindGroupLayoutEntry {
+                    binding: 13,
+                    visibility: shared_visibility,
+                    ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ]),
+        },
+        None,
+    );
+    assert!(
+        shared_error.is_none(),
+        "fragment-visible sampled layout with extra vertex visibility must remain representable: {shared_error:?}"
+    );
+    global.bind_group_layout_drop(shared_layout);
+    std::println!("PASS: fragment-visible sampled layouts retain shared-stage visibility");
     for (view_dimension, required_flag) in [
         (
             wgt::TextureViewDimension::D2Array,

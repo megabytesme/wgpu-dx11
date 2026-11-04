@@ -1058,6 +1058,17 @@ pub struct DownlevelLimits {
     /// if the backend cannot implement the texture shape.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d: bool,
+    /// Whether depth sample types are supported by sampled texture bindings.
+    ///
+    /// This can be unavailable even when the backend supports depth attachments.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub sampled_depth_textures: bool,
+    /// Whether signed-integer sample types are supported by sampled texture bindings.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub sampled_sint_textures: bool,
+    /// Whether unsigned-integer sample types are supported by sampled texture bindings.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub sampled_uint_textures: bool,
     /// Whether vertex entry points may declare `@builtin(vertex_index)`.
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
@@ -1125,6 +1136,9 @@ impl Default for DownlevelLimits {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            sampled_depth_textures: true,
+            sampled_sint_textures: true,
+            sampled_uint_textures: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
@@ -1165,6 +1179,9 @@ impl DownlevelLimits {
         (!required.texture_1d || self.texture_1d)
             && (!required.empty_binding_visibility || self.empty_binding_visibility)
             && (!required.texture_3d || self.texture_3d)
+            && (!required.sampled_depth_textures || self.sampled_depth_textures)
+            && (!required.sampled_sint_textures || self.sampled_sint_textures)
+            && (!required.sampled_uint_textures || self.sampled_uint_textures)
             && (!required.vertex_index_input || self.vertex_index_input)
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
@@ -1215,6 +1232,9 @@ impl DownlevelCapabilities {
             && self.limits.empty_binding_visibility
             && self.limits.texture_1d
             && self.limits.texture_3d
+            && self.limits.sampled_depth_textures
+            && self.limits.sampled_sint_textures
+            && self.limits.sampled_uint_textures
             && self.limits.vertex_index_input
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
@@ -1498,6 +1518,9 @@ mod tests {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            sampled_depth_textures: true,
+            sampled_sint_textures: true,
+            sampled_uint_textures: true,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
@@ -1514,6 +1537,9 @@ mod tests {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            sampled_depth_textures: true,
+            sampled_sint_textures: true,
+            sampled_uint_textures: true,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
@@ -1554,6 +1580,31 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn sampled_texture_types_are_downlevel_capabilities() {
+        for available in [
+            DownlevelLimits {
+                sampled_depth_textures: false,
+                ..DownlevelLimits::default()
+            },
+            DownlevelLimits {
+                sampled_sint_textures: false,
+                ..DownlevelLimits::default()
+            },
+            DownlevelLimits {
+                sampled_uint_textures: false,
+                ..DownlevelLimits::default()
+            },
+        ] {
+            assert!(!available.check_limits(&DownlevelLimits::default()));
+            assert!(!DownlevelCapabilities {
+                limits: available,
+                ..DownlevelCapabilities::default()
+            }
+            .is_webgpu_compliant());
+        }
     }
 
     #[test]

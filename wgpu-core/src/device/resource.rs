@@ -3031,6 +3031,33 @@ impl Device {
 
             use wgt::BindingType as Bt;
 
+            if let Bt::Texture { sample_type, .. } = entry.ty {
+                let available = match sample_type {
+                    TextureSampleType::Float { .. } => true,
+                    TextureSampleType::Depth => self.downlevel.limits.sampled_depth_textures,
+                    TextureSampleType::Sint => self.downlevel.limits.sampled_sint_textures,
+                    TextureSampleType::Uint => self.downlevel.limits.sampled_uint_textures,
+                };
+                if !available {
+                    return Err(CreateBindGroupLayoutError::Entry {
+                        binding: entry.binding,
+                        error: BindGroupLayoutEntryError::SampledTextureTypeUnavailable(
+                            sample_type,
+                        ),
+                    });
+                }
+            }
+
+            if entry.visibility == wgt::ShaderStages::VERTEX
+                && self.downlevel.limits.max_sampled_textures_per_vertex_stage == 0
+                && matches!(entry.ty, Bt::Texture { .. } | Bt::Sampler(_))
+            {
+                return Err(CreateBindGroupLayoutError::Entry {
+                    binding: entry.binding,
+                    error: BindGroupLayoutEntryError::VertexOnlySampledResourceUnavailable,
+                });
+            }
+
             let view_dimension = match entry.ty {
                 Bt::Texture { view_dimension, .. } | Bt::StorageTexture { view_dimension, .. } => {
                     Some(view_dimension)
