@@ -60,6 +60,14 @@ runtime integer shader operation. The forced-FL9_1 RTX test exercises all three
 formats in one draw and validates every pixel. No public adapter reports this
 mask yet, and other layout and draw restrictions remain.
 
+Core now also models whether viewport rectangles may extend beyond the active
+render target with `DownlevelLimits::viewport_rectangles_outside_target`. The
+controlled FL9_1 fixture reports false and verifies that left-overflowing
+rectangles fail command validation before HAL. The private HAL still supports
+clipping when its optional remapped vertex shader compiles, but that variant
+can exceed FL9_1 instruction limits, so the core path conservatively rejects
+all out-of-target rectangles. Other backends keep the default true capability.
+
 ## Implemented private HAL paths
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted

@@ -61,6 +61,20 @@ References: [feature-level table](https://learn.microsoft.com/en-us/windows/win3
 [shader compiler targets](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/specifying-compiler-targets),
 and the [WebGPU specification](https://www.w3.org/TR/webgpu/).
 
+## Viewport clipping
+
+The private HAL clamps a viewport rectangle to the attachment and, when
+clipping changes its transform, selects a separately compiled FL9_1 vertex
+shader variant. That variant can fail FXC's level-9 instruction limits even
+when the original shader compiles. Core carries this implementation
+restriction as `DownlevelLimits::viewport_rectangles_outside_target`; when it
+is false, rectangles extending past any attachment edge are rejected during
+render-command validation before the HAL is called. Rectangles contained by
+the target continue through the normal shader path. The HAL's private clipped
+viewport path remains available when its adjusted shader exists, but the
+controlled FL9_1 core fixture reports the conservative false capability and
+tests the rejection. Other backends retain the default true capability.
+
 ## Recorded forced-FL9_1 observation
 
 On 2026-11-02, an RTX 3090 Ti (`0x10de:0x2203`), Windows 11 build 26300,

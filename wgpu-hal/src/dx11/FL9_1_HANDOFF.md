@@ -11,17 +11,20 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The latest code checkpoint is `cd82e503d3954a86467c2d42f1ca39a6cbb3c66d`
-(`dx11: report and validate FL9_1 vertex input formats`). Core receives a
-per-format downlevel mask and rejects unsupported attributes before HAL. The
-private implementation adds three FL9_1-required integer IA formats under a
-restricted direct integer-vector-to-float shader rule. At requested and actual
-FL9_1 on the RTX 3090 Ti, 64/64 output pixels matched. The strict HAL suite
-passed 326/326, fixture-enabled core passed 74/74, core zero-adapter isolation
-passed, and DX12 passed 71/71. The previous `d3e7db9a1` checkpoint models the
-static FL9 repeat limit; the fixture still uses a synthetic unbounded repeat
-limit so private repeat rendering tests can exercise the HAL. Exact commands
-and warnings are in FL9_1_PROGRESS.md. Public enumeration remains disabled.
+The latest code checkpoint is `19ff6dff6` (`core: gate clipped viewports on
+downlevel capability`). Core now rejects viewports extending past the active
+target when `DownlevelLimits::viewport_rectangles_outside_target` is false;
+this prevents optional FL9_1 viewport shader compilation failures from
+surfacing as late draw failures. Defaults preserve existing backends, while
+the controlled fixture reports false and tests all four edges in CPU logic and
+the production validation path. The strict fixture-enabled core suite passed
+75/75 on the RTX 3090 Ti (`0x10de:0x2203`) at requested/actual FL9_1; existing
+render/readback cases passed, and the viewport rejection itself issued no GPU
+draw. The strict private HAL suite passed 326/326, with six unsupported-shader
+probes explicitly skipped after compiler rejection; core DX12 passed 72/72 and
+zero-adapter isolation passed 1/1. Exact commands and pre-existing lint
+warnings are recorded in FL9_1_PROGRESS.md. Public enumeration remains
+disabled.
 
 The prior core NPOT checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
 pairs`). Core retains selected-entry Naga sampling relationships and validates

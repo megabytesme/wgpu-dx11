@@ -2,6 +2,49 @@
 
 ## Current position — 2026-11-04
 
+## Checkpoint — core viewport clipping capability — `19ff6dff6`
+
+Core now reports and enforces `DownlevelLimits::viewport_rectangles_outside_target`.
+The default remains true for existing backends; the controlled FL9_1 fixture
+sets it false. When false, core rejects a finite viewport crossing any active
+render-target edge with a validation error before invoking HAL. This avoids
+the previous late draw failure when D3D11's optional clipped-viewport shader
+variant exceeds the FL9_1 FXC instruction budget. The private HAL remap path is
+unchanged and remains available to restricted private callers.
+
+Verification used Rust 1.93.1/MSVC with `CARGO_BUILD_JOBS=32`, one Cargo process
+at a time:
+
+- Baseline before the change: existing `wgpu-types` downlevel-limit test passed
+  1/1.
+- New CPU bounds test: `viewport_target_bounds_cover_all_edges` passed 1/1 and
+  checked all four edges plus fully contained and edge-aligned rectangles.
+- `cargo test --offline -p wgpu-types --lib -- --test-threads=1`: 60/60 passed.
+- Strict fixture-enabled core suite: 75/75 passed. Its physical adapter was
+  NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false), requested and
+  selected FL9_1. The new out-of-target case was validation-only and issued no
+  draw; existing fixture operations performed rendering/readback and matched
+  their expected pixels. The test also asserts that normal D3D11 HAL adapter
+  enumeration is empty.
+- Strict private HAL suite: 326/326 Rust tests passed. The run logged 144
+  hardware initialization records on the RTX forced to FL9_1. Six shader
+  probes printed `SKIP` after FXC rejected their unsupported shader before
+  GPU rendering; those probes are not counted as successful GPU work.
+- Core's explicit zero-D3D11-adapter test: 1/1 passed. Core DX12 regression:
+  72/72 passed.
+- HAL `dx11,gles`, core `dx11,std,wgsl`, `wgpu-info` and `wgpu-test` checks
+  passed. Clippy passed for wgpu-types, fixture-enabled core, HAL `dx11,gles`,
+  wgpu-info and wgpu-test. HAL emitted ten existing warnings; wgpu-types
+  emitted fourteen existing unused-serde-import warnings.
+- Targeted rustfmt and `git diff --check` passed. A first core build caught
+  missing initializers in the no-op adapter; no-op and GLES now explicitly
+  report the default-supported behavior. No test failures remain.
+
+The strict core fixture did not print the driver version during this run; the
+last recorded driver baseline is NVIDIA `32.0.16.2101`. This forced-level test
+does not establish behavior on historical FL9_1 hardware. The public adapter
+and surface gates remain closed.
+
 ## Checkpoint — finite texture-repeat limit in core — `d3e7db9a1`
 
 Microsoft's 10Level9 `Draw`/`DrawIndexed` contract limits repeats over one

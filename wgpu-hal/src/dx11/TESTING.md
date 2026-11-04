@@ -41,6 +41,26 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 Microsoft documents this as a static 10Level9 restriction, not a per-format
 blendability query: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
 
+### Out-of-target viewport validation
+
+The FL9_1 fixture reports
+`DownlevelLimits::viewport_rectangles_outside_target = false`. Core rejects a
+viewport extending past the active target before it reaches the private HAL;
+this avoids a late command failure when the optional shader variant required
+for viewport remapping exceeds the FL9_1 compiler profile. CPU tests cover all
+four target edges, and the controlled fixture exercises the production command
+validation path:
+
+```powershell
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std viewport_target_bounds_cover_all_edges -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The first is CPU-only. The second uses a physical adapter forced to FL9_1 for
+the fixture's rendering/readback cases; its out-of-target viewport case is a
+validation-only negative case and does not issue a GPU draw.
+
 Single-mip-only format metadata is checked through the strict controlled core
 fixture. Queried sampled-upload formats can create one-mip textures; a POT
 8×8, two-mip descriptor for each reported single-mip format must fail in core
