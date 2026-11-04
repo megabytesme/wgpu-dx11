@@ -2471,7 +2471,19 @@ impl super::Instance {
             alignments,
             downlevel: wgt::DownlevelCapabilities {
                 flags: downlevel_flags,
-                limits: wgt::DownlevelLimits::default(),
+                limits: wgt::DownlevelLimits {
+                    max_sampler_anisotropy: if phd_features.core.sampler_anisotropy != 0 {
+                        phd_capabilities
+                            .properties
+                            .limits
+                            .max_sampler_anisotropy
+                            .floor()
+                            .clamp(1.0, 16.0) as u16
+                    } else {
+                        1
+                    },
+                    ..wgt::DownlevelLimits::default()
+                },
                 shader_model: wgt::ShaderModel::Sm5, //TODO?
             },
             cooperative_matrix_properties: phd_capabilities.cooperative_matrix_properties.clone(),

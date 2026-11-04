@@ -439,12 +439,14 @@ impl super::Adapter {
                 && (vertex_shader_storage_blocks != 0 || vertex_ssbo_false_zero),
         );
         downlevel_flags.set(wgt::DownlevelFlags::FRAGMENT_STORAGE, supports_storage);
+        let mut max_sampler_anisotropy = 1;
         if extensions.contains("EXT_texture_filter_anisotropic")
             || extensions.contains("GL_EXT_texture_filter_anisotropic")
         {
             let max_aniso =
-                unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_MAX_ANISOTROPY_EXT) } as u32;
-            downlevel_flags.set(wgt::DownlevelFlags::ANISOTROPIC_FILTERING, max_aniso >= 16);
+                unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_MAX_ANISOTROPY_EXT) }.max(1) as u32;
+            max_sampler_anisotropy = max_aniso.min(16) as u16;
+            downlevel_flags.set(wgt::DownlevelFlags::ANISOTROPIC_FILTERING, max_aniso > 1);
         }
         downlevel_flags.set(
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
@@ -979,6 +981,7 @@ impl super::Adapter {
             .max(0) as u32,
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
+            max_sampler_anisotropy,
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
             depth_bias_with_fragment_depth: true,

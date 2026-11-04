@@ -200,6 +200,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 max_sampled_textures_per_vertex_stage: 16,
                 unrestricted_npot_texture_sampling: true,
                 max_texture_repeat_per_primitive: u32::MAX,
+                max_sampler_anisotropy: 16,
                 src_alpha_saturated_blend: true,
                 viewport_rectangles_outside_target: true,
                 depth_bias_with_fragment_depth: true,

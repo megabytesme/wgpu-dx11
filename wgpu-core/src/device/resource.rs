@@ -556,6 +556,17 @@ fn validate_texture_repeat_limit(
     }
 }
 
+fn limit_sampler_anisotropy(requested: u16, downlevel: &wgt::DownlevelCapabilities) -> u16 {
+    if downlevel
+        .flags
+        .contains(wgt::DownlevelFlags::ANISOTROPIC_FILTERING)
+    {
+        requested.min(downlevel.limits.max_sampler_anisotropy.clamp(1, 16))
+    } else {
+        1
+    }
+}
+
 #[cfg(test)]
 mod sampler_repeat_limit_tests {
     use super::validate_texture_repeat_limit;
@@ -579,6 +590,41 @@ mod sampler_repeat_limit_tests {
         }
         assert!(validate_texture_repeat_limit([AddressMode::ClampToEdge; 3], 128).is_ok());
         assert!(validate_texture_repeat_limit([AddressMode::Repeat; 3], u32::MAX).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod sampler_anisotropy_limit_tests {
+    use super::limit_sampler_anisotropy;
+    use wgt::{DownlevelCapabilities, DownlevelFlags};
+
+    #[test]
+    fn clamps_to_reported_downlevel_anisotropy_limit() {
+        let mut downlevel = DownlevelCapabilities::default();
+        downlevel.flags |= DownlevelFlags::ANISOTROPIC_FILTERING;
+        downlevel.limits.max_sampler_anisotropy = 2;
+
+        for (requested, expected) in [(1, 1), (2, 2), (3, 2), (16, 2), (u16::MAX, 2)] {
+            assert_eq!(limit_sampler_anisotropy(requested, &downlevel), expected);
+        }
+    }
+
+    #[test]
+    fn unavailable_or_invalid_anisotropy_cap_is_conservative() {
+        let mut downlevel = DownlevelCapabilities::default();
+        downlevel
+            .flags
+            .remove(DownlevelFlags::ANISOTROPIC_FILTERING);
+        for requested in [1, 2, 16, u16::MAX] {
+            assert_eq!(limit_sampler_anisotropy(requested, &downlevel), 1);
+        }
+
+        downlevel.flags |= DownlevelFlags::ANISOTROPIC_FILTERING;
+        downlevel.limits.max_sampler_anisotropy = 0;
+        assert_eq!(limit_sampler_anisotropy(16, &downlevel), 1);
+
+        downlevel.limits.max_sampler_anisotropy = u16::MAX;
+        assert_eq!(limit_sampler_anisotropy(32, &downlevel), 16);
     }
 }
 
@@ -2659,17 +2705,7 @@ impl Device {
             }
         }
 
-        let anisotropy_clamp = if self
-            .downlevel
-            .flags
-            .contains(wgt::DownlevelFlags::ANISOTROPIC_FILTERING)
-        {
-            // Clamp anisotropy clamp to [1, 16] per the wgpu-hal interface
-            desc.anisotropy_clamp.min(16)
-        } else {
-            // If it isn't supported, set this unconditionally to 1
-            1
-        };
+        let anisotropy_clamp = limit_sampler_anisotropy(desc.anisotropy_clamp, &self.downlevel);
 
         if desc.compare.is_some() {
             self.require_downlevel_flags(wgt::DownlevelFlags::COMPARISON_SAMPLERS)?;

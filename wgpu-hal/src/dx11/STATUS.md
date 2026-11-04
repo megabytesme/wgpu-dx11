@@ -147,6 +147,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   out-of-range and helper-argument biases remain rejected. Nine strict GPU
   executions checked 64 pixels each, including linear mip blending; direct and
   indexed draws rejected incompatible samplers.
+- `DownlevelLimits::max_sampler_anisotropy` carries the private FL9_1 maximum of
+  2 separately from the anisotropic-filtering availability flag. Core clamps
+  descriptor requests to the reported cap before HAL creation; strict core
+  hardware coverage creates native samplers for requests 2, 3 and 16. The
+  single-mip resource model still cannot establish anisotropic visual quality.
 - R8_UNORM is supported for single-mip, single-layer 2D sampled textures with
   RESOURCE and/or COPY_DST usage, subject to a positive device format query.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer

@@ -1096,6 +1096,14 @@ pub struct DownlevelLimits {
     /// `u32::MAX` means no finite limit is modeled. Core rejects repeating address modes when
     /// this value is finite because it cannot prove the coordinate range used by a draw.
     pub max_texture_repeat_per_primitive: u32,
+    /// Maximum anisotropy value that may be passed to the backend.
+    ///
+    /// This is capped at 16, the maximum accepted by the wgpu HAL sampler
+    /// interface. A value of 1 means that anisotropic filtering is unavailable;
+    /// the [`DownlevelFlags::ANISOTROPIC_FILTERING`] flag must also be present
+    /// for core to use values greater than 1.
+    #[cfg_attr(feature = "serde", serde(default = "default_max_sampler_anisotropy"))]
+    pub max_sampler_anisotropy: u16,
     /// Whether `BlendFactor::SrcAlphaSaturated` is supported.
     ///
     /// Direct3D feature levels 9_1 through 9_3 do not support this blend factor.
@@ -1133,6 +1141,11 @@ fn default_true() -> bool {
     true
 }
 
+#[cfg(feature = "serde")]
+fn default_max_sampler_anisotropy() -> u16 {
+    16
+}
+
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
@@ -1148,6 +1161,7 @@ impl Default for DownlevelLimits {
             max_sampled_textures_per_vertex_stage: 16,
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
+            max_sampler_anisotropy: 16,
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
             depth_bias_with_fragment_depth: true,
@@ -1194,6 +1208,7 @@ impl DownlevelLimits {
             && (!required.unrestricted_npot_texture_sampling
                 || self.unrestricted_npot_texture_sampling)
             && self.max_texture_repeat_per_primitive >= required.max_texture_repeat_per_primitive
+            && self.max_sampler_anisotropy >= required.max_sampler_anisotropy
             && (!required.src_alpha_saturated_blend || self.src_alpha_saturated_blend)
             && (!required.viewport_rectangles_outside_target
                 || self.viewport_rectangles_outside_target)
@@ -1533,6 +1548,7 @@ mod tests {
             max_sampled_textures_per_vertex_stage: 4,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
+            max_sampler_anisotropy: 2,
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
@@ -1553,6 +1569,7 @@ mod tests {
             max_sampled_textures_per_vertex_stage: 3,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
+            max_sampler_anisotropy: 2,
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
@@ -1570,6 +1587,28 @@ mod tests {
             unrestricted_npot_texture_sampling: true,
             ..required
         }));
+    }
+
+    #[test]
+    fn sampler_anisotropy_is_a_numeric_downlevel_limit() {
+        let available = DownlevelLimits {
+            max_sampler_anisotropy: 2,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            max_sampler_anisotropy: 2,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_sampler_anisotropy: 3,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+        assert!(DownlevelCapabilities::default().is_webgpu_compliant());
     }
 
     #[test]
@@ -1644,6 +1683,7 @@ mod tests {
             "sampled_sint_textures",
             "sampled_uint_textures",
             "multisampled_texture_bindings",
+            "max_sampler_anisotropy",
         ] {
             object.remove(field);
         }
@@ -1654,6 +1694,7 @@ mod tests {
         assert!(limits.sampled_sint_textures);
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);
+        assert_eq!(limits.max_sampler_anisotropy, 16);
     }
 
     #[test]

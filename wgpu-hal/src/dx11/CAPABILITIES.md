@@ -437,7 +437,7 @@ disabled.
 | Min/mag filtering | Point and linear filters can be specified independently. | All four min/mag combinations map to D3D11 filters. GPU readback exercises both magnification and minification with contrasting texels; filter outputs differ. |
 | Mipmap filtering | Point and linear mip filters exist. | Both are tested with sampled full-chain POT textures; suffix and restricted clone-backed non-suffix views passed on the RTX. General mipmap behavior remains unavailable. |
 | LOD | FL9_1 native MinLOD must be integral and MaxLOD must be FLT_MAX. | A normalized minimum requires a one-mip view. When only a finite maximum is raised and the minimum is preserved, a used multi-mip view requires the original maximum to reach its last mip and anisotropy 1. Anisotropic sampling with a raised finite maximum remains one-mip-only. Other unrepresentable mixed-filter and anisotropic ranges are rejected. FL9 does not specify whether clamping precedes min/mag selection. FXC rejects `SampleLevel` for the tested pixel profile with X4532; explicit-LOD sampling is not claimed. |
-| Anisotropy | FL9_1 native maximum is 2; an upper limit alone is not a visual-quality guarantee. | The private backend accepts 1 or 2, requiring linear min, mag and mip filters for 2. Native creation and a sampled GPU output passed; anisotropic quality on minified textures is unverified. Values above 2 are rejected even on a modern GPU forced to 9_1. |
+| Anisotropy | FL9_1 native maximum is 2; an upper limit alone is not a visual-quality guarantee. | The private backend accepts 1 or 2, requiring linear min, mag and mip filters for 2. `DownlevelLimits::max_sampler_anisotropy` reports 2, and core clamps requested values to this cap before HAL creation. Native creation and a sampled GPU output passed; anisotropic quality on minified textures is unverified. |
 | Comparison / border | Comparison filtering is not generally supported at 9_1; ordinary border addressing is not normally allowed. Optional 9_x shadow support is separate. | Comparison and border addressing remain rejected. On the RTX forced to 9_1, ordinary border sampler creation returned E_INVALIDARG. No optional wgpu border or comparison feature is advertised. |
 | NPOT | FL9_x permits a single-mip 2D NPOT texture only when `AddressU/V/W` are not `D3D11_TEXTURE_ADDRESS_WRAP`; full NPOT is an optional driver query. `MIRROR` is distinct from `WRAP`. | The private HAL checks only used NPOT/repeat pairs unless full NPOT is positively reported. Core also has selected-entry pair validation, but its FL9_1 fixture reports the finite per-primitive repeat limit of 128 and consequently rejects Repeat and MirrorRepeat sampler creation before pair validation is reachable. Clamp and mirrored-repeat do not trigger the conditional-NPOT `WRAP` rule; MirrorRepeat remains subject to the separate finite repeat limit. Synthetic core tests exercise selected-entry pair validation under a repeat-permitting limit, while the strict physical fixture verifies the 128 limit and renders POT/NPOT clamp sampling. |
 
@@ -456,9 +456,12 @@ ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a
 fractional linear-mipmap blend; direct and indexed draws rejected incompatible
 samplers. This restricted implementation does not cover all valid biased sampling.
 
-The backend does not expose a public adapter. In particular, the wgpu downlevel
-anisotropy flag does not describe this private maximum of 2 by itself; public
-validation or emulation must be resolved before any such capability is exposed.
+The backend does not expose a public adapter. The boolean anisotropy flag
+indicates availability, while `DownlevelLimits::max_sampler_anisotropy` reports
+the cap separately; the selected FL9_1 projection reports 2. Core clamps the
+requested sampler value to this maximum, and strict core fixture tests create
+native samplers for requests 2, 3 and 16. This does not establish visual
+anisotropic quality on minified textures or validate historical FL9_1 drivers.
 
 The nondefault `dx11-test-fixture` feature provides an unsafe, non-enumerated
 adapter solely for a controlled core integration test. Normal `Adapter::open`

@@ -91,6 +91,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: max_texture_repeat,
+                    max_sampler_anisotropy: 1,
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
@@ -233,6 +234,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         .test_fixture_wgpu_capabilities()
         .expect("selected FL9_1 device must produce a capability projection");
     assert_eq!(projected_capabilities.limits.max_texture_dimension_2d, 2048);
+    assert_eq!(
+        projected_capabilities
+            .downlevel
+            .limits
+            .max_sampler_anisotropy,
+        2
+    );
     assert!(!projected_capabilities.downlevel.limits.texture_1d);
     assert!(!projected_capabilities.downlevel.limits.texture_3d);
     // Keep the restrictive NPOT branch deterministic even when the selected driver's query is positive.
@@ -471,6 +479,29 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let (device, queue) = global
         .adapter_request_device(adapter_id, &descriptor, None, None)
         .expect("controlled core adapter device request");
+    for requested_anisotropy in [2, 3, 16] {
+        let sampler_desc = crate::resource::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Linear,
+            min_filter: wgt::FilterMode::Linear,
+            mipmap_filter: wgt::MipmapFilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 32.0,
+            compare: None,
+            anisotropy_clamp: requested_anisotropy,
+            border_color: None,
+        };
+        let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
+        assert!(
+            error.is_none(),
+            "core must clamp requested anisotropy {requested_anisotropy} to the FL9_1 maximum of 2: {error:?}"
+        );
+        global.sampler_drop(sampler);
+    }
+    std::println!(
+        "PASS: core sampler requests 2, 3 and 16 clamp to the selected FL9_1 maximum of 2"
+    );
     for address_mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
         let sampler_desc = crate::resource::SamplerDescriptor {
             label: None,

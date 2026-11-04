@@ -66,6 +66,7 @@ Bottom level categories:
 - Add `DownlevelLimits::depth_bias_with_fragment_depth` so adapters can reject depth-biased pipelines only when the selected fragment entry point writes fragment depth.
 - Add `DownlevelLimits::fragment_position` so adapters can reject fragment `@builtin(position)` use when their shader profile cannot provide it.
 - Add `DownlevelLimits::vertex_index_input` and `instance_index_input` so adapters can reject vertex entry points the backend cannot compile or execute.
+- Add `DownlevelLimits::max_sampler_anisotropy` so core can clamp sampler anisotropy to the selected adapter's supported maximum.
 - Add downlevel texture-dimension capabilities so adapters can reject unsupported 1D and 3D texture shapes even when their hardware limits are non-zero.
 
 #### Hal

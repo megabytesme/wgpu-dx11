@@ -25,6 +25,20 @@ cargo test --offline -p wgpu-types downlevel_limits_check_minimum_capabilities -
 These tests are synthetic/CPU-only. They do not claim that the RTX validates
 behavior at or beyond the FL9_1 repeat cap.
 
+Sampler anisotropy uses both the `ANISOTROPIC_FILTERING` availability flag and
+the numeric `DownlevelLimits::max_sampler_anisotropy` cap. Synthetic tests
+cover capability matching and core's clamp to 1, 2 and 16; the strict core
+fixture requests 2, 3 and 16 on a physical FL9_1 device whose projected cap is
+2. The HAL receives a valid FL9_1 sampler state in each case. This validates
+descriptor translation and clamping, not anisotropic image quality.
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-types --lib sampler_anisotropy_is_a_numeric_downlevel_limit
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std sampler_anisotropy_limit
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
 The source-alpha-saturated blend capability is false in the controlled FL9_1
 core fixture. Its hardware test constructs pipelines with the factor in each
 color/alpha source/destination slot and checks that core returns the specific

@@ -3836,3 +3836,69 @@ The next reviewed mismatch is sampler anisotropy: core models the downlevel
 flag as support up to 16, while the FL9_1 HAL accepts at most 2. A truthful
 numeric downlevel limit is needed so core can clamp requests consistently
 before HAL. Public D3D11 enumeration and HWND surface exposure remain gated.
+
+## Checkpoint — numeric sampler-anisotropy capability
+
+Core previously treated `DownlevelFlags::ANISOTROPIC_FILTERING` as permission to
+pass every requested anisotropy value up to 16. The private FL9_1 HAL can create
+only values through 2. `DownlevelLimits::max_sampler_anisotropy` now expresses
+the numeric cap separately from the availability flag; core clamps to the
+reported cap (and still sends 1 when the flag is absent). The cap is not a
+WebGPU-required limit because WebGPU permits implementations to ignore
+anisotropy. Old serde payloads default the new field to 16.
+
+The FL9_1 wgpu projection reports cap 2 and retains the anisotropy flag. The
+controlled core fixture created real D3D11 sampler states from requests 2, 3
+and 16; the latter requests reached the HAL clamped to the legal maximum. The
+single-mip test image cannot establish anisotropic quality on minified content.
+Vulkan now reports its selected device maximum capped at 16, GLES reports its
+queried maximum capped at 16, and the noop backend uses 16. `wgpu-info` prints
+the limit. Normal D3D11 adapter enumeration remains empty.
+
+Rust 1.93.1/MSVC verification on 2026-11-04:
+
+- `wgpu-types` full library suite: 69/69; serde suite: 71/71, including the
+  old-shape default for the added field.
+- Core anisotropy clamp unit tests: 2/2.
+- Strict controlled core suite: 80/80 on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1. The fixture
+  reported cap 2 and successfully created states for requested clamps 2, 3 and
+  16. Full readback and render cases in the fixture also passed.
+- Strict private D3D11 HAL suite: 337/337. It reported the same physical GPU
+  and forced feature level; sampler translation and rendered sampler cases
+  remained green.
+- Core DX12 regression suite: 77/77; D3D11 zero-adapter isolation: 1/1.
+- HAL test compilation with `dx11,gles,vulkan`, `wgpu-info` check, `wgpu-test`
+  test check and Clippy for wgpu-types, fixture-enabled wgpu-core, D3D11 HAL,
+  and GLES/Vulkan HAL passed.
+- Targeted rustfmt and `git diff --check` passed. The serde types build retains
+  fourteen pre-existing unused-serde-import warnings. Visual Studio's developer
+  prompt still prints its existing `Error: Unknown error` banner.
+
+Commands:
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-types --lib
+cargo +1.93 test --offline -j16 -p wgpu-types --lib --features serde
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std sampler_anisotropy_limit -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 check --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11,gles,vulkan
+cargo +1.93 check --offline -j16 -p wgpu-info
+cargo +1.93 check --offline -j16 -p wgpu-test --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-types --lib
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --lib --no-default-features --features gles,vulkan
+```
+
+A first compile exposed one missing test constant field and a Vulkan query typo;
+both were corrected and the complete checks above then passed. An initial core
+Clippy run pointed out a clamp idiom, which was corrected and Clippy rerun clean.
+The next work remains the core/HAL capability audit and a truthful production
+adapter contract. HWND `Present` reentrancy remains a separately documented
+blocker; public D3D11 enumeration and surface exposure stay disabled.

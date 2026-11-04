@@ -355,6 +355,7 @@ impl Capabilities {
                 },
                 unrestricted_npot_texture_sampling: self.unrestricted_npot_texture_sampling(),
                 max_texture_repeat_per_primitive: self.hardware.max_texture_repeat_per_primitive,
+                max_sampler_anisotropy: self.backend.max_sampler_anisotropy,
                 src_alpha_saturated_blend: self.backend.src_alpha_saturated_blend,
                 viewport_rectangles_outside_target: false,
                 depth_bias_with_fragment_depth: self.backend.fragment_depth_with_bias,
@@ -805,6 +806,7 @@ mod tests {
             exposed.downlevel.limits.max_texture_repeat_per_primitive,
             128
         );
+        assert_eq!(exposed.downlevel.limits.max_sampler_anisotropy, 2);
         assert!(!exposed.downlevel.flags.intersects(
             wgt::DownlevelFlags::COMPUTE_SHADERS
                 | wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE
@@ -906,12 +908,13 @@ mod tests {
             native.feature_level()
         );
         std::println!(
-            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={}; downlevel_flags={:?}; unrestricted_npot={:?}; BC1={:?}",
+            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; BC1={:?}",
             projection.capabilities.limits.max_texture_dimension_2d,
             projection.capabilities.limits.max_sampled_textures_per_shader_stage,
             projection.capabilities.limits.max_samplers_per_shader_stage,
             projection.capabilities.limits.max_uniform_buffers_per_shader_stage,
             projection.capabilities.limits.max_color_attachments,
+            projection.capabilities.downlevel.limits.max_sampler_anisotropy,
             projection.capabilities.downlevel.flags,
             caps.driver.full_npot,
             caps.driver.bc1_unorm

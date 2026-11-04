@@ -1047,3 +1047,21 @@ most 2 and the private HAL rejects larger values. Add a numeric downlevel cap,
 preserve old serialized defaults, project 2 for FL9_1, and test the core clamp
 and native descriptor. Continue the capability and adapter contract audit;
 ordinary enumeration and HWND surface exposure remain disabled.
+
+## Checkpoint — numeric sampler-anisotropy capability
+
+`DownlevelLimits::max_sampler_anisotropy` now carries the backend maximum
+separately from `ANISOTROPIC_FILTERING`; core clamps descriptors to the cap.
+FL9_1 projection reports 2. The strict core fixture created native samplers for
+requests 2, 3 and 16 on the RTX 3090 Ti at requested/actual FL9_1. Full
+`wgpu-types` suites passed 69/69 and 71/71 (serde), full strict core passed
+80/80, strict private HAL passed 337/337, DX12 core passed 77/77, and
+zero-adapter isolation passed. Cross-backend HAL tests compiled `dx11,gles,vulkan`;
+wgpu-info/wgpu-test checks and affected Clippy also passed. Exact commands,
+warning notes and the lack of visual anisotropy-quality evidence are recorded
+in `FL9_1_PROGRESS.md`.
+
+The checkpoint is ready for commit. Resume with the remaining core/HAL contract
+audit and truthful production adapter projection. Do not enable ordinary
+D3D11 enumeration. HWND `Present` reentrancy remains unresolved; no public
+surface exposure until safe scheduling and synchronization are established.

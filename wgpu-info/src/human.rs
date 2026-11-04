@@ -292,6 +292,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             instance_index_input,
             unrestricted_npot_texture_sampling,
             max_texture_repeat_per_primitive,
+            max_sampler_anisotropy,
             src_alpha_saturated_blend,
             viewport_rectangles_outside_target,
             depth_bias_with_fragment_depth,
@@ -322,6 +323,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         output,
         "\t\tMaximum texture repeats per primitive: {max_texture_repeat_per_primitive}"
     )?;
+    writeln!(output, "\t\tMaximum sampler anisotropy: {max_sampler_anisotropy}")?;
     writeln!(
         output,
         "\t\tSource-alpha-saturated blending: {src_alpha_saturated_blend}"
