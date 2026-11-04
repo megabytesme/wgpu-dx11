@@ -5,9 +5,10 @@ use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
         D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
-        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
-        D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
-        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL,
+        D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_FORMAT_SUPPORT_MIP,
+        D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+        D3D11_FORMAT_SUPPORT_TEXTURE2D,
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM,
@@ -518,6 +519,94 @@ impl Capabilities {
             & self.backend.vertex_input_formats
     }
 
+    pub fn texture_format_capabilities(
+        &self,
+        format: wgt::TextureFormat,
+    ) -> crate::TextureFormatCapabilities {
+        use crate::TextureFormatCapabilities as Caps;
+
+        if format == wgt::TextureFormat::Depth24PlusStencil8 {
+            let required =
+                (D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0 | D3D11_FORMAT_SUPPORT_TEXTURE2D.0) as u32;
+            return if self.backend.d24s8_depth_attachment
+                && matches!(self.driver.depth24_stencil8, Query::Value(bits) if bits & required == required)
+            {
+                Caps::DEPTH_STENCIL_ATTACHMENT | Caps::SINGLE_MIP_ONLY
+            } else {
+                Caps::empty()
+            };
+        }
+
+        if matches!(
+            format,
+            wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Snorm
+                | wgt::TextureFormat::Rgba8Snorm
+                | wgt::TextureFormat::Bc1RgbaUnorm
+        ) {
+            let supported = self
+                .check_private_texture_2d(
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [8, 8],
+                    1,
+                    1,
+                    1,
+                )
+                .is_ok();
+            return if supported {
+                Caps::SAMPLED | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
+            } else {
+                Caps::empty()
+            };
+        }
+
+        if self.backend.color_attachments == 0
+            || (format == wgt::TextureFormat::Rgba8Unorm
+                && !self.backend.rgba8_single_mip_transfers)
+            || (format == wgt::TextureFormat::Bgra8Unorm
+                && !self.backend.bgra8_single_mip_transfers)
+            || !matches!(
+                format,
+                wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+            )
+        {
+            return Caps::empty();
+        }
+        let supported = self
+            .check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET
+                    | wgt::TextureUses::COPY_SRC
+                    | wgt::TextureUses::COPY_DST
+                    | wgt::TextureUses::RESOURCE,
+                [8, 8],
+                1,
+                1,
+                1,
+            )
+            .is_ok();
+        if !supported {
+            return Caps::empty();
+        }
+
+        let mut result = Caps::COLOR_ATTACHMENT
+            | Caps::COPY_SRC
+            | Caps::COPY_DST
+            | Caps::SAMPLED
+            | Caps::SAMPLED_LINEAR;
+        let blend_query = if format == wgt::TextureFormat::Rgba8Unorm {
+            self.driver.rgba8
+        } else {
+            self.driver.bgra8
+        };
+        if matches!(blend_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
+        {
+            result |= Caps::COLOR_ATTACHMENT_BLEND;
+        }
+        result
+    }
+
     pub fn public_adapter_supported(&self) -> bool {
         false
     }
@@ -543,6 +632,7 @@ const fn fl91_vertex_formats() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TextureFormatCapabilities as FormatCaps;
 
     fn model(level: FeatureLevel) -> Capabilities {
         Capabilities {
@@ -751,6 +841,95 @@ mod tests {
             fl93.vertex_input_format_mask() & vertex_format_bit(wgt::VertexFormat::Float16x2),
             0
         );
+    }
+
+    #[test]
+    fn format_projection_intersects_queries_and_backend_implementation() {
+        let mut caps = model(FeatureLevel::L9_1);
+        let rgba = caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm);
+        assert!(rgba.contains(
+            FormatCaps::COLOR_ATTACHMENT
+                | FormatCaps::COPY_SRC
+                | FormatCaps::COPY_DST
+                | FormatCaps::SAMPLED
+                | FormatCaps::SAMPLED_LINEAR
+                | FormatCaps::COLOR_ATTACHMENT_BLEND
+        ));
+        assert!(!rgba.contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.driver.rgba8 = Query::Value(
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0) as u32,
+        );
+        let rgba_without_blend = caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm);
+        assert!(rgba_without_blend.contains(FormatCaps::COLOR_ATTACHMENT));
+        assert!(!rgba_without_blend.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+
+        caps.backend.rgba8_single_mip_transfers = false;
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .is_empty());
+        caps.backend.rgba8_single_mip_transfers = true;
+        caps.backend.color_attachments = 0;
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .is_empty());
+    }
+
+    #[test]
+    fn format_projection_reports_only_implemented_sampled_uploads_and_depth() {
+        let mut caps = model(FeatureLevel::L9_1);
+        for format in [
+            wgt::TextureFormat::R8Unorm,
+            wgt::TextureFormat::Rg8Snorm,
+            wgt::TextureFormat::Rgba8Snorm,
+            wgt::TextureFormat::Bc1RgbaUnorm,
+        ] {
+            let reported = caps.texture_format_capabilities(format);
+            assert!(reported.contains(
+                FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY
+            ));
+            assert!(!reported.intersects(
+                FormatCaps::COPY_SRC | FormatCaps::COLOR_ATTACHMENT | FormatCaps::SAMPLED_LINEAR
+            ));
+        }
+
+        let depth = caps.texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8);
+        assert_eq!(
+            depth,
+            FormatCaps::DEPTH_STENCIL_ATTACHMENT | FormatCaps::SINGLE_MIP_ONLY
+        );
+        caps.backend.d24s8_depth_attachment = false;
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8)
+            .is_empty());
+
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba16Float)
+            .is_empty());
+    }
+
+    #[test]
+    fn format_projection_treats_missing_driver_queries_as_unsupported() {
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.rgba8 = Query::Unavailable(-1);
+        caps.driver.r8_unorm = Query::Unavailable(-1);
+        caps.driver.depth24_stencil8 = Query::Unavailable(-1);
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .is_empty());
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::R8Unorm)
+            .is_empty());
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8)
+            .is_empty());
+
+        caps.driver.rgba8 = Query::Value(0);
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .is_empty());
     }
 
     #[test]
