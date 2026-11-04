@@ -11,6 +11,31 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
+## Current checkpoint — internal FL9_1 capability projection — `dfc93078a`
+
+`Capabilities::wgpu_projection` now builds a selected-device FL9_1 snapshot of
+limits, alignments, downlevel gates, features and per-format support. The
+controlled core fixture consumes it rather than a duplicated handcrafted
+capability set. It remains test-only; ordinary D3D11 enumeration is empty.
+The projection withholds `TEXTURE_COMPRESSION_BC` because only BC1 is
+implemented, while the fixture locally enables the aggregate feature solely
+for its BC1 path. Core now rejects unsupported 1D and 3D shapes through
+`DownlevelLimits` booleans while other backends retain true defaults.
+
+The strict full core fixture suite passed 78/78 and the strict private D3D11
+suite passed 337/337 on the RTX 3090 Ti at requested/actual FL9_1. Projection
+tests passed 4/4; DX12 core passed 75/75; wgpu-types passed 65/65 (66/66 with
+serde); the ordinary zero-adapter regression passed 1/1. Build/check, Clippy,
+targeted formatting and diff checks passed. The suite records the initial
+RGBA8 color-attachment limit correction (wgpu sample cost is 8, not its
+four-byte storage size). Full commands and existing warning counts are in
+`FL9_1_PROGRESS.md`.
+
+Next audit every projected numeric limit, per-format usage and core-accepted
+operation against the private HAL and its validation gates. The forced modern
+GPU is not evidence for historical FL9_1 behavior. Public adapter and HWND
+surface exposure remain gated.
+
 The latest code checkpoint is `e8c7240da` (`core: gate FL9_1 fragment position
 use`). `DownlevelLimits::fragment_position` is false for the controlled FL9_1
 fixture. Core rejects a selected fragment entry that consumes

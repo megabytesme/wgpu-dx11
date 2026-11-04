@@ -2,6 +2,81 @@
 
 ## Current position — 2026-11-04
 
+## Checkpoint — internal FL9_1 capability projection — `dfc93078a`
+
+Added an FL9_1-only internal projection from the selected-device capability
+model to wgpu limits, alignments, downlevel gates, features and per-format
+reports. The controlled core fixture now consumes that projection instead of
+injecting a separately fabricated capability set. It forces only the
+conditional-NPOT branch needed for deterministic coverage and locally opts into
+the aggregate BC feature only for its BC1-specific test. The production
+projection withholds the BCn feature because only BC1 is implemented. It is
+not connected to ordinary adapter enumeration; the core zero-adapter test
+continues to verify that boundary.
+
+The new `DownlevelLimits::texture_1d` and `texture_3d` gates let core reject
+unsupported resource shapes even when their numeric dimension limits are
+nonzero. Other backends retain their prior behavior through `true` defaults.
+The public capability model remains provisional: numeric buffer/resource
+limits, supported features and all core-valid operations still need a complete
+contract audit before exposing an adapter.
+
+Verification used Rust 1.93.1 (`+1.93`) and the Visual Studio MSVC prompt with
+16 Cargo jobs. Its banner printed `Error: Unknown error`, but all compiler and
+test commands completed:
+
+- Strict controlled core suite: 78/78 passed on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and selected FL9_1. The fixture
+  exercised uploads, copies, mip views, format gates, multiple rendering
+  cases and CPU readback; unsupported 1D/3D shapes failed core validation.
+- Strict private D3D11 HAL suite: 337/337 passed at forced FL9_1, with actual
+  GPU rendering, transfer, fence and readback tests. Tests that intentionally
+  rejected a shader before rendering logged local GPU `SKIP`s; these were not
+  counted as executed draws.
+- Focused capability projection tests: 4/4 passed, including the physical RTX
+  query (`unrestricted_npot=Value(true)`, BC1 query positive) and the selected
+  actual feature-level assertion.
+- Core DX12 suite: 75/75; explicit ordinary D3D11 zero-adapter test: 1/1.
+- `wgpu-types`: 65/65; serde-enabled `wgpu-types`: 66/66.
+- HAL `dx11,gles`, `wgpu-info`, and `wgpu-test --tests` checks passed.
+- Core fixture, wgpu-types, HAL `dx11,gles`, and wgpu-info Clippy passed.
+  Existing warnings remain: 14 unused-serde imports in wgpu-types and 10
+  unrelated HAL warnings. No warning was introduced by the projection.
+- Targeted rustfmt and `git diff --check` passed.
+
+One initial strict core run exposed that wgpu's color-attachment
+bytes-per-sample limit assigns RGBA8 a cost of eight, despite its four-byte
+storage size. The projection was corrected from 4 to 8 while retaining a
+one-target count; the focused fixture and complete strict core suite then
+passed. No failed test remains from that correction.
+
+Reproduction commands (run inside the MSVC developer prompt):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-types --lib -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-types --features serde --lib -- --test-threads=1
+cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx11,gles
+cargo +1.93 check --offline -j16 -p wgpu-info
+cargo +1.93 check --offline -j16 -p wgpu-test --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j16 -p wgpu-types --lib --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo +1.93 clippy --offline -j16 -p wgpu-info
+rustfmt --edition 2021 --check tests/src/params.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-core/src/resource.rs wgpu-hal/src/dx11/adapter.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/gles/adapter.rs wgpu-hal/src/noop/mod.rs wgpu-info/src/human.rs wgpu-types/src/limits.rs
+git diff --check
+```
+
+Continue by auditing whether every projected numeric limit, per-format usage
+and accepted core command is implemented by the D3D11 path. Public D3D11
+enumeration and public HWND surface exposure remain gated; the forced RTX
+result does not validate historical FL9_1 drivers.
+
 ## Checkpoint — vertex system-value input gates — `d85e51e7b`
 
 Core now has `DownlevelLimits::vertex_index_input` and
