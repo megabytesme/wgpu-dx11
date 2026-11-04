@@ -17,6 +17,14 @@ pub struct Adapter {
 
 #[cfg(feature = "dx11-test-fixture")]
 impl Adapter {
+    /// Returns the conservative FL9_1 wgpu capability projection for this selected test device.
+    #[doc(hidden)]
+    pub fn test_fixture_wgpu_capabilities(&self) -> Option<(wgt::Features, crate::Capabilities)> {
+        let AdapterInner::Fixture(native) = &self.inner;
+        let projection = super::capabilities::Capabilities::query(native).wgpu_projection()?;
+        Some((projection.features, projection.capabilities))
+    }
+
     /// Reports whether the selected device has unrestricted NPOT sampling.
     pub fn test_fixture_unrestricted_npot_sampling(&self) -> bool {
         let AdapterInner::Fixture(native) = &self.inner;

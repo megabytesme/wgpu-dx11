@@ -79,6 +79,8 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                 flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
                 limits: wgt::DownlevelLimits {
+                    texture_1d: false,
+                    texture_3d: false,
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
@@ -222,30 +224,18 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     info.name = identity.name.clone();
     info.vendor = identity.vendor_id;
     info.device = identity.device_id;
-    let limits = wgt::Limits {
-        max_texture_dimension_1d: 0,
-        max_texture_dimension_2d: 8,
-        max_texture_dimension_3d: 0,
-        max_texture_array_layers: 1,
-        max_bind_groups: 1,
-        max_bind_groups_plus_vertex_buffers: 3,
-        max_bindings_per_bind_group: 64,
-        max_dynamic_uniform_buffers_per_pipeline_layout: 1,
-        max_sampled_textures_per_shader_stage: 2,
-        max_samplers_per_shader_stage: 2,
-        max_uniform_buffers_per_shader_stage: 1,
-        max_uniform_buffer_binding_size: 256,
-        max_vertex_buffers: 2,
-        max_vertex_attributes: 2,
-        max_vertex_buffer_array_stride: 20,
-        max_inter_stage_shader_variables: 2,
-        max_color_attachments: 1,
-        max_color_attachment_bytes_per_sample: 8,
-        max_buffer_size: 512 << 10,
-        max_non_sampler_bindings: 4,
-        max_buffers_and_acceleration_structures_per_shader_stage: 2,
-        ..wgt::Limits::downlevel_webgl2_defaults()
-    };
+    let (projected_features, mut projected_capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device must produce a capability projection");
+    assert_eq!(projected_capabilities.limits.max_texture_dimension_2d, 2048);
+    assert!(!projected_capabilities.downlevel.limits.texture_1d);
+    assert!(!projected_capabilities.downlevel.limits.texture_3d);
+    // Keep the restrictive NPOT branch deterministic even when the selected driver's query is positive.
+    projected_capabilities
+        .downlevel
+        .limits
+        .unrestricted_npot_texture_sampling = false;
+    let limits = projected_capabilities.limits.clone();
     let rgba_mips = fixture
         .test_fixture_copy_only_rgba8_mip_supported()
         .expect("query copy-only RGBA8 mip prerequisites");
@@ -360,11 +350,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     if !bc1_supported {
         std::println!("SKIP: BC1 sampled upload format support unavailable");
     }
-    let fixture_features = if bc1_supported {
-        wgt::Features::TEXTURE_COMPRESSION_BC
-    } else {
-        wgt::Features::empty()
-    };
+    let mut fixture_features = projected_features;
+    if bc1_supported {
+        // This fixture opt-in is limited to BC1 testing; production withholds the BCn feature.
+        fixture_features |= wgt::Features::TEXTURE_COMPRESSION_BC;
+    }
     let one_mip_format_caps = [
         wgt::TextureFormat::R8Unorm,
         wgt::TextureFormat::Rg8Snorm,
@@ -383,38 +373,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         adapter: fixture,
         info,
         features: fixture_features,
-        capabilities: hal::Capabilities {
-            limits: limits.clone(),
-            alignments: hal::Alignments {
-                buffer_copy_offset: NonZeroU64::new(4).unwrap(),
-                buffer_copy_pitch: NonZeroU64::new(256).unwrap(),
-                uniform_bounds_check_alignment: NonZeroU64::new(16).unwrap(),
-                raw_tlas_instance_size: 0,
-                ray_tracing_scratch_buffer_alignment: 0,
-                ray_tracing_pipeline_group_data_size: 0,
-                ray_tracing_pipeline_group_data_alignment: 0,
-                ray_tracing_pipeline_data_offset_alignment: 0,
-            },
-            downlevel: wgt::DownlevelCapabilities {
-                flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
-                shader_model: wgt::ShaderModel::Sm2,
-                limits: wgt::DownlevelLimits {
-                    vertex_index_input: false,
-                    instance_index_input: false,
-                    max_sampled_textures_per_vertex_stage: 0,
-                    unrestricted_npot_texture_sampling: false,
-                    max_texture_repeat_per_primitive: max_texture_repeat,
-                    src_alpha_saturated_blend: false,
-                    viewport_rectangles_outside_target: false,
-                    depth_bias_with_fragment_depth: false,
-                    fragment_front_facing: false,
-                    fragment_position: false,
-                    vertex_format_mask,
-                },
-                ..Default::default()
-            },
-            cooperative_matrix_properties: Vec::new(),
-        },
+        capabilities: projected_capabilities,
     };
     let adapter_id = unsafe { global.create_adapter_from_hal(exposed.into(), None) };
     let rgba_core =
@@ -734,6 +693,24 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         usage,
         view_formats: Vec::new(),
     };
+    for dimension in [wgt::TextureDimension::D1, wgt::TextureDimension::D3] {
+        let mut unsupported =
+            texture_desc(wgt::TextureFormat::Rgba8Unorm, wgt::TextureUsages::COPY_DST);
+        unsupported.dimension = dimension;
+        let (texture, error) = global.device_create_texture(device, &unsupported, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(crate::resource::CreateTextureError::InvalidDimension(
+                    crate::resource::TextureDimensionError::UnsupportedDimension(found)
+                )) if *found == dimension
+            ),
+            "unsupported {dimension:?} resources must fail core validation before HAL: {error:?}"
+        );
+        global.texture_drop(texture);
+    }
+    std::println!("PASS: unsupported 1D and 3D texture shapes rejected by core");
+
     let mut npot_mip_texture_desc = texture_desc(
         wgt::TextureFormat::Rgba8Unorm,
         wgt::TextureUsages::TEXTURE_BINDING,

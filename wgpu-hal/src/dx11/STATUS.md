@@ -417,6 +417,14 @@ all out-of-target rectangles. Other backends keep the default true capability.
   indexed triangle on FL9_1 with pixel readback. It is not an adapter or a
   capability-conformance test.
 
+The internal FL9_1 wgpu-types projection now supplies conservative limits,
+alignments, downlevel gates and selected-device format reports to the controlled
+core fixture. It is not used by ordinary enumeration. The projection withholds
+the aggregate BC compression feature because only BC1 is implemented; the
+private BC1 core case opts into that feature locally for coverage. A public
+adapter still needs a complete feature/format contract and the remaining
+core/HAL audit.
+
 ## Before a public adapter
 
 - Build a reproducible, tightly scoped core-integration test without

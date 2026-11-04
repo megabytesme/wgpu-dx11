@@ -1790,6 +1790,8 @@ pub enum TextureErrorDimension {
 #[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum TextureDimensionError {
+    #[error("Texture dimension {0:?} is unavailable on this adapter")]
+    UnsupportedDimension(wgt::TextureDimension),
     #[error("Dimension {0:?} is zero")]
     Zero(TextureErrorDimension),
     #[error("Dimension {dim:?} value {given} exceeds the limit of {limit}")]

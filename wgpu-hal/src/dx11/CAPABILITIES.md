@@ -667,3 +667,27 @@ adapter enumeration remain disabled. [Microsoft HLSL semantics](https://learn.mi
 and [10Level9 device rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
 are references for the hardware model, not substitutes for the tested FXC
 profile.
+
+## Internal FL9_1 wgpu projection
+
+`Capabilities::wgpu_projection` builds a conservative wgpu-types snapshot only
+when the selected device actually runs at FL9_1. It intersects selected-level
+facts, driver queries and backend paths. The controlled core fixture consumes
+this snapshot, but regular D3D11 adapter enumeration remains disabled and the
+snapshot is not a public adapter report.
+
+The projection preserves the native 2048×2048 2D minimum and logical binding
+indices through 999. The binding-index limit is distinct from implementation
+capacities: the private pipeline allocator still caps aggregate resources at
+eight textures, sixteen samplers and thirteen uniform slots. Core receives
+explicit downlevel gates for 1D and 3D textures because nonzero hardware size
+limits do not mean these resource shapes are implemented by this backend.
+Other unsupported shader, storage, query and multisample paths remain absent
+from projected flags or format usages.
+
+The projection withholds `Features::TEXTURE_COMPRESSION_BC`: wgpu's BC feature
+guarantees the BCn family, while this backend currently implements only BC1.
+The private core fixture adds the aggregate feature locally when it specifically
+tests its BC1 path; this does not establish that the production projection can
+advertise BC support. Enabling a truthful public report requires implementing
+the required BC formats or adding a narrower core capability contract.

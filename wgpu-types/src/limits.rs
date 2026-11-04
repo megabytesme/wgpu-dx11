@@ -1040,6 +1040,18 @@ impl Limits {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DownlevelLimits {
+    /// Whether textures with [`TextureDimension::D1`] can be created.
+    ///
+    /// This can be unavailable even when `max_texture_dimension_1d` is non-zero
+    /// if the backend cannot implement the texture shape.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_1d: bool,
+    /// Whether textures with [`TextureDimension::D3`] can be created.
+    ///
+    /// This can be unavailable even when `max_texture_dimension_3d` is non-zero
+    /// if the backend cannot implement the texture shape.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_3d: bool,
     /// Whether vertex entry points may declare `@builtin(vertex_index)`.
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
@@ -1096,9 +1108,16 @@ pub struct DownlevelLimits {
     pub vertex_format_mask: u64,
 }
 
+#[cfg(feature = "serde")]
+fn default_true() -> bool {
+    true
+}
+
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
+            texture_1d: true,
+            texture_3d: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
@@ -1136,7 +1155,9 @@ impl DownlevelLimits {
     /// Returns whether `self` satisfies the minimum downlevel limits in `required`.
     #[must_use]
     pub fn check_limits(&self, required: &Self) -> bool {
-        (!required.vertex_index_input || self.vertex_index_input)
+        (!required.texture_1d || self.texture_1d)
+            && (!required.texture_3d || self.texture_3d)
+            && (!required.vertex_index_input || self.vertex_index_input)
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
@@ -1183,6 +1204,8 @@ impl DownlevelCapabilities {
     #[must_use]
     pub fn is_webgpu_compliant(&self) -> bool {
         self.flags.contains(DownlevelFlags::compliant())
+            && self.limits.texture_1d
+            && self.limits.texture_3d
             && self.limits.vertex_index_input
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
@@ -1463,6 +1486,8 @@ mod tests {
     #[test]
     fn downlevel_limits_check_minimum_capabilities() {
         let available = DownlevelLimits {
+            texture_1d: true,
+            texture_3d: true,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
@@ -1476,6 +1501,8 @@ mod tests {
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
+            texture_1d: true,
+            texture_3d: true,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
@@ -1585,6 +1612,26 @@ mod tests {
             ..DownlevelLimits::default()
         };
         assert!(available.check_limits(&required));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn texture_dimensions_are_downlevel_capabilities() {
+        let available = DownlevelLimits {
+            texture_1d: false,
+            texture_3d: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_1d: false,
+            texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
         assert!(!available.check_limits(&DownlevelLimits::default()));
         assert!(!DownlevelCapabilities {
             limits: available,

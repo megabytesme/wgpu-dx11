@@ -1688,6 +1688,12 @@ impl Device {
             return Err(CreateTextureError::InvalidUsage(desc.usage));
         }
 
+        if (desc.dimension == wgt::TextureDimension::D1 && !self.downlevel.limits.texture_1d)
+            || (desc.dimension == wgt::TextureDimension::D3 && !self.downlevel.limits.texture_3d)
+        {
+            return Err(TextureDimensionError::UnsupportedDimension(desc.dimension).into());
+        }
+
         conv::check_texture_dimension_size(
             desc.dimension,
             desc.size,
@@ -3026,10 +3032,16 @@ impl Device {
                 _ => None,
             };
             let unavailable_dimension = match view_dimension {
-                Some(TextureViewDimension::D1) if self.limits.max_texture_dimension_1d == 0 => {
+                Some(TextureViewDimension::D1)
+                    if self.limits.max_texture_dimension_1d == 0
+                        || !self.downlevel.limits.texture_1d =>
+                {
                     view_dimension
                 }
-                Some(TextureViewDimension::D3) if self.limits.max_texture_dimension_3d == 0 => {
+                Some(TextureViewDimension::D3)
+                    if self.limits.max_texture_dimension_3d == 0
+                        || !self.downlevel.limits.texture_3d =>
+                {
                     view_dimension
                 }
                 _ => None,

@@ -38,6 +38,27 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### Internal FL9_1 capability projection
+
+`Capabilities::wgpu_projection` is exercised against synthetic records and an
+explicitly selected physical adapter. It returns a snapshot only for an
+actually created FL9_1 device. The core fixture consumes the projected limits,
+alignments and downlevel gates, but ordinary D3D11 enumeration stays empty. The
+fixture locally opts into aggregate BC support only to test the private BC1
+path; the production projection withholds `TEXTURE_COMPRESSION_BC` because the
+backend does not implement the complete BCn format family.
+
+```powershell
+cargo +1.93 test --offline -j 16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j 16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The projection test records the selected adapter identity, requested and actual
+feature level, driver format/optional-feature queries, and conservative limits
+and flags. The RTX's forced FL9_1 result is not evidence for historical FL9_1
+drivers.
+
 Microsoft documents this as a static 10Level9 restriction, not a per-format
 blendability query: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
 

@@ -280,6 +280,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     let wgpu::DownlevelCapabilities {
         shader_model: _,
         limits: wgpu::DownlevelLimits {
+            texture_1d,
+            texture_3d,
             max_sampled_textures_per_vertex_stage,
             vertex_index_input,
             instance_index_input,
@@ -294,6 +296,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         },
         flags,
     } = downlevel;
+    writeln!(output, "\t\tTexture 1D: {texture_1d}")?;
+    writeln!(output, "\t\tTexture 3D: {texture_3d}")?;
     writeln!(
         output,
         "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"

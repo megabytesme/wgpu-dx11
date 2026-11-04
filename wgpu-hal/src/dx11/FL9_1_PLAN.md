@@ -130,6 +130,13 @@ below is met. This plan does not claim WebGPU conformance.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
+   An internal FL9_1-only wgpu-types projection now feeds the controlled core
+   fixture, including selected-device format reports and explicit unsupported
+   1D/3D shape gates. It is not connected to ordinary adapter enumeration.
+   Logical binding indices remain capped by the wgpu index limit while actual
+   resource counts use separate backend limits. The aggregate BC feature stays
+   withheld because only BC1 is implemented. Continue the descriptor and
+   feature/format audit before treating the projection as a public report.
 6. Complete HWND surface lifecycle while preserving CoreWindow; the private
    hidden-window path and retained-command-buffer resize are tested, but
    concurrent presentation requires work. Microsoft documents that DXGI may

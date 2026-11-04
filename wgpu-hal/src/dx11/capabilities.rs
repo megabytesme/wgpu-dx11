@@ -1,6 +1,7 @@
 //! Conservative internal capability facts for the experimental D3D11 backend.
 
 use super::device::{FeatureLevel, NativeDevice};
+use core::num::NonZeroU64;
 use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
@@ -289,6 +290,95 @@ pub(super) struct Capabilities {
     pub hardware: HardwareGuarantees,
     pub driver: DriverCapabilities,
     pub backend: BackendCapabilities,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct WgpuCapabilityProjection {
+    pub features: wgt::Features,
+    pub capabilities: crate::Capabilities,
+}
+
+impl Capabilities {
+    pub fn wgpu_projection(&self) -> Option<WgpuCapabilityProjection> {
+        if self.hardware.level != FeatureLevel::L9_1 {
+            return None;
+        }
+
+        let mut limits = wgt::Limits::downlevel_defaults();
+        limits.max_texture_dimension_1d = 2048;
+        limits.max_texture_dimension_2d = self.hardware.texture_2d_dimension;
+        limits.max_texture_dimension_3d = 256;
+        limits.max_texture_array_layers = self.backend.texture_array_layers;
+        limits.max_bind_groups = crate::MAX_BIND_GROUPS as u32;
+        limits.max_bind_groups_plus_vertex_buffers =
+            crate::MAX_BIND_GROUPS as u32 + self.backend.vertex_buffers;
+        limits.max_dynamic_uniform_buffers_per_pipeline_layout = 2;
+        limits.max_sampled_textures_per_shader_stage = self.backend.sampled_textures_per_group;
+        limits.max_samplers_per_shader_stage = self.backend.samplers_per_group;
+        limits.max_uniform_buffers_per_shader_stage = 1;
+        limits.max_uniform_buffer_binding_size = 32 * 16;
+        limits.max_vertex_buffers = self.backend.vertex_buffers;
+        limits.max_buffer_size = u64::from(u32::MAX);
+        limits.max_vertex_attributes = 16;
+        limits.max_vertex_buffer_array_stride = 2048;
+        limits.max_inter_stage_shader_variables = 8;
+        limits.max_color_attachments = self.backend.color_attachments;
+        limits.max_color_attachment_bytes_per_sample = 8;
+        limits.max_buffers_and_acceleration_structures_per_shader_stage =
+            self.backend.vertex_buffers + 1;
+
+        let mut flags = wgt::DownlevelFlags::empty();
+        if self.backend.uniform_binding_sizes_unaligned_16 {
+            flags |= wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED;
+        }
+        if self.backend.max_sampler_anisotropy > 1 {
+            flags |= wgt::DownlevelFlags::ANISOTROPIC_FILTERING;
+        }
+
+        let downlevel = wgt::DownlevelCapabilities {
+            flags,
+            shader_model: wgt::ShaderModel::Sm2,
+            limits: wgt::DownlevelLimits {
+                texture_1d: false,
+                texture_3d: false,
+                vertex_index_input: self.backend.vertex_index_input,
+                instance_index_input: self.backend.instance_index_input,
+                max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
+                    self.backend.sampled_textures_per_group
+                } else {
+                    0
+                },
+                unrestricted_npot_texture_sampling: self.unrestricted_npot_texture_sampling(),
+                max_texture_repeat_per_primitive: self.hardware.max_texture_repeat_per_primitive,
+                src_alpha_saturated_blend: self.backend.src_alpha_saturated_blend,
+                viewport_rectangles_outside_target: false,
+                depth_bias_with_fragment_depth: self.backend.fragment_depth_with_bias,
+                fragment_front_facing: false,
+                fragment_position: false,
+                vertex_format_mask: self.vertex_input_format_mask(),
+            },
+        };
+        let alignments = crate::Alignments {
+            buffer_copy_offset: NonZeroU64::new(4).unwrap(),
+            buffer_copy_pitch: NonZeroU64::new(256).unwrap(),
+            uniform_bounds_check_alignment: NonZeroU64::new(16).unwrap(),
+            raw_tlas_instance_size: 0,
+            ray_tracing_scratch_buffer_alignment: 0,
+            ray_tracing_pipeline_group_data_size: 0,
+            ray_tracing_pipeline_group_data_alignment: 0,
+            ray_tracing_pipeline_data_offset_alignment: 0,
+        };
+        let capabilities = crate::Capabilities {
+            limits,
+            alignments,
+            downlevel,
+            cooperative_matrix_properties: alloc::vec::Vec::new(),
+        };
+        Some(WgpuCapabilityProjection {
+            features: wgt::Features::empty(),
+            capabilities,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -664,6 +754,159 @@ mod tests {
             },
             backend: BackendCapabilities::CURRENT,
         }
+    }
+
+    #[test]
+    fn fl91_wgpu_projection_is_conservative_and_uses_only_implemented_paths() {
+        let caps = model(FeatureLevel::L9_1);
+        let projection = caps.wgpu_projection().unwrap();
+        let exposed = &projection.capabilities;
+
+        assert_eq!(exposed.limits.max_texture_dimension_1d, 2048);
+        assert_eq!(exposed.limits.max_texture_dimension_2d, 2048);
+        assert_eq!(exposed.limits.max_texture_dimension_3d, 256);
+        assert_eq!(exposed.limits.max_texture_array_layers, 1);
+        assert_eq!(exposed.limits.max_bindings_per_bind_group, 1000);
+        assert_eq!(exposed.limits.max_sampled_textures_per_shader_stage, 8);
+        assert_eq!(exposed.limits.max_samplers_per_shader_stage, 16);
+        assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 1);
+        assert_eq!(exposed.limits.max_uniform_buffer_binding_size, 512);
+        assert_eq!(exposed.limits.max_color_attachments, 1);
+        assert_eq!(exposed.limits.max_color_attachment_bytes_per_sample, 8);
+        assert_eq!(exposed.limits.max_buffer_size, u64::from(u32::MAX));
+        assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
+        assert_eq!(
+            exposed.downlevel.flags,
+            wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
+                | wgt::DownlevelFlags::ANISOTROPIC_FILTERING
+        );
+        assert!(!exposed.downlevel.limits.texture_1d);
+        assert!(!exposed.downlevel.limits.texture_3d);
+        assert!(!exposed.downlevel.limits.vertex_index_input);
+        assert!(!exposed.downlevel.limits.instance_index_input);
+        assert_eq!(
+            exposed
+                .downlevel
+                .limits
+                .max_sampled_textures_per_vertex_stage,
+            0
+        );
+        assert_eq!(
+            exposed.downlevel.limits.max_texture_repeat_per_primitive,
+            128
+        );
+        assert!(!exposed.downlevel.flags.intersects(
+            wgt::DownlevelFlags::COMPUTE_SHADERS
+                | wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE
+                | wgt::DownlevelFlags::INDIRECT_EXECUTION
+                | wgt::DownlevelFlags::COMPARISON_SAMPLERS
+                | wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
+                | wgt::DownlevelFlags::CUBE_TEXTURES
+                | wgt::DownlevelFlags::OCCLUSION_QUERY
+        ));
+        assert!(projection.features.is_empty());
+        assert!(!exposed.downlevel.is_webgpu_compliant());
+        assert!(!caps.public_adapter_supported());
+    }
+
+    #[test]
+    fn wgpu_projection_requires_the_selected_fl91_execution_path() {
+        for level in FeatureLevel::ALL_DESCENDING {
+            let projection = model(level).wgpu_projection();
+            assert_eq!(projection.is_some(), level == FeatureLevel::L9_1);
+        }
+    }
+
+    #[test]
+    fn wgpu_projection_treats_unavailable_optional_queries_as_unsupported() {
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.full_npot = Query::Unavailable(-1);
+        caps.driver.bc1_unorm = Query::Unavailable(-1);
+        let projection = caps.wgpu_projection().unwrap();
+
+        assert!(
+            !projection
+                .capabilities
+                .downlevel
+                .limits
+                .unrestricted_npot_texture_sampling
+        );
+        assert!(!projection
+            .features
+            .contains(wgt::Features::TEXTURE_COMPRESSION_BC));
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Bc1RgbaUnorm)
+            .is_empty());
+    }
+
+    #[test]
+    fn fl91_wgpu_projection_matches_the_selected_physical_device() -> windows::core::Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let adapters = match super::super::enumerate_native_adapters() {
+            Ok(adapters) => adapters,
+            Err(error) => {
+                assert!(
+                    !required,
+                    "strict hardware mode requires DXGI enumeration to succeed: {error}"
+                );
+                std::println!(
+                    "SKIP: DXGI enumeration unavailable for capability projection: {error}"
+                );
+                return Ok(());
+            }
+        };
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            assert!(
+                !required,
+                "strict hardware mode requires a physical DXGI adapter"
+            );
+            std::println!("SKIP: no physical D3D11 hardware adapter for capability projection");
+            return Ok(());
+        };
+        let identity = adapter.identity();
+        let native = match adapter.open_device(&[FeatureLevel::L9_1]) {
+            Ok(native) => native,
+            Err(error) => {
+                assert!(
+                    !required,
+                    "strict hardware mode failed to create the requested FL9_1 device: {error}"
+                );
+                std::println!("SKIP: FL9_1 device creation unavailable: {error}");
+                return Ok(());
+            }
+        };
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        let caps = Capabilities::query(&native);
+        let projection = caps
+            .wgpu_projection()
+            .expect("the selected FL9_1 path has a wgpu capability projection");
+        assert_eq!(
+            projection.capabilities.limits.max_texture_dimension_2d,
+            2048
+        );
+        assert!(!projection.capabilities.downlevel.is_webgpu_compliant());
+
+        std::println!(
+            "PASS: capability projection adapter={:?} vendor={:#06x} device={:#06x} software={} requested=FL9_1 actual={:?}",
+            identity.name,
+            identity.vendor_id,
+            identity.device_id,
+            identity.software,
+            native.feature_level()
+        );
+        std::println!(
+            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={}; downlevel_flags={:?}; unrestricted_npot={:?}; BC1={:?}",
+            projection.capabilities.limits.max_texture_dimension_2d,
+            projection.capabilities.limits.max_sampled_textures_per_shader_stage,
+            projection.capabilities.limits.max_samplers_per_shader_stage,
+            projection.capabilities.limits.max_uniform_buffers_per_shader_stage,
+            projection.capabilities.limits.max_color_attachments,
+            projection.capabilities.downlevel.flags,
+            caps.driver.full_npot,
+            caps.driver.bc1_unorm
+        );
+        Ok(())
     }
 
     #[test]
