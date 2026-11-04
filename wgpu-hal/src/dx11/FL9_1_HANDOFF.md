@@ -850,3 +850,15 @@ HAL tests passed 329/329 at forced FL9_1; core DX12 passed 72/72; HAL build and
 Clippy passed (ten existing warnings). Exact commands are in
 `FL9_1_PROGRESS.md`. Continue the core/HAL texture descriptor and render-pass
 audit; public adapter and HWND surface exposure remain gated.
+
+## Current checkpoint — conditional color-format mip projection
+
+The capability fix sets `SINGLE_MIP_ONLY` for RGBA8/BGRA8 if the selected device
+lacks the native MIP format bit or any required implemented mip path. The
+controlled fixture asserts the projection against the actual query and
+core-rejects multi-mip descriptors when the bit is set. Synthetic tests cover
+missing MIP support; the RTX reports it for both formats at forced FL9_1. See
+`FL9_1_PROGRESS.md` for current test results. Continue the core/HAL audit: core
+permits nonzero depth bias with a selected fragment entry point that writes
+`frag_depth`, while HAL rejects that pipeline. Gate it narrowly on selected-entry
+analysis. Keep ordinary D3D11 enumeration disabled.

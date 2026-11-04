@@ -3130,3 +3130,42 @@ Verification on Rust 1.93.1/MSVC (`CARGO_BUILD_JOBS=32`, one Cargo process):
 The capability projection did not enable public enumeration and is not a full
 adapter report. The public adapter and surface gates remain closed. The modern
 RTX forced to FL9_1 does not substitute for historical hardware testing.
+
+## Checkpoint — conditional RGBA8/BGRA8 mip projection — pending code commit
+
+The reusable per-format projection now includes `SINGLE_MIP_ONLY` for RGBA8
+and BGRA8 when the selected device lacks `D3D11_FORMAT_SUPPORT_MIP`, or when
+any backend path needed for the supported POT mip combinations is unavailable.
+The controlled core fixture compares both flags against the actual query and
+includes both formats in the pre-HAL multi-mip rejection loop. Ordinary D3D11
+enumeration remains empty.
+
+Verification used Rust 1.93.1, the Visual Studio developer shell, and
+`CARGO_BUILD_JOBS=32`, with one Cargo process at a time:
+
+- Synthetic `color_format_projection_limits_mips_to_positive_driver_and_backend_support`: 1/1 passed for both RGBA8 and BGRA8, testing absent/present MIP bits and a disabled backend mip path.
+- Strict fixture-enabled core suite: 75/75 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false), requested FL9_1 and actual L9_1. RGBA8 and BGRA8 both reported driver MIP support and `single_mip_only=false`; existing mip-chain transfer/render/readback cases passed. The fixture also verified ordinary D3D11 enumeration remains empty.
+- After adding the explicit query diagnostic, the focused strict hardware fixture passed 1/1 and printed the same query/projection values.
+- Full strict private HAL suite: 330/330 passed, including GPU execution cases; core DX12 regression: 72/72 passed.
+- HAL and core fixture Clippy passed; HAL retained ten pre-existing warnings in untouched code. Targeted rustfmt and `git diff --check` passed.
+
+Exact commands:
+
+```text
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 color_format_projection -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo clippy --offline -p wgpu-hal --tests --no-default-features --features dx11,gles
+cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs
+git diff --check
+```
+
+The negative no-MIP case is synthetic; the RTX cannot validate a driver that
+does not expose that format bit. This modern forced-FL9_1 result does not
+substitute for historical hardware. Next address the audited core/HAL mismatch
+for nonzero depth bias with a selected fragment entry point that writes
+`frag_depth`, using entry-point-specific validation and keeping adapter
+enumeration closed.

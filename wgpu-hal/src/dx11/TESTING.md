@@ -86,6 +86,14 @@ printed its RGBA8, D24S8 and BC1 core format projections. It also asserted
 normal D3D11 HAL enumeration is empty. These checks do not constitute a public
 adapter contract.
 
+The fixture also prints and asserts RGBA8/BGRA8 `SINGLE_MIP_ONLY` against the
+selected device's `D3D11_FORMAT_SUPPORT_MIP` query. The RTX 3090 Ti reports MIP
+for both formats at forced FL9_1, so the projected formats permit their
+implemented POT mip paths. The synthetic `color_format_projection_limits_mips`
+test removes MIP support or a backend mip path and verifies the real projection
+reports single-mip-only. This synthetic case covers a restrictive driver that
+the development GPU cannot represent.
+
 ## 1. HAL tests and GPU readback
 
 ### Focused FL9_1 hardware test

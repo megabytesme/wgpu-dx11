@@ -191,3 +191,12 @@ it remains outside ordinary adapter enumeration. Projection tests cover
 missing/negative queries and unsupported backend paths. Next continue the
 descriptor and render-pass audit for core-valid requests the private HAL cannot
 execute, without treating this helper as a public adapter report.
+
+The latest audit found a core/HAL pipeline mismatch: core permits nonzero depth
+bias when the selected fragment entry point writes `frag_depth`, while the
+private HAL rejects it. Next add a narrow selected-entry validation gate before
+HAL pipeline creation and test that unused depth-writing entries do not trigger
+it. The per-format RGBA8/BGRA8 mip projection now honors missing driver MIP
+support and disabled backend mip paths; the strict RTX fixture reports MIP
+support for both formats at FL9_1. Public adapter and HWND surface exposure
+remain gated.

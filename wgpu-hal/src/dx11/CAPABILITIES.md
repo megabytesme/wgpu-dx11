@@ -142,11 +142,17 @@ private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
 | Render passes / targets | One color target and an optional D24S8 depth/stencil attachment support load, clear or don't-care and store or discard. Discard retains native contents, which remain undefined to HAL callers. Restricted transient color and depth attachments use ordinary textures without memoryless savings; transient combinations with sampled or copy usage are rejected. Private read-only passes require LOAD and STORE on both aspects and pipelines without depth or stencil writes; depth sampling aliases remain unsupported. Depth-only clears and draws without a fragment stage are supported. No resolve, timestamps, occlusion, multiview or multiple color attachments. | Render/readback tests include a depth-only prepass, read-only depth preservation and transient color/depth attachment passes on the tested FL9_1 device. Aspect-specific depth views, public discard initialization and general pass combinations still need implementation or validation before public exposure. |
 
 Per-format `SINGLE_MIP_ONLY` metadata reports the current one-mip ceiling for
-R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8. Core checks this
-metadata before HAL creation and rejects larger mip counts. This is separate
-from device-wide NPOT-mipmap and depth-attachment flags: the format metadata
-expresses a per-format implementation ceiling, while those flags express
-broader downlevel behavior.
+R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8. RGBA8 and BGRA8
+also receive this flag when the selected device's successful format query
+lacks `D3D11_FORMAT_SUPPORT_MIP`, or when any currently required backend mip
+path is disabled. Core checks this metadata before HAL creation and rejects
+larger mip counts. This is separate from device-wide NPOT-mipmap and
+depth-attachment flags: the format metadata expresses a per-format
+implementation ceiling, while those flags express broader downlevel behavior.
+The controlled fixture compares the RGBA8/BGRA8 projection against the real
+device query; the RTX 3090 Ti reports MIP support for both at forced FL9_1.
+Synthetic capability tests cover missing MIP support and disabled backend
+paths, since this modern driver cannot reproduce those negative query results.
 
 FL9_1 native indexed point lists are unavailable. The private HAL stages the
 GPU-authoritative index buffer at replay and plans ordered nonindexed point
