@@ -11,8 +11,20 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The latest code checkpoint is `19ff6dff6` (`core: gate clipped viewports on
-downlevel capability`). Core now rejects viewports extending past the active
+The latest code checkpoint is `95fb67e22` (`dx11: preserve fractional viewport
+mapping at FL9_1`). The private HAL uses integral native viewport bounds and a
+vertex remap based on the original fractional viewport. Strict RTX 3090 Ti
+readback passed through both the HAL test and controlled core fixture at
+requested/actual FL9_1. The core test uses contained geometry; it does not
+misinterpret a viewport as a scissor. The full private HAL suite passed
+333/333, the fixture-enabled core suite passed 75/75, normal D3D11 adapter
+isolation passed, and the DX12 core suite passed 72/72. Exact commands, the
+initial incorrect fixture expectation and compiler-environment diagnostic are
+recorded in FL9_1_PROGRESS.md. Historical 9_1 viewport precision remains
+unverified; public enumeration and surface exposure stay disabled.
+
+The preceding code checkpoint is `19ff6dff6` (`core: gate clipped viewports on
+downlevel capability`). Core rejects viewports extending past the active
 target when `DownlevelLimits::viewport_rectangles_outside_target` is false;
 this prevents optional FL9_1 viewport shader compilation failures from
 surfacing as late draw failures. Defaults preserve existing backends, while

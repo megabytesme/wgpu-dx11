@@ -2,6 +2,50 @@
 
 ## Current position — 2026-11-04
 
+## Checkpoint — fractional FL9_1 viewport mapping — `95fb67e22`
+
+The private HAL now keeps the logical fractional viewport values when building
+the FL9_1 vertex remap. Its native D3D11 viewport uses integral bounds that
+contain the clipped logical viewport, avoiding the 9_x runtime's DWORD-based
+viewport conversion while preserving the requested screen transform. The
+strict HAL readback test covers fractional x/y origins and extents. The
+controlled core fixture also covers a fractional viewport with contained
+geometry; it deliberately does not treat a viewport as a scissor, since an
+oversized primitive can render outside the viewport rectangle. Core's
+out-of-target viewport gate remains unchanged. Historical FL9_1 precision is
+not established by the RTX test.
+
+Verification used Rust 1.93.1/MSVC and `CARGO_BUILD_JOBS=32`:
+
+- CPU viewport tests: `cargo test --offline -p wgpu-hal --lib
+  --no-default-features --features dx11 fractional_viewport -- --nocapture
+  --test-threads=1`: 3/3 passed.
+- Strict private HAL test:
+  `WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib
+  --no-default-features --features dx11 fl91_viewport_fractional_coordinates
+  -- --nocapture --test-threads=1`: passed on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1.
+- Full strict private HAL suite: 333/333 passed. Hardware-dependent tests ran
+  with strict mode enabled; shader-profile rejection tests validate compiler
+  errors rather than GPU output.
+- Strict core fixture: 75/75 passed. Its physical fixture test was separately
+  run with `--nocapture`, reported the same RTX and requested/actual FL9_1,
+  and matched all 64 pixels for `FractionalViewport` and the other render
+  cases.
+- Normal D3D11 zero-adapter isolation: 1/1 passed. Core DX12 regression suite:
+  72/72 passed with `dx12,std,wgsl`.
+- HAL and fixture-enabled core Clippy passed. Targeted rustfmt and
+  `git diff --check` passed.
+
+The first core viewport test draft incorrectly expected the viewport to clip
+an additional oversized triangle; it failed at pixel `(1, 0)`. The fixture was
+corrected to use only contained geometry, after which strict core readback
+passed. An initial DX12 command omitted the required `wgsl` feature and failed
+to compile; the correctly configured run above passed. Visual Studio's setup
+script printed `Error: Unknown error` in its banner, but MSVC-backed Cargo
+builds and all listed tests completed successfully. Public D3D11 enumeration
+and surface exposure remain disabled.
+
 ## Checkpoint — core viewport clipping capability — `19ff6dff6`
 
 Core now reports and enforces `DownlevelLimits::viewport_rectangles_outside_target`.
