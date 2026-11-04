@@ -2914,6 +2914,27 @@ fn render_triangle(
         );
         global.render_pipeline_drop(invalid_pipeline);
         pipeline_descriptor.depth_stencil.as_mut().unwrap().stencil = wgt::StencilState::default();
+
+        pipeline_descriptor
+            .depth_stencil
+            .as_mut()
+            .unwrap()
+            .bias
+            .clamp = 0.5;
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                )) if *flags == wgt::DownlevelFlags::DEPTH_BIAS_CLAMP
+            ),
+            "FL9_1 core validation must reject unavailable depth-bias clamp before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        std::println!("PASS: unsupported depth-bias clamp rejected by core validation");
+        pipeline_descriptor.depth_stencil.as_mut().unwrap().bias = wgt::DepthBiasState::default();
     }
     if unfilterable_float {
         let mut invalid_entries = group_entries.clone();
