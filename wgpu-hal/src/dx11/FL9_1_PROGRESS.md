@@ -2608,7 +2608,8 @@ Modern hardware forced to FL9_1 does not establish historical bias precision.
 
 Code checkpoint: `6f7f1297891ac3477ed7055ded00934da1c46c2a`
 (`dx11: support FL9_1 slope depth bias`). Public adapter enumeration remains
-disabled.
+disabled. Documentation checkpoint: `5bf9140034703754110639375168096218a2155d`
+(`docs: record FL9_1 slope depth bias checkpoint`).
 
 Commands:
 
