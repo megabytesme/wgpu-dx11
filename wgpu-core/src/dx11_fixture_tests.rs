@@ -29,6 +29,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
     let vertex_format_mask = fixture.test_fixture_vertex_format_mask();
+    let max_texture_repeat = fixture.test_fixture_max_texture_repeat_per_primitive();
     let open = unsafe { fixture.open_test_fixture() };
     let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
     info.name = identity.name.clone();
@@ -80,7 +81,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                 limits: wgt::DownlevelLimits {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
-                    max_texture_repeat_per_primitive: u32::MAX,
+                    max_texture_repeat_per_primitive: max_texture_repeat,
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
@@ -208,8 +209,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
     let driver_unrestricted_npot = fixture.test_fixture_unrestricted_npot_sampling();
     let vertex_format_mask = fixture.test_fixture_vertex_format_mask();
+    let max_texture_repeat = fixture.test_fixture_max_texture_repeat_per_primitive();
+    assert_eq!(max_texture_repeat, 128);
     std::println!(
-        "Driver unrestricted NPOT sampling: {driver_unrestricted_npot}; core test fixture forces the conditional-NPOT validation path"
+        "Driver unrestricted NPOT sampling: {driver_unrestricted_npot}; core test fixture forces conditional-NPOT validation; texture repeat limit: {max_texture_repeat}"
     );
     let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
     info.name = identity.name.clone();
@@ -394,7 +397,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 limits: wgt::DownlevelLimits {
                     max_sampled_textures_per_vertex_stage: 0,
                     unrestricted_npot_texture_sampling: false,
-                    max_texture_repeat_per_primitive: u32::MAX,
+                    max_texture_repeat_per_primitive: max_texture_repeat,
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
                     depth_bias_with_fragment_depth: false,
@@ -496,6 +499,37 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let (device, queue) = global
         .adapter_request_device(adapter_id, &descriptor, None, None)
         .expect("controlled core adapter device request");
+    for address_mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
+        let sampler_desc = crate::resource::SamplerDescriptor {
+            label: None,
+            address_modes: [
+                address_mode,
+                wgt::AddressMode::ClampToEdge,
+                wgt::AddressMode::ClampToEdge,
+            ],
+            mag_filter: wgt::FilterMode::Nearest,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 32.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        };
+        let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
+        assert!(
+            matches!(
+                error,
+                Some(crate::resource::CreateSamplerError::TextureRepeatLimitExceeded {
+                    address_mode: given,
+                    maximum: 128,
+                }) if given == address_mode
+            ),
+            "FL9_1 must reject {address_mode:?} samplers without coordinate-range proof: {error:?}"
+        );
+        global.sampler_drop(sampler);
+    }
+    std::println!("PASS: FL9_1 core repeat and mirrored-repeat sampler limit enforced");
     for (visibility, read_only, required_flags) in [
         (
             wgt::ShaderStages::VERTEX,
@@ -1046,9 +1080,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     for case in [
         VertexCase::Baseline,
         VertexCase::FractionalViewport,
-        VertexCase::NpotRepeat,
         VertexCase::ViewportOutsideTarget,
-        VertexCase::NpotValidPairs,
+        VertexCase::NpotClampedPairs,
         VertexCase::ZeroSampleMask,
         VertexCase::ConstantBlend,
         VertexCase::NonFiltering,
@@ -2208,8 +2241,7 @@ enum VertexCase {
     Uniform12,
     Uniform20,
     Bc1,
-    NpotRepeat,
-    NpotValidPairs,
+    NpotClampedPairs,
     ViewportOutsideTarget,
     FractionalViewport,
 }
@@ -2230,10 +2262,9 @@ fn render_triangle(
     );
     let unfilterable_float = matches!(case, VertexCase::UnfilterableFloat | VertexCase::Bc1);
     let bc1 = case == VertexCase::Bc1;
-    let npot_repeat = case == VertexCase::NpotRepeat;
     let viewport_outside_target = case == VertexCase::ViewportOutsideTarget;
     let fractional_viewport = case == VertexCase::FractionalViewport;
-    let npot_valid_pairs = case == VertexCase::NpotValidPairs;
+    let npot_valid_pairs = case == VertexCase::NpotClampedPairs;
     let sampled_visibility = if case == VertexCase::VertexVisibleBindings {
         wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
     } else {
@@ -2371,9 +2402,7 @@ fn render_triangle(
         global.texture_create_view(depth, &resource::TextureViewDescriptor::default(), None);
     assert!(error.is_none(), "depth view creation: {error:?}");
     let sample_extent = wgt::Extent3d {
-        width: if npot_repeat {
-            3
-        } else if bc1 || disjoint_format.is_some() {
+        width: if bc1 || disjoint_format.is_some() {
             8
         } else if sampled_mip_suffix {
             4
@@ -2508,8 +2537,6 @@ fn render_triangle(
                     ]
                 } else if bc1 {
                     bc1_data.as_deref().expect("BC1 sample data")
-                } else if npot_repeat {
-                    &[255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]
                 } else if npot_valid_pairs {
                     &[255, 0, 0, 255, 255, 0, 0, 255]
                 } else if premultiplied_blend {
@@ -2677,15 +2704,7 @@ fn render_triangle(
     });
     let sampler_desc = resource::SamplerDescriptor {
         label: None,
-        address_modes: if npot_repeat || npot_valid_pairs {
-            [
-                wgt::AddressMode::Repeat,
-                wgt::AddressMode::ClampToEdge,
-                wgt::AddressMode::ClampToEdge,
-            ]
-        } else {
-            [wgt::AddressMode::ClampToEdge; 3]
-        },
+        address_modes: [wgt::AddressMode::ClampToEdge; 3],
         mag_filter: wgt::FilterMode::Nearest,
         min_filter: wgt::FilterMode::Nearest,
         mipmap_filter: wgt::MipmapFilterMode::Nearest,
@@ -3835,9 +3854,7 @@ fn render_triangle(
             .unwrap();
     }
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
-    if npot_repeat {
-        global.render_pass_draw(&mut pass, 6, 1, 0, 0).unwrap();
-    } else if let (Some(format), Some(indices)) = (index_format, index_buffer) {
+    if let (Some(format), Some(indices)) = (index_format, index_buffer) {
         global
             .render_pass_set_index_buffer(
                 &mut pass,
@@ -3900,8 +3917,7 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, bias_pipeline)
             .unwrap();
     }
-    if !npot_repeat
-        && !point_input
+    if !point_input
         && !depth_only_prepass
         && special_topology.is_none()
         && triangle_strip_index_format.is_none()
@@ -3946,42 +3962,6 @@ fn render_triangle(
         .unwrap();
     let (command, error) =
         global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
-    if npot_repeat {
-        let error = error.expect("NPOT texture with repeat sampler must fail Core validation");
-        assert!(
-            std::format!("{error:?}").contains("NpotTextureWithRepeatSampler"),
-            "NPOT compatibility must fail before HAL draw: {error:?}"
-        );
-        std::println!("PASS: core rejected the used NPOT/repeat pair before HAL draw");
-        global.command_buffer_drop(command);
-        global.command_encoder_drop(encoder);
-        global.render_pipeline_drop(pipeline_id);
-        global.pipeline_layout_drop(layout);
-        global.shader_module_drop(shader);
-        global.bind_group_drop(group);
-        global.bind_group_layout_drop(group_layout);
-        global.sampler_drop(sampler);
-        global.texture_view_drop(sample_view);
-        if disjoint_format.is_none() {
-            global.texture_drop(sampled);
-        }
-        global.texture_view_drop(depth_view);
-        global.texture_drop(depth);
-        global.texture_view_drop(view);
-        global.texture_drop(target);
-        global.buffer_drop(vertices);
-        if let Some(indices) = index_buffer {
-            global.buffer_drop(indices);
-        }
-        if let Some(buffer) = auxiliary_vertices {
-            global.buffer_drop(buffer);
-        }
-        if let Some(buffer) = uniform {
-            global.buffer_drop(buffer);
-        }
-        global.buffer_drop(readback);
-        return;
-    }
     if viewport_outside_target {
         let error = error.expect("out-of-target viewport must fail core validation");
         assert!(
@@ -4075,14 +4055,6 @@ fn render_triangle(
                     &pixels[offset..offset + 4],
                     &[0, 0, 255, 255],
                     "zero sample mask pixel ({x}, {y})"
-                );
-                continue;
-            }
-            if npot_repeat {
-                assert_eq!(
-                    &pixels[offset..offset + 4],
-                    &[0, 0, 255, 255],
-                    "rejected NPOT/repeat draw must preserve the clear color"
                 );
                 continue;
             }

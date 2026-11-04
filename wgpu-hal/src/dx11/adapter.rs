@@ -29,6 +29,13 @@ impl Adapter {
         super::capabilities::Capabilities::query(native).vertex_input_format_mask()
     }
 
+    /// Reports the selected feature level's per-primitive texture repeat limit.
+    pub fn test_fixture_max_texture_repeat_per_primitive(&self) -> u32 {
+        let AdapterInner::Fixture(native) = &self.inner;
+        super::capabilities::HardwareGuarantees::for_level(native.feature_level())
+            .max_texture_repeat_per_primitive
+    }
+
     /// Query the format prerequisites for the controlled copy-only RGBA8 mip test.
     pub fn test_fixture_copy_only_rgba8_mip_supported(&self) -> Result<bool, crate::DeviceError> {
         self.test_fixture_mip_supported(

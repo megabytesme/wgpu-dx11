@@ -114,17 +114,16 @@ below is met. This plan does not claim WebGPU conformance.
    one mip. Vertex-stage sampled texture access now has a separate downlevel
    limit. Core counts resources used by the selected vertex entry point and
    rejects them before HAL; the controlled FL9_1 fixture reports zero and
-   verifies that result. Conditional NPOT repeat use is also represented by a
+   verifies that result. Conditional NPOT repeat use is represented by a
    downlevel capability and checked against Naga's selected-entry sampling
-   pairs using the currently bound views and samplers. A strict core fixture
-   rejects a used NPOT/repeat pair before submission and reads 64 yellow pixels
-   from POT/repeat plus NPOT/clamp pairs despite an unused incompatible
-   cross-pair; the RTX's positive full-NPOT query is separately reported. The
-   fixed 10Level9 repeat cap is now modeled separately (128 at FL9_1) and core
-   rejects Repeat and MirrorRepeat sampler creation whenever the reported cap
-   is finite, because it cannot prove interpolated coordinate ranges for every
-   draw. Synthetic tests cover both modes and the unrestricted sentinel; the
-   RTX forced to 9_1 does not validate legacy overflow behavior. Test selection
+   pairs in core when the reported repeat limit allows such samplers. FL9_1's
+   fixed repeat cap is 128, so the controlled core fixture now derives that
+   value from the selected level and rejects Repeat and MirrorRepeat sampler
+   creation: core cannot prove interpolated coordinate ranges for every draw.
+   The fixture separately renders POT and NPOT clamp-to-edge resources. CPU
+   tests cover the conditional NPOT relationship path under synthetic
+   unrestricted-repeat settings; private HAL tests exercise bounded repeat.
+   The RTX forced to 9_1 does not validate legacy overflow behavior. Test selection
    now checks downlevel limit requirements as well as flags. Next continue
    auditing core-valid attachment, viewport and render-state combinations
    before building the truthful public capability snapshot.
