@@ -11,6 +11,19 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
+The newest code checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling
+pairs`). Core retains selected-entry Naga sampling relationships and validates
+current bound texture/sampler descriptors at draw encoding. A strict fixture
+on the RTX 3090 Ti requested and selected FL9_1; the physical driver reports
+full NPOT support, while the fixture synthetically forced the conservative
+path. It rejected a used NPOT/repeat pair before submission and rendered 64/64
+yellow pixels for POT/repeat plus NPOT/clamp despite an unused incompatible
+cross-pair. The full strict core suite passed 73/73, the private HAL suite
+passed 323/323, zero-adapter isolation passed 1/1, and the core DX12 suite
+passed 70/70. Details and exact commands are in FL9_1_PROGRESS.md. Continue
+the core/HAL capability-boundary audit; do not enable public D3D11 enumeration
+or surface exposure.
+
 Latest related code checkpoints are `983eea619` and `834cd9856`. The first
 adds a core downlevel gate for multi-mip depth/stencil render attachments,
 matching the FL9_x D3D11 requirement; the second preserves this shared flag in

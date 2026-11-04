@@ -400,7 +400,7 @@ disabled.
 | LOD | FL9_1 native MinLOD must be integral and MaxLOD must be FLT_MAX. | A normalized minimum requires a one-mip view. When only a finite maximum is raised and the minimum is preserved, a used multi-mip view requires the original maximum to reach its last mip and anisotropy 1. Anisotropic sampling with a raised finite maximum remains one-mip-only. Other unrepresentable mixed-filter and anisotropic ranges are rejected. FL9 does not specify whether clamping precedes min/mag selection. FXC rejects `SampleLevel` for the tested pixel profile with X4532; explicit-LOD sampling is not claimed. |
 | Anisotropy | FL9_1 native maximum is 2; an upper limit alone is not a visual-quality guarantee. | The private backend accepts 1 or 2, requiring linear min, mag and mip filters for 2. Native creation and a sampled GPU output passed; anisotropic quality on minified textures is unverified. Values above 2 are rejected even on a modern GPU forced to 9_1. |
 | Comparison / border | Comparison filtering is not generally supported at 9_1; ordinary border addressing is not normally allowed. Optional 9_x shadow support is separate. | Comparison and border addressing remain rejected. On the RTX forced to 9_1, ordinary border sampler creation returned E_INVALIDARG. No optional wgpu border or comparison feature is advertised. |
-| NPOT | Conditional NPOT requires one mip and restricts addressing; full NPOT is an optional driver query. | Shader-aware validation rejects non-clamp modes for used NPOT pairs unless full NPOT is positively reported. Mirror is treated conservatively as non-clamp, as are all U/V/W modes. Synthetic restrictive-capability tests supplement modern-driver execution. |
+| NPOT | FL9_x permits a single-mip 2D NPOT texture only when `AddressU/V/W` are not `D3D11_TEXTURE_ADDRESS_WRAP`; full NPOT is an optional driver query. `MIRROR` is distinct from `WRAP`. | The HAL and core reject only used NPOT/repeat pairs unless full NPOT is positively reported. Clamp and mirrored-repeat modes remain valid under the conditional rule. Core checks the selected shader entry point's Naga sampling pairs against current bound texture views and sampler descriptors before command submission. Strict fixture tests use the real FL9_1 device while synthetically reporting conditional NPOT to core. |
 
 For normalized LOD ranges, patterned single-mip GPU tests cover both nearest
 and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
@@ -561,10 +561,18 @@ current pipeline's pairs against the current bound groups; changing either state
 changes the validation inputs. Missing identities fail closed, and an invalid
 draw causes command encoding to fail before submission.
 
-For FL9, a used NPOT texture with a wrapping sampler is accepted only when the
+For FL9, a used NPOT texture with a repeating sampler is accepted only when the
 `D3D9_OPTIONS` full-NPOT query returned true. A false or unavailable query uses
-the conditional restriction. POT/wrap and NPOT/clamp pairs work even when an
-unused cross-product would be invalid. Multi-mip sampled views are POT-only;
+the conditional restriction. Microsoft specifies that the restricted mode
+forbids `D3D11_TEXTURE_ADDRESS_WRAP` on U, V or W; mirrored repeat maps to the
+distinct `D3D11_TEXTURE_ADDRESS_MIRROR` mode and is not treated as wrap. POT /
+repeat and NPOT / clamp pairs work even when an unused cross-product would be
+invalid. The core fixture rendered 64 yellow pixels from a shader using a POT
+texture with repeat and a separate NPOT texture with clamp while the unused
+NPOT / repeat cross-pair remained present in the bind group. Its selected
+NPOT / repeat shader failed during command encoding before submission. The
+RTX 3090 Ti reports full NPOT support under forced FL9_1; these core tests
+synthetically disable that optional capability. Multi-mip sampled views are POT-only;
 native suffix views include the resource's last mip and other supported ranges
 use per-draw GPU clones. Sampler checks include all address axes and use the
 view-relative mip count and LOD. Strict suffix and non-suffix sampling passed

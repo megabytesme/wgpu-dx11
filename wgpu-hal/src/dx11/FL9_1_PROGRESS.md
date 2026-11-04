@@ -2805,3 +2805,25 @@ Verification used Rust 1.93.1/MSVC with `CARGO_BUILD_JOBS=8`:
 The first DX12 invocation omitted `std,wgsl` and failed during test compilation; the corrected command passed. An initial attempt to construct a vertex-visible layout in the fixture reached a HAL device-lost path, so the test now reuses the supported fragment-visible layout: the core vertex-resource limit is checked before that later layout compatibility path. The actual unsupported vertex texture execution remains unattempted, by design.
 
 Code checkpoint: `68cccdf111f36553e36f8328ec80ec3195786c80` (`core: gate vertex textures by downlevel limits`). Next continue the core/HAL capability-boundary audit; do not enable public adapter enumeration or surface exposure.
+
+## Checkpoint — conditional FL9_x NPOT sampling in core — `bb22b4636`
+
+Core now retains Naga's validated sampling pairs for the selected render-pipeline entries and checks those pairs against the current bind groups during draw readiness. On devices without unrestricted NPOT sampling, only a used NPOT texture with a `Repeat` sampler is rejected; an unused texture/sampler cross-pair does not cause a false rejection. D3D11 derives the capability from the selected feature level and a positive `D3D9_OPTIONS` query, treating negative and unavailable 9_x queries conservatively. The private HAL applies the same rule. Public D3D11 adapter enumeration remains disabled.
+
+Verification used Rust/Cargo 1.93.1, MSVC and `CARGO_BUILD_JOBS=32`:
+
+- Strict core fixture suite: 73/73 passed; physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), software=false, requested/actual FL9_1. Its driver query reports full NPOT=true; the fixture synthetically sets the core capability false. The used NPOT/repeat pair was rejected at command encoding before submission. POT/repeat plus NPOT/clamp rendered 64/64 expected yellow pixels while an unused NPOT/repeat cross-pair remained bound.
+- Strict private D3D11 HAL suite: 323/323 passed on forced FL9_1 hardware. The six legacy shader-operation cases that explicitly report `SKIP` remain unsupported negative probes, not GPU passes.
+- Core zero-adapter isolation: 1/1 passed. Core DX12 regression: 70/70 passed.
+- Core, HAL, wgpu-types and wgpu-info Clippy passed. HAL emitted ten existing warnings outside this change; wgpu-types emitted 14 existing serde-import warnings under default features. Rustfmt check on all changed Rust files and `git diff --check` passed. Workspace-wide `cargo fmt --all -- --check` still reports formatting differences in unchanged `naga/src/back/hlsl/writer.rs` and `wgpu-core/src/instance.rs`.
+
+One attempted zero-adapter invocation omitted the `wgsl` feature and failed while compiling its WGSL-based unit test; the corrected invocation below passed. No code failure remained.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+```
+
+The core feature and test checkpoint is `bb22b4636` (`core: validate FL9_1 NPOT sampling pairs`). Documentation and this journal are recorded separately.

@@ -494,6 +494,23 @@ They also reject invalid draw, indexed draw and pipeline/bind-group transitions
 before submission. The unrestricted NPOT/wrap case requires a positive device
 query, and fails in strict mode if that prerequisite is missing.
 
+Core has a separate command-encoding gate because public wgpu validation must
+not rely on the private HAL draw error. Run the controlled fixture with strict
+hardware required:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+This test forces FL9_1 on the physical RTX 3090 Ti and logs the actual positive
+full-NPOT driver query, then injects the conservative false capability into its
+test-only core adapter. A used NPOT/repeat pair must fail during command-buffer
+encoding, before submission. A separate GPU case samples POT/repeat and
+NPOT/clamp pairs from one bind group; its unused NPOT/repeat cross-pair is
+present in the layout, and all 64 output pixels must be yellow. The fixture
+does not expose an ordinary D3D11 adapter.
+
 ### FL9_1 sampler translation and patterned sampling
 
 ```powershell

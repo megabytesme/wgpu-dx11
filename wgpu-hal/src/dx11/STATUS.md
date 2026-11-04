@@ -22,6 +22,19 @@ the strict fixture confirms the rejection is a core validation error. This
 prevents unsupported D3D11 vertex texture access from becoming a HAL device
 error if a future adapter reports the current private shader subset.
 
+Core now also applies the FL9_x conditional-NPOT addressing rule to the actual
+texture/sampler pairs used by the selected render-pipeline entry points. Naga's
+validated sampling relationships are retained on the pipeline, while bind
+groups retain the current view dimensions and sampler address modes. Repeat
+addressing of an NPOT texture is rejected during command encoding unless the
+adapter positively reports unrestricted NPOT support; clamp and mirrored
+repeat do not trigger this D3D11 `WRAP` restriction. A strict RTX 3090 Ti
+fixture synthetically disables the optional capability and verifies that a
+used NPOT/repeat pair is rejected before submission, while POT/repeat plus
+NPOT/clamp renders 64 expected yellow pixels despite an unused incompatible
+cross-pair. The driver itself reports unrestricted NPOT support at forced
+FL9_1, so the restrictive behavior is verified synthetically.
+
 ## Implemented private HAL paths
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted

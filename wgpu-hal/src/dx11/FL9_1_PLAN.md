@@ -104,9 +104,14 @@ below is met. This plan does not claim WebGPU conformance.
    one mip. Vertex-stage sampled texture access now has a separate downlevel
    limit. Core counts resources used by the selected vertex entry point and
    rejects them before HAL; the controlled FL9_1 fixture reports zero and
-   verifies that result. Next continue auditing core-valid attachment, viewport and
-   render-state combinations before building the truthful public capability
-   snapshot.
+   verifies that result. Conditional NPOT repeat use is also represented by a
+   downlevel capability and checked against Naga's selected-entry sampling
+   pairs using the currently bound views and samplers. A strict core fixture
+   rejects a used NPOT/repeat pair before submission and reads 64 yellow pixels
+   from POT/repeat plus NPOT/clamp pairs despite an unused incompatible
+   cross-pair; the RTX's positive full-NPOT query is separately reported.
+   Next continue auditing core-valid attachment, viewport and render-state
+   combinations before building the truthful public capability snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
