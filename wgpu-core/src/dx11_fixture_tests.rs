@@ -2629,6 +2629,37 @@ fn render_triangle(
         cache: None,
     };
     if case == VertexCase::Baseline {
+        let mut alpha_target = targets[0].clone().unwrap();
+        alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
+        alpha_target.write_mask =
+            wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE;
+        pipeline_descriptor.fragment.as_mut().unwrap().targets =
+            Cow::Owned(vec![Some(alpha_target.clone())]);
+        let (rgb_only_pipeline, rgb_only_error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            rgb_only_error.is_none(),
+            "RGB-only alpha blending must not require separate alpha: {rgb_only_error:?}"
+        );
+        global.render_pipeline_drop(rgb_only_pipeline);
+
+        alpha_target.write_mask = wgt::ColorWrites::ALL;
+        pipeline_descriptor.fragment.as_mut().unwrap().targets =
+            Cow::Owned(vec![Some(alpha_target)]);
+        let (invalid_blend_pipeline, blend_error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            matches!(
+                blend_error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                )) if *flags == wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND
+            ),
+            "FL9_1 core validation must reject separate RGB/alpha blending before HAL: {blend_error:?}"
+        );
+        global.render_pipeline_drop(invalid_blend_pipeline);
+        pipeline_descriptor.fragment.as_mut().unwrap().targets = Cow::Borrowed(&targets);
+
         let asymmetric = wgt::StencilState {
             front: wgt::StencilFaceState::IGNORE,
             back: wgt::StencilFaceState {

@@ -63,9 +63,11 @@ below is met. This plan does not claim WebGPU conformance.
    reports `DownlevelFlags::TWO_SIDED_STENCIL`; the D3D11 fixture omits it at
    FL9_1. Comparison-sampler creation now similarly requires
    `DownlevelFlags::COMPARISON_SAMPLERS`, and the controlled fixture verifies
-   rejection before HAL. Continue mapping core-valid render state and format
-   combinations to explicit downlevel or format capabilities before
-   considering production enumeration.
+   rejection before HAL. Full-channel differing RGB/alpha blend equations now
+   require `SEPARATE_ALPHA_BLEND`; the FL9_1 fixture checks this while
+   preserving the masked-channel emulation path. Continue mapping core-valid
+   render state and format combinations to explicit downlevel or format
+   capabilities before considering production enumeration.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

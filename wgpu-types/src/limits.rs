@@ -1245,6 +1245,12 @@ bitflags::bitflags! {
         /// Without this flag, render pipelines with different front and back stencil
         /// face states are rejected during validation.
         const TWO_SIDED_STENCIL = 1 << 27;
+
+        /// Supports different blend equations for RGB and alpha in one render target.
+        ///
+        /// Without this flag, pipelines that write both RGB and alpha and specify
+        /// different blend components are rejected during validation.
+        const SEPARATE_ALPHA_BLEND = 1 << 28;
     }
 }
 
@@ -1287,11 +1293,15 @@ mod tests {
     }
 
     #[test]
-    fn two_sided_stencil_is_included_in_default_and_compliant_flags() {
+    fn compliant_flags_include_two_sided_stencil_and_separate_alpha_blend() {
         assert!(DownlevelCapabilities::default()
             .flags
             .contains(DownlevelFlags::TWO_SIDED_STENCIL));
         assert!(DownlevelFlags::compliant().contains(DownlevelFlags::TWO_SIDED_STENCIL));
+        assert!(DownlevelCapabilities::default()
+            .flags
+            .contains(DownlevelFlags::SEPARATE_ALPHA_BLEND));
+        assert!(DownlevelFlags::compliant().contains(DownlevelFlags::SEPARATE_ALPHA_BLEND));
     }
 
     fn side_by_side(left: &str, right: &str) -> String {

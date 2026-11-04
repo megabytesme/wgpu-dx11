@@ -697,6 +697,7 @@ impl PhysicalDeviceFeatures {
             | Df::NONBLOCKING_QUERY_RESOLVE
             | Df::OCCLUSION_QUERY
             | Df::TWO_SIDED_STENCIL
+            | Df::SEPARATE_ALPHA_BLEND
             | Df::SHADER_F16_IN_F32
             | Df::MSL2_1;
 

@@ -4379,6 +4379,16 @@ impl Device {
         {
             let cts: ArrayVec<_, { hal::MAX_COLOR_ATTACHMENTS }> =
                 color_targets.iter().filter_map(|x| x.as_ref()).collect();
+            if cts.iter().any(|target| {
+                target.write_mask.intersects(
+                    wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE,
+                ) && target.write_mask.contains(wgt::ColorWrites::ALPHA)
+                    && target.blend.is_some_and(|blend| {
+                        blend != wgt::BlendState::REPLACE && blend.color != blend.alpha
+                    })
+            }) {
+                self.require_downlevel_flags(wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND)?;
+            }
             if !cts.is_empty() && {
                 let first = &cts[0];
                 cts[1..]

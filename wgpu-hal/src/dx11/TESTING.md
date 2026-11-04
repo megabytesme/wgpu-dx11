@@ -990,7 +990,9 @@ numeric limits and format capabilities do not constitute a safe general adapter
 contract. The fixture verifies that core's format-feature query preserves the
 HAL's RGBA8, D24S8, BC1-only and unsupported-BC results. It also verifies core
 rejects asymmetric stencil state with the missing
-`TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL.
+`TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL. Full-channel
+straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`, while the
+same blend with alpha writes masked creates through the existing HAL path.
 
 ### FL9_1 line topologies
 

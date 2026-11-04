@@ -200,8 +200,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   sRGB formats and normal public adapter exposure remain unsupported. Historical
   FL9_1 driver behavior remains unverified.
 - FL9_1 rejects straight alpha, inversion and vignette blending when both RGB and alpha
-  are written because separate alpha is not guaranteed. RGB-only and alpha-only
-  cases use coupled factors; a test-only opt-in retains nonportable diagnostics.
+  are written because separate alpha is not guaranteed. Core now requires
+  `DownlevelFlags::SEPARATE_ALPHA_BLEND` for distinct color/alpha equations when
+  both RGB and alpha are written; RGB-only and alpha-only cases use coupled
+  factors and remain accepted. A test-only opt-in retains nonportable
+  diagnostics.
 - Nonindexed point-list draws support the restricted vertex- and instance-rate
   streams, including sparse slots, nonzero offsets and `first_instance`. FL9_1
   point batches rebase vertex bindings and contain at most 65,535 points.
