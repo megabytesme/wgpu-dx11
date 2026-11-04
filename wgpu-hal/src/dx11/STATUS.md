@@ -25,7 +25,10 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   layouts when the corresponding limits are zero, and requires explicit
   downlevel flags for 2D-array, cube and cube-array binding layouts and views;
   storage-texture array layouts use the same array gate. A one-layer 2D-array
-  view is rejected before reaching the HAL.
+  view is rejected before reaching the HAL. Core also gates NPOT mip chains
+  with `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`; D3D11 leaves it absent because
+  this HAL implements POT-only mip chains regardless of optional full-NPOT
+  driver support.
 - RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy

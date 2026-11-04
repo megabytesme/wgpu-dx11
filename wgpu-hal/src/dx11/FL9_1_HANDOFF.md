@@ -686,3 +686,19 @@ See `FL9_1_PROGRESS.md` for exact commands. Next continue the core/HAL audit at
 texture descriptor and render-pass validation. The fixture's injected
 capabilities do not validate a production adapter, and historical FL9_1
 hardware is untested.
+
+## Core texture capability checkpoint — `1eb21620c`
+
+Core texture creation now requires `DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`
+for a multi-mip resource with any non-power-of-two spatial dimension. D2 array
+layer counts are excluded. This closes a descriptor path that reached the
+private D3D11 HAL even though its mip implementation is POT-only. A strict
+controlled FL9_1 core fixture verified a 6×8 RGBA8/two-mip descriptor fails
+with the specific missing-flag validation error before HAL. The CPU dimension
+test, full fixture-enabled core suite (71), core DX12 suite (68), explicit
+zero-adapter regression (1), core Clippy, targeted formatting and diff check
+passed. The core DX12 test build emitted existing warnings with WGSL disabled.
+The HAL was unchanged; its last strict private suite passed 318 tests under
+`8eff9020a`. See `FL9_1_PROGRESS.md` for exact commands. Continue auditing
+custom blend-state validation and public adapter gaps; keep both public gates
+closed.

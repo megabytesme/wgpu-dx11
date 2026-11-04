@@ -655,6 +655,22 @@ for completion and verified forbidden view/readback validation; no core
 readback of the upload-only texture is claimed. Historical hardware remains
 unverified and ordinary public adapter enumeration remains disabled.
 
+### NPOT mip capability gate
+
+```powershell
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std npot_mipmap_tests -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+Core requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` when any spatial dimension
+of a texture with multiple mips is not a power of two. D2 array-layer counts do
+not participate because they are not mip dimensions. The strict controlled
+fixture requests a 6×8 RGBA8 texture with two mips while the flag is absent and
+verifies a `MissingDownlevelFlags` validation error before HAL. The device's
+optional full-NPOT query does not imply that this backend implements NPOT mip
+chains. The CPU test covers D1/D2/D3 dimensions and the D2 array-layer case.
+
 ### Copy-only POT mip transfers
 
 ```powershell

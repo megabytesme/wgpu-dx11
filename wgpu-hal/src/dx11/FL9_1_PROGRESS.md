@@ -1,36 +1,37 @@
 # FL9_1 progress
 
-## Current position — 2026-11-03
+## Current position — 2026-11-04
 
-Branch: `uwp-dx11`. The previous private uniform work was independently
-reviewed, corrected for unused-entry-point binding conflicts, tested and
-checkpointed as `26739b52d1ae042a6499b578521eb3250f1d9c21` (generalized static
-uniform bindings). No public D3D11 adapter is exposed.
+Branch: `uwp-dx11`. The autonomous FL9_1 completion mission remains active.
+Recent verified code checkpoints are `8eff9020a` (single-sample output masks)
+and `1eb21620c` (core rejects NPOT mip chains when the downlevel capability is
+absent). Ordinary public D3D11 adapter enumeration and public surface exposure
+remain disabled.
 
-The verified tree has a restricted private renderer with sampled textures,
-group-0 uniforms including dynamic offsets, RGBA8 transfers, indexed draws,
-restricted D24S8 depth attachments, event-query fences and a hidden-HWND
-presentation test. It lacks general depth/stencil, verified visible HWND
-presentation, a usable public adapter and numerous operations required by core.
-See CAPABILITIES.md for the detailed matrix.
+The private renderer now has extensive forced-FL9_1 coverage for depth/stencil,
+texture formats and mip views, static and dynamic uniform ranges, sampled
+resources, texture transfers, and indexed/non-indexed point, line and triangle
+topologies. The principal completion blockers remain a truthful public adapter
+contract, unsupported core-valid descriptor/state combinations, a safe public
+HWND presentation design, shader limits, and historical FL9_1 verification.
+See CAPABILITIES.md and STATUS.md for the detailed implementation matrix.
 
 ## Latest validation
 
-- Rust 1.93.1, MSVC, Windows 11, `CARGO_BUILD_JOBS=8`.
-- `cargo build --offline -p wgpu-hal --no-default-features --features dx11`:
-  passed.
-- With `WGPU_DX11_REQUIRE_HARDWARE=1`, `cargo test --offline -p wgpu-hal
-  --lib --no-default-features --features dx11 dx11:: -- --test-threads=1`:
-  126 passed, 0 failed, 2 filtered. Some older tests can skip internally.
-- Strict focused FL9_1 GPU tests ran on NVIDIA RTX 3090 Ti, vendor 0x10de,
-  device 0x2203, driver 32.0.16.2101. The checked multi-uniform test rendered
-  [127,191,0,255] and [64,127,0,255]; textured uniforms rendered
-  [64,127,191,255]. Requested and actual feature level: 9_1.
-- `cargo test --offline -p wgpu-core --lib --no-default-features --features
-  dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture`:
-  passed. Targeted Clippy passed with ten existing warnings.
-- The preceding milestone's targeted DX12 buffer map regression passed on the
-  NVIDIA adapter. No public D3D11 or historical-hardware validation exists.
+- Rust 1.93.1, MSVC, Windows 11, bounded Cargo jobs (8).
+- At `8eff9020a`, strict D3D11 HAL tests passed 318/318; the fixture-enabled
+  core suite passed 70/70, the core DX12 suite passed 67/67, and the ordinary
+  zero-adapter isolation test passed. The RTX 3090 Ti (`0x10de:0x2203`, driver
+  `32.0.16.2101`) was requested and selected at FL9_1. A core fixture with a
+  zero sample mask preserved all 64 blue clear pixels.
+- At `1eb21620c`, the new core CPU dimension test passed 1/1, the strict
+  fixture-enabled core suite passed 71/71 and printed the NPOT-mip missing-flag
+  validation result, the core DX12 suite passed 68/68, and ordinary D3D11
+  adapter isolation passed 1/1. Core Clippy, targeted rustfmt and
+  `git diff --check` passed. The DX12-only test configuration emitted existing
+  warnings because WGSL is disabled. No HAL code changed for this checkpoint.
+- No public D3D11 adapter, public HWND render, or historical FL9_1 hardware
+  result is available.
 
 ## Review findings and decisions
 
@@ -2413,3 +2414,45 @@ cargo check --offline -p wgpu-hal --no-default-features --features dx11
 The focused unit and fixture selectors, both Clippy commands, and targeted
 format commands are recorded in the session checkpoint; the full commands
 above include the corresponding suites and ordinary library check.
+
+## Checkpoint — core rejects unavailable NPOT mip chains — `1eb21620c` — 2026-11-04
+
+The texture descriptor audit found that core forwarded non-power-of-two mip
+chains to HAL without checking the existing
+`NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` downlevel flag. The D3D11 HAL only
+implements power-of-two mip chains and rejects NPOT mip resources regardless
+of the modern driver's optional full-NPOT query. Core now checks the flag for
+multi-mip textures using the spatial dimensions for D1, D2 or D3; D2 array
+layer counts are correctly excluded. The controlled FL9_1 fixture requests a
+6×8 RGBA8 two-mip texture with the flag absent and observes the specific core
+`MissingDownlevelFlags` error before HAL.
+
+The CPU dimension test passed 1/1. Under strict hardware mode, the core fixture
+ran on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested
+and actual FL9_1, printed `PASS: NPOT mip chain rejected by core validation`,
+and completed all render/readback cases; the complete fixture-enabled core
+suite passed 71/71. The core DX12 suite passed 68/68, with the existing
+no-WGSL-feature warnings; the ordinary zero-D3D11-adapter test passed 1/1.
+Core Clippy, targeted rustfmt and `git diff --check` passed. Other backends
+retain their existing flag reports: the default-compliant DX12/Metal flags and
+the explicit Vulkan/GLES flags permit this path.
+
+Code checkpoint: `1eb21620c` (`core: gate unsupported NPOT mip chains`). The
+HAL was not changed; its last strict private suite passed 318 tests at
+`8eff9020a`. Public D3D11 enumeration and surface exposure remain disabled.
+Continue the core/HAL contract audit, especially blend-state legality and
+resource/view combinations that cannot be represented by the current flags.
+
+Commands:
+
+```text
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std npot_mipmap_tests -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx12,std -- --test-threads=1
+cargo test --offline -p wgpu-core --lib --no-default-features --features dx11,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture --test-threads=1
+cargo clippy --offline -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt --edition 2021 --check wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
