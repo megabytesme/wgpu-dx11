@@ -193,6 +193,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 max_texture_repeat_per_primitive: u32::MAX,
                 src_alpha_saturated_blend: true,
                 viewport_rectangles_outside_target: true,
+                depth_bias_with_fragment_depth: true,
                 vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
             },
             shader_model: wgt::ShaderModel::Sm5,

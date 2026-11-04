@@ -781,6 +781,8 @@ pub enum CreateRenderPipelineError {
     TooManyBuffersAndAccelerationStructuresInVertexStage { given: u32, limit: u32 },
     #[error("The number of sampled textures used by the vertex stage {given} exceeds the downlevel limit {limit}")]
     TooManySampledTexturesInVertexStage { given: u32, limit: u32 },
+    #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
+    UnsupportedDepthBiasWithFragmentDepth,
     #[error("Vertex format {format:?} is not supported by this downlevel adapter")]
     UnsupportedVertexFormatOnDownlevelAdapter { format: wgt::VertexFormat },
     #[error("The total number of vertex attributes {given} exceeds the limit {limit}")]
@@ -866,6 +868,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManyBindGroupsPlusVertexBuffers { .. }
             | Self::TooManyBuffersAndAccelerationStructuresInVertexStage { .. }
             | Self::TooManySampledTexturesInVertexStage { .. }
+            | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedVertexFormatOnDownlevelAdapter { .. }
             | Self::TooManyVertexAttributes { .. }
             | Self::VertexAttributeLocationTooLarge { .. }

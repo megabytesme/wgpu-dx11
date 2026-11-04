@@ -1065,6 +1065,10 @@ pub struct DownlevelLimits {
     /// This is false on backends that cannot preserve clipped viewport semantics for every
     /// shader, such as when clipping requires an optional shader variant.
     pub viewport_rectangles_outside_target: bool,
+    /// Whether depth bias may be combined with a fragment entry point that writes `frag_depth`.
+    ///
+    /// Adapters that cannot preserve this combination reject the pipeline during validation.
+    pub depth_bias_with_fragment_depth: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1082,6 +1086,7 @@ impl Default for DownlevelLimits {
             max_texture_repeat_per_primitive: u32::MAX,
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
+            depth_bias_with_fragment_depth: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -1116,6 +1121,7 @@ impl DownlevelLimits {
             && (!required.src_alpha_saturated_blend || self.src_alpha_saturated_blend)
             && (!required.viewport_rectangles_outside_target
                 || self.viewport_rectangles_outside_target)
+            && (!required.depth_bias_with_fragment_depth || self.depth_bias_with_fragment_depth)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -1156,6 +1162,7 @@ impl DownlevelCapabilities {
             && self.limits.max_texture_repeat_per_primitive == u32::MAX
             && self.limits.src_alpha_saturated_blend
             && self.limits.viewport_rectangles_outside_target
+            && self.limits.depth_bias_with_fragment_depth
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
@@ -1430,6 +1437,7 @@ mod tests {
             max_texture_repeat_per_primitive: 128,
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
+            depth_bias_with_fragment_depth: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
@@ -1438,6 +1446,7 @@ mod tests {
             max_texture_repeat_per_primitive: 128,
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
+            depth_bias_with_fragment_depth: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
@@ -1460,6 +1469,24 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             viewport_rectangles_outside_target: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn depth_bias_with_fragment_depth_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            depth_bias_with_fragment_depth: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            depth_bias_with_fragment_depth: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));

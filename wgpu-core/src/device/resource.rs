@@ -5245,6 +5245,28 @@ impl Device {
                     )
                     .map_err(stage_err)?;
 
+                if desc
+                    .depth_stencil
+                    .as_ref()
+                    .is_some_and(|state| state.bias.is_enabled())
+                    && !self.downlevel.limits.depth_bias_with_fragment_depth
+                {
+                    let writes_fragment_depth = match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_writes_frag_depth(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    };
+                    if writes_fragment_depth {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedDepthBiasWithFragmentDepth,
+                        );
+                    }
+                }
+
                 if let Some(interface) = shader_module.interface.interface() {
                     sampling_pairs.extend(
                         interface

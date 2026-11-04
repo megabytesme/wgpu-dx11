@@ -1402,6 +1402,20 @@ impl Interface {
         Ok(pairs)
     }
 
+    pub(crate) fn entry_point_writes_frag_depth(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point
+            .outputs
+            .contains(&Varying::BuiltIn(BuiltIn::FragDepth)))
+    }
+
     pub fn finalize_entry_point_name(
         &self,
         stage: naga::ShaderStage,

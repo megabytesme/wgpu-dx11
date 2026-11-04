@@ -83,6 +83,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     max_texture_repeat_per_primitive: u32::MAX,
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
+                    depth_bias_with_fragment_depth: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -396,6 +397,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     max_texture_repeat_per_primitive: u32::MAX,
                     src_alpha_saturated_blend: false,
                     viewport_rectangles_outside_target: false,
+                    depth_bias_with_fragment_depth: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -3298,6 +3300,77 @@ fn render_triangle(
         global.render_pipeline_drop(invalid_pipeline);
         std::println!("PASS: unsupported depth-bias clamp rejected by core validation");
         pipeline_descriptor.depth_stencil.as_mut().unwrap().bias = wgt::DepthBiasState::default();
+    }
+
+    if case == VertexCase::Baseline {
+        let depth_bias_shader_source = "struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }; struct FragmentOut { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 }; @vertex fn vs(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 1.0), uv); } @fragment fn color(input: VertexOut) -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); } @fragment fn depth(input: VertexOut) -> FragmentOut { return FragmentOut(vec4f(1.0, 0.0, 0.0, 1.0), 0.5); }";
+        let (depth_bias_shader, error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(depth_bias_shader_source)),
+            None,
+        );
+        assert!(error.is_none(), "depth-bias shader creation: {error:?}");
+        let mut depth_bias_pipeline = pipeline_descriptor.clone();
+        depth_bias_pipeline.vertex.stage.module = depth_bias_shader;
+        depth_bias_pipeline.vertex.stage.entry_point = Some(Cow::Borrowed("vs"));
+        depth_bias_pipeline.fragment.as_mut().unwrap().stage.module = depth_bias_shader;
+        depth_bias_pipeline
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("depth"));
+        depth_bias_pipeline
+            .depth_stencil
+            .as_mut()
+            .unwrap()
+            .bias
+            .constant = 1;
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &depth_bias_pipeline, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedDepthBiasWithFragmentDepth)
+            ),
+            "selected frag_depth output with nonzero bias must fail core validation: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+
+        depth_bias_pipeline
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("color"));
+        let (color_pipeline, error) =
+            global.device_create_render_pipeline(device, &depth_bias_pipeline, None);
+        assert!(
+            error.is_none(),
+            "unselected frag_depth entry must not restrict biased pipeline: {error:?}"
+        );
+        global.render_pipeline_drop(color_pipeline);
+
+        depth_bias_pipeline
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("depth"));
+        depth_bias_pipeline.depth_stencil.as_mut().unwrap().bias = wgt::DepthBiasState::default();
+        let (zero_bias_pipeline, error) =
+            global.device_create_render_pipeline(device, &depth_bias_pipeline, None);
+        assert!(
+            error.is_none(),
+            "zero-bias pipeline may select frag_depth: {error:?}"
+        );
+        global.render_pipeline_drop(zero_bias_pipeline);
+        global.shader_module_drop(depth_bias_shader);
+        std::println!("PASS: selected frag_depth/depth-bias capability validated before HAL");
     }
     if unfilterable_float {
         let mut invalid_entries = group_entries.clone();
