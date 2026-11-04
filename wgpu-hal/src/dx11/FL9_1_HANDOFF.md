@@ -758,3 +758,9 @@ snapshot without enabling ordinary adapter enumeration. Public adapter
 enumeration and public surface exposure remain disabled. The HWND `Present`
 reentrancy issue, historical FL9_1 hardware and production capability-reporting
 gaps remain unresolved.
+
+## Latest checkpoint — vertex-stage sampled-texture downlevel gate — `68cccdf11`
+
+Core now validates statically used sampled/depth texture count for the selected vertex entry point against a separate downlevel limit before HAL pipeline creation. The controlled FL9_1 fixture reports zero and confirms the precise rejection; it then completes strict hardware rendering and readback. The RTX 3090 Ti was explicitly requested and selected at FL9_1. The fixture-enabled core suite passed 72/72, strict private D3D11 HAL suite 322/322, core DX12 suite 69/69, the sampled-texture analysis unit test 1/1, and the focused wgpu-types compliance test 1/1. Core and backend checks, Clippy, formatting and diff checks passed; ten existing HAL Clippy warnings remain. Exact commands and details are in `FL9_1_PROGRESS.md`.
+
+Code commit: `68cccdf111f36553e36f8328ec80ec3195786c80`. Continue auditing the remaining core/HAL capability boundary. Production D3D11 adapter enumeration and public surface exposure stay disabled.

@@ -2787,3 +2787,21 @@ cargo clippy --offline -p wgpu-hal --tests --no-default-features --features vulk
 Documentation checkpoint is recorded in the following commit.
 Continue the core/HAL audit before constructing the public capability
 snapshot; do not enable enumeration or surface exposure.
+
+## Checkpoint — selected-entry vertex texture limits in core — `68cccdf11`
+
+Added `DownlevelLimits::max_sampled_textures_per_vertex_stage` so backends can report vertex sampled-texture capacity separately from the general per-stage limit. Core counts sampled and depth textures statically used by the selected vertex entry point, using Naga's validated per-entry resource usage (including helper calls and `textureLoad`), and rejects excess use before HAL pipeline creation. The D3D11 capability fixture reports zero at FL9_1; the test confirms a vertex texture pipeline fails with the specific core validation error before the private HAL. D3D11 hardware guarantees record vertex texture sampling as absent through FL9_3 and present from FL10_0, while backend implementation remains false. GLES queries its actual vertex texture unit count; Vulkan and noop report their current capacities. Ordinary D3D11 enumeration remains disabled.
+
+Verification used Rust 1.93.1/MSVC with `CARGO_BUILD_JOBS=8`:
+
+- Core selected-entry usage unit test: 1/1 passed.
+- wgpu-types downlevel-compliance test: 1/1 passed.
+- Strict forced-FL9_1 core fixture: 1/1 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`); the fixture confirmed `TooManySampledTexturesInVertexStage { given: 1, limit: 0 }` before HAL and then completed GPU rendering/readback.
+- Full strict fixture-enabled core suite: 72/72 passed, including zero-D3D11-adapter isolation.
+- Strict private D3D11 HAL suite: 322/322 passed with hardware required; expected negative shader tests still print `SKIP` for unsupported operations after confirming rejection.
+- Core DX12 regression: 69/69 passed.
+- HAL D3D11+GLES and Vulkan checks, wgpu-info check, and core Clippy passed. HAL Clippy passed with ten pre-existing warnings in D3D11 fence/device/test support. Targeted formatting and `git diff --check` passed.
+
+The first DX12 invocation omitted `std,wgsl` and failed during test compilation; the corrected command passed. An initial attempt to construct a vertex-visible layout in the fixture reached a HAL device-lost path, so the test now reuses the supported fragment-visible layout: the core vertex-resource limit is checked before that later layout compatibility path. The actual unsupported vertex texture execution remains unattempted, by design.
+
+Code checkpoint: `68cccdf111f36553e36f8328ec80ec3195786c80` (`core: gate vertex textures by downlevel limits`). Next continue the core/HAL capability-boundary audit; do not enable public adapter enumeration or surface exposure.
