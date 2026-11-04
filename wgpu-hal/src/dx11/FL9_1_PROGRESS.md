@@ -3345,3 +3345,43 @@ The RTX result is a compiler/validation check at forced FL9_1, not a
 depth-writing GPU render or a historical-driver claim. Next continue the
 public adapter contract audit; the public capability snapshot and HWND
 presentation gates remain unresolved.
+
+## Checkpoint — FL9_1 fragment position validation
+
+Core now exposes `DownlevelLimits::fragment_position` and rejects a selected
+fragment entry point that actually consumes `@builtin(position)` when the
+capability is unavailable. The controlled FL9_1 fixture sets it to false.
+Unlike `front_facing`, FXC strips an unused `SV_POSITION` input, so an unused
+declaration and a safe sibling entry point remain valid. Naga validated
+function expression refcounts are used to detect direct and structure-member
+reads; helper arguments are traced recursively through the validated call
+graph, including helpers that only forward a structure or vector to another
+helper. Opaque shader interfaces are rejected conservatively. The capability
+does not change normal D3D11 adapter enumeration.
+
+Verification used Rust 1.93.1/MSVC and a serial Cargo build while a separate
+Horizon build was consuming system memory:
+
+- Fragment-position analysis CPU test: 1/1, including direct, structured,
+  helper, forwarded helper, unused and sibling-entry cases.
+- Strict controlled core suite: 77/77 on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested FL9_1 and actual L9_1. Its
+  offscreen fixture performed the existing FL9_1 rendering/readback cases and
+  verified used-position rejection and unused-position acceptance.
+- `wgpu-types` library tests: 63/63; 14 pre-existing unused serde-import
+  warnings.
+- Core zero-D3D11-adapter isolation: 1/1.
+- Core DX12 regression: 74/74.
+- `cargo check` for HAL `dx11,gles`, `wgpu-info`, and `wgpu-test --tests`
+  passed.
+- Core Clippy passed with two pre-existing `op_ref` warnings in
+  `dx11_fixture_tests.rs`.
+- Targeted Rust formatting and `git diff --check` passed.
+
+The strict fixture is one hardware test containing multiple actual draws and
+pixel checks; it is not historical FL9_1 validation. The private HAL suite was
+not rerun for this core-only validation change. Code commit: `e8c7240da`
+(`core: gate FL9_1 fragment position use`). This progress entry, handoff and
+capability documentation record the verified checkpoint. Next continue the
+production adapter capability audit; ordinary D3D11 enumeration and public
+HWND surface exposure remain gated.

@@ -38,13 +38,17 @@ same module remains allowed. The capability is represented separately from
 the native `DEPTH_BIAS_CLAMP` flag because this is a backend implementation
 restriction, not a feature-level guarantee.
 
-The controlled FL9_1 core fixture also reports
-`DownlevelLimits::fragment_front_facing = false`: the tested `ps_4_0_level_9_1`
-FXC profile rejects a fragment entry point declaring `@builtin(front_facing)`.
-Core uses Naga's selected entry-point interface to reject that pipeline before
-HAL, while another safe entry point in the same module remains usable. This is
-a current compiler/backend limitation; it is not classified as impossible on
-FL9_1 hardware.
+The controlled FL9_1 core fixture reports
+`DownlevelLimits::fragment_front_facing = false` and
+`DownlevelLimits::fragment_position = false`. The tested `ps_4_0_level_9_1`
+FXC profile rejects `@builtin(front_facing)`, even when its declared value is
+unused, so core rejects selected entries that declare it. Microsoft documents
+that 9_x pixel shaders cannot read `SV_POSITION`; core rejects selected
+entries that use fragment `@builtin(position)` and permits unused declarations.
+Both gates leave safe sibling entries in the same module usable. Fragment
+position is unavailable in the 9_x shader model; front-facing remains a tested
+compiler/backend limitation, not a separate claim about hardware
+impossibility.
 
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and

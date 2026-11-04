@@ -205,9 +205,10 @@ remain gated.
 The selected-entry depth-bias mismatch is now represented in core's
 `DownlevelLimits` and covered by the controlled fixture. Next audit remaining
 core-valid depth/stencil and render-pass combinations. The tested FL9_1 FXC
-profile rejects fragment `@builtin(front_facing)`; core now represents that
-compiler/backend limitation with a selected-entry `DownlevelLimits` gate, so a
-safe sibling entry remains usable. Continue auditing shader and render-state
-combinations, then design a truthful production adapter capability snapshot.
+profile rejects fragment `@builtin(front_facing)`, and Microsoft documents
+that 9_x pixel shaders cannot read fragment `@builtin(position)`. Core now
+represents these with selected-entry `DownlevelLimits` gates, so safe sibling
+entries remain usable. Continue auditing shader and render-state combinations,
+then design a truthful production adapter capability snapshot.
 The public adapter and HWND surface must stay gated until the snapshot covers
 every operation it permits.

@@ -11,18 +11,19 @@ verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep both ordinary adapter and public surface
 exposure gated.
 
-The latest code checkpoint is `77ac0b78330c4ba330682c89526daa2833f2b1c6`
-(`dx11: gate FL9_1 front-facing shaders in core`). Core now reports the
-`fragment_front_facing` downlevel capability and rejects a selected fragment
-entry point declaring `@builtin(front_facing)` before HAL when unavailable.
-The tested FL9_1 FXC profile rejects that input; the limit records this as a
-compiler/backend restriction, not a proven hardware impossibility. A safe
-sibling entry point in the same shader module still creates successfully.
-The strict core fixture suite passed 76/76 on the RTX 3090 Ti at requested and
-actual FL9_1; the strict private HAL suite passed 333/333, core DX12 passed
-73/73, and relevant Clippy/build checks passed. See FL9_1_PROGRESS.md for
-exact commands and the workspace-wide formatting caveat. The public adapter
-and HWND surface gates remain closed.
+The latest code checkpoint is `e8c7240da` (`core: gate FL9_1 fragment position
+use`). `DownlevelLimits::fragment_position` is false for the controlled FL9_1
+fixture. Core rejects a selected fragment entry that consumes
+`@builtin(position)`, while allowing an unused declaration and safe sibling
+entry. The analyzer uses validated Naga expression information and follows
+helper arguments, including forwarded structs and vectors. The strict core
+fixture suite passed 77/77 on the NVIDIA RTX 3090 Ti at requested and actual
+FL9_1; the core DX12 suite passed 74/74, `wgpu-types` passed 63/63, and the
+ordinary D3D11 zero-adapter check passed 1/1. HAL/GLES, wgpu-info and test
+crate checks, core Clippy, targeted formatting and diff checks passed. The
+private HAL suite was not rerun for this core validation-only change. See
+FL9_1_PROGRESS.md for exact commands and warnings. Public adapter and HWND
+surface gates remain closed.
 
 The documentation-only checkpoint `e5fe9207c611234c1669da48892ec12b80ebcfab`
 reconciles the capability/testing/status pages with the corrected repeat-cap
