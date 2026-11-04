@@ -963,7 +963,12 @@ impl super::Adapter {
             workarounds.set(super::Workarounds::MESA_I915_SRGB_SHADER_CLEAR, true);
         }
 
-        let downlevel_defaults = wgt::DownlevelLimits {};
+        let downlevel_defaults = wgt::DownlevelLimits {
+            max_sampled_textures_per_vertex_stage: unsafe {
+                gl.get_parameter_i32(glow::MAX_VERTEX_TEXTURE_IMAGE_UNITS)
+            }
+            .max(0) as u32,
+        };
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };
 
         // Drop the GL guard so we can move the context into AdapterShared

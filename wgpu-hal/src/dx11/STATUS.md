@@ -15,6 +15,13 @@ the controlled FL9_1 core fixture verifies the descriptor is rejected before
 the private HAL. D24S8 remains single-mip in the private implementation, and
 normal adapter enumeration remains disabled.
 
+Core also models the vertex-stage sampled-texture limit separately from the
+shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
+checks the selected shader entry point before pipeline creation reaches HAL;
+the strict fixture confirms the rejection is a core validation error. This
+prevents unsupported D3D11 vertex texture access from becoming a HAL device
+error if a future adapter reports the current private shader subset.
+
 ## Implemented private HAL paths
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted

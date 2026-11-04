@@ -101,7 +101,10 @@ below is met. This plan does not claim WebGPU conformance.
    readback; asymmetric front/back states remain rejected. Core now gates
    multi-mip depth/stencil attachments through a dedicated downlevel flag,
    matching the FL9_x D3D11 requirement that depth/stencil-bound resources use
-   one mip. Next continue auditing core-valid attachment, viewport and
+   one mip. Vertex-stage sampled texture access now has a separate downlevel
+   limit. Core counts resources used by the selected vertex entry point and
+   rejects them before HAL; the controlled FL9_1 fixture reports zero and
+   verifies that result. Next continue auditing core-valid attachment, viewport and
    render-state combinations before building the truthful public capability
    snapshot.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and

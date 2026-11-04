@@ -4946,6 +4946,18 @@ impl Device {
                         .map_err(stage_err)?;
 
                     if let Some(interface) = vertex_shader_module.interface.interface() {
+                        let sampled_textures = interface
+                            .sampled_textures_used(stage.to_naga(), &_vertex_entry_point_name)
+                            .map_err(stage_err)?;
+                        let limit = self.downlevel.limits.max_sampled_textures_per_vertex_stage;
+                        if sampled_textures > limit {
+                            return Err(
+                                pipeline::CreateRenderPipelineError::TooManySampledTexturesInVertexStage {
+                                    given: sampled_textures,
+                                    limit,
+                                },
+                            );
+                        }
                         immediate_slots_required |= interface
                             .immediate_slots_required(stage.to_naga(), &_vertex_entry_point_name);
                         io = interface

@@ -76,6 +76,9 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
             downlevel: wgt::DownlevelCapabilities {
                 flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
+                limits: wgt::DownlevelLimits {
+                    max_sampled_textures_per_vertex_stage: 0,
+                },
                 ..Default::default()
             },
             cooperative_matrix_properties: Vec::new(),
@@ -346,6 +349,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             downlevel: wgt::DownlevelCapabilities {
                 flags: wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED,
                 shader_model: wgt::ShaderModel::Sm2,
+                limits: wgt::DownlevelLimits {
+                    max_sampled_textures_per_vertex_stage: 0,
+                },
                 ..Default::default()
             },
             cooperative_matrix_properties: Vec::new(),
@@ -2880,6 +2886,44 @@ fn render_triangle(
         pipeline_descriptor.multisample.mask = 0;
     }
     if case == VertexCase::Baseline {
+        let (vertex_texture_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @vertex fn vs() -> @builtin(position) vec4f { return textureSampleLevel(image, smp, vec2f(0.5), 0.0); }",
+            )),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "vertex texture shader: {shader_error:?}"
+        );
+        let mut vertex_texture_descriptor = pipeline_descriptor.clone();
+        vertex_texture_descriptor.layout = Some(layout);
+        vertex_texture_descriptor.vertex.stage.module = vertex_texture_shader;
+        vertex_texture_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("vs"));
+        vertex_texture_descriptor.fragment = None;
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_texture_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(
+                    pipeline::CreateRenderPipelineError::TooManySampledTexturesInVertexStage {
+                        given: 1,
+                        limit: 0,
+                    }
+                )
+            ),
+            "FL9_1 core validation must reject vertex texture use before HAL: {error:?}"
+        );
+        std::println!("PASS: vertex texture sampling rejected by core downlevel limit");
+        global.render_pipeline_drop(invalid_pipeline);
+        global.shader_module_drop(vertex_texture_shader);
+
         let mut alpha_target = targets[0].clone().unwrap();
         alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
         alpha_target.write_mask =

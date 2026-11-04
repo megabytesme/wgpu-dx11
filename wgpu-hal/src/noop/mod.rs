@@ -187,7 +187,9 @@ pub const CAPABILITIES: crate::Capabilities = {
         },
         downlevel: wgt::DownlevelCapabilities {
             flags: wgt::DownlevelFlags::all(),
-            limits: wgt::DownlevelLimits {},
+            limits: wgt::DownlevelLimits {
+                max_sampled_textures_per_vertex_stage: 16,
+            },
             shader_model: wgt::ShaderModel::Sm5,
         },
         cooperative_matrix_properties: Vec::new(),

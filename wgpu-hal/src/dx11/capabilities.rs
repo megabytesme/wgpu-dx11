@@ -31,6 +31,7 @@ pub(super) struct HardwareGuarantees {
     pub depth_stencil_mip_levels: bool,
     pub geometry_shader: bool,
     pub compute_shader: bool,
+    pub vertex_texture_sampling: bool,
     pub two_sided_stencil: bool,
     pub r8_unorm_sampled_texture: bool,
     pub rg8_snorm_sampled_texture: bool,
@@ -63,6 +64,7 @@ impl HardwareGuarantees {
             depth_stencil_mip_levels: level.as_raw() >= L10_0.as_raw(),
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
+            vertex_texture_sampling: level.as_raw() >= L10_0.as_raw(),
             two_sided_stencil: level != L9_1,
             r8_unorm_sampled_texture: true,
             rg8_snorm_sampled_texture: true,
@@ -178,6 +180,7 @@ pub(super) struct BackendCapabilities {
     pub uniform_binding_sizes_unaligned_16: bool,
     pub compute: bool,
     pub storage: bool,
+    pub vertex_texture_sampling: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub d24s8_stencil_operations: bool,
@@ -237,6 +240,7 @@ impl BackendCapabilities {
         uniform_binding_sizes_unaligned_16: true,
         compute: false,
         storage: false,
+        vertex_texture_sampling: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
         d24s8_stencil_operations: true,
@@ -532,10 +536,15 @@ mod tests {
             assert!(caps.hardware.rgba8_snorm_sampled_texture);
             assert!(caps.hardware.bc1_unorm_sampled_texture);
             assert_eq!(
+                caps.hardware.vertex_texture_sampling,
+                level.as_raw() >= FeatureLevel::L10_0.as_raw()
+            );
+            assert_eq!(
                 caps.hardware.max_triangle_vertices_per_draw(),
                 caps.hardware.max_primitives_per_draw.saturating_mul(3)
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
+            assert!(!caps.backend.vertex_texture_sampling);
             assert!(!caps.backend.depth_stencil_mip_levels);
             assert!(caps.hardware.depth_bias);
             assert!(caps.hardware.slope_scaled_depth_bias);
@@ -584,6 +593,8 @@ mod tests {
         assert!(fl9.hardware.conditional_npot);
         assert!(!fl9.hardware.separate_alpha_blend);
         assert!(!fl9.hardware.two_sided_stencil);
+        assert!(!fl9.hardware.vertex_texture_sampling);
+        assert!(!fl9.backend.vertex_texture_sampling);
         assert_eq!(fl9.backend.max_sampler_anisotropy, 2);
         assert!(fl9.backend.d24s8_stencil_operations);
         assert!(fl9.backend.r8_unorm_sampled_upload);

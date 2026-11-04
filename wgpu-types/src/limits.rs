@@ -1039,12 +1039,19 @@ impl Limits {
 /// which take place when running on downlevel backends.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct DownlevelLimits {}
+pub struct DownlevelLimits {
+    /// Maximum number of sampled texture bindings statically used by a vertex shader.
+    ///
+    /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
+    /// applies to vertex shaders. WebGPU's baseline guarantee is 16.
+    pub max_sampled_textures_per_vertex_stage: u32,
+}
 
-#[allow(clippy::derivable_impls)]
 impl Default for DownlevelLimits {
     fn default() -> Self {
-        DownlevelLimits {}
+        Self {
+            max_sampled_textures_per_vertex_stage: 16,
+        }
     }
 }
 
@@ -1078,7 +1085,8 @@ impl DownlevelCapabilities {
     #[must_use]
     pub fn is_webgpu_compliant(&self) -> bool {
         self.flags.contains(DownlevelFlags::compliant())
-            && self.limits == DownlevelLimits::default()
+            && self.limits.max_sampled_textures_per_vertex_stage
+                >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
             && self.shader_model >= ShaderModel::Sm5
     }
 }
@@ -1323,6 +1331,16 @@ mod tests {
             .flags
             .contains(DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP));
         assert!(DownlevelFlags::compliant().contains(DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP));
+    }
+
+    #[test]
+    fn extra_vertex_texture_capacity_does_not_break_downlevel_compliance() {
+        let mut capabilities = DownlevelCapabilities::default();
+        capabilities.limits.max_sampled_textures_per_vertex_stage = 32;
+        assert!(capabilities.is_webgpu_compliant());
+
+        capabilities.limits.max_sampled_textures_per_vertex_stage = 15;
+        assert!(!capabilities.is_webgpu_compliant());
     }
 
     fn side_by_side(left: &str, right: &str) -> String {

@@ -1342,6 +1342,31 @@ impl Interface {
             .map_or(Default::default(), |ep| ep.immediate_slots_required)
     }
 
+    pub fn sampled_textures_used(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<u32, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        let count = entry_point
+            .resources
+            .iter()
+            .filter(|&&handle| {
+                matches!(
+                    &self.resources[handle].ty,
+                    ResourceType::Texture {
+                        class: naga::ImageClass::Sampled { .. } | naga::ImageClass::Depth { .. },
+                        ..
+                    }
+                )
+            })
+            .count();
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
     pub fn finalize_entry_point_name(
         &self,
         stage: naga::ShaderStage,
@@ -2048,7 +2073,7 @@ impl ShaderStageForValidation {
 mod tests {
     use alloc::{string::ToString, vec::Vec};
 
-    use super::{InterfaceVar, StageError};
+    use super::{Interface, InterfaceVar, StageError};
 
     #[test]
     fn fragment_location_error_formats_zero_limit() {
@@ -2059,5 +2084,66 @@ mod tests {
             deductions: Vec::new(),
         };
         assert!(error.to_string().contains("-1, 0-based"));
+    }
+
+    #[test]
+    fn sampled_texture_count_uses_the_selected_entry_point() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            fn sample_helper() -> vec4f {
+                return textureSampleLevel(image, smp, vec2f(0.5), 0.0);
+            }
+            @vertex fn sampled() -> @builtin(position) vec4f {
+                return sample_helper();
+            }
+            @vertex fn loaded() -> @builtin(position) vec4f {
+                return textureLoad(image, vec2i(0), 0);
+            }
+            @vertex fn unused() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @fragment fn fragment() -> @location(0) vec4f {
+                return textureSample(image, smp, vec2f(0.5));
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+
+        assert_eq!(
+            interface
+                .sampled_textures_used(naga::ShaderStage::Vertex, "sampled")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            interface
+                .sampled_textures_used(naga::ShaderStage::Vertex, "loaded")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            interface
+                .sampled_textures_used(naga::ShaderStage::Vertex, "unused")
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            interface
+                .sampled_textures_used(naga::ShaderStage::Fragment, "fragment")
+                .unwrap(),
+            1
+        );
+        assert!(interface
+            .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
+            .is_err());
     }
 }

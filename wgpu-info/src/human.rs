@@ -279,9 +279,15 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\tDownlevel Properties:")?;
     let wgpu::DownlevelCapabilities {
         shader_model: _,
-        limits: _,
+        limits: wgpu::DownlevelLimits {
+            max_sampled_textures_per_vertex_stage,
+        },
         flags,
     } = downlevel;
+    writeln!(
+        output,
+        "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"
+    )?;
     let max_downlevel_flag_width = wgpu::DownlevelFlags::max_debug_print_width();
     for bit in wgpu::DownlevelFlags::all().iter() {
         writeln!(output, "\t\t{:>width$}: {}", bit.name(), flags.contains(bit), width = max_downlevel_flag_width)?;
