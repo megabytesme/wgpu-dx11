@@ -2810,7 +2810,9 @@ Code checkpoint: `68cccdf111f36553e36f8328ec80ec3195786c80` (`core: gate vertex 
 
 Core now retains Naga's validated sampling pairs for the selected render-pipeline entries and checks those pairs against the current bind groups during draw readiness. On devices without unrestricted NPOT sampling, only a used NPOT texture with a `Repeat` sampler is rejected; an unused texture/sampler cross-pair does not cause a false rejection. D3D11 derives the capability from the selected feature level and a positive `D3D9_OPTIONS` query, treating negative and unavailable 9_x queries conservatively. The private HAL applies the same rule. Public D3D11 adapter enumeration remains disabled.
 
-Verification used Rust/Cargo 1.93.1, MSVC and `CARGO_BUILD_JOBS=32`:
+Verification used Rust/Cargo 1.93.1 and MSVC. The strict GPU suites ran with
+`CARGO_BUILD_JOBS=16`; the final focused checks and Clippy runs used
+`CARGO_BUILD_JOBS=32`:
 
 - Strict core fixture suite: 73/73 passed; physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), software=false, requested/actual FL9_1. Its driver query reports full NPOT=true; the fixture synthetically sets the core capability false. The used NPOT/repeat pair was rejected at command encoding before submission. POT/repeat plus NPOT/clamp rendered 64/64 expected yellow pixels while an unused NPOT/repeat cross-pair remained bound.
 - Strict private D3D11 HAL suite: 323/323 passed on forced FL9_1 hardware. The six legacy shader-operation cases that explicitly report `SKIP` remain unsupported negative probes, not GPU passes.
