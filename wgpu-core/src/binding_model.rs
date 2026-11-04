@@ -46,6 +46,8 @@ pub enum BindGroupLayoutEntryError {
     SampleTypeFloatFilterableBindingMultisampled,
     #[error("Multisampled texture binding view dimension must be 2d, got {0:?}")]
     Non2DMultisampled(wgt::TextureViewDimension),
+    #[error("Texture view dimension {0:?} is unsupported because its device limit is zero")]
+    TextureViewDimensionUnavailable(wgt::TextureViewDimension),
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
     #[error(transparent)]

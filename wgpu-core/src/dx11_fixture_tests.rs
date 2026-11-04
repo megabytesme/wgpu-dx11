@@ -507,6 +507,67 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         global.bind_group_layout_drop(layout);
     }
     std::println!("PASS: unsupported texture-array and cube layouts rejected by core validation");
+    for view_dimension in [wgt::TextureViewDimension::D1, wgt::TextureViewDimension::D3] {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgt::ShaderStages::FRAGMENT,
+                    ty: wgt::BindingType::Texture {
+                        sample_type: wgt::TextureSampleType::Float { filterable: true },
+                        view_dimension,
+                        multisampled: false,
+                    },
+                    count: None,
+                }]),
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::TextureViewDimensionUnavailable(given),
+                    ..
+                }) if *given == view_dimension
+            ),
+            "unavailable {view_dimension:?} layout must fail before HAL: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+    }
+    let (layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                binding: 11,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::StorageTexture {
+                    access: wgt::StorageTextureAccess::WriteOnly,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    view_dimension: wgt::TextureViewDimension::D2Array,
+                },
+                count: None,
+            }]),
+        },
+        None,
+    );
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(binding_model::CreateBindGroupLayoutError::Entry {
+                error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                ),
+                ..
+            }) if *flags == wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
+        ),
+        "storage texture array layout must fail its missing array flag before format checks: {error:?}"
+    );
+    global.bind_group_layout_drop(layout);
+    std::println!("PASS: unavailable 1D/3D and storage-array layouts rejected by core validation");
     for hlsl in [
         None,
         Some(Cow::Borrowed("float4 main() : SV_Target { return 1; }")),

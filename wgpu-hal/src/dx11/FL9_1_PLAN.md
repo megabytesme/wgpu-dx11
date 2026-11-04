@@ -73,7 +73,9 @@ below is met. This plan does not claim WebGPU conformance.
    supported buffer role; it still does not implement shader storage access.
    Texture-view layout and creation validation now also requires explicit
    downlevel support for 2D arrays, cube views and cube-array views. The D3D11
-   fixture leaves those flags absent and verifies rejection before HAL.
+   fixture leaves those flags absent and verifies rejection before HAL. D1/D3
+   binding layouts are rejected when their texture dimension limits are zero,
+   and storage-texture D2Array layouts now share the array downlevel gate.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

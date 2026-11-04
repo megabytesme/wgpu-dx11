@@ -670,6 +670,9 @@ The same strict controlled fixture checks that `D2Array`, `Cube` and
 and that a one-layer `D2Array` view returns a core validation error before the
 HAL is called. This covers a dimension restriction that
 `max_texture_array_layers = 1` cannot express by itself.
+It also verifies that D1/D3 layouts are rejected when their corresponding
+texture dimension limits are zero, and that storage-texture `D2Array` layouts
+use the same array capability gate before format validation.
 
 The first two tests execute GPU work; the third is CPU-only. Strict execution on
 the RTX 3090 Ti at requested and actual FL9_1 verified RGBA8 and BGRA8 four-level

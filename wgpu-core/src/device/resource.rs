@@ -2887,6 +2887,28 @@ impl Device {
 
             use wgt::BindingType as Bt;
 
+            let view_dimension = match entry.ty {
+                Bt::Texture { view_dimension, .. } | Bt::StorageTexture { view_dimension, .. } => {
+                    Some(view_dimension)
+                }
+                _ => None,
+            };
+            let unavailable_dimension = match view_dimension {
+                Some(TextureViewDimension::D1) if self.limits.max_texture_dimension_1d == 0 => {
+                    view_dimension
+                }
+                Some(TextureViewDimension::D3) if self.limits.max_texture_dimension_3d == 0 => {
+                    view_dimension
+                }
+                _ => None,
+            };
+            if let Some(dimension) = unavailable_dimension {
+                return Err(CreateBindGroupLayoutError::Entry {
+                    binding: entry.binding,
+                    error: BindGroupLayoutEntryError::TextureViewDimensionUnavailable(dimension),
+                });
+            }
+
             let mut required_features = wgt::Features::empty();
             let mut required_downlevel_flags = wgt::DownlevelFlags::empty();
             let (array_feature, writable_storage) = match entry.ty {
@@ -2972,6 +2994,14 @@ impl Device {
                             })
                         }
                         _ => (),
+                    }
+                    if view_dimension == TextureViewDimension::D2Array {
+                        self.require_downlevel_flags(wgt::DownlevelFlags::TEXTURE_2D_ARRAYS)
+                            .map_err(BindGroupLayoutEntryError::MissingDownlevelFlags)
+                            .map_err(|error| CreateBindGroupLayoutError::Entry {
+                                binding: entry.binding,
+                                error,
+                            })?;
                     }
                     match access {
                         wgt::StorageTextureAccess::Atomic

@@ -21,9 +21,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   but no storage-buffer shader binding is implemented. Core requires the
   relevant stage downlevel flags and the controlled fixture confirms unsupported
   vertex, fragment and compute storage layouts are rejected before HAL.
-- Texture resources and views remain 2D-only. Core now requires explicit
+- Texture resources and views remain 2D-only. Core rejects D1/D3 binding
+  layouts when the corresponding limits are zero, and requires explicit
   downlevel flags for 2D-array, cube and cube-array binding layouts and views;
-  a one-layer 2D-array view is rejected before reaching the HAL.
+  storage-texture array layouts use the same array gate. A one-layer 2D-array
+  view is rejected before reaching the HAL.
 - RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
