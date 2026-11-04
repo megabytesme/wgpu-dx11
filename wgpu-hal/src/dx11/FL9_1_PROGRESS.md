@@ -3760,13 +3760,13 @@ analysis, resource mapping, HLSL generation and FXC compilation. The ordinary
 and viewport-remapped vertex shader paths share the same values. Invalid and
 unknown overrides return the existing stage-specific pipeline-constant error.
 
-The strict controlled core fixture rendered with an explicit fragment override
-(`tint = 0.75`, readback red 191) and the WGSL default (`tint = 0.25`, readback
-red 64); each expected value appeared in all 64 checked pixels. An unknown
-override was rejected as a fragment pipeline-constant validation error. This
-also verifies that override resolution precedes the private backend's selected
-entry safety checks, rather than treating `Expression::Override` as an unsafe
-runtime expression.
+The strict controlled core fixture rendered explicit fragment and vertex
+overrides (`tint = 0.75`, readback red 191) and WGSL defaults (`tint = 0.25`,
+readback red 64); each expected value appeared in all 64 checked pixels.
+Unknown overrides were rejected with the corresponding fragment or vertex
+pipeline-constant validation error. This also verifies that override
+resolution precedes the private backend's selected-entry safety checks, rather
+than treating `Expression::Override` as an unsafe runtime expression.
 
 Rust 1.93.1/MSVC verification on 2026-11-04:
 
@@ -3783,6 +3783,10 @@ Rust 1.93.1/MSVC verification on 2026-11-04:
   rustfmt and `git diff --check` passed.
 - Visual Studio's developer prompt printed its existing `Error: Unknown
   error` banner; all listed commands exited successfully.
+- The vertex-override extension reran the strict controlled core suite at
+  78/78 and core Clippy. Its first targeted rustfmt check found two formatting
+  differences in the new assertions; formatting was applied to the changed
+  fixture file and the targeted check then passed. No functional test failed.
 
 Commands (run after entering the Visual Studio developer environment; strict
 hardware commands set `WGPU_DX11_REQUIRE_HARDWARE=1`):
@@ -3801,5 +3805,7 @@ git diff --check
 
 Code changes are limited to `hal_shader.rs`, `hal_pipeline.rs` and the
 controlled core fixture. Normal D3D11 adapter enumeration and public HWND
-surface exposure remain disabled. Continue plan item 1 with uniform matrix,
-array and nested-structure coverage, then resume the core/HAL contract audit.
+surface exposure remain disabled. Existing GPU tests already cover nested
+uniform structures, an asymmetric matrix, stride-sensitive arrays and bounded
+ranges. Runtime integer indexing remains unavailable. Continue the core/HAL
+contract audit and production capability projection.

@@ -16,9 +16,12 @@ below is met. This plan does not claim WebGPU conformance.
    indexing remains rejected, so dynamic near-limit indexing is still
    unavailable. Core pipeline override constants are now resolved through
    Naga before selected-entry checks and FL9_1 shader compilation; strict
-   hardware readback covers explicit/default values and invalid overrides.
-   Continue investigating matrix, array and nested-structure layouts and FXC
-   instruction pressure with checked shader translation.
+   hardware readback covers explicit/default values and invalid overrides for
+   both vertex and fragment stages.
+   Strict readback also covers nested structures, an asymmetric matrix,
+   stride-sensitive arrays and padding. Runtime integer indexing remains
+   unavailable; continue checking shader instruction pressure and other
+   untested layout shapes with checked translation.
 2. Implement depth/stencil textures, views, initialization, render-pass
    attachments and depth state incrementally. Verify overlapping geometry in
    both draw orders on forced FL9_1, and independent load/clear/store behavior.
