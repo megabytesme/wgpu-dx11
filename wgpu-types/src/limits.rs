@@ -1239,6 +1239,12 @@ bitflags::bitflags! {
         ///
         /// Custom HAL adapters must report this flag to permit occlusion queries.
         const OCCLUSION_QUERY = 1 << 26;
+
+        /// Supports distinct stencil state for front-facing and back-facing primitives.
+        ///
+        /// Without this flag, render pipelines with different front and back stencil
+        /// face states are rejected during validation.
+        const TWO_SIDED_STENCIL = 1 << 27;
     }
 }
 
@@ -1278,6 +1284,14 @@ mod tests {
         assert!(capabilities.is_webgpu_compliant());
         capabilities.flags.remove(DownlevelFlags::OCCLUSION_QUERY);
         assert!(!capabilities.is_webgpu_compliant());
+    }
+
+    #[test]
+    fn two_sided_stencil_is_included_in_default_and_compliant_flags() {
+        assert!(DownlevelCapabilities::default()
+            .flags
+            .contains(DownlevelFlags::TWO_SIDED_STENCIL));
+        assert!(DownlevelFlags::compliant().contains(DownlevelFlags::TWO_SIDED_STENCIL));
     }
 
     fn side_by_side(left: &str, right: &str) -> String {

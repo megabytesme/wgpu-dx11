@@ -114,8 +114,11 @@ for the internal capability model, FL9_1 inventory and validation gaps.
   depth/stencil clears, depth-only draws and native Always/LessEqual depth tests
   with optional writes. Equal front/back stencil states map native comparisons,
   operations and references; asymmetric states are rejected because FL9_1 does
-  not support two-sided stencil. Never with active stencil uses Always plus
-  remapped depth-fail operations and disabled color/depth writes; inert-stencil
+  not support two-sided stencil. Core represents this restriction with
+  `DownlevelFlags::TWO_SIDED_STENCIL`; the controlled fixture verifies an
+  asymmetric pipeline is rejected before the HAL call. Never with active
+  stencil uses Always plus remapped depth-fail operations and disabled
+  color/depth writes; inert-stencil
   Never still suppresses validated draws. Replace/Equal writes and reference
   transitions are indirectly verified through strict GPU readback, including
   the depth-fail path. Private read-only passes require load/store on both

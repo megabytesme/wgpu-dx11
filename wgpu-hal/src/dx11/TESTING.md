@@ -985,7 +985,10 @@ mapped readback and explicit teardown. It checks all 64 copied bytes and all
 unsupported transient formats and usages and creates transient textures and
 views; it does not execute a transient render pass through core. Its restricted
 numeric limits and format capabilities do not constitute a safe general adapter
-contract.
+contract. The fixture verifies that core's format-feature query preserves the
+HAL's RGBA8, D24S8, BC1-only and unsupported-BC results. It also verifies core
+rejects asymmetric stencil state with the missing
+`TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL.
 
 ### FL9_1 line topologies
 

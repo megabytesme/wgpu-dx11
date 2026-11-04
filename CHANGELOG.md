@@ -44,6 +44,10 @@ Bottom level categories:
 
 ### Changes
 
+#### Validation
+
+- Add `DownlevelFlags::TWO_SIDED_STENCIL` so adapters can report whether front and back stencil states may differ.
+
 #### Hal
 
 - `Device::invalidate_mapped_ranges` now returns a `Result` so invalidation failures can be handled without exposing stale mapped data.

@@ -4732,6 +4732,10 @@ impl Device {
                 return Err(pipeline::CreateRenderPipelineError::DepthStencilState(e));
             }
 
+            if ds.stencil.front != ds.stencil.back {
+                self.require_downlevel_flags(wgt::DownlevelFlags::TWO_SIDED_STENCIL)?;
+            }
+
             if ds.bias.clamp != 0.0 {
                 self.require_downlevel_flags(wgt::DownlevelFlags::DEPTH_BIAS_CLAMP)?;
             }

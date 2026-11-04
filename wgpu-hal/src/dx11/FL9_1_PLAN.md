@@ -59,6 +59,11 @@ below is met. This plan does not claim WebGPU conformance.
    and unavailable occlusion query sets are rejected by a downlevel flag.
    Depth-only clears and restricted draws work privately; handle read-only
    depth hazards and audit the remaining general render-pass combinations.
+   Active asymmetric stencil state is now rejected by core unless the adapter
+   reports `DownlevelFlags::TWO_SIDED_STENCIL`; the D3D11 fixture omits it at
+   FL9_1. Continue mapping core-valid render state and format combinations to
+   explicit downlevel or format capabilities before considering production
+   enumeration.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.

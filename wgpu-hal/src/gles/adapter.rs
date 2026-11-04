@@ -397,7 +397,8 @@ impl super::Adapter {
             | wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
             | wgt::DownlevelFlags::COMPARISON_SAMPLERS
             | wgt::DownlevelFlags::SHADER_F16_IN_F32
-            | wgt::DownlevelFlags::MSL2_1;
+            | wgt::DownlevelFlags::MSL2_1
+            | wgt::DownlevelFlags::TWO_SIDED_STENCIL;
         downlevel_flags.set(
             wgt::DownlevelFlags::OCCLUSION_QUERY,
             supports_conservative_occlusion_query(

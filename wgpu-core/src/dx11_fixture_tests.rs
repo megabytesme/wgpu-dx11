@@ -352,6 +352,53 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         },
     };
     let adapter_id = unsafe { global.create_adapter_from_hal(exposed.into(), None) };
+    let rgba_core =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Rgba8Unorm);
+    assert_eq!(
+        rgba_core.allowed_usages,
+        wgt::TextureUsages::COPY_SRC
+            | wgt::TextureUsages::COPY_DST
+            | wgt::TextureUsages::TEXTURE_BINDING
+            | wgt::TextureUsages::RENDER_ATTACHMENT
+            | wgt::TextureUsages::TRANSIENT_ATTACHMENT
+    );
+    assert_eq!(
+        rgba_core
+            .flags
+            .contains(wgt::TextureFormatFeatureFlags::FILTERABLE),
+        rgba_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR)
+    );
+    assert_eq!(
+        rgba_core
+            .flags
+            .contains(wgt::TextureFormatFeatureFlags::BLENDABLE),
+        rgba_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND)
+    );
+    let depth_core = global
+        .adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Depth24PlusStencil8);
+    assert_eq!(
+        depth_core.allowed_usages,
+        wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT
+    );
+    let bc1_core =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc1RgbaUnorm);
+    if bc1_supported {
+        assert_eq!(
+            bc1_core.allowed_usages,
+            wgt::TextureUsages::COPY_DST | wgt::TextureUsages::TEXTURE_BINDING
+        );
+        assert!(bc1_core.flags.is_empty());
+    } else {
+        assert!(bc1_core.allowed_usages.is_empty());
+        assert!(bc1_core.flags.is_empty());
+    }
+    let bc2_core =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc2RgbaUnorm);
+    assert!(bc2_core.allowed_usages.is_empty());
+    assert!(bc2_core.flags.is_empty());
+    std::println!(
+        "Core format capability projection: RGBA8 {rgba_core:?}; D24S8 {depth_core:?}; BC1 {bc1_core:?}"
+    );
     let descriptor = crate::device::DeviceDescriptor {
         required_features: fixture_features,
         required_limits: limits,
@@ -2565,6 +2612,31 @@ fn render_triangle(
         multiview_mask: None,
         cache: None,
     };
+    if case == VertexCase::Baseline {
+        let asymmetric = wgt::StencilState {
+            front: wgt::StencilFaceState::IGNORE,
+            back: wgt::StencilFaceState {
+                pass_op: wgt::StencilOperation::Replace,
+                ..wgt::StencilFaceState::IGNORE
+            },
+            read_mask: 0xff,
+            write_mask: 0xff,
+        };
+        pipeline_descriptor.depth_stencil.as_mut().unwrap().stencil = asymmetric;
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                )) if *flags == wgt::DownlevelFlags::TWO_SIDED_STENCIL
+            ),
+            "FL9_1 core validation must reject active asymmetric stencil state before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        pipeline_descriptor.depth_stencil.as_mut().unwrap().stencil = wgt::StencilState::default();
+    }
     if unfilterable_float {
         let mut invalid_entries = group_entries.clone();
         invalid_entries
