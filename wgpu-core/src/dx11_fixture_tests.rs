@@ -78,6 +78,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                 shader_model: wgt::ShaderModel::Sm2,
                 limits: wgt::DownlevelLimits {
                     max_sampled_textures_per_vertex_stage: 0,
+                    unrestricted_npot_texture_sampling: false,
                 },
                 ..Default::default()
             },
@@ -199,6 +200,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
     assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let driver_unrestricted_npot = fixture.test_fixture_unrestricted_npot_sampling();
+    std::println!(
+        "Driver unrestricted NPOT sampling: {driver_unrestricted_npot}; core test fixture forces the conditional-NPOT validation path"
+    );
     let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
     info.name = identity.name.clone();
     info.vendor = identity.vendor_id;
@@ -212,8 +217,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_bind_groups_plus_vertex_buffers: 3,
         max_bindings_per_bind_group: 64,
         max_dynamic_uniform_buffers_per_pipeline_layout: 1,
-        max_sampled_textures_per_shader_stage: 1,
-        max_samplers_per_shader_stage: 1,
+        max_sampled_textures_per_shader_stage: 2,
+        max_samplers_per_shader_stage: 2,
         max_uniform_buffers_per_shader_stage: 1,
         max_uniform_buffer_binding_size: 256,
         max_vertex_buffers: 2,
@@ -223,7 +228,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         max_color_attachments: 1,
         max_color_attachment_bytes_per_sample: 8,
         max_buffer_size: 512 << 10,
-        max_non_sampler_bindings: 2,
+        max_non_sampler_bindings: 4,
         max_buffers_and_acceleration_structures_per_shader_stage: 2,
         ..wgt::Limits::downlevel_webgl2_defaults()
     };
@@ -351,6 +356,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 shader_model: wgt::ShaderModel::Sm2,
                 limits: wgt::DownlevelLimits {
                     max_sampled_textures_per_vertex_stage: 0,
+                    unrestricted_npot_texture_sampling: false,
                 },
                 ..Default::default()
             },
@@ -918,6 +924,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     global.buffer_unmap(readback).unwrap();
     for case in [
         VertexCase::Baseline,
+        VertexCase::NpotRepeat,
+        VertexCase::NpotValidPairs,
         VertexCase::ZeroSampleMask,
         VertexCase::ConstantBlend,
         VertexCase::NonFiltering,
@@ -2077,6 +2085,8 @@ enum VertexCase {
     Uniform12,
     Uniform20,
     Bc1,
+    NpotRepeat,
+    NpotValidPairs,
 }
 
 fn render_triangle(
@@ -2095,6 +2105,8 @@ fn render_triangle(
     );
     let unfilterable_float = matches!(case, VertexCase::UnfilterableFloat | VertexCase::Bc1);
     let bc1 = case == VertexCase::Bc1;
+    let npot_repeat = case == VertexCase::NpotRepeat;
+    let npot_valid_pairs = case == VertexCase::NpotValidPairs;
     let sampled_visibility = if case == VertexCase::VertexVisibleBindings {
         wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
     } else {
@@ -2232,7 +2244,9 @@ fn render_triangle(
         global.texture_create_view(depth, &resource::TextureViewDescriptor::default(), None);
     assert!(error.is_none(), "depth view creation: {error:?}");
     let sample_extent = wgt::Extent3d {
-        width: if bc1 || disjoint_format.is_some() {
+        width: if npot_repeat {
+            3
+        } else if bc1 || disjoint_format.is_some() {
             8
         } else if sampled_mip_suffix {
             4
@@ -2367,6 +2381,10 @@ fn render_triangle(
                     ]
                 } else if bc1 {
                     bc1_data.as_deref().expect("BC1 sample data")
+                } else if npot_repeat {
+                    &[255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]
+                } else if npot_valid_pairs {
+                    &[255, 0, 0, 255, 255, 0, 0, 255]
                 } else if premultiplied_blend {
                     &[128, 0, 0, 128, 0, 128, 0, 128]
                 } else {
@@ -2532,7 +2550,15 @@ fn render_triangle(
     });
     let sampler_desc = resource::SamplerDescriptor {
         label: None,
-        address_modes: [wgt::AddressMode::ClampToEdge; 3],
+        address_modes: if npot_repeat || npot_valid_pairs {
+            [
+                wgt::AddressMode::Repeat,
+                wgt::AddressMode::ClampToEdge,
+                wgt::AddressMode::ClampToEdge,
+            ]
+        } else {
+            [wgt::AddressMode::ClampToEdge; 3]
+        },
         mag_filter: wgt::FilterMode::Nearest,
         min_filter: wgt::FilterMode::Nearest,
         mipmap_filter: wgt::MipmapFilterMode::Nearest,
@@ -2597,6 +2623,26 @@ fn render_triangle(
             count: None,
         },
     ];
+    if npot_valid_pairs {
+        group_entries.extend([
+            wgt::BindGroupLayoutEntry {
+                binding: 13,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgt::BindGroupLayoutEntry {
+                binding: 51,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ]);
+    }
     if let Some(size) = uniform_size {
         group_entries.push(wgt::BindGroupLayoutEntry {
             binding: 17,
@@ -2651,6 +2697,68 @@ fn render_triangle(
             resource: binding_model::BindingResource::Sampler(sampler),
         },
     ];
+    let (npot_pair_texture, npot_pair_view, npot_pair_sampler) = if npot_valid_pairs {
+        let npot_extent = wgt::Extent3d {
+            width: 3,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+        let (texture, error) = global.device_create_texture(
+            device,
+            &wgt::TextureDescriptor {
+                label: Some(Cow::Borrowed("conditional NPOT sampled pair")),
+                size: npot_extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Rgba8Unorm,
+                usage: wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+                view_formats: Vec::new(),
+            },
+            None,
+        );
+        assert!(error.is_none(), "NPOT sampled texture creation: {error:?}");
+        global
+            .queue_write_texture(
+                queue,
+                &wgt::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &[0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255],
+                &wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: None,
+                    rows_per_image: None,
+                },
+                &npot_extent,
+            )
+            .expect("upload NPOT sampled texture");
+        let (view, error) =
+            global.texture_create_view(texture, &resource::TextureViewDescriptor::default(), None);
+        assert!(error.is_none(), "NPOT sample view creation: {error:?}");
+        let sampler_desc = resource::SamplerDescriptor {
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            ..sampler_desc.clone()
+        };
+        let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
+        assert!(error.is_none(), "NPOT clamp sampler creation: {error:?}");
+        group_resources.extend([
+            binding_model::BindGroupEntry {
+                binding: 13,
+                resource: binding_model::BindingResource::TextureView(view),
+            },
+            binding_model::BindGroupEntry {
+                binding: 51,
+                resource: binding_model::BindingResource::Sampler(sampler),
+            },
+        ]);
+        (Some(texture), Some(view), Some(sampler))
+    } else {
+        (None, None, None)
+    };
     if let (Some(buffer), Some(size)) = (uniform, uniform_size) {
         group_resources.push(binding_model::BindGroupEntry {
             binding: 17,
@@ -2711,7 +2819,9 @@ fn render_triangle(
         global.bind_group_drop(invalid_group);
         global.sampler_drop(linear);
     }
-    let source = if case == VertexCase::SampledMipsBias {
+    let source = if npot_valid_pairs {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var repeat_smp: sampler; @group(0) @binding(13) var npot_image: texture_2d<f32>; @group(0) @binding(51) var clamp_smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, repeat_smp, in.uv) + textureSample(npot_image, clamp_smp, in.uv); }"
+    } else if case == VertexCase::SampledMipsBias {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
     } else if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
@@ -3451,7 +3561,9 @@ fn render_triangle(
             .unwrap();
     }
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
-    if let (Some(format), Some(indices)) = (index_format, index_buffer) {
+    if npot_repeat {
+        global.render_pass_draw(&mut pass, 6, 1, 0, 0).unwrap();
+    } else if let (Some(format), Some(indices)) = (index_format, index_buffer) {
         global
             .render_pass_set_index_buffer(
                 &mut pass,
@@ -3514,7 +3626,8 @@ fn render_triangle(
             .render_pass_set_pipeline(&mut pass, bias_pipeline)
             .unwrap();
     }
-    if !point_input
+    if !npot_repeat
+        && !point_input
         && !depth_only_prepass
         && special_topology.is_none()
         && triangle_strip_index_format.is_none()
@@ -3558,6 +3671,42 @@ fn render_triangle(
         .unwrap();
     let (command, error) =
         global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    if npot_repeat {
+        let error = error.expect("NPOT texture with repeat sampler must fail Core validation");
+        assert!(
+            std::format!("{error:?}").contains("NpotTextureWithRepeatSampler"),
+            "NPOT compatibility must fail before HAL draw: {error:?}"
+        );
+        std::println!("PASS: core rejected the used NPOT/repeat pair before HAL draw");
+        global.command_buffer_drop(command);
+        global.command_encoder_drop(encoder);
+        global.render_pipeline_drop(pipeline_id);
+        global.pipeline_layout_drop(layout);
+        global.shader_module_drop(shader);
+        global.bind_group_drop(group);
+        global.bind_group_layout_drop(group_layout);
+        global.sampler_drop(sampler);
+        global.texture_view_drop(sample_view);
+        if disjoint_format.is_none() {
+            global.texture_drop(sampled);
+        }
+        global.texture_view_drop(depth_view);
+        global.texture_drop(depth);
+        global.texture_view_drop(view);
+        global.texture_drop(target);
+        global.buffer_drop(vertices);
+        if let Some(indices) = index_buffer {
+            global.buffer_drop(indices);
+        }
+        if let Some(buffer) = auxiliary_vertices {
+            global.buffer_drop(buffer);
+        }
+        if let Some(buffer) = uniform {
+            global.buffer_drop(buffer);
+        }
+        global.buffer_drop(readback);
+        return;
+    }
     assert!(error.is_none(), "render command finish: {error:?}");
     global
         .queue_submit(queue, &[command])
@@ -3618,6 +3767,14 @@ fn render_triangle(
                 );
                 continue;
             }
+            if npot_repeat {
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[0, 0, 255, 255],
+                    "rejected NPOT/repeat draw must preserve the clear color"
+                );
+                continue;
+            }
             if special_topology.is_some() {
                 match &pixels[offset..offset + 4] {
                     [0, 0, 255, 255] => {}
@@ -3670,6 +3827,8 @@ fn render_triangle(
                     } else {
                         &[0, 0, 255, 255]
                     }
+                } else if npot_valid_pairs {
+                    &[255, 255, 0, 255]
                 } else if disjoint_format.is_some() {
                     &[0, 255, 0, 255]
                 } else if non_suffix {
@@ -3725,6 +3884,15 @@ fn render_triangle(
     global.bind_group_drop(group);
     global.bind_group_layout_drop(group_layout);
     global.sampler_drop(sampler);
+    if let Some(sampler) = npot_pair_sampler {
+        global.sampler_drop(sampler);
+    }
+    if let Some(view) = npot_pair_view {
+        global.texture_view_drop(view);
+    }
+    if let Some(texture) = npot_pair_texture {
+        global.texture_drop(texture);
+    }
     if let Some((green, blue, dual)) = render_mip_views {
         global.texture_view_drop(green);
         if !dual {

@@ -3,6 +3,7 @@ use alloc::{
     boxed::Box,
     string::{String, ToString as _},
     sync::{Arc, Weak},
+    vec,
     vec::Vec,
 };
 use core::{
@@ -2627,6 +2628,7 @@ impl Device {
             filtering: desc.min_filter == wgt::FilterMode::Linear
                 || desc.mag_filter == wgt::FilterMode::Linear
                 || desc.mipmap_filter == wgt::MipmapFilterMode::Linear,
+            address_modes: desc.address_modes,
         };
 
         let sampler = Arc::new(sampler);
@@ -3663,6 +3665,8 @@ impl Device {
         // TODO: arrayvec/smallvec, or re-use allocations
         // Record binding info for dynamic offset validation
         let mut dynamic_binding_info = Vec::new();
+        let mut sampled_texture_npot = FastHashMap::default();
+        let mut sampler_uses_repeat = FastHashMap::default();
         // Map of binding -> shader reflected size
         //Note: we can't collect into a vector right away because
         // it needs to be in BGL iteration order, not BG entry order.
@@ -3724,7 +3728,9 @@ impl Device {
                     (res_index, num_bindings)
                 }
                 Br::Sampler(ref sampler) => {
+                    let uses_repeat = sampler.address_modes.contains(&wgt::AddressMode::Repeat);
                     let sampler = self.create_sampler_binding(&mut used, binding, decl, sampler)?;
+                    sampler_uses_repeat.insert(binding, vec![uses_repeat]);
 
                     let res_index = hal_samplers.len();
                     hal_samplers.push(sampler);
@@ -3733,6 +3739,16 @@ impl Device {
                 Br::SamplerArray(ref samplers) => {
                     let num_bindings = samplers.len();
                     Self::check_array_binding(self.features, decl.count, num_bindings)?;
+
+                    sampler_uses_repeat.insert(
+                        binding,
+                        samplers
+                            .iter()
+                            .map(|sampler| {
+                                sampler.address_modes.contains(&wgt::AddressMode::Repeat)
+                            })
+                            .collect(),
+                    );
 
                     let res_index = hal_samplers.len();
                     for sampler in samplers.iter() {
@@ -3758,6 +3774,12 @@ impl Device {
                         (res_index, 1)
                     }
                     _ => {
+                        if matches!(&decl.ty, wgt::BindingType::Texture { .. }) {
+                            sampled_texture_npot.insert(
+                                binding,
+                                vec![binding_model::sampled_view_is_npot_2d(view)],
+                            );
+                        }
                         let tb = self.create_texture_binding(
                             binding,
                             decl,
@@ -3774,6 +3796,16 @@ impl Device {
                 Br::TextureViewArray(ref views) => {
                     let num_bindings = views.len();
                     Self::check_array_binding(self.features, decl.count, num_bindings)?;
+
+                    if matches!(&decl.ty, wgt::BindingType::Texture { .. }) {
+                        sampled_texture_npot.insert(
+                            binding,
+                            views
+                                .iter()
+                                .map(|view| binding_model::sampled_view_is_npot_2d(view))
+                                .collect(),
+                        );
+                    }
 
                     let res_index = hal_textures.len();
                     for view in views.iter() {
@@ -3887,6 +3919,8 @@ impl Device {
             texture_init_actions,
             dynamic_binding_info,
             late_buffer_binding_infos,
+            sampled_texture_npot,
+            sampler_uses_repeat,
         };
 
         let bind_group = Arc::new(bind_group);
@@ -4920,6 +4954,7 @@ impl Device {
         let mut _task_entry_point_name = String::new();
         let mut _mesh_entry_point_name = String::new();
         let mut immediate_slots_required = naga::valid::ImmediateSlots::default();
+        let mut sampling_pairs = Vec::new();
         match desc.vertex {
             pipeline::RenderPipelineVertexProcessor::Vertex(ref vertex) => {
                 vertex_stage = {
@@ -4946,6 +4981,11 @@ impl Device {
                         .map_err(stage_err)?;
 
                     if let Some(interface) = vertex_shader_module.interface.interface() {
+                        sampling_pairs.extend(
+                            interface
+                                .sampling_pairs_used(stage.to_naga(), &_vertex_entry_point_name)
+                                .map_err(stage_err)?,
+                        );
                         let sampled_textures = interface
                             .sampled_textures_used(stage.to_naga(), &_vertex_entry_point_name)
                             .map_err(stage_err)?;
@@ -5004,6 +5044,11 @@ impl Device {
                         .map_err(stage_err)?;
 
                     if let Some(interface) = task_shader_module.interface.interface() {
+                        sampling_pairs.extend(
+                            interface
+                                .sampling_pairs_used(stage.to_naga(), &_task_entry_point_name)
+                                .map_err(stage_err)?,
+                        );
                         immediate_slots_required |= interface
                             .immediate_slots_required(stage.to_naga(), &_task_entry_point_name);
                         io = interface
@@ -5048,6 +5093,11 @@ impl Device {
                         .map_err(stage_err)?;
 
                     if let Some(interface) = mesh_shader_module.interface.interface() {
+                        sampling_pairs.extend(
+                            interface
+                                .sampling_pairs_used(stage.to_naga(), &_mesh_entry_point_name)
+                                .map_err(stage_err)?,
+                        );
                         immediate_slots_required |= interface
                             .immediate_slots_required(stage.to_naga(), &_mesh_entry_point_name);
                         io = interface
@@ -5102,6 +5152,11 @@ impl Device {
                     .map_err(stage_err)?;
 
                 if let Some(interface) = shader_module.interface.interface() {
+                    sampling_pairs.extend(
+                        interface
+                            .sampling_pairs_used(stage.to_naga(), &fragment_entry_point_name)
+                            .map_err(stage_err)?,
+                    );
                     immediate_slots_required |= interface
                         .immediate_slots_required(stage.to_naga(), &fragment_entry_point_name);
                     io = interface
@@ -5353,6 +5408,8 @@ impl Device {
             shader_modules.extend(desc.fragment.map(|f| f.stage.module));
             shader_modules
         };
+        sampling_pairs.sort_unstable();
+        sampling_pairs.dedup();
 
         let pipeline = pipeline::RenderPipeline {
             state: ResourceState::Valid(pipeline::RenderPipelineState {
@@ -5368,6 +5425,7 @@ impl Device {
             vertex_steps,
             late_sized_buffer_groups,
             immediate_slots_required,
+            sampling_pairs,
             label: desc.label.to_string(),
             tracking_data: TrackingData::new(self.tracker_indices.render_pipelines.clone()),
             is_mesh,

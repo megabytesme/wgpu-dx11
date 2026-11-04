@@ -106,9 +106,7 @@ fn translate_sampler(
 }
 
 fn requires_power_of_two(address_modes: &[wgt::AddressMode; 3]) -> bool {
-    address_modes
-        .iter()
-        .any(|mode| *mode != wgt::AddressMode::ClampToEdge)
+    address_modes.contains(&wgt::AddressMode::Repeat)
 }
 
 fn bias_compatible(desc: &crate::SamplerDescriptor) -> bool {
@@ -258,7 +256,7 @@ mod tests {
             for axis in 0..3 {
                 let mut modes = [ClampToEdge; 3];
                 modes[axis] = mode;
-                assert!(requires_power_of_two(&modes));
+                assert_eq!(requires_power_of_two(&modes), mode == Repeat);
             }
         }
         for (u, expected_u) in [
@@ -480,6 +478,7 @@ mod tests {
                 for axis in 0..3 {
                     let mut modes = [wgt::AddressMode::ClampToEdge; 3];
                     modes[axis] = mode;
+                    let requires_pot = mode == wgt::AddressMode::Repeat;
                     let resources = SamplingResources {
                         textures: alloc::vec![TextureInfo {
                             size,
@@ -489,18 +488,19 @@ mod tests {
                         samplers_lod: alloc::vec![SamplerLod::Unchanged],
                         samplers_bias_compatible: alloc::vec![true],
                     };
-                    assert!(!compatible(
-                        &[pair],
-                        &resources,
-                        FeatureLevel::L9_1,
-                        Query::Value(false)
-                    ));
-                    assert!(!compatible(
-                        &[pair],
-                        &resources,
-                        FeatureLevel::L9_1,
-                        Query::Unavailable(-1)
-                    ));
+                    assert_eq!(
+                        compatible(&[pair], &resources, FeatureLevel::L9_1, Query::Value(false)),
+                        !requires_pot
+                    );
+                    assert_eq!(
+                        compatible(
+                            &[pair],
+                            &resources,
+                            FeatureLevel::L9_1,
+                            Query::Unavailable(-1)
+                        ),
+                        !requires_pot
+                    );
                     assert!(compatible(
                         &[pair],
                         &resources,

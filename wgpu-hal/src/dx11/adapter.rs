@@ -24,6 +24,12 @@ pub struct Adapter {
 
 #[cfg(feature = "dx11-test-fixture")]
 impl Adapter {
+    /// Reports whether the selected device has unrestricted NPOT sampling.
+    pub fn test_fixture_unrestricted_npot_sampling(&self) -> bool {
+        let AdapterInner::Fixture(native) = &self.inner;
+        super::capabilities::Capabilities::query(native).unrestricted_npot_texture_sampling()
+    }
+
     /// Query the format prerequisites for the controlled copy-only RGBA8 mip test.
     pub fn test_fixture_copy_only_rgba8_mip_supported(&self) -> Result<bool, crate::DeviceError> {
         self.test_fixture_mip_supported(

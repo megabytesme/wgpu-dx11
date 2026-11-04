@@ -1045,12 +1045,19 @@ pub struct DownlevelLimits {
     /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
     /// applies to vertex shaders. WebGPU's baseline guarantee is 16.
     pub max_sampled_textures_per_vertex_stage: u32,
+    /// Whether non-power-of-two textures may use repeat addressing when sampled.
+    ///
+    /// This is false on APIs that expose conditional NPOT support and whose driver does not
+    /// report unrestricted NPOT sampling. The restriction applies only to texture/sampler pairs
+    /// used by the selected shader entry point.
+    pub unrestricted_npot_texture_sampling: bool,
 }
 
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
             max_sampled_textures_per_vertex_stage: 16,
+            unrestricted_npot_texture_sampling: true,
         }
     }
 }
@@ -1087,6 +1094,7 @@ impl DownlevelCapabilities {
         self.flags.contains(DownlevelFlags::compliant())
             && self.limits.max_sampled_textures_per_vertex_stage
                 >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
+            && self.limits.unrestricted_npot_texture_sampling
             && self.shader_model >= ShaderModel::Sm5
     }
 }
@@ -1340,6 +1348,10 @@ mod tests {
         assert!(capabilities.is_webgpu_compliant());
 
         capabilities.limits.max_sampled_textures_per_vertex_stage = 15;
+        assert!(!capabilities.is_webgpu_compliant());
+
+        capabilities.limits.max_sampled_textures_per_vertex_stage = 16;
+        capabilities.limits.unrestricted_npot_texture_sampling = false;
         assert!(!capabilities.is_webgpu_compliant());
     }
 

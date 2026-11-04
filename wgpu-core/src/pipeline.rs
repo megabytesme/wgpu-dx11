@@ -929,6 +929,7 @@ pub struct RenderPipeline {
     pub(crate) vertex_steps: Vec<Option<VertexStep>>,
     pub(crate) late_sized_buffer_groups: ArrayVec<LateSizedBufferGroup, { hal::MAX_BIND_GROUPS }>,
     pub(crate) immediate_slots_required: naga::valid::ImmediateSlots,
+    pub(crate) sampling_pairs: Vec<validation::SamplingPair>,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
     pub(crate) tracking_data: TrackingData,
@@ -1009,6 +1010,7 @@ impl RenderPipeline {
             vertex_steps: Vec::new(),
             late_sized_buffer_groups: ArrayVec::new(),
             immediate_slots_required: naga::valid::ImmediateSlots::default(),
+            sampling_pairs: Vec::new(),
             label,
             is_mesh: false,
             has_task_shader: false,

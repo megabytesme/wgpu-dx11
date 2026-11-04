@@ -300,6 +300,10 @@ pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
 }
 
 impl Capabilities {
+    pub fn unrestricted_npot_texture_sampling(&self) -> bool {
+        !self.hardware.conditional_npot || matches!(self.driver.full_npot, Query::Value(true))
+    }
+
     pub fn query(device: &NativeDevice) -> Self {
         let raw = device.raw_device();
         let format =
@@ -635,6 +639,23 @@ mod tests {
             Query::<bool>::from_result(Err(error)),
             Query::Unavailable(windows::Win32::Foundation::E_INVALIDARG.0)
         );
+    }
+
+    #[test]
+    fn unrestricted_npot_sampling_requires_a_positive_optional_query_below_fl10() {
+        let mut fl9 = model(FeatureLevel::L9_1);
+        fl9.driver.full_npot = Query::Value(false);
+        assert!(!fl9.unrestricted_npot_texture_sampling());
+
+        fl9.driver.full_npot = Query::Unavailable(-1);
+        assert!(!fl9.unrestricted_npot_texture_sampling());
+
+        fl9.driver.full_npot = Query::Value(true);
+        assert!(fl9.unrestricted_npot_texture_sampling());
+
+        let mut fl10 = model(FeatureLevel::L10_0);
+        fl10.driver.full_npot = Query::Unavailable(-1);
+        assert!(fl10.unrestricted_npot_texture_sampling());
     }
 
     #[test]

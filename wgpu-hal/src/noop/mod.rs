@@ -189,6 +189,7 @@ pub const CAPABILITIES: crate::Capabilities = {
             flags: wgt::DownlevelFlags::all(),
             limits: wgt::DownlevelLimits {
                 max_sampled_textures_per_vertex_stage: 16,
+                unrestricted_npot_texture_sampling: true,
             },
             shader_model: wgt::ShaderModel::Sm5,
         },

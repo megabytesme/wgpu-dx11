@@ -76,6 +76,15 @@ pub enum DrawError {
     },
     #[error("The number of bind groups + vertex buffers {given} exceeds the limit {limit}")]
     TooManyBindGroupsPlusVertexBuffers { given: u32, limit: u32 },
+    #[error("Non-power-of-two texture group {texture_group} binding {texture_binding} cannot be sampled with repeating sampler group {sampler_group} binding {sampler_binding} on this device")]
+    NpotTextureWithRepeatSampler {
+        texture_group: u32,
+        texture_binding: u32,
+        sampler_group: u32,
+        sampler_binding: u32,
+    },
+    #[error("Sampling binding metadata is missing for group {group} binding {binding}")]
+    MissingSamplingBindingMetadata { group: u32, binding: u32 },
 }
 
 impl WebGpuError for DrawError {

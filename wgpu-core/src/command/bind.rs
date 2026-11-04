@@ -4,7 +4,9 @@ use thiserror::Error;
 
 use crate::{
     binding_model::{BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout},
+    command::draw::DrawError,
     pipeline::LateSizedBufferGroup,
+    pipeline::RenderPipeline,
     resource::{Labeled, ParentDevice, ResourceErrorIdent},
 };
 
@@ -330,6 +332,10 @@ impl EntryPayload {
     }
 }
 
+fn npot_sampler_pair_compatible(texture_npot: &[bool], sampler_uses_repeat: &[bool]) -> bool {
+    !texture_npot.iter().any(|&npot| npot) || !sampler_uses_repeat.iter().any(|&repeat| repeat)
+}
+
 #[derive(Debug)]
 pub(super) struct Binder {
     pub(super) pipeline_layout: Option<Arc<PipelineLayout>>,
@@ -493,6 +499,63 @@ impl Binder {
         })
     }
 
+    pub(super) fn check_npot_sampling(&self, pipeline: &RenderPipeline) -> Result<(), DrawError> {
+        if pipeline
+            .device
+            .downlevel
+            .limits
+            .unrestricted_npot_texture_sampling
+        {
+            return Ok(());
+        }
+
+        for pair in &pipeline.sampling_pairs {
+            let texture_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.texture_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                })?;
+            let sampler_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.sampler_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+            let texture_npot = texture_group
+                .sampled_texture_npot
+                .get(&pair.texture_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                })?;
+            let sampler_uses_repeat = sampler_group
+                .sampler_uses_repeat
+                .get(&pair.sampler_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+
+            if !npot_sampler_pair_compatible(texture_npot, sampler_uses_repeat) {
+                return Err(DrawError::NpotTextureWithRepeatSampler {
+                    texture_group: pair.texture_group,
+                    texture_binding: pair.texture_binding,
+                    sampler_group: pair.sampler_group,
+                    sampler_binding: pair.sampler_binding,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Scan active buffer bindings corresponding to layouts without `min_binding_size` specified.
     pub(super) fn check_late_buffer_bindings(
         &self,
@@ -545,5 +608,21 @@ impl Binder {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::npot_sampler_pair_compatible;
+
+    #[test]
+    fn npot_repeat_validation_uses_the_bound_relationship() {
+        assert!(npot_sampler_pair_compatible(&[false], &[true]));
+        assert!(npot_sampler_pair_compatible(&[true], &[false]));
+        assert!(!npot_sampler_pair_compatible(&[true], &[true]));
+        assert!(!npot_sampler_pair_compatible(
+            &[false, true],
+            &[false, true]
+        ));
     }
 }

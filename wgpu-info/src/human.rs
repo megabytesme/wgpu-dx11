@@ -281,12 +281,17 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         shader_model: _,
         limits: wgpu::DownlevelLimits {
             max_sampled_textures_per_vertex_stage,
+            unrestricted_npot_texture_sampling,
         },
         flags,
     } = downlevel;
     writeln!(
         output,
         "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"
+    )?;
+    writeln!(
+        output,
+        "\t\tUnrestricted NPOT texture sampling: {unrestricted_npot_texture_sampling}"
     )?;
     let max_downlevel_flag_width = wgpu::DownlevelFlags::max_debug_print_width();
     for bit in wgpu::DownlevelFlags::all().iter() {

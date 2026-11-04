@@ -296,6 +296,14 @@ struct EntryPoint {
     immediate_slots_required: naga::valid::ImmediateSlots,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct SamplingPair {
+    pub texture_group: u32,
+    pub texture_binding: u32,
+    pub sampler_group: u32,
+    pub sampler_binding: u32,
+}
+
 #[derive(Debug)]
 pub struct Interface {
     limits: wgt::Limits,
@@ -1367,6 +1375,33 @@ impl Interface {
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
 
+    pub(crate) fn sampling_pairs_used(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<Vec<SamplingPair>, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        let mut pairs = entry_point
+            .sampling_pairs
+            .iter()
+            .map(|&(texture, sampler)| {
+                let texture = self.resources[texture].bind;
+                let sampler = self.resources[sampler].bind;
+                SamplingPair {
+                    texture_group: texture.group,
+                    texture_binding: texture.binding,
+                    sampler_group: sampler.group,
+                    sampler_binding: sampler.binding,
+                }
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        Ok(pairs)
+    }
+
     pub fn finalize_entry_point_name(
         &self,
         stage: naga::ShaderStage,
@@ -2073,7 +2108,7 @@ impl ShaderStageForValidation {
 mod tests {
     use alloc::{string::ToString, vec::Vec};
 
-    use super::{Interface, InterfaceVar, StageError};
+    use super::{Interface, InterfaceVar, SamplingPair, StageError};
 
     #[test]
     fn fragment_location_error_formats_zero_limit() {
@@ -2142,6 +2177,22 @@ mod tests {
                 .unwrap(),
             1
         );
+        let expected_pair = SamplingPair {
+            texture_group: 0,
+            texture_binding: 0,
+            sampler_group: 0,
+            sampler_binding: 1,
+        };
+        assert_eq!(
+            interface
+                .sampling_pairs_used(naga::ShaderStage::Vertex, "sampled")
+                .unwrap(),
+            [expected_pair]
+        );
+        assert!(interface
+            .sampling_pairs_used(naga::ShaderStage::Vertex, "unused")
+            .unwrap()
+            .is_empty());
         assert!(interface
             .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
             .is_err());

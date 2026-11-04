@@ -30,7 +30,7 @@ use crate::{
     resource_log,
     snatch::{SnatchGuard, Snatchable},
     track::{BindGroupStates, ResourceUsageCompatibilityError},
-    Label,
+    FastHashMap, Label,
 };
 
 #[derive(Clone, Debug, Error)]
@@ -1351,6 +1351,23 @@ pub struct BindGroup {
     /// Actual binding sizes for buffers that don't have `min_binding_size`
     /// specified in BGL. Listed in the order of iteration of `BGL.entries`.
     pub(crate) late_buffer_binding_infos: Vec<BindGroupLateBufferBindingInfo>,
+    pub(crate) sampled_texture_npot: FastHashMap<u32, Vec<bool>>,
+    pub(crate) sampler_uses_repeat: FastHashMap<u32, Vec<bool>>,
+}
+
+pub(crate) fn sampled_view_is_npot_2d(view: &TextureView) -> bool {
+    if !matches!(
+        view.desc.dimension,
+        wgt::TextureViewDimension::D2 | wgt::TextureViewDimension::D2Array
+    ) {
+        return false;
+    }
+    let size = view
+        .parent
+        .desc
+        .size
+        .mip_level_size(view.desc.range.base_mip_level, view.parent.desc.dimension);
+    !size.width.is_power_of_two() || !size.height.is_power_of_two()
 }
 
 impl Drop for BindGroup {

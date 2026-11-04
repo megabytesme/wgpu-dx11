@@ -968,6 +968,7 @@ impl super::Adapter {
                 gl.get_parameter_i32(glow::MAX_VERTEX_TEXTURE_IMAGE_UNITS)
             }
             .max(0) as u32,
+            unrestricted_npot_texture_sampling: true,
         };
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };
 
