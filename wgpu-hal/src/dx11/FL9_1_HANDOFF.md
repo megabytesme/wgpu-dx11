@@ -20,6 +20,13 @@ creation. Safe sibling entries remain accepted. Strict core and public tests
 pass on forced FL9_1 hardware. Public HWND presentation remains the next
 architectural investigation; see `FL9_1_PROGRESS.md` for exact test commands.
 
+The public strict suite now has a third test for D24S8 stencil: it writes a
+stencil reference, verifies passing and failing equality draws by checking all
+64 output pixels, and confirms asymmetric front/back state is rejected before
+HAL. Checkpoint `64894f9c8`; the full strict public suite passed 3/3 on the RTX
+3090 Ti at requested/actual FL9_1. The obsolete initial backend README has
+also been replaced by an accurate opt-in/offscreen summary (`ee05538a3`).
+
 ## Current checkpoint — internal FL9_1 capability projection — `dfc93078a`
 
 `Capabilities::wgpu_projection` now builds a selected-device FL9_1 snapshot of

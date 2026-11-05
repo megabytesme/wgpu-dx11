@@ -4772,3 +4772,31 @@ files. Public presentation, a complete core/HAL contract audit and historical
 FL9_1 hardware remain outstanding. Next, investigate the D3D11 HWND Present
 path and core queue/context locking; do not expose surface capabilities unless
 the reentrancy and surface lifecycle are safely resolved.
+
+## Checkpoint — public FL9_1 stencil behavior
+
+Commit `64894f9c8` (`dx11: test public FL9_1 stencil rendering`) adds a strict
+public wgpu test for the implemented symmetric stencil subset. It clears the
+D24S8 stencil plane, writes reference 1 with `Replace`, colors passing `Equal`
+fragments green, then verifies an `Equal` draw with reference 0 cannot replace
+that result. All 64 readback pixels were `[0, 255, 0, 255]`. The test also
+confirms that an asymmetric front/back stencil pipeline is rejected through a
+public validation error before HAL. `CAPABILITIES.md`, `TESTING.md` and
+`STATUS.md` record this coverage.
+
+Verification on 2026-11-05, Rust 1.93.1, Visual Studio 2022 x64:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 3/3 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, `software=false`. This includes the public indexed textured/depth-tested draw, dynamic uniform update, two-device queue submissions, R8 sampled upload, and the new stencil readback/rejection checks.
+- A first compile caught that `VertexState::buffers` requires `Option<VertexBufferLayout>`; the test fixture was corrected and the focused strict stencil case passed 1/1 before the complete 3/3 rerun.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std`, rustfmt on `wgpu/tests/dx11_public.rs`, and `git diff --check` passed.
+
+Commit `ee05538a3` (`docs: refresh experimental D3D11 backend overview`)
+replaces the obsolete README that said adapter enumeration was empty and the
+renderer was not available through wgpu. It now accurately describes the
+opt-in public offscreen adapter, strict commands, and still-gated surfaces.
+No behavior changed in that documentation commit.
+
+The public offscreen API now has verified depth and stencil use, but no HWND
+surface capabilities. The next investigation revisits DXGI Present scheduling
+and reentrancy; do not attempt to resolve it by dropping the immediate-context
+or core queue-order locks without a correct serialization design.
