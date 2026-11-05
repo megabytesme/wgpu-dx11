@@ -1132,6 +1132,20 @@ were 148 selected-hardware reports in the HAL log and six explicit nested
 shader-render skips after expected FXC rejection. See the latest progress
 entry for commands and outputs.
 
+The projection and two-fragment-uniform core case were committed as
+`0d86bcdd240fe98f61cfc085f250edcacbd41255`. The controlled core fixture now
+also exercises distinct vertex- and fragment-visible uniforms at sparse
+bindings 17 and 23 through the selected device's unchanged uniform projection.
+The vertex uniform changes geometry coverage and the fragment uniform changes
+sampled color; strict forced-FL9_1 GPU readback validated all 64 pixels. The
+complete core suite passed 81/81, the exact projection test passed 1/1, DX12
+passed 77/77, ordinary adapter isolation passed 1/1, and Clippy/format checks
+passed. See the latest progress entry for commands and rounding tolerance.
+
+Next continue the exact core/HAL contract audit. Public adapter enumeration
+and surface capabilities remain disabled; synchronous HWND `Present`
+reentrancy and the broader public capability snapshot remain blockers.
+
 The production adapter remains absent, and the known synchronous HWND
 `Present` reentrancy deadlock remains unresolved. Keep normal enumeration and
 public surface capabilities disabled until those architectural and full

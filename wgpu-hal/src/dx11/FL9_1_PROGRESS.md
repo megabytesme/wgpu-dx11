@@ -4211,8 +4211,60 @@ rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-core
 git diff --check
 ```
 
-This capability increment is ready for a focused checkpoint. Public adapter
-enumeration remains disabled.
-Continue the failure-path/device-loss audit and the truthful production
-adapter work. Normal adapter enumeration and public surface capabilities remain
-disabled; synchronous HWND `Present` reentrancy is still unresolved.
+This capability increment was committed as
+`0d86bcdd240fe98f61cfc085f250edcacbd41255`. Public adapter enumeration remains disabled.
+
+## Checkpoint — exercise vertex and fragment uniforms through core
+
+The controlled core renderer now includes a pipeline with sparse uniform
+binding 17 visible only to the vertex stage and binding 23 visible only to the
+fragment stage. Both use nonzero 256-byte-aligned ranges and distinct native
+stage registers. The vertex value scales the sampled geometry horizontally;
+the fragment value halves the sampled color. Readback checks all 64 pixels,
+including the reduced coverage and tinted region. This case uses the selected
+device's capability projection without overriding its uniform limits; the
+fixture's existing conditional-NPOT override is unrelated.
+
+Rust 1.93.1 / Visual Studio x64 checks on 2026-11-05, from
+`C:\dev\personal\wgpu` on `Ben-Desktop`, with 16 Cargo jobs:
+
+- The strict FL9_1 core renderer passed on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1. The new
+  vertex/fragment uniform case ran through core and D3D11 and verified all 64
+  pixels. The 16 covered pixels matched red tinted by 0.5 (UNORM conversion
+  accepted within one channel value); the remaining 48 pixels matched the
+  blue clear color. The existing two-fragment-uniform test still passed.
+- The complete controlled core fixture suite passed 81/81 with strict hardware
+  mode enabled and no missing-hardware skip. Its single hardware fixture
+  executed all contained transfer, validation and rendering cases.
+- The exact selected-device projection test passed 1/1 and continued to reject
+  seven fragment uniforms before HAL. Ordinary D3D11 adapter isolation passed
+  1/1. DX12 core regression passed 77/77.
+- Core Clippy passed with its three existing warnings at unrelated fixture
+  lines. Targeted rustfmt and `git diff --check` passed.
+- Initial assertions exposed a one-unit UNORM rounding difference and an
+  incorrect assumption about the fixture's second triangle coverage. The
+  final test uses a one-unit tolerance for the tinted channel and checks the
+  reduced first-draw rectangle; no backend behavior was changed to mask either
+  observation.
+
+Commands (inside the Visual Studio x64 environment):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+Next continue auditing the exact core/HAL contract, with priority on resource
+layout and render-pass combinations that remain core-legal but unsupported by
+the private backend. The production adapter and public surface gates stay
+closed; synchronous HWND `Present` reentrancy remains unresolved.

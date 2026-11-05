@@ -1733,6 +1733,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Uniform12,
         VertexCase::Uniform20,
         VertexCase::TwoUniformBindings,
+        VertexCase::VertexFragmentUniformBindings,
     ] {
         render_triangle(&global, device, queue, case);
     }
@@ -2864,6 +2865,7 @@ enum VertexCase {
     Uniform12,
     Uniform20,
     TwoUniformBindings,
+    VertexFragmentUniformBindings,
     Bc1,
     NpotClampedPairs,
     ViewportOutsideTarget,
@@ -2975,7 +2977,7 @@ fn render_triangle(
         VertexCase::Uniform5 => Some(5),
         VertexCase::Uniform12 => Some(12),
         VertexCase::Uniform20 => Some(20),
-        VertexCase::TwoUniformBindings => Some(16),
+        VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings => Some(16),
         _ => None,
     };
     let dynamic_uniform = case == VertexCase::Uniform4;
@@ -3456,9 +3458,14 @@ fn render_triangle(
         ]);
     }
     if let Some(size) = uniform_size {
+        let visibility = if case == VertexCase::VertexFragmentUniformBindings {
+            wgt::ShaderStages::VERTEX
+        } else {
+            wgt::ShaderStages::FRAGMENT
+        };
         group_entries.push(wgt::BindGroupLayoutEntry {
             binding: 17,
-            visibility: wgt::ShaderStages::FRAGMENT,
+            visibility,
             ty: wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
                 has_dynamic_offset: dynamic_uniform,
@@ -3467,7 +3474,10 @@ fn render_triangle(
             count: None,
         });
     }
-    if case == VertexCase::TwoUniformBindings {
+    if matches!(
+        case,
+        VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings
+    ) {
         group_entries.push(wgt::BindGroupLayoutEntry {
             binding: 23,
             visibility: wgt::ShaderStages::FRAGMENT,
@@ -3505,8 +3515,16 @@ fn render_triangle(
         for byte in data[offset..offset + size as usize].chunks_exact_mut(4) {
             byte.copy_from_slice(&1.0f32.to_ne_bytes());
         }
-        if case == VertexCase::TwoUniformBindings {
-            for (component, value) in [0.5f32, 0.5, 0.5, 1.0].into_iter().enumerate() {
+        if matches!(
+            case,
+            VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings
+        ) {
+            let values = if case == VertexCase::TwoUniformBindings {
+                [0.5f32, 0.5, 0.5, 1.0]
+            } else {
+                [0.5f32, 1.0, 1.0, 1.0]
+            };
+            for (component, value) in values.into_iter().enumerate() {
                 let offset = offset + component * 4;
                 data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
             }
@@ -3517,7 +3535,10 @@ fn render_triangle(
         global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
         buffer
     });
-    let uniform_b = if case == VertexCase::TwoUniformBindings {
+    let uniform_b = if matches!(
+        case,
+        VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings
+    ) {
         let (buffer, error) = global.device_create_buffer(
             device,
             &wgt::BufferDescriptor {
@@ -3691,6 +3712,8 @@ fn render_triangle(
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
     } else if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else if case == VertexCase::VertexFragmentUniformBindings {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> vertex_scale: vec4f; @group(0) @binding(23) var<uniform> tint: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p.x * vertex_scale.x, p.y, p.z, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
     } else if case == VertexCase::TwoUniformBindings {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint_a: vec4f; @group(0) @binding(23) var<uniform> tint_b: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint_a * tint_b; }"
     } else if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
@@ -4873,6 +4896,7 @@ fn render_triangle(
         && !depth_only_prepass
         && special_topology.is_none()
         && triangle_strip_index_format.is_none()
+        && case != VertexCase::VertexFragmentUniformBindings
         && !fractional_viewport
     {
         global
@@ -5011,6 +5035,25 @@ fn render_triangle(
                     &[0, 0, 255, 255],
                     "zero sample mask pixel ({x}, {y})"
                 );
+                continue;
+            }
+            if case == VertexCase::VertexFragmentUniformBindings {
+                if !(2..4).contains(&x) {
+                    assert_eq!(
+                        &pixels[offset..offset + 4],
+                        &[0, 0, 255, 255],
+                        "vertex/fragment uniform coverage pixel ({x}, {y})"
+                    );
+                } else {
+                    let expected = [128u8, 0, 0, 255];
+                    for (actual, expected) in pixels[offset..offset + 4].iter().zip(expected) {
+                        assert!(
+                            actual.abs_diff(expected) <= 1,
+                            "vertex/fragment uniform pixel ({x}, {y}): {:?}",
+                            &pixels[offset..offset + 4]
+                        );
+                    }
+                }
                 continue;
             }
             if case == VertexCase::TwoUniformBindings {
