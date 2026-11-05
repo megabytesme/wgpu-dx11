@@ -4437,8 +4437,34 @@ git diff --check
 The public projection and core/HAL operation audit remain incomplete. The
 independent review found no confirmed core-valid route to the scanned unsupported
 compute/query/cache/acceleration-structure panic paths, but this is not an
-exhaustive audit. Next add public-stage uniform transforms and broaden the
-ordinary wgpu scene test, then continue auditing every advertised pipeline,
-resource, mapping, pass and error path. Keep public surfaces disabled due to the
+exhaustive audit. Continue auditing every advertised pipeline, resource,
+mapping, pass and error path. Keep public surfaces disabled due to the
 documented synchronous `Present` reentrancy deadlock. Historical FL9_1 drivers
 remain untested.
+
+## Checkpoint — public stage uniforms and two bind groups
+
+Commit `a0f29c5ab` expands the ordinary public wgpu integration test. Group 0
+contains a sparse vertex-visible transform uniform at binding 3 and a separate
+fragment-visible tint uniform at binding 17. Group 1 contains a sampled
+texture/sampler pair at bindings 7/42. Queue uploads initialize the uniforms
+and texture; indexed textured geometry is transformed, depth-tested using
+D24S8 and read back through public wgpu APIs. All 64 pixels matched: 32
+tinted-red `[128, 0, 0, 255]` pixels (within one UNORM unit) and 32 green
+`[0, 255, 0, 255]` pixels. The second device still independently cleared and
+read back 64 green pixels.
+
+Strict hardware execution on 2026-11-05 used Rust 1.93.1 and the Visual Studio
+2022 x64 developer environment:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 1/1 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, requested and actual FL9_1, `software=false`.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std` passed without warnings.
+- `rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs` and `git diff --check` passed.
+
+The first test invocation from a non-developer shell lacked `link.exe`; the
+same test passed after invoking the installed Visual Studio x64 developer
+environment. No GPU skip occurred. No HAL/core code changed in this increment,
+so their last full verified counts remain the prior checkpoint (HAL 337/337,
+core 81/81, DX12 core 77/77). Continue with the remaining exact core/HAL
+capability contract audit; do not widen limits without coverage and keep public
+surface support disabled until safe Present scheduling is established.
