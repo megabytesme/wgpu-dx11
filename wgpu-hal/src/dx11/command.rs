@@ -41,6 +41,7 @@ pub(crate) struct CopyEncoder<'a> {
 #[derive(Debug)]
 pub(super) struct DepthAttachment {
     pub view: ID3D11DepthStencilView,
+    pub format: wgt::TextureFormat,
     pub clear_depth: Option<f32>,
     pub clear_stencil: Option<u8>,
 }

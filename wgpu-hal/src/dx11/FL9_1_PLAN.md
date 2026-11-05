@@ -32,10 +32,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    across two sparse bindings, while core rejected 33 before HAL. Per-stage
    aggregate validation is implemented; broader WGSL packing and instruction
    budget cases still need coverage.
-2. Implement depth/stencil textures, views, initialization, render-pass
-   attachments and depth state incrementally. Verify overlapping geometry in
-   both draw orders on forced FL9_1, and independent load/clear/store behavior.
-   Validate format support and restrict unsupported native state.
+2. Extend depth/stencil coverage from the implemented D16 depth-only and D24S8
+   attachment paths. D16 uses a required-format guarantee intersected with a
+   selected-device query and is single-mip; a strict public test verifies depth
+   ordering in both draw orders and core rejects stencil and multi-mip use.
+   Continue testing independent load/clear/store behavior, unsupported views,
+   and remaining render-pass combinations before widening public capability claims.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. A controlled core test

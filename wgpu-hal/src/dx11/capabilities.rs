@@ -13,8 +13,9 @@ use windows::Win32::Graphics::{
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-        DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
-        DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM,
+        DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+        DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        DXGI_FORMAT_R8G8_SNORM,
     },
 };
 
@@ -47,6 +48,7 @@ pub(super) struct HardwareGuarantees {
     pub rg8_snorm_sampled_texture: bool,
     pub rgba8_snorm_sampled_texture: bool,
     pub bc1_unorm_sampled_texture: bool,
+    pub d16_unorm_depth_attachment: bool,
     pub rgba8_srgb_texture: bool,
     pub bgra8_srgb_texture: bool,
 }
@@ -107,6 +109,7 @@ impl HardwareGuarantees {
             rg8_snorm_sampled_texture: true,
             rgba8_snorm_sampled_texture: true,
             bc1_unorm_sampled_texture: true,
+            d16_unorm_depth_attachment: true,
             rgba8_srgb_texture: true,
             bgra8_srgb_texture: true,
         }
@@ -168,6 +171,7 @@ pub(super) struct DriverCapabilities {
     pub rgba8_srgb: Query<u32>,
     pub bgra8_srgb: Query<u32>,
     pub depth24_stencil8: Query<u32>,
+    pub depth16_unorm: Query<u32>,
     pub rgba8_samples_4: Query<u32>,
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
@@ -236,6 +240,7 @@ pub(super) struct BackendCapabilities {
     pub texture_sample_level: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
+    pub d16_depth_attachment: bool,
     pub d24s8_stencil_operations: bool,
     pub d24s8_triangle_constant_depth_bias: bool,
     pub d24s8_triangle_slope_depth_bias: bool,
@@ -309,6 +314,7 @@ impl BackendCapabilities {
         texture_sample_level: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
+        d16_depth_attachment: true,
         d24s8_stencil_operations: true,
         d24s8_triangle_constant_depth_bias: true,
         d24s8_triangle_slope_depth_bias: true,
@@ -527,6 +533,7 @@ impl Capabilities {
                 rgba8_srgb: format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
                 bgra8_srgb: format(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
                 depth24_stencil8: format(DXGI_FORMAT_D24_UNORM_S8_UINT),
+                depth16_unorm: format(DXGI_FORMAT_D16_UNORM),
                 rgba8_samples_4: Query::from_result(unsafe {
                     raw.CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4)
                 }),
@@ -679,11 +686,28 @@ impl Capabilities {
     ) -> crate::TextureFormatCapabilities {
         use crate::TextureFormatCapabilities as Caps;
 
-        if format == wgt::TextureFormat::Depth24PlusStencil8 {
+        if matches!(
+            format,
+            wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+        ) {
             let required =
                 (D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0 | D3D11_FORMAT_SUPPORT_TEXTURE2D.0) as u32;
-            return if self.backend.d24s8_depth_attachment
-                && matches!(self.driver.depth24_stencil8, Query::Value(bits) if bits & required == required)
+            let (guaranteed, implemented, query) = match format {
+                wgt::TextureFormat::Depth16Unorm => (
+                    self.hardware.d16_unorm_depth_attachment,
+                    self.backend.d16_depth_attachment,
+                    self.driver.depth16_unorm,
+                ),
+                wgt::TextureFormat::Depth24PlusStencil8 => (
+                    true,
+                    self.backend.d24s8_depth_attachment,
+                    self.driver.depth24_stencil8,
+                ),
+                _ => unreachable!(),
+            };
+            return if guaranteed
+                && implemented
+                && matches!(query, Query::Value(bits) if bits & required == required)
             {
                 Caps::DEPTH_STENCIL_ATTACHMENT | Caps::SINGLE_MIP_ONLY
             } else {
@@ -810,6 +834,7 @@ mod tests {
                 rgba8_srgb: Query::Value(u32::MAX),
                 bgra8_srgb: Query::Value(u32::MAX),
                 depth24_stencil8: Query::Value(u32::MAX),
+                depth16_unorm: Query::Value(u32::MAX),
                 rgba8_samples_4: Query::Value(1),
                 full_npot: Query::Value(true),
                 comparison_shadow: Query::Value(true),
@@ -1068,7 +1093,7 @@ mod tests {
             native.feature_level()
         );
         std::println!(
-            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; BC1={:?}",
+            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; BC1={:?}; D16_UNORM={:?} projected={:?}",
             projection.capabilities.limits.max_texture_dimension_2d,
             projection.capabilities.limits.max_sampled_textures_per_shader_stage,
             projection.capabilities.limits.max_samplers_per_shader_stage,
@@ -1077,7 +1102,9 @@ mod tests {
             projection.capabilities.downlevel.limits.max_sampler_anisotropy,
             projection.capabilities.downlevel.flags,
             caps.driver.full_npot,
-            caps.driver.bc1_unorm
+            caps.driver.bc1_unorm,
+            caps.driver.depth16_unorm,
+            caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
         );
         Ok(())
     }
@@ -1177,6 +1204,7 @@ mod tests {
         {
             let caps = model(level);
             assert_eq!(caps.hardware.level, level);
+            assert!(caps.hardware.d16_unorm_depth_attachment);
             assert_eq!(caps.hardware.texture_2d_dimension, dimension);
             assert_eq!(caps.hardware.render_targets, targets);
             assert_eq!(caps.hardware.max_texture_repeat_per_primitive, max_repeat);
@@ -1283,6 +1311,7 @@ mod tests {
         assert!(fl9.backend.index_u32_wide_triangle_gather);
         assert_eq!(fl9.hardware.max_primitives_per_draw, 65_535);
         assert!(fl9.hardware.conditional_npot);
+        assert!(fl9.hardware.d16_unorm_depth_attachment);
         assert!(!fl9.hardware.separate_alpha_blend);
         assert!(!fl9.hardware.src_alpha_saturated_blend);
         assert!(!fl9.hardware.two_sided_stencil);
@@ -1473,6 +1502,15 @@ mod tests {
             .texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8)
             .is_empty());
 
+        assert_eq!(
+            caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm),
+            FormatCaps::DEPTH_STENCIL_ATTACHMENT | FormatCaps::SINGLE_MIP_ONLY
+        );
+        caps.backend.d16_depth_attachment = false;
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+            .is_empty());
+
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Rgba16Float)
             .is_empty());
@@ -1484,6 +1522,7 @@ mod tests {
         caps.driver.rgba8 = Query::Unavailable(-1);
         caps.driver.r8_unorm = Query::Unavailable(-1);
         caps.driver.depth24_stencil8 = Query::Unavailable(-1);
+        caps.driver.depth16_unorm = Query::Unavailable(-1);
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
             .is_empty());
@@ -1493,6 +1532,9 @@ mod tests {
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8)
             .is_empty());
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+            .is_empty());
 
         caps.driver.rgba8 = Query::Value(0);
         assert!(caps
@@ -1501,6 +1543,39 @@ mod tests {
         caps.driver.rgba8_srgb = Query::Unavailable(-1);
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Rgba8UnormSrgb)
+            .is_empty());
+    }
+
+    #[test]
+    fn d16_format_projection_requires_guarantee_driver_query_and_backend_path() {
+        let mut caps = model(FeatureLevel::L9_1);
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0) as u32;
+        caps.driver.depth16_unorm = Query::Value(required);
+        assert_eq!(
+            caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm),
+            FormatCaps::DEPTH_STENCIL_ATTACHMENT | FormatCaps::SINGLE_MIP_ONLY
+        );
+
+        caps.driver.depth16_unorm = Query::Unavailable(-1);
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+            .is_empty());
+        caps.driver.depth16_unorm = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+            .is_empty());
+
+        caps.driver.depth16_unorm = Query::Value(required);
+        caps.backend.d16_depth_attachment = false;
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+            .is_empty());
+
+        caps.backend.d16_depth_attachment = true;
+        caps.hardware.d16_unorm_depth_attachment = false;
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
             .is_empty());
     }
 

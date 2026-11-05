@@ -761,6 +761,16 @@ impl crate::CommandEncoder for CommandEncoder {
             (None, None)
         };
         let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
+            let (view, format, size) = match self
+                .device
+                .depth_stencil_view(attachment.target.view, attachment.target.usage)
+            {
+                Ok(info) => info,
+                Err(_) => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
             let depth_clear = match attachment_needs_clear(attachment.depth_ops) {
                 Some(true)
                     if attachment.clear_value.0.is_finite()
@@ -786,29 +796,22 @@ impl crate::CommandEncoder for CommandEncoder {
             };
             let read_only = attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ;
             let read_ops = AttachmentOps::LOAD | AttachmentOps::STORE;
+            let stencil_read_only =
+                !format.has_stencil_aspect() || attachment.stencil_ops == read_ops;
             if !(read_only || attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_WRITE)
-                || (read_only
-                    && (attachment.depth_ops != read_ops || attachment.stencil_ops != read_ops))
+                || (read_only && (attachment.depth_ops != read_ops || !stencil_read_only))
+                || (!format.has_stencil_aspect() && !stencil_read_only)
             {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
-            let (view, size) = match self
-                .device
-                .depth_stencil_view(attachment.target.view, attachment.target.usage)
-            {
-                Ok(info) => info,
-                Err(_) => {
-                    self.reject();
-                    return Err(DeviceError::Unexpected);
-                }
-            };
             if size != extent {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
             Some(DepthAttachment {
                 view,
+                format,
                 clear_depth: depth_clear,
                 clear_stencil: stencil_clear,
             })
@@ -828,9 +831,7 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         self.render = Some(RenderState {
             format,
-            depth_format: depth
-                .as_ref()
-                .map(|_| wgt::TextureFormat::Depth24PlusStencil8),
+            depth_format: depth.as_ref().map(|depth| depth.format),
             depth_stencil_read_only: desc.depth_stencil_attachment.as_ref().is_some_and(
                 |attachment| attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ,
             ),

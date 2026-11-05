@@ -185,7 +185,10 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
-        let depth = desc.format == wgt::TextureFormat::Depth24PlusStencil8;
+        let depth = matches!(
+            desc.format,
+            wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+        );
         let sampled_upload = matches!(
             desc.format,
             wgt::TextureFormat::R8Unorm
@@ -249,14 +252,15 @@ impl crate::Device for Device {
         if depth {
             use windows::Win32::Graphics::{
                 Direct3D11::{D3D11_FORMAT_SUPPORT_DEPTH_STENCIL, D3D11_FORMAT_SUPPORT_TEXTURE2D},
-                Dxgi::Common::DXGI_FORMAT_D24_UNORM_S8_UINT,
+                Dxgi::Common::{DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT},
             };
-            let support = unsafe {
-                self.native
-                    .raw_device()
-                    .CheckFormatSupport(DXGI_FORMAT_D24_UNORM_S8_UINT)
-            }
-            .map_err(device_error)?;
+            let native_format = match desc.format {
+                wgt::TextureFormat::Depth16Unorm => DXGI_FORMAT_D16_UNORM,
+                wgt::TextureFormat::Depth24PlusStencil8 => DXGI_FORMAT_D24_UNORM_S8_UINT,
+                _ => return Err(DeviceError::Unexpected),
+            };
+            let support = unsafe { self.native.raw_device().CheckFormatSupport(native_format) }
+                .map_err(device_error)?;
             let required =
                 (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0) as u32;
             if support & required != required {
@@ -264,7 +268,7 @@ impl crate::Device for Device {
             }
             let mut texture = self
                 .native
-                .create_depth_stencil_texture(desc.size.width, desc.size.height)
+                .create_depth_stencil_texture(desc.size.width, desc.size.height, native_format)
                 .map_err(device_error)?;
             texture.set_usage(desc.usage);
             return Ok(texture);
@@ -370,7 +374,7 @@ impl crate::Device for Device {
             },
             Dxgi::Common::{
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
-                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
                 DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
             },
@@ -385,10 +389,14 @@ impl crate::Device for Device {
             DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
             DXGI_FORMAT_BC1_UNORM => wgt::TextureFormat::Bc1RgbaUnorm,
+            DXGI_FORMAT_D16_UNORM => wgt::TextureFormat::Depth16Unorm,
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(DeviceError::Unexpected),
         };
-        let is_depth = format == wgt::TextureFormat::Depth24PlusStencil8;
+        let is_depth = matches!(
+            format,
+            wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+        );
         let sampled_upload = matches!(
             format,
             wgt::TextureFormat::R8Unorm

@@ -2624,11 +2624,17 @@ impl RenderPipeline {
         let mut depth_bias = (0, 0.0);
         let mut stencil_write = false;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
-            if state.format != wgt::TextureFormat::Depth24PlusStencil8 {
+            if !matches!(
+                state.format,
+                wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+            ) {
                 return Err(invalid());
             }
             let (stencil_enable, stencil_read_mask, stencil_write_mask, mut face) =
                 stencil_state(&state.stencil).ok_or_else(invalid)?;
+            if state.format == wgt::TextureFormat::Depth16Unorm && stencil_enable {
+                return Err(invalid());
+            }
             depth_bias =
                 native_depth_bias(&state.bias, desc.primitive.topology).ok_or_else(invalid)?;
             if depth_bias.0 != 0 || depth_bias.1 != 0.0 {

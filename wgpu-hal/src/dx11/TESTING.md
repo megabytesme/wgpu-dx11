@@ -480,6 +480,32 @@ cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --te
 cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_mip_chain_sampling_at_fl91 -- --nocapture --test-threads=1
 ```
 
+### Public FL9_1 D16 depth-only attachment
+
+The D16 format is a feature-level 9_1 required depth attachment format, but the
+backend still intersects the guarantee with the selected device's
+`CheckFormatSupport` result. The public test verifies that the adapter reports
+only render-attachment/transient usage and `SINGLE_MIP_ONLY`, then creates a
+D16 texture through wgpu. Near and far full-screen triangles are submitted in
+both draw orders with depth writes enabled; all 128 pixels retain the near
+triangle's green output. Core rejects a two-mip D16 texture and a stencil
+pipeline before HAL.
+
+The RTX 3090 Ti at explicitly requested/actual FL9_1 reported D16 format mask
+`0x210020`; the capability projection returned
+`DEPTH_STENCIL_ATTACHMENT | SINGLE_MIP_ONLY`. This modern device confirms the
+tested path, not every historical driver.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d16_depth_attachment_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 d16_format_projection_requires_guarantee_driver_query_and_backend_path -- --nocapture
+```
+
+The first test executes public core → HAL → D3D11 → GPU rendering and readback.
+The second is synthetic CPU-only coverage for unavailable or incomplete
+queries and disabled guarantee/backend inputs.
+
 ### Exact FL9_1 capability projection through core
 
 The strict fixture includes a test-only adapter constructed from the selected

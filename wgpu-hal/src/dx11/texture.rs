@@ -20,9 +20,10 @@ use windows::{
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-                DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -281,13 +282,20 @@ impl NativeDevice {
         &self,
         width: u32,
         height: u32,
+        format: DXGI_FORMAT,
     ) -> Result<NativeTexture> {
+        if !matches!(
+            format,
+            DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_D24_UNORM_S8_UINT
+        ) {
+            return Err(invalid());
+        }
         let desc = D3D11_TEXTURE2D_DESC {
             Width: width,
             Height: height,
             MipLevels: 1,
             ArraySize: 1,
-            Format: DXGI_FORMAT_D24_UNORM_S8_UINT,
+            Format: format,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,
@@ -312,7 +320,12 @@ impl NativeDevice {
         unsafe {
             context.ClearDepthStencilView(
                 &view,
-                D3D11_CLEAR_DEPTH.0 | D3D11_CLEAR_STENCIL.0,
+                D3D11_CLEAR_DEPTH.0
+                    | if format == DXGI_FORMAT_D24_UNORM_S8_UINT {
+                        D3D11_CLEAR_STENCIL.0
+                    } else {
+                        0
+                    },
                 0.0,
                 0,
             );
@@ -332,7 +345,7 @@ impl NativeDevice {
         &self,
         view: &NativeTextureView,
         usage: wgt::TextureUses,
-    ) -> Result<(ID3D11DepthStencilView, [u32; 2])> {
+    ) -> Result<(ID3D11DepthStencilView, wgt::TextureFormat, [u32; 2])> {
         if view.owner.as_raw() != self.raw_device().as_raw() || !view.usage.contains(usage) {
             return Err(invalid());
         }
@@ -341,14 +354,15 @@ impl NativeDevice {
         unsafe {
             view.texture.GetDesc(&mut desc);
         }
-        if desc.Format != DXGI_FORMAT_D24_UNORM_S8_UINT
-            || desc.MipLevels != 1
-            || desc.ArraySize != 1
-            || desc.SampleDesc.Count != 1
-        {
+        let format = match desc.Format {
+            DXGI_FORMAT_D16_UNORM => wgt::TextureFormat::Depth16Unorm,
+            DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
+            _ => return Err(invalid()),
+        };
+        if desc.MipLevels != 1 || desc.ArraySize != 1 || desc.SampleDesc.Count != 1 {
             return Err(invalid());
         }
-        Ok((depth.clone(), [desc.Width, desc.Height]))
+        Ok((depth.clone(), format, [desc.Width, desc.Height]))
     }
 
     pub(super) fn texture_copy_texture_source(

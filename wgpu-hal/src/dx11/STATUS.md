@@ -73,7 +73,7 @@ An additional strict public test now checks the selected adapter's usage and
 filter reports for RGBA8_SRGB and BGRA8_SRGB, samples uploaded texels and
 checks sRGB decoding across 128 pixels, then renders linear colors into both
 sRGB targets and checks 128 encoded pixels and channel order. The complete
-public D3D11 test binary passes 18/18 on the RTX at requested and actual
+public D3D11 test binary passes 19/19 on the RTX at requested and actual
 FL9_1.
 
 The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
@@ -119,12 +119,12 @@ Core gates multi-mip depth/stencil attachment textures on
 rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
 require a single mip for depth/stencil-bound resources at FL9_1 through FL9_3;
 the controlled FL9_1 core fixture verifies the descriptor is rejected before
-the private HAL. D24S8 remains single-mip in the private implementation; the
+the private HAL. D16_UNORM and D24S8 remain single-mip in the private implementation; the
 public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8 are always
+R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM, D16_UNORM and D24S8 are always
 single-mip in the private implementation. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
@@ -138,14 +138,16 @@ per-device format queries. A strict public test verifies sRGB decoding from
 both upload formats and sRGB encoding to both render-target formats across
 128 sampled and 128 rendered pixels. A dedicated sRGB mip-chain execution test
 also uploads four-level POT chains for both formats and verifies that implicit
-LOD sampling selects mip 1 in all 128 readback pixels. Mip reporting remains
-conditional on the selected format query and the existing POT mip
-implementation.
+LOD sampling selects mip 1 in all 128 readback pixels. The new D16_UNORM
+public test reports only render-attachment/transient usage and
+SINGLE_MIP_ONLY, then verifies near geometry wins over far geometry in both
+draw orders across 128 readback pixels. Mip reporting remains conditional on
+the selected format query and the existing POT mip implementation.
 
-The complete strict private HAL suite passes 346/346, the controlled core
+The complete strict private HAL suite passes 347/347, the controlled core
 fixture suite passes 89/89, core's explicit physical-adapter enumeration test
 passes 1/1, and the DX12 core regression suite passes 85/85. The expanded
-public suite passes 18/18. `cargo check` for
+public suite passes 19/19. `cargo check` for
 the D3D11 HAL, targeted Clippy, changed-file rustfmt and `git diff --check`
 also pass. HAL Clippy reports nine existing warnings in unrelated mapped
 range tests, swapchain ordering and texel-load proof code.
