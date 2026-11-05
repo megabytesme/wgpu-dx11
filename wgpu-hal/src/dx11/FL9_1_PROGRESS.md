@@ -4800,3 +4800,45 @@ The public offscreen API now has verified depth and stencil use, but no HWND
 surface capabilities. The next investigation revisits DXGI Present scheduling
 and reentrancy; do not attempt to resolve it by dropping the immediate-context
 or core queue-order locks without a correct serialization design.
+
+## Checkpoint — public FL9_1 blending and Present audit
+
+Commit `28d3bbddd` (`dx11: verify public FL9_1 blending and validation`) adds a
+strict public render test for a premultiplied red overlay over opaque blue.
+Using identical color and alpha equations, all 64 pixels read back as
+`[128, 0, 128, 255]`. The test separately confirms core rejects
+`SrcAlphaSaturated` and differing full-channel RGB/alpha equations before HAL.
+Capability, status and test documents record the exact verified subset.
+
+On 2026-11-05, the complete strict public suite passed 4/4 on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with requested/actual FL9_1 and
+`software=false`. It covers the indexed textured/depth-tested draw, dynamic
+uniform update, public selected-entry texture-load validation, multi-device
+submission/readback, R8 sampling, symmetric stencil readback, and blending.
+The blend case's strict standalone filter passed 1/1. Clippy for wgpu tests,
+pinned rustfmt and `git diff --check` passed.
+
+Two independent read-only audits and the local source trace reconfirmed the
+public HWND Present blocker. Core holds `device.command_indices.write()` across
+HAL `present` (`wgpu-core/src/present.rs`); core submissions hold the same
+serialization guard while invoking HAL submit. D3D11 surface presentation
+retains a busy operation, and `CoreWindowFrame::present_for_hal` holds the
+non-reentrant immediate-context mutex over synchronous `IDXGISwapChain::Present`
+(`wgpu-hal/src/dx11/surface.rs`, `swapchain.rs`, and `device.rs`). A reentrant
+window callback that submits can block first in core and then, even if that
+lock is changed, on the HAL context. Dropping those guards without replacement
+would allow unordered submissions or concurrent immediate-context use. A
+reentrant mutex alone does not prove nested context calls safe while Present is
+on the stack; surface unconfigure can also wait on the busy operation.
+
+Microsoft [DXGI best practices](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices)
+states that DXGI calls including Present may synchronously send window messages
+and recommends not blocking the message pump. [D3D11 multithreading guidance](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-render-multi-thread-intro)
+states that only one thread should use the immediate context and recommends
+using that same thread for DXGI, especially Present. The likely safe direction
+is a serialized asynchronous per-device executor: reentrant submissions must
+enqueue and return rather than wait on a worker blocked in Present, while
+command order, resources, mapping, surface lifecycle, and completion semantics
+remain correct. This is a cross-layer redesign, not a lock-release patch. Keep
+public surface capabilities unavailable while continuing independent FL9_1
+work.

@@ -27,6 +27,16 @@ HAL. Checkpoint `64894f9c8`; the full strict public suite passed 3/3 on the RTX
 3090 Ti at requested/actual FL9_1. The obsolete initial backend README has
 also been replaced by an accurate opt-in/offscreen summary (`ee05538a3`).
 
+Latest public render checkpoint `28d3bbddd` adds a strict premultiplied blend
+test through public wgpu; forced-FL9_1 readback matched `[128, 0, 128, 255]`
+for all 64 pixels. Core rejects unsupported source-alpha-saturated and
+separate-alpha descriptors before HAL. The complete public suite passed 4/4 on
+the RTX 3090 Ti. Independent Present audits confirmed the current deadlock path
+and found no safe lock-release-only fix. A correct surface design likely needs
+ordered asynchronous per-device scheduling; keep public surface capabilities
+unavailable. Exact analysis and Microsoft references are in
+`FL9_1_PROGRESS.md`.
+
 ## Current checkpoint — internal FL9_1 capability projection — `dfc93078a`
 
 `Capabilities::wgpu_projection` now builds a selected-device FL9_1 snapshot of
