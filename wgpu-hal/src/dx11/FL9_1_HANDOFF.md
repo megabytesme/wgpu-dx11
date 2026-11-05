@@ -2,20 +2,17 @@
 
 ## Current mission state — 2026-11-05
 
-This mission remains active. Later checkpoints supersede older status notes
-below. The branch is `uwp-dx11`; the latest implementation checkpoint is
-`4f1ac09a4` (`dx11: report query-backed sampled format filtering`). A
-documentation-only journal commit records its verification immediately after
-the implementation commit. The opt-in public D3D11 backend supports a
-conservative offscreen path and a constrained HWND path; it is not
-WebGPU-compliant. Public selected-device format reports now expose
-`FILTERABLE` only for sampled/upload formats with a positive
-`D3D11_FORMAT_SUPPORT_SHADER_SAMPLE` query. A strict RG8_UNORM linear-sampling
-render matched its expected eight-column gradient across 64 pixels. The RTX
-3090 Ti was requested and selected at FL9_1 (`0x10de:0x2203`, driver
-`32.0.16.2101`, software=false). Full private HAL and public D3D11 suites
-passed 353/353 and 23/23; the physical adapter-selection regression passed
-1/1 and DX12 core passed 86/86. Exact commands and diagnostics are in
+This mission remains active. Later checkpoints supersede older status notes.
+The branch is `uwp-dx11`; latest implementation commit `6c6b28d64` adds
+query-backed point-only sampled textures and core filterability validation.
+The opt-in public D3D11 backend supports a conservative offscreen path and a
+constrained HWND path; it is not WebGPU-compliant. Sampled/upload formats now
+require the queried `TEXTURE2D` bit, while `SHADER_SAMPLE` separately controls
+`FILTERABLE`. Strict FL9_1 private and public tests executed point sampling of
+`R16G16_SNORM` on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false; format query `0x00021122`) and verified that filtering is
+rejected. Final strict HAL, public D3D11 and core D3D11 suites passed 355/355,
+23/23 and 87/87; DX12 core passed 86/86. Exact commands and diagnostics are in
 `FL9_1_PROGRESS.md`.
 
 The constrained HWND path has hidden-window configure/acquire/present/resize
@@ -23,8 +20,9 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits; keep optional formats
-query-gated and do not push.
+format/usage and public core/HAL contract audits; next inspect the remaining
+16-bit normalized format family. Keep optional formats query-gated and do not
+push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1

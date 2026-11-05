@@ -6148,3 +6148,53 @@ absent. Start with forced-FL9_1 R16G16_SNORM, whose RTX query is positive for
 the resource but lacks the any-filter bit. Verify native texture/SRV creation,
 point-sampler execution and public non-filterable projection before deciding
 whether to expose the conditional subset.
+
+## Checkpoint — query-backed point-only sampled textures
+
+Code commit: `6c6b28d64` (`dx11: support query-backed point-only texture sampling`).
+
+Microsoft's D3D11 format-support documentation permits point-filtered HLSL
+`Sample` when `TEXTURE2D` is supported but `SHADER_SAMPLE` is absent. The
+backend now treats those bits separately for its restricted one-mip sampled
+upload formats: `TEXTURE2D` enables resource creation and sampling, while
+`SHADER_SAMPLE` alone projects `FILTERABLE`. A failed query or missing
+`TEXTURE2D` bit still rejects the format.
+
+At forced FL9_1, the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) reports `R16G16_SNORM=0x00021122`: the texture bit is present
+and the any-filter bit is absent. The private HAL test uploaded padded
+R16G16_SNORM data, created an SRV, point-sampled into RGBA8 and matched all
+80 output pixels. The public adapter exposes the query-backed
+`TEXTURE_FORMAT_16BIT_NORM` feature and reports sampled/upload usage without
+`FILTERABLE`. Public core validation rejects a filtering-sampler bind for
+this format; a non-filtering layout renders the signed data correctly and
+all 64 checked output pixels match.
+
+This surfaced and fixed a narrow core validation gap. For a filterable float
+layout, core previously trusted the format's static sample type even when a
+downlevel adapter's selected-device format flags omitted `FILTERABLE`. Core
+now requires the actual view format capability in that case. The public test
+exercises this check. The selected format feature remains query-gated, and
+unsupported normalized formats retain empty format usages.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 x64 environment.
+The final complete strict HAL suite passed 355/355, including actual RTX
+FL9_1 rendering. The strict public D3D11 integration suite passed 23/23; the
+R16G16_SNORM point-only output and filter rejection both executed. The full
+core D3D11 suite passed 87/87, the physical adapter isolation test passed
+1/1, and DX12 core regression tests passed 86/86. HAL Clippy passed with nine
+pre-existing test-code warnings; core and public-test Clippy passed without
+warnings. Changed Rust files passed rustfmt and `git diff --check` passed.
+
+Initial verification caught stale expectations: synthetic tests still
+required `SHADER_SAMPLE` for point-only use, the adapter-isolation test assumed
+the public feature set was always empty, and core allowed a filterable layout
+for an unfilterable queried format. Those expectations and the core check were
+updated; the full final suites above passed. The NVIDIA run establishes the
+documented path only on this modern driver explicitly forced to FL9_1; it does
+not establish historical driver behavior.
+
+Next, audit the remaining 16-bit normalized formats against selected-device
+queries and the backend's format/usage implementation. Add only individually
+verified texture and view behavior; retain queried filterability and keep
+historical FL9_1 and ARM32 execution marked unverified.
