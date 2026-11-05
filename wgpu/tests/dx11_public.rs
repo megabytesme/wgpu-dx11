@@ -4994,3 +4994,55 @@ fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
     drop(pipeline("color_only"));
     println!("PASS: core rejected fragment sample-mask output before FXC and accepted the color-only sibling");
 }
+
+#[test]
+fn public_dx11_rejects_sample_index_without_multisampled_shading() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 sample-index validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    expect_validation_error_containing(
+        &device,
+        "fragment sample_index without multisampled shading",
+        "MULTISAMPLED_SHADING",
+        || {
+            drop(device.create_shader_module(ShaderModuleDescriptor {
+                label: Some("unsupported FL9_1 sample_index shader"),
+                source: ShaderSource::Wgsl(
+                    "@fragment fn fs(@builtin(sample_index) index: u32) -> @location(0) vec4f { return vec4f(f32(index)); }"
+                        .into(),
+                ),
+            }));
+        },
+    );
+    drop(device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("supported FL9_1 single-sample shader"),
+        source: ShaderSource::Wgsl(
+            "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }".into(),
+        ),
+    }));
+    println!("PASS: core rejected sample_index through Naga's multisampled-shading capability and accepted a single-sample shader");
+}
