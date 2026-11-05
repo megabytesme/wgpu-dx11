@@ -1,6 +1,59 @@
 # FL9_1 progress
 
-## Current position — 2026-11-04
+## Current position — 2026-11-05
+
+## Checkpoint — indexed strips without vertex-rate inputs — `3b1d4f964`
+
+Extended the no-vertex-rate indexed fast path to LineStrip and TriangleStrip.
+At command replay the HAL copies the authoritative index buffer to its retained
+staging buffer, maps the requested range, applies signed base-vertex restart
+matching, splits runs, and issues bounded nonindexed strip draws. This avoids
+relying on native FL9_1 strip-cut behavior. The path also covers instance-only
+layouts by rebinding the instance stream for each emulated instance. Existing
+vertex-rate indexed strip replay is unchanged. `vertex_index` and
+`instance_index` remain unsupported.
+
+Strict tests compare Uint16/Uint32 indexed draws with direct draws for both
+strip topologies, instance-only and empty input layouts, nonzero first index,
+and signed-base restart markers. The CPU planner test verifies exact restart
+run lengths and overlap at bounded draw limits. Independent review found no
+correctness blocker; because no vertex-rate input or vertex index can vary
+vertex output, GPU image equality is necessarily degenerate, so exact run
+planning is separately asserted on CPU. Additional coverage for nonzero index
+binding offsets and in-submission index updates would strengthen the test.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 x64 developer prompt
+with Cargo `-j16`. The initial public test launch outside that prompt lacked
+`link.exe`; rerunning from the documented MSVC environment succeeded. Results:
+
+- Strict private D3D11 HAL suite: 343 passed, 0 failed, 0 ignored. Hardware
+  cases selected the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+  driver `32.0.16.2101`, `software=false`) at requested and actual FL9_1.
+- Strict public `wgpu` D3D11 integration suite: 13 passed, 0 failed,
+  0 ignored on the same forced-FL9_1 device.
+- Strict D3D11 core fixture suite: 86 passed, 0 failed, 0 ignored.
+- DX12 core regression suite: 82 passed, 0 failed, 0 ignored.
+- HAL Clippy passed with nine pre-existing warnings; no warning from this
+  checkpoint. `wgpu` test Clippy passed without warnings.
+- Changed-Rust-file rustfmt check and `git diff --check` passed. Workspace-wide
+  formatting remains blocked only by the previously recorded untouched Naga
+  HLSL writer formatting differences.
+
+Reproduction commands (inside the Visual Studio x64 developer prompt):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+```
+
+Continue the core/HAL contract audit. Public adapter access remains explicit
+opt-in and offscreen-only; public presentation and historical FL9_1-driver
+compatibility are not verified.
 
 ## Checkpoint — internal FL9_1 capability projection — `dfc93078a`
 

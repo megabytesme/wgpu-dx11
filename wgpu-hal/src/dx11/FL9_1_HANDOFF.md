@@ -13,6 +13,18 @@ explicitly forced to FL9_1. Historical FL9_1 compatibility has not been
 verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep public surface exposure gated.
 
+Latest code checkpoint `3b1d4f964` handles indexed LineStrip and TriangleStrip
+draws with no vertex-rate inputs. Replay reads current index-buffer contents,
+matches restart after signed base-vertex resolution, splits runs and issues
+bounded direct strips; instance-only layouts rebind their stream per emulated
+instance. Strict private and public readback suites passed at requested/actual
+FL9_1. Full results: HAL 343/343, public wgpu 13/13, D3D11 core fixture
+86/86, and DX12 core 82/82. The GPU comparison is degenerate because the
+supported shader cannot observe vertex identity without a vertex input; exact
+run lengths and native batching are asserted by the CPU planner test. A
+nonzero index-buffer binding offset and same-submission index update remain
+useful follow-up coverage. Details and commands are in `FL9_1_PROGRESS.md`.
+
 Latest core/HAL contract checkpoint: `a3a6a177c` adds the public downlevel
 `texture_load` limit and rejects selected FL9_1 shader entries that reach
 Naga `ImageLoad`, including through helper functions, before HAL pipeline

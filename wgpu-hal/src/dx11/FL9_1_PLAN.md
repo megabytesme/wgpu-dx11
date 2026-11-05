@@ -60,9 +60,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    Indexed LineList and TriangleList with only instance-rate or no vertex-rate
    inputs now validate the index range and replay a matching nonindexed draw
    sequence; strict private and public readbacks compare Uint16/Uint32 cases to
-   direct draws. PointList retains its previously tested instance-only path.
-   Indexed strips still require vertex-rate streams so restart runs can be
-   preserved. `vertex_index` and `instance_index` remain unsupported.
+   direct draws. Indexed LineStrip and TriangleStrip now read the execution-time
+   index contents, split effective restart runs, and replay matching per-run
+   nonindexed strips when no vertex-rate inputs exist. Strict tests cover both
+   index widths, layouts and strip topologies. PointList retains its separately
+   tested instance-only path. `vertex_index` and `instance_index` remain
+   unsupported.
    Broader instance semantics and indirect draws remain unavailable. Microsoft
    marks native `DrawInstancedIndirect` and `DrawIndexedInstancedIndirect` as
    unsupported at 9_1; wgpu-core's `INDIRECT_EXECUTION` flag is also coupled to

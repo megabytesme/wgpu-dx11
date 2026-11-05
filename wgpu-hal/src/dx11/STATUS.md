@@ -526,11 +526,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
   draws, binding each instance-rate stream with native stride zero at its
   `first_instance`-adjusted offset. Indexed LineList and TriangleList draws
   with only instance-rate or no vertex-rate streams validate the index range,
-  then replay the same primitive count with nonindexed draws. Strict private
-  HAL and public wgpu readback compare these cases to direct draws for Uint16
-  and Uint32 indices; the existing PointList instance-only path remains covered
-  separately. Indexed strips still require a vertex-rate stream so CPU replay
-  can preserve primitive-restart runs. Pipelines using `instance_index` remain
+  then replay the same primitive count with nonindexed draws. Indexed LineStrip
+  and TriangleStrip draws without vertex-rate inputs read index data at replay,
+  split effective restart runs and issue one direct strip draw for each
+  bounded run. Strict private HAL and public wgpu readback cover Uint16 and
+  Uint32, instance-only and empty layouts. The existing PointList instance-only
+  path remains covered separately. Pipelines using `instance_index` remain
   unsupported; general instancing is not advertised.
 - Restricted index-dependent draws support signed base vertices and validate GPU
   index contents at replay. Uint32 triangle lists and Uint16 values beyond native
