@@ -631,7 +631,13 @@ representative application or a complete contract audit.
   is rejected before queue or mapping state changes. The strict public test
   configures, clears, presents, resizes and presents again, then confirms
   wrong-thread acquisition is rejected. It uses a hidden window; visible
-  desktop presentation and a continuously pumped event loop remain unverified.
+  desktop presentation and a continuously pumped event loop remain unverified
+  by this particular test.
+- `wgpu/examples/dx11_fl91_windowed.rs` is a visible public-API example. It
+  pumps Win32 messages, handles resize, and presents an animated indexed,
+  textured, depth-tested cube. A 60-frame run passed on the RTX 3090 Ti at
+  forced FL9_1 and checked HWND visibility. The pixels were not captured for
+  independent visual inspection; strict offscreen tests provide readback.
 - The public capability projection and core/HAL audit still need independent
 review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
@@ -641,8 +647,8 @@ comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
 - Device removal/recovery, event-query failure retention, some destroy paths,
-historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and visible
-desktop HWND presentation remain unverified.
+historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and visual
+inspection of desktop output remain unverified.
 
 The public texture-copy path now accepts RGBA8↔RGBA8-sRGB and BGRA8↔BGRA8-sRGB
 copies that core already considers format-compatible. The D3D11 path retains

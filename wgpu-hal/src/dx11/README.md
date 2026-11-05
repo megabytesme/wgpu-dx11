@@ -14,8 +14,10 @@ usage. Configure, acquire and present must run on the HWND's creating thread.
 Queue submissions, writes, mapped-buffer updates and context-backed resource
 creation are serialized against Present; same-thread reentrant work that would
 touch queue/context state is rejected. Drop views of the previous backbuffer
-before reconfiguring a resized surface. The strict test uses a hidden HWND, so
-visible desktop presentation remains unverified.
+before reconfiguring a resized surface. The strict lifecycle test uses a
+hidden HWND. A separate visible-window example pumps messages, renders and
+resizes; its shown HWND and frame presents were verified, though its pixels
+were not captured for independent visual inspection.
 
 A public offscreen example renders an indexed, textured, depth-tested cube and
 checks full-image readback:
@@ -23,6 +25,17 @@ checks full-image readback:
 ```powershell
 cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
 ```
+
+The visible-window example creates a native HWND, pumps messages, renders a
+rotating indexed textured cube with depth testing, and handles resize. Close
+the window to exit; `--frames=N` bounds a smoke run:
+
+```powershell
+cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=120
+```
+
+A 60-frame run passed on the RTX 3090 Ti at forced FL9_1. The code checked
+that the HWND became visible, but did not capture the displayed pixels.
 
 The strict public integration test requires physical FL9_1 hardware and rejects
 missing hardware, software substitution, device-creation failures and wrong

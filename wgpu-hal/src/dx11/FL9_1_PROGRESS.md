@@ -5792,7 +5792,7 @@ none of the public projection because its default requested limits exceed the
 FL9_1 limits. The Deno CTS package still does not enable DX11, and this
 non-WebGPU-compliant adapter must not be exposed to a conformance runner.
 
-## Checkpoint — serialized public HWND presentation — pending
+## Checkpoint — serialized public HWND presentation — `9ed1cc305`
 
 The explicit `dx11` backend now reports a deliberately narrow public surface
 contract for valid HWNDs: BGRA8 sRGB FIFO, opaque composition, render-attachment
@@ -5850,7 +5850,34 @@ rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-core/src/d
 git diff --check
 ```
 
-Next: add a native visible-window example with a real Windows message pump and
-exercise a textured, indexed, depth-tested scene. Then continue the public
-core/HAL contract audit. Visible output and historical FL9_1 behavior remain
+The implementation checkpoint is commit `9ed1cc305` (`dx11: add serialized
+public HWND presentation`).
+
+## Follow-up — visible public HWND example — pending
+
+`wgpu/examples/dx11_fl91_windowed.rs` now creates and shows a native HWND,
+selects a surface-compatible physical D3D11 adapter explicitly at FL9_1,
+configures BGRA8 sRGB FIFO presentation, pumps the Windows message queue,
+renders an animated indexed textured cube with D24S8 depth, and handles
+client-area resize by reconfiguring the surface and recreating depth storage.
+`--frames=N` makes the interactive example usable as a bounded smoke run.
+
+The example compiled cleanly and ran for 60 frames on the NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+`software=false`. It printed `Presented 60 textured, indexed, depth-tested
+frames.` and verified that the HWND was visible. This confirms the public
+message pump and repeated surface render/present path. No screenshot or pixel
+capture was taken; deterministic output remains covered by the public
+offscreen readback test.
+
+Exact command (Rust 1.93.1, Visual Studio x64 developer environment):
+
+```powershell
+cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=60'
+```
+
+The focused HWND lifecycle rerun also passed 1/1 after the surface checkpoint.
+Next continue the public core/HAL contract audit, including additional
+reentrant and resize edge cases, and independently inspect the visible output
+when a visual-capture workflow is available. Historical FL9_1 behavior remains
 unverified.

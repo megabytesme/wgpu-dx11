@@ -1536,7 +1536,7 @@ and HAL context locks are held, and a safe cross-layer scheduling design has
 not been established. Historical FL9_1 hardware and ARM32 UWP remain
 unverified.
 
-## Current checkpoint — serialized public HWND presentation — pending
+## Checkpoint — serialized public HWND presentation — `9ed1cc305`
 
 The newest working-tree increment replaces the former surface gate with a
 narrow public HWND contract: BGRA8 sRGB FIFO, opaque composition,
@@ -1556,7 +1556,18 @@ verified. Clippy and changed-file formatting passed; existing unrelated
 warnings and the Naga workspace-format discrepancy are recorded in
 `FL9_1_PROGRESS.md`.
 
-Next implement and run a native visible-window example, then continue the
-public core/HAL contract audit. Do not treat the hidden surface smoke test as
-visible presentation verification. Historical FL9_1 and ARM32 UWP execution
-remain unverified.
+Code commit `9ed1cc305` (`dx11: add serialized public HWND presentation`)
+contains the implementation and strict hidden-window evidence.
+
+## Current follow-up — visible public HWND example — pending
+
+`wgpu/examples/dx11_fl91_windowed.rs` creates a visible window, pumps Win32
+messages, renders an animated indexed textured depth-tested cube, and handles
+resizing. A bounded 60-frame run passed on the physical RTX 3090 Ti at
+requested/actual FL9_1 (`software=false`, driver `32.0.16.2101`) and verified
+the HWND visibility state. The exact invocation and limits of this evidence
+are in `FL9_1_PROGRESS.md`; no displayed-pixel capture was taken.
+
+Next continue the public core/HAL contract audit and add focused tests for any
+remaining surface or presentation reentrancy gaps. Historical FL9_1 and ARM32
+UWP execution and independent visual inspection remain unverified.

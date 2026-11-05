@@ -59,13 +59,31 @@ frame. It then verifies that acquisition from a different thread is rejected.
 The D3D11 surface operations must run on the HWND's creating thread. A shared
 queue gate serializes submissions, writes, mapping flushes, polling and
 context-backed resource creation against `Present`; same-thread reentrant work
-returns a validation/surface error. The test is not a visible display or
-message-loop test.
+returns a validation/surface error. The test is not a visible display test;
+use the windowed example below to exercise the message loop and swapchain
+presentation.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
 ```
+
+### Visible public HWND example
+
+`wgpu/examples/dx11_fl91_windowed.rs` opens a visible native HWND, uses the
+public `dx11` adapter and surface APIs, pumps Windows messages, and renders a
+rotating indexed textured cube with depth testing. It handles client-area
+changes by reconfiguring the swapchain and recreating its depth target. Close
+the window to stop it. For a bounded run, pass `--frames=N`:
+
+```powershell
+cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=120
+```
+
+A 60-frame run passed on the physical RTX 3090 Ti at requested/actual FL9_1.
+The example checks that the HWND is visible and reports presented frame count.
+It is not a pixel-readback test; use the offscreen example and strict
+integration suite for deterministic pixel validation.
 
 The public test also draws fully overlapping near and far textured surfaces
 with the same depth-tested pipeline, in both far-then-near and near-then-far
