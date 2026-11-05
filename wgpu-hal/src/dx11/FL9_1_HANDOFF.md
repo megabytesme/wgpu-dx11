@@ -1571,11 +1571,11 @@ are in `FL9_1_PROGRESS.md`; no displayed-pixel capture was taken.
 Commit `ca0b026fd` (`dx11: add visible FL9_1 windowed example`) contains the
 example, documentation and 60-frame hardware verification record.
 
-The latest pending capability work maps optional half-float IA formats while
-keeping them outside FL9_1 static guarantees. The forced-FL9_1 RTX reports
-`Float16x2` unsupported through the selected-device query; the public test
-logs an explicit optional-path skip. Synthetic projection tests cover a
-positive optional query. See the current checkpoint section in
+Commit `867122688978524082ada4ba8614a3c3f4f72c3b` maps optional half-float IA
+formats while keeping them outside FL9_1 static guarantees. The forced-FL9_1
+RTX reports `Float16x2` unsupported through the selected-device query; the
+public test logs an explicit optional-path skip. Synthetic projection tests
+cover a positive optional query. See the current checkpoint section in
 `FL9_1_PROGRESS.md` for verification commands and results.
 
 Next continue the public core/HAL contract audit and add focused tests for any

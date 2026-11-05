@@ -5886,7 +5886,7 @@ reentrant and resize edge cases, and independently inspect the visible output
 when a visual-capture workflow is available. Historical FL9_1 behavior remains
 unverified.
 
-## Checkpoint in progress — optional half-float vertex inputs
+## Checkpoint — optional half-float vertex inputs (`867122688978524082ada4ba8614a3c3f4f72c3b`)
 
 The required DXGI format table makes `R16G16_FLOAT` and
 `R16G16B16A16_FLOAT` input-assembler support mandatory from FL9_3, not FL9_1.
@@ -5929,6 +5929,7 @@ rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-hal/src/dx
 git diff --check
 ```
 
-After committing this checkpoint, continue auditing public core/HAL behavior
+Commit `867122688978524082ada4ba8614a3c3f4f72c3b` contains this implementation,
+the public test and documentation. Continue auditing public core/HAL behavior
 and optional vertex formats. Do not claim that the RTX executed Float16x2 at
 FL9_1 or that a forced modern device validates historical FL9_1 drivers.
