@@ -5085,3 +5085,5 @@ The Visual Studio prompt continues to print its pre-existing `vError: Unknown
 error` banner despite correctly setting the x64 compiler and linker environment.
 Public HWND presentation, a complete core/HAL operation audit and testing on
 historical FL9_1 devices remain outstanding.
+
+Code checkpoint commit: `f6e4125fe` (`core: validate FL9_1 texture sample bias limits`).

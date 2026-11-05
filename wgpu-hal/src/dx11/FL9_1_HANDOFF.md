@@ -1310,5 +1310,6 @@ Strict public FL9_1 execution passed 11/11, the core fixture suite passed
 82/82, the adapter selection test passed 1/1, and the type/serde, HAL,
 wgpu-info, DX12 compile, Clippy, rustfmt and diff checks passed. Details and
 exact commands are in the latest `FL9_1_PROGRESS.md` section. The code
-checkpoint commit is being recorded after this verification; public HWND
-presentation and the remaining operation audit still block full completion.
+checkpoint is `f6e4125fe` (`core: validate FL9_1 texture sample bias limits`).
+Public HWND presentation and the remaining operation audit still block full
+completion.
