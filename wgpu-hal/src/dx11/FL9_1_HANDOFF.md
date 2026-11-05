@@ -1280,3 +1280,10 @@ texture-to-buffer readback. All 36 output pixels matched, including unchanged
 destination texels. The strict public suite now passes 8/8 on the forced-FL9_1
 RTX. The full public contract audit, historical hardware and safe HWND
 presentation remain outstanding.
+
+Code commit `f191d4f97` adds public RGBA8 mip-chain upload and sampling at
+forced FL9_1. The test verifies implicit derivatives select the distinct
+level-1 color across 64 pixels and that core rejects a multi-mip R8 descriptor.
+The full strict suite now passes 9/9; exact evidence is in
+`FL9_1_PROGRESS.md`. Other formats, NPOT chains and historical FL9_1 drivers
+remain separate validation questions.

@@ -171,6 +171,11 @@ The public transfer test also verifies a mapped-buffer upload with offset 16
 and 256-byte row pitch, a 2×2 copy between 8×8 and 6×6 textures at nonzero
 origins, and a 6×6 readback with padded rows. All 36 output texels matched,
 including the preserved destination background.
+The public sampled-mip test uploaded and rendered an RGBA8 four-level POT chain;
+implicit derivatives selected mip 1 across all 64 pixels. The same test
+confirmed core rejects multi-mip R8 because that queried format is projected
+with `SINGLE_MIP_ONLY`. This does not imply multi-mip support for other formats
+or NPOT chains.
 
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample

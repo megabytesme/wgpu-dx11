@@ -306,3 +306,8 @@ through a partial buffer-to-texture update, copies a 2×2 source box between
 different texture dimensions at nonzero origins, and reads all 36 destination
 texels back through a padded buffer layout. The test also verifies untouched
 destination texels retain their prior values.
+
+The public RGBA8 sampled path now has a four-level POT mip-chain execution
+test. Distinct colors were uploaded to each level and implicit derivatives
+selected level 1 across the full 8×8 output. Core also rejects a multi-mip R8
+descriptor according to that format's `SINGLE_MIP_ONLY` report.

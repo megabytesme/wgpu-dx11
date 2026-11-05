@@ -48,6 +48,9 @@ An eighth strict test verifies a padded, offset buffer-to-texture upload,
 partial copy between differently sized textures with nonzero origins, and
 full texture readback; all 36 destination texels match the expected patch and
 preserved background.
+A ninth strict test uploads and samples an RGBA8 mip chain through implicit
+derivatives, selecting level 1 across all 64 output pixels; a multi-mip R8
+descriptor is rejected by core.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

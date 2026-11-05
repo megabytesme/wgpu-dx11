@@ -4957,3 +4957,35 @@ This verifies the projected RGBA8 copy usages through public core and the HAL;
 it does not establish all texture combinations or historical FL9_1 driver
 behavior. Public HWND presentation and the exhaustive capability audit remain
 outstanding.
+
+## Checkpoint — public sampled RGBA8 mip chain — `f191d4f97`
+
+Added a public strict test that creates an 8×8, four-level RGBA8 resource,
+uploads a different solid color to every mip with padded rows, creates a view
+of the full chain, and renders it with implicit derivatives. An oversized
+fullscreen triangle produces a known 2:1 texel minification ratio and selects
+level 1 through a nearest mip filter; all 64 output pixels matched green. The
+test also verifies the public core rejects a three-mip R8 texture under the
+selected device's `SINGLE_MIP_ONLY` format projection.
+
+The focused strict test passed 1/1. The complete public suite passed 9/9 on the
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with requested and actual
+FL9_1 and `software=false`. `Rgba8Unorm` reported sampled, upload, copy,
+render-target and filtering support with no `SINGLE_MIP_ONLY` flag. The new
+readback selected mip 1 in every pixel; R8 multi-mip creation produced a public
+validation error. Rust 1.93.1 wgpu test Clippy, targeted rustfmt and
+`git diff --check` passed. Early test runs selected mip 0 and then mip 2 while
+calibrating the UV scale; the final 2:1 ratio selected mip 1 deterministically.
+Visual Studio's existing x64 prompt banner did not affect the build or GPU
+execution.
+
+Exact strict command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+This proves the reported RGBA8 mip path on the tested RTX at forced FL9_1; it
+does not generalize to NPOT textures, other formats or legacy drivers. Public
+HWND presentation and exhaustive contract review remain outstanding.

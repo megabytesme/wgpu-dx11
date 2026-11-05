@@ -129,6 +129,12 @@ readback buffer and verifies every texel, including all unchanged green
 pixels. The test exercises buffer-to-texture, texture-to-texture and
 texture-to-buffer paths in one ordered submission.
 
+A ninth strict public test uploads all four levels of an 8×8 RGBA8 mip chain
+with different colors, samples the chain with implicit derivatives and
+nearest mip selection, and verifies all 64 pixels select level 1. It also
+confirms that a multi-mip R8 texture is rejected because the selected format
+projection marks R8 as single-mip-only.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a
