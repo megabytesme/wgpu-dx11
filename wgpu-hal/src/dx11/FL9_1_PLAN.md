@@ -79,9 +79,9 @@ contract is safe. This plan does not claim WebGPU conformance.
    strict GPU verification. Required RGBA8_SRGB and BGRA8_SRGB formats now
    have independent device queries and public sampled/render-target paths;
    strict FL9_1 readback verifies decoding and encoding for both channel
-   orders. Their generic mip path remains query-gated without dedicated sRGB
-   mip execution coverage. Continue adding narrowly verified required formats
-   and usage combinations.
+   orders. The public suite also samples four-level POT chains of both formats
+   and verifies implicit LOD selects mip 1. Continue adding narrowly verified
+   required formats and usage combinations.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex

@@ -5534,3 +5534,24 @@ command above passed. Neither issue required a product-code change. Historical
 FL9_1 hardware, ARM32 UWP and the existing public HWND presentation scheduler
 remain unverified or unresolved; continue the independent format and
 core/HAL-contract audit.
+
+## Checkpoint — public FL9_1 sRGB mip execution — `f2c813671`
+
+The selected RTX projection reports mip support for both sRGB formats, so a
+second public GPU test now creates four-level POT `Rgba8UnormSrgb` and
+`Bgra8UnormSrgb` textures. It uploads different values to each level, samples
+with implicit LOD into a linear RGBA8 target, and verifies that mip 1 is
+selected and decoded to `[55, 13, 134, 255]` in all 128 checked pixels. This
+closes the previously documented sRGB mip execution gap for the tested
+implicit-LOD path; it does not test every LOD clamp or mip filter combination.
+
+The first test attempt sampled mip 0 because its UV gradient produced a base
+LOD. The expected mip-1 result was therefore wrong; the test gradient was
+adjusted to match the calibrated public POT-mip test pattern. The corrected
+strict test passed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual FL9_1,
+`software=false`. The full strict public suite then passed 18/18 with no
+skips. `cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public
+--no-default-features --features dx11,wgsl,std`, changed-file rustfmt and
+`git diff --check` passed. The suite does not establish historical-device
+behavior; continue the capability and core/HAL audit.

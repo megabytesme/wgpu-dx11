@@ -51,11 +51,11 @@ The required-format table also includes `R8G8B8A8_UNORM_SRGB` and
 `B8G8R8A8_UNORM_SRGB` from FL9_1. Both are modeled as feature-level
 guarantees, then independently gated by their own device `CheckFormatSupport`
 results and the implemented typed-texture path. The backend supports their
-single-mip upload, sampled-view, render-target and readback uses. A strict
-public test verifies sRGB decode while sampling and encode on render-target
-writes for both channel orders; multi-mip sRGB rendering is not covered by
-that test. The same positive per-format query and mip/backend checks used for
-linear RGBA8/BGRA8 govern any reported mip-chain support.
+single-mip upload, sampled-view, render-target and readback uses. Strict public
+tests verify sRGB decode while sampling and encode on render-target writes for
+both channel orders, plus implicit-LOD selection from four-level POT chains.
+The same positive per-format query and mip/backend checks used for linear
+RGBA8/BGRA8 govern reported mip-chain support.
 
 Conditional NPOT textures at FL9 require one mip and restricted addressing. Full NPOT and
 comparison-shadow support are separately queried using `CheckFeatureSupport`;
@@ -149,9 +149,11 @@ required 2D texture, shader sampling, mip, render-target and blendable bits.
 The public strict test uploaded one texel in each format and verified that
 sampling decoded all 128 RGBA8 output pixels to `[55, 13, 134, 255]`. It then
 rendered linear `[0.5, 0.25, 1.0, 1.0]` into both sRGB targets and verified 128
-encoded pixels, including RGBA/BGRA byte order. This proves the single-mip
-paths on this driver; no dedicated sRGB mip-chain execution case has run, and
-the modern adapter does not establish historical-driver behavior.
+encoded pixels, including RGBA/BGRA byte order. A separate strict test created
+four-level POT chains of both formats and verified that implicit LOD selected
+mip 1, decoding 128/128 pixels to `[55, 13, 134, 255]`. These observations
+verify the tested paths on this driver; the modern adapter does not establish
+historical-driver behavior or every possible sRGB mip use.
 
 ## FL9_1 inventory and gaps
 

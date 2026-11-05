@@ -469,12 +469,15 @@ pixels. It then renders known linear values into each sRGB target and verifies
 all 128 encoded readback pixels, including BGRA channel order and the transfer
 curve. This exercises public texture creation, upload, sampling, render-target
 view creation, GPU rendering and copy readback at explicitly selected FL9_1.
-It does not add a dedicated sRGB mip-chain execution case; mip availability
-remains controlled by the device query and the tested POT mip paths.
+The companion mip test creates four-level POT textures in both formats and
+uses implicit LOD sampling; mip 1 decoded to the expected linear value across
+128 output pixels. Mip availability remains controlled by the device query
+and the existing POT mip paths.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_texture_sampling_and_rendering -- --nocapture --test-threads=1
+cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_mip_chain_sampling_at_fl91 -- --nocapture --test-threads=1
 ```
 
 ### Exact FL9_1 capability projection through core

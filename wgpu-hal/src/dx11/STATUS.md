@@ -73,7 +73,7 @@ An additional strict public test now checks the selected adapter's usage and
 filter reports for RGBA8_SRGB and BGRA8_SRGB, samples uploaded texels and
 checks sRGB decoding across 128 pixels, then renders linear colors into both
 sRGB targets and checks 128 encoded pixels and channel order. The complete
-public D3D11 test binary passes 17/17 on the RTX at requested and actual
+public D3D11 test binary passes 18/18 on the RTX at requested and actual
 FL9_1.
 
 The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
@@ -137,12 +137,15 @@ view, render-target and readback paths, with independent FL9_1 guarantees and
 per-device format queries. A strict public test verifies sRGB decoding from
 both upload formats and sRGB encoding to both render-target formats across
 128 sampled and 128 rendered pixels. A dedicated sRGB mip-chain execution test
-has not been run; mip reporting remains conditional on the selected format
-query and the existing POT mip implementation.
+also uploads four-level POT chains for both formats and verifies that implicit
+LOD sampling selects mip 1 in all 128 readback pixels. Mip reporting remains
+conditional on the selected format query and the existing POT mip
+implementation.
 
 The complete strict private HAL suite passes 346/346, the controlled core
 fixture suite passes 89/89, core's explicit physical-adapter enumeration test
-passes 1/1, and the DX12 core regression suite passes 85/85. `cargo check` for
+passes 1/1, and the DX12 core regression suite passes 85/85. The expanded
+public suite passes 18/18. `cargo check` for
 the D3D11 HAL, targeted Clippy, changed-file rustfmt and `git diff --check`
 also pass. HAL Clippy reports nine existing warnings in unrelated mapped
 range tests, swapchain ordering and texel-load proof code.
