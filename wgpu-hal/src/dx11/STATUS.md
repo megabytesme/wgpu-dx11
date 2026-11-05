@@ -155,8 +155,11 @@ comparison independently. It also discards each aspect separately, loads it
 again, and verifies core initializes it before use; all 320 checked pixels
 matched the expected results. The selected RTX's FL9_1 D24S8 path passed these
 cases. Public core rejects sampled D24S8 usage, and the D16 test rejects its
-unsupported `StencilOnly` view. These results do not establish behavior on
-historical FL9_1 drivers or native post-discard contents.
+unsupported `StencilOnly` view. The selected public D24S8 format report is
+render-attachment/transient only and single-mip; core rejects aspect-specific
+D24S8 views while retaining the combined attachment view. These results do
+not establish behavior on historical FL9_1 drivers or native post-discard
+contents.
 
 The complete strict private HAL suite passes 347/347, the controlled core
 fixture suite passes 89/89, core's explicit physical-adapter enumeration test

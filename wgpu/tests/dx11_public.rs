@@ -2100,10 +2100,20 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let format_features = adapter.get_texture_format_features(TextureFormat::Depth24PlusStencil8);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
-        info.name, info.vendor, info.device, info.driver, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; D24S8={format_features:?}",
+        info.name, info.vendor, info.device, info.driver, info.driver_info,
     );
+    assert!(format_features
+        .allowed_usages
+        .contains(TextureUsages::RENDER_ATTACHMENT));
+    assert!(!format_features.allowed_usages.intersects(
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST
+    ));
+    assert!(format_features
+        .flags
+        .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 D24S8 transition test"),
         required_features: Features::empty(),
@@ -2167,6 +2177,14 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         usage: TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
+    for aspect in [TextureAspect::DepthOnly, TextureAspect::StencilOnly] {
+        expect_validation_error(&device, "D24S8 aspect-specific attachment view", || {
+            drop(depth_stencil.create_view(&TextureViewDescriptor {
+                aspect,
+                ..Default::default()
+            }));
+        });
+    }
     let depth_stencil_view = depth_stencil.create_view(&TextureViewDescriptor::default());
     let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
         .into_iter()
@@ -2489,7 +2507,7 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 D24S8 LOAD preserved depth and stencil (64/64 green); independent depth/stencil CLEAR and Discard initialization matched all 256 checked transition pixels; sampled D24S8 was rejected by core");
+    println!("PASS: public FL9_1 D24S8 LOAD preserved depth and stencil (64/64 green); independent depth/stencil CLEAR and Discard initialization matched all 256 checked transition pixels; sampled usage and aspect-specific views were rejected by core");
 }
 
 #[test]

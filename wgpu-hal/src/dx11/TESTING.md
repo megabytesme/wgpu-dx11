@@ -530,6 +530,9 @@ matching. The depth-discard probe confirms the initialized value behaves as
 zero: an incoming 0.25 fragment passes `Less` against the stale 0.5 value but
 fails after discard initialization. This is evidence for the selected core
 initialization path and driver, not a claim about native contents after discard.
+The selected adapter reports D24S8 as render-attachment/transient only and
+single-mip; core also rejects `DepthOnly` and `StencilOnly` D24S8 views because
+the projection does not expose those aspect-specific formats.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

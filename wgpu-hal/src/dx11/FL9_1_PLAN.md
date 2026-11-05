@@ -41,9 +41,10 @@ contract is safe. This plan does not claim WebGPU conformance.
    rendering. Public D24S8 tests now verify both aspects survive LOAD, each
    aspect's CLEAR independently changes later comparisons, and each aspect's
    DISCARD followed by LOAD is initialized before use. Sampled D24S8 is
-   rejected through core; the D16 test separately rejects its unsupported
-   stencil-only view. Continue auditing less common render-pass combinations
-   and format aspects before widening public claims.
+   rejected through core; public core rejects depth-only/stencil-only D24S8
+   views while retaining the combined attachment, and the D16 test rejects its
+   unsupported stencil-only view. Continue auditing less common render-pass
+   combinations and format aspects before widening public claims.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. A controlled core test
