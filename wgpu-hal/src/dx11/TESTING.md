@@ -908,6 +908,24 @@ transitions plus invalid pass operations, then exercises READ→WRITE→READ
 across submissions after caller resource destruction. This
 does not establish sampled-depth alias support or a public read-only flag.
 
+The strict public D24S8 test also checks three core-valid read-only modes:
+both aspects read-only, depth read-only with stencil writable, and stencil
+read-only with depth writable. Subsequent Equal comparisons validate the
+preserved or updated aspect through color output. Error scopes confirm core
+rejects a depth-writing pipeline in a depth-read-only pass and a
+stencil-writing pipeline in a stencil-read-only pass. This uses a normal DSV
+without an SRV alias; the D3D11 projection does not report
+`READ_ONLY_DEPTH_STENCIL`.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d24s8_load_clear_discard_transitions_at_fl91 -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested and actual FL9_1, all 512 pixels across the
+eight pass snapshots matched. The test retains coverage for D24S8 LOAD, CLEAR,
+DISCARD initialization and aspect-specific view rejection.
+
 For dynamic uniform offsets, run `cargo test -p wgpu-hal --lib
 --no-default-features --features dx11 dynamic_uniform -- --nocapture` with
 strict hardware mode enabled. These tests cover sampled and indexed draws,

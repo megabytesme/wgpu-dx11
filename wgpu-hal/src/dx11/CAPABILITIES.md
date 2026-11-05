@@ -426,9 +426,15 @@ The strict forced-FL9_1 test verifies all seven native depth functions and the
 Never emulation. Historical 9_1 drivers remain unverified. The stencil test
 confirms that a following Equal comparison observes the remapped write.
 Private read-only passes require LOAD|STORE for both aspects and a pipeline
-without depth or stencil writes. They use an ordinary DSV; sampled aliases
-remain prohibited, so this does not establish the public
-`READ_ONLY_DEPTH_STENCIL` flag.
+without depth or stencil writes. A strict public test now verifies D24S8
+passes with both aspects read-only, read-only depth plus writable stencil, and
+writable depth plus read-only stencil. Core rejects pipelines that write a
+read-only aspect; all three valid combinations pass on the forced-FL9_1 RTX.
+The public projection still omits `READ_ONLY_DEPTH_STENCIL`: without that flag,
+core uses the ordinary writable DSV usage and does not permit sampling the
+attachment during the pass. This test proves aspect rules for non-aliasing
+passes, not a read-only DSV/SRV alias. Private read-only passes use an ordinary
+DSV as well.
 The broad `depth_stencil` capability remains false. Texture and view descriptors
 may declare READ, WRITE or READ|WRITE, but an actual pass uses one usage.
 Strict GPU tests verify textured depth ordering, initialization, independent

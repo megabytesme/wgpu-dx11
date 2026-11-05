@@ -449,8 +449,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   transitions are indirectly verified through strict GPU readback. All eight
   stencil operations now pass boundary-value checks when used on native pass,
   stencil-fail and depth-fail branches (24 full-image cases); the DSV is not
-  directly readable through the HAL. Private read-only passes require
-  load/store on both aspects, no depth or stencil writes and no sampled alias.
+  directly readable through the HAL. Private and public read-only passes are
+  tested without sampled aliases. The public D24S8 test covers both aspects
+  read-only and each mixed read/write aspect combination; core rejects writes
+  to whichever aspect is read-only. `READ_ONLY_DEPTH_STENCIL` remains
+  unreported, so simultaneous sampled-depth aliasing is unavailable.
   Aspect-specific views and depth copies remain unsupported; broad public
   depth-stencil capability is still false.
 - D24S8 triangle pipelines accept signed constant and finite slope-scaled depth
