@@ -98,6 +98,9 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     fragment_front_facing: false,
                     fragment_position: false,
                     texture_load: false,
+                    max_texture_sample_bias: 3,
+                    texture_sample_bias_dynamic: false,
+                    texture_sample_bias_offset: false,
                     vertex_format_mask,
                 },
                 ..Default::default()

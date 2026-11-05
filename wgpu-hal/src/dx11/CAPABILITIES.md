@@ -519,7 +519,13 @@ Unrelated entries remain usable. The tested FXC emitted an unclamped legacy
 `texldb`, for which Microsoft documents undefined behavior outside [-3, 3] at
 ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a
 fractional linear-mipmap blend; direct and indexed draws rejected incompatible
-samplers. This restricted implementation does not cover all valid biased sampling.
+samplers. The public projection reports a maximum absolute literal bias of 3,
+no dynamic bias and no sampling offsets. Core's selected-entry analysis follows
+helper calls and rejects those unsupported forms as validation errors before
+HAL pipeline compilation. Public readback verifies implicit sampling and
+literal biases -3, +1 and +3 selected the expected mip colors across 256
+pixels; synthetic interface tests cover fractional and helper cases. This
+restricted implementation does not cover all valid biased sampling.
 
 The public offscreen adapter reports anisotropy availability through the
 `ANISOTROPIC_FILTERING` flag and the cap through

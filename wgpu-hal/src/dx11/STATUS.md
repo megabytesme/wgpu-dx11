@@ -48,15 +48,24 @@ An eighth strict test verifies a padded, offset buffer-to-texture upload,
 partial copy between differently sized textures with nonzero origins, and
 full texture readback; all 36 destination texels match the expected patch and
 preserved background.
-A ninth strict test uploads and samples an RGBA8 mip chain through implicit
-derivatives, selecting level 1 across all 64 output pixels; a multi-mip R8
-descriptor is rejected by core.
+A ninth strict test uploads and samples a four-level RGBA8 mip chain through
+implicit derivatives and literal sample biases -3, +1 and +3. The expected
+mip colors were verified across 256 pixels; core rejects dynamic,
+helper-forwarded, out-of-range and offset bias forms before HAL. A multi-mip R8
+descriptor is also rejected by core.
 A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
 wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
 projected formats are non-filterable and single-mip-only.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels); core
 rejects the unsupported `instance_index` builtin.
+
+The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
+bias and texel offsets. Core's per-entry analysis follows helper calls, so
+unsupported bias forms produce public validation errors instead of HAL
+compiler errors. `wgpu-info` prints all three limits. Synthetic tests cover
+fractional literals and entry-point isolation; this does not claim full
+`textureSampleBias` support.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

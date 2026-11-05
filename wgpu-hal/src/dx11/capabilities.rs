@@ -362,6 +362,9 @@ impl Capabilities {
                 fragment_front_facing: false,
                 fragment_position: false,
                 texture_load: false,
+                max_texture_sample_bias: 3,
+                texture_sample_bias_dynamic: false,
+                texture_sample_bias_offset: false,
                 vertex_format_mask: self.vertex_input_format_mask(),
             },
         };

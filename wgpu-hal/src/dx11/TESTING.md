@@ -130,10 +130,13 @@ pixels. The test exercises buffer-to-texture, texture-to-texture and
 texture-to-buffer paths in one ordered submission.
 
 A ninth strict public test uploads all four levels of an 8×8 RGBA8 mip chain
-with different colors, samples the chain with implicit derivatives and
-nearest mip selection, and verifies all 64 pixels select level 1. It also
-confirms that a multi-mip R8 texture is rejected because the selected format
-projection marks R8 as single-mip-only.
+with different colors. Implicit derivatives and literal sample biases -3, +1
+and +3 select their expected mip colors across 256 readback pixels. Dynamic,
+helper-forwarded, out-of-range and offset biases are rejected by core validation
+before HAL compilation. CPU-only core analysis tests cover fractional bias and
+constant helper calls. The same public test confirms that a multi-mip R8
+texture is rejected because the selected format projection marks R8 as
+single-mip-only.
 
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible

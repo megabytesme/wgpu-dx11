@@ -5046,3 +5046,42 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 
 Public adapter presentation, the remaining core/HAL operation audit and
 historical FL9_1 devices remain outstanding.
+
+## Checkpoint — selected-entry sample-bias validation
+
+Added three `DownlevelLimits` properties for the FL9_1 sample-bias subset:
+maximum absolute literal bias 3, dynamic bias disabled, and texel offsets
+disabled. Core records bias operations by entry point, follows helper calls,
+and rejects unsupported forms as pipeline validation errors before HAL shader
+compilation. This closes the case where a core-valid but unsupported bias
+previously surfaced as a HAL linkage/internal error. Strict public readback
+verified implicit sampling and literal biases -3, +1 and +3 against four mip
+colors across 256 pixels. The public test also expects validation errors for
+dynamic, helper-dynamic, out-of-range and offset forms. CPU-only tests cover
+fractional literals, constant helper sampling, selected-entry isolation,
+conservative dynamic rejection and unrestricted defaults.
+
+Verification on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`):
+requested/actual FL9_1, hardware adapter, no software fallback. Strict public
+suite passed 11/11; core fixture suite passed 82/82, including real D3D11
+readback cases; direct adapter test passed 1/1 and enumerated one FL9_1 device.
+The wgpu-types suite passed 71/71; its serde compatibility case passed 1/1.
+HAL `dx11,gles`, `wgpu-info`, and core `dx12` checks passed. Core and public
+wgpu Clippy, wgpu-types serde Clippy, rustfmt checks and `git diff --check`
+passed. The DX12 check emitted 15 existing warnings caused by building without
+WGSL, while the no-serde wgpu-types test emitted existing serde-import
+warnings. `wgpu-info` initially failed because its exhaustive downlevel
+destructure had omitted the already-existing `texture_load` field; it now
+prints that property alongside the new bias limits.
+
+Exact strict commands:
+
+```powershell
+cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1'
+cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -q -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1'
+```
+
+The Visual Studio prompt continues to print its pre-existing `vError: Unknown
+error` banner despite correctly setting the x64 compiler and linker environment.
+Public HWND presentation, a complete core/HAL operation audit and testing on
+historical FL9_1 devices remain outstanding.

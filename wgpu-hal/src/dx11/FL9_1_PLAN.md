@@ -99,7 +99,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    The selected-entry audit also models `textureLoad` as a downlevel limit and
    rejects only entries that reach a load through their call graph; safe sibling
    entries remain usable. Continue auditing other WGSL operations accepted by
-   core but rejected by the private FL9_1 compiler.
+   core but rejected by the private FL9_1 compiler. The public FL9_1 projection
+   now models the FXC bias subset (`abs(literal) <= 3`, no dynamic value or
+   offset), and selected-entry core validation follows helper calls so
+   unsupported bias forms fail before HAL. Strict public readback verifies
+   implicit sampling and -3/+1/+3 literal bias mip selection. Continue the
+   shader audit for additional core-accepted compiler failures.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

@@ -795,6 +795,10 @@ pub enum CreateRenderPipelineError {
     UnsupportedFragmentPosition,
     #[error("Texture loads are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureLoad { stage: wgt::ShaderStages },
+    #[error(
+        "Texture sample bias is not supported in the {stage:?} shader by this downlevel adapter"
+    )]
+    UnsupportedTextureSampleBias { stage: wgt::ShaderStages },
     #[error("Vertex format {format:?} is not supported by this downlevel adapter")]
     UnsupportedVertexFormatOnDownlevelAdapter { format: wgt::VertexFormat },
     #[error("The total number of vertex attributes {given} exceeds the limit {limit}")]
@@ -887,6 +891,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedFragmentFrontFacing
             | Self::UnsupportedFragmentPosition
             | Self::UnsupportedTextureLoad { .. }
+            | Self::UnsupportedTextureSampleBias { .. }
             | Self::UnsupportedVertexFormatOnDownlevelAdapter { .. }
             | Self::TooManyVertexAttributes { .. }
             | Self::VertexAttributeLocationTooLarge { .. }

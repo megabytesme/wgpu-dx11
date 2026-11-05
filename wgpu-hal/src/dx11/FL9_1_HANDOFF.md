@@ -1302,3 +1302,13 @@ first record absent. Public core also rejects `instance_index`. The strict
 public suite now passes 11/11 on forced FL9_1; see `FL9_1_PROGRESS.md` for
 pixel counts and the exact command. The public presentation and comprehensive
 core/HAL audit are still unresolved.
+
+The selected-entry bias capability checkpoint extends `DownlevelLimits` with
+an absolute literal bias cap of 3 and explicit dynamic/offset support bits.
+Core follows helper calls and rejects unsupported bias forms before HAL.
+Strict public FL9_1 execution passed 11/11, the core fixture suite passed
+82/82, the adapter selection test passed 1/1, and the type/serde, HAL,
+wgpu-info, DX12 compile, Clippy, rustfmt and diff checks passed. Details and
+exact commands are in the latest `FL9_1_PROGRESS.md` section. The code
+checkpoint commit is being recorded after this verification; public HWND
+presentation and the remaining operation audit still block full completion.

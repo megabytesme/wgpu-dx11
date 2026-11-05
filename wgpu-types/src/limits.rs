@@ -1133,6 +1133,18 @@ pub struct DownlevelLimits {
     /// selected shader model or resource subset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_load: bool,
+    /// Maximum absolute literal bias accepted by `textureSampleBias`.
+    ///
+    /// `u32::MAX` means that no finite backend-specific bound is modeled. A
+    /// finite value constrains only statically known bias values.
+    #[cfg_attr(feature = "serde", serde(default = "default_max_texture_sample_bias"))]
+    pub max_texture_sample_bias: u32,
+    /// Whether `textureSampleBias` may use a dynamically computed bias.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_sample_bias_dynamic: bool,
+    /// Whether `textureSampleBias` may specify a constant texel offset.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_sample_bias_offset: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1150,6 +1162,11 @@ fn default_true() -> bool {
 #[cfg(feature = "serde")]
 fn default_max_sampler_anisotropy() -> u16 {
     16
+}
+
+#[cfg(feature = "serde")]
+fn default_max_texture_sample_bias() -> u32 {
+    u32::MAX
 }
 
 impl Default for DownlevelLimits {
@@ -1174,6 +1191,9 @@ impl Default for DownlevelLimits {
             fragment_front_facing: true,
             fragment_position: true,
             texture_load: true,
+            max_texture_sample_bias: u32::MAX,
+            texture_sample_bias_dynamic: true,
+            texture_sample_bias_offset: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -1223,6 +1243,9 @@ impl DownlevelLimits {
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
             && (!required.texture_load || self.texture_load)
+            && self.max_texture_sample_bias >= required.max_texture_sample_bias
+            && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
+            && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -1276,6 +1299,10 @@ impl DownlevelCapabilities {
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
             && self.limits.texture_load
+            && self.limits.max_texture_sample_bias
+                >= DownlevelLimits::default().max_texture_sample_bias
+            && self.limits.texture_sample_bias_dynamic
+            && self.limits.texture_sample_bias_offset
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
@@ -1564,6 +1591,9 @@ mod tests {
             fragment_front_facing: false,
             fragment_position: false,
             texture_load: true,
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            texture_sample_bias_offset: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
@@ -1586,6 +1616,9 @@ mod tests {
             fragment_front_facing: false,
             fragment_position: false,
             texture_load: true,
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            texture_sample_bias_offset: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
@@ -1696,6 +1729,9 @@ mod tests {
             "multisampled_texture_bindings",
             "max_sampler_anisotropy",
             "texture_load",
+            "max_texture_sample_bias",
+            "texture_sample_bias_dynamic",
+            "texture_sample_bias_offset",
         ] {
             object.remove(field);
         }
@@ -1708,6 +1744,9 @@ mod tests {
         assert!(limits.multisampled_texture_bindings);
         assert_eq!(limits.max_sampler_anisotropy, 16);
         assert!(limits.texture_load);
+        assert_eq!(limits.max_texture_sample_bias, u32::MAX);
+        assert!(limits.texture_sample_bias_dynamic);
+        assert!(limits.texture_sample_bias_offset);
     }
 
     #[test]
@@ -1793,6 +1832,32 @@ mod tests {
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn texture_sample_bias_restrictions_are_downlevel_limits() {
+        let available = DownlevelLimits {
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            texture_sample_bias_offset: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            texture_sample_bias_offset: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_texture_sample_bias: 4,
+            ..DownlevelLimits::default()
+        }));
         assert!(!DownlevelCapabilities {
             limits: available,
             ..DownlevelCapabilities::default()

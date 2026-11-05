@@ -291,11 +291,18 @@ struct EntryPoint {
     #[allow(unused)]
     spec_constants: Vec<SpecializationConstant>,
     sampling_pairs: FastHashSet<(naga::Handle<Resource>, naga::Handle<Resource>)>,
+    texture_sample_biases: Vec<TextureSampleBias>,
     workgroup_size: [u32; 3],
     dual_source_blending: bool,
     task_payload_size: Option<u32>,
     mesh_info: Option<EntryPointMeshInfo>,
     immediate_slots_required: naga::valid::ImmediateSlots,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TextureSampleBias {
+    literal: Option<f32>,
+    has_offset: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -390,6 +397,64 @@ fn collect_called_functions(
             }
         }
     }
+}
+
+fn expression_literal_f32(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> Option<f32> {
+    match function.expressions[expression] {
+        naga::Expression::Literal(naga::Literal::F32(value)) => Some(value),
+        naga::Expression::Unary {
+            op: naga::UnaryOperator::Negate,
+            expr,
+        } => match function.expressions[expr] {
+            naga::Expression::Literal(naga::Literal::F32(value)) => Some(-value),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn collect_function_texture_sample_biases(
+    function: &naga::Function,
+    biases: &mut Vec<TextureSampleBias>,
+) {
+    for (_, expression) in function.expressions.iter() {
+        let naga::Expression::ImageSample {
+            level: naga::SampleLevel::Bias(bias),
+            offset,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        biases.push(TextureSampleBias {
+            literal: expression_literal_f32(function, bias),
+            has_offset: offset.is_some(),
+        });
+    }
+}
+
+fn entry_point_texture_sample_biases(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> Vec<TextureSampleBias> {
+    let mut biases = Vec::new();
+    collect_function_texture_sample_biases(&entry_point.function, &mut biases);
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        collect_function_texture_sample_biases(function, &mut biases);
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    biases
 }
 
 fn entry_point_uses_texture_load(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
@@ -1529,6 +1594,7 @@ impl Interface {
                     module_info,
                 ),
                 texture_load_used: entry_point_uses_texture_load(module, entry_point),
+                texture_sample_biases: entry_point_texture_sample_biases(module, entry_point),
                 ..Default::default()
             };
             for arg in entry_point.function.arguments.iter() {
@@ -1741,6 +1807,29 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.texture_load_used)
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_texture_sample_bias(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.texture_sample_biases.iter().any(|bias| {
+            (bias.has_offset && !limits.texture_sample_bias_offset)
+                || match bias.literal {
+                    Some(value) => {
+                        limits.max_texture_sample_bias != u32::MAX
+                            && (!value.is_finite()
+                                || value.abs() > limits.max_texture_sample_bias as f32)
+                    }
+                    None => !limits.texture_sample_bias_dynamic,
+                }
+        }))
     }
 
     pub fn finalize_entry_point_name(
@@ -2558,6 +2647,127 @@ mod tests {
             .is_empty());
         assert!(interface
             .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
+            .is_err());
+    }
+
+    #[test]
+    fn texture_sample_bias_limits_follow_selected_entry_and_helper_calls() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            fn dynamic_helper(uv: vec2f, bias: f32) -> vec4f {
+                return textureSampleBias(image, smp, uv, bias);
+            }
+            fn constant_helper(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0);
+            }
+            @fragment fn min_boundary(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, -3.0);
+            }
+            @fragment fn max_boundary(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 3.0);
+            }
+            @fragment fn fractional(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 0.5);
+            }
+            @fragment fn too_large(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 3.01);
+            }
+            @fragment fn dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, uv.x);
+            }
+            @fragment fn offset(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(0, 0));
+            }
+            @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return dynamic_helper(uv, uv.x);
+            }
+            @fragment fn helper_forwarded_constant(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return dynamic_helper(uv, 1.0);
+            }
+            @fragment fn helper_constant(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return constant_helper(uv);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            texture_sample_bias_offset: false,
+            ..Default::default()
+        };
+
+        for entry in [
+            "min_boundary",
+            "max_boundary",
+            "fractional",
+            "helper_constant",
+            "safe",
+        ] {
+            assert!(
+                !interface
+                    .entry_point_uses_unsupported_texture_sample_bias(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &fl91,
+                    )
+                    .unwrap(),
+                "{entry} should be allowed"
+            );
+        }
+        for entry in [
+            "too_large",
+            "dynamic",
+            "offset",
+            "helper_dynamic",
+            "helper_forwarded_constant",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_texture_sample_bias(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &fl91,
+                    )
+                    .unwrap(),
+                "{entry} should be rejected"
+            );
+        }
+
+        for entry in [
+            "too_large",
+            "dynamic",
+            "offset",
+            "helper_dynamic",
+            "helper_forwarded_constant",
+        ] {
+            assert!(
+                !interface
+                    .entry_point_uses_unsupported_texture_sample_bias(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &wgt::DownlevelLimits::default(),
+                    )
+                    .unwrap(),
+                "unrestricted capabilities must allow {entry}"
+            );
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
             .is_err());
     }
 

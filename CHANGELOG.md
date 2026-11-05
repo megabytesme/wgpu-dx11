@@ -67,6 +67,7 @@ Bottom level categories:
 - Add `DownlevelLimits::fragment_position` so adapters can reject fragment `@builtin(position)` use when their shader profile cannot provide it.
 - Add `DownlevelLimits::vertex_index_input` and `instance_index_input` so adapters can reject vertex entry points the backend cannot compile or execute.
 - Add `DownlevelLimits::texture_load` so backends can reject selected shader entry points that use unsupported texel loads.
+- Add downlevel limits for the maximum literal texture sample bias, dynamic bias and texel offsets so backends can reject unsupported sampling forms before HAL compilation.
 - Add `DownlevelLimits::max_sampler_anisotropy` so core can clamp sampler anisotropy to the selected adapter's supported maximum.
 - Add downlevel texture-dimension capabilities so adapters can reject unsupported 1D and 3D texture shapes even when their hardware limits are non-zero.
 

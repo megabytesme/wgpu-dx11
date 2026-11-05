@@ -3072,55 +3072,83 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         source: ShaderSource::Wgsl(
             "@group(0) @binding(17) var levels: texture_2d<f32>;\n\
              @group(0) @binding(23) var mip_sampler: sampler;\n\
+             fn sample_with_bias(uv: vec2f, bias: f32) -> vec4f { return textureSampleBias(levels, mip_sampler, uv, bias); }\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.5, 1.0), uv); }\n\
-             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(levels, mip_sampler, input.uv * 2.0); }"
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(levels, mip_sampler, input.uv * 2.0); }\n\
+             @fragment fn bias_positive(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 1.0); }\n\
+             @fragment fn bias_min(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, -3.0); }\n\
+             @fragment fn bias_max(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 3.0); }\n\
+             @fragment fn bias_dynamic(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, input.uv.x); }\n\
+             @fragment fn bias_helper_dynamic(input: VertexOut) -> @location(0) vec4f { return sample_with_bias(input.uv, input.uv.x); }\n\
+             @fragment fn bias_out_of_range(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 4.0); }\n\
+             @fragment fn bias_offset(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 1.0, vec2i(0, 0)); }"
                 .into(),
         ),
     });
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 sampled mip pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &[Some(VertexBufferLayout {
-                array_stride: 16,
-                step_mode: VertexStepMode::Vertex,
-                attributes: &[
-                    VertexAttribute {
-                        format: VertexFormat::Float32x2,
-                        offset: 0,
-                        shader_location: 0,
-                    },
-                    VertexAttribute {
-                        format: VertexFormat::Float32x2,
-                        offset: 8,
-                        shader_location: 1,
-                    },
-                ],
-            })],
-        },
-        primitive: PrimitiveState {
-            cull_mode: None,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &[Some(ColorTargetState {
-                format: TextureFormat::Rgba8Unorm,
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 16,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 8,
+                shader_location: 1,
+            },
+        ],
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_pipeline = |fragment_entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 sampled mip pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_buffers,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipelines = [
+        create_pipeline("fs"),
+        create_pipeline("bias_positive"),
+        create_pipeline("bias_min"),
+        create_pipeline("bias_max"),
+    ];
+    for entry_point in [
+        "bias_dynamic",
+        "bias_helper_dynamic",
+        "bias_out_of_range",
+        "bias_offset",
+    ] {
+        expect_validation_error(&device, &format!("unsupported {entry_point}"), || {
+            drop(create_pipeline(entry_point));
+        });
+    }
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 sampled mip output"),
         size: Extent3d {
@@ -3155,56 +3183,58 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
     vertex_buffer.unmap();
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 sampled mip readback"),
-        size: 8 * 256,
+        size: 4 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 sampled mip commands"),
     });
-    {
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 sampled mip pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(Color::BLACK),
-                    store: StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.draw(0..3, 0..1);
-    }
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &target,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(8),
+    for (index, pipeline) in pipelines.iter().enumerate() {
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 sampled mip pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
             },
-        },
-        Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-    );
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: (index * 8 * 256) as u64,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -3222,19 +3252,24 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         .expect("map sampled mip readback");
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
-        for y in 0..8 {
-            for x in 0..8 {
-                let offset = y * 256 + x * 4;
-                assert_eq!(
-                    &data[offset..offset + 4],
-                    mip_colors[1],
-                    "sampled mip pixel ({x}, {y})"
-                );
+        for (index, expected) in [mip_colors[1], mip_colors[1], mip_colors[0], mip_colors[3]]
+            .into_iter()
+            .enumerate()
+        {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = index * 8 * 256 + y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "sampled mip pipeline {index} pixel ({x}, {y})"
+                    );
+                }
             }
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 uploaded and sampled a four-level RGBA8 mip chain; 64 pixels selected the green level-1 image, and core rejected an R8 mip chain");
+    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 selected the expected mip colors across 256 pixels; core/HAL rejected dynamic, helper-dynamic, out-of-range and offset bias forms");
 }
 
 #[test]
