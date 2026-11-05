@@ -5853,7 +5853,7 @@ git diff --check
 The implementation checkpoint is commit `9ed1cc305` (`dx11: add serialized
 public HWND presentation`).
 
-## Follow-up — visible public HWND example — pending
+## Follow-up — visible public HWND example — `ca0b026fd`
 
 `wgpu/examples/dx11_fl91_windowed.rs` now creates and shows a native HWND,
 selects a surface-compatible physical D3D11 adapter explicitly at FL9_1,
@@ -5869,6 +5869,10 @@ frames.` and verified that the HWND was visible. This confirms the public
 message pump and repeated surface render/present path. No screenshot or pixel
 capture was taken; deterministic output remains covered by the public
 offscreen readback test.
+
+Code commit `ca0b026fd` (`dx11: add visible FL9_1 windowed example`) contains
+the example and reproduction notes. Targeted Clippy, rustfmt and
+`git diff --check` passed.
 
 Exact command (Rust 1.93.1, Visual Studio x64 developer environment):
 

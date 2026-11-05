@@ -1559,7 +1559,7 @@ warnings and the Naga workspace-format discrepancy are recorded in
 Code commit `9ed1cc305` (`dx11: add serialized public HWND presentation`)
 contains the implementation and strict hidden-window evidence.
 
-## Current follow-up — visible public HWND example — pending
+## Checkpoint — visible public HWND example — `ca0b026fd`
 
 `wgpu/examples/dx11_fl91_windowed.rs` creates a visible window, pumps Win32
 messages, renders an animated indexed textured depth-tested cube, and handles
@@ -1567,6 +1567,9 @@ resizing. A bounded 60-frame run passed on the physical RTX 3090 Ti at
 requested/actual FL9_1 (`software=false`, driver `32.0.16.2101`) and verified
 the HWND visibility state. The exact invocation and limits of this evidence
 are in `FL9_1_PROGRESS.md`; no displayed-pixel capture was taken.
+
+Commit `ca0b026fd` (`dx11: add visible FL9_1 windowed example`) contains the
+example, documentation and 60-frame hardware verification record.
 
 Next continue the public core/HAL contract audit and add focused tests for any
 remaining surface or presentation reentrancy gaps. Historical FL9_1 and ARM32
