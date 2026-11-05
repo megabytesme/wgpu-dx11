@@ -150,8 +150,9 @@ contract is safe. This plan does not claim WebGPU conformance.
    the projection, uploads and samples a texture at sparse bindings, binds
    separate vertex transform and fragment tint uniforms across two groups,
    performs indexed depth-tested draws, updates the transform between
-   submissions, and verifies both images by readback. Continue auditing the
-   full core/HAL contract before widening the projection.
+   submissions using a dynamic uniform offset, and verifies both images by
+   readback. Continue auditing the full core/HAL contract before widening the
+   projection.
    Logical binding indices remain capped by the wgpu index limit while actual
    resource counts use separate backend limits. The projection exposes six
    uniform buffers per shader stage so disjoint vertex/fragment bindings fit

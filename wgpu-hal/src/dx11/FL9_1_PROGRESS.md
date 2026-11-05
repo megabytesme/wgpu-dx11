@@ -4493,3 +4493,25 @@ expected image was corrected to the observed geometric coverage and then
 passed. No backend code changed. Continue auditing selected-device projection
 and public core/HAL combinations; retain offscreen-only exposure and the known
 surface Present reentrancy blocker.
+
+## Checkpoint — public dynamic uniform ranges
+
+The public stage-uniform integration now declares both group-0 uniforms as
+dynamic. The vertex transform binding references a 64-byte range in a 512-byte
+buffer. After the first submitted render and readback, `Queue::write_buffer`
+uploads a translated transform at byte offset 256; the next render selects
+that aligned range using dynamic offsets `[256, 0]`. Tint remains in the
+original range. This validates the adapter's projected two-dynamic-uniform
+limit through public wgpu and confirms the updated subrange affects pixels.
+
+Verification on 2026-11-05 used Rust 1.93.1, Visual Studio 2022 x64 and strict
+hardware mode:
+
+- Public D3D11 integration test passed 1/1 on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1, `software=false`. The first readback matched 32 tinted-red/32 green pixels; the dynamic-offset render matched 16 blue/32 tinted-red/16 green; a second device matched 64/64 green pixels.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std`, targeted rustfmt and `git diff --check` passed.
+
+The focused core fixture already covered dynamic uniform offsets, and this
+extends the positive evidence to ordinary public wgpu adapter/device/queue
+calls. Invalid offset rejection and all dynamic range combinations remain
+part of the wider contract audit. Public surfaces remain unavailable pending
+safe Present scheduling.

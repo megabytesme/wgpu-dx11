@@ -14,11 +14,12 @@ The strict public integration test uses ordinary adapter enumeration and
 validated wgpu APIs for a two-group layout with sparse sampled bindings,
 vertex- and fragment-visible uniforms, indexed drawing, D24S8 depth testing,
 submission and full 8×8 readback. On the RTX 3090 Ti forced to FL9_1, it
-verified 32 tinted-red and 32 green pixels. A public queue update changed the
-vertex transform before a second submission, shifting the image to 16 blue,
-32 tinted-red and 16 green pixels. A second wgpu device from the same adapter
-independently cleared and read back 64 green pixels. This proves these paths
-through the public API, not every operation within the projection.
+verified 32 tinted-red and 32 green pixels. A queue write updated an aligned
+dynamic-uniform range and a second submission selected it with a dynamic
+offset, shifting the image to 16 blue, 32 tinted-red and 16 green pixels. A
+second wgpu device from the same adapter independently cleared and read back
+64 green pixels. This proves these paths through the public API, not every
+operation within the projection.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device

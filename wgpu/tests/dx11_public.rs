@@ -126,7 +126,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                 visibility: ShaderStages::VERTEX,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
+                    has_dynamic_offset: true,
                     min_binding_size: NonZeroU64::new(64),
                 },
                 count: None,
@@ -136,7 +136,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
+                    has_dynamic_offset: true,
                     min_binding_size: NonZeroU64::new(16),
                 },
                 count: None,
@@ -186,7 +186,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     .collect();
     let transform = device.create_buffer(&BufferDescriptor {
         label: Some("public DX11 FL9_1 vertex transform uniform"),
-        size: transform_data.len() as u64,
+        size: 512,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -208,7 +208,11 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         entries: &[
             BindGroupEntry {
                 binding: 3,
-                resource: transform.as_entire_binding(),
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &transform,
+                    offset: 0,
+                    size: NonZeroU64::new(64),
+                }),
             },
             BindGroupEntry {
                 binding: 17,
@@ -350,7 +354,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &uniforms_group, &[]);
+        pass.set_bind_group(0, &uniforms_group, &[0, 0]);
         pass.set_bind_group(1, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
@@ -421,7 +425,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     .into_iter()
     .flat_map(f32::to_ne_bytes)
     .collect();
-    queue.write_buffer(&transform, 0, &shifted_transform_data);
+    queue.write_buffer(&transform, 256, &shifted_transform_data);
     let mut shifted_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
     {
         let mut pass = shifted_encoder.begin_render_pass(&RenderPassDescriptor {
@@ -451,7 +455,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &uniforms_group, &[]);
+        pass.set_bind_group(0, &uniforms_group, &[256, 0]);
         pass.set_bind_group(1, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
@@ -623,5 +627,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         }
     }
     second_readback.unmap();
-    println!("PASS: public wgpu D3D11 FL9_1 two-group stage uniforms and indexed textured depth rendering; first frame matched 32 tinted-red/32 green pixels; updated transform shifted the second frame to 16 blue/32 tinted-red/16 green; second-device clear/readback matched 64/64 green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1 two-group stage uniforms and indexed textured depth rendering; dynamic transform offset shifted the second frame; first frame matched 32 tinted-red/32 green pixels, second frame matched 16 blue/32 tinted-red/16 green; second-device clear/readback matched 64/64 green pixels");
 }
