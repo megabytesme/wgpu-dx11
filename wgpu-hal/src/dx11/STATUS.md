@@ -676,9 +676,11 @@ Fragment `@builtin(sample_mask)` output is now represented by
 `ps_4_0_level_9_1`. FXC rejects the output, while the color-only sibling
 compiles. Core rejects only selected fragment entries that write the mask.
 
-The HAL maps `Float16x2` and `Float16x4` as optional vertex inputs. At FL9_1,
-they are included in the selected adapter's vertex-format mask only when
-`CheckFormatSupport(IA_VERTEX_BUFFER)` succeeds; the feature-level guarantee
-set remains unchanged. The RTX 3090 Ti forced to FL9_1 reports no
-`R16G16_FLOAT` IA support, so the strict public readback test explicitly logs
-that case as a skip. Synthetic capability tests cover the positive path.
+The HAL maps all wgpu vertex formats with direct DXGI IA equivalents except
+Float64 variants. At FL9_1, formats outside the required set enter the
+selected adapter's vertex-format mask only when `CheckFormatSupport`
+(`IA_VERTEX_BUFFER`) succeeds; the feature-level guarantee set remains
+unchanged. The RTX 3090 Ti forced to FL9_1 reports exactly the ten required
+formats and no optional format. The strict public Float16x2 readback test logs
+that case as a skip. Synthetic capability tests cover positive optional
+queries, unavailable queries and missing backend mappings.

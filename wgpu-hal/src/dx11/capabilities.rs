@@ -833,8 +833,37 @@ const fn fl91_vertex_formats() -> u64 {
 }
 
 const fn optional_vertex_formats() -> u64 {
-    vertex_format_bit(wgt::VertexFormat::Float16x2)
+    vertex_format_bit(wgt::VertexFormat::Uint8)
+        | vertex_format_bit(wgt::VertexFormat::Uint8x2)
+        | vertex_format_bit(wgt::VertexFormat::Sint8)
+        | vertex_format_bit(wgt::VertexFormat::Sint8x2)
+        | vertex_format_bit(wgt::VertexFormat::Sint8x4)
+        | vertex_format_bit(wgt::VertexFormat::Unorm8)
+        | vertex_format_bit(wgt::VertexFormat::Unorm8x2)
+        | vertex_format_bit(wgt::VertexFormat::Snorm8)
+        | vertex_format_bit(wgt::VertexFormat::Snorm8x2)
+        | vertex_format_bit(wgt::VertexFormat::Snorm8x4)
+        | vertex_format_bit(wgt::VertexFormat::Uint16)
+        | vertex_format_bit(wgt::VertexFormat::Uint16x2)
+        | vertex_format_bit(wgt::VertexFormat::Uint16x4)
+        | vertex_format_bit(wgt::VertexFormat::Sint16)
+        | vertex_format_bit(wgt::VertexFormat::Unorm16)
+        | vertex_format_bit(wgt::VertexFormat::Unorm16x2)
+        | vertex_format_bit(wgt::VertexFormat::Unorm16x4)
+        | vertex_format_bit(wgt::VertexFormat::Snorm16)
+        | vertex_format_bit(wgt::VertexFormat::Float16)
+        | vertex_format_bit(wgt::VertexFormat::Float16x2)
         | vertex_format_bit(wgt::VertexFormat::Float16x4)
+        | vertex_format_bit(wgt::VertexFormat::Uint32)
+        | vertex_format_bit(wgt::VertexFormat::Uint32x2)
+        | vertex_format_bit(wgt::VertexFormat::Uint32x3)
+        | vertex_format_bit(wgt::VertexFormat::Uint32x4)
+        | vertex_format_bit(wgt::VertexFormat::Sint32)
+        | vertex_format_bit(wgt::VertexFormat::Sint32x2)
+        | vertex_format_bit(wgt::VertexFormat::Sint32x3)
+        | vertex_format_bit(wgt::VertexFormat::Sint32x4)
+        | vertex_format_bit(wgt::VertexFormat::Unorm10_10_10_2)
+        | vertex_format_bit(wgt::VertexFormat::Unorm8x4Bgra)
 }
 
 #[cfg(test)]
@@ -1125,6 +1154,19 @@ mod tests {
             caps.driver.depth16_unorm,
             caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
         );
+        let selected_vertex_formats = super::super::hal_pipeline::VERTEX_FORMATS
+            .iter()
+            .filter_map(|(format, _, _)| {
+                (projection.capabilities.downlevel.limits.vertex_format_mask
+                    & vertex_format_bit(*format)
+                    != 0)
+                    .then_some(format)
+            })
+            .collect::<alloc::vec::Vec<_>>();
+        std::println!(
+            "FL9_1 vertex input format mask={:#x}; selected formats={selected_vertex_formats:?}",
+            projection.capabilities.downlevel.limits.vertex_format_mask
+        );
         Ok(())
     }
 
@@ -1388,8 +1430,12 @@ mod tests {
         let mut fl91 = model(FeatureLevel::L9_1);
         let baseline = fl91_vertex_formats();
         let optional = optional_vertex_formats();
+        let mapped = super::super::hal_pipeline::VERTEX_FORMATS
+            .iter()
+            .fold(0, |mask, (format, _, _)| mask | vertex_format_bit(*format));
         assert_eq!(fl91.hardware.vertex_input_formats, baseline);
-        assert_eq!(fl91.backend.vertex_input_formats, baseline | optional);
+        assert_eq!(optional, mapped & !baseline);
+        assert_eq!(fl91.backend.vertex_input_formats, mapped);
         assert_eq!(fl91.vertex_input_format_mask(), baseline | optional);
         assert_eq!(
             fl91.wgpu_projection()
@@ -1417,14 +1463,14 @@ mod tests {
         fl91.backend.vertex_input_formats &= !vertex_format_bit(wgt::VertexFormat::Float16x4);
         assert_eq!(
             fl91.vertex_input_format_mask(),
-            baseline | vertex_format_bit(wgt::VertexFormat::Float16x2)
+            baseline | (optional & !vertex_format_bit(wgt::VertexFormat::Float16x4))
         );
 
         fl91.driver.vertex_input_formats &= !vertex_format_bit(wgt::VertexFormat::Sint16x2);
         assert_eq!(
             fl91.vertex_input_format_mask(),
             (baseline & !vertex_format_bit(wgt::VertexFormat::Sint16x2))
-                | vertex_format_bit(wgt::VertexFormat::Float16x2)
+                | (optional & !vertex_format_bit(wgt::VertexFormat::Float16x4))
         );
 
         let fl93 = model(FeatureLevel::L9_3);

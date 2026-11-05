@@ -5959,3 +5959,47 @@ The initial capture attempt used DPI-virtualized coordinates and included
 unrelated desktop regions. It was discarded and not used as evidence. The
 final capture used per-monitor-aware coordinates and cropped to the HWND
 client area. No code files changed during this verification.
+
+## Checkpoint — selected-device optional vertex formats
+
+The HAL now maps all 41 wgpu vertex formats with direct DXGI IA equivalents,
+excluding Float64 formats that have no faithful mapping. The FL9_1 static
+guarantee set remains unchanged. Every mapped format outside that set enters
+the selected-device projection only when `CheckFormatSupport` reports
+`IA_VERTEX_BUFFER`; failed or missing queries stay unsupported. Allocation
+tests verify the mapping table is unique and each stride matches
+`VertexFormat::size()`. Synthetic projection tests cover the optional formats
+as a whole, positive/negative device query results, and missing backend
+mapping.
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) explicitly forced
+to FL9_1, the selected mask was `0x78c30104` and contained exactly the ten
+guaranteed formats: `Uint8x4`, `Unorm8x4`, `Sint16x2`, `Snorm16x2`,
+`Sint16x4`, `Snorm16x4` and `Float32` through `Float32x4`. No optional input
+format was reported. The public Float16x2 test logged its capability skip;
+this is not GPU execution evidence for optional formats.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 x64 developer
+environment, strict hardware mode, offline dependencies and Cargo `-j32`:
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 vertex_format -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/capabilities.rs
+git diff --check
+```
+
+Results: private HAL 351/351 before the final test-only invariant assertion;
+the focused vertex-format test filter passed 5/5 afterward. Public D3D11
+passed 23/23 test functions, with one capability-based optional Float16x2
+skip and 22 other public GPU tests executed. The controlled core fixture
+passed 90/90, physical adapter selection 1/1, and DX12 core 86/86. HAL Clippy
+passed with nine existing warnings outside this change; public-test Clippy,
+changed-file rustfmt and `git diff --check` passed. No optional-format GPU
+execution or historical-driver behavior is claimed.

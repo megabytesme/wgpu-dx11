@@ -69,7 +69,12 @@ not a repository artifact.
    uniform offsets have restricted private coverage. A controlled core test
    now exercises one two-group pipeline (uniform in group 0, sampled resources
    in group 1); broader aggregate group layouts and transitions remain to be
-   audited. Each feature needs positive GPU and negative tests. Non-indexed
+   audited. All wgpu vertex formats with direct DXGI input equivalents are
+   now mapped except Float64 variants. Outside the ten FL9_1-required IA
+   formats, core exposes a format only when the selected device positively
+   reports `IA_VERTEX_BUFFER`; the forced-FL9_1 RTX reports no optional input
+   formats, so optional-format GPU execution remains unverified. Each feature
+   needs positive GPU and negative tests. Non-indexed
    line lists and line strips now have a
    bounded private FL9_1 implementation with strict GPU readback and the
    controlled core fixture verifies both through core command recording and

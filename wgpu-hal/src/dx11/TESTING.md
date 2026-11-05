@@ -502,29 +502,32 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
-### Optional FL9_1 half-float vertex inputs
+### Optional FL9_1 vertex input formats
 
-`R16G16_FLOAT` and `R16G16B16A16_FLOAT` are not FL9_1 guarantees; Microsoft's
-required-format table makes their input-assembler support mandatory at FL9_3.
-The HAL maps both, but the selected-device `CheckFormatSupport` query must
-report `IA_VERTEX_BUFFER` before either bit enters `DownlevelLimits` at FL9_1.
-The synthetic capability test covers positive query, absent query and missing
-backend mapping cases. The public test renders a triangle from `Float16x2`
-positions and checks all 64 readback pixels when the device reports support.
+The HAL maps the wgpu vertex formats with direct DXGI input equivalents except
+`Float64` variants. Formats outside the FL9_1 required subset are admitted only
+when the selected device's `CheckFormatSupport` query reports
+`IA_VERTEX_BUFFER`; missing or failed queries are treated as unsupported. This
+keeps the ten documented FL9_1 guarantees separate from optional driver
+support. `Float16x2` and `Float16x4` become hardware guarantees only at FL9_3.
+CPU tests cover every native mapping, descriptor size, and the synthetic
+positive, absent-query and missing-backend cases. The public `Float16x2` test
+renders a triangle and checks all 64 pixels if that format is reported.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_format_projection_intersects_level_driver_and_backend -- --nocapture --test-threads=1
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_the_fl91_required_input_set -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_required_and_optional_inputs -- --nocapture --test-threads=1
 cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fl91_optional_float16_vertex_input -- --nocapture --test-threads=1
 ```
 
-On the RTX 3090 Ti at requested/actual FL9_1, the selected-device projection
-reports `Float16x2=false`; the public test logs `SKIP` for this optional path.
-This is not a successful GPU execution. The synthetic positive model verifies
-that a future device reporting the IA bit will advertise only the mapped
-optional formats. `Float16x4` has the same guarded mapping but does not yet
-have a dedicated execution test.
+On the RTX 3090 Ti at requested/actual FL9_1, the selected-device format mask
+contains exactly the ten guaranteed formats and no optional inputs. The public
+`Float16x2` test logs `SKIP`; this is not a successful GPU execution. The
+private capability diagnostic prints the selected format mask and names. The
+optional formats are not hardware-verified on this adapter; a driver-positive
+format should receive a GPU readback case before broad claims are made about
+legacy devices.
 
 ### Public FL9_1 sRGB texture formats
 

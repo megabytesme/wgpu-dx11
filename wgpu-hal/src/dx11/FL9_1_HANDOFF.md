@@ -1588,3 +1588,18 @@ presented 80,871 frames before a clean `WM_CLOSE`. The reviewed frame showed
 distinct red/green cube faces over the clear color. The PNG is temporary at
 `%TEMP%\wgpu-dx11-fl91-windowed.png`, not tracked. Deterministic image checks
 remain covered by offscreen GPU readback tests.
+
+## Current checkpoint — complete direct-DXGI vertex input mapping
+
+The current uncommitted increment maps 41 direct DXGI IA formats, excluding
+Float64, while preserving the ten-format FL9_1 guarantee set. Other mapped
+formats enter the selected-device capability mask only after a positive
+`IA_VERTEX_BUFFER` query. The forced-FL9_1 RTX reports no optional formats;
+the public Float16x2 case logs a capability skip. Full test results and exact
+commands are in `FL9_1_PROGRESS.md`. The implementation and documentation
+changes are ready for review and a focused commit after final diff checks.
+
+Next continue the public core/HAL contract audit and surface reentrancy edge
+tests. Keep the opt-in adapter's limited contract explicit; historical FL9_1
+drivers, ARM32 UWP, and GPU execution of optional IA formats remain
+unverified. Do not push.

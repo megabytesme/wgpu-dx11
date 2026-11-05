@@ -31,24 +31,61 @@ use windows::{
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-            DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SINT,
-            DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SINT,
-            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT,
-            DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UINT,
-            DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            DXGI_FORMAT_R10G10B10A2_UNORM, DXGI_FORMAT_R16G16B16A16_FLOAT,
+            DXGI_FORMAT_R16G16B16A16_SINT, DXGI_FORMAT_R16G16B16A16_SNORM,
+            DXGI_FORMAT_R16G16B16A16_UINT, DXGI_FORMAT_R16G16B16A16_UNORM,
+            DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SINT, DXGI_FORMAT_R16G16_SNORM,
+            DXGI_FORMAT_R16G16_UINT, DXGI_FORMAT_R16G16_UNORM, DXGI_FORMAT_R16_FLOAT,
+            DXGI_FORMAT_R16_SINT, DXGI_FORMAT_R16_SNORM, DXGI_FORMAT_R16_UINT,
+            DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32A32_SINT,
+            DXGI_FORMAT_R32G32B32A32_UINT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32B32_SINT,
+            DXGI_FORMAT_R32G32B32_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32_SINT,
+            DXGI_FORMAT_R32G32_UINT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_SINT,
+            DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R8G8B8A8_SINT, DXGI_FORMAT_R8G8B8A8_SNORM,
+            DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            DXGI_FORMAT_R8G8_SINT, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UINT,
+            DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_SINT, DXGI_FORMAT_R8_SNORM, DXGI_FORMAT_R8_UINT,
+            DXGI_FORMAT_R8_UNORM,
         },
     },
 };
 
-pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 12] = [
+pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 41] = [
+    (wgt::VertexFormat::Uint8, DXGI_FORMAT_R8_UINT, 1),
+    (wgt::VertexFormat::Uint8x2, DXGI_FORMAT_R8G8_UINT, 2),
     (wgt::VertexFormat::Uint8x4, DXGI_FORMAT_R8G8B8A8_UINT, 4),
+    (wgt::VertexFormat::Sint8, DXGI_FORMAT_R8_SINT, 1),
+    (wgt::VertexFormat::Sint8x2, DXGI_FORMAT_R8G8_SINT, 2),
+    (wgt::VertexFormat::Sint8x4, DXGI_FORMAT_R8G8B8A8_SINT, 4),
+    (wgt::VertexFormat::Unorm8, DXGI_FORMAT_R8_UNORM, 1),
+    (wgt::VertexFormat::Unorm8x2, DXGI_FORMAT_R8G8_UNORM, 2),
     (wgt::VertexFormat::Unorm8x4, DXGI_FORMAT_R8G8B8A8_UNORM, 4),
+    (wgt::VertexFormat::Snorm8, DXGI_FORMAT_R8_SNORM, 1),
+    (wgt::VertexFormat::Snorm8x2, DXGI_FORMAT_R8G8_SNORM, 2),
+    (wgt::VertexFormat::Snorm8x4, DXGI_FORMAT_R8G8B8A8_SNORM, 4),
+    (wgt::VertexFormat::Uint16, DXGI_FORMAT_R16_UINT, 2),
+    (wgt::VertexFormat::Uint16x2, DXGI_FORMAT_R16G16_UINT, 4),
+    (
+        wgt::VertexFormat::Uint16x4,
+        DXGI_FORMAT_R16G16B16A16_UINT,
+        8,
+    ),
+    (wgt::VertexFormat::Sint16, DXGI_FORMAT_R16_SINT, 2),
     (wgt::VertexFormat::Float16x2, DXGI_FORMAT_R16G16_FLOAT, 4),
     (
         wgt::VertexFormat::Float16x4,
         DXGI_FORMAT_R16G16B16A16_FLOAT,
         8,
     ),
+    (wgt::VertexFormat::Float16, DXGI_FORMAT_R16_FLOAT, 2),
+    (wgt::VertexFormat::Unorm16, DXGI_FORMAT_R16_UNORM, 2),
+    (wgt::VertexFormat::Unorm16x2, DXGI_FORMAT_R16G16_UNORM, 4),
+    (
+        wgt::VertexFormat::Unorm16x4,
+        DXGI_FORMAT_R16G16B16A16_UNORM,
+        8,
+    ),
+    (wgt::VertexFormat::Snorm16, DXGI_FORMAT_R16_SNORM, 2),
     (wgt::VertexFormat::Sint16x2, DXGI_FORMAT_R16G16_SINT, 4),
     (wgt::VertexFormat::Snorm16x2, DXGI_FORMAT_R16G16_SNORM, 4),
     (
@@ -61,6 +98,22 @@ pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 12] = [
         DXGI_FORMAT_R16G16B16A16_SNORM,
         8,
     ),
+    (wgt::VertexFormat::Uint32, DXGI_FORMAT_R32_UINT, 4),
+    (wgt::VertexFormat::Uint32x2, DXGI_FORMAT_R32G32_UINT, 8),
+    (wgt::VertexFormat::Uint32x3, DXGI_FORMAT_R32G32B32_UINT, 12),
+    (
+        wgt::VertexFormat::Uint32x4,
+        DXGI_FORMAT_R32G32B32A32_UINT,
+        16,
+    ),
+    (wgt::VertexFormat::Sint32, DXGI_FORMAT_R32_SINT, 4),
+    (wgt::VertexFormat::Sint32x2, DXGI_FORMAT_R32G32_SINT, 8),
+    (wgt::VertexFormat::Sint32x3, DXGI_FORMAT_R32G32B32_SINT, 12),
+    (
+        wgt::VertexFormat::Sint32x4,
+        DXGI_FORMAT_R32G32B32A32_SINT,
+        16,
+    ),
     (wgt::VertexFormat::Float32, DXGI_FORMAT_R32_FLOAT, 4),
     (wgt::VertexFormat::Float32x2, DXGI_FORMAT_R32G32_FLOAT, 8),
     (
@@ -72,6 +125,16 @@ pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 12] = [
         wgt::VertexFormat::Float32x4,
         DXGI_FORMAT_R32G32B32A32_FLOAT,
         16,
+    ),
+    (
+        wgt::VertexFormat::Unorm10_10_10_2,
+        DXGI_FORMAT_R10G10B10A2_UNORM,
+        4,
+    ),
+    (
+        wgt::VertexFormat::Unorm8x4Bgra,
+        DXGI_FORMAT_B8G8R8A8_UNORM,
+        4,
     ),
 ];
 
@@ -835,7 +898,7 @@ mod tests {
         use super::{
             vertex_format, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SINT,
             DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SINT,
-            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_UINT,
+            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_UINT, VERTEX_FORMATS,
         };
 
         for (format, dxgi, size) in [
@@ -861,8 +924,20 @@ mod tests {
         ] {
             assert_eq!(vertex_format(format), Some((dxgi, size)));
         }
-        assert_eq!(vertex_format(wgt::VertexFormat::Unorm16x2), None);
-        assert_eq!(vertex_format(wgt::VertexFormat::Uint8x2), None);
+        assert_eq!(VERTEX_FORMATS.len(), 41);
+        for (index, (format, _, size)) in VERTEX_FORMATS.iter().enumerate() {
+            assert_eq!(*size as u64, format.size(), "{format:?}");
+            assert!(
+                VERTEX_FORMATS[..index]
+                    .iter()
+                    .all(|(previous, _, _)| previous != format),
+                "duplicate mapping for {format:?}"
+            );
+        }
+        assert!(vertex_format(wgt::VertexFormat::Unorm16x2).is_some());
+        assert!(vertex_format(wgt::VertexFormat::Uint8x2).is_some());
+        assert_eq!(vertex_format(wgt::VertexFormat::Float64), None);
+        assert_eq!(vertex_format(wgt::VertexFormat::Uint32x3).unwrap().1, 12);
     }
 
     #[test]
