@@ -6194,7 +6194,78 @@ updated; the full final suites above passed. The NVIDIA run establishes the
 documented path only on this modern driver explicitly forced to FL9_1; it does
 not establish historical driver behavior.
 
-Next, audit the remaining 16-bit normalized formats against selected-device
-queries and the backend's format/usage implementation. Add only individually
-verified texture and view behavior; retain queried filterability and keep
-historical FL9_1 and ARM32 execution marked unverified.
+The packed-format audit found the three Windows 8 FL9_x texture formats to be
+required at feature level 9_x and query-positive on this RTX. The separate
+R16_UNORM, R16_SNORM, R16G16_UNORM and RGBA16_UNORM queries are unavailable;
+R16G16_SNORM remains point-only and RGBA16_SNORM remains IA-only. The current
+next task is the broader public core/HAL contract audit, with additional
+formats gated on positive queries and actual resource/view execution.
+
+## Checkpoint — query-backed packed 16-bit sampled texture family
+
+The D3D11 format model now includes feature-gated `Rgb5g6b5Unorm`,
+`Rgb5a1Unorm` and `Rgba4Unorm`. Each format has an independent
+`CheckFormatSupport` result; the shared native-only
+`TEXTURE_FORMAT_16BIT_PACKED` feature is projected only when all three
+selected-device sampled paths are available. The backend exposes one-mip,
+one-layer `TEXTURE_BINDING | COPY_DST` use and derives filterability from the
+selected query. Other usage combinations remain unavailable.
+
+On 2026-11-05, the RTX 3090 Ti (`0x10de:0x2203`, D3D11 driver
+`32.0.16.2101`, software=false) was explicitly created at FL9_1. Format query
+masks were `B5G6R5_UNORM=0x0026F3A0`, `B5G5R5A1_UNORM=0x000213A0` and
+`B4G4R4A4_UNORM=0x000213A0`. The strict public wgpu test performed padded
+uploads and separate sampling/readback renders for all three. Every one of
+the 64 pixels per output matched; the RGB5A1 and RGBA4 cases also verified
+transparent alpha. The selected-device reports were
+`COPY_DST | TEXTURE_BINDING` and `FILTERABLE | SINGLE_MIP_ONLY` for all three.
+
+Rust 1.93.1 checks passed for `wgpu-hal --features dx11`, the controlled
+`wgpu-core` fixture, and the public `dx11_public` test target. The synthetic
+packed-format capability test passed 1/1, packed-format metadata tests passed
+2/2, the selected-device capability diagnostic passed 1/1, and the strict
+public GPU test passed 1/1 (three format renders, 192 checked pixels). The
+complete strict suites passed: private HAL 356/356, public wgpu 24/24, D3D11
+core fixture 90/90, and DX12 core 86/86. The full `wgpu-types` suite passed
+79 unit tests; its doctests passed 14 with 21 ignored. The packed public case
+was run as part of the 24-test strict suite and passed with hardware required.
+
+The strict suite commands were:
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+```
+
+The first three ran after setting `WGPU_DX11_REQUIRE_HARDWARE=1` inside the
+Visual Studio 2022 x64 developer environment. The DX12 command was a CPU
+regression suite and did not use the strict D3D11 variable.
+
+Shared format conversion was kept backend-safe: DXGI and Vulkan receive the
+matching packed format mapping; GLES has native upload descriptors but reports
+the formats unsupported until its optional-feature projection is implemented;
+Metal explicitly returns no format capability. `wgpu-hal` checked with
+`dx11`, `dx12` (through the DX12 core test), `gles` and `vulkan` feature sets.
+The Metal target cannot be compiled in this Windows environment.
+
+The first DX12 regression compile found the newly added global format variants
+missing from the common DXGI conversion match; that compile error was fixed by
+adding their exact native mappings before rerunning the complete DX12 core
+suite. The initial GLES check was run without MSVC setup and stopped because
+`link.exe` was not on PATH; the developer-shell retry compiled successfully.
+
+Clippy passed for HAL, core, the public test target and `wgpu-types`. HAL still
+reports nine existing warnings in unrelated test code; core reports one
+existing collapsible-if warning; `wgpu-types` reports fourteen pre-existing
+unused serde-import warnings without its serde feature. The newly introduced
+core test comparison warnings were fixed. Changed-file rustfmt and
+`git diff --check` passed. Visual Studio's `VsDevCmd.bat` prints an existing
+`Unknown error` banner in this environment, but the configured MSVC compiler
+and linker worked for all successful builds.
+
+The selected-device feature projection and the three sampled/upload paths
+passed on the RTX 3090 Ti forced to actual FL9_1. Historical FL9_1 drivers and
+ARM32 UWP remain unverified. Continue with the broader public core/HAL contract
+audit; do not infer support for other formats or usages from these three.

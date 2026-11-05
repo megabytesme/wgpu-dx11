@@ -196,6 +196,20 @@ pub enum TextureFormat {
     /// Blue, green, red, and alpha channels. 8 bit integer per channel. Srgb-color [0, 255] converted to/from linear-color float [0, 1] in shader.
     Bgra8UnormSrgb,
 
+    // Packed 16 bit formats
+    /// Red, green, and blue channels packed as 5, 6, and 5 bits, normalized to [0, 1].
+    ///
+    /// [`Features::TEXTURE_FORMAT_16BIT_PACKED`] must be enabled to use this texture format.
+    Rgb5g6b5Unorm,
+    /// Red, green, blue, and one-bit alpha channels packed into 16 bits.
+    ///
+    /// [`Features::TEXTURE_FORMAT_16BIT_PACKED`] must be enabled to use this texture format.
+    Rgb5a1Unorm,
+    /// Red, green, blue, and alpha channels packed as four 4-bit normalized values.
+    ///
+    /// [`Features::TEXTURE_FORMAT_16BIT_PACKED`] must be enabled to use this texture format.
+    Rgba4Unorm,
+
     // Packed 32 bit formats
     /// Packed unsigned float with 9 bits mantisa for each RGB component, then a common 5 bits exponent
     Rgb9e5Ufloat,
@@ -612,6 +626,7 @@ impl TextureFormat {
             | Self::EacRg11Snorm => TextureChannel::RG,
 
             Self::Rgb9e5Ufloat
+            | Self::Rgb5g6b5Unorm
             | Self::Rg11b10Ufloat
             | Self::Bc6hRgbUfloat
             | Self::Bc6hRgbFloat
@@ -625,6 +640,8 @@ impl TextureFormat {
             | Self::Rgba8Sint
             | Self::Bgra8Unorm
             | Self::Bgra8UnormSrgb
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm
             | Self::Rgb10a2Uint
             | Self::Rgb10a2Unorm
             | Self::Rgba16Uint
@@ -724,6 +741,9 @@ impl TextureFormat {
             | Self::Rgba8Sint
             | Self::Bgra8Unorm
             | Self::Bgra8UnormSrgb
+            | Self::Rgb5g6b5Unorm
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm
             | Self::Rgb9e5Ufloat
             | Self::Rgb10a2Uint
             | Self::Rgb10a2Unorm
@@ -874,6 +894,10 @@ impl TextureFormat {
             | Self::Rgba16Unorm
             | Self::Rgba16Snorm => Features::TEXTURE_FORMAT_16BIT_NORM,
 
+            Self::Rgb5g6b5Unorm | Self::Rgb5a1Unorm | Self::Rgba4Unorm => {
+                Features::TEXTURE_FORMAT_16BIT_PACKED
+            }
+
             Self::Bc1RgbaUnorm
             | Self::Bc1RgbaUnormSrgb
             | Self::Bc2RgbaUnorm
@@ -1013,6 +1037,9 @@ impl TextureFormat {
             Self::Rgba16Snorm =>          (        msaa | s_ro_wo,    storage),
 
             Self::Rgb9e5Ufloat =>         (        none,      basic),
+            Self::Rgb5g6b5Unorm
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm =>       (        none,      basic),
 
             Self::Bc1RgbaUnorm =>         (        none,      basic),
             Self::Bc1RgbaUnormSrgb =>     (        none,      basic),
@@ -1149,7 +1176,9 @@ impl TextureFormat {
             | Self::Rgba16Unorm
             | Self::Rgba16Snorm => Some(float),
 
-            Self::Rgb9e5Ufloat => Some(float),
+            Self::Rgb9e5Ufloat | Self::Rgb5g6b5Unorm | Self::Rgb5a1Unorm | Self::Rgba4Unorm => {
+                Some(float)
+            }
 
             Self::Bc1RgbaUnorm
             | Self::Bc1RgbaUnormSrgb
@@ -1216,7 +1245,13 @@ impl TextureFormat {
         match *self {
             Self::R8Unorm | Self::R8Snorm | Self::R8Uint | Self::R8Sint => Some(1),
 
-            Self::Rg8Unorm | Self::Rg8Snorm | Self::Rg8Uint | Self::Rg8Sint => Some(2),
+            Self::Rg8Unorm
+            | Self::Rg8Snorm
+            | Self::Rg8Uint
+            | Self::Rg8Sint
+            | Self::Rgb5g6b5Unorm
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm => Some(2),
             Self::R16Unorm | Self::R16Snorm | Self::R16Uint | Self::R16Sint | Self::R16Float => {
                 Some(2)
             }
@@ -1316,6 +1351,9 @@ impl TextureFormat {
             | Self::Rg8Snorm
             | Self::Rg8Uint
             | Self::Rg8Sint
+            | Self::Rgb5g6b5Unorm
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm
             | Self::R16Uint
             | Self::R16Sint
             | Self::R16Unorm
@@ -1408,7 +1446,10 @@ impl TextureFormat {
             | Self::Rgba8Sint
             | Self::Bgra8Unorm
             | Self::Bgra8UnormSrgb => Some(1),
-            Self::R16Uint
+            Self::Rgb5g6b5Unorm
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm
+            | Self::R16Uint
             | Self::R16Sint
             | Self::R16Unorm
             | Self::R16Snorm
@@ -1519,6 +1560,8 @@ impl TextureFormat {
             | Self::Rgba8Sint
             | Self::Bgra8Unorm
             | Self::Bgra8UnormSrgb
+            | Self::Rgb5a1Unorm
+            | Self::Rgba4Unorm
             | Self::Rgba16Unorm
             | Self::Rgba16Snorm
             | Self::Rgba16Uint
@@ -1528,7 +1571,7 @@ impl TextureFormat {
             | Self::Rgba32Sint
             | Self::Rgba32Float => 4,
 
-            Self::Rgb9e5Ufloat | Self::Rg11b10Ufloat => 3,
+            Self::Rgb9e5Ufloat | Self::Rg11b10Ufloat | Self::Rgb5g6b5Unorm => 3,
             Self::Rgb10a2Uint | Self::Rgb10a2Unorm => 4,
 
             Self::Stencil8 | Self::Depth16Unorm | Self::Depth24Plus | Self::Depth32Float => 1,
@@ -1712,6 +1755,9 @@ impl<'de> Deserialize<'de> for TextureFormat {
                     "rgba8sint" => TextureFormat::Rgba8Sint,
                     "bgra8unorm" => TextureFormat::Bgra8Unorm,
                     "bgra8unorm-srgb" => TextureFormat::Bgra8UnormSrgb,
+                    "rgb5g6b5unorm" => TextureFormat::Rgb5g6b5Unorm,
+                    "rgb5a1unorm" => TextureFormat::Rgb5a1Unorm,
+                    "rgba4unorm" => TextureFormat::Rgba4Unorm,
                     "rgb10a2uint" => TextureFormat::Rgb10a2Uint,
                     "rgb10a2unorm" => TextureFormat::Rgb10a2Unorm,
                     "rg11b10ufloat" => TextureFormat::Rg11b10Ufloat,
@@ -1842,6 +1888,9 @@ impl Serialize for TextureFormat {
             TextureFormat::Rgba8Sint => "rgba8sint",
             TextureFormat::Bgra8Unorm => "bgra8unorm",
             TextureFormat::Bgra8UnormSrgb => "bgra8unorm-srgb",
+            TextureFormat::Rgb5g6b5Unorm => "rgb5g6b5unorm",
+            TextureFormat::Rgb5a1Unorm => "rgb5a1unorm",
+            TextureFormat::Rgba4Unorm => "rgba4unorm",
             TextureFormat::Rgb10a2Uint => "rgb10a2uint",
             TextureFormat::Rgb10a2Unorm => "rgb10a2unorm",
             TextureFormat::Rg11b10Ufloat => "rg11b10ufloat",
@@ -2010,6 +2059,45 @@ mod tests {
     use hashbrown::HashSet;
 
     #[test]
+    fn packed_rgb565_format_metadata_is_consistent() {
+        let format = TextureFormat::Rgb5g6b5Unorm;
+        assert_eq!(
+            format.required_features(),
+            Features::TEXTURE_FORMAT_16BIT_PACKED
+        );
+        assert_eq!(format.channels(), TextureChannel::RGB);
+        assert_eq!(format.components(), 3);
+        assert_eq!(format.block_dimensions(), (1, 1));
+        assert_eq!(format.block_copy_size(None), Some(2));
+        assert_eq!(
+            format.sample_type(None, None),
+            Some(TextureSampleType::Float { filterable: true })
+        );
+        assert_eq!(format.target_pixel_byte_cost(), Some(2));
+        assert_eq!(format.target_component_alignment(), Some(2));
+    }
+
+    #[test]
+    fn packed_rgba_16bit_format_metadata_is_consistent() {
+        for format in [TextureFormat::Rgb5a1Unorm, TextureFormat::Rgba4Unorm] {
+            assert_eq!(
+                format.required_features(),
+                Features::TEXTURE_FORMAT_16BIT_PACKED
+            );
+            assert_eq!(format.channels(), TextureChannel::RGBA);
+            assert_eq!(format.components(), 4);
+            assert_eq!(format.block_dimensions(), (1, 1));
+            assert_eq!(format.block_copy_size(None), Some(2));
+            assert_eq!(
+                format.sample_type(None, None),
+                Some(TextureSampleType::Float { filterable: true })
+            );
+            assert_eq!(format.target_pixel_byte_cost(), Some(2));
+            assert_eq!(format.target_component_alignment(), Some(2));
+        }
+    }
+
+    #[test]
     fn texture_format_serialize() {
         use alloc::string::ToString;
 
@@ -2124,6 +2212,18 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&TextureFormat::Bgra8UnormSrgb).unwrap(),
             "\"bgra8unorm-srgb\"".to_string()
+        );
+        assert_eq!(
+            serde_json::to_string(&TextureFormat::Rgb5g6b5Unorm).unwrap(),
+            "\"rgb5g6b5unorm\"".to_string()
+        );
+        assert_eq!(
+            serde_json::to_string(&TextureFormat::Rgb5a1Unorm).unwrap(),
+            "\"rgb5a1unorm\"".to_string()
+        );
+        assert_eq!(
+            serde_json::to_string(&TextureFormat::Rgba4Unorm).unwrap(),
+            "\"rgba4unorm\"".to_string()
         );
         assert_eq!(
             serde_json::to_string(&TextureFormat::Rgb10a2Uint).unwrap(),
@@ -2426,6 +2526,18 @@ mod tests {
             TextureFormat::Bgra8UnormSrgb
         );
         assert_eq!(
+            serde_json::from_str::<TextureFormat>("\"rgb5g6b5unorm\"").unwrap(),
+            TextureFormat::Rgb5g6b5Unorm
+        );
+        assert_eq!(
+            serde_json::from_str::<TextureFormat>("\"rgb5a1unorm\"").unwrap(),
+            TextureFormat::Rgb5a1Unorm
+        );
+        assert_eq!(
+            serde_json::from_str::<TextureFormat>("\"rgba4unorm\"").unwrap(),
+            TextureFormat::Rgba4Unorm
+        );
+        assert_eq!(
             serde_json::from_str::<TextureFormat>("\"rgb10a2uint\"").unwrap(),
             TextureFormat::Rgb10a2Uint
         );
@@ -2684,6 +2796,9 @@ mod tests {
             TextureFormat::Rgba8Sint,
             TextureFormat::Bgra8Unorm,
             TextureFormat::Bgra8UnormSrgb,
+            TextureFormat::Rgb5g6b5Unorm,
+            TextureFormat::Rgb5a1Unorm,
+            TextureFormat::Rgba4Unorm,
             TextureFormat::Rgb9e5Ufloat,
             TextureFormat::Rgb10a2Uint,
             TextureFormat::Rgb10a2Unorm,

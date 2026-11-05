@@ -1026,6 +1026,12 @@ bitflags_array! {
         /// [`TextureFormat::P010`]: super::TextureFormat::P010
         #[name("wgpu-texture-format-p010")]
         const TEXTURE_FORMAT_P010 = 1 << 30;
+        /// Enables packed 16-bit normalized texture formats supported by the adapter.
+        ///
+        /// This is a native-only feature. Format capabilities are reported per format and may
+        /// differ between adapters.
+        #[name("wgpu-texture-format-16-bit-packed")]
+        const TEXTURE_FORMAT_16BIT_PACKED = 1 << 14;
 
         /// Allows for the creation and usage of `ExternalTexture`s, and bind
         /// group layouts containing external texture `BindingType`s.

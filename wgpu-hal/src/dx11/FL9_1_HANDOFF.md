@@ -1643,3 +1643,17 @@ delivery during Present. Exact command and first-run resolution are in
 tree is clean after this focused checkpoint. Continue the public core/HAL
 contract audit; this does not establish that every possible callback API is
 safe or that historical drivers behave identically.
+
+## Current checkpoint — query-backed packed 16-bit sampled formats
+
+The selected-device format audit includes RGB565, RGB5A1 and RGBA4 single-mip
+sampled uploads behind `TEXTURE_FORMAT_16BIT_PACKED`. Strict FL9_1 public
+readback passed all three formats on the RTX 3090 Ti. The private HAL suite
+passed 356/356, public D3D11 passed 24/24, core D3D11 fixtures passed 90/90
+and DX12 core passed 86/86. GLES and Vulkan HAL feature checks passed. See
+`FL9_1_PROGRESS.md` for exact commands and lint results. The implementation
+and observed query masks are recorded in `CAPABILITIES.md`.
+
+After this checkpoint, continue with the public core/HAL contract audit. The
+modern RTX query results do not establish historical FL9_1 behavior or ARM32
+Windows 10 Mobile compatibility.

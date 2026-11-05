@@ -217,6 +217,7 @@ impl crate::Adapter for super::Adapter {
                     | msaa_count
                     | msaa_resolve_desktop_if
             }
+            Tf::Rgb5g6b5Unorm | Tf::Rgb5a1Unorm | Tf::Rgba4Unorm => return Tfc::empty(),
             Tf::Rg8Unorm | Tf::Rg16Float | Tf::Bgra8Unorm => all_caps,
             Tf::Rg8Uint | Tf::Rg8Sint => {
                 Tfc::STORAGE_WRITE_ONLY | Tfc::COLOR_ATTACHMENT | msaa_count
@@ -1623,6 +1624,7 @@ impl super::PrivateTextureFormatCapabilities {
             Tf::R16Unorm => MTL::R16Unorm,
             Tf::R16Snorm => MTL::R16Snorm,
             Tf::R16Float => MTL::R16Float,
+            Tf::Rgb5g6b5Unorm | Tf::Rgb5a1Unorm | Tf::Rgba4Unorm => MTL::Invalid,
             Tf::Rg8Unorm => MTL::RG8Unorm,
             Tf::Rg8Snorm => MTL::RG8Snorm,
             Tf::Rg8Uint => MTL::RG8Uint,

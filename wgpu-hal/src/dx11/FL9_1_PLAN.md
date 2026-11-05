@@ -124,8 +124,11 @@ not a repository artifact.
    2D resource but lacks any-filter support. Private and public tests verified
    point-filtered upload/sample/readback while core rejects a filtering bind.
    The public adapter exposes `TEXTURE_FORMAT_16BIT_NORM` only after the
-   selected query establishes 2D support. Continue adding narrowly verified
-   formats and usage combinations.
+   selected query establishes 2D support. The Windows 8 FL9_x packed formats
+   B5G6R5, B5G5R5A1 and B4G4R4A4 now have individual selected-device queries
+   and single-mip sampled/upload support behind `TEXTURE_FORMAT_16BIT_PACKED`;
+   forced-FL9_1 public readback covers all three channel layouts and alpha.
+   Continue the format and usage audit from the actual query table.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex
@@ -425,13 +428,12 @@ which the FL9_1 shader path does not implement.
 
 ## Current next implementation task
 
-Continue the selected-device format audit from the verified point-only
-`R16G16_SNORM` path. Inspect another FL9_1 optional sampled format family,
-beginning with the remaining 16-bit normalized DXGI formats. Compare actual
-`TEXTURE2D`, `SHADER_SAMPLE`, copy and render-target query bits with the
-backend's restricted implementation and wgpu feature gates. Add a format only
-when texture/view creation and representative GPU output can be tested; keep
-unsupported usages out of the capability projection. Preserve separate
-point-only and filterable reports and exercise core's queried-format
-validation. Continue the public core/HAL contract audit and keep historical
-FL9_1 drivers and ARM32 execution explicitly unverified.
+The 16-bit normalized and packed format audit is recorded in
+`CAPABILITIES.md`: R16G16_SNORM remains point-only on this selected FL9_1
+device, the packed Windows 8 family is filterable and sampled/upload-only, and
+the remaining R16 query results provide no additional sampled candidates.
+Continue the public core/HAL contract audit from those bounded format reports.
+Add another format only when its selected-device query, native resource/view
+path and representative GPU output can all be validated. Keep unsupported
+usages out of the projection and preserve historical FL9_1 and ARM32 as
+unverified targets.

@@ -292,6 +292,24 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### FL9_1 packed 16-bit sampled formats
+
+The strict public test checks the selected-device format reports and performs
+three separate padded uploads and sampled renders for RGB565, RGB5A1 and RGBA4.
+It verifies all 64 pixels in each output, including transparent alpha from the
+1-bit and 4-bit formats. The native-only capability unit test synthesizes
+unavailable, resource-only, sample-capable and negative queries for every
+format and checks that absent backend support does not project the format.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 packed_16bit_sampling_requires_each_selected_device_query_and_backend_path
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb565_sampled_upload_at_fl91 -- --nocapture --test-threads=1
+```
+
+This path only supports single-mip 2D `TEXTURE_BINDING | COPY_DST` resources.
+Render-target, copy-source, readback and mip-chain uses remain unavailable.
+
 ### Internal FL9_1 capability projection
 
 `Capabilities::wgpu_projection` is exercised against synthetic records and an

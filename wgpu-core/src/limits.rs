@@ -247,7 +247,8 @@ pub fn apply_limit_buckets(mut raw: hal::DynExposedAdapter) -> Option<hal::DynEx
 pub(crate) const EXEMPT_FEATURES: Features = Features::EXTERNAL_TEXTURE
     .union(Features::TEXTURE_FORMAT_NV12)
     .union(Features::TEXTURE_FORMAT_P010)
-    .union(Features::TEXTURE_FORMAT_16BIT_NORM);
+    .union(Features::TEXTURE_FORMAT_16BIT_NORM)
+    .union(Features::TEXTURE_FORMAT_16BIT_PACKED);
 
 /// Return the defined adapter feature/limit buckets
 ///

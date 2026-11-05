@@ -7,7 +7,10 @@ wgpu API. The HWND path reports BGRA8 sRGB FIFO, opaque composition,
 render-attachment usage and one frame of latency; configure, acquire and
 present are restricted to the creating thread. It exposes the native-only
 `TEXTURE_FORMAT_16BIT_NORM` feature only when a selected-device query reports
-the required 2D format support, and does not claim WebGPU compliance. The implementation remains experimental
+the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
+feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
+uploads; other uses of those formats remain disabled. The backend does not
+claim WebGPU compliance. The implementation remains experimental
 and restrictions not representable through current core limits still need
 auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
@@ -697,3 +700,12 @@ unchanged. The RTX 3090 Ti forced to FL9_1 reports exactly the ten required
 formats and no optional format. The strict public Float16x2 readback test logs
 that case as a skip. Synthetic capability tests cover positive optional
 queries, unavailable queries and missing backend mappings.
+
+The required FL9_x packed B5G6R5, B5G5R5A1 and B4G4R4A4 formats are now
+implemented as `Rgb5g6b5Unorm`, `Rgb5a1Unorm` and `Rgba4Unorm` with a shared
+native-only feature, individual selected-device format queries, single-mip
+sampled/upload usage, and channel/alpha readback coverage. The RTX 3090 Ti
+forced to FL9_1 reports `0x0026F3A0` for B5G6R5 and `0x000213A0` for both
+alpha-bearing formats; strict public sampling matched all 64 output pixels for
+each format. Render-target, copy-source, readback and mip-chain functionality
+remain unavailable.

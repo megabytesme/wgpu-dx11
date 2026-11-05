@@ -1318,6 +1318,7 @@ impl crate::Adapter for super::Adapter {
             Tf::R16Unorm => norm16_unorm | norm16_storage,
             Tf::R16Snorm => norm16_snorm | norm16_storage,
             Tf::R16Float => filterable | half_float_renderable,
+            Tf::Rgb5g6b5Unorm | Tf::Rgb5a1Unorm | Tf::Rgba4Unorm => empty,
             Tf::Rg8Unorm => filterable_renderable,
             Tf::Rg8Snorm => filterable,
             Tf::Rg8Uint => renderable,

@@ -234,7 +234,10 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (features, capabilities) = fixture
         .test_fixture_wgpu_capabilities()
         .expect("selected FL9_1 device capability projection");
-    assert!(features.is_empty());
+    assert_eq!(
+        features,
+        wgt::Features::TEXTURE_FORMAT_16BIT_NORM | wgt::Features::TEXTURE_FORMAT_16BIT_PACKED
+    );
     assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
     assert!(capabilities.limits.max_bind_groups >= 2);
     assert_eq!(
@@ -738,7 +741,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         | hal::TextureFormatCapabilities::COPY_DST
         | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY;
     let bc1_supported = bc1_caps.contains(bc1_required);
-    assert_eq!(bc1_supported, bc1_caps == bc1_required);
+    assert!(bc1_supported);
+    assert!(
+        (bc1_caps & !bc1_required & !hal::TextureFormatCapabilities::SAMPLED_LINEAR).is_empty()
+    );
     if required {
         assert!(
             bc1_supported,
@@ -778,6 +784,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         wgt::TextureFormat::R8Unorm,
         wgt::TextureFormat::Rg8Snorm,
         wgt::TextureFormat::Rgba8Snorm,
+        wgt::TextureFormat::Rgb5g6b5Unorm,
+        wgt::TextureFormat::Rgb5a1Unorm,
+        wgt::TextureFormat::Rgba4Unorm,
     ]
     .map(|format| {
         (format, unsafe {
@@ -837,6 +846,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         assert_eq!(
             bc1_core.flags,
             wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+                | if bc1_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR) {
+                    wgt::TextureFormatFeatureFlags::FILTERABLE
+                } else {
+                    wgt::TextureFormatFeatureFlags::empty()
+                }
         );
     } else {
         assert!(bc1_core.allowed_usages.is_empty());
@@ -858,11 +872,17 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             assert!(core_caps.allowed_usages.is_empty());
             assert!(core_caps.flags.is_empty());
         } else {
+            let filterable = hal_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR);
             assert_eq!(
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
                     | hal::TextureFormatCapabilities::COPY_DST
                     | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY
+                    | if filterable {
+                        hal::TextureFormatCapabilities::SAMPLED_LINEAR
+                    } else {
+                        hal::TextureFormatCapabilities::empty()
+                    }
             );
             assert_eq!(
                 core_caps.allowed_usages,
@@ -871,6 +891,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             assert_eq!(
                 core_caps.flags,
                 wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+                    | if filterable {
+                        wgt::TextureFormatFeatureFlags::FILTERABLE
+                    } else {
+                        wgt::TextureFormatFeatureFlags::empty()
+                    }
             );
         }
     }
@@ -5437,8 +5462,8 @@ fn render_triangle(
             if fractional_viewport {
                 if (1..3).contains(&x) && (1..5).contains(&y) {
                     assert!(
-                        &pixels[offset..offset + 4] == [255, 0, 0, 255]
-                            || &pixels[offset..offset + 4] == [0, 255, 0, 255],
+                        pixels[offset..offset + 4] == [255, 0, 0, 255]
+                            || pixels[offset..offset + 4] == [0, 255, 0, 255],
                         "fractional viewport interior pixel ({x}, {y}): {:?}",
                         &pixels[offset..offset + 4]
                     );

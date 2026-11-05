@@ -164,6 +164,32 @@ capability; core rejects a filtering layout using the queried format flags.
 The strict public point-sampling test also passed. This modern-driver result
 does not establish historical-driver behavior.
 
+The remaining queried 16-bit normalized formats did not provide another
+sampled implementation candidate on this device: R16_UNORM, R16_SNORM,
+R16G16_UNORM and R16G16B16A16_UNORM returned `E_FAIL`, while
+R16G16B16A16_SNORM returned only `IA_VERTEX_BUFFER` (`0x00000002`). These are
+unavailable/partial query observations, not claims that every FL9_1 device
+lacks them. Microsoft's required-format table places the normalized texture
+support for R16_UNORM and R16G16_UNORM at FL9_2 and lists R16G16B16A16_SNORM
+as an FL9_1 vertex-input format only.
+
+Microsoft requires B5G6R5, B5G5R5A1 and B4G4R4A4 2D textures, filtered shader
+sampling, mip support and CPU lockability for Windows 8 FL9_x drivers. The
+backend implements the narrower single-mip sampled-upload subset as
+`Rgb5g6b5Unorm`, `Rgb5a1Unorm` and `Rgba4Unorm`, gated by
+`TEXTURE_FORMAT_16BIT_PACKED` and separate selected-device `CheckFormatSupport`
+queries. At forced FL9_1 the RTX returned `0x0026F3A0` for B5G6R5_UNORM and
+`0x000213A0` for each of B5G5R5A1_UNORM and B4G4R4A4_UNORM. Those masks include
+2D texture and shader-sample support. The strict public test uploaded padded
+two-byte texels, sampled all three native SRVs and matched every RGBA8 output
+pixel, including the 1-bit and 4-bit transparent alpha cases.
+
+These formats are exposed only for `TEXTURE_BINDING | COPY_DST`, one 2D layer,
+one sample and one mip. `SHADER_SAMPLE` controls filterability. Copy source,
+readback, render-target use and mip chains are not implemented even where the
+native feature-level table guarantees more. The modern RTX result verifies the
+query-selected path, not behavior of historical FL9_1 drivers.
+
 The same adapter returned R8G8B8A8_SNORM support mask `0x000213a0` at
 requested and selected FL9_1. The strict test uploaded padded four-channel
 signed data, sampled and remapped all channels to RGBA8, then matched all 80

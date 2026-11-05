@@ -6081,6 +6081,12 @@ impl Device {
         let using_device_features = self
             .features
             .contains(wgt::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES);
+        let packed_16bit_format = matches!(
+            format,
+            TextureFormat::Rgb5g6b5Unorm | TextureFormat::Rgb5a1Unorm | TextureFormat::Rgba4Unorm
+        ) && self
+            .features
+            .contains(wgt::Features::TEXTURE_FORMAT_16BIT_PACKED);
         // If we're running downlevel, we need to manually ask the backend what
         // we can use as we can't trust WebGPU.
         let downlevel = !self
@@ -6088,7 +6094,7 @@ impl Device {
             .flags
             .contains(wgt::DownlevelFlags::WEBGPU_TEXTURE_FORMAT_SUPPORT);
 
-        if using_device_features || downlevel {
+        if using_device_features || downlevel || packed_16bit_format {
             Ok(self.get_texture_format_features(format))
         } else {
             Ok(format.guaranteed_format_features(self.features))

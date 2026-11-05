@@ -1426,7 +1426,10 @@ impl NumericType {
             }
             Tf::NV12 => panic!("Unexpected nv12 format"),
             Tf::P010 => panic!("Unexpected p010 format"),
-            Tf::Rgb9e5Ufloat => (NumericDimension::Vector(Vs::Tri), Scalar::F32),
+            Tf::Rgb9e5Ufloat | Tf::Rgb5g6b5Unorm => {
+                (NumericDimension::Vector(Vs::Tri), Scalar::F32)
+            }
+            Tf::Rgb5a1Unorm | Tf::Rgba4Unorm => (NumericDimension::Vector(Vs::Quad), Scalar::F32),
             Tf::Bc1RgbaUnorm
             | Tf::Bc1RgbaUnormSrgb
             | Tf::Bc2RgbaUnorm

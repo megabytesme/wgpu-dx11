@@ -5443,6 +5443,350 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
 }
 
 #[test]
+fn public_dx11_rgb565_sampled_upload_at_fl91() {
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .next()
+        .expect("strict FL9_1 hardware adapter");
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let formats = [
+        TextureFormat::Rgb5g6b5Unorm,
+        TextureFormat::Rgb5a1Unorm,
+        TextureFormat::Rgba4Unorm,
+    ];
+    let format_capabilities = formats.map(|format| {
+        let capabilities = adapter.get_texture_format_features(format);
+        assert!(capabilities
+            .allowed_usages
+            .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST));
+        assert!(capabilities
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE));
+        assert!(capabilities
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
+        assert!(!capabilities
+            .allowed_usages
+            .intersects(TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT));
+        capabilities
+    });
+    let available_features = adapter.features();
+    assert!(available_features.contains(Features::TEXTURE_FORMAT_16BIT_PACKED));
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; packed formats={format_capabilities:?}",
+        info.name, info.vendor, info.device, info.driver
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 packed RGB565 sampled-upload test"),
+        required_features: Features::TEXTURE_FORMAT_16BIT_PACKED,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device with packed formats");
+
+    for (format_name, format, texels, expected_colors) in [
+        (
+            "RGB565",
+            TextureFormat::Rgb5g6b5Unorm,
+            [0xF800u16, 0x07E0, 0x001F, 0xFFFF],
+            [
+                [255u8, 0, 0, 255],
+                [0, 255, 0, 255],
+                [0, 0, 255, 255],
+                [255, 255, 255, 255],
+            ],
+        ),
+        (
+            "RGB5A1",
+            TextureFormat::Rgb5a1Unorm,
+            [0xFC00u16, 0x83E0, 0x801F, 0x0000],
+            [
+                [255u8, 0, 0, 255],
+                [0, 255, 0, 255],
+                [0, 0, 255, 255],
+                [0, 0, 0, 0],
+            ],
+        ),
+        (
+            "RGBA4",
+            TextureFormat::Rgba4Unorm,
+            [0xFF00u16, 0xF0F0, 0xF00F, 0x0000],
+            [
+                [255u8, 0, 0, 255],
+                [0, 255, 0, 255],
+                [0, 0, 255, 255],
+                [0, 0, 0, 0],
+            ],
+        ),
+    ] {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 B5G6R5 sampled texture"),
+            size: Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut upload = vec![0; 2 * 256];
+        for (offset, texel) in texels.into_iter().enumerate() {
+            let row = offset / 2;
+            let column = offset % 2;
+            let byte_offset = row * 256 + column * 2;
+            upload[byte_offset..byte_offset + 2].copy_from_slice(&texel.to_le_bytes());
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+            Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+        let image_view = texture.create_view(&TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("RGB565 sampled-upload layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: false },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 42,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+        });
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("RGB565 sampled-upload bind group"),
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&image_view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("RGB565 sampled-upload shader"),
+        source: ShaderSource::Wgsl(
+            "struct VOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }\n\
+             @group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(42) var image_sampler: sampler;\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VOut { var out: VOut; out.position = vec4f(position, 0.5, 1.0); out.uv = uv; return out; }\n\
+             @fragment fn fs(input: VOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }"
+                .into(),
+        ),
+    });
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("RGB565 sampled-upload pipeline layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let attributes = [
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 8,
+                shader_location: 1,
+            },
+        ];
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("RGB565 sampled-upload pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 16,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let target = device.create_texture(&TextureDescriptor {
+            label: Some("RGB565 sampled-upload output"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&TextureViewDescriptor::default());
+        let vertices: Vec<u8> = [
+            -1.0f32, -1.0, 0.0, 1.0, 3.0, -1.0, 2.0, 1.0, -1.0, 3.0, 0.0, -1.0,
+        ]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+        let vertex_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("RGB565 sampled-upload triangle"),
+            size: vertices.len() as u64,
+            usage: BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+        vertex_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("mapped vertices")
+            .copy_from_slice(&vertices);
+        vertex_buffer.unmap();
+        let readback = device.create_buffer(&BufferDescriptor {
+            label: Some("RGB565 sampled-upload readback"),
+            size: 8 * 256,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("RGB565 sampled-upload encoder"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("RGB565 sampled-upload pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for RGB565 sampled render");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("RGB565 readback callback")
+            .expect("map RGB565 readback");
+        {
+            let data = readback.slice(..).get_mapped_range().expect("mapped data");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let quad = usize::from(x >= 4) + 2 * usize::from(y >= 4);
+                    let expected = expected_colors[quad];
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "{format_name} sampled pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!("PASS: FL9_1 {format_name} padded upload, native SRV sampling and RGBA8 readback; all 64 pixels matched expected color and alpha quadrants");
+    }
+}
+
+#[test]
 fn public_dx11_instance_rate_vertex_streams_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
