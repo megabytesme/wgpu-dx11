@@ -58,13 +58,15 @@ unavailable. Exact analysis and Microsoft references are in
 `FL9_1_PROGRESS.md`.
 
 The shared upstream `wgpu-gpu` Naga capability selector now handles the
-opt-in D3D11 backend using HLSL's capability ceiling. Its focused run selected
-the physical RTX 3090 Ti at FL9_1 and passed; this was adapter/device and
-capability validation, not a rendering case. The test crate compiles with the
-DX11 feature. The workspace test-report setup required a temporary DX11-only
-feature selection because this Build Tools install lacks `atls.lib`; the
-workspace manifest and existing `.gpuconfig` were restored. Continue broader
-upstream GPU and CTS integration after resolving the test-runner build setup.
+opt-in D3D11 backend using HLSL's capability ceiling. Its initial focused run
+was skipped for oversized default limits; the FL9_1-specific test limits fixed
+that, and the rerun executed and passed on the physical RTX 3090 Ti. In the
+full upstream GPU harness, Cargo reported 351 tests passed, but only one
+executed; 330 were unsupported by limits and 20 skipped by expectations. The
+workspace test-report setup required a temporary DX11-only feature selection
+because this Build Tools install lacks `atls.lib`; the workspace manifest and
+existing `.gpuconfig` were restored. The D3D11 adapter is not WebGPU-compliant,
+so do not add it to a CTS runner. See `FL9_1_PROGRESS.md` for exact outcomes.
 
 The latest strict public suite passed 5/5 at forced FL9_1. The new scissor case
 rendered 24 green pixels within a `4×6` rectangle and preserved 40 blue pixels
