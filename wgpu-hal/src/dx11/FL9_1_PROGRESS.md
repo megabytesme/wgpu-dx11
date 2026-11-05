@@ -5960,7 +5960,9 @@ unrelated desktop regions. It was discarded and not used as evidence. The
 final capture used per-monitor-aware coordinates and cropped to the HWND
 client area. No code files changed during this verification.
 
-## Checkpoint — selected-device optional vertex formats
+## Checkpoint — selected-device optional vertex formats (`a4e9bc360`)
+
+Code commit: `a4e9bc360d3355081292c87c9ce6ab1800252d8e`.
 
 The HAL now maps all 41 wgpu vertex formats with direct DXGI IA equivalents,
 excluding Float64 formats that have no faithful mapping. The FL9_1 static
@@ -6005,6 +6007,8 @@ changed-file rustfmt and `git diff --check` passed. No optional-format GPU
 execution or historical-driver behavior is claimed.
 
 ## Checkpoint — same-thread Present reentrancy coverage
+
+Code commit: `f6b6d93a6a1746882c5384e341d37b95f01bcc6a`.
 
 The controlled D3D11 core fixture now enters the production
 `QueuePresentGuard` and invokes core operations on the same thread. It verifies

@@ -1589,7 +1589,9 @@ distinct red/green cube faces over the clear color. The PNG is temporary at
 `%TEMP%\wgpu-dx11-fl91-windowed.png`, not tracked. Deterministic image checks
 remain covered by offscreen GPU readback tests.
 
-## Current checkpoint — complete direct-DXGI vertex input mapping
+## Current checkpoint — complete direct-DXGI vertex input mapping (`a4e9bc360`)
+
+Code commit: `a4e9bc360d3355081292c87c9ce6ab1800252d8e`.
 
 The current uncommitted increment maps 41 direct DXGI IA formats, excluding
 Float64, while preserving the ten-format FL9_1 guarantee set. Other mapped
@@ -1606,13 +1608,13 @@ unverified. Do not push.
 
 ## Follow-up — core Present-guard reentrancy coverage
 
-The current working tree adds core fixture assertions that acquire the
-production queue presentation guard and exercise queue write, queue submit,
-device poll, buffer creation and texture creation reentrantly on the same
-thread. The targeted forced-FL9_1 fixture passed on the RTX 3090 Ti at actual
-L9_1. It verifies guard responses, not DXGI callback delivery during Present.
-Exact command and first-run resolution are in `FL9_1_PROGRESS.md`. Run
-core-test Clippy, formatting and diff checks, then commit this focused test
-and documentation update. Continue the public core/HAL contract audit after
-that checkpoint; this does not establish that every possible callback API is
+Commit `f6b6d93a6a1746882c5384e341d37b95f01bcc6a` adds core fixture assertions
+that acquire the production queue presentation guard and exercise queue
+write, queue submit, device poll, buffer creation and texture creation
+reentrantly on the same thread. The targeted forced-FL9_1 fixture passed on
+the RTX 3090 Ti at actual L9_1. It verifies guard responses, not DXGI callback
+delivery during Present. Exact command and first-run resolution are in
+`FL9_1_PROGRESS.md`. Core-test Clippy, formatting and diff checks passed. The
+tree is clean after this focused checkpoint. Continue the public core/HAL
+contract audit; this does not establish that every possible callback API is
 safe or that historical drivers behave identically.
