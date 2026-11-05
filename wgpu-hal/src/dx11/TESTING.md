@@ -1380,6 +1380,7 @@ for R8 and 2 bytes for RG8/RGB565).
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 narrow_optional_copy_sources_require_render_target_support_and_backend_paths -- --nocapture --test-threads=1
 ```
 
@@ -1392,6 +1393,16 @@ plus the row-padding sentinel. On the RTX 3090 Ti, R8, RG8 and RGB565 all
 passed. The synthetic HAL test proves that a missing `RENDER_TARGET` query or
 disabled backend path suppresses `COPY_SRC` and rejects use. This observation
 does not establish compatibility with historical FL9_1 drivers.
+
+The rendered-attachment case uses `RESOURCE | COLOR_TARGET | COPY_SRC` for
+R8_UNORM, R8G8_UNORM and B5G6R5. It renders a constant color, samples the
+attachment into RGBA8, and copies the native attachment directly to a padded
+readback buffer. All 64 native texels per format, the nonzero buffer prefix and
+row padding are checked. The RTX 3090 Ti at forced FL9_1 passed all three
+formats. The stored R8 and RGB565 bytes match their expected quantized values;
+the RG8 green byte is one code below the RGBA8 sampled value, consistent with
+render-target quantization. This checks the combined usage path and rendered
+source contents, in addition to copies from uploaded textures.
 
 ### Non-filtering sampler layouts
 

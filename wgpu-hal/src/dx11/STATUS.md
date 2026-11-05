@@ -12,7 +12,9 @@ feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
 uploads. RGB565 additionally has queried render-target and copy/readback
 support; RGB5A1 and RGBA4 remain sampled-upload-only. R8_UNORM and R8G8_UNORM
 also expose copy-source use only when their selected format query reports
-render-target support. The backend does not
+render-target support. A strict public FL9_1 test renders into each of these
+three narrow formats, copies the rendered attachment to a padded readback
+buffer and validates all native texels. The backend does not
 claim WebGPU compliance. The implementation remains experimental
 and restrictions not representable through current core limits still need
 auditing. Feature level 9_1 is a tested target, not evidence of

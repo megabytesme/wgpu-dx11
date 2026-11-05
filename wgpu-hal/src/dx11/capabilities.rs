@@ -3005,6 +3005,12 @@ mod tests {
             assert!(base
                 .texture_format_capabilities(format)
                 .contains(FormatCaps::COPY_SRC));
+            let rendered_copy_source =
+                copy_source | wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
+            assert_eq!(
+                base.check_private_texture_2d(format, rendered_copy_source, [8, 8], 1, 1, 1),
+                Ok(())
+            );
 
             let mut missing_render_target = base;
             match format {
@@ -3030,6 +3036,17 @@ mod tests {
                 ),
                 Err(DriverFormatUnsupported)
             );
+            assert_eq!(
+                missing_render_target.check_private_texture_2d(
+                    format,
+                    rendered_copy_source,
+                    [8, 8],
+                    1,
+                    1,
+                    1
+                ),
+                Err(DriverFormatUnsupported)
+            );
             assert!(!missing_render_target
                 .texture_format_capabilities(format)
                 .contains(FormatCaps::COPY_SRC));
@@ -3047,6 +3064,17 @@ mod tests {
             }
             assert_eq!(
                 missing_backend.check_private_texture_2d(format, copy_source, [8, 8], 1, 1, 1),
+                Err(UnsupportedUsage)
+            );
+            assert_eq!(
+                missing_backend.check_private_texture_2d(
+                    format,
+                    rendered_copy_source,
+                    [8, 8],
+                    1,
+                    1,
+                    1
+                ),
                 Err(UnsupportedUsage)
             );
             assert!(!missing_backend

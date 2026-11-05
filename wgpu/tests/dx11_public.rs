@@ -2684,6 +2684,14 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
+    let source_readback_offset = 16u64;
+    let source_readback_size = source_readback_offset + 8 * 256;
+    let source_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("rendered narrow-format copy-source readback"),
+        size: source_readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
 
     for (format, expected) in formats {
         let source = device.create_texture(&TextureDescriptor {
@@ -2697,7 +2705,9 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            usage: TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let attachment_view = source.create_view(&TextureViewDescriptor {
@@ -2768,6 +2778,11 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("narrow-format render, sample and readback commands"),
         });
+        queue.write_buffer(
+            &source_readback,
+            0,
+            &vec![0xCD; source_readback_size as usize],
+        );
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("draw into narrow-format render attachment"),
@@ -2837,11 +2852,38 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
                 depth_or_array_layers: 1,
             },
         );
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &source_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: source_readback_offset,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
         readback
             .slice(..)
             .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        let (source_sender, source_receiver) = std::sync::mpsc::channel();
+        source_readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| {
+                source_sender.send(result).unwrap()
+            });
         device
             .poll(PollType::Wait {
                 submission_index: Some(submission),
@@ -2852,6 +2894,10 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             .recv_timeout(Duration::from_secs(10))
             .expect("narrow-format attachment map callback")
             .expect("map narrow-format attachment readback");
+        source_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("rendered narrow-format copy-source map callback")
+            .expect("map rendered narrow-format copy-source readback");
         let first_pixel;
         {
             let data = readback
@@ -2874,8 +2920,43 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             }
         }
         readback.unmap();
+        let bytes_per_pixel = format.block_copy_size(None).expect("block copy size") as usize;
+        let expected_source = match format {
+            TextureFormat::R8Unorm => vec![expected[0]],
+            TextureFormat::Rg8Unorm => vec![expected[0], expected[1].saturating_sub(1)],
+            TextureFormat::Rgb5g6b5Unorm => {
+                let r = (u16::from(expected[0]) >> 3) << 11;
+                let g = (u16::from(expected[1]) >> 2) << 5;
+                let b = u16::from(expected[2]) >> 3;
+                (r | g | b).to_le_bytes().to_vec()
+            }
+            _ => unreachable!(),
+        };
+        {
+            let data = source_readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped rendered narrow-format copy source");
+            assert!(data[..source_readback_offset as usize]
+                .iter()
+                .all(|&byte| byte == 0xCD));
+            for y in 0..8 {
+                let row = source_readback_offset as usize + y * 256;
+                for x in 0..8 {
+                    let start = row + x * bytes_per_pixel;
+                    assert_eq!(
+                        &data[start..start + bytes_per_pixel],
+                        expected_source.as_slice(),
+                        "{format:?} rendered copy-source texel ({x}, {y})"
+                    );
+                }
+                let row_end = row + 8 * bytes_per_pixel;
+                assert!(data[row_end..row + 256].iter().all(|&byte| byte == 0xCD));
+            }
+        }
+        source_readback.unmap();
         println!(
-            "PASS: FL9_1 {format:?} attachment draw sampled within one code of {expected:?}; first pixel {first_pixel:?}; 64/64 pixels matched"
+            "PASS: FL9_1 {format:?} attachment draw sampled within one code of {expected:?}; first pixel {first_pixel:?}; 64/64 sampled pixels and 64/64 copied attachment texels matched"
         );
     }
 }
