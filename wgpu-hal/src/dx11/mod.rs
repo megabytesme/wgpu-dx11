@@ -1,7 +1,7 @@
-//! Experimental fail-closed D3D11 HAL and native diagnostics.
+//! Experimental FL9_1 D3D11 HAL and native diagnostics.
 //!
-//! The HAL exposes no adapters until its device implementation is complete.
-//! A D3D feature level alone does not establish WebGPU support.
+//! Adapter exposure is restricted to physical FL9_1 devices with an implemented
+//! capability projection. A D3D feature level alone does not establish WebGPU support.
 mod adapter;
 mod api;
 mod buffer;

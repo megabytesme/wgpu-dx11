@@ -18,7 +18,7 @@ use core::{
     time::Duration,
 };
 
-/// Restricted recorder; it is not yet exposed by a wgpu adapter.
+/// Recorder for the operations exposed by the opt-in FL9_1 adapter projection.
 #[derive(Debug)]
 pub struct CommandEncoder {
     device: Arc<NativeDevice>,

@@ -1,4 +1,4 @@
-//! Restricted D3D11 HAL queue; no adapter exposes it yet.
+//! Restricted D3D11 HAL queue for the FL9_1 adapter projection.
 use super::{device::NativeDevice, Api};
 use alloc::sync::Arc;
 

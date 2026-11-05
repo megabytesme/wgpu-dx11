@@ -1,8 +1,8 @@
-//! Fail-closed API types for the incomplete D3D11 backend.
+//! Fail-closed API types for the experimental FL9_1 D3D11 backend.
 
 use super::{Adapter, CommandEncoder, Device, Instance, Queue, Surface};
 
-/// Experimental D3D11 API. It currently exposes no adapters.
+/// Experimental D3D11 API with a conservative, offscreen FL9_1 adapter projection.
 #[derive(Clone, Debug)]
 pub struct Api;
 

@@ -1,4 +1,4 @@
-//! Restricted copy-only D3D11 HAL device; no adapter exposes it yet.
+//! Restricted FL9_1 D3D11 HAL device.
 #![allow(unused_variables)]
 
 use super::Api as Dx11Api;
@@ -13,7 +13,7 @@ use core::{
     time::Duration,
 };
 
-/// A private copy-only device, not yet exposed by an adapter.
+/// A device restricted to the implemented FL9_1 capability projection.
 #[derive(Debug)]
 pub struct Device {
     native: Arc<super::device::NativeDevice>,

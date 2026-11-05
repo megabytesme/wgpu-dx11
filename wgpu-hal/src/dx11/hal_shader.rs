@@ -10,7 +10,7 @@ use super::{
 };
 use alloc::{format, string::ToString, sync::Arc, vec::Vec};
 
-/// Naga module retained until pipeline creation; no adapter exposes it yet.
+/// Naga module retained until pipeline creation.
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct ShaderModule {

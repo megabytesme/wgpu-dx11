@@ -974,28 +974,30 @@ backend free of application-specific fixtures and window-host assumptions.
 
 ## 2. wgpu-core and public API integration
 
-A safe core integration test is deferred: the HAL `Adapter` is uninhabited,
-its normal instance intentionally exposes no adapters, and core's shader module
-path treats the DX11 backend as unreachable. A core device also needs truthful
-capabilities and validation for its accepted operations; restrictions such as
-specific binding layouts cannot be represented by limits alone. A test-only
-bootstrap would require a separately contained adapter and validation contract,
-not just an enumeration switch. Do not use placeholder limits to bypass it.
+The opt-in `dx11` HAL instance now enumerates only physical adapters that
+successfully create an explicitly requested FL9_1 device and satisfy the
+implemented capability projection. The public integration tests use ordinary
+wgpu adapter and device creation, while the controlled core fixture exercises
+core device/queue initialization, layouts, uploads, rendering, readback and
+validation against the selected physical device. Strict mode fails if hardware
+is unavailable; it does not substitute WARP. These tests cover a substantial
+subset but do not establish that every operation allowed by the projection is
+safe or that the backend is WebGPU-compliant.
 
-A future tightly scoped hardware integration test should cover actual
-wgpu-core device and queue initialization, empty and nonempty layouts, mapped
-upload/copy/readback, checked shaders, rendering, errors and destruction. An
-isolated local diagnostic has exercised device startup, mapped copying and an
-indexed triangle via public wgpu with deliberately unsafe placeholder limits;
-it is not an adapter and is not sufficient for release. The future test must
-be safely contained and must not advertise those placeholders. Test device
-loss, lifetimes, synchronization, initialization, and surface resize and
-presentation, including diagnostics from the validation layers.
+The public adapter remains offscreen-only: surface capabilities are absent
+because synchronous DXGI `Present` can reenter application window procedures
+while core queue-ordering and the HAL immediate-context locks are held. Do not
+enable public surface support until a cross-layer scheduling design preserves
+submission order, D3D11 context serialization and safe window-thread
+reentrancy. Continue checking validation, synchronization, device loss,
+resource lifetime, initialization, surface resize and presentation.
 
 ## 3. Upstream wgpu GPU tests
 
-Once a DX11 adapter can truthfully describe and fulfill the required wgpu
-contract, run the upstream suite:
+The opt-in adapter and direct strict integration tests exist, but the public
+contract and test-runner coverage remain incomplete. Run focused upstream GPU
+selectors that are supported by the projection, verify the selected backend
+and adapter, and record skips separately:
 
 ```console
 cargo xtask test --test wgpu-gpu
@@ -1008,8 +1010,9 @@ or a skipped test is not a pass. Keep other backend builds and tests working.
 
 ## 4. WebGPU CTS
 
-Only after the public adapter and test-runner integration are ready, start with
-selected CTS cases and then run the pinned full suite:
+The Deno CTS runner still needs an explicit DX11 feature path and adapter
+selection verification. After that wiring is complete, start with selected
+CTS cases and then run the pinned full suite:
 
 ```console
 cargo xtask cts --backend dx11 'webgpu:api,operation,command_buffer,basic:*'
