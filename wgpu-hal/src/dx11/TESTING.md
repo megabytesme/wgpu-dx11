@@ -922,9 +922,16 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d24s8_load_clear_discard_transitions_at_fl91 -- --nocapture --test-threads=1
 ```
 
-On the RTX 3090 Ti at requested and actual FL9_1, all 512 pixels across the
-eight pass snapshots matched. The test retains coverage for D24S8 LOAD, CLEAR,
+On the RTX 3090 Ti at requested and actual FL9_1, all 576 pixels across the
+nine pass snapshots matched. The test retains coverage for D24S8 LOAD, CLEAR,
 DISCARD initialization and aspect-specific view rejection.
+
+The same public test records a D24S8 prepass with `color_attachments: &[]`,
+clears depth to 1, writes near depth without a fragment stage, then draws far
+geometry in a color pass using `Less`. All 64 pixels remain blue because the
+prepass changed the depth buffer; without that write, the far draw would pass
+against the clear value. The strict focused and full public test runs passed at
+requested and actual FL9_1.
 
 For dynamic uniform offsets, run `cargo test -p wgpu-hal --lib
 --no-default-features --features dx11 dynamic_uniform -- --nocapture` with

@@ -434,7 +434,10 @@ The public projection still omits `READ_ONLY_DEPTH_STENCIL`: without that flag,
 core uses the ordinary writable DSV usage and does not permit sampling the
 attachment during the pass. This test proves aspect rules for non-aliasing
 passes, not a read-only DSV/SRV alias. Private read-only passes use an ordinary
-DSV as well.
+DSV as well. The public D24S8 path also supports a colorless depth prepass:
+the later color pass fails its depth comparison only after the prepass writes
+the near depth value. This verifies the no-color-target pass across core, HAL
+and GPU execution.
 The broad `depth_stencil` capability remains false. Texture and view descriptors
 may declare READ, WRITE or READ|WRITE, but an actual pass uses one usage.
 Strict GPU tests verify textured depth ordering, initialization, independent

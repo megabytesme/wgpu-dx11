@@ -3505,10 +3505,45 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         StencilOperation::Keep,
         0,
     );
+    let depth_only_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 colorless D24S8 depth prepass pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_near"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilState {
+            format: TextureFormat::Depth24PlusStencil8,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(CompareFunction::LessEqual),
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
+        multisample: MultisampleState::default(),
+        fragment: None,
+        multiview_mask: None,
+        cache: None,
+    });
+    let color_after_prepass_pipeline =
+        make_pipeline("vs_far", CompareFunction::Less, CompareFunction::Equal);
 
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 D24S8 transition readback"),
-        size: 8 * 8 * 256,
+        size: 9 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -3775,6 +3810,63 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
     );
     snapshot(&mut encoder, 7);
 
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("colorless D24S8 depth prepass"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(1),
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_pipeline(&depth_only_pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("color pass consumes colorless D24S8 depth prepass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_stencil_reference(1);
+        pass.set_pipeline(&color_after_prepass_pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    snapshot(&mut encoder, 8);
+
     expect_validation_error(&device, "depth write in a read-only depth pass", || {
         let mut invalid_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("invalid depth write in read-only pass"),
@@ -3830,7 +3922,7 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
             .slice(..)
             .get_mapped_range()
             .expect("mapped D24S8 data");
-        for image_index in 0..8 {
+        for image_index in 0..9 {
             let expected = match image_index {
                 0 | 1 | 5 | 6 | 7 => [0, 255, 0, 255],
                 _ => [0, 0, 255, 255],
@@ -3848,7 +3940,7 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 D24S8 LOAD/CLEAR/DISCARD and independent read-only depth/stencil aspects matched all 512 checked transition pixels; read-only depth and stencil writes were rejected by core; sampled usage and aspect-specific views remain rejected");
+    println!("PASS: public FL9_1 D24S8 LOAD/CLEAR/DISCARD, independent read-only aspects and colorless depth prepass matched all 576 checked transition pixels; read-only depth and stencil writes were rejected by core; sampled usage and aspect-specific views remain rejected");
 }
 
 #[test]

@@ -454,6 +454,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
   read-only and each mixed read/write aspect combination; core rejects writes
   to whichever aspect is read-only. `READ_ONLY_DEPTH_STENCIL` remains
   unreported, so simultaneous sampled-depth aliasing is unavailable.
+  A public colorless D24S8 prepass followed by a color pass also verifies that
+  depth written without a color target controls the later comparison.
   Aspect-specific views and depth copies remain unsupported; broad public
   depth-stencil capability is still false.
 - D24S8 triangle pipelines accept signed constant and finite slope-scaled depth
