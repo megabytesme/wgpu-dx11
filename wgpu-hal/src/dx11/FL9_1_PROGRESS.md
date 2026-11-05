@@ -6592,6 +6592,30 @@ rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ```
 
-Next: test a public D24S8 depth-only pass with no color attachment, then draw
-to color using that depth and validate the comparison result. This audits the
-colorless-prepass path across core, HAL and GPU execution.
+## Follow-up — public colorless D24S8 depth prepass
+
+Code checkpoint `78b52faf1` adds a public wgpu depth-only render pass with no
+color attachments. It clears D24S8 depth/stencil, writes near depth without a
+fragment shader, then starts a color pass and draws far geometry with a Less
+comparison. All 64 pixels remain blue, proving the prepass affected later
+depth testing. The existing D24S8 transitions now check 576 pixels across nine
+snapshots, including read-only aspects and colorless rendering.
+
+The exact-tree strict public run passed 26/26 tests using Rust 1.93.1 and the
+Visual Studio 2022 x64 environment. The physical adapter was NVIDIA RTX 3090
+Ti (`0x10de:0x2203`), driver `32.0.16.2101`, software=false, requested and
+actual FL9_1. No hardware execution skipped; the optional Float16x2 IA branch
+printed its explicit capability skip. The public test crate's Clippy,
+rustfmt and diff checks also passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: exercise transient attachments through public wgpu/core/HAL with valid
+clear/discard operations and verify the supported non-persistent semantics.
+Continue the broader render-pass and core/HAL contract audit afterward.

@@ -453,9 +453,13 @@ COPY_SRC`, copy the attachment to a padded readback buffer and check all 64
 native texels. A strict public D24S8 test now checks core-valid read-only depth
 and stencil pass combinations, including each mixed read/write aspect mode and
 rejection of writes to the read-only aspect. The public projection still omits
-`READ_ONLY_DEPTH_STENCIL`, so sampled aliases remain unavailable. Next audit a
-public colorless D24S8 depth prepass followed by a color pass, then continue the
-core/HAL render-pass contract review. Add another format only when its
-selected-device query, native resource/view path and representative GPU output
-can all be validated. Keep unsupported usages out of the projection and
-preserve historical FL9_1 and ARM32 as unverified targets.
+`READ_ONLY_DEPTH_STENCIL`, so sampled aliases remain unavailable. A public
+colorless D24S8 depth prepass now writes near depth and a following color pass
+proves that far geometry fails its depth test. Strict readback checks the whole
+target. Next test the existing transient attachment path through public
+wgpu/core/HAL with valid clear/discard operations and verify that its contents
+do not become observably persistent. Then continue the core/HAL render-pass
+contract review. Add another format only when its selected-device query,
+native resource/view path and representative GPU output can all be validated.
+Keep unsupported usages out of the projection and preserve historical FL9_1
+and ARM32 as unverified targets.
