@@ -1379,10 +1379,6 @@ impl crate::CommandEncoder for CommandEncoder {
             if index_count == 0 || instance_count == 0 {
                 return;
             }
-            if vertices.is_empty() {
-                self.reject();
-                return;
-            }
             let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
             else {
                 self.reject();
@@ -1405,6 +1401,19 @@ impl crate::CommandEncoder for CommandEncoder {
             let max_indices =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                     .max_indexed_line_list_indices_per_draw();
+            if vertices.is_empty() {
+                let max_vertices =
+                    super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                        .max_direct_line_list_vertices_per_draw();
+                self.record(NativeCommand::DrawLines {
+                    vertices: Vec::new(),
+                    count: index_count,
+                    max_vertices,
+                    instances: instance_count,
+                    instance_bindings,
+                });
+                return;
+            }
             self.record(NativeCommand::DrawIndexedLines {
                 binding: index,
                 vertices,
@@ -1673,11 +1682,14 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             return;
         }
-        if render
-            .vertex_slots
-            .iter()
-            .enumerate()
-            .any(|(physical, logical)| logical.is_some() && (physical != 0 || *logical != Some(0)))
+        if render.vertex_slots.iter().all(Option::is_none)
+            || render
+                .vertex_slots
+                .iter()
+                .enumerate()
+                .any(|(physical, logical)| {
+                    logical.is_some() && (physical != 0 || *logical != Some(0))
+                })
             || render
                 .vertex_layouts
                 .iter()
@@ -1727,10 +1739,6 @@ impl crate::CommandEncoder for CommandEncoder {
             if index_count == 0 || instance_count == 0 {
                 return;
             }
-            if vertices.is_empty() {
-                self.reject();
-                return;
-            }
             let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
             else {
                 self.reject();
@@ -1753,6 +1761,20 @@ impl crate::CommandEncoder for CommandEncoder {
             let max_vertices =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                     .max_triangle_vertices_per_draw();
+            if vertices.is_empty() {
+                self.record(NativeCommand::Draw {
+                    first: 0,
+                    count: index_count,
+                    instances: instance_count,
+                    max_vertices: super::capabilities::HardwareGuarantees::for_level(
+                        self.device.feature_level(),
+                    )
+                    .max_direct_triangle_vertices_per_draw(),
+                    zero_input: true,
+                    instance_bindings,
+                });
+                return;
+            }
             self.record(NativeCommand::DrawIndexedMulti {
                 binding: index,
                 vertices,

@@ -401,3 +401,314 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
     std::println!("PASS: FL9_1 instance streams, 4 full-image executions");
     Ok(())
 }
+
+#[test]
+fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::core::Result<()> {
+    use crate::dx11::{buffer::NativeBuffer, hal_pipeline::RenderPipeline};
+
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|error| panic!("{error}"))
+    else {
+        std::println!("SKIP: no physical D3D11 adapter");
+        return Ok(());
+    };
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {:?}; requested and actual FL9_1",
+        adapter.identity()
+    );
+    let device = Device::new(native.clone());
+    let queue = Queue::new(native.clone());
+    let module = naga::front::wgsl::parse_str(
+        r#"
+        struct Out {
+            @builtin(position) position: vec4f,
+            @location(0) color: vec4f,
+        }
+        @vertex fn vs(@location(0) center: vec2f) -> Out {
+            return Out(vec4f(center, 0.5, 1.0), vec4f(1.0, 0.0, 0.0, 1.0));
+        }
+        @vertex fn vs_empty() -> Out {
+            return Out(vec4f(0.0, 0.0, 0.5, 1.0), vec4f(1.0, 0.0, 0.0, 1.0));
+        }
+        @fragment fn fs(input: Out) -> @location(0) vec4f { return input.color; }
+        "#,
+    )
+    .unwrap();
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&module)
+    .unwrap();
+    let shader = unsafe {
+        device
+            .create_shader_module(
+                &crate::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                },
+                crate::ShaderInput::Naga(crate::NagaShader {
+                    module: Cow::Owned(module),
+                    info,
+                    debug_source: None,
+                }),
+            )
+            .unwrap()
+    };
+    let layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let centers = [
+        (-0.5f32).to_ne_bytes(),
+        0.0f32.to_ne_bytes(),
+        0.5f32.to_ne_bytes(),
+        0.0f32.to_ne_bytes(),
+    ]
+    .concat();
+    let instance_data = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: centers.len() as u64,
+                usage: wgt::BufferUses::VERTEX,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&instance_data, 0, &centers)?;
+    let attributes = [wgt::VertexAttribute {
+        format: wgt::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(crate::VertexBufferLayout {
+        array_stride: 8,
+        step_mode: wgt::VertexStepMode::Instance,
+        attributes: &attributes,
+    })];
+    let constants = naga::back::PipelineConstants::default();
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let empty_vertex_buffers: [Option<crate::VertexBufferLayout<'_>>; 0] = [];
+    let make_pipeline = |topology, instance_only| unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: if instance_only {
+                        &vertex_buffers
+                    } else {
+                        &empty_vertex_buffers
+                    },
+                    vertex_stage: crate::ProgrammableStage {
+                        module: &shader,
+                        entry_point: if instance_only { "vs" } else { "vs_empty" },
+                        constants: &constants,
+                        zero_initialize_workgroup_memory: false,
+                    },
+                },
+                primitive: wgt::PrimitiveState {
+                    topology,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(crate::ProgrammableStage {
+                    module: &shader,
+                    entry_point: "fs",
+                    constants: &constants,
+                    zero_initialize_workgroup_memory: false,
+                }),
+                color_targets: &targets,
+                multiview_mask: None,
+                cache: None,
+            })
+            .expect("FL9_1 instance-only pipeline")
+    };
+    let triangle_list_instance = make_pipeline(wgt::PrimitiveTopology::TriangleList, true);
+    let line_list_instance = make_pipeline(wgt::PrimitiveTopology::LineList, true);
+    let triangle_list_empty = make_pipeline(wgt::PrimitiveTopology::TriangleList, false);
+    let line_list_empty = make_pipeline(wgt::PrimitiveTopology::LineList, false);
+    let mut index_buffers = Vec::new();
+    for format in [wgt::IndexFormat::Uint16, wgt::IndexFormat::Uint32] {
+        let bytes = match format {
+            wgt::IndexFormat::Uint16 => [u16::MAX, 200, 201, 202]
+                .into_iter()
+                .flat_map(u16::to_ne_bytes)
+                .collect::<Vec<_>>(),
+            wgt::IndexFormat::Uint32 => [u32::MAX, 200, 201, 202]
+                .into_iter()
+                .flat_map(u32::to_ne_bytes)
+                .collect::<Vec<_>>(),
+        };
+        let buffer = unsafe {
+            device
+                .create_buffer(&crate::BufferDescriptor {
+                    label: None,
+                    size: bytes.len() as u64,
+                    usage: wgt::BufferUses::INDEX,
+                    memory_flags: crate::MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&buffer, 0, &bytes)?;
+        index_buffers.push((format, buffer));
+    }
+    let extent = wgt::Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let target = unsafe {
+        device
+            .create_texture(&crate::TextureDescriptor {
+                label: None,
+                size: extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Rgba8Unorm,
+                usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                memory_flags: crate::MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+            .unwrap()
+    };
+    let view = unsafe {
+        device
+            .create_texture_view(
+                &target,
+                &crate::TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage: wgt::TextureUses::COLOR_TARGET,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+            .unwrap()
+    };
+    let colors = [Some(crate::ColorAttachment {
+        target: crate::Attachment {
+            view: &view,
+            usage: wgt::TextureUses::COLOR_TARGET,
+        },
+        depth_slice: None,
+        resolve_target: None,
+        ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+        clear_value: wgt::Color::BLUE,
+    })];
+    let pass = crate::RenderPassDescriptor {
+        label: None,
+        extent,
+        sample_count: 1,
+        color_attachments: &colors,
+        depth_stencil_attachment: None,
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let mut encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let fence = native.create_native_fence();
+    let mut fence_value = 0;
+    let mut render = |pipeline: &RenderPipeline,
+                      instance_only: bool,
+                      count: u32,
+                      indexed: Option<(wgt::IndexFormat, &NativeBuffer)>|
+     -> windows::core::Result<Vec<u8>> {
+        let command = unsafe {
+            encoder.begin_encoding(None).unwrap();
+            encoder.begin_render_pass(&pass).unwrap();
+            encoder.set_render_pipeline(pipeline);
+            if instance_only {
+                encoder.set_vertex_buffer(
+                    0,
+                    crate::BufferBinding::new_unchecked(&instance_data, 0, None),
+                );
+            }
+            if let Some((format, indices)) = indexed {
+                encoder.set_index_buffer(
+                    crate::BufferBinding::new_unchecked(indices, 0, None),
+                    format,
+                );
+                encoder.draw_indexed(1, count, -200, 0, 2);
+            } else {
+                encoder.draw(0, count, 0, 2);
+            }
+            encoder.end_render_pass();
+            encoder
+                .end_encoding()
+                .expect("instance-only indexed list draw")
+        };
+        fence_value += 1;
+        unsafe {
+            queue
+                .submit(&[&command], &[], (&fence, fence_value))
+                .unwrap()
+        };
+        assert!(native.wait_native_fence(&fence, fence_value, Some(Duration::from_secs(5)))?);
+        native.read_rgba_texture(&target, 0, 0)
+    };
+    for (pipeline_instance, pipeline_empty, count, topology) in [
+        (
+            &triangle_list_instance,
+            &triangle_list_empty,
+            3,
+            wgt::PrimitiveTopology::TriangleList,
+        ),
+        (
+            &line_list_instance,
+            &line_list_empty,
+            2,
+            wgt::PrimitiveTopology::LineList,
+        ),
+    ] {
+        for (pipeline, instance_only) in [(pipeline_instance, true), (pipeline_empty, false)] {
+            let direct = render(pipeline, instance_only, count, None)?;
+            assert_eq!(direct.len(), 8 * 8 * 4);
+            for (format, index) in &index_buffers {
+                let indexed = render(pipeline, instance_only, count, Some((*format, index)))?;
+                assert_eq!(
+                    indexed, direct,
+                    "{topology:?}, {format:?}, instance-only={instance_only}"
+                );
+            }
+        }
+    }
+    std::println!(
+        "PASS: indexed LineList/TriangleList with no vertex-rate inputs matched equivalent direct draws for Uint16/Uint32; instance-only and empty layouts"
+    );
+    unsafe {
+        for (_, index) in index_buffers {
+            device.destroy_buffer(index);
+        }
+        device.destroy_buffer(instance_data);
+        device.destroy_texture_view(view);
+        device.destroy_texture(target);
+        device.destroy_render_pipeline(triangle_list_instance);
+        device.destroy_render_pipeline(line_list_instance);
+        device.destroy_render_pipeline(triangle_list_empty);
+        device.destroy_render_pipeline(line_list_empty);
+        device.destroy_pipeline_layout(layout);
+        device.destroy_shader_module(shader);
+    }
+    Ok(())
+}
