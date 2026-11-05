@@ -1135,7 +1135,10 @@ driver behavior or general public adapter support.
 
 Microsoft lists R8_UNORM (legacy L8), R8G8_SNORM (legacy V8U8),
 R8G8B8A8_SNORM (legacy Q8W8V8U8) and BC1_UNORM (legacy DXT1) as FL9_1 2D
-shader-sample formats. The backend checks the selected device's actual
+shader-sample formats. `R16G16_SNORM` has a FL9_1 2D-texture guarantee, but
+its required `SHADER_SAMPLE` support begins at FL9_2. At FL9_1, the backend
+allows it only when the selected device query positively reports sampling.
+The backend checks the selected device's actual
 `TEXTURE2D | SHADER_SAMPLE` bits and supports only single-mip sampled/upload
 textures. BC1 dimensions and updates must be aligned to complete 4×4 blocks.
 Run the synthetic capability checks and strict hardware tests with:
@@ -1145,18 +1148,26 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_unorm -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rg8_snorm -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rgba8_snorm -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_texture_tests::fl91_rg16_snorm_is_query_gated_and_samples_when_supported -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 bc1 -- --nocapture --test-threads=1
 ```
 
 The CPU tests cover legal and illegal usages, shape limits and missing or
-insufficient driver-query results. All three hardware tests request and assert
-FL9_1, upload padded 5×4 patterns from nonzero source offsets, sample into a
+insufficient driver-query results. The R8, R8G8 and RGBA8 SNORM hardware tests
+request and assert FL9_1, upload padded 5×4 patterns from nonzero source offsets, sample into a
 10×8 RGBA8 target and compare every pixel. R8_UNORM uses offset 1 and 7-byte
 rows, R8G8_SNORM offset 2 and 12-byte rows, and R8G8B8A8_SNORM offset 4 and
 24-byte rows. SNORM tests remap signed channels to UNORM and allow one code
 value for conversion rounding. On the RTX 3090 Ti, R8_UNORM, R8G8_SNORM and
 R8G8B8A8_SNORM returned masks `0x0002d3e0`, `0x00021320` and `0x000213a0`;
 all reported filtered-sampling support, while the tests use nearest filtering.
+At forced FL9_1, `R16G16_SNORM` returned `0x00021122`, which lacks
+`SHADER_SAMPLE`; the strict private test verifies HAL rejection instead of
+counting it as a successful sample. The strict public SNORM test verifies the
+format remains absent from the adapter projection, confirms public texture
+creation is rejected, and still validates the R8G8/RGBA8 SNORM draws. A
+synthetic positive query exercises the conditional capability projection, but
+the R16G16 positive upload/sample path has not run on hardware.
 The BC1 test uploads an 8×8 block-compressed image from offset 8 with a 24-byte
 block-row pitch, replaces the block at [4,0] with a second padded upload, and
 checks all 256 pixels after sampling. Its format mask was `0x000213a0` and

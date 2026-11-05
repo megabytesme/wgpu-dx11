@@ -21,7 +21,7 @@ use windows::{
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
                 DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
                 DXGI_SAMPLE_DESC,
             },
@@ -238,7 +238,8 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             height: 1,
             bytes: 2,
         }),
-        DXGI_FORMAT_R8G8B8A8_SNORM
+        DXGI_FORMAT_R16G16_SNORM
+        | DXGI_FORMAT_R8G8B8A8_SNORM
         | DXGI_FORMAT_R8G8B8A8_UNORM
         | DXGI_FORMAT_B8G8R8A8_UNORM
         | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
@@ -405,6 +406,7 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
@@ -440,6 +442,7 @@ impl NativeDevice {
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
@@ -469,6 +472,7 @@ impl NativeDevice {
             desc.Format,
             DXGI_FORMAT_R8_UNORM
                 | DXGI_FORMAT_R8G8_SNORM
+                | DXGI_FORMAT_R16G16_SNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
                 | DXGI_FORMAT_BC1_UNORM
         ) {
@@ -603,7 +607,10 @@ impl NativeDevice {
         );
         let uncompressed_sampled = matches!(
             format,
-            DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+            DXGI_FORMAT_R8_UNORM
+                | DXGI_FORMAT_R8G8_SNORM
+                | DXGI_FORMAT_R16G16_SNORM
+                | DXGI_FORMAT_R8G8B8A8_SNORM
         ) && !render_target
             && layers == 1
             && mip_levels == 1;
@@ -663,6 +670,7 @@ impl NativeDevice {
                 format,
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
             ) {

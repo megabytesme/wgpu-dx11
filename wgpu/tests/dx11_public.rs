@@ -3831,6 +3831,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let rg_features = adapter.get_texture_format_features(TextureFormat::Rg8Snorm);
+    let rg16_features = adapter.get_texture_format_features(TextureFormat::Rg16Snorm);
     let rgba_features = adapter.get_texture_format_features(TextureFormat::Rgba8Snorm);
     for (format, features) in [
         (TextureFormat::Rg8Snorm, rg_features),
@@ -3855,8 +3856,22 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             "{format:?}: {features:?}"
         );
     }
+    let rg16_sampled = rg16_features
+        .allowed_usages
+        .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
+    if rg16_sampled {
+        assert!(rg16_features
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
+        assert!(!rg16_features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE));
+    } else {
+        assert!(rg16_features.allowed_usages.is_empty());
+        assert!(rg16_features.flags.is_empty());
+    }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={rg_features:?}; Rgba8Snorm={rgba_features:?}",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={rg_features:?}; Rg16Snorm={rg16_features:?}; Rgba8Snorm={rgba_features:?}",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -3866,6 +3881,30 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         ..Default::default()
     }))
     .expect("request the selected FL9_1 device");
+
+    if !rg16_sampled {
+        expect_validation_error(
+            &device,
+            "R16G16_SNORM sampled texture without FL9_1 support",
+            || {
+                let _ = device.create_texture(&TextureDescriptor {
+                    label: Some("unsupported public FL9_1 Rg16Snorm texture"),
+                    size: Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: TextureFormat::Rg16Snorm,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+            },
+        );
+        println!("PASS: public FL9_1 capabilities omit Rg16Snorm when the selected driver query lacks shader sampling");
+    }
 
     let rg_texture = device.create_texture(&TextureDescriptor {
         label: Some("public FL9_1 Rg8Snorm sampled texture"),
@@ -3947,78 +3986,154 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    let rg16_texture = if rg16_sampled {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("public FL9_1 Rg16Snorm sampled texture"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rg16Snorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut data = vec![0; 8 * 256];
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                data[offset..offset + 2].copy_from_slice(&(-16384i16).to_le_bytes());
+                data[offset + 2..offset + 4].copy_from_slice(&(-8192i16).to_le_bytes());
+            }
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        Some(texture)
+    } else {
+        None
+    };
     let rg_view = rg_texture.create_view(&TextureViewDescriptor::default());
     let rgba_view = rgba_texture.create_view(&TextureViewDescriptor::default());
+    let rg16_view = rg16_texture
+        .as_ref()
+        .map(|texture| texture.create_view(&TextureViewDescriptor::default()));
     let sampler = device.create_sampler(&SamplerDescriptor {
         mag_filter: FilterMode::Nearest,
         min_filter: FilterMode::Nearest,
         mipmap_filter: MipmapFilterMode::Nearest,
         ..Default::default()
     });
+    let mut layout_entries = vec![
+        BindGroupLayoutEntry {
+            binding: 100,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 42,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: false },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: false },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+    ];
+    if rg16_sampled {
+        layout_entries.push(BindGroupLayoutEntry {
+            binding: 13,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: false },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+    }
     let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("public FL9_1 SNORM sampled layout"),
-        entries: &[
-            BindGroupLayoutEntry {
-                binding: 100,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
-                count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 42,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: false },
-                    view_dimension: TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 7,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: false },
-                    view_dimension: TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-        ],
+        entries: &layout_entries,
     });
+    let mut group_entries = vec![
+        BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&rg_view),
+        },
+        BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::TextureView(&rgba_view),
+        },
+        BindGroupEntry {
+            binding: 100,
+            resource: BindingResource::Sampler(&sampler),
+        },
+    ];
+    if let Some(view) = &rg16_view {
+        group_entries.push(BindGroupEntry {
+            binding: 13,
+            resource: BindingResource::TextureView(view),
+        });
+    }
     let group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("public FL9_1 SNORM sampled resources"),
         layout: &layout,
-        entries: &[
-            BindGroupEntry {
-                binding: 7,
-                resource: BindingResource::TextureView(&rg_view),
-            },
-            BindGroupEntry {
-                binding: 42,
-                resource: BindingResource::TextureView(&rgba_view),
-            },
-            BindGroupEntry {
-                binding: 100,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
+        entries: &group_entries,
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("public FL9_1 SNORM pipeline layout"),
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
+    let shader_source = if rg16_sampled {
+        "@group(0) @binding(100) var nearest_sampler: sampler;\n\
+         @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
+         @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
+         @group(0) @binding(13) var rg16_image: texture_2d<f32>;\n\
+         @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); let rg16 = textureSample(rg16_image, nearest_sampler, vec2f(0.5)).r; return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, rg16 * 0.5 + 0.5); }"
+    } else {
+        "@group(0) @binding(100) var nearest_sampler: sampler;\n\
+         @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
+         @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
+         @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, 1.0); }"
+    };
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("public FL9_1 SNORM sampled shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(100) var nearest_sampler: sampler;\n\
-             @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
-             @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
-             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, 1.0); }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(shader_source.into()),
     });
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("public FL9_1 SNORM pipeline"),
@@ -4158,7 +4273,12 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         for y in 0..8 {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
-                for (channel, expected) in [192u8, 63, 160, 255].into_iter().enumerate() {
+                let expected = if rg16_sampled {
+                    [192u8, 63, 160, 64]
+                } else {
+                    [192u8, 63, 160, 255]
+                };
+                for (channel, expected) in expected.into_iter().enumerate() {
                     let observed = data[offset + channel];
                     assert!(
                         observed.abs_diff(expected) <= 1,
@@ -4169,7 +4289,9 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 Rg8Snorm and Rgba8Snorm uploads sampled with signed normalization; all 64 pixels matched [192, 63, 160, 255] within ±1");
+    println!(
+        "PASS: public FL9_1 Rg8Snorm and Rgba8Snorm sampled; Rg16Snorm sampled={rg16_sampled}; all 64 pixels matched expected signed normalization"
+    );
 }
 
 #[test]

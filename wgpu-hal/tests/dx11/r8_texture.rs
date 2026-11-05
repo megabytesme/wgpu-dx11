@@ -597,6 +597,11 @@ fn unorm_from_snorm(value: i8) -> u8 {
     ((normalized * 0.5 + 0.5) * 255.0).round() as u8
 }
 
+fn unorm_from_snorm16(value: i16) -> u8 {
+    let normalized = (value as f32 / 32767.0).max(-1.0);
+    ((normalized * 0.5 + 0.5) * 255.0).round() as u8
+}
+
 #[test]
 fn fl91_rg8_snorm_padded_upload_samples_both_signed_channels() -> windows::core::Result<()> {
     use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8_SNORM;
@@ -628,6 +633,107 @@ fn fl91_rg8_snorm_padded_upload_samples_both_signed_channels() -> windows::core:
             [
                 unorm_from_snorm(row[offset]),
                 unorm_from_snorm(row[offset + 1]),
+                0,
+                255,
+            ]
+        },
+    )
+}
+
+#[test]
+fn fl91_rg16_snorm_is_query_gated_and_samples_when_supported() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::{
+        Direct3D11::{D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D},
+        Dxgi::Common::DXGI_FORMAT_R16G16_SNORM,
+    };
+
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|error| panic!("{error}"))
+    else {
+        std::println!("SKIP: no physical D3D11 adapter");
+        return Ok(());
+    };
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    let format_support = unsafe {
+        native
+            .raw_device()
+            .CheckFormatSupport(DXGI_FORMAT_R16G16_SNORM)
+    }?;
+    let required_support =
+        (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+    std::println!(
+        "Hardware: {:?}; requested and actual FL9_1; R16G16_SNORM support=0x{format_support:08x}",
+        adapter.identity()
+    );
+    if format_support & required_support != required_support {
+        let device = Device::new(native);
+        let texture = unsafe {
+            device.create_texture(&crate::TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 5,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Rg16Snorm,
+                usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+                memory_flags: crate::MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+        };
+        assert!(
+            texture.is_err(),
+            "unsupported R16G16_SNORM sampling was accepted"
+        );
+        std::println!(
+            "PASS: selected FL9_1 driver does not report R16G16_SNORM shader sampling; HAL rejected the sampled texture"
+        );
+        return Ok(());
+    }
+
+    let rows = [
+        [
+            16384i16, -8192, 8192, -16384, 0, 32767, -32768, 0, 32767, -32768,
+        ],
+        [
+            -32768, 32767, -16384, 8192, 4096, -4096, 24576, -24576, 0, 0,
+        ],
+        [
+            8192, 16384, -8192, -16384, 32767, 0, -32768, 16384, 2048, -2048,
+        ],
+        [0, 32767, 0, -32768, 4096, 8192, -4096, -8192, 24576, 12288],
+    ];
+    let texels: vec::Vec<_> = rows
+        .iter()
+        .flatten()
+        .flat_map(|&value| value.to_le_bytes())
+        .collect();
+    sample_upload(
+        SampledTexture {
+            format: wgt::TextureFormat::Rg16Snorm,
+            native_format: DXGI_FORMAT_R16G16_SNORM,
+            format_name: "R16G16_SNORM",
+            extent: [5, 4],
+            block_dimensions: [1, 1],
+            bytes_per_block: 4,
+            row_pitch: 24,
+            source_offset: 4,
+            patch: None,
+            fragment_body: "let rg = textureSample(image, image_sampler, input.uv).rg; return vec4f(rg * 0.5 + vec2f(0.5), 0.0, 1.0);",
+        },
+        &texels,
+        |x, y| {
+            let row = rows[y as usize];
+            let offset = x as usize * 2;
+            [
+                unorm_from_snorm16(row[offset]),
+                unorm_from_snorm16(row[offset + 1]),
                 0,
                 255,
             ]

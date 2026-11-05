@@ -84,8 +84,13 @@ contract is safe. This plan does not claim WebGPU conformance.
    have independent device queries and public sampled/render-target paths;
    strict FL9_1 readback verifies decoding and encoding for both channel
    orders. The public suite also samples four-level POT chains of both formats
-   and verifies implicit LOD selects mip 1. Continue adding narrowly verified
-   required formats and usage combinations.
+   and verifies implicit LOD selects mip 1. An R16G16_SNORM investigation
+   found that the required FL9_1 table guarantees 2D texture use but requires
+   shader sampling only from FL9_2. The model therefore does not promote it at
+   FL9_1; a positive selected-device query can enable the narrow one-mip path.
+   The RTX forced to FL9_1 returns `0x00021122` without `SHADER_SAMPLE`, and
+   private/public tests verify rejection. Continue adding narrowly verified
+   formats and usage combinations.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex
