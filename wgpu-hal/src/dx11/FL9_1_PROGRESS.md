@@ -5608,3 +5608,23 @@ the physical RTX 3090 Ti, vendor/device `0x10de:0x2203`, driver
 `git diff --check` passed. The test does not exercise D16 discard semantics.
 Next continue validated depth/render-pass combinations and the wider
 core/HAL audit.
+
+## Checkpoint — D16 discard followed by LOAD — `e3807a1b3`
+
+Extended the public D16 render-pass test with a depth attachment stored using
+Discard, followed by a second pass that loads depth and draws a nearer
+primitive. The first pass writes depth 0.75 and red color; if that discarded
+depth remained visible, the later 0.25 draw would replace the red output. The
+strict readback remained red for all 64 pixels, showing that core's required
+initialization after discard prevented stale depth from affecting subsequent
+rendering. Together with the prior D16 cases, the test checked 128/128
+draw-order pixels, 128/128 LOAD/CLEAR transition pixels and 64/64 discard-load
+pixels.
+
+The full strict public suite passed 19/19 on the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and
+returned FL9_1, `software=false`, with no skips. Targeted public-test Clippy,
+rustfmt and `git diff --check` passed. The full private HAL, core fixture and
+DX12 suites were not rerun for this test-only increment; their latest results
+remain 347/347, 89/89, and 85/85 respectively at `d0efe2753`. Continue with
+other validated render-pass combinations and the core/HAL audit.

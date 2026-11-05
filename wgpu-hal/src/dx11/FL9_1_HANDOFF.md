@@ -1441,25 +1441,22 @@ Continue the shader/core/HAL compatibility audit. Public HWND presentation is
 still gated on a safe scheduling design for DXGI's synchronous reentrancy;
 historical FL9_1 drivers and ARM32 UWP remain unverified.
 
-## Current checkpoint — public FL9_1 D16 depth-only attachment — `d0efe2753`
+## Current checkpoint — D16 depth and render-pass transitions — `e3807a1b3`
 
 D16_UNORM is exposed as a single-mip depth-only attachment when the required
 FL9_1 format guarantee, selected-device `CheckFormatSupport` query and backend
 implementation all agree. The RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`) returned format mask `0x210020` while explicitly forced to
-FL9_1. A public strict test verified near/far depth ordering in both draw
-orders across 128/128 pixels; core rejects multi-mip D16 and stencil use. The
-full strict private HAL suite passed 347/347, public suite 19/19, core fixture
-89/89, physical-adapter core test 1/1, and DX12 core regression 85/85. Exact
-commands and diagnostics are recorded in `FL9_1_PROGRESS.md` and
+FL9_1. The public strict test uses `DepthOnly`, verifies core rejects
+`StencilOnly`, multi-mip D16 and stencil state, and confirms depth ordering in
+both draw orders (128/128 pixels). Additional passes confirm LOAD preserves
+depth, CLEAR resets it (128/128 pixels), and a discarded depth value followed
+by LOAD cannot affect rendering (64/64 pixels). The full strict public suite
+passed 19/19 on this physical adapter with no skips. The full private HAL,
+core fixture, physical-adapter isolation and DX12 core suites passed 347/347,
+89/89, 1/1 and 85/85 at code checkpoint `d0efe2753`; they were not rerun for
+this test-only increment. Exact commands are in `FL9_1_PROGRESS.md` and
 `TESTING.md`. Historical hardware remains unverified.
-
-Checkpoint `0cba1afbb` extends the D16 case to verify an explicit `DepthOnly`
-view, core rejection of `StencilOnly`, depth preservation across a second-pass
-LOAD, and depth reset by CLEAR. Readback matched 128/128 pass-transition pixels
-in addition to the 128/128 depth-order pixels. The full strict public suite
-passed 19/19 with no skips; the earlier full HAL/core/DX12 suites remain those
-recorded for `d0efe2753`. The D16 path still has no discard-specific test.
 
 The mission remains active. Continue the shader/core/HAL and format audit, then
 return to safe HWND presentation scheduling. The public adapter is
