@@ -5555,3 +5555,36 @@ skips. `cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public
 --no-default-features --features dx11,wgsl,std`, changed-file rustfmt and
 `git diff --check` passed. The suite does not establish historical-device
 behavior; continue the capability and core/HAL audit.
+
+## Checkpoint — public FL9_1 D16 depth-only attachment — `d0efe2753`
+
+The private and selected-device capability models now expose D16_UNORM as a
+single-mip depth-only attachment when the FL9_1 required-format guarantee, the
+backend path and the selected device's `CheckFormatSupport` query all agree.
+Texture initialization clears depth without requesting a stencil clear. HAL
+views retain their actual depth format through render-pass and pipeline setup;
+stencil operations on D16 and unsupported multi-mip requests are rejected.
+Ordinary D24S8 behavior and normal D3D11 enumeration remain unchanged.
+
+The strict public wgpu test draws near and far full-screen triangles in both
+orders through a D16 attachment and validates 128/128 green pixels. It also
+verifies the selected format projection and core rejection of multi-mip D16
+and active stencil state. The NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) reported `CheckFormatSupport(D16_UNORM)=0x210020`; the
+device was physical (`software=false`) and explicitly requested and returned
+FL9_1. This validates the modern forced-level path, not historical drivers.
+
+Verification (Rust 1.93.1, Visual Studio MSVC environment):
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 -- --nocapture --test-threads=1`: 347 passed, 0 failed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 19 passed, 0 failed, 0 skipped.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 dx11::capabilities::tests -- --nocapture --test-threads=1`: 23 passed, including the selected-device D16 query/projection.
+- D3D11 core fixture: 89 passed; core physical-adapter enumeration isolation: 1 passed; DX12 core regression: 85 passed.
+- HAL and public-test Clippy passed; HAL emitted nine pre-existing warnings in unrelated code. Changed-file rustfmt and `git diff --check` passed.
+
+The initial public test expected only `RENDER_ATTACHMENT`, but the HAL
+correctly includes `TRANSIENT_ATTACHMENT`; the assertion was narrowed to
+require render attachment and forbid sampled/copy usages. No implementation
+failure remained. Continue depth/load/store and general core/HAL contract
+coverage; safe public HWND presentation is still blocked on cross-layer DXGI
+Present scheduling, and historical FL9_1 plus ARM32 UWP remain unverified.

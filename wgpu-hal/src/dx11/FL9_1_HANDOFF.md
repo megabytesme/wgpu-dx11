@@ -1441,18 +1441,18 @@ Continue the shader/core/HAL compatibility audit. Public HWND presentation is
 still gated on a safe scheduling design for DXGI's synchronous reentrancy;
 historical FL9_1 drivers and ARM32 UWP remain unverified.
 
-## Current checkpoint — public FL9_1 sRGB mip execution — `f2c813671`
+## Current checkpoint — public FL9_1 D16 depth-only attachment — `d0efe2753`
 
-RGBA8_SRGB and BGRA8_SRGB are modeled as required FL9_1 formats, with separate
-selected-device `CheckFormatSupport` queries intersected with implemented
-texture paths. The physical RTX 3090 Ti (`0x10de:0x2203`, driver
-`32.0.16.2101`) returned `0x112ef3e0` for both formats when explicitly forced
-to FL9_1. Strict public GPU readback verifies sampling decode and render-target
-encoding, plus implicit-LOD selection from four-level POT chains for both
-formats. The full public D3D11 suite passed 18/18. The strict HAL suite passed
-346/346, core fixture 89/89, physical-adapter core test 1/1 and DX12 core
-regression 85/85. Historical hardware remains unverified. Exact commands and
-readbacks are in `FL9_1_PROGRESS.md`.
+D16_UNORM is exposed as a single-mip depth-only attachment when the required
+FL9_1 format guarantee, selected-device `CheckFormatSupport` query and backend
+implementation all agree. The RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) returned format mask `0x210020` while explicitly forced to
+FL9_1. A public strict test verified near/far depth ordering in both draw
+orders across 128/128 pixels; core rejects multi-mip D16 and stencil use. The
+full strict private HAL suite passed 347/347, public suite 19/19, core fixture
+89/89, physical-adapter core test 1/1, and DX12 core regression 85/85. Exact
+commands and diagnostics are recorded in `FL9_1_PROGRESS.md` and
+`TESTING.md`. Historical hardware remains unverified.
 
 The mission remains active. Continue the shader/core/HAL and format audit, then
 return to safe HWND presentation scheduling. The public adapter is
