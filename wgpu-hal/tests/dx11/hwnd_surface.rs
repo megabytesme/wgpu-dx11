@@ -346,6 +346,20 @@ fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
     unsafe {
         surface.configure(&device, &config).unwrap();
     }
+    let active_surface_operation = surface.begin_operation().unwrap();
+    assert!(matches!(
+        unsafe { surface.acquire_texture(None, &fence) },
+        Err(crate::SurfaceError::Other(
+            "D3D11 surface operation already in progress"
+        ))
+    ));
+    assert!(matches!(
+        unsafe { surface.configure(&device, &config) },
+        Err(crate::SurfaceError::Other(
+            "D3D11 surface operation already in progress"
+        ))
+    ));
+    drop(active_surface_operation);
     let chain = surface
         .configured
         .lock()
