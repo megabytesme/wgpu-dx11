@@ -6555,3 +6555,43 @@ The tested format masks remain R8=`0x0002d3e0`, RG8=`0x0002c320` and
 B5G6R5=`0x0026f3a0`; each has `RENDER_TARGET`. These results apply to the
 modern RTX forced to FL9_1 and do not verify historical FL9_1 drivers or ARM32
 UWP. Next audit core-valid read-only depth/stencil render-pass combinations.
+
+## Follow-up — public D24S8 read-only pass aspects
+
+Code checkpoint `3a1b84bd0` expands the public D24S8 transition test to cover
+all three core-valid read-only shapes without a sampled alias: both aspects
+read-only, depth read-only with stencil writable, and stencil read-only with
+depth writable. Each mixed case uses a later depth/stencil comparison to
+verify the read-only aspect stayed unchanged while the writable aspect took
+the expected update. Error scopes verify that a depth-writing pipeline is
+rejected in a depth-read-only pass and a stencil-writing pipeline is rejected
+in a stencil-read-only pass.
+
+The first targeted run exposed only an incorrect expected-image classification
+for an existing stencil-discard snapshot; that original image correctly stays
+blue. After fixing the oracle, the focused strict test passed 1/1 and the full
+strict public D3D11 suite passed 26/26. The expanded test checks 512 pixels
+across eight snapshots on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), explicitly requested and actual FL9_1. The
+suite printed one capability skip for optional Float16x2 IA support; no
+hardware execution was skipped. The D3D11 projection still omits
+`READ_ONLY_DEPTH_STENCIL`, so simultaneous sampling of the DSV remains
+unsupported. HAL code and capabilities were unchanged.
+
+The public test crate passed Clippy without warnings. Rustfmt and
+`git diff --check` passed.
+
+Exact commands, run with Rust 1.93.1 in the Visual Studio 2022 x64 environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d24s8_load_clear_discard_transitions_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: test a public D24S8 depth-only pass with no color attachment, then draw
+to color using that depth and validate the comparison result. This audits the
+colorless-prepass path across core, HAL and GPU execution.

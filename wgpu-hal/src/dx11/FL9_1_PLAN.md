@@ -450,8 +450,12 @@ support. Strict public GPU tests validate partial copies for all three
 formats, including untouched texels, nonzero destination origins and padded
 rows. They also render into each format with `RESOURCE | COLOR_TARGET |
 COPY_SRC`, copy the attachment to a padded readback buffer and check all 64
-native texels. Continue the public core/HAL contract audit, beginning with
-read-only depth/stencil render-pass combinations permitted by core. Add another
-format only when its selected-device query, native resource/view path and
-representative GPU output can all be validated. Keep unsupported usages out of
-the projection and preserve historical FL9_1 and ARM32 as unverified targets.
+native texels. A strict public D24S8 test now checks core-valid read-only depth
+and stencil pass combinations, including each mixed read/write aspect mode and
+rejection of writes to the read-only aspect. The public projection still omits
+`READ_ONLY_DEPTH_STENCIL`, so sampled aliases remain unavailable. Next audit a
+public colorless D24S8 depth prepass followed by a color pass, then continue the
+core/HAL render-pass contract review. Add another format only when its
+selected-device query, native resource/view path and representative GPU output
+can all be validated. Keep unsupported usages out of the projection and
+preserve historical FL9_1 and ARM32 as unverified targets.
