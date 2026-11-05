@@ -4842,3 +4842,30 @@ command order, resources, mapping, surface lifecycle, and completion semantics
 remain correct. This is a cross-layer redesign, not a lock-release patch. Keep
 public surface capabilities unavailable while continuing independent FL9_1
 work.
+
+## Checkpoint — public FL9_1 scissor bounds
+
+Commit `ee430b9b2` (`dx11: verify public FL9_1 scissor bounds`) adds a public
+offscreen render test using an 8×8 RGBA8 target and a fullscreen triangle. A
+scissor at `(2, 1)` with size `4×6` produced exactly 24 green pixels while the
+remaining 40 stayed blue. The same selected-device test submits a viewport
+extending one pixel past the left target edge and confirms core validation
+rejects it before HAL. The capability, testing and status documents now state
+this public evidence.
+
+On 2026-11-05, with Rust 1.93.1, Visual Studio 2022 x64 and
+`WGPU_DX11_REQUIRE_HARDWARE=1`, the full public suite passed 5/5 on the NVIDIA
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+`software=false`. The scissor test passed 1/1 in its focused run. Across the
+five strict tests, rendering/readback covers the indexed textured depth scene,
+dynamic uniform update, multi-device submission, R8 sampling, symmetric
+stencil, premultiplied blending and scissor bounds; negative checks reject
+texture loads, asymmetric stencil, unsupported blend states and out-of-target
+viewports before HAL. `cargo +1.93 clippy --offline -j16 -p wgpu --tests
+--no-default-features --features dx11,wgsl,std`, rustfmt and
+`git diff --check` passed.
+
+The safe public HWND presentation redesign remains the largest outstanding
+cross-layer task. Independent audit evidence for the synchronous message-pump
+and lock interaction is in the previous checkpoint above. Continue with other
+bounded public FL9_1 functionality while surface capabilities remain disabled.

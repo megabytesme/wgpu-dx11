@@ -37,6 +37,12 @@ ordered asynchronous per-device scheduling; keep public surface capabilities
 unavailable. Exact analysis and Microsoft references are in
 `FL9_1_PROGRESS.md`.
 
+The latest strict public suite passed 5/5 at forced FL9_1. The new scissor case
+rendered 24 green pixels within a `4×6` rectangle and preserved 40 blue pixels
+outside; a left-overflow viewport was rejected by core before HAL. Checkpoint
+`ee430b9b2`; exact command and the complete public test inventory are in
+`FL9_1_PROGRESS.md`.
+
 ## Current checkpoint — internal FL9_1 capability projection — `dfc93078a`
 
 `Capabilities::wgpu_projection` now builds a selected-device FL9_1 snapshot of
