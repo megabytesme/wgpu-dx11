@@ -1398,3 +1398,24 @@ Continue the public core/HAL contract audit and the surface scheduler
 investigation. The opt-in adapter remains offscreen-only because synchronous
 HWND `Present` reentrancy is unresolved. Historical FL9_1 drivers and ARM32
 UWP execution remain unverified.
+
+## Current checkpoint — fragment depth output validation — `ed642d768`
+
+Core's FL9_1 selected-entry validation now rejects a fragment shader that
+writes `frag_depth` but omits color output at `@location(0)`, matching FXC's
+X4530 failure before shader compilation. A structured color-plus-depth entry
+is accepted; sibling entry points are evaluated independently. The public
+strict test verifies rejection before HAL and acceptance of the supported
+form. Strict forced-FL9_1 suites passed: private HAL 344/344, public wgpu
+14/14, D3D11 core fixture 88/88, DX12 core 84/84; all hardware cases used the
+RTX 3090 Ti at actual FL9_1. Types, checks and Clippy passed; nine existing
+unrelated HAL warnings remain. Full commands and driver details are in
+`FL9_1_PROGRESS.md`.
+
+The preceding selected-entry `textureSampleBaseClampToEdge` gate is code
+commit `4a5cde393`; its public/core/type updates are covered by the latest
+verification. Continue auditing core-accepted shader operations and HAL
+behavior, then resume the surface scheduler investigation. Public HWND
+presentation remains gated by unresolved synchronous `Present` reentrancy;
+the public adapter is still opt-in/offscreen-only. Historical FL9_1 drivers
+and ARM32 UWP hardware remain unverified.

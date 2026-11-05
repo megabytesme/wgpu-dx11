@@ -5391,3 +5391,36 @@ The code commit is `d96650d72`. Continue auditing operations that core
 accepts but the private HAL cannot execute, then return to the public surface
 scheduler design. Public adapter access remains opt-in/offscreen-only;
 historical FL9_1 drivers remain untested.
+
+## Checkpoint — selected fragment-depth output validation — `ed642d768`
+
+Core now models the `ps_4_0_level_9_1` output restriction found during the
+shader audit: a fragment entry point that writes `frag_depth` without
+`@location(0)` fails pipeline validation before FXC. Naga interface metadata
+checks the selected entry point, so a color-and-depth sibling remains valid
+and an unrelated entry point does not affect selection. The D3D11 capability
+projection reports this restriction; other backends retain the default
+permissive value. The private compiler test records FXC X4530 for direct-only
+depth output and accepts structured color plus depth. The public integration
+test verifies the precise core rejection and compiles the supported output.
+
+Strict execution used Rust 1.93.1, Visual Studio 2022 x64 tools, and the
+physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`)
+at requested and actual FL9_1 (`software=false`). Results:
+
+- Private HAL suite: 344 passed, 0 failed, 0 ignored.
+- Public `wgpu` D3D11 suite: 14 passed, 0 failed, 0 ignored.
+- Strict D3D11 core fixture suite: 88 passed, 0 failed, 0 ignored.
+- Core DX12 regression suite: 84 passed, 0 failed, 0 ignored.
+- `wgpu-types` unit suite: 76 passed; serde-enabled suite: 78 passed.
+- D3D11 HAL/GLES compilation, `wgpu-info`, and `wgpu-test --tests` checks
+  passed. The latter two checks also caught and corrected exhaustive
+  `DownlevelLimits` consumers that needed the newly added fields.
+- Clippy passed for HAL, core, wgpu, types, info and test crates. HAL emitted
+  nine pre-existing warnings in unrelated test/swapchain/texel-load code.
+- Changed-file rustfmt and `git diff --check` passed. No hardware tests skipped.
+
+The code checkpoint is `ed642d768`. Continue the selected-entry shader and
+core/HAL contract audit, then revisit the public HWND presentation scheduler.
+The adapter remains opt-in and offscreen-only; historical FL9_1 drivers and
+ARM32 UWP hardware remain unverified.
