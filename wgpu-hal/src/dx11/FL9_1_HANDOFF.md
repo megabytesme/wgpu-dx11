@@ -57,6 +57,15 @@ ordered asynchronous per-device scheduling; keep public surface capabilities
 unavailable. Exact analysis and Microsoft references are in
 `FL9_1_PROGRESS.md`.
 
+The shared upstream `wgpu-gpu` Naga capability selector now handles the
+opt-in D3D11 backend using HLSL's capability ceiling. Its focused run selected
+the physical RTX 3090 Ti at FL9_1 and passed; this was adapter/device and
+capability validation, not a rendering case. The test crate compiles with the
+DX11 feature. The workspace test-report setup required a temporary DX11-only
+feature selection because this Build Tools install lacks `atls.lib`; the
+workspace manifest and existing `.gpuconfig` were restored. Continue broader
+upstream GPU and CTS integration after resolving the test-runner build setup.
+
 The latest strict public suite passed 5/5 at forced FL9_1. The new scissor case
 rendered 24 green pixels within a `4×6` rectangle and preserved 40 blue pixels
 outside; a left-overflow viewport was rejected by core before HAL. Checkpoint

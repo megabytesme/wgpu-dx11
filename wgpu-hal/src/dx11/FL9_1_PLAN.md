@@ -247,7 +247,10 @@ contract is safe. This plan does not claim WebGPU conformance.
    cross-layer scheduling and lock-order design is resolved.
 7. Audit unsupported operations, synchronization, lifetime and device loss;
    run strict GPU, core, Naga and non-D3D11 regressions and relevant downlevel
-   conformance cases. Independently review the public contract.
+   conformance cases. Independently review the public contract. The upstream
+   `wgpu-gpu` Naga capability selector now uses HLSL's capability ceiling for
+   the D3D11 backend instead of assuming no DX11 adapter can be selected; the
+   focused selector ran against the physical FL9_1 adapter.
 
 ## Completion evidence
 

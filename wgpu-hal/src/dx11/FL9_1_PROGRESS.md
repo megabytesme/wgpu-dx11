@@ -5752,3 +5752,32 @@ installed Visual Studio environment succeeded. `VsDevCmd` continues to print
 completed successfully. Public HWND presentation remains gated by the
 cross-layer `Present` reentrancy deadlock; the mission continues with the
 remaining public core/HAL audit and scheduler design.
+
+## Checkpoint — upstream Naga capability selector — `143a24351`
+
+The shared `wgpu-gpu` Naga capability test still treated `Backend::Dx11` as
+unreachable. It now compares the adapter's projected Naga capabilities against
+Naga's HLSL backend ceiling. The D3D11 API/module/device/queue/shader comments
+and the testing guide were also corrected to describe the current opt-in,
+offscreen adapter and core fixture rather than the pre-integration scaffold.
+
+The focused GPU harness test passed as
+`[Unsupported: Limits] [Dx11/NVIDIA GeForce RTX 3090 Ti/0] ...validate_capabilities`
+with `WGPU_BACKEND=dx11` and `WGPU_DX11_REQUIRE_HARDWARE=1`. Its `.gpuconfig`
+was generated from one physical D3D11 adapter explicitly selected at FL9_1.
+This selector checks Naga capability projection and device setup; it does not
+draw or read back pixels. The test crate also passed a normal `cargo check`
+with its DX11 feature enabled.
+
+Exact test commands:
+
+- `WGPU_INFO_SAVE_GPUCONFIG_REPORT=1 cargo +1.93 test --offline -j16 -p wgpu-info --features wgpu/dx11 generate_gpuconfig_report -- --nocapture`
+- `WGPU_BACKEND=dx11 WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-test --test wgpu-gpu --features wgpu/dx11 -- validate_capabilities --nocapture`
+- `cargo +1.93 check --offline -j16 -p wgpu-test --test wgpu-gpu --features wgpu/dx11`
+
+For the runtime test only, the workspace's default `wgpu` feature list was
+temporarily adjusted from `dx12`/`static-dxc` to `dx11` because this Build
+Tools installation lacks `atls.lib`; the exact `Cargo.toml` bytes and existing
+`.gpuconfig` bytes were restored in a `finally` block. The generated report
+contained one DX11 adapter. Broader upstream GPU selectors and CTS remain to
+be exercised, and the Deno CTS package still does not enable DX11.
