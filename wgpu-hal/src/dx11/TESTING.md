@@ -147,8 +147,31 @@ RGBA8 target; all 64 pixels matched (32 with red 64, 32 with red 192), proving
 the two-byte texel stride in the actual upload and sampling path. The linear
 test produced the expected eight-column gradient in all 64 output pixels. The
 selected format projection reports only `TEXTURE_BINDING | COPY_DST` and
-`SINGLE_MIP_ONLY`; no render-target, copy-source, readback or mip-chain support
-is asserted.
+`SINGLE_MIP_ONLY`. A separate `RENDER_TARGET` query enables the narrow
+attachment path below. Copy-source, raw readback and mip-chain support are not
+asserted.
+
+### R8/RG8 color attachments
+
+R8_UNORM and R8G8_UNORM remain single-mip, one-layer, one-sample resources.
+Their color-attachment usage is reported only when the selected device's
+`CheckFormatSupport` query positively includes
+`D3D11_FORMAT_SUPPORT_RENDER_TARGET` (`0x00004000`). Each native texture has
+both RTV and SRV bind flags; the public test creates separate attachment-only
+and texture-binding-only views, clears the former, samples the latter, and
+checks RGBA8 readback. The formats remain non-blendable and do not support
+`COPY_SRC`.
+
+On the RTX 3090 Ti at requested/actual FL9_1, the query masks were
+R8_UNORM=`0x0002d3e0` and R8G8_UNORM=`0x0002c320`, both including the render
+target bit. Clearing to `(0.25, 0.75, 0.5, 1.0)` produced `[64, 0, 0, 255]`
+and `[64, 191, 0, 255]` respectively; all 64 output pixels per format are
+checked.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_render_attachments_at_fl91 -- --nocapture --test-threads=1
+```
 
 A third strict public test writes stencil reference value 1 over the target,
 renders green where `Equal` succeeds, then attempts a blue draw with reference

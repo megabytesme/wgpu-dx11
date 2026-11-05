@@ -877,6 +877,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
                     | hal::TextureFormatCapabilities::COPY_DST
+                    | if format == wgt::TextureFormat::R8Unorm {
+                        hal::TextureFormatCapabilities::COLOR_ATTACHMENT
+                    } else {
+                        hal::TextureFormatCapabilities::empty()
+                    }
                     | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY
                     | if filterable {
                         hal::TextureFormatCapabilities::SAMPLED_LINEAR
@@ -886,7 +891,14 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             );
             assert_eq!(
                 core_caps.allowed_usages,
-                wgt::TextureUsages::COPY_DST | wgt::TextureUsages::TEXTURE_BINDING
+                wgt::TextureUsages::COPY_DST
+                    | wgt::TextureUsages::TEXTURE_BINDING
+                    | if format == wgt::TextureFormat::R8Unorm {
+                        wgt::TextureUsages::RENDER_ATTACHMENT
+                            | wgt::TextureUsages::TRANSIENT_ATTACHMENT
+                    } else {
+                        wgt::TextureUsages::empty()
+                    }
             );
             assert_eq!(
                 core_caps.flags,

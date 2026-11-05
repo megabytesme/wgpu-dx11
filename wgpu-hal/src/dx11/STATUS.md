@@ -329,15 +329,17 @@ all out-of-target rectangles. Other backends keep the default true capability.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
   offset and all 80 sampled output pixels. A positive `SHADER_SAMPLE` query
   reports `FILTERABLE`; when the bit is absent but `TEXTURE2D` is present, the
-  backend supports point-only sampling. Render-target, copy-source, readback and mip-chain uses
-  remain unsupported.
+  backend supports point-only sampling. The selected-device
+  `RENDER_TARGET` query also enables a single-mip color-attachment path; it is
+  non-blendable and has no copy-source or direct-readback usage.
 - R8G8_UNORM is not a required FL9_1 sampled format. Its one-mip,
   single-layer sampled/upload path is exposed only when the selected device
   reports `TEXTURE2D`; `SHADER_SAMPLE` controls filterability. The forced-FL9_1 RTX returned
   `0x0002c320`; a strict public upload/sample test verified 64 pixels and the
   two-byte texel stride. A second pass verifies linear filtering with an
-  eight-column gradient. Render-target, copy-source, readback and mip-chain
-  uses remain unsupported.
+  eight-column gradient. The selected-device `RENDER_TARGET` query also
+  gates single-mip attachment use. It remains non-blendable and cannot be
+  copied from or read back directly.
 - R8G8_SNORM has the same queried one-mip sampled/upload subset. A strict
   forced-FL9_1 test verifies padded signed two-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).

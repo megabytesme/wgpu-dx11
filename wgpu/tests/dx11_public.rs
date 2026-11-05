@@ -2484,6 +2484,335 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
 }
 
 #[test]
+fn public_dx11_r8_rg8_render_attachments_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let formats = [
+        (TextureFormat::R8Unorm, [64, 0, 0, 255]),
+        (TextureFormat::Rg8Unorm, [64, 191, 0, 255]),
+    ];
+    for (format, _) in formats {
+        let features = adapter.get_texture_format_features(format);
+        if !features
+            .allowed_usages
+            .contains(TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING)
+        {
+            assert!(
+                !required,
+                "strict FL9_1 hardware lacks the queried {format:?} render-target path: {features:?}"
+            );
+            println!("SKIP: {format:?} lacks queried render-target support: {features:?}");
+            return;
+        }
+        assert!(
+            !features.allowed_usages.contains(TextureUsages::COPY_SRC)
+                && !features
+                    .flags
+                    .contains(TextureFormatFeatureFlags::BLENDABLE),
+            "R8/RG8 render-target projection must remain non-copyable and non-blendable: {features:?}"
+        );
+        println!("Public {format:?} format projection: {features:?}");
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 R8/RG8 render-target test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the FL9_1 projection");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("sample an R8 or RG8 render target"),
+        source: ShaderSource::Wgsl(
+            "struct VertexIn { @location(0) position: vec2f, @location(1) uv: vec2f, }\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }\n\
+             @vertex fn vs(input: VertexIn) -> VertexOut { var out: VertexOut; out.position = vec4f(input.position, 0.5, 1.0); out.uv = input.uv; return out; }\n\
+             @group(0) @binding(7) var source: texture_2d<f32>;\n\
+             @group(0) @binding(42) var source_sampler: sampler;\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(source, source_sampler, input.uv); }"
+                .into(),
+        ),
+    });
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("sparse sampled attachment layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: false },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("sparse sampled attachment pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("sample the narrow-format attachment"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 16,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[
+                    VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 8,
+                        shader_location: 1,
+                    },
+                ],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("point sampler for R8/RG8 attachment"),
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let vertex_data: Vec<u8> = [
+        -1.0f32, -1.0, 0.0, 1.0, 3.0, -1.0, 2.0, 1.0, -1.0, 3.0, 0.0, -1.0,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("fullscreen triangle for R8/RG8 attachment"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map fullscreen triangle")
+        .copy_from_slice(&vertex_data);
+    vertex.unmap();
+
+    let output = device.create_texture(&TextureDescriptor {
+        label: Some("R8/RG8 sampled output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let output_view = output.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("R8/RG8 sampled output readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    for (format, expected) in formats {
+        let source = device.create_texture(&TextureDescriptor {
+            label: Some("R8/RG8 queried render attachment"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let attachment_view = source.create_view(&TextureViewDescriptor {
+            usage: Some(TextureUsages::RENDER_ATTACHMENT),
+            ..Default::default()
+        });
+        let sampled_view = source.create_view(&TextureViewDescriptor {
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            ..Default::default()
+        });
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("R8/RG8 sampled attachment resources"),
+            layout: &bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&sampled_view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("R8/RG8 render, sample and readback commands"),
+        });
+        {
+            let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("clear R8/RG8 render attachment"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &attachment_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color {
+                            r: 0.25,
+                            g: 0.75,
+                            b: 0.5,
+                            a: 1.0,
+                        }),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("sample R8/RG8 attachment"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &output_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &output,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for R8/RG8 attachment sampling");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("R8/RG8 attachment map callback")
+            .expect("map R8/RG8 attachment readback");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped output");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "{format:?} render-target sample at ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: FL9_1 {format:?} attachment clear sampled as {expected:?}; 64/64 pixels matched"
+        );
+    }
+}
+#[test]
 fn public_dx11_stencil_replace_and_compare_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

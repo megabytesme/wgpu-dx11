@@ -201,11 +201,21 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm
         );
+        let sampled_color_target = matches!(
+            desc.format,
+            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Unorm
+        );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
             } else if sampled_upload {
-                wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
+                wgt::TextureUses::COPY_DST
+                    | wgt::TextureUses::RESOURCE
+                    | if sampled_color_target {
+                        wgt::TextureUses::COLOR_TARGET
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
             } else {
                 wgt::TextureUses::COPY_SRC
                     | wgt::TextureUses::COPY_DST
@@ -432,11 +442,20 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm
         );
+        let sampled_color_target = matches!(
+            format,
+            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Unorm
+        );
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
             } else if sampled_upload {
                 wgt::TextureUses::RESOURCE
+                    | if sampled_color_target {
+                        wgt::TextureUses::COLOR_TARGET
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
             } else {
                 wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET
             };

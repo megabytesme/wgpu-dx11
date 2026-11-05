@@ -546,6 +546,8 @@ impl NativeDevice {
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
             DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
             DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => wgt::TextureFormat::Bgra8UnormSrgb,
+            DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
+            DXGI_FORMAT_R8G8_UNORM => wgt::TextureFormat::Rg8Unorm,
             _ => return Err(invalid()),
         };
         if desc.Width == 0
@@ -633,9 +635,9 @@ impl NativeDevice {
                 | DXGI_FORMAT_B5G5R5A1_UNORM
                 | DXGI_FORMAT_B4G4R4A4_UNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
-        ) && !render_target
-            && layers == 1
-            && mip_levels == 1;
+        ) && layers == 1
+            && mip_levels == 1
+            && (!render_target || matches!(format, DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_UNORM));
         let bc1_sampled = format == DXGI_FORMAT_BC1_UNORM
             && !render_target
             && layers == 1
@@ -688,18 +690,19 @@ impl NativeDevice {
             height,
             mip_levels,
             layers,
-            usage: if matches!(
-                format,
-                DXGI_FORMAT_R8_UNORM
-                    | DXGI_FORMAT_R8G8_UNORM
-                    | DXGI_FORMAT_R8G8_SNORM
-                    | DXGI_FORMAT_R16G16_SNORM
-                    | DXGI_FORMAT_B5G6R5_UNORM
-                    | DXGI_FORMAT_B5G5R5A1_UNORM
-                    | DXGI_FORMAT_B4G4R4A4_UNORM
-                    | DXGI_FORMAT_R8G8B8A8_SNORM
-                    | DXGI_FORMAT_BC1_UNORM
-            ) {
+            usage: if !render_target
+                && matches!(
+                    format,
+                    DXGI_FORMAT_R8_UNORM
+                        | DXGI_FORMAT_R8G8_UNORM
+                        | DXGI_FORMAT_R8G8_SNORM
+                        | DXGI_FORMAT_R16G16_SNORM
+                        | DXGI_FORMAT_B5G6R5_UNORM
+                        | DXGI_FORMAT_B5G5R5A1_UNORM
+                        | DXGI_FORMAT_B4G4R4A4_UNORM
+                        | DXGI_FORMAT_R8G8B8A8_SNORM
+                        | DXGI_FORMAT_BC1_UNORM
+                ) {
                 wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::COPY_SRC
