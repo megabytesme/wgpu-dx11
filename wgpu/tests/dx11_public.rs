@@ -2669,3 +2669,241 @@ fn public_dx11_eight_sampled_textures_at_fl91() {
     assert_eq!(views.len(), 8);
     println!("PASS: public FL9_1 shader used all eight sampled textures; core rejected texture 9 and all 64 pixels matched [180, 72, 36, 255]");
 }
+
+#[test]
+fn public_dx11_partial_texture_transfer_roundtrip_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 partial texture transfer test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 partial transfer source"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let mut source_initial = vec![0; 8 * 256];
+    for y in 0..8 {
+        for x in 0..8 {
+            let offset = y * 256 + x * 4;
+            source_initial[offset..offset + 4].copy_from_slice(&[0, 0, 255, 255]);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &source_initial,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(8),
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let upload = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 padded partial upload rows"),
+        size: 512,
+        usage: BufferUsages::COPY_SRC,
+        mapped_at_creation: true,
+    });
+    upload
+        .get_mapped_range_mut(16..24)
+        .expect("map first partial upload row")
+        .copy_from_slice(&[255, 0, 0, 255, 0, 255, 0, 255]);
+    upload
+        .get_mapped_range_mut(272..280)
+        .expect("map second partial upload row")
+        .copy_from_slice(&[255, 255, 0, 255, 255, 255, 255, 255]);
+    upload.unmap();
+
+    let destination = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 partial transfer destination"),
+        size: Extent3d {
+            width: 6,
+            height: 6,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let mut destination_initial = vec![0; 6 * 256];
+    for y in 0..6 {
+        for x in 0..6 {
+            let offset = y * 256 + x * 4;
+            destination_initial[offset..offset + 4].copy_from_slice(&[0, 255, 0, 255]);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &destination_initial,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(6),
+        },
+        Extent3d {
+            width: 6,
+            height: 6,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 partial transfer roundtrip readback"),
+        size: 6 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 partial texture transfer commands"),
+    });
+    encoder.copy_buffer_to_texture(
+        TexelCopyBufferInfo {
+            buffer: &upload,
+            layout: TexelCopyBufferLayout {
+                offset: 16,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+        },
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d { x: 2, y: 3, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d { x: 2, y: 3, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d { x: 3, y: 2, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(6),
+            },
+        },
+        Extent3d {
+            width: 6,
+            height: 6,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for partial texture transfer submission");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("partial texture transfer map callback")
+        .expect("map partial texture transfer readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..6 {
+            for x in 0..6 {
+                let expected = match (x, y) {
+                    (3, 2) => [255, 0, 0, 255],
+                    (4, 2) => [0, 255, 0, 255],
+                    (3, 3) => [255, 255, 0, 255],
+                    (4, 3) => [255, 255, 255, 255],
+                    _ => [0, 255, 0, 255],
+                };
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "partial transfer destination pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 buffer→texture→texture→buffer transfer; padded source rows and nonzero origins produced the expected 2×2 patch while all other destination texels remained green");
+}
