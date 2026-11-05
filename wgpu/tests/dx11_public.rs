@@ -3597,3 +3597,272 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     readback.unmap();
     println!("PASS: public FL9_1 Rg8Snorm and Rgba8Snorm uploads sampled with signed normalization; all 64 pixels matched [192, 63, 160, 255] within ±1");
 }
+
+#[test]
+fn public_dx11_instance_rate_vertex_streams_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 instance-stream test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let unsupported_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 rejected instance_index shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn bad_vs(@builtin(instance_index) instance_id: u32) -> @builtin(position) vec4f { return vec4f(f32(instance_id), 0.0, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+                .into(),
+        ),
+    });
+    expect_validation_error(&device, "instance_index vertex input", || {
+        drop(device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 rejected instance_index pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &unsupported_shader,
+                entry_point: Some("bad_vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &unsupported_shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        }));
+    });
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 per-instance attribute shader"),
+        source: ShaderSource::Wgsl(
+            "struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec4f };\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(1) offset: vec2f, @location(2) tint: vec4f) -> VertexOut { return VertexOut(vec4f(position * 0.3 + offset, 0.5, 1.0), tint); }\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return input.color; }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 per-instance attribute pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[
+                Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                }),
+                Some(VertexBufferLayout {
+                    array_stride: 24,
+                    step_mode: VertexStepMode::Instance,
+                    attributes: &[
+                        VertexAttribute {
+                            format: VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 1,
+                        },
+                        VertexAttribute {
+                            format: VertexFormat::Float32x4,
+                            offset: 8,
+                            shader_location: 2,
+                        },
+                    ],
+                }),
+            ],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 per-instance output"),
+        size: Extent3d {
+            width: 32,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let positions: Vec<u8> = [-1.0f32, -1.0, 1.0, -1.0, 0.0, 1.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let instances: Vec<u8> = [
+        -0.65f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.65, 0.0, 1.0, 1.0, 0.0,
+        1.0,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 per-vertex triangle positions"),
+        size: positions.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map per-vertex positions")
+        .copy_from_slice(&positions);
+    vertex_buffer.unmap();
+    let instance_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 per-instance offsets and colors"),
+        size: instances.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    instance_buffer
+        .get_mapped_range_mut(..)
+        .expect("map per-instance offsets and colors")
+        .copy_from_slice(&instances);
+    instance_buffer.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 per-instance readback"),
+        size: 16 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 per-instance commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 per-instance pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_vertex_buffer(1, instance_buffer.slice(..));
+        pass.draw(0..3, 1..3);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(16),
+            },
+        },
+        Extent3d {
+            width: 32,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for per-instance draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("per-instance readback callback")
+        .expect("map per-instance readback");
+    let mut green = 0;
+    let mut yellow = 0;
+    let mut blue = 0;
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..16 {
+            for x in 0..32 {
+                let offset = y * 256 + x * 4;
+                match &data[offset..offset + 4] {
+                    [0, 255, 0, 255] => green += 1,
+                    [255, 255, 0, 255] => yellow += 1,
+                    [0, 0, 255, 255] => blue += 1,
+                    pixel => panic!("unexpected per-instance pixel ({x}, {y}): {pixel:?}"),
+                }
+            }
+        }
+    }
+    readback.unmap();
+    assert!(green > 0, "the second instance must render green");
+    assert!(yellow > 0, "the third instance must render yellow");
+    assert!(blue > 0, "the untouched background must remain blue");
+    println!("PASS: public FL9_1 emulated instance-rate streams and first_instance=1; green={green}, yellow={yellow}, blue={blue}; core rejected instance_index");
+}
