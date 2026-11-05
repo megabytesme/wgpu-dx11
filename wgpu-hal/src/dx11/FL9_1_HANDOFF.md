@@ -1112,20 +1112,27 @@ full core/HAL audit and lifetime/device-loss review. Normal adapter enumeration
 and surface capabilities remain disabled pending truthful production reporting
 and safe Present scheduling.
 
-Current uncommitted audit work additionally drains partial GPU work after a
-command replay error by ending/flushing an event query and waiting before HAL
-returns the original error. Strict RTX 3090 Ti forced-FL9_1 HAL and core suites
-passed (337/337 and 81/81), DX12 passed 77/77, and ordinary adapter isolation
-passed 1/1. The exact projection fixture now verifies core rejects D1/D3
-textures, D2Array/Cube/CubeArray views, and DepthOnly/StencilOnly D24S8 render
-views before HAL. The 1D/3D numeric limits remain 2048/256 while their
-downlevel shape flags are false. These changes are
-uncommitted at `e2a8f153d`; details and exact commands are in the latest entry
-of `FL9_1_PROGRESS.md`.
+The partial command replay lifetime fix and the exact-projection D1/D3, array,
+cube and D24S8 aspect-view rejection cases were committed as
+`e32a29732e672cc96e9e2b9dbff3474425e9ae66`.
+Strict RTX 3090 Ti forced-FL9_1 HAL/core suites passed (337/337 and 81/81),
+DX12 passed 77/77 and ordinary adapter isolation passed 1/1. If the event
+query itself fails due to actual device removal, safe retention after an
+unqueryable device has not been established.
 
-If the event query itself fails due to actual device removal, safe retention
-after an unqueryable device has not been established. Continue the
-failure-path/lifetime review. The production adapter and surface paths are
-still absent, and the known synchronous HWND `Present` reentrancy deadlock
-remains a blocker; keep normal enumeration and public surface capabilities
-disabled.
+The current uniform projection checkpoint exposes six uniform bindings per
+shader stage, a conservative fit within thirteen aggregate private HAL slots.
+The exact selected-device core projection rejects seven fragment uniforms
+before HAL. A forced-FL9_1 core draw binds two independent sparse fragment
+uniform buffers and verified all 64 sampled pixels with both values applied.
+The latest strict core suite passed 81/81, HAL projection tests passed 4/4,
+the full strict HAL suite passed 337/337, DX12 passed 77/77, ordinary
+enumeration isolation passed 1/1, and Clippy/format/diff checks passed. There
+were 148 selected-hardware reports in the HAL log and six explicit nested
+shader-render skips after expected FXC rejection. See the latest progress
+entry for commands and outputs.
+
+The production adapter remains absent, and the known synchronous HWND
+`Present` reentrancy deadlock remains unresolved. Keep normal enumeration and
+public surface capabilities disabled until those architectural and full
+contract audit gates are closed.

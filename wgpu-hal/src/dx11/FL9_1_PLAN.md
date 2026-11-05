@@ -140,7 +140,11 @@ below is met. This plan does not claim WebGPU conformance.
    fixture, including selected-device format reports and explicit unsupported
    1D/3D shape gates. It is not connected to ordinary adapter enumeration.
    Logical binding indices remain capped by the wgpu index limit while actual
-   resource counts use separate backend limits. The aggregate BC feature stays
+   resource counts use separate backend limits. The projection exposes six
+   uniform buffers per shader stage so disjoint vertex/fragment bindings fit
+   the shared thirteen-slot HAL allocator; strict core GPU coverage exercises
+   two independent projected uniforms and rejects seven in one stage. The
+   aggregate BC feature stays
    withheld because only BC1 is implemented. Continue the descriptor and
    feature/format audit before treating the projection as a public report.
 6. Complete HWND surface lifecycle while preserving CoreWindow; the private

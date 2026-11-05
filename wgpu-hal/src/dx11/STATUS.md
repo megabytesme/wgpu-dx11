@@ -282,7 +282,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
 - Up to eight groups with thirteen static or dynamic uniform slots, eight sampled
-  textures and sixteen samplers in total.
+  textures and sixteen samplers in total. The internal wgpu capability
+  projection exposes six uniforms per shader stage, ensuring disjoint vertex
+  and fragment bindings fit the shared thirteen-slot allocator.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
 - NonFiltering sampler layouts accept samplers with nearest minification,

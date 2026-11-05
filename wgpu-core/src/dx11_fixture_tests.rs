@@ -265,6 +265,41 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (device, queue) = global
         .adapter_request_device(adapter_id, &descriptor, None, None)
         .expect("request device with unmodified selected-device projection");
+    let over_limit_uniforms: Vec<_> = (0..7)
+        .map(|binding| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        })
+        .collect();
+    let (over_limit_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&over_limit_uniforms),
+        },
+        None,
+    );
+    assert!(matches!(
+        error,
+        Some(binding_model::CreateBindGroupLayoutError::TooManyBindings(
+            binding_model::BindingTypeMaxCountError {
+                kind: binding_model::BindingTypeMaxCountErrorKind::UniformBuffers,
+                limit: 6,
+                count: 7,
+                ..
+            }
+        ))
+    ));
+    std::println!(
+        "PASS: core rejected seven fragment uniform bindings against the projected limit of six"
+    );
+    global.bind_group_layout_drop(over_limit_layout);
     let oversized_buffer = crate::resource::BufferDescriptor {
         label: None,
         size: capabilities.limits.max_buffer_size + 1,
@@ -1697,6 +1732,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Uniform5,
         VertexCase::Uniform12,
         VertexCase::Uniform20,
+        VertexCase::TwoUniformBindings,
     ] {
         render_triangle(&global, device, queue, case);
     }
@@ -2827,6 +2863,7 @@ enum VertexCase {
     Uniform5,
     Uniform12,
     Uniform20,
+    TwoUniformBindings,
     Bc1,
     NpotClampedPairs,
     ViewportOutsideTarget,
@@ -2938,6 +2975,7 @@ fn render_triangle(
         VertexCase::Uniform5 => Some(5),
         VertexCase::Uniform12 => Some(12),
         VertexCase::Uniform20 => Some(20),
+        VertexCase::TwoUniformBindings => Some(16),
         _ => None,
     };
     let dynamic_uniform = case == VertexCase::Uniform4;
@@ -3429,6 +3467,18 @@ fn render_triangle(
             count: None,
         });
     }
+    if case == VertexCase::TwoUniformBindings {
+        group_entries.push(wgt::BindGroupLayoutEntry {
+            binding: 23,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        });
+    }
     let (group_layout, error) = global.device_create_bind_group_layout(
         device,
         &binding_model::BindGroupLayoutDescriptor {
@@ -3455,12 +3505,40 @@ fn render_triangle(
         for byte in data[offset..offset + size as usize].chunks_exact_mut(4) {
             byte.copy_from_slice(&1.0f32.to_ne_bytes());
         }
+        if case == VertexCase::TwoUniformBindings {
+            for (component, value) in [0.5f32, 0.5, 0.5, 1.0].into_iter().enumerate() {
+                let offset = offset + component * 4;
+                data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+            }
+        }
         if size == 5 {
             data[offset + 4] = 0xa7;
         }
         global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
         buffer
     });
+    let uniform_b = if case == VertexCase::TwoUniformBindings {
+        let (buffer, error) = global.device_create_buffer(
+            device,
+            &wgt::BufferDescriptor {
+                label: Some(Cow::Borrowed("second independent uniform binding")),
+                size: 768,
+                usage: wgt::BufferUsages::UNIFORM | wgt::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(error.is_none(), "second uniform buffer creation: {error:?}");
+        let mut data = vec![0u8; 768];
+        for (component, value) in [0.5f32, 0.5, 0.5, 1.0].into_iter().enumerate() {
+            let offset = 256 + component * 4;
+            data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+        global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
+        Some(buffer)
+    } else {
+        None
+    };
     let mut group_resources = vec![
         binding_model::BindGroupEntry {
             binding: 7,
@@ -3543,6 +3621,16 @@ fn render_triangle(
             }),
         });
     }
+    if let Some(buffer) = uniform_b {
+        group_resources.push(binding_model::BindGroupEntry {
+            binding: 23,
+            resource: binding_model::BindingResource::Buffer(binding_model::BufferBinding {
+                buffer,
+                offset: 256,
+                size: Some(16),
+            }),
+        });
+    }
     let (group, error) = global.device_create_bind_group(
         device,
         &binding_model::BindGroupDescriptor {
@@ -3603,6 +3691,8 @@ fn render_triangle(
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
     } else if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else if case == VertexCase::TwoUniformBindings {
+        "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint_a: vec4f; @group(0) @binding(23) var<uniform> tint_b: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint_a * tint_b; }"
     } else if case == VertexCase::Uniform4 || case == VertexCase::Uniform5 {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: f32; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
     } else if case == VertexCase::Uniform12 {
@@ -4857,6 +4947,9 @@ fn render_triangle(
         if let Some(buffer) = uniform {
             global.buffer_drop(buffer);
         }
+        if let Some(buffer) = uniform_b {
+            global.buffer_drop(buffer);
+        }
         global.buffer_drop(readback);
         return;
     }
@@ -4917,6 +5010,18 @@ fn render_triangle(
                     &pixels[offset..offset + 4],
                     &[0, 0, 255, 255],
                     "zero sample mask pixel ({x}, {y})"
+                );
+                continue;
+            }
+            if case == VertexCase::TwoUniformBindings {
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    if x < 4 {
+                        &[64, 0, 0, 255]
+                    } else {
+                        &[0, 64, 0, 255]
+                    },
+                    "two-uniform output pixel ({x}, {y})"
                 );
                 continue;
             }
@@ -5096,6 +5201,9 @@ fn render_triangle(
         global.buffer_drop(buffer);
     }
     if let Some(buffer) = uniform {
+        global.buffer_drop(buffer);
+    }
+    if let Some(buffer) = uniform_b {
         global.buffer_drop(buffer);
     }
     global.buffer_drop(readback);

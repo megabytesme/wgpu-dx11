@@ -4139,7 +4139,80 @@ rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/command.rs wgpu-hal/src/d
 git diff --check
 ```
 
-The changes remain uncommitted at HEAD `e2a8f153d6ba725b76b6b01fb81e27bd88506ec3`.
+The checkpoint was committed as `e32a29732e672cc96e9e2b9dbff3474425e9ae66`.
+Continue the failure-path/device-loss audit and the truthful
+production adapter work. Normal enumeration and surface capabilities remain
+disabled; synchronous HWND `Present` reentrancy is still unresolved.
+
+## Checkpoint — run multiple uniforms through the exact core projection
+
+The private HAL already allocates thirteen uniform slots across all stages and
+bind groups, but the internal FL9_1 projection exposed only one per shader
+stage. The projection now exposes six per stage: the worst-case union of six
+vertex-only and six fragment-only bindings is twelve, within the backend's
+thirteen-slot cap. The two-stage count remains conservative and avoids
+advertising a layout that the shared allocator would reject.
+
+The controlled fixture adds two independent fragment uniform buffers at sparse
+bindings 17 and 23. Each binds a nonzero 256-byte-aligned range with a distinct
+native constant-buffer slot; both values multiply the sampled texture. Strict
+RTX 3090 Ti readback at requested/actual FL9_1 matched all 64 pixels: red-side
+pixels were `[64, 0, 0, 255]`, green-side pixels were `[0, 64, 0, 255]`.
+The exact-projection core test also creates a seven-uniform fragment layout
+and verifies core rejects it against the projected limit of six before HAL.
+Ordinary D3D11 adapter enumeration remains empty.
+
+Verification on 2026-11-05 used Rust 1.93.1 and the Visual Studio x64
+environment on `Ben-Desktop` (`C:\dev\personal\wgpu`, 32 Cargo jobs):
+
+- The strict core offscreen case passed on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested/actual FL9_1. Its two independent
+  fragment uniforms changed the sampled output; all 64 pixels matched the
+  red-side `[64, 0, 0, 255]` and green-side `[0, 64, 0, 255]` expectations.
+- The exact selected-device projection test passed 1/1 and reported that core
+  rejected seven fragment uniform bindings against the limit of six before
+  HAL. This test requested a core device with the unmodified projection.
+- The complete strict core fixture passed 81/81 with no missing-hardware skips;
+  it included the two-uniform draw/readback. The exact-projection test above was
+  run separately as well.
+- HAL projection tests passed 4/4. The physical query reported the six-uniform
+  stage cap on the forced FL9_1 RTX 3090 Ti; optional format and NPOT queries
+  remained separate from implementation guarantees.
+- The strict HAL suite passed 337/337. 148 test executions printed the
+  selected physical adapter; six nested GPU draw experiments explicitly
+  skipped rendering after expected FXC rejection, and are not GPU passes.
+- DX12 core regression passed 77/77; ordinary D3D11 adapter isolation passed
+  1/1.
+- HAL and core Clippy passed. Existing warnings remain: nine HAL warnings in
+  old tests/untouched code and three core fixture warnings; the new fixture
+  introduced no lint warning. Targeted rustfmt and `git diff --check` passed.
+- The first compile found a test-only `Option<u64>` versus `NonZeroU64`
+  mismatch; the `BufferBinding` size was corrected. One test invocation
+  outside the developer prompt could not find `link.exe`; rerunning through
+  `VsDevCmd.bat` succeeded. The prompt still prints `Error: Unknown error`.
+
+Commands (run inside the Visual Studio x64 developer environment):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+This capability increment is ready for a focused checkpoint. Public adapter
+enumeration remains disabled.
 Continue the failure-path/device-loss audit and the truthful production
 adapter work. Normal adapter enumeration and public surface capabilities remain
 disabled; synchronous HWND `Present` reentrancy is still unresolved.

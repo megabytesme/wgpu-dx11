@@ -315,7 +315,7 @@ impl Capabilities {
         limits.max_dynamic_uniform_buffers_per_pipeline_layout = 2;
         limits.max_sampled_textures_per_shader_stage = self.backend.sampled_textures_per_group;
         limits.max_samplers_per_shader_stage = self.backend.samplers_per_group;
-        limits.max_uniform_buffers_per_shader_stage = 1;
+        limits.max_uniform_buffers_per_shader_stage = self.backend.uniform_bindings_total / 2;
         limits.max_uniform_buffer_binding_size = 32 * 16;
         limits.max_vertex_buffers = self.backend.vertex_buffers;
         limits.max_buffer_size = u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT;
@@ -757,7 +757,7 @@ mod tests {
         assert_eq!(exposed.limits.max_bindings_per_bind_group, 1000);
         assert_eq!(exposed.limits.max_sampled_textures_per_shader_stage, 8);
         assert_eq!(exposed.limits.max_samplers_per_shader_stage, 16);
-        assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 1);
+        assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 6);
         assert_eq!(exposed.limits.max_uniform_buffer_binding_size, 512);
         assert_eq!(exposed.limits.max_color_attachments, 1);
         assert_eq!(exposed.limits.max_color_attachment_bytes_per_sample, 8);
