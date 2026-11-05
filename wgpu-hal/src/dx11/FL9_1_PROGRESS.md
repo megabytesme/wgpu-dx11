@@ -4319,7 +4319,64 @@ rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
 git diff --check
 ```
 
-The projection, core test and documentation changes are verified in the
-working tree and remain uncommitted under the current repository instructions.
-Next continue auditing core-legal pipeline/resource combinations against the
-private HAL, and keep ordinary adapter and surface exposure disabled.
+The projection, core test and documentation changes were committed as
+`8d19d14c9`. Next continue auditing core-legal pipeline/resource combinations
+against the private HAL, and keep ordinary adapter and surface exposure
+disabled.
+
+## Checkpoint — execute a two-group uniform/texture pipeline through core
+
+The controlled core fixture now has a `MultiGroupUniformBindings` case. It
+creates a group-0 layout containing only a fragment-visible uniform at sparse
+binding 17, and a group-1 layout containing a filtering sampler at binding 42
+and sampled texture at binding 7. WGSL uses those exact logical identities;
+the pipeline layout carries both group layouts, and the render pass binds the
+two groups independently. The uniform halves the red channel of the texture.
+Strict forced-FL9_1 readback checks the full 8x8 target: the left half is
+`[128, 0, 0, 255]` within one UNORM unit, and the right half is
+`[0, 255, 0, 255]`. This establishes one two-group core-to-HAL path, not every
+combination or the full eight-group limit. Ordinary D3D11 enumeration remains
+empty.
+
+Verification on 2026-11-05 used Rust 1.93.1 and Visual Studio x64 on
+`Ben-Desktop`, with `-j16` and strict hardware mode for D3D11 runs:
+
+- Targeted core fixture passed 1/1 on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested FL9_1 and actual L9_1. The new
+  multi-group draw and all existing fixture cases rendered/read back as
+  expected.
+- Full controlled core fixture suite passed 81/81, including the real hardware
+  render. The selected-device projection test passed 1/1 and rejected three
+  dynamic uniforms against its projected limit of two. The zero-public-adapter
+  isolation test passed 1/1.
+- Full private D3D11 HAL suite passed 337/337 under strict mode. Some tests
+  intentionally report nested shader-render skips after the expected FXC
+  rejection; these are unsupported-shader negatives, not successful GPU
+  executions. The suite's positive GPU cases reported the physical adapter and
+  FL9_1.
+- DX12 core regression passed 77/77. D3D11 HAL build passed. Core and HAL
+  Clippy completed with existing warnings only: three core fixture warnings,
+  seven `single_range_in_vec_init` test warnings in `hal_device.rs`, one
+  `items_after_test_module` warning in `swapchain.rs`, and one `needless_borrow`
+  warning in `fl9_texel_load.rs`. No warning points at the new fixture code.
+- Rustfmt and `git diff --check` passed.
+
+Commands (inside the Visual Studio x64 environment):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 build --offline -j16 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```

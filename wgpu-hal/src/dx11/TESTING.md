@@ -460,6 +460,14 @@ is fragment-visible and uses 256/512. Both alter checked readback pixels. The
 unmodified-projection test separately verifies that core rejects three dynamic
 uniform entries against the reported limit of two.
 
+The same strict core fixture includes a two-group case: a fragment uniform at
+group 0/binding 17 tints a sampled RGBA8 texture and filtering sampler at
+group 1/bindings 7 and 42. The draw checks all 64 output pixels, proving that
+the selected core pipeline layout, shader resource map and runtime HAL group
+indices agree for this arrangement. This test does not claim all eight private
+groups or all combinations of aggregate group limits are supported through a
+public adapter.
+
 The private HWND path can be checked with a hidden desktop window using
 `cargo test -p wgpu-hal --lib --no-default-features --features dx11
 fl91_hidden_hwnd_surface -- --nocapture`. With strict hardware mode enabled,

@@ -224,6 +224,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         .expect("selected FL9_1 device capability projection");
     assert!(features.is_empty());
     assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
+    assert!(capabilities.limits.max_bind_groups >= 2);
     assert_eq!(
         capabilities
             .limits
@@ -1780,6 +1781,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::TwoUniformBindings,
         VertexCase::VertexFragmentUniformBindings,
         VertexCase::DynamicVertexFragmentUniformBindings,
+        VertexCase::MultiGroupUniformBindings,
     ] {
         render_triangle(&global, device, queue, case);
     }
@@ -2913,6 +2915,7 @@ enum VertexCase {
     TwoUniformBindings,
     VertexFragmentUniformBindings,
     DynamicVertexFragmentUniformBindings,
+    MultiGroupUniformBindings,
     Bc1,
     NpotClampedPairs,
     ViewportOutsideTarget,
@@ -3026,7 +3029,8 @@ fn render_triangle(
         VertexCase::Uniform20 => Some(20),
         VertexCase::TwoUniformBindings
         | VertexCase::VertexFragmentUniformBindings
-        | VertexCase::DynamicVertexFragmentUniformBindings => Some(16),
+        | VertexCase::DynamicVertexFragmentUniformBindings
+        | VertexCase::MultiGroupUniformBindings => Some(16),
         _ => None,
     };
     let dynamic_stage_uniforms = case == VertexCase::DynamicVertexFragmentUniformBindings;
@@ -3465,30 +3469,35 @@ fn render_triangle(
         "FL9_1 core validation must reject comparison samplers before HAL: {comparison_error:?}"
     );
     global.sampler_drop(comparison_sampler);
-    let mut group_entries = vec![
-        wgt::BindGroupLayoutEntry {
-            binding: 7,
-            visibility: sampled_visibility,
-            ty: wgt::BindingType::Texture {
-                sample_type: wgt::TextureSampleType::Float {
-                    filterable: !unfilterable_float,
+    let multi_group = case == VertexCase::MultiGroupUniformBindings;
+    let mut group_entries = if multi_group {
+        Vec::new()
+    } else {
+        vec![
+            wgt::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: sampled_visibility,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float {
+                        filterable: !unfilterable_float,
+                    },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
                 },
-                view_dimension: wgt::TextureViewDimension::D2,
-                multisampled: false,
+                count: None,
             },
-            count: None,
-        },
-        wgt::BindGroupLayoutEntry {
-            binding: 42,
-            visibility: sampled_visibility,
-            ty: wgt::BindingType::Sampler(if non_filtering {
-                wgt::SamplerBindingType::NonFiltering
-            } else {
-                wgt::SamplerBindingType::Filtering
-            }),
-            count: None,
-        },
-    ];
+            wgt::BindGroupLayoutEntry {
+                binding: 42,
+                visibility: sampled_visibility,
+                ty: wgt::BindingType::Sampler(if non_filtering {
+                    wgt::SamplerBindingType::NonFiltering
+                } else {
+                    wgt::SamplerBindingType::Filtering
+                }),
+                count: None,
+            },
+        ]
+    };
     if npot_valid_pairs {
         group_entries.extend([
             wgt::BindGroupLayoutEntry {
@@ -3552,6 +3561,38 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group layout: {error:?}");
+    let secondary_group_layout = if multi_group {
+        let entries = [
+            wgt::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgt::BindGroupLayoutEntry {
+                binding: 42,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ];
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: Some(Cow::Borrowed("second FL9_1 resource group")),
+                entries: Cow::Borrowed(&entries),
+            },
+            None,
+        );
+        assert!(error.is_none(), "second bind group layout: {error:?}");
+        Some(layout)
+    } else {
+        None
+    };
     let uniform = uniform_size.map(|size| {
         let (buffer, error) = global.device_create_buffer(
             device,
@@ -3574,6 +3615,7 @@ fn render_triangle(
             VertexCase::TwoUniformBindings
                 | VertexCase::VertexFragmentUniformBindings
                 | VertexCase::DynamicVertexFragmentUniformBindings
+                | VertexCase::MultiGroupUniformBindings
         ) {
             let values = if case == VertexCase::TwoUniformBindings {
                 [0.5f32, 0.5, 0.5, 1.0]
@@ -3619,16 +3661,20 @@ fn render_triangle(
     } else {
         None
     };
-    let mut group_resources = vec![
-        binding_model::BindGroupEntry {
-            binding: 7,
-            resource: binding_model::BindingResource::TextureView(sample_view),
-        },
-        binding_model::BindGroupEntry {
-            binding: 42,
-            resource: binding_model::BindingResource::Sampler(sampler),
-        },
-    ];
+    let mut group_resources = if multi_group {
+        Vec::new()
+    } else {
+        vec![
+            binding_model::BindGroupEntry {
+                binding: 7,
+                resource: binding_model::BindingResource::TextureView(sample_view),
+            },
+            binding_model::BindGroupEntry {
+                binding: 42,
+                resource: binding_model::BindingResource::Sampler(sampler),
+            },
+        ]
+    };
     let (npot_pair_texture, npot_pair_view, npot_pair_sampler) = if npot_valid_pairs {
         let npot_extent = wgt::Extent3d {
             width: 3,
@@ -3721,6 +3767,29 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "bind group creation: {error:?}");
+    let secondary_group = secondary_group_layout.map(|layout| {
+        let entries = [
+            binding_model::BindGroupEntry {
+                binding: 7,
+                resource: binding_model::BindingResource::TextureView(sample_view),
+            },
+            binding_model::BindGroupEntry {
+                binding: 42,
+                resource: binding_model::BindingResource::Sampler(sampler),
+            },
+        ];
+        let (group, error) = global.device_create_bind_group(
+            device,
+            &binding_model::BindGroupDescriptor {
+                label: Some(Cow::Borrowed("second FL9_1 resource group")),
+                layout,
+                entries: Cow::Borrowed(&entries),
+            },
+            None,
+        );
+        assert!(error.is_none(), "second bind group creation: {error:?}");
+        group
+    });
     if non_filtering {
         let linear_desc = resource::SamplerDescriptor {
             mag_filter: wgt::FilterMode::Linear,
@@ -3771,6 +3840,8 @@ fn render_triangle(
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
     } else if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
+    } else if multi_group {
+        "@group(1) @binding(7) var image: texture_2d<f32>; @group(1) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
     } else if stage_uniforms {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> vertex_scale: vec4f; @group(0) @binding(23) var<uniform> tint: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p.x * vertex_scale.x, p.y, p.z, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
     } else if case == VertexCase::TwoUniformBindings {
@@ -3800,11 +3871,16 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "shader creation: {error:?}");
+    let bind_group_layouts = if let Some(secondary) = secondary_group_layout {
+        vec![Some(group_layout), Some(secondary)]
+    } else {
+        vec![Some(group_layout)]
+    };
     let (layout, error) = global.device_create_pipeline_layout(
         device,
         &binding_model::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: Cow::Borrowed(&[Some(group_layout)]),
+            bind_group_layouts: Cow::Borrowed(&bind_group_layouts),
             immediate_size: 0,
         },
         None,
@@ -4865,6 +4941,11 @@ fn render_triangle(
     global
         .render_pass_set_bind_group(&mut pass, 0, Some(group), dynamic_offsets)
         .unwrap();
+    if let Some(group) = secondary_group {
+        global
+            .render_pass_set_bind_group(&mut pass, 1, Some(group), &[])
+            .unwrap();
+    }
     if viewport_outside_target {
         global
             .render_pass_set_viewport(&mut pass, -1.0, 0.0, 8.0, 8.0, 0.0, 1.0)
@@ -5116,6 +5197,21 @@ fn render_triangle(
                 }
                 continue;
             }
+            if multi_group {
+                let expected = if x < 4 {
+                    [128u8, 0, 0, 255]
+                } else {
+                    [0u8, 255, 0, 255]
+                };
+                for (actual, expected) in pixels[offset..offset + 4].iter().zip(expected) {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "multi-group uniform pixel ({x}, {y}): {:?}",
+                        &pixels[offset..offset + 4]
+                    );
+                }
+                continue;
+            }
             if case == VertexCase::TwoUniformBindings {
                 assert_eq!(
                     &pixels[offset..offset + 4],
@@ -5271,7 +5367,13 @@ fn render_triangle(
     global.pipeline_layout_drop(layout);
     global.shader_module_drop(shader);
     global.bind_group_drop(group);
+    if let Some(group) = secondary_group {
+        global.bind_group_drop(group);
+    }
     global.bind_group_layout_drop(group_layout);
+    if let Some(layout) = secondary_group_layout {
+        global.bind_group_layout_drop(layout);
+    }
     global.sampler_drop(sampler);
     if let Some(sampler) = npot_pair_sampler {
         global.sampler_drop(sampler);

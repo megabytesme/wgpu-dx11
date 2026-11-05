@@ -31,8 +31,11 @@ below is met. This plan does not claim WebGPU conformance.
    Validate format support and restrict unsupported native state.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
-   uniform offsets have restricted private coverage. Each feature needs positive
-   GPU and negative tests. Non-indexed line lists and line strips now have a
+   uniform offsets have restricted private coverage. A controlled core test
+   now exercises one two-group pipeline (uniform in group 0, sampled resources
+   in group 1); broader aggregate group layouts and transitions remain to be
+   audited. Each feature needs positive GPU and negative tests. Non-indexed
+   line lists and line strips now have a
    bounded private FL9_1 implementation with strict GPU readback and the
    controlled core fixture verifies both through core command recording and
    readback. Indexed Uint16/Uint32 line lists now preserve line pairs through

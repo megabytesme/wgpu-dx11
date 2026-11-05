@@ -287,7 +287,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   and fragment bindings fit the shared thirteen-slot allocator. It caps
   dynamic uniforms at two per pipeline layout; the exact core projection
   rejects three, and strict core readback exercises two simultaneously across
-  vertex and fragment stages with distinct offsets.
+  vertex and fragment stages with distinct offsets. A controlled core draw
+  also places a fragment uniform in group 0 and sampled resources in group 1;
+  this verifies one supported two-group combination, not the entire eight-group
+  aggregate limit.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
 - NonFiltering sampler layouts accept samplers with nearest minification,
