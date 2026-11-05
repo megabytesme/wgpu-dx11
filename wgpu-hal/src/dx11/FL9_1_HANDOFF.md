@@ -1712,12 +1712,15 @@ unknowns for historical FL9_1 and ARM32.
 
 ## Follow-up — query-gated B5G6R5 attachment
 
-The current working increment adds selected-query-gated B5G6R5 render-target
-usage behind `TEXTURE_FORMAT_16BIT_PACKED`. A strict public FL9_1 draw into
-the packed target, followed by sampling and RGBA8 readback, passed on the RTX
-3090 Ti; all 64 pixels matched within one UNORM code. The capability projection
-continues to omit blending and copy-source usage. Exact query masks, the
-initial native-whitelist failure and its fix, and the targeted test commands
-are recorded in `FL9_1_PROGRESS.md`. Run the full regression and lint set
-before checkpointing. Continue the broader public core/HAL capability audit;
-historical FL9_1 and ARM32 behavior remain unverified.
+Code commit: `4b013795f` (`dx11: enable query-gated RGB565 render attachments`).
+
+Selected-query-gated B5G6R5 color-attachment usage is now exposed behind
+`TEXTURE_FORMAT_16BIT_PACKED`. A strict public FL9_1 draw into the packed
+target, followed by sampling and RGBA8 readback, passed on the RTX 3090 Ti;
+all 64 pixels matched within one UNORM code. The selected query included
+`RENDER_TARGET` and `BLENDABLE`; the public projection intentionally omits
+blendability and copy-source use. The strict private HAL suite passed 357/357,
+public D3D11 25/25, the controlled core fixture 1/1 and DX12 core 86/86.
+HAL/core/public Clippy passed; existing warnings are recorded in
+`FL9_1_PROGRESS.md`. Continue the broader core/HAL capability audit.
+Historical FL9_1 and ARM32 behavior remain unverified.

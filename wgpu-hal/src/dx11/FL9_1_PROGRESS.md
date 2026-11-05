@@ -6391,6 +6391,8 @@ ARM32 remain unverified.
 
 ## Follow-up — query-gated B5G6R5 color attachment
 
+Code checkpoint: `4b013795f` (`dx11: enable query-gated RGB565 render attachments`).
+
 Extended the selected-device color-attachment subset to packed B5G6R5. The
 capability predicate requires the existing `TEXTURE_FORMAT_16BIT_PACKED`
 support, the format's `TEXTURE2D` query, the backend color-target path and a
@@ -6419,6 +6421,11 @@ existing HAL warnings and one existing core warning; public Clippy was clean.
 Changed-file rustfmt and `git diff --check` passed. `VsDevCmd.bat` continues to
 print its existing `Unknown error` banner while successfully configuring
 MSVC. Historical FL9_1 devices and ARM32 remain unverified.
+
+The full public suite initially found the older packed-format upload test
+still asserting that RGB565 could never be a render target. It now requires
+render-target usage for RGB565, keeps RGB5A1/RGBA4 sampled-upload-only, and
+continues to assert no copy-source use. The corrected full suite passed.
 
 Exact verification commands, using rustc/cargo 1.93.1:
 
