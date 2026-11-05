@@ -5493,3 +5493,44 @@ The full HAL/public/core suites were not rerun for this isolated regression.
 Continue the selected shader/core/HAL audit and the HWND presentation
 scheduling investigation. Historical FL9_1 hardware and ARM32 UWP remain
 unverified.
+
+## Checkpoint — required FL9_1 sRGB color formats — `a9f46afe1`
+
+The selected-format model now treats RGBA8_SRGB and BGRA8_SRGB as FL9_1
+required formats while retaining independent positive `CheckFormatSupport`
+gates. The backend routes their typed DXGI formats through the existing
+single-mip texture upload, sampled SRV, color-target RTV, texture readback and
+copy paths. Public format reporting exposes only usages and filter/blend flags
+reported for the selected format and already implemented by the backend. A
+stale HAL negative test was changed to keep testing rejection with Rgba16Float;
+the two newly supported sRGB formats are no longer expected to fail creation.
+
+Strict hardware validation used Rust 1.93.1 and Visual Studio 2022 x64. The
+selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`)
+was a physical adapter (`software=false`) and explicitly requested and
+returned FL9_1. `CheckFormatSupport` returned `0x112ef3e0` for each sRGB format.
+Public readback decoded uploaded sRGB texels to 128/128 expected linear pixels
+`[55, 13, 134, 255]`; rendering linear `[0.5, 0.25, 1.0, 1.0]` into RGBA8_SRGB
+and BGRA8_SRGB encoded 128/128 expected pixels, including the correct channel
+order. No hardware test skipped. The dedicated public test checks single-mip
+paths; no sRGB mip-chain execution case has run, and this modern device does
+not establish historical-driver behavior.
+
+Verification:
+
+- `cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx11`: passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1`: 346 passed, 0 failed, 0 ignored. The first run exposed the stale sRGB rejection assertion (345 passed, 1 failed); after correcting that test, the full run passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 17 passed, 0 failed, 0 ignored, all physical FL9_1 adapter cases.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1`: 89 passed, 0 failed, 0 ignored.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1`: 1 passed; core exposed the one physical FL9_1 adapter in the explicitly enabled DX11 configuration.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1`: 85 passed, 0 failed, 0 ignored.
+- HAL Clippy passed with nine pre-existing warnings in unrelated test, swapchain and texel-load proof code. Public `wgpu` test Clippy passed without warnings. Changed-file rustfmt and `git diff --check` passed.
+
+One early `rustfmt` invocation omitted the crate edition and could not parse
+the repository's existing Rust 2021 C-string literal; the changed files pass
+when checked with `--edition 2021`. One initial core test command omitted the
+`wgsl` feature and failed to compile its WGSL-based unit tests; the corrected
+command above passed. Neither issue required a product-code change. Historical
+FL9_1 hardware, ARM32 UWP and the existing public HWND presentation scheduler
+remain unverified or unresolved; continue the independent format and
+core/HAL-contract audit.
