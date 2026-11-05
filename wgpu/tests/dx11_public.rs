@@ -2082,6 +2082,417 @@ fn public_dx11_stencil_replace_and_compare_at_fl91() {
 }
 
 #[test]
+fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 D24S8 transition test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    expect_validation_error(&device, "sampled D24S8 texture", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported sampled FL9_1 D24S8 texture"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth24PlusStencil8,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        }));
+    });
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 D24S8 transition shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs_near(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.25, 1.0); }\n\
+             @vertex fn vs_far(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.75, 1.0); }\n\
+             @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 D24S8 transition color target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let depth_stencil = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 D24S8 transition attachment"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24PlusStencil8,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_stencil_view = depth_stencil.create_view(&TextureViewDescriptor::default());
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 D24S8 transition triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map D24S8 transition vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+
+    let make_pipeline = |vertex_entry, depth_compare, stencil_compare| {
+        let face = StencilFaceState {
+            compare: stencil_compare,
+            pass_op: StencilOperation::Keep,
+            ..StencilFaceState::IGNORE
+        };
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 D24S8 transition pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth24PlusStencil8,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(depth_compare),
+                stencil: StencilState {
+                    front: face,
+                    back: face,
+                    read_mask: 0xff,
+                    write_mask: 0,
+                },
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("green"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let depth_and_stencil_pass =
+        make_pipeline("vs_far", CompareFunction::Greater, CompareFunction::Equal);
+    let stencil_only_pass =
+        make_pipeline("vs_far", CompareFunction::Always, CompareFunction::Equal);
+    let depth_discard_pass =
+        make_pipeline("vs_near", CompareFunction::Less, CompareFunction::Equal);
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 D24S8 transition readback"),
+        size: 5 * 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let record_pass = |encoder: &mut CommandEncoder,
+                       label: &'static str,
+                       depth_ops: Option<Operations<f32>>,
+                       stencil_ops: Option<Operations<u32>>,
+                       pipeline: Option<&RenderPipeline>,
+                       stencil_reference: u32| {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops,
+                stencil_ops,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        if let Some(pipeline) = pipeline {
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.set_stencil_reference(stencil_reference);
+            pass.set_pipeline(pipeline);
+            pass.draw(0..3, 0..1);
+        }
+    };
+    let initialize = |encoder: &mut CommandEncoder, label| {
+        record_pass(
+            encoder,
+            label,
+            Some(Operations {
+                load: LoadOp::Clear(0.5),
+                store: StoreOp::Store,
+            }),
+            Some(Operations {
+                load: LoadOp::Clear(1),
+                store: StoreOp::Store,
+            }),
+            None,
+            0,
+        );
+    };
+    let snapshot = |encoder: &mut CommandEncoder, image_index: u64| {
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &color,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: image_index * 8 * 256,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    };
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 D24S8 load/clear/discard transitions"),
+    });
+
+    initialize(&mut encoder, "initialize depth and stencil for LOAD");
+    record_pass(
+        &mut encoder,
+        "LOAD preserves depth and stencil",
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(&depth_and_stencil_pass),
+        1,
+    );
+    snapshot(&mut encoder, 0);
+
+    initialize(
+        &mut encoder,
+        "initialize depth and stencil for stencil CLEAR",
+    );
+    record_pass(
+        &mut encoder,
+        "CLEAR resets only stencil",
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(Operations {
+            load: LoadOp::Clear(0),
+            store: StoreOp::Store,
+        }),
+        Some(&stencil_only_pass),
+        0,
+    );
+    snapshot(&mut encoder, 1);
+
+    initialize(&mut encoder, "initialize depth and stencil for depth CLEAR");
+    record_pass(
+        &mut encoder,
+        "CLEAR resets only depth",
+        Some(Operations {
+            load: LoadOp::Clear(1.0),
+            store: StoreOp::Store,
+        }),
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(&depth_and_stencil_pass),
+        1,
+    );
+    snapshot(&mut encoder, 2);
+
+    initialize(
+        &mut encoder,
+        "initialize depth and stencil for stencil discard",
+    );
+    record_pass(
+        &mut encoder,
+        "discard stencil while preserving depth",
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Discard,
+        }),
+        None,
+        0,
+    );
+    record_pass(
+        &mut encoder,
+        "LOAD after stencil discard initializes stencil",
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(&stencil_only_pass),
+        1,
+    );
+    snapshot(&mut encoder, 3);
+
+    initialize(
+        &mut encoder,
+        "initialize depth and stencil for depth discard",
+    );
+    record_pass(
+        &mut encoder,
+        "discard depth while preserving stencil",
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Discard,
+        }),
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        None,
+        0,
+    );
+    record_pass(
+        &mut encoder,
+        "LOAD after depth discard initializes depth",
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        }),
+        Some(&depth_discard_pass),
+        1,
+    );
+    snapshot(&mut encoder, 4);
+
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public FL9_1 D24S8 transitions");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public D24S8 readback callback")
+        .expect("map public D24S8 readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped D24S8 data");
+        for image_index in 0..5 {
+            let expected = if image_index < 2 {
+                [0, 255, 0, 255]
+            } else {
+                [0, 0, 255, 255]
+            };
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = image_index * 8 * 256 + y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "D24S8 transition {image_index} pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 D24S8 LOAD preserved depth and stencil (64/64 green); independent depth/stencil CLEAR and Discard initialization matched all 256 checked transition pixels; sampled D24S8 was rejected by core");
+}
+
+#[test]
 fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

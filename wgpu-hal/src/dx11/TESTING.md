@@ -512,6 +512,32 @@ The first test executes public core → HAL → D3D11 → GPU rendering and read
 The second is synthetic CPU-only coverage for unavailable or incomplete
 queries and disabled guarantee/backend inputs.
 
+### Public FL9_1 D24S8 depth/stencil pass transitions
+
+The public transition test initializes both D24S8 aspects, then verifies a
+second pass with LOAD preserves the depth and stencil values together. It
+separately clears stencil while loading depth, and clears depth while loading
+stencil, with comparisons making stale values produce the opposite color. Two
+more cases discard only stencil or only depth and then LOAD both aspects:
+stale values would draw green, while core initialization of the discarded
+aspect leaves the blue clear. The readback checks all 320 pixels across the
+LOAD and four CLEAR/DISCARD outcomes. A sampled D24S8 texture request is also
+expected to fail public validation. The existing D16 test separately rejects
+a `StencilOnly` view, which is not a supported D16 aspect.
+
+On the RTX 3090 Ti forced to FL9_1, the public test passed with all pixels
+matching. The depth-discard probe confirms the initialized value behaves as
+zero: an incoming 0.25 fragment passes `Less` against the stale 0.5 value but
+fails after discard initialization. This is evidence for the selected core
+initialization path and driver, not a claim about native contents after discard.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d24s8_load_clear_discard_transitions_at_fl91 -- --nocapture --test-threads=1
+```
+
+The test executes public core → HAL → D3D11 → GPU rendering and readback.
+
 ### Exact FL9_1 capability projection through core
 
 The strict fixture includes a test-only adapter constructed from the selected

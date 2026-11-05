@@ -148,6 +148,16 @@ for draw order and another 192 for pass transitions. Mip reporting remains
 conditional on the selected format query and the existing POT mip
 implementation.
 
+The public D24S8 transition test verifies that a second pass loading both
+aspects preserves the initialized depth and stencil values. Separate
+depth-only and stencil-only CLEAR cases prove each aspect changes the later
+comparison independently. It also discards each aspect separately, loads it
+again, and verifies core initializes it before use; all 320 checked pixels
+matched the expected results. The selected RTX's FL9_1 D24S8 path passed these
+cases. Public core rejects sampled D24S8 usage, and the D16 test rejects its
+unsupported `StencilOnly` view. These results do not establish behavior on
+historical FL9_1 drivers or native post-discard contents.
+
 The complete strict private HAL suite passes 347/347, the controlled core
 fixture suite passes 89/89, core's explicit physical-adapter enumeration test
 passes 1/1, and the DX12 core regression suite passes 85/85. The expanded
