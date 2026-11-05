@@ -5708,3 +5708,13 @@ were not rerun for this public-test-only increment; their recorded results at
 the previous code checkpoint remain separate evidence. Continue the broader
 core/HAL audit, then return to the cross-layer HWND presentation scheduler.
 The public adapter remains opt-in and offscreen-only.
+
+### Follow-up — public D24S8 capability/aspect checks — `cdd06e5ca`
+
+The D24S8 public test now records the selected adapter's format projection and
+asserts it is render-attachment/transient only and single-mip. It also verifies
+public core rejects both `DepthOnly` and `StencilOnly` D24S8 views while the
+combined attachment view succeeds. The focused strict test passed 1/1 and the
+full strict public suite passed 20/20 on the RTX at requested/actual FL9_1;
+public-test Clippy, rustfmt and `git diff --check` passed. No HAL/core code
+changed in this follow-up. Commit: `cdd06e5ca`.

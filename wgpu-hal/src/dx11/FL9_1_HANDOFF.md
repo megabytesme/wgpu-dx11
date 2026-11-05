@@ -587,6 +587,12 @@ passed with ten existing warnings. Windows paging-file error 1455 prevented a
 DX12 regression check; historical FL9 hardware and public D3D11 exposure remain
 unverified.
 
+Follow-up commit `cdd06e5ca` asserts the live public format report is
+`RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT` with `SINGLE_MIP_ONLY`, and checks
+core rejects both aspect-specific D24S8 views while accepting the combined
+view. The strict focused test and complete public suite passed again (1/1 and
+20/20); see `FL9_1_PROGRESS.md`.
+
 The read-only regression now also rejects a depth-Never pipeline whose requested
 stencil depth-fail Replace is remapped to a native pass write. The focused strict
 GPU test passed with the preserved 32 green/32 blue result. This validates the
