@@ -456,10 +456,10 @@ rejection of writes to the read-only aspect. The public projection still omits
 `READ_ONLY_DEPTH_STENCIL`, so sampled aliases remain unavailable. Public
 colorless and transient D24S8 depth passes now affect checked color output. The
 strict transient pass exercises color and depth clear/draw/discard; core rejects
-sampled transient usage and invalid LOAD/STORE operations. Next test rejection
-of read-only transient depth and an empty render pass, ensuring core catches
-both before HAL. Then continue the core/HAL render-pass contract review. Add
-another format only when its selected-device query, native resource/view path
-and representative GPU output can all be validated. Keep unsupported usages out
-of the projection and preserve historical FL9_1 and ARM32 as unverified
-targets.
+sampled transient usage, invalid LOAD/STORE, read-only transient depth and empty
+passes. Next exercise public `LoadOp::DontCare` for color and depth attachments,
+fully overwrite the affected pixels and validate deterministic output. Then
+continue the core/HAL render-pass contract review. Add another format only when
+its selected-device query, native resource/view path and representative GPU
+output can all be validated. Keep unsupported usages out of the projection and
+preserve historical FL9_1 and ARM32 as unverified targets.

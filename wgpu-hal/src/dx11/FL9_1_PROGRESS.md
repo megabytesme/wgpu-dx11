@@ -6632,12 +6632,18 @@ green. Discarded transient data is not read back because public usage forbids
 preserving it. These D3D11 textures use ordinary allocations; no memoryless
 behavior or memory savings are claimed.
 
+Follow-up commit `bbceec53d` adds public negative cases for read-only transient
+depth and a render pass with no attachments. Both report validation errors on
+encoder finish and do not reach the HAL. The test summary now states those
+rejections along with invalid transient LOAD/STORE and sampled usage.
+
 Invalid render-pass descriptor errors are deferred by core until the parent
 encoder is finished. The negative checks therefore finish isolated encoders
 before popping their error scopes. The first focused run initially appeared to
 accept transient LOAD because the test popped the scope before finishing; after
 following core's error path and correcting the test, the strict focused test
-passed 1/1 and the full public suite passed 27/27. Hardware was the physical
+passed 1/1. After the negative validation extension, the full public suite
+passed 27/27. Hardware was the physical
 NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false),
 requested and actual FL9_1. No GPU test skipped; the optional Float16x2 IA
 branch printed its explicit unsupported-capability skip. Public Clippy,
@@ -6652,6 +6658,6 @@ rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ```
 
-Next: test that core rejects read-only transient depth and a render pass with
-no attachments before either reaches the private HAL. Continue the remaining
-render-pass/core-HAL contract audit afterward.
+Next: exercise public `LoadOp::DontCare` on color and depth attachments with
+full writes that make the resulting color deterministic. Continue the
+remaining render-pass/core-HAL contract audit afterward.
