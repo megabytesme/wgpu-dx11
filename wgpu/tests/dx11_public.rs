@@ -2525,13 +2525,10 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             println!("SKIP: {format:?} lacks queried render-target support: {features:?}");
             return;
         }
-        assert!(
-            !features.allowed_usages.contains(TextureUsages::COPY_SRC)
-                && !features
-                    .flags
-                    .contains(TextureFormatFeatureFlags::BLENDABLE),
-            "these narrow render-target paths must remain non-copyable and non-blendable: {features:?}"
-        );
+        assert!(features.allowed_usages.contains(TextureUsages::COPY_SRC));
+        assert!(!features
+            .flags
+            .contains(TextureFormatFeatureFlags::BLENDABLE));
         println!("Public {format:?} format projection: {features:?}");
     }
 
@@ -5842,6 +5839,259 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
 }
 
 #[test]
+fn public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let Some(adapter) = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .next()
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+
+    let formats = [
+        (TextureFormat::R8Unorm, 1usize),
+        (TextureFormat::Rg8Unorm, 2usize),
+        (TextureFormat::Rgb5g6b5Unorm, 2usize),
+    ];
+    for (format, _) in formats {
+        let caps = adapter.get_texture_format_features(format);
+        assert_eq!(
+            caps.allowed_usages.contains(TextureUsages::COPY_SRC),
+            caps.allowed_usages.contains(TextureUsages::RENDER_ATTACHMENT),
+            "FL9_1 copy-source use requires the backend's queried render-target bind: {format:?} {caps:?}"
+        );
+    }
+    if !adapter
+        .features()
+        .contains(Features::TEXTURE_FORMAT_16BIT_PACKED)
+    {
+        assert!(
+            !required,
+            "strict FL9_1 hardware must expose queried packed 16-bit formats"
+        );
+        println!("SKIP: TEXTURE_FORMAT_16BIT_PACKED unavailable");
+        return;
+    }
+
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 narrow-format copy/readback test"),
+        required_features: Features::TEXTURE_FORMAT_16BIT_PACKED,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let source_size = Extent3d {
+        width: 5,
+        height: 3,
+        depth_or_array_layers: 1,
+    };
+    let destination_size = Extent3d {
+        width: 6,
+        height: 4,
+        depth_or_array_layers: 1,
+    };
+    let source_pitch = 256usize;
+    let destination_pitch = 256usize;
+    let output_offset = 16usize;
+    let sentinel = 0xCD;
+    let mut executed = 0;
+
+    for (format, bytes_per_pixel) in formats {
+        let caps = adapter.get_texture_format_features(format);
+        if !caps
+            .allowed_usages
+            .contains(TextureUsages::COPY_SRC | TextureUsages::COPY_DST)
+        {
+            assert!(
+                !required,
+                "strict FL9_1 hardware lacks queried {format:?} copy/readback support: {caps:?}"
+            );
+            println!("SKIP: {format:?} lacks queried copy-source support: {caps:?}");
+            continue;
+        }
+
+        let texture_usage = TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+        let source = device.create_texture(&TextureDescriptor {
+            label: Some("narrow-format copy source"),
+            size: source_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: texture_usage,
+            view_formats: &[],
+        });
+        let destination = device.create_texture(&TextureDescriptor {
+            label: Some("narrow-format copy destination"),
+            size: destination_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: texture_usage,
+            view_formats: &[],
+        });
+        let mut upload = vec![0u8; source_pitch * source_size.height as usize];
+        let source_pixel = |x: usize, y: usize| -> Vec<u8> {
+            match format {
+                TextureFormat::R8Unorm => vec![(19 + 31 * y + 7 * x) as u8],
+                TextureFormat::Rg8Unorm => {
+                    vec![(13 + 17 * x + 5 * y) as u8, (29 + 3 * x + 23 * y) as u8]
+                }
+                TextureFormat::Rgb5g6b5Unorm => (0x3127u16
+                    .wrapping_add((x * 0x0711 + y * 0x1923) as u16))
+                .to_le_bytes()
+                .to_vec(),
+                _ => unreachable!(),
+            }
+        };
+        for y in 0..source_size.height as usize {
+            for x in 0..source_size.width as usize {
+                let start = y * source_pitch + x * bytes_per_pixel;
+                upload[start..start + bytes_per_pixel].copy_from_slice(&source_pixel(x, y));
+            }
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(source_pitch as u32),
+                rows_per_image: Some(source_size.height),
+            },
+            source_size,
+        );
+
+        let readback_size = output_offset + destination_pitch * destination_size.height as usize;
+        let readback = device.create_buffer(&BufferDescriptor {
+            label: Some("narrow-format padded readback"),
+            size: readback_size as u64,
+            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&readback, 0, &vec![sentinel; readback_size]);
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("narrow-format partial copy and readback"),
+        });
+        encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: Origin3d { x: 1, y: 0, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: Origin3d { x: 2, y: 1, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 3,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: output_offset as u64,
+                    bytes_per_row: Some(destination_pitch as u32),
+                    rows_per_image: Some(destination_size.height),
+                },
+            },
+            destination_size,
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for narrow-format copy and readback");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("narrow-format map callback")
+            .expect("map narrow-format readback");
+
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped readback");
+        assert!(data[..output_offset].iter().all(|&byte| byte == sentinel));
+        for y in 0..destination_size.height as usize {
+            let row = output_offset + y * destination_pitch;
+            for x in 0..destination_size.width as usize {
+                let start = row + x * bytes_per_pixel;
+                let expected = if (2..5).contains(&x) && (1..3).contains(&y) {
+                    source_pixel(x - 1, y - 1)
+                } else {
+                    vec![0; bytes_per_pixel]
+                };
+                assert_eq!(
+                    &data[start..start + bytes_per_pixel],
+                    expected.as_slice(),
+                    "{format:?} output texel ({x}, {y})"
+                );
+            }
+            let payload_end = row + destination_size.width as usize * bytes_per_pixel;
+            let row_end = row + destination_pitch;
+            assert!(data[payload_end..row_end]
+                .iter()
+                .all(|&byte| byte == sentinel));
+        }
+        drop(data);
+        readback.unmap();
+        executed += 1;
+        println!(
+            "PASS: {format:?} FL9_1 partial GPU texture copy and padded CPU readback; 24 texels, 6 copied and 18 preserved"
+        );
+    }
+    assert!(executed > 0, "no narrow-format GPU copy case executed");
+    if required {
+        assert_eq!(
+            executed,
+            formats.len(),
+            "strict mode requires all three formats"
+        );
+    }
+}
+
+#[test]
 fn public_dx11_rgb565_sampled_upload_at_fl91() {
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -5869,9 +6119,12 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         assert!(capabilities
             .flags
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
-        assert!(!capabilities
-            .allowed_usages
-            .contains(TextureUsages::COPY_SRC));
+        assert_eq!(
+            capabilities
+                .allowed_usages
+                .contains(TextureUsages::COPY_SRC),
+            format == TextureFormat::Rgb5g6b5Unorm
+        );
         assert_eq!(
             capabilities
                 .allowed_usages

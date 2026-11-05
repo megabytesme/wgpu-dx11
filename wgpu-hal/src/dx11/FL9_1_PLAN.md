@@ -113,9 +113,11 @@ not a repository artifact.
    additionally expose single-mip render-attachment use after their selected
    format query reports `RENDER_TARGET`; strict public draw-then-sample
    readback now covers R8_UNORM, R8G8_UNORM and B5G6R5 with all 64 pixels per
-   format checked. B5G6R5 requires `TEXTURE_FORMAT_16BIT_PACKED`. These narrow
-   attachments are not exposed as blendable or copy sources; direct readback
-   and mip chains remain unsupported. The required
+   format checked. B5G6R5 requires `TEXTURE_FORMAT_16BIT_PACKED`. R8_UNORM,
+   R8G8_UNORM and B5G6R5 now also expose query-gated GPU copies and CPU
+   readback when `RENDER_TARGET` is reported; they remain non-blendable and
+   single-mip. Other narrow formats remain without copy-source/readback paths.
+   The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
    the previously mapped formats, with a core per-format downlevel mask and
    strict GPU verification. Required RGBA8_SRGB and BGRA8_SRGB formats now
@@ -440,13 +442,14 @@ which the FL9_1 shader path does not implement.
 
 The 16-bit normalized and packed format audit is recorded in
 `CAPABILITIES.md`: R16G16_SNORM remains point-only on this selected FL9_1
-device, the packed Windows 8 family is filterable and sampled/upload-only, and
-the remaining R16 query results provide no additional sampled candidates.
-Follow-up R32 and D32 queries produced no texture or depth candidate. The
-latest R8_UNORM and R8G8_UNORM queries additionally establish single-mip color
-attachment support on the selected device; core and public readback now cover
-the query-gated projection. Continue the public core/HAL contract audit from
-those bounded format reports. Add another format only when its selected-device
-query, native resource/view path and representative GPU output can all be
-validated. Keep unsupported usages out of the projection and preserve
-historical FL9_1 and ARM32 as unverified targets.
+device, the packed Windows 8 family is filterable, and the remaining R16 query
+results provide no additional sampled candidates. Follow-up R32 and D32
+queries produced no texture or depth candidate. R8_UNORM, R8G8_UNORM and
+B5G6R5 now have query-gated single-mip color attachment, GPU copy and CPU
+readback support. Strict public GPU readback validates partial copies for all
+three formats, including untouched texels, nonzero destination origin and
+padded rows. Continue the public core/HAL contract audit from these bounded
+format reports. Add another format only when its selected-device query, native
+resource/view path and representative GPU output can all be validated. Keep
+unsupported usages out of the projection and preserve historical FL9_1 and
+ARM32 as unverified targets.

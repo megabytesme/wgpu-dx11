@@ -117,7 +117,7 @@ fn sample_upload(
         };
         assert_eq!(
             result.is_ok(),
-            render_target_supported && usage != wgt::TextureUses::COPY_SRC,
+            render_target_supported,
             "{format_name} usage {usage:?} with support {format_support:#010x}: {result:?}"
         );
     }

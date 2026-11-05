@@ -9,7 +9,10 @@ present are restricted to the creating thread. It exposes the native-only
 `TEXTURE_FORMAT_16BIT_NORM` feature only when a selected-device query reports
 the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
 feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
-uploads; other uses of those formats remain disabled. The backend does not
+uploads. RGB565 additionally has queried render-target and copy/readback
+support; RGB5A1 and RGBA4 remain sampled-upload-only. R8_UNORM and R8G8_UNORM
+also expose copy-source use only when their selected format query reports
+render-target support. The backend does not
 claim WebGPU compliance. The implementation remains experimental
 and restrictions not representable through current core limits still need
 auditing. Feature level 9_1 is a tested target, not evidence of

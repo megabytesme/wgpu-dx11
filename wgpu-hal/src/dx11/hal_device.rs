@@ -207,6 +207,12 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Rgb5g6b5Unorm
         );
+        let sampled_copy_source = matches!(
+            desc.format,
+            wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
+                | wgt::TextureFormat::Rgb5g6b5Unorm
+        );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
@@ -215,6 +221,11 @@ impl crate::Device for Device {
                     | wgt::TextureUses::RESOURCE
                     | if sampled_color_target {
                         wgt::TextureUses::COLOR_TARGET
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
+                    | if sampled_copy_source {
+                        wgt::TextureUses::COPY_SRC
                     } else {
                         wgt::TextureUses::empty()
                     }

@@ -782,6 +782,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     let one_mip_format_caps = [
         wgt::TextureFormat::R8Unorm,
+        wgt::TextureFormat::Rg8Unorm,
         wgt::TextureFormat::Rg8Snorm,
         wgt::TextureFormat::Rgba8Snorm,
         wgt::TextureFormat::Rgb5g6b5Unorm,
@@ -873,15 +874,20 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             assert!(core_caps.flags.is_empty());
         } else {
             let filterable = hal_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR);
+            let copy_source = hal_caps.contains(hal::TextureFormatCapabilities::COPY_SRC);
+            let color_attachment =
+                hal_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT);
             assert_eq!(
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
                     | hal::TextureFormatCapabilities::COPY_DST
-                    | if matches!(
-                        format,
-                        wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rgb5g6b5Unorm
-                    ) {
+                    | if color_attachment {
                         hal::TextureFormatCapabilities::COLOR_ATTACHMENT
+                    } else {
+                        hal::TextureFormatCapabilities::empty()
+                    }
+                    | if copy_source {
+                        hal::TextureFormatCapabilities::COPY_SRC
                     } else {
                         hal::TextureFormatCapabilities::empty()
                     }
@@ -896,10 +902,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 core_caps.allowed_usages,
                 wgt::TextureUsages::COPY_DST
                     | wgt::TextureUsages::TEXTURE_BINDING
-                    | if matches!(
-                        format,
-                        wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rgb5g6b5Unorm
-                    ) {
+                    | if copy_source {
+                        wgt::TextureUsages::COPY_SRC
+                    } else {
+                        wgt::TextureUsages::empty()
+                    }
+                    | if color_attachment {
                         wgt::TextureUsages::RENDER_ATTACHMENT
                             | wgt::TextureUsages::TRANSIENT_ATTACHMENT
                     } else {

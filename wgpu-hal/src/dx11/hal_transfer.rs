@@ -224,16 +224,12 @@ impl NativeDevice {
         let (source, dimensions, source_subresource) =
             self.texture_copy_texture_source(texture, base.mip_level)?;
         let source_box = texture_box(base, size, dimensions)?;
-        let (offset, pitch, row_bytes, total) = copy_layout(
-            layout,
-            size.width,
-            size.height,
-            TextureBlockLayout {
-                width: 1,
-                height: 1,
-                bytes: 4,
-            },
-        )?;
+        let block = format_block_layout(self.texture_desc(texture)?.Format)?;
+        if !block_aligned_box(base, size, block) {
+            return Err(invalid());
+        }
+        let (offset, pitch, row_bytes, total) =
+            copy_layout(layout, size.width, size.height, block)?;
         let native_destination =
             self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
         let staging_desc = D3D11_TEXTURE2D_DESC {
@@ -264,7 +260,7 @@ impl NativeDevice {
             destination_offset: offset,
             row_pitch: pitch,
             row_bytes,
-            rows: size.height,
+            rows: block.height_blocks(size.height),
         })
     }
 
@@ -464,6 +460,30 @@ mod tests {
         assert!(copy_layout(&byte_aligned, 5, 4, linear(4)).is_err());
         assert!(copy_layout(&invalid, u32::MAX, 1, linear(4)).is_err());
         assert!(copy_layout(&layout, 0, 1, linear(4)).is_err());
+    }
+
+    #[test]
+    fn narrow_format_readback_layout_uses_the_texel_width() -> Result<()> {
+        use windows::Win32::Graphics::Dxgi::Common::{
+            DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
+        };
+
+        let padded = wgt::TexelCopyBufferLayout {
+            offset: 16,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(3),
+        };
+        assert_eq!(
+            copy_layout(&padded, 5, 3, format_block_layout(DXGI_FORMAT_R8_UNORM)?)?,
+            (16, 256, 5, 517)
+        );
+        for format in [DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_B5G6R5_UNORM] {
+            assert_eq!(
+                copy_layout(&padded, 5, 3, format_block_layout(format)?)?,
+                (16, 256, 10, 522)
+            );
+        }
+        Ok(())
     }
 
     #[test]

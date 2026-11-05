@@ -1357,11 +1357,41 @@ on historical FL9_1 hardware.
 The BC1 test uploads an 8×8 block-compressed image from offset 8 with a 24-byte
 block-row pitch, replaces the block at [4,0] with a second padded upload, and
 checks all 256 pixels after sampling. Its format mask was `0x000213a0` and
-filtered sampling was reported. The uncompressed sampled/upload-only formats
-and BC1 do not support render-target, copy-source, readback or mip-chain
-operations in this private subset. RG8_UNORM linear filtering has visual
-execution coverage; R8_UNORM and the SNORM formats have query-backed
-filterability but only nearest-sampling readback coverage.
+filtered sampling was reported. R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM,
+RGB5A1, RGBA4 and BC1 do not support render-target, copy-source or readback
+operations in this private subset. R8_UNORM, R8G8_UNORM and B5G6R5 have a
+narrower query-gated single-mip render-target, copy and readback path described
+below. RG8_UNORM linear filtering has visual execution coverage; R8_UNORM and
+the SNORM formats have query-backed filterability but only nearest-sampling
+readback coverage.
+
+### Query-gated R8, RG8 and RGB565 copy/readback
+
+The 10Level9 texture transfer restriction requires the native texture to have
+render-target support for the tested GPU-to-CPU readback path. Accordingly,
+R8_UNORM, R8G8_UNORM and B5G6R5 expose `COPY_SRC` only when the selected
+device's `CheckFormatSupport` result includes `RENDER_TARGET`, and the backend
+path is enabled. RGB5A1 and RGBA4 do not have this implementation path.
+Texture-to-texture copies remain on the GPU. Readback copies into a staging
+texture, then uses the mapped native row pitch to pack texels into the caller's
+buffer. The format block size supplies the bytes-per-texel calculation (1 byte
+for R8 and 2 bytes for RG8/RGB565).
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 narrow_optional_copy_sources_require_render_target_support_and_backend_paths -- --nocapture --test-threads=1
+```
+
+The physical test explicitly requests FL9_1 and excludes software adapters.
+It uploads padded source rows, partially copies a 3×2 region from a 5×3
+texture into a differently sized 6×4 texture at a nonzero origin, and reads
+the full result into a buffer with offset 16 and 256-byte row pitch. Each
+format checks 24 texels (six copied and eighteen zero-initialized/preserved)
+plus the row-padding sentinel. On the RTX 3090 Ti, R8, RG8 and RGB565 all
+passed. The synthetic HAL test proves that a missing `RENDER_TARGET` query or
+disabled backend path suppresses `COPY_SRC` and rejects use. This observation
+does not establish compatibility with historical FL9_1 drivers.
 
 ### Non-filtering sampler layouts
 
