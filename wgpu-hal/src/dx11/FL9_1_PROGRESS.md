@@ -4380,3 +4380,65 @@ cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --fe
 rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
 git diff --check
 ```
+
+## Checkpoint — opt-in public FL9_1 offscreen adapter
+
+Commit `6d077bdee` exposes only physical DXGI adapters that successfully create
+an explicitly requested FL9_1 device. Software adapters are filtered, no
+higher-level fallback is attempted, and an adapter is returned only when the
+selected-device capability projection exists. Adapter metadata reports the
+name, PCI vendor/device IDs and the DXGI driver-package version when
+`CheckInterfaceSupport(IDXGIDevice)` succeeds. The public feature set is empty,
+the adapter reports a non-WebGPU-compliant downlevel contract, and
+`surface_capabilities` remains `None`. No claim of a complete public adapter
+contract or presentation support is made.
+
+The strict public wgpu integration test selects the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), reports requested and actual FL9_1,
+and excludes software adapters. Through ordinary public adapter enumeration it
+requests two devices, uploads a two-color texture, binds sparse logical
+bindings 7/42, draws indexed textured geometry with a D24S8 depth attachment,
+and verifies the full 8x8 output: 32 red pixels and 32 green pixels. The second
+device independently clears and reads back 64 green pixels. This verifies a
+meaningful public path and sequential device opens over the adapter's shared
+native D3D11 device/context; it is not the required complete 3D application
+scene, a concurrent multi-device test, a full contract audit, or a historical
+driver result.
+
+Verification on 2026-11-05, Rust 1.93.1, Visual Studio x64, bounded `-j16`,
+strict hardware mode for DX11 runs:
+
+- `cargo +1.93 build --offline -j16 -p wgpu-hal --no-default-features --features dx11` passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 1/1; both public render/readback cases executed on the RTX at FL9_1.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1` passed 337/337. The suite includes CPU-only checks and strict physical-GPU tests; nested shader-render skips are expected negative FXC cases, not GPU-render passes.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1` passed 81/81, including physical forced-FL9_1 fixture rendering and ordinary public enumeration of the projected adapter.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl` passed 77/77.
+- HAL, core and wgpu Clippy checks passed. Existing warnings remain: nine HAL test warnings (seven single-range-in-vector, one items-after-test-module, one needless-borrow) and three core fixture warnings (one collapsible-if, two op-ref); the new adapter/test code introduced none.
+- Rustfmt `--check` on changed Rust files and `git diff --check` passed. No test skipped in the strict public test; ordinary runs print a recognizable SKIP when physical FL9_1 hardware is unavailable.
+
+Exact commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 build --offline -j16 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-core/src/instance.rs wgpu-hal/src/dx11/adapter.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/device.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/src/dx11/instance.rs wgpu/tests/dx11_fixture.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+The public projection and core/HAL operation audit remain incomplete. The
+independent review found no confirmed core-valid route to the scanned unsupported
+compute/query/cache/acceleration-structure panic paths, but this is not an
+exhaustive audit. Next add public-stage uniform transforms and broaden the
+ordinary wgpu scene test, then continue auditing every advertised pipeline,
+resource, mapping, pass and error path. Keep public surfaces disabled due to the
+documented synchronous `Present` reentrancy deadlock. Historical FL9_1 drivers
+remain untested.

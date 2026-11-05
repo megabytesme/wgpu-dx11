@@ -1161,3 +1161,13 @@ The production adapter remains absent, and the known synchronous HWND
 `Present` reentrancy deadlock remains unresolved. Keep normal enumeration and
 public surface capabilities disabled until those architectural and full
 contract audit gates are closed.
+
+## Current checkpoint — public offscreen adapter
+
+Branch `uwp-dx11`; code checkpoint `6d077bdee` (`dx11: expose experimental FL9_1 offscreen adapters`). The opt-in D3D11 backend now enumerates physical DXGI adapters only when explicit FL9_1 device creation succeeds, rejects software adapters, and exposes the selected-device capability projection. Adapter info reports the DXGI driver version when available. This experimental adapter is offscreen-only: `surface_capabilities` returns `None` because synchronous HWND `Present` reentrancy remains unresolved. It is not a claim of complete public wgpu support.
+
+The strict public wgpu integration test passed on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1. Sparse sampled bindings, queue texture upload, indexed geometry, D24S8 depth testing and full 8x8 readback produced 32 red and 32 green pixels. A second public device opened from the same adapter and verified a separate 64-pixel clear/readback. The shared underlying native D3D11 context was exercised sequentially, not concurrently.
+
+Current verification: HAL build passed; strict private HAL 337/337; strict core 81/81; public wgpu integration 1/1; DX12 core 77/77; Clippy passed with only existing HAL/core test warnings; rustfmt and diff checks passed. Exact commands and details are in `FL9_1_PROGRESS.md`. Commit is `6d077bdee`.
+
+The independent review found no confirmed core-valid route to the scanned unsupported compute, query, cache or acceleration-structure panic paths, but the projection contract audit is incomplete. The public test is not yet a full scene/application validation, no concurrent multiple-device test exists, and historical FL9_1 hardware is untested. Continue by adding vertex transform and fragment uniform bindings to the ordinary public scene, then keep auditing all core-valid operations against HAL. Do not enable public surfaces until the cross-layer `Present` reentrancy issue has a safe design.
