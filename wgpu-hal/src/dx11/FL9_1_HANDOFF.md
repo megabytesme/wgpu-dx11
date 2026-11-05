@@ -1659,3 +1659,9 @@ and observed query masks are recorded in `CAPABILITIES.md`.
 After this checkpoint, continue with the public core/HAL contract audit. The
 modern RTX query results do not establish historical FL9_1 behavior or ARM32
 Windows 10 Mobile compatibility.
+
+The latest diagnostic-only audit queried R32_FLOAT, R32G32B32A32_FLOAT,
+D32_FLOAT and D32_FLOAT_S8X24_UINT on that selected device. Neither R32 format
+reported `TEXTURE2D`; D32 queries were unavailable. Do not expand formats from
+those results. Exact query masks and the strict command are in
+`FL9_1_PROGRESS.md`.

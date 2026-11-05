@@ -6271,3 +6271,25 @@ The selected-device feature projection and the three sampled/upload paths
 passed on the RTX 3090 Ti forced to actual FL9_1. Historical FL9_1 drivers and
 ARM32 UWP remain unverified. Continue with the broader public core/HAL contract
 audit; do not infer support for other formats or usages from these three.
+
+## Follow-up — optional R32 and D32 format audit
+
+Extended the physical-device capability diagnostic to query R32_FLOAT,
+R32G32B32A32_FLOAT, D32_FLOAT and D32_FLOAT_S8X24_UINT, because these formats
+are plausible next candidates for sampled or depth use. The strict diagnostic
+passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), forced
+to actual FL9_1. Both R32 formats returned only `IA_VERTEX_BUFFER`
+(`0x00000002`), without `TEXTURE2D`; both D32 queries returned `E_FAIL`.
+No new resource path was added. The results and Microsoft minimum-level
+context are in `CAPABILITIES.md`.
+
+Command, run with `WGPU_DX11_REQUIRE_HARDWARE=1` in the Visual Studio 2022 x64
+developer environment:
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 fl91_wgpu_projection_matches_the_selected_physical_device -- --nocapture --test-threads=1
+```
+
+Continue the public core/HAL contract audit. The format query evidence remains
+specific to the modern RTX forced to FL9_1; historical drivers and ARM32 UWP
+remain unverified.

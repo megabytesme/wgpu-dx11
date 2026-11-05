@@ -432,8 +432,9 @@ The 16-bit normalized and packed format audit is recorded in
 `CAPABILITIES.md`: R16G16_SNORM remains point-only on this selected FL9_1
 device, the packed Windows 8 family is filterable and sampled/upload-only, and
 the remaining R16 query results provide no additional sampled candidates.
-Continue the public core/HAL contract audit from those bounded format reports.
-Add another format only when its selected-device query, native resource/view
-path and representative GPU output can all be validated. Keep unsupported
-usages out of the projection and preserve historical FL9_1 and ARM32 as
-unverified targets.
+Follow-up R32 and D32 queries on the selected FL9_1 RTX likewise produced no
+texture or depth candidate. Continue the public core/HAL contract audit from
+those bounded format reports. Add another format only when its selected-device
+query, native resource/view path and representative GPU output can all be
+validated. Keep unsupported usages out of the projection and preserve
+historical FL9_1 and ARM32 as unverified targets.

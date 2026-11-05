@@ -1294,10 +1294,11 @@ mod tests {
     fn fl91_wgpu_projection_matches_the_selected_physical_device() -> windows::core::Result<()> {
         use windows::Win32::Graphics::Dxgi::Common::{
             DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B5G6R5_UNORM,
+            DXGI_FORMAT_D32_FLOAT, DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
             DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SNORM,
             DXGI_FORMAT_R16G16B16A16_UNORM, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SNORM,
             DXGI_FORMAT_R16G16_UNORM, DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16_SNORM,
-            DXGI_FORMAT_R16_UNORM,
+            DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32_FLOAT,
         };
 
         let required =
@@ -1338,6 +1339,8 @@ mod tests {
         assert_eq!(native.feature_level(), FeatureLevel::L9_1);
         let caps = Capabilities::query(&native);
         let optional_float_formats = [
+            ("R32_FLOAT", DXGI_FORMAT_R32_FLOAT),
+            ("R32G32B32A32_FLOAT", DXGI_FORMAT_R32G32B32A32_FLOAT),
             ("R16_FLOAT", DXGI_FORMAT_R16_FLOAT),
             ("R16G16_FLOAT", DXGI_FORMAT_R16G16_FLOAT),
             ("R16G16B16A16_FLOAT", DXGI_FORMAT_R16G16B16A16_FLOAT),
@@ -1358,6 +1361,16 @@ mod tests {
             ("R16G16_SNORM", DXGI_FORMAT_R16G16_SNORM),
             ("R16G16B16A16_UNORM", DXGI_FORMAT_R16G16B16A16_UNORM),
             ("R16G16B16A16_SNORM", DXGI_FORMAT_R16G16B16A16_SNORM),
+        ]
+        .map(|(name, format)| {
+            (
+                name,
+                Query::from_result(unsafe { native.raw_device().CheckFormatSupport(format) }),
+            )
+        });
+        let optional_depth_formats = [
+            ("D32_FLOAT", DXGI_FORMAT_D32_FLOAT),
+            ("D32_FLOAT_S8X24_UINT", DXGI_FORMAT_D32_FLOAT_S8X24_UINT),
         ]
         .map(|(name, format)| {
             (
@@ -1402,6 +1415,7 @@ mod tests {
         std::println!(
             "Optional and packed normalized texture format queries at FL9_1: {optional_normalized_formats:?}"
         );
+        std::println!("Optional depth format queries at FL9_1: {optional_depth_formats:?}");
         std::println!(
             "Packed format projection: queries={:?}, formats={:?}/{:?}/{:?}, feature={}",
             (

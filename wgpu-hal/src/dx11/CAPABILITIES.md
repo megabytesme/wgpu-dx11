@@ -173,6 +173,15 @@ lacks them. Microsoft's required-format table places the normalized texture
 support for R16_UNORM and R16G16_UNORM at FL9_2 and lists R16G16B16A16_SNORM
 as an FL9_1 vertex-input format only.
 
+The selected-device diagnostic also checked R32_FLOAT and
+R32G32B32A32_FLOAT. Both returned only `IA_VERTEX_BUFFER` (`0x00000002`) at
+forced FL9_1, without `TEXTURE2D`; D32_FLOAT and D32_FLOAT_S8X24_UINT queries
+returned `E_FAIL`. These results provide no additional sampled or depth
+attachment path on this RTX. Microsoft's required-format table places R32_FLOAT
+texture support at FL9_2 and does not list D32 as an FL9_1 depth attachment.
+This is a bounded observation for the selected driver, not a claim about every
+FL9_1 implementation. See [Microsoft's required DXGI formats](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/required-dxgi-formats).
+
 Microsoft requires B5G6R5, B5G5R5A1 and B4G4R4A4 2D textures, filtered shader
 sampling, mip support and CPU lockability for Windows 8 FL9_x drivers. The
 backend implements the narrower single-mip sampled-upload subset as
