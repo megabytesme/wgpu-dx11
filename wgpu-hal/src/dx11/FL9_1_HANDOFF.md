@@ -1349,7 +1349,18 @@ by selected entry point and reachable helper calls. FXC rejects literal and
 dynamic exact LOD in both 9_1 and 9_3 pixel profiles; the public strict suite
 still passes 12/12 on the forced-FL9_1 RTX and rejects explicit LOD before HAL
 while accepting its implicit-sampling sibling. The full private HAL suite
-passed 340/340 and the core fixture passed 85/85 during this checkpoint.
-Continue auditing image queries and the remaining core/HAL contract. The
-public adapter remains offscreen-only; synchronous HWND Present reentrancy
-and historical-device verification remain outstanding.
+passed 340/340 and the core fixture passed 85/85 during that checkpoint.
+
+Code checkpoint `38b5a0077` gates selected-entry `textureDimensions` and
+`textureNumLevels` use before HAL. Naga's current image-query HLSL lowering
+fails FXC under the tested level-9 pixel profiles (X3548; direct float-output
+control X4532), while SM5 controls compile. Strict public wgpu passed 12/12,
+private HAL 341/341, core fixture 86/86, types serde 76/76 unit tests plus 14
+docs (21 ignored), and core DX12 82/82. GPU cases used the RTX 3090 Ti at
+requested/actual FL9_1 with software=false. Exact evidence is in
+`FL9_1_PROGRESS.md` and `TESTING.md`.
+
+Continue auditing core-legal indexed draws when only instance-rate streams
+exist, then return to the rest of the core/HAL contract. The public adapter
+remains offscreen-only; synchronous HWND Present reentrancy and
+historical-device verification remain outstanding.

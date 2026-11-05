@@ -5210,6 +5210,51 @@ Exact final public command:
 cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1'
 ```
 
-Next inspect image-query operations and continue the core/HAL contract audit.
-The opt-in public adapter remains offscreen-only; synchronous HWND Present
-reentrancy remains unresolved, and historical FL9_1 hardware is untested.
+## Checkpoint — selected-entry FL9_1 texture-query validation — `38b5a0077`
+
+Added `DownlevelLimits::texture_query`, with a backward-compatible serde
+default. The hardware model marks this feature from FL10_0, while the current
+D3D11 implementation reports it unavailable at every level. Core records
+`ImageQuery` use per entry point, including helper calls, and rejects only the
+selected vertex or fragment pipeline entry before HAL. CPU validation tests
+cover direct dimensions queries, helper forwarding, `textureNumLevels`, safe
+sibling entries, vertex-stage use and missing entries. The public strict test
+rejects direct, helper and level-count queries while compiling a safe sibling.
+
+FXC confirms that the current Naga HLSL query lowering is not usable under
+`ps_4_0_level_9_1` or `_9_3`: dimensions and level-count shaders fail with
+X3548, and a direct float-output `GetDimensions` control fails with X4532.
+Equivalent controls compile under `ps_5_0`. This is a selected compiler-path
+restriction, not a claim that every FL9_1 driver behaves identically.
+
+Verification used Rust 1.93.1, Visual Studio 2022 x64 tools and Cargo `-j16`.
+The strict public suite passed 12/12, the full private HAL suite passed
+341/341, and the core D3D11 fixture suite passed 86/86. GPU tests selected
+the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested and selected FL9_1, `software=false`; no hardware
+tests skipped. The targeted updated FXC diagnostic test passed after adding
+the float-output control. The `wgpu-types --features serde` suite passed
+76/76 unit tests and 14 doc tests (21 ignored); the targeted DX12 core suite
+passed 82/82. HAL `dx11,gles`, `wgpu-info` and `wgpu-test` checks passed.
+Affected Clippy and targeted Rust formatting checks passed; core/HAL emitted
+only the already-recorded fixture/test warnings. `git diff --check` passed.
+
+The relevant strict runs used these Cargo commands from the x64 Visual Studio
+developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -q -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-types --features serde
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+```
+
+The D3D11 implementation and regression tests are committed in
+`38b5a0077488f7ebe7131516cc2d3de5a0d9c0c2`. Exact commands are in
+`TESTING.md` and this checkpoint. Continue the exact
+core/HAL contract audit; the next shader gap is selected-entry indexed draw
+behavior for pipelines with only instance-rate vertex streams. Public HWND
+presentation remains gated by the unresolved synchronous `Present`
+reentrancy/serialization design, and historical FL9_1 hardware is untested.
