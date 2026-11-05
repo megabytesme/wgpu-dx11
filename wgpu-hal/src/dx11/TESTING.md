@@ -492,7 +492,10 @@ triangle's green output. The test uses a `DepthOnly` view and core rejects a
 `StencilOnly` view, a two-mip D16 texture and a stencil pipeline before HAL.
 Two additional two-pass cases verify that LOAD preserves the near depth value
 and rejects a farther draw, while CLEAR resets depth and permits that draw;
-the 128 pass-transition pixels are checked through readback.
+the 128 pass-transition pixels are checked through readback. A third case
+discards a written depth value and then loads it in a subsequent pass; the
+core's initialization path prevents the stale value from changing the checked
+output.
 
 The RTX 3090 Ti at explicitly requested/actual FL9_1 reported D16 format mask
 `0x210020`; the capability projection returned
