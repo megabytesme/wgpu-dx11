@@ -176,6 +176,11 @@ implicit derivatives selected mip 1 across all 64 pixels. The same test
 confirmed core rejects multi-mip R8 because that queried format is projected
 with `SINGLE_MIP_ONLY`. This does not imply multi-mip support for other formats
 or NPOT chains.
+Public `Rg8Snorm` and `Rgba8Snorm` tests also verify the selected-device
+`TEXTURE_BINDING | COPY_DST`, non-filterable, single-mip projection. Both
+signed-normalized resources were sampled through wgpu and their converted
+values matched all 64 RGBA8 output pixels. Other SNORM formats and usages are
+not implied.
 
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample

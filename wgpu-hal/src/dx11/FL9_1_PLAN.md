@@ -311,3 +311,8 @@ The public RGBA8 sampled path now has a four-level POT mip-chain execution
 test. Distinct colors were uploaded to each level and implicit derivatives
 selected level 1 across the full 8×8 output. Core also rejects a multi-mip R8
 descriptor according to that format's `SINGLE_MIP_ONLY` report.
+
+Public Rg8Snorm and Rgba8Snorm capabilities now have upload, sample and
+conversion readback coverage through ordinary wgpu. The exact selected-device
+reports remain non-filterable and single-mip-only; all 64 output pixels matched
+the signed-to-unorm shader conversion.

@@ -51,6 +51,9 @@ preserved background.
 A ninth strict test uploads and samples an RGBA8 mip chain through implicit
 derivatives, selecting level 1 across all 64 output pixels; a multi-mip R8
 descriptor is rejected by core.
+A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
+wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
+projected formats are non-filterable and single-mip-only.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

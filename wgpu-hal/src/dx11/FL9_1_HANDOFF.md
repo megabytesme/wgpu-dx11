@@ -1287,3 +1287,11 @@ level-1 color across 64 pixels and that core rejects a multi-mip R8 descriptor.
 The full strict suite now passes 9/9; exact evidence is in
 `FL9_1_PROGRESS.md`. Other formats, NPOT chains and historical FL9_1 drivers
 remain separate validation questions.
+
+Code commit `f62e819db` adds public upload/sample/readback for both projected
+SNORM formats. Their signed-to-unorm conversion matched 64 pixels within ±1;
+format reports correctly omit filtering and retain the single-mip flag. The
+strict public suite passes 10/10. A read-only texture/view/copy audit found no
+new undocumented contract gap; BC1 edge-partial upload limits remain the
+already documented private-HAL restriction. Full core/HAL auditing and safe
+HWND presentation remain open.

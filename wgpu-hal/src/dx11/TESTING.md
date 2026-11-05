@@ -135,6 +135,12 @@ nearest mip selection, and verifies all 64 pixels select level 1. It also
 confirms that a multi-mip R8 texture is rejected because the selected format
 projection marks R8 as single-mip-only.
 
+A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
+them with one non-filtering sampler, converts signed values to visible
+unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within
+one channel value. It confirms the selected format reports allow sampling and
+uploads, but not filtering, and remain single-mip-only.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

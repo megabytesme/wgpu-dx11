@@ -4989,3 +4989,34 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 This proves the reported RGBA8 mip path on the tested RTX at forced FL9_1; it
 does not generalize to NPOT textures, other formats or legacy drivers. Public
 HWND presentation and exhaustive contract review remain outstanding.
+
+## Checkpoint — public SNORM sampled formats — `f62e819db`
+
+Added a public strict integration case that checks the selected adapter's
+reports for `Rg8Snorm` and `Rgba8Snorm`, uploads each format, samples both
+through one non-filtering sampler and maps RGBA8 output back to the CPU. Each
+input uses signed values with nontrivial positive and negative channels; the
+shader maps them into visible unorm output. Both format reports contain
+`TEXTURE_BINDING | COPY_DST`, omit `FILTERABLE` and set `SINGLE_MIP_ONLY`.
+
+The focused strict test passed 1/1 and the full public suite passed 10/10 on
+the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual
+FL9_1 and `software=false`. All 64 output pixels matched
+`[192, 63, 160, 255]` within ±1. Rust 1.93.1 wgpu test Clippy, targeted
+rustfmt and `git diff --check` passed. Visual Studio printed its recurring
+developer-prompt banner while providing a working x64 build environment.
+
+An independent read-only audit of public format, view, mip, upload, copy and
+readback paths found no new undocumented mismatch. It reconfirmed the known
+BC1 partial-edge upload restriction (block-aligned regions only), which remains
+documented in `CAPABILITIES.md`; core allows edge-ending partial BC blocks that
+the private HAL currently rejects. The strict command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The public offscreen contract and tested format subset are broader, but public
+HWND presentation, the full reachable-operation audit and historical FL9_1
+drivers remain outstanding.
