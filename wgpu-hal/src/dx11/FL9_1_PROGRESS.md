@@ -4718,3 +4718,24 @@ Example-target `cargo +1.93 clippy --offline -j16 -p wgpu --examples
 This advances the public offscreen example requirement. It does not resolve
 the safe HWND `Present` reentrancy/scheduling design, so public surface
 capabilities remain unavailable.
+
+## Checkpoint — accurate public-backend diagnostic
+
+Commit `435a31c4d54fe4c565c95de722d3f21cc1aee051` updates the core instance
+warning shown when D3D11 is explicitly enabled. The previous message claimed
+there was no usable wgpu backend, which became inaccurate when the restricted
+public FL9_1 offscreen adapter was added. The new warning describes its
+experimental offscreen-only status without implying surface support.
+
+Verification on 2026-11-05:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1` passed 1/1 and enumerated one physical RTX 3090 Ti FL9_1 adapter.
+- `cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl`, targeted rustfmt and `git diff --check` passed.
+- The strict public integration suite passed 2/2 on the same physical RTX at requested/actual FL9_1. It verified the indexed depth-tested public scene, six validation rejections, group-7 sampling, dynamic-uniform update, concurrent devices, and R8 sampled upload. The standalone example separately validated 1,024 pixels (112 red, 277 green, 635 blue clear).
+
+An initial core test invocation omitted the crate's `std` and `wgsl` features and failed to compile test-only imports; rerunning with the feature set above succeeded. The MSVC developer prompt continues to print `vError: Unknown error` despite providing a working x64 toolchain.
+
+The current core review remains focused on any core-valid operation that can
+reach unsupported HAL behavior. The public adapter still reports no surface
+capabilities; the known synchronous HWND `Present` reentrancy design remains
+the presentation blocker.
