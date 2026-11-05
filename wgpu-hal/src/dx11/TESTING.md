@@ -1400,9 +1400,9 @@ attachment into RGBA8, and copies the native attachment directly to a padded
 readback buffer. All 64 native texels per format, the nonzero buffer prefix and
 row padding are checked. The RTX 3090 Ti at forced FL9_1 passed all three
 formats. The stored R8 and RGB565 bytes match their expected quantized values;
-the RG8 green byte is one code below the RGBA8 sampled value, consistent with
-render-target quantization. This checks the combined usage path and rendered
-source contents, in addition to copies from uploaded textures.
+the RG8 green byte is allowed a one-code rounding tolerance relative to the
+RGBA8 sampled value. This checks the combined usage path and rendered source
+contents, in addition to copies from uploaded textures.
 
 ### Non-filtering sampler layouts
 

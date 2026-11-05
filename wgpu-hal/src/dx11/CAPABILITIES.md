@@ -546,9 +546,9 @@ reads the full destination into a nonzero-offset, 256-byte-pitched buffer. All
 separate strict case uses each format with `RESOURCE | COLOR_TARGET | COPY_SRC`,
 renders into it, then copies the rendered attachment to a nonzero-offset,
 padded readback buffer. It checks all 64 source texels per format and confirms
-the offset prefix and row padding retain their sentinel values. RG8's native
-green channel is one code below the sampled/readback RGBA expectation because
-the format's render-target conversion quantizes the stored byte.
+the offset prefix and row padding retain their sentinel values. For RG8, the
+native green byte is checked within one code of the RGBA8 sample because
+render-target conversion can quantize the intermediate channel differently.
 A missing or failed render-target query omits
 `COLOR_ATTACHMENT` from the public projection and rejects attachment creation.
 Multiple mips require POT

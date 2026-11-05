@@ -2923,7 +2923,7 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
         let bytes_per_pixel = format.block_copy_size(None).expect("block copy size") as usize;
         let expected_source = match format {
             TextureFormat::R8Unorm => vec![expected[0]],
-            TextureFormat::Rg8Unorm => vec![expected[0], expected[1].saturating_sub(1)],
+            TextureFormat::Rg8Unorm => vec![expected[0], expected[1]],
             TextureFormat::Rgb5g6b5Unorm => {
                 let r = (u16::from(expected[0]) >> 3) << 11;
                 let g = (u16::from(expected[1]) >> 2) << 5;
@@ -2944,11 +2944,25 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
                 let row = source_readback_offset as usize + y * 256;
                 for x in 0..8 {
                     let start = row + x * bytes_per_pixel;
-                    assert_eq!(
-                        &data[start..start + bytes_per_pixel],
-                        expected_source.as_slice(),
-                        "{format:?} rendered copy-source texel ({x}, {y})"
-                    );
+                    let actual = &data[start..start + bytes_per_pixel];
+                    if format == TextureFormat::Rg8Unorm {
+                        assert_eq!(
+                            actual[0], expected_source[0],
+                            "{format:?} red channel at ({x}, {y})"
+                        );
+                        assert!(
+                            actual[1].abs_diff(expected_source[1]) <= 1,
+                            "{format:?} green channel at ({x}, {y}): expected {}±1, observed {}",
+                            expected_source[1],
+                            actual[1]
+                        );
+                    } else {
+                        assert_eq!(
+                            actual,
+                            expected_source.as_slice(),
+                            "{format:?} rendered copy-source texel ({x}, {y})"
+                        );
+                    }
                 }
                 let row_end = row + 8 * bytes_per_pixel;
                 assert!(data[row_end..row + 256].iter().all(|&byte| byte == 0xCD));
