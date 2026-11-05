@@ -450,6 +450,16 @@ strict hardware mode enabled. These tests cover sampled and indexed draws,
 offset changes, GPU-upload ordering and range rejection; they exercise the
 private four-byte alignment, not a future public device's reported alignment.
 
+The controlled core fixture also verifies two simultaneous dynamic uniforms
+against the selected-device FL9_1 projection. Run
+`cargo test -p wgpu-core --lib --no-default-features
+--features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware
+-- --nocapture --test-threads=1` with `WGPU_DX11_REQUIRE_HARDWARE=1`. Logical
+binding 17 is vertex-visible and uses base/dynamic offsets 256/256; binding 23
+is fragment-visible and uses 256/512. Both alter checked readback pixels. The
+unmodified-projection test separately verifies that core rejects three dynamic
+uniform entries against the reported limit of two.
+
 The private HWND path can be checked with a hidden desktop window using
 `cargo test -p wgpu-hal --lib --no-default-features --features dx11
 fl91_hidden_hwnd_surface -- --nocapture`. With strict hardware mode enabled,

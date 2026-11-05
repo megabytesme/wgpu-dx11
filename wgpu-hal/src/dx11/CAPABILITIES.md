@@ -593,7 +593,13 @@ odd-sized buffer copy remains unverified. The controlled core fixture enables
 `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED` to test these ranges and rendered with a
 dynamic offset. Without this flag core rejected its short uniform shader. The
 fixture flag is not a public adapter capability; normal enumeration remains
-disabled. Three earlier RTX GPU results for integer-uniform bitcasts and a
+disabled. The selected-device FL9_1 core projection permits two dynamic
+uniform buffers per pipeline layout. Strict core readback uses logical
+bindings 17 (vertex) and 23 (fragment), with a base offset of 256 bytes and
+dynamic offsets of 256 and 512 bytes respectively; geometry and sampled color
+both change as expected. Core rejects three dynamic uniform entries against
+the projected limit of two. This verifies the restricted core path, not a
+publicly enumerated adapter. Three earlier RTX GPU results for integer-uniform bitcasts and a
 comparison around 2^24 are superseded: the original integer entry points now
 fail linkage, and the updated tests render float-only controls. An FXC probe
 showed the embedded legacy pixel shader rounding 16777217 to 16777216 and a

@@ -4271,3 +4271,55 @@ closed; synchronous HWND `Present` reentrancy remains unresolved.
 
 The stage-specific uniform fixture and its verification record were committed
 as `2ae141279`.
+
+## Checkpoint — verify two dynamic uniforms through core
+
+The exact selected-device FL9_1 projection exposes two dynamic uniform
+bindings per pipeline layout. The core fixture now binds logical binding 17
+only to the vertex stage with base/dynamic offsets 256/256 and logical binding
+23 only to the fragment stage with offsets 256/512. Each uniform references a
+different aligned range. The vertex value scales geometry and the fragment
+value tints a sampled texture, making both offset selections observable in the
+same draw. The exact-projection test rejects three dynamic entries at
+bind-group-layout creation with `DynamicUniformBuffers { limit: 2, count: 3 }`.
+Normal D3D11 enumeration remains empty.
+
+Verification on 2026-11-05 used Rust 1.93.1 and Visual Studio x64 on
+`Ben-Desktop`, in `C:\dev\personal\wgpu`, with 16 Cargo jobs:
+
+- Strict core rendering passed on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1. The new
+  two-dynamic-uniform draw passed through core, private HAL and D3D11; all 64
+  pixels matched. Sixteen covered pixels were red tinted by 0.5 (UNORM
+  tolerance one); the other 48 matched blue clear. The existing static
+  two-uniform and stage-specific uniform draws also passed.
+- The complete controlled core fixture suite passed 81/81 with strict hardware
+  mode and no missing-device skip. The exact selected-projection test passed
+  1/1, including the three-entry rejection. DX12 core regression passed 77/77,
+  and ordinary D3D11 zero-adapter isolation passed 1/1.
+- Core Clippy passed with the same three pre-existing fixture warnings and no
+  new warnings. Targeted rustfmt and `git diff --check` passed.
+- An initial negative test expected rejection at pipeline-layout creation,
+  but core rejects the over-limit dynamic entries at bind-group-layout
+  creation. The final test asserts that earlier, more precise validation point.
+
+Commands (inside Visual Studio x64; strict mode is required for the GPU run):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+The projection, core test and documentation changes are verified in the
+working tree and remain uncommitted under the current repository instructions.
+Next continue auditing core-legal pipeline/resource combinations against the
+private HAL, and keep ordinary adapter and surface exposure disabled.

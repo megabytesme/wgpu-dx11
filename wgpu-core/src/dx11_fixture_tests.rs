@@ -225,6 +225,12 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     assert!(features.is_empty());
     assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
     assert_eq!(
+        capabilities
+            .limits
+            .max_dynamic_uniform_buffers_per_pipeline_layout,
+        2
+    );
+    assert_eq!(
         capabilities.limits.max_buffer_size,
         u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
     );
@@ -300,6 +306,39 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         "PASS: core rejected seven fragment uniform bindings against the projected limit of six"
     );
     global.bind_group_layout_drop(over_limit_layout);
+    let over_limit_dynamic: Vec<_> = (0..3)
+        .map(|binding| wgt::BindGroupLayoutEntry {
+            binding,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Buffer {
+                ty: wgt::BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        })
+        .collect();
+    let (dynamic_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&over_limit_dynamic),
+        },
+        None,
+    );
+    assert!(matches!(
+        error,
+        Some(binding_model::CreateBindGroupLayoutError::TooManyBindings(
+            binding_model::BindingTypeMaxCountError {
+                kind: binding_model::BindingTypeMaxCountErrorKind::DynamicUniformBuffers,
+                zone: binding_model::BindingZone::Pipeline,
+                limit: 2,
+                count: 3,
+            }
+        ))
+    ));
+    std::println!("PASS: core rejected three dynamic uniforms against the projected limit of two");
+    global.bind_group_layout_drop(dynamic_layout);
     let oversized_buffer = crate::resource::BufferDescriptor {
         label: None,
         size: capabilities.limits.max_buffer_size + 1,
@@ -582,6 +621,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         .test_fixture_wgpu_capabilities()
         .expect("selected FL9_1 device must produce a capability projection");
     assert_eq!(projected_capabilities.limits.max_texture_dimension_2d, 2048);
+    assert_eq!(
+        projected_capabilities
+            .limits
+            .max_dynamic_uniform_buffers_per_pipeline_layout,
+        2
+    );
     assert_eq!(
         projected_capabilities
             .downlevel
@@ -1734,6 +1779,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::Uniform20,
         VertexCase::TwoUniformBindings,
         VertexCase::VertexFragmentUniformBindings,
+        VertexCase::DynamicVertexFragmentUniformBindings,
     ] {
         render_triangle(&global, device, queue, case);
     }
@@ -2866,6 +2912,7 @@ enum VertexCase {
     Uniform20,
     TwoUniformBindings,
     VertexFragmentUniformBindings,
+    DynamicVertexFragmentUniformBindings,
     Bc1,
     NpotClampedPairs,
     ViewportOutsideTarget,
@@ -2977,10 +3024,15 @@ fn render_triangle(
         VertexCase::Uniform5 => Some(5),
         VertexCase::Uniform12 => Some(12),
         VertexCase::Uniform20 => Some(20),
-        VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings => Some(16),
+        VertexCase::TwoUniformBindings
+        | VertexCase::VertexFragmentUniformBindings
+        | VertexCase::DynamicVertexFragmentUniformBindings => Some(16),
         _ => None,
     };
-    let dynamic_uniform = case == VertexCase::Uniform4;
+    let dynamic_stage_uniforms = case == VertexCase::DynamicVertexFragmentUniformBindings;
+    let dynamic_uniform = case == VertexCase::Uniform4 || dynamic_stage_uniforms;
+    let stage_uniforms =
+        case == VertexCase::VertexFragmentUniformBindings || dynamic_stage_uniforms;
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -3458,7 +3510,7 @@ fn render_triangle(
         ]);
     }
     if let Some(size) = uniform_size {
-        let visibility = if case == VertexCase::VertexFragmentUniformBindings {
+        let visibility = if stage_uniforms {
             wgt::ShaderStages::VERTEX
         } else {
             wgt::ShaderStages::FRAGMENT
@@ -3476,14 +3528,16 @@ fn render_triangle(
     }
     if matches!(
         case,
-        VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings
+        VertexCase::TwoUniformBindings
+            | VertexCase::VertexFragmentUniformBindings
+            | VertexCase::DynamicVertexFragmentUniformBindings
     ) {
         group_entries.push(wgt::BindGroupLayoutEntry {
             binding: 23,
             visibility: wgt::ShaderStages::FRAGMENT,
             ty: wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
+                has_dynamic_offset: dynamic_stage_uniforms,
                 min_binding_size: NonZeroU64::new(16),
             },
             count: None,
@@ -3517,7 +3571,9 @@ fn render_triangle(
         }
         if matches!(
             case,
-            VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings
+            VertexCase::TwoUniformBindings
+                | VertexCase::VertexFragmentUniformBindings
+                | VertexCase::DynamicVertexFragmentUniformBindings
         ) {
             let values = if case == VertexCase::TwoUniformBindings {
                 [0.5f32, 0.5, 0.5, 1.0]
@@ -3537,22 +3593,25 @@ fn render_triangle(
     });
     let uniform_b = if matches!(
         case,
-        VertexCase::TwoUniformBindings | VertexCase::VertexFragmentUniformBindings
+        VertexCase::TwoUniformBindings
+            | VertexCase::VertexFragmentUniformBindings
+            | VertexCase::DynamicVertexFragmentUniformBindings
     ) {
         let (buffer, error) = global.device_create_buffer(
             device,
             &wgt::BufferDescriptor {
                 label: Some(Cow::Borrowed("second independent uniform binding")),
-                size: 768,
+                size: if dynamic_stage_uniforms { 1024 } else { 768 },
                 usage: wgt::BufferUsages::UNIFORM | wgt::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             },
             None,
         );
         assert!(error.is_none(), "second uniform buffer creation: {error:?}");
-        let mut data = vec![0u8; 768];
+        let mut data = vec![0u8; if dynamic_stage_uniforms { 1024 } else { 768 }];
+        let base_offset = if dynamic_stage_uniforms { 768 } else { 256 };
         for (component, value) in [0.5f32, 0.5, 0.5, 1.0].into_iter().enumerate() {
-            let offset = 256 + component * 4;
+            let offset = base_offset + component * 4;
             data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
         }
         global.queue_write_buffer(queue, buffer, 0, &data).unwrap();
@@ -3712,7 +3771,7 @@ fn render_triangle(
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSampleBias(image, smp, in.uv, 2.0); }"
     } else if sampled_mips && !sampled_mip_suffix {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), p.xy * 4.0); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv); }"
-    } else if case == VertexCase::VertexFragmentUniformBindings {
+    } else if stage_uniforms {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> vertex_scale: vec4f; @group(0) @binding(23) var<uniform> tint: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p.x * vertex_scale.x, p.y, p.z, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint; }"
     } else if case == VertexCase::TwoUniformBindings {
         "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(17) var<uniform> tint_a: vec4f; @group(0) @binding(23) var<uniform> tint_b: vec4f; struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f }; @vertex fn vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 1.0), uv); } @fragment fn fs(in: Out) -> @location(0) vec4f { return textureSample(image, smp, in.uv) * tint_a * tint_b; }"
@@ -4798,13 +4857,13 @@ fn render_triangle(
             .render_pass_set_vertex_buffer(&mut pass, 1, Some(buffer), 4, None)
             .unwrap();
     }
+    let dynamic_offsets: &[wgt::DynamicOffset] = match case {
+        VertexCase::DynamicVertexFragmentUniformBindings => &[256, 512],
+        VertexCase::Uniform4 => &[256],
+        _ => &[],
+    };
     global
-        .render_pass_set_bind_group(
-            &mut pass,
-            0,
-            Some(group),
-            if dynamic_uniform { &[256] } else { &[] },
-        )
+        .render_pass_set_bind_group(&mut pass, 0, Some(group), dynamic_offsets)
         .unwrap();
     if viewport_outside_target {
         global
@@ -4897,6 +4956,7 @@ fn render_triangle(
         && special_topology.is_none()
         && triangle_strip_index_format.is_none()
         && case != VertexCase::VertexFragmentUniformBindings
+        && !dynamic_stage_uniforms
         && !fractional_viewport
     {
         global
@@ -5037,7 +5097,7 @@ fn render_triangle(
                 );
                 continue;
             }
-            if case == VertexCase::VertexFragmentUniformBindings {
+            if stage_uniforms {
                 if !(2..4).contains(&x) {
                     assert_eq!(
                         &pixels[offset..offset + 4],

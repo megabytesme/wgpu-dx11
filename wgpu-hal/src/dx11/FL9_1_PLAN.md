@@ -20,7 +20,10 @@ below is met. This plan does not claim WebGPU conformance.
    both vertex and fragment stages.
    Strict readback also covers nested structures, an asymmetric matrix,
    stride-sensitive arrays and padding. Runtime integer indexing remains
-   unavailable; continue checking shader instruction pressure and other
+   unavailable. The selected-device core projection also permits two dynamic
+   uniform buffers per pipeline layout; strict readback exercises distinct
+   vertex- and fragment-visible offsets, and core rejects three at bind-group
+   layout creation. Continue checking shader instruction pressure and other
    untested layout shapes with checked translation.
 2. Implement depth/stencil textures, views, initialization, render-pass
    attachments and depth state incrementally. Verify overlapping geometry in

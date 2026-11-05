@@ -284,7 +284,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - Up to eight groups with thirteen static or dynamic uniform slots, eight sampled
   textures and sixteen samplers in total. The internal wgpu capability
   projection exposes six uniforms per shader stage, ensuring disjoint vertex
-  and fragment bindings fit the shared thirteen-slot allocator.
+  and fragment bindings fit the shared thirteen-slot allocator. It caps
+  dynamic uniforms at two per pipeline layout; the exact core projection
+  rejects three, and strict core readback exercises two simultaneously across
+  vertex and fragment stages with distinct offsets.
   Shader-aware pair validation and restricted
   Naga/FXC shaders.
 - NonFiltering sampler layouts accept samplers with nearest minification,

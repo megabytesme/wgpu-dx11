@@ -1147,6 +1147,16 @@ and surface capabilities remain disabled; synchronous HWND `Present`
 reentrancy and the broader public capability snapshot remain blockers.
 The stage-specific uniform fixture was committed as `2ae141279`.
 
+The current working tree extends that fixture to two simultaneous dynamic
+uniforms through the selected-device core projection: logical binding 17 is
+vertex-visible at base/dynamic offsets 256/256, and binding 23 is
+fragment-visible at 256/512. Strict RTX 3090 Ti FL9_1 readback passed all 64
+pixels. Core rejects three dynamic entries against the projected limit of two
+at bind-group-layout creation. The full strict core suite passed 81/81,
+DX12 passed 77/77, adapter isolation passed 1/1, and Clippy/format/diff checks
+passed. These latest changes remain uncommitted under the current repository
+instructions; full commands and diagnostics are in the latest progress entry.
+
 The production adapter remains absent, and the known synchronous HWND
 `Present` reentrancy deadlock remains unresolved. Keep normal enumeration and
 public surface capabilities disabled until those architectural and full
