@@ -5135,3 +5135,47 @@ The repository-wide core/HAL audit remains unfinished; public presentation is
 still gated by the existing synchronous DXGI `Present` reentrancy and lock
 ordering problem. Historical FL9_1 hardware has not been tested. Continue
 with shader/core contract gaps, then return to the surface scheduling design.
+
+## Checkpoint — aggregate FL9_1 uniform-vector budgets — `76dd6656deec94d3832db6961a9516cdba08070e`
+
+Added stage-specific `DownlevelLimits` for the FL9_1 vertex and fragment
+constant budgets (255 and 32 float4 vectors). The hardware capability model
+derives these limits only for FL9_x, while the active backend/compiler limits
+remain a separate intersection. Core's validated Naga interface records the
+complete layout size of uniform globals used by each selected entry point,
+including helper calls, and rejects an over-budget vertex or fragment
+pipeline before invoking HAL. Unused entry-point resources are not counted.
+This size-based accounting is deliberately conservative when only part of a
+declared structure is read. `wgpu-info` prints the values; non-D3D11 adapters
+retain unlimited defaults. The downlevel limits remain non-WebGPU-compliant.
+
+Microsoft's 10Level9 context reference specifies maximum totals of 255 vertex
+and 32 pixel constants. FXC accepts 32 directly referenced pixel vectors in a
+single buffer and across two 16-vector buffers; it rejects 33 and 17+16 at
+register 32. A strict public FL9_1 pipeline reads all 32 vectors from two
+sparse logical bindings, and GPU readback verifies 64/64 `[191, 0, 0, 255]`
+pixels. The same public test asserts that a 33-vector fragment pipeline is
+rejected by core validation before HAL. An initial shader test added an extra
+`vec4` literal, which correctly consumed a 33rd FXC register; the final test
+derives its alpha output from the uploaded uniforms instead.
+
+Verification used `rustc 1.93.1 (01f6ddf75 2026-02-11)`, Visual Studio 2022 x64
+tools and Cargo `-j16`. Strict GPU tests selected the physical NVIDIA GeForce
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested
+FL9_1, observed actual FL9_1, and reported `software=false`:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 12/12 passed, no hardware skips. The new aggregate test rendered 64/64 expected pixels and rejected 33 vectors.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --test-threads=1`: 339/339 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1`: 84/84 passed, including physical adapter enumeration and core hardware cases.
+- `cargo +1.93 test --offline -j16 -p wgpu-types --features serde`: 74/74 unit tests and 14 doc tests passed; 21 doc tests were ignored.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1`: 80/80 passed.
+- HAL with `dx11,gles`, `wgpu-info`, and `wgpu-test` checks passed.
+- Clippy passed for wgpu-types and wgpu. Core emitted three existing fixture-test warnings; HAL emitted nine existing test warnings. No warnings originated in the new implementation.
+- `cargo +1.93 fmt --check` for wgpu-core, wgpu-hal, wgpu-types, wgpu-info, wgpu and wgpu-test, plus `git diff --check`, passed.
+
+The first `wgpu-test` check was accidentally run outside the VS developer
+prompt and could not find `cl.exe`; rerunning inside `VsDevCmd.bat` passed.
+The known Visual Studio `vError: Unknown error` banner remains cosmetic. Public
+HWND presentation, full public capability auditing, historical FL9_1 hardware
+and remaining shader/resource gaps are still outstanding. Next continue the
+reachable-operation audit and investigate the public surface scheduler.

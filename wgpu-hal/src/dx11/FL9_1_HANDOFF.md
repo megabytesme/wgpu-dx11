@@ -1323,10 +1323,23 @@ respectively; the types serde and DX12 core unit suites passed 73/73 and
 79/79. Exact commands, warnings, and hardware identity are in
 `FL9_1_PROGRESS.md`. The public API remains opt-in and offscreen-only.
 
-Recommended next audit: determine whether multiple per-entry constant buffers
-can collectively exceed the FL9_1 pixel shader's 32 float4 constant limit
-despite each declared uniform buffer staying within the current per-binding
-size. FXC tests currently cover the 32/33 boundary for one buffer. Also
-continue auditing other core-accepted shader expressions. The full surface
-gate remains the unresolved synchronous `Present` reentrancy/serialization
-problem; don't enable HWND capabilities until that cross-layer design is safe.
+The multiple-uniform constant-budget audit is resolved by code checkpoint
+`76dd6656deec94d3832db6961a9516cdba08070e`; see the latest checkpoint below.
+Continue auditing other core-accepted shader expressions and return to the
+surface scheduler. The public surface gate remains the unresolved synchronous
+`Present` reentrancy/serialization problem; do not enable HWND capabilities
+until that cross-layer design is safe.
+
+## Current checkpoint — aggregate FL9_1 uniform-vector budgets
+
+`76dd6656deec94d3832db6961a9516cdba08070e` adds selected-entry uniform-vector
+accounting and public FL9_1 budgets of 255 vertex / 32 fragment vectors. Core
+rejects aggregate overages before HAL, counting complete declared uniform
+layouts for used resources. Strict public rendering exercised 32 fragment
+vectors across two sparse bindings, read back 64 expected pixels, and rejected
+33 at pipeline creation. Strict suite results: public wgpu 12/12, private HAL
+339/339, core fixture 84/84, and core DX12 80/80. Types serde passed 74/74
+unit tests and 14 doc tests (21 ignored). Exact commands and compiler evidence
+are in `FL9_1_PROGRESS.md`. Continue the public core/HAL contract audit; public
+HWND presentation, historical FL9_1 drivers and remaining shader/resource gaps
+remain unverified.
