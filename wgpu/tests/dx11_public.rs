@@ -415,6 +415,111 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     }
     readback.unmap();
 
+    let shifted_transform_data: Vec<u8> = [
+        1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.25, 1.0,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    queue.write_buffer(&transform, 0, &shifted_transform_data);
+    let mut shifted_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = shifted_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public DX11 FL9_1 transformed second frame"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &uniforms_group, &[]);
+        pass.set_bind_group(1, &texture_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 0..1);
+        pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
+        pass.draw_indexed(0..3, 0, 0..1);
+    }
+    shifted_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let shifted_submission = queue.submit([shifted_encoder.finish()]);
+    let (shifted_sender, shifted_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        shifted_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(shifted_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for transformed public D3D11 submission");
+    shifted_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("transformed readback map callback")
+        .expect("map transformed readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 2 {
+                    [0, 0, 255, 255]
+                } else if (2..6).contains(&x) {
+                    [128, 0, 0, 255]
+                } else {
+                    [0, 255, 0, 255]
+                };
+                let actual = &data[offset..offset + 4];
+                for (channel, (&observed_channel, expected)) in
+                    actual.iter().zip(expected).enumerate()
+                {
+                    assert!(
+                        observed_channel.abs_diff(expected) <= 1,
+                        "shifted pixel ({x}, {y}) channel {channel}: expected pixel {expected:?}, observed {actual:?}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+
     let (second_device, second_queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("second public DX11 FL9_1 device"),
         required_features: Features::empty(),
@@ -518,5 +623,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         }
     }
     second_readback.unmap();
-    println!("PASS: public wgpu D3D11 FL9_1 two-group stage uniforms and indexed textured depth rendering; 32 tinted-red/32 green pixels matched; a second device clear/readback matched 64/64 green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1 two-group stage uniforms and indexed textured depth rendering; first frame matched 32 tinted-red/32 green pixels; updated transform shifted the second frame to 16 blue/32 tinted-red/16 green; second-device clear/readback matched 64/64 green pixels");
 }

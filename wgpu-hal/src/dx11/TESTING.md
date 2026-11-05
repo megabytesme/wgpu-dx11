@@ -18,9 +18,11 @@ at sparse logical bindings 7 and 42, and binds a vertex transform at group 0
 binding 3 and fragment tint at group 0 binding 17. An indexed textured scene
 uses those stage-visible uniforms with a D24S8 depth attachment. Readback
 checks all 64 pixels: 32 tinted-red pixels and 32 green pixels from the
-depth-tested indexed draw. It then opens a second public device from the same
-adapter and verifies a separate 64-pixel clear and readback. Strict mode turns
-missing physical hardware into a test failure:
+depth-tested indexed draw. The test updates the transform uniform between
+submissions and verifies a shifted frame containing 16 blue, 32 tinted-red
+and 16 green pixels. It then opens a second public device from the same adapter
+and verifies a separate 64-pixel clear and readback. Strict mode turns missing
+physical hardware into a test failure:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -29,10 +31,11 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 
 The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
 `32.0.16.2101`, requested and actual FL9_1, and `software=false`. The main
-image matched 32 tinted-red/32 green pixels; the second device readback matched
-all 64 green pixels. This is a representative public offscreen integration
-case, not a complete application or adapter-contract audit. Presentation
-remains unavailable.
+image matched 32 tinted-red/32 green pixels; the transform update shifted the
+second image to 16 blue/32 tinted-red/16 green pixels; the second device
+readback matched all 64 green pixels. This is a representative public offscreen
+integration case, not a complete application or adapter-contract audit.
+Presentation remains unavailable.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag

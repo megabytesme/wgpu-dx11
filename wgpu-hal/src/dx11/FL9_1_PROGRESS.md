@@ -4468,3 +4468,28 @@ so their last full verified counts remain the prior checkpoint (HAL 337/337,
 core 81/81, DX12 core 77/77). Continue with the remaining exact core/HAL
 capability contract audit; do not widen limits without coverage and keep public
 surface support disabled until safe Present scheduling is established.
+
+## Checkpoint — public transform update across submissions
+
+The public integration now changes the vertex transform with
+`Queue::write_buffer`, submits the same indexed textured/depth-tested pipeline
+again, and verifies a second full readback. The initial image matched 32
+tinted-red and 32 green pixels. The updated transform shifted the red quad by
+two columns; the second image matched 16 blue clear pixels, 32 tinted-red
+pixels and 16 green pixels. This confirms the selected public uniform binding
+is updated between submissions and changes the rendered geometry while the
+pipeline, texture/sampler bindings and target remain reused.
+
+Verification on 2026-11-05 used Rust 1.93.1, Visual Studio 2022 x64 and
+`WGPU_DX11_REQUIRE_HARDWARE=1`:
+
+- `cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1, `software=false`.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std` passed without warnings.
+- Targeted rustfmt and `git diff --check` passed.
+
+The first attempt used an incorrect expected image for the translated triangle
+and failed with a diagnostic showing the complete row values; the test's
+expected image was corrected to the observed geometric coverage and then
+passed. No backend code changed. Continue auditing selected-device projection
+and public core/HAL combinations; retain offscreen-only exposure and the known
+surface Present reentrancy blocker.
