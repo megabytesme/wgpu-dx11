@@ -592,3 +592,9 @@ Do not describe this restricted offscreen adapter as complete wgpu or WebGPU
 support. See [TESTING.md](TESTING.md) for exact public and private test commands.
 
 See [TESTING.md](TESTING.md) for the staged validation plan and hardware matrix.
+
+Fragment `@builtin(sample_mask)` output is now represented by
+`DownlevelLimits::fragment_sample_mask_output`. Microsoft documents HLSL
+`SV_Coverage` output as requiring `ps_4_1`; the selected FL9_1 profile is
+`ps_4_0_level_9_1`. FXC rejects the output, while the color-only sibling
+compiles. Core rejects only selected fragment entries that write the mask.

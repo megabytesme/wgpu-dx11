@@ -133,7 +133,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    selected-entry gate because its HLSL lowering uses image queries and
    explicit-level sampling; both 9_1 and 9_3 pixel profiles reject it with
    FXC X4532, including through a helper. Continue checking other WGSL
-   expressions against the FL9_1 compiler path.
+   expressions against the FL9_1 compiler path. Fragment
+   `@builtin(sample_mask)` output is separately gated: Naga lowers it to
+   `SV_Coverage`, which Microsoft documents as writable only from `ps_4_1`,
+   while FL9_1 compiles `ps_4_0_level_9_1`. FXC rejection and the selected-entry
+   core error are tested; a possible single-sample discard emulation remains
+   unimplemented.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

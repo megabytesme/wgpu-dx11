@@ -4917,3 +4917,80 @@ fn public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91() {
     drop(pipeline("color_and_depth"));
     println!("PASS: core rejected direct-only frag_depth before FXC and accepted the structured color+depth output");
 }
+
+#[test]
+fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 sample-mask output test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 fragment sample-mask output forms"),
+        source: ShaderSource::Wgsl(
+            "struct ColorAndMask { @location(0) color: vec4f, @builtin(sample_mask) mask: u32 };\n\
+             @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.5, 1.0); }\n\
+             @fragment fn with_mask() -> ColorAndMask { return ColorAndMask(vec4f(1.0, 0.0, 0.0, 1.0), 0xffffffffu); }\n\
+             @fragment fn color_only() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 fragment sample-mask pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error_containing(
+        &device,
+        "fragment sample-mask output",
+        "@builtin(sample_mask)",
+        || drop(pipeline("with_mask")),
+    );
+    drop(pipeline("color_only"));
+    println!("PASS: core rejected fragment sample-mask output before FXC and accepted the color-only sibling");
+}

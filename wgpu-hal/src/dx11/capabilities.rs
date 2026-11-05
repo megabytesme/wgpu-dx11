@@ -234,6 +234,7 @@ pub(super) struct BackendCapabilities {
     pub d24s8_depth_bias_clamp: bool,
     pub fragment_depth_with_bias: bool,
     pub fragment_depth_without_color_target_0: bool,
+    pub fragment_sample_mask_output: bool,
     pub two_sided_stencil: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
@@ -304,6 +305,7 @@ impl BackendCapabilities {
         d24s8_depth_bias_clamp: false,
         fragment_depth_with_bias: false,
         fragment_depth_without_color_target_0: false,
+        fragment_sample_mask_output: false,
         two_sided_stencil: false,
         instancing: false,
         instancing_without_instance_inputs: true,
@@ -399,6 +401,7 @@ impl Capabilities {
                 fragment_depth_without_color_target_0: self
                     .backend
                     .fragment_depth_without_color_target_0,
+                fragment_sample_mask_output: self.backend.fragment_sample_mask_output,
                 fragment_front_facing: false,
                 fragment_position: false,
                 texture_load: false,
@@ -841,6 +844,7 @@ mod tests {
                 .limits
                 .fragment_depth_without_color_target_0
         );
+        assert!(!exposed.downlevel.limits.fragment_sample_mask_output);
         assert!(!exposed.downlevel.limits.vertex_index_input);
         assert!(!exposed.downlevel.limits.instance_index_input);
         assert!(!exposed.downlevel.limits.texture_query);
@@ -1166,6 +1170,7 @@ mod tests {
             assert!(!caps.backend.d24s8_depth_bias_clamp);
             assert!(!caps.backend.fragment_depth_with_bias);
             assert!(!caps.backend.fragment_depth_without_color_target_0);
+            assert!(!caps.backend.fragment_sample_mask_output);
             assert!(caps.backend.dynamic_uniform_offsets);
             assert!(caps.backend.uniform_binding_sizes_unaligned_16);
         }

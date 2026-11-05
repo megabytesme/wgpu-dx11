@@ -369,6 +369,16 @@ the missing-target-0 shape before HAL. A color output at another location does
 not satisfy this profile requirement. This restriction reflects the current
 10Level9 compiler path; it is not a general FL9_1 hardware claim.
 
+The FL9_1 projection also disables
+`DownlevelLimits::fragment_sample_mask_output`. Naga lowers a WGSL fragment
+`@builtin(sample_mask)` output to HLSL `SV_Coverage`, whose writable pixel
+shader form Microsoft documents as requiring `ps_4_1` or higher. The backend
+uses `ps_4_0_level_9_1`; a strict-device FXC test confirms that the mask output
+fails while a color-only sibling compiles. Core checks the selected fragment
+entry point before HAL. The private renderer is single-sample, so a future
+semantics-preserving implementation could investigate lowering the low bit
+to discard, but no such rewrite is currently performed.
+
 | Transfer | Implementation and restrictions | Coverage |
 | --- | --- | --- |
 | Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM accept one-mip, one-layer sampled/upload textures only. BC1_UNORM uses 4×4 texel blocks, 8-byte block rows, 4-aligned dimensions and block-aligned update regions. | RGBA8/BGRA8 offset and padded full/partial uploads, GPU-written source and ordered submissions. All three sampled-upload-only uncompressed formats passed padded-row, nonzero-source-offset upload and full rendered readback tests on forced FL9_1. BC1 passed an offset padded full upload, a partial block replacement and 256-pixel rendered readback. |

@@ -646,6 +646,13 @@ rejected at zero bias through
 strict public wgpu test verify that this error is returned before HAL, while
 the same module's structured color-plus-depth entry successfully compiles.
 
+`@builtin(sample_mask)` output is another profile boundary. Naga emits HLSL
+`SV_Coverage`, which Microsoft documents as writable only from `ps_4_1`;
+`ps_4_0_level_9_1` rejects it. The HAL test captures the FXC failure and
+compiles a color-only sibling. The strict public test confirms core rejects
+only the selected entry using sample-mask output, before HAL. It does not
+exercise a GPU draw; the device is nevertheless explicitly created at FL9_1.
+
 The controlled core fixture reports
 `DownlevelLimits::depth_bias_with_fragment_depth = false`. It verifies that a
 selected `frag_depth` entry plus nonzero bias returns

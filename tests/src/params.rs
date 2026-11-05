@@ -28,6 +28,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         viewport_rectangles_outside_target: false,
         depth_bias_with_fragment_depth: false,
         fragment_depth_without_color_target_0: false,
+        fragment_sample_mask_output: false,
         fragment_front_facing: false,
         fragment_position: false,
         texture_query: false,

@@ -1945,6 +1945,24 @@ impl Interface {
         Ok(writes_depth && !writes_color_target_0)
     }
 
+    pub(crate) fn entry_point_uses_unsupported_fragment_sample_mask_output(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        if limits.fragment_sample_mask_output {
+            return Ok(false);
+        }
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point
+            .outputs
+            .contains(&Varying::BuiltIn(BuiltIn::SampleMask)))
+    }
+
     pub(crate) fn entry_point_uses_front_facing(
         &self,
         stage: naga::ShaderStage,
@@ -3456,6 +3474,63 @@ mod tests {
             .unwrap());
         assert!(interface
             .entry_point_uses_unsupported_fragment_depth_without_color_target_0(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn fragment_sample_mask_output_follows_selected_entry() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct ColorAndMask {
+                @location(0) color: vec4f,
+                @builtin(sample_mask) mask: u32,
+            }
+            @fragment fn with_mask() -> ColorAndMask {
+                return ColorAndMask(vec4f(1.0), 0xffffffffu);
+            }
+            @fragment fn color_only() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            fragment_sample_mask_output: false,
+            ..Default::default()
+        };
+
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_sample_mask_output(
+                naga::ShaderStage::Fragment,
+                "with_mask",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_sample_mask_output(
+                naga::ShaderStage::Fragment,
+                "color_only",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_sample_mask_output(
+                naga::ShaderStage::Fragment,
+                "with_mask",
+                &wgt::DownlevelLimits::default(),
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_sample_mask_output(
                 naga::ShaderStage::Fragment,
                 "missing",
                 &fl91,

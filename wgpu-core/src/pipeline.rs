@@ -799,6 +799,8 @@ pub enum CreateRenderPipelineError {
         "A fragment entry point that writes frag_depth without a color target at @location(0) is not supported by this downlevel adapter"
     )]
     UnsupportedFragmentDepthWithoutColorTarget0,
+    #[error("Fragment `@builtin(sample_mask)` output is not supported by this downlevel adapter")]
+    UnsupportedFragmentSampleMaskOutput,
     #[error("Fragment `@builtin(front_facing)` is not supported by this downlevel adapter")]
     UnsupportedFragmentFrontFacing,
     #[error("Fragment `@builtin(position)` input is not supported by this downlevel adapter")]
@@ -908,6 +910,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
+            | Self::UnsupportedFragmentSampleMaskOutput
             | Self::UnsupportedFragmentFrontFacing
             | Self::UnsupportedFragmentPosition
             | Self::UnsupportedTextureLoad { .. }
