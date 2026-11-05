@@ -80,6 +80,14 @@ map to the level-9_1 instruction set and `SampleGrad` is unsupported by
 fractional bias, derivative helpers and entry-point isolation; this does not
 claim full biased or explicit-gradient sampling support.
 
+Explicit `textureSampleLevel` is independently restricted. The selected-entry
+`texture_sample_level` limit rejects reachable `SampleLevel::Exact` operations
+before HAL pipeline creation, including helper calls. FXC emits X4532 for both
+literal and dynamic explicit LOD under the 9_1 and 9_3 pixel profiles; implicit
+sampling is unaffected. The static feature-level model marks this capability
+available starting at 10_0, while this backend's current implementation flag is
+false.
+
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
 D24S8 depth testing and validates all 1,024 offscreen pixels. Strict execution

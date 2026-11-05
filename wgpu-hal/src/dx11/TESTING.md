@@ -144,6 +144,17 @@ Naga interface tests verify selected-entry and helper-call tracking. An FXC
 compiler test records that `ddx` cannot map to `ps_4_0_level_9_1` and
 `SampleGrad` is unsupported by that profile.
 
+Explicit `textureSampleLevel`, including level zero, is a separate operation
+from implicit sampling. FXC rejects literal and dynamic explicit LOD with
+`X4532: texlod not supported on this target` for both
+`ps_4_0_level_9_1` and `ps_4_0_level_9_3`. Core's `texture_sample_level`
+downlevel limit rejects selected entries that use `SampleLevel::Exact`
+directly or through a helper, and permits an implicit-sampling sibling. The
+strict public test exercises these validation outcomes; HAL compiler tests
+capture the profile diagnostics. This capability is modeled as available at
+FL10_0 and above, but the current D3D11 backend execution profile remains
+FL9_1-only.
+
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
 unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within

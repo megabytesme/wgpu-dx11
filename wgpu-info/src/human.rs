@@ -300,6 +300,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             depth_bias_with_fragment_depth,
             fragment_front_facing,
             fragment_position,
+            texture_sample_level,
             texture_load,
             max_texture_sample_bias,
             texture_sample_bias_dynamic,
@@ -353,6 +354,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     )?;
     writeln!(output, "\t\tFragment front-facing input: {fragment_front_facing}")?;
     writeln!(output, "\t\tFragment position input: {fragment_position}")?;
+    writeln!(output, "\t\tExplicit texture sample level: {texture_sample_level}")?;
     writeln!(output, "\t\tTexture loads: {texture_load}")?;
     writeln!(output, "\t\tMaximum absolute texture sample bias: {max_texture_sample_bias}")?;
     writeln!(output, "\t\tDynamic texture sample bias: {texture_sample_bias_dynamic}")?;

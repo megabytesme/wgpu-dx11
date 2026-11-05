@@ -17,6 +17,7 @@ use windows::{
 pub(crate) enum ShaderProfile {
     VertexLevel9_1,
     PixelLevel9_1,
+    PixelLevel9_3,
     Vertex5_0,
     Pixel5_0,
     Compute5_0,
@@ -27,6 +28,7 @@ impl ShaderProfile {
         match self {
             Self::VertexLevel9_1 => PCSTR(c"vs_4_0_level_9_1".as_ptr().cast()),
             Self::PixelLevel9_1 => PCSTR(c"ps_4_0_level_9_1".as_ptr().cast()),
+            Self::PixelLevel9_3 => PCSTR(c"ps_4_0_level_9_3".as_ptr().cast()),
             Self::Vertex5_0 => PCSTR(c"vs_5_0".as_ptr().cast()),
             Self::Pixel5_0 => PCSTR(c"ps_5_0".as_ptr().cast()),
             Self::Compute5_0 => PCSTR(c"cs_5_0".as_ptr().cast()),
@@ -233,7 +235,9 @@ pub(super) fn compile_naga_with_viewport(
     use naga::back::hlsl;
     let expected = match profile {
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
-        ShaderProfile::PixelLevel9_1 | ShaderProfile::Pixel5_0 => naga::ShaderStage::Fragment,
+        ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3 | ShaderProfile::Pixel5_0 => {
+            naga::ShaderStage::Fragment
+        }
         ShaderProfile::Compute5_0 => naga::ShaderStage::Compute,
     };
     if expected != stage {
@@ -247,7 +251,7 @@ pub(super) fn compile_naga_with_viewport(
     let entry_info = info.get_entry_point(entry_index);
     let level_9 = matches!(
         profile,
-        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3
     );
     let mut options = hlsl::Options {
         shader_model: hlsl::ShaderModel::V5_0,
@@ -608,6 +612,7 @@ mod tests {
         for (source, profile) in [
             (vertex, ShaderProfile::VertexLevel9_1),
             (pixel, ShaderProfile::PixelLevel9_1),
+            (pixel, ShaderProfile::PixelLevel9_3),
             (vertex, ShaderProfile::Vertex5_0),
             (pixel, ShaderProfile::Pixel5_0),
             (compute, ShaderProfile::Compute5_0),
@@ -633,6 +638,74 @@ mod tests {
             let error = compile_hlsl(source, "main", ShaderProfile::PixelLevel9_1)
                 .expect_err("FL9_1 profile must reject derivative instructions");
             std::println!("FL9_1 {label} FXC diagnostic: {}", error.message);
+            assert!(!error.message.is_empty());
+        }
+    }
+
+    #[test]
+    fn level_9_1_pixel_profile_explicit_lod_diagnostic() {
+        for (label, level) in [("literal", "0.0"), ("dynamic", "uv.x")] {
+            let source = alloc::format!(
+                "@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {{ return textureSampleLevel(image, smp, uv, {level}); }}"
+            );
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let bindings = [
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 0,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::Texture2dFloat,
+                },
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 1,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::Sampler,
+                },
+            ];
+            let error = compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "main",
+                ShaderProfile::PixelLevel9_1,
+                &bindings,
+            )
+            .unwrap_err();
+            let NagaCompileError::Compilation(error) = error else {
+                panic!("expected the level-9 profile compiler to reject {label} explicit LOD: {error:?}");
+            };
+            std::println!(
+                "FL9_1 explicit {label} LOD FXC diagnostic: {}",
+                error.message
+            );
+            assert!(!error.message.is_empty());
+            let error = compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "main",
+                ShaderProfile::PixelLevel9_3,
+                &bindings,
+            )
+            .expect_err("the 9_3 profile must also reject explicit texture LOD");
+            let NagaCompileError::Compilation(error) = error else {
+                panic!("unexpected 9_3 compiler error: {error:?}");
+            };
+            std::println!(
+                "FL9_3 explicit {label} LOD FXC diagnostic: {}",
+                error.message
+            );
             assert!(!error.message.is_empty());
         }
     }

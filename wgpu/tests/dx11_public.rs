@@ -126,6 +126,22 @@ fn expect_validation_error(device: &Device, label: &str, operation: impl FnOnce(
     );
 }
 
+fn expect_validation_error_containing(
+    device: &Device,
+    label: &str,
+    expected: &str,
+    operation: impl FnOnce(),
+) {
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    operation();
+    let error = poll_ready(scope.pop()).unwrap_or_else(|| panic!("{label} was accepted"));
+    assert!(matches!(error, Error::Validation { .. }), "{error:?}");
+    assert!(
+        format!("{error:?}").contains(expected),
+        "{label} produced the wrong validation error: {error:?}"
+    );
+}
+
 #[test]
 fn public_dx11_enforces_fl91_aggregate_uniform_constants() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -563,6 +579,89 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     });
     drop(create_texel_load_pipeline("safe"));
     println!("PASS: public core rejected selected textureLoad and accepted its safe sibling entry");
+
+    let sample_level_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 explicit texture-level validation layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 23,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let sample_level_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 explicit texture-level pipeline layout"),
+        bind_group_layouts: &[Some(&sample_level_layout)],
+        immediate_size: 0,
+    });
+    let sample_level_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 explicit texture-level selected-entry shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(23) var smp: sampler;\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0), vec2f(0.5)); }\n\
+             fn sample_exact(uv: vec2f, lod: f32) -> vec4f { return textureSampleLevel(image, smp, uv, lod); }\n\
+             @fragment fn exact_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
+             @fragment fn exact_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_exact(uv, uv.x); }\n\
+             @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }"
+                .into(),
+        ),
+    });
+    let sample_level_targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_sample_level_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 selected-entry explicit texture-level pipeline"),
+            layout: Some(&sample_level_pipeline_layout),
+            vertex: VertexState {
+                module: &sample_level_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &sample_level_shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &sample_level_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error_containing(
+        &device,
+        "direct explicit texture sample level",
+        "Explicit texture sample levels are not supported",
+        || drop(create_sample_level_pipeline("exact_direct")),
+    );
+    expect_validation_error_containing(
+        &device,
+        "helper explicit texture sample level",
+        "Explicit texture sample levels are not supported",
+        || drop(create_sample_level_pipeline("exact_helper")),
+    );
+    drop(create_sample_level_pipeline("implicit"));
+    println!("PASS: public core rejected reachable explicit textureSampleLevel before HAL and compiled the implicit-sampling sibling");
 
     expect_validation_error(&device, "3D texture creation", || {
         drop(device.create_texture(&TextureDescriptor {

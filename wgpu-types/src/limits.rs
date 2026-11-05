@@ -1139,6 +1139,12 @@ pub struct DownlevelLimits {
     /// This can be unavailable when the shader backend cannot compile the corresponding input
     /// for its selected shader model.
     pub fragment_position: bool,
+    /// Whether sampled texture operations may specify an explicit mip level.
+    ///
+    /// This models shader-profile support for `textureSampleLevel`; implicit
+    /// sampling and `textureSampleBias` are reported separately.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_sample_level: bool,
     /// Whether shader entry points may use `textureLoad` operations.
     ///
     /// This can be unavailable when the backend cannot preserve texel-load semantics for its
@@ -1212,6 +1218,7 @@ impl Default for DownlevelLimits {
             depth_bias_with_fragment_depth: true,
             fragment_front_facing: true,
             fragment_position: true,
+            texture_sample_level: true,
             texture_load: true,
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
@@ -1268,6 +1275,7 @@ impl DownlevelLimits {
             && (!required.depth_bias_with_fragment_depth || self.depth_bias_with_fragment_depth)
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
+            && (!required.texture_sample_level || self.texture_sample_level)
             && (!required.texture_load || self.texture_load)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
             && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
@@ -1329,6 +1337,7 @@ impl DownlevelCapabilities {
             && self.limits.depth_bias_with_fragment_depth
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
+            && self.limits.texture_sample_level
             && self.limits.texture_load
             && self.limits.max_texture_sample_bias
                 >= DownlevelLimits::default().max_texture_sample_bias
@@ -1624,6 +1633,7 @@ mod tests {
             depth_bias_with_fragment_depth: false,
             fragment_front_facing: false,
             fragment_position: false,
+            texture_sample_level: false,
             texture_load: true,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
@@ -1652,6 +1662,7 @@ mod tests {
             depth_bias_with_fragment_depth: false,
             fragment_front_facing: false,
             fragment_position: false,
+            texture_sample_level: false,
             texture_load: true,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
@@ -1781,6 +1792,24 @@ mod tests {
         .is_webgpu_compliant());
     }
 
+    #[test]
+    fn explicit_texture_sample_level_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            texture_sample_level: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_sample_level: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn previous_downlevel_limits_serde_shape_defaults_new_binding_caps() {
@@ -1796,6 +1825,7 @@ mod tests {
             "max_fragment_shader_uniform_vectors",
             "max_sampler_anisotropy",
             "texture_load",
+            "texture_sample_level",
             "max_texture_sample_bias",
             "texture_sample_bias_dynamic",
             "texture_sample_bias_offset",
@@ -1814,6 +1844,7 @@ mod tests {
         assert_eq!(limits.max_fragment_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_sampler_anisotropy, 16);
         assert!(limits.texture_load);
+        assert!(limits.texture_sample_level);
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);
         assert!(limits.texture_sample_bias_dynamic);
         assert!(limits.texture_sample_bias_offset);
