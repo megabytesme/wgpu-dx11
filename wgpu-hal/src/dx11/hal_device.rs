@@ -209,7 +209,10 @@ impl crate::Device for Device {
                 && !sampled_upload
                 && !matches!(
                     desc.format,
-                    wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                    wgt::TextureFormat::Rgba8Unorm
+                        | wgt::TextureFormat::Bgra8Unorm
+                        | wgt::TextureFormat::Rgba8UnormSrgb
+                        | wgt::TextureFormat::Bgra8UnormSrgb
                 ))
             || desc.size.depth_or_array_layers != 1
             || desc.mip_level_count == 0
@@ -272,13 +275,16 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
             wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
             wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+            wgt::TextureFormat::Rgba8UnormSrgb => DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            wgt::TextureFormat::Bgra8UnormSrgb => DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
             wgt::TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM,
             wgt::TextureFormat::Rg8Snorm => DXGI_FORMAT_R8G8_SNORM,
             wgt::TextureFormat::Rgba8Snorm => DXGI_FORMAT_R8G8B8A8_SNORM,
@@ -363,15 +369,18 @@ impl crate::Device for Device {
                 D3D11_BIND_DEPTH_STENCIL, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
             },
             Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM,
-                DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
+                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         let native = self.native.texture_desc(texture).map_err(device_error)?;
         let format = match native.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => wgt::TextureFormat::Bgra8UnormSrgb,
             DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
             DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,

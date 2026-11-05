@@ -2238,7 +2238,7 @@ mod tests {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgt::TextureDimension::D2,
-            format: wgt::TextureFormat::Bgra8UnormSrgb,
+            format: wgt::TextureFormat::Rgba16Float,
             usage: wgt::TextureUses::COLOR_TARGET,
             memory_flags: MemoryFlags::empty(),
             view_formats: vec![],

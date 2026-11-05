@@ -12,9 +12,9 @@ use windows::Win32::Graphics::{
         D3D11_FORMAT_SUPPORT_TEXTURE2D,
     },
     Dxgi::Common::{
-        DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM,
-        DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-        DXGI_FORMAT_R8G8_SNORM,
+        DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+        DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
+        DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM,
     },
 };
 
@@ -47,6 +47,8 @@ pub(super) struct HardwareGuarantees {
     pub rg8_snorm_sampled_texture: bool,
     pub rgba8_snorm_sampled_texture: bool,
     pub bc1_unorm_sampled_texture: bool,
+    pub rgba8_srgb_texture: bool,
+    pub bgra8_srgb_texture: bool,
 }
 
 impl HardwareGuarantees {
@@ -105,6 +107,8 @@ impl HardwareGuarantees {
             rg8_snorm_sampled_texture: true,
             rgba8_snorm_sampled_texture: true,
             bc1_unorm_sampled_texture: true,
+            rgba8_srgb_texture: true,
+            bgra8_srgb_texture: true,
         }
     }
 
@@ -161,6 +165,8 @@ impl<T> Query<T> {
 pub(super) struct DriverCapabilities {
     pub rgba8: Query<u32>,
     pub bgra8: Query<u32>,
+    pub rgba8_srgb: Query<u32>,
+    pub bgra8_srgb: Query<u32>,
     pub depth24_stencil8: Query<u32>,
     pub rgba8_samples_4: Query<u32>,
     pub full_npot: Query<bool>,
@@ -182,6 +188,8 @@ pub(super) struct BackendCapabilities {
     pub pot_sampled_attachment_mips: bool,
     pub rgba8_single_mip_transfers: bool,
     pub bgra8_single_mip_transfers: bool,
+    pub rgba8_srgb_single_mip_transfers: bool,
+    pub bgra8_srgb_single_mip_transfers: bool,
     pub r8_unorm_sampled_upload: bool,
     pub rg8_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
@@ -253,6 +261,8 @@ impl BackendCapabilities {
         pot_sampled_attachment_mips: true,
         rgba8_single_mip_transfers: true,
         bgra8_single_mip_transfers: true,
+        rgba8_srgb_single_mip_transfers: true,
+        bgra8_srgb_single_mip_transfers: true,
         r8_unorm_sampled_upload: true,
         rg8_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
@@ -514,6 +524,8 @@ impl Capabilities {
             driver: DriverCapabilities {
                 rgba8: format(DXGI_FORMAT_R8G8B8A8_UNORM),
                 bgra8: format(DXGI_FORMAT_B8G8R8A8_UNORM),
+                rgba8_srgb: format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
+                bgra8_srgb: format(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
                 depth24_stencil8: format(DXGI_FORMAT_D24_UNORM_S8_UINT),
                 rgba8_samples_4: Query::from_result(unsafe {
                     raw.CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4)
@@ -543,6 +555,8 @@ impl Capabilities {
         let (query, sampled_upload) = match format {
             wgt::TextureFormat::Rgba8Unorm => (self.driver.rgba8, false),
             wgt::TextureFormat::Bgra8Unorm => (self.driver.bgra8, false),
+            wgt::TextureFormat::Rgba8UnormSrgb => (self.driver.rgba8_srgb, false),
+            wgt::TextureFormat::Bgra8UnormSrgb => (self.driver.bgra8_srgb, false),
             wgt::TextureFormat::R8Unorm => (self.driver.r8_unorm, true),
             wgt::TextureFormat::Rg8Snorm => (self.driver.rg8_snorm, true),
             wgt::TextureFormat::Rgba8Snorm => (self.driver.rgba8_snorm, true),
@@ -562,6 +576,8 @@ impl Capabilities {
                 && !self.hardware.rgba8_snorm_sampled_texture
             || format == wgt::TextureFormat::Bc1RgbaUnorm
                 && !self.hardware.bc1_unorm_sampled_texture
+            || format == wgt::TextureFormat::Rgba8UnormSrgb && !self.hardware.rgba8_srgb_texture
+            || format == wgt::TextureFormat::Bgra8UnormSrgb && !self.hardware.bgra8_srgb_texture
         {
             return Err(UnsupportedFormat);
         }
@@ -704,9 +720,16 @@ impl Capabilities {
                 && !self.backend.rgba8_single_mip_transfers)
             || (format == wgt::TextureFormat::Bgra8Unorm
                 && !self.backend.bgra8_single_mip_transfers)
+            || (format == wgt::TextureFormat::Rgba8UnormSrgb
+                && !self.backend.rgba8_srgb_single_mip_transfers)
+            || (format == wgt::TextureFormat::Bgra8UnormSrgb
+                && !self.backend.bgra8_srgb_single_mip_transfers)
             || !matches!(
                 format,
-                wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                wgt::TextureFormat::Rgba8Unorm
+                    | wgt::TextureFormat::Bgra8Unorm
+                    | wgt::TextureFormat::Rgba8UnormSrgb
+                    | wgt::TextureFormat::Bgra8UnormSrgb
             )
         {
             return Caps::empty();
@@ -733,10 +756,12 @@ impl Capabilities {
             | Caps::COPY_DST
             | Caps::SAMPLED
             | Caps::SAMPLED_LINEAR;
-        let format_query = if format == wgt::TextureFormat::Rgba8Unorm {
-            self.driver.rgba8
-        } else {
-            self.driver.bgra8
+        let format_query = match format {
+            wgt::TextureFormat::Rgba8Unorm => self.driver.rgba8,
+            wgt::TextureFormat::Bgra8Unorm => self.driver.bgra8,
+            wgt::TextureFormat::Rgba8UnormSrgb => self.driver.rgba8_srgb,
+            wgt::TextureFormat::Bgra8UnormSrgb => self.driver.bgra8_srgb,
+            _ => unreachable!("the color format was checked above"),
         };
         if !matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0)
             || !self.backend.pot_copy_only_mip_chains
@@ -782,6 +807,8 @@ mod tests {
             driver: DriverCapabilities {
                 rgba8: Query::Value(u32::MAX),
                 bgra8: Query::Value(u32::MAX),
+                rgba8_srgb: Query::Value(u32::MAX),
+                bgra8_srgb: Query::Value(u32::MAX),
                 depth24_stencil8: Query::Value(u32::MAX),
                 rgba8_samples_4: Query::Value(1),
                 full_npot: Query::Value(true),
@@ -793,6 +820,20 @@ mod tests {
                 vertex_input_formats: u64::MAX,
             },
             backend: BackendCapabilities::CURRENT,
+        }
+    }
+
+    fn set_color_format_query(
+        caps: &mut Capabilities,
+        format: wgt::TextureFormat,
+        query: Query<u32>,
+    ) {
+        match format {
+            wgt::TextureFormat::Rgba8Unorm => caps.driver.rgba8 = query,
+            wgt::TextureFormat::Bgra8Unorm => caps.driver.bgra8 = query,
+            wgt::TextureFormat::Rgba8UnormSrgb => caps.driver.rgba8_srgb = query,
+            wgt::TextureFormat::Bgra8UnormSrgb => caps.driver.bgra8_srgb = query,
+            _ => unreachable!(),
         }
     }
 
@@ -909,6 +950,43 @@ mod tests {
             BackendCapabilities::CURRENT.max_fragment_shader_uniform_vectors,
             32
         );
+    }
+
+    #[test]
+    fn srgb_color_texture_guarantees_and_queries_are_separate() {
+        for level in FeatureLevel::ALL_DESCENDING {
+            let hardware = HardwareGuarantees::for_level(level);
+            assert!(hardware.rgba8_srgb_texture);
+            assert!(hardware.bgra8_srgb_texture);
+        }
+
+        let sampled_target = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0) as u32;
+        for format in [
+            wgt::TextureFormat::Rgba8UnormSrgb,
+            wgt::TextureFormat::Bgra8UnormSrgb,
+        ] {
+            let mut caps = model(FeatureLevel::L9_1);
+            set_color_format_query(&mut caps, format, Query::Unavailable(-1));
+            assert!(caps.texture_format_capabilities(format).is_empty());
+
+            set_color_format_query(&mut caps, format, Query::Value(sampled_target));
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::COLOR_ATTACHMENT | FormatCaps::SAMPLED));
+
+            match format {
+                wgt::TextureFormat::Rgba8UnormSrgb => {
+                    caps.backend.rgba8_srgb_single_mip_transfers = false
+                }
+                wgt::TextureFormat::Bgra8UnormSrgb => {
+                    caps.backend.bgra8_srgb_single_mip_transfers = false
+                }
+                _ => unreachable!(),
+            }
+            assert!(caps.texture_format_capabilities(format).is_empty());
+        }
     }
 
     #[test]
@@ -1283,6 +1361,7 @@ mod tests {
     fn format_projection_intersects_queries_and_backend_implementation() {
         let mut caps = model(FeatureLevel::L9_1);
         let rgba = caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm);
+        let srgb = caps.texture_format_capabilities(wgt::TextureFormat::Rgba8UnormSrgb);
         assert!(rgba.contains(
             FormatCaps::COLOR_ATTACHMENT
                 | FormatCaps::COPY_SRC
@@ -1292,6 +1371,15 @@ mod tests {
                 | FormatCaps::COLOR_ATTACHMENT_BLEND
         ));
         assert!(!rgba.contains(FormatCaps::SINGLE_MIP_ONLY));
+        assert!(srgb.contains(
+            FormatCaps::COLOR_ATTACHMENT
+                | FormatCaps::COPY_SRC
+                | FormatCaps::COPY_DST
+                | FormatCaps::SAMPLED
+                | FormatCaps::SAMPLED_LINEAR
+        ));
+        assert!(!srgb.contains(FormatCaps::SINGLE_MIP_ONLY));
+        assert!(srgb.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
 
         caps.driver.rgba8 = Query::Value(
             (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
@@ -1332,22 +1420,20 @@ mod tests {
         for format in [
             wgt::TextureFormat::Rgba8Unorm,
             wgt::TextureFormat::Bgra8Unorm,
+            wgt::TextureFormat::Rgba8UnormSrgb,
+            wgt::TextureFormat::Bgra8UnormSrgb,
         ] {
             let mut caps = model(FeatureLevel::L9_1);
-            if format == wgt::TextureFormat::Rgba8Unorm {
-                caps.driver.rgba8 = Query::Value(required);
-            } else {
-                caps.driver.bgra8 = Query::Value(required);
-            }
+            set_color_format_query(&mut caps, format, Query::Value(required));
             assert!(caps
                 .texture_format_capabilities(format)
                 .contains(FormatCaps::SINGLE_MIP_ONLY));
 
-            if format == wgt::TextureFormat::Rgba8Unorm {
-                caps.driver.rgba8 = Query::Value(required | D3D11_FORMAT_SUPPORT_MIP.0 as u32);
-            } else {
-                caps.driver.bgra8 = Query::Value(required | D3D11_FORMAT_SUPPORT_MIP.0 as u32);
-            }
+            set_color_format_query(
+                &mut caps,
+                format,
+                Query::Value(required | D3D11_FORMAT_SUPPORT_MIP.0 as u32),
+            );
             assert!(!caps
                 .texture_format_capabilities(format)
                 .contains(FormatCaps::SINGLE_MIP_ONLY));
@@ -1411,6 +1497,10 @@ mod tests {
         caps.driver.rgba8 = Query::Value(0);
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .is_empty());
+        caps.driver.rgba8_srgb = Query::Unavailable(-1);
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8UnormSrgb)
             .is_empty());
     }
 
@@ -1828,7 +1918,20 @@ mod tests {
                 1,
                 1
             ),
-            Err(TextureRejection::UnsupportedFormat)
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                &caps,
+                wgt::TextureFormat::Rgba8UnormSrgb,
+                usage,
+                8,
+                8,
+                1,
+                1,
+                1
+            ),
+            Ok(())
         );
         assert_eq!(
             check(&caps, wgt::TextureFormat::Bgra8Unorm, usage, 8, 8, 1, 1, 1),

@@ -5046,3 +5046,468 @@ fn public_dx11_rejects_sample_index_without_multisampled_shading() {
     }));
     println!("PASS: core rejected sample_index through Naga's multisampled-shading capability and accepted a single-sample shader");
 }
+
+#[test]
+fn public_dx11_srgb_texture_sampling_and_rendering() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let formats = [TextureFormat::Rgba8UnormSrgb, TextureFormat::Bgra8UnormSrgb];
+    for format in formats {
+        let features = adapter.get_texture_format_features(format);
+        assert!(
+            features.allowed_usages.contains(
+                TextureUsages::TEXTURE_BINDING
+                    | TextureUsages::COPY_DST
+                    | TextureUsages::RENDER_ATTACHMENT
+                    | TextureUsages::COPY_SRC
+            ),
+            "{format:?}: {features:?}"
+        );
+        assert!(features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE));
+    }
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 sRGB texture test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; RGBA8_SRGB={:?}; BGRA8_SRGB={:?}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb),
+        adapter.get_texture_format_features(TextureFormat::Bgra8UnormSrgb),
+    );
+
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("sRGB sampled texture layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("sRGB sampled pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let sample_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("sample decoded sRGB values"),
+        source: ShaderSource::Wgsl(
+            "struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
+             @group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(42) var smp: sampler;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> Out { return Out(vec4f(p, 0.5, 1.0), vec2f(0.5)); }\n\
+             @fragment fn fs(input: Out) -> @location(0) vec4f { return textureSample(image, smp, input.uv); }"
+                .into(),
+        ),
+    });
+    let sample_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("sample decoded sRGB pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &sample_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &sample_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("sRGB fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("mapped sRGB vertices")
+        .copy_from_slice(&vertices);
+    vertex.unmap();
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let mut sampled_counts = [0usize; 2];
+    for (index, (format, bytes)) in [
+        (TextureFormat::Rgba8UnormSrgb, [128u8, 64, 192, 255]),
+        (TextureFormat::Bgra8UnormSrgb, [192u8, 64, 128, 255]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("sRGB sample source"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut upload = vec![0u8; 256];
+        upload[..4].copy_from_slice(&bytes);
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("sRGB source binding"),
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let target = device.create_texture(&TextureDescriptor {
+            label: Some("linear sRGB sample output"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&TextureViewDescriptor::default());
+        let readback = device.create_buffer(&BufferDescriptor {
+            label: Some("sRGB sample readback"),
+            size: 8 * 256,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("sRGB sample draw"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("sRGB sample pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&sample_pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for sRGB sample draw");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("sRGB sample map callback")
+            .expect("map sRGB sample output");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped sRGB output");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        &[55, 13, 134, 255],
+                        "{format:?} decoded pixel ({x}, {y})"
+                    );
+                    sampled_counts[index] += 1;
+                }
+            }
+        }
+        readback.unmap();
+    }
+    assert_eq!(sampled_counts, [64, 64]);
+
+    let output_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("write linear values to sRGB targets"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.5, 0.25, 1.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let mut render_counts = [0usize; 2];
+    for (index, (format, expected)) in [
+        (TextureFormat::Rgba8UnormSrgb, [188u8, 137, 255, 255]),
+        (TextureFormat::Bgra8UnormSrgb, [255u8, 137, 188, 255]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("sRGB render target pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &output_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &output_shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let target = device.create_texture(&TextureDescriptor {
+            label: Some("sRGB render target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&TextureViewDescriptor::default());
+        let readback = device.create_buffer(&BufferDescriptor {
+            label: Some("sRGB render target readback"),
+            size: 8 * 256,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("sRGB render target draw"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("sRGB render target pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for sRGB render target draw");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("sRGB render target map callback")
+            .expect("map sRGB render target output");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped sRGB target");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        &expected,
+                        "{format:?} encoded pixel ({x}, {y})"
+                    );
+                    render_counts[index] += 1;
+                }
+            }
+        }
+        readback.unmap();
+    }
+    assert_eq!(render_counts, [64, 64]);
+    println!("PASS: RGBA8/BGRA8 sRGB sampling decoded all 128 pixels to [55, 13, 134, 255]; sRGB render targets encoded all 128 pixels with the expected channel order and transfer curve");
+}

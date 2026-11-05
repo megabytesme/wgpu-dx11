@@ -66,8 +66,15 @@ rendered result, and core rejects a 33-vector pipeline before HAL. The selected
 device reports separate 255-vector vertex and 32-vector fragment limits; core
 counts the complete layout footprint of each statically used uniform in the
 selected entry point, which is conservative for partially read structures.
-The full strict public suite now passes 12/12 on the RTX 3090 Ti at requested
-and actual FL9_1.
+The strict sRGB test also exercises both public formats; full suite totals are
+recorded in the current checkpoint below.
+
+An additional strict public test now checks the selected adapter's usage and
+filter reports for RGBA8_SRGB and BGRA8_SRGB, samples uploaded texels and
+checks sRGB decoding across 128 pixels, then renders linear colors into both
+sRGB targets and checks 128 encoded pixels and channel order. The complete
+public D3D11 test binary passes 17/17 on the RTX at requested and actual
+FL9_1.
 
 The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
 bias and texel offsets. Core's per-entry analysis follows helper calls, so
@@ -118,11 +125,27 @@ public projection reports that format restriction.
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
 R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8 are always
-single-mip in the private implementation. RGBA8 and BGRA8 are also reported
+single-mip in the private implementation. RGBA8 and BGRA8, including their
+sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
 backend mip path is unavailable. The controlled fixture asserts this
 projection against the actual format-query result. This closes the POT
 multi-mip gap that device-wide NPOT and depth-attachment flags cannot express.
+
+RGBA8_SRGB and BGRA8_SRGB now follow the linear RGBA8/BGRA8 upload, sampled
+view, render-target and readback paths, with independent FL9_1 guarantees and
+per-device format queries. A strict public test verifies sRGB decoding from
+both upload formats and sRGB encoding to both render-target formats across
+128 sampled and 128 rendered pixels. A dedicated sRGB mip-chain execution test
+has not been run; mip reporting remains conditional on the selected format
+query and the existing POT mip implementation.
+
+The complete strict private HAL suite passes 346/346, the controlled core
+fixture suite passes 89/89, core's explicit physical-adapter enumeration test
+passes 1/1, and the DX12 core regression suite passes 85/85. `cargo check` for
+the D3D11 HAL, targeted Clippy, changed-file rustfmt and `git diff --check`
+also pass. HAL Clippy reports nine existing warnings in unrelated mapped
+range tests, swapchain ordering and texel-load proof code.
 
 The internal per-format projection now resides in `Capabilities` and combines
 the actual device's format query with the selected feature level and implemented

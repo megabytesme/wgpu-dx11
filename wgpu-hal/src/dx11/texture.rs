@@ -19,10 +19,10 @@ use windows::{
                 D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
-                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_BC1_UNORM,
-                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
-                DXGI_SAMPLE_DESC,
+                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -237,13 +237,15 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             height: 1,
             bytes: 2,
         }),
-        DXGI_FORMAT_R8G8B8A8_SNORM | DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM => {
-            Ok(TextureBlockLayout {
-                width: 1,
-                height: 1,
-                bytes: 4,
-            })
-        }
+        DXGI_FORMAT_R8G8B8A8_SNORM
+        | DXGI_FORMAT_R8G8B8A8_UNORM
+        | DXGI_FORMAT_B8G8R8A8_UNORM
+        | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+        | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => Ok(TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes: 4,
+        }),
         DXGI_FORMAT_BC1_UNORM => Ok(TextureBlockLayout {
             width: 4,
             height: 4,
@@ -360,7 +362,10 @@ impl NativeDevice {
         if !texture.usage.contains(wgt::TextureUses::COPY_SRC)
             || !matches!(
                 desc.Format,
-                DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+                DXGI_FORMAT_R8G8B8A8_UNORM
+                    | DXGI_FORMAT_B8G8R8A8_UNORM
+                    | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                    | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
             )
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
@@ -390,6 +395,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
+                    | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                    | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
             )
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
@@ -423,6 +430,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
+                    | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                    | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
             )
             || (desc.MipLevels > 1
                 && (!(view.usage == wgt::TextureUses::RESOURCE
@@ -499,6 +508,8 @@ impl NativeDevice {
         let format = match desc.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => wgt::TextureFormat::Bgra8UnormSrgb,
             _ => return Err(invalid()),
         };
         if desc.Width == 0
@@ -571,7 +582,10 @@ impl NativeDevice {
     ) -> Result<NativeTexture> {
         let rgba_bgra = matches!(
             format,
-            DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+            DXGI_FORMAT_R8G8B8A8_UNORM
+                | DXGI_FORMAT_B8G8R8A8_UNORM
+                | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
         let uncompressed_sampled = matches!(
             format,

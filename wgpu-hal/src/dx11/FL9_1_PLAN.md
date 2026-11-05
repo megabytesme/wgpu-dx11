@@ -76,8 +76,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    copy-source, readback and mip-chain uses remain unsupported. The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
    the previously mapped formats, with a core per-format downlevel mask and
-   strict GPU verification; other baseline formats are rejected before HAL.
-   Continue adding narrowly verified required formats and usage combinations.
+   strict GPU verification. Required RGBA8_SRGB and BGRA8_SRGB formats now
+   have independent device queries and public sampled/render-target paths;
+   strict FL9_1 readback verifies decoding and encoding for both channel
+   orders. Their generic mip path remains query-gated without dedicated sRGB
+   mip execution coverage. Continue adding narrowly verified required formats
+   and usage combinations.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex

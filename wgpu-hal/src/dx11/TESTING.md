@@ -460,6 +460,23 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### Public FL9_1 sRGB texture formats
+
+The public integration test checks the selected adapter's usage and filter
+reports for `Rgba8UnormSrgb` and `Bgra8UnormSrgb`, uploads one sRGB texel to
+each format, samples them into linear RGBA8 and verifies all 128 decoded
+pixels. It then renders known linear values into each sRGB target and verifies
+all 128 encoded readback pixels, including BGRA channel order and the transfer
+curve. This exercises public texture creation, upload, sampling, render-target
+view creation, GPU rendering and copy readback at explicitly selected FL9_1.
+It does not add a dedicated sRGB mip-chain execution case; mip availability
+remains controlled by the device query and the tested POT mip paths.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_texture_sampling_and_rendering -- --nocapture --test-threads=1
+```
+
 ### Exact FL9_1 capability projection through core
 
 The strict fixture includes a test-only adapter constructed from the selected
@@ -764,7 +781,9 @@ with a one-unit per-channel rounding tolerance; an observed left pixel was
 `[128, 0, 63, 191]`. Its unsafe adapter fixture reports blendability only after
 a positive driver format query, and cannot express the backend's restricted
 blend-state subset. These tests do not establish behavior on historical FL9_1
-drivers, enable sRGB formats or enable public surface capabilities.
+drivers or enable public surface capabilities. The public sRGB format test
+below verifies the distinct transfer function and channel order; it does not
+validate every blend equation on sRGB targets.
 FL9_1 does not guarantee separate alpha blending: the production path rejects
 those modes with both RGB and alpha writes. Some older full-channel blend tests
 explicitly opt into a test-only RTX diagnostic and do not establish portability;

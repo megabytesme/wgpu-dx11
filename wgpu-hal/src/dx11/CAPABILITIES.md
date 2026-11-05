@@ -47,11 +47,22 @@ shader-sample support beginning at FL9_1. It also requires DXT1 / BC1_UNORM
 for 2D texture sampling at FL9_1. The backend records these minima separately
 from the selected device's queried format bits.
 
+The required-format table also includes `R8G8B8A8_UNORM_SRGB` and
+`B8G8R8A8_UNORM_SRGB` from FL9_1. Both are modeled as feature-level
+guarantees, then independently gated by their own device `CheckFormatSupport`
+results and the implemented typed-texture path. The backend supports their
+single-mip upload, sampled-view, render-target and readback uses. A strict
+public test verifies sRGB decode while sampling and encode on render-target
+writes for both channel orders; multi-mip sRGB rendering is not covered by
+that test. The same positive per-format query and mip/backend checks used for
+linear RGBA8/BGRA8 govern any reported mip-chain support.
+
 Conditional NPOT textures at FL9 require one mip and restricted addressing. Full NPOT and
 comparison-shadow support are separately queried using `CheckFeatureSupport`;
 a newer runtime or driver may return E_INVALIDARG for an unknown query, which
 is retained as unavailable. `CheckFormatSupport` is queried only for RGBA8,
-BGRA8, R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8, and
+BGRA8, RGBA8_SRGB, BGRA8_SRGB, R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM,
+BC1_UNORM and D24S8, and
 `CheckMultisampleQualityLevels` for RGBA8 at four samples.
 A positive bit or quality count is a driver observation, not an implemented HAL
 feature or a guarantee of a valid combination of descriptors. The RGBA8 2D
@@ -130,6 +141,17 @@ block through a second staged partial upload. Sampling into RGBA8 matched all
 4-aligned BC1_UNORM textures with RESOURCE and/or COPY_DST usage. Updates must
 cover complete aligned blocks. BC1 copy-source, readback, render-target,
 mip-chain, non-block-aligned dimensions and BC1 sRGB views remain unavailable.
+
+On 2026-11-05, the same adapter returned `CheckFormatSupport` mask
+`0x112ef3e0` for both `R8G8B8A8_UNORM_SRGB` and
+`B8G8R8A8_UNORM_SRGB` at requested and selected FL9_1. The mask includes the
+required 2D texture, shader sampling, mip, render-target and blendable bits.
+The public strict test uploaded one texel in each format and verified that
+sampling decoded all 128 RGBA8 output pixels to `[55, 13, 134, 255]`. It then
+rendered linear `[0.5, 0.25, 1.0, 1.0]` into both sRGB targets and verified 128
+encoded pixels, including RGBA/BGRA byte order. This proves the single-mip
+paths on this driver; no dedicated sRGB mip-chain execution case has run, and
+the modern adapter does not establish historical-driver behavior.
 
 ## FL9_1 inventory and gaps
 
@@ -381,9 +403,9 @@ to discard, but no such rewrite is currently performed.
 
 | Transfer | Implementation and restrictions | Coverage |
 | --- | --- | --- |
-| Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM accept one-mip, one-layer sampled/upload textures only. BC1_UNORM uses 4×4 texel blocks, 8-byte block rows, 4-aligned dimensions and block-aligned update regions. | RGBA8/BGRA8 offset and padded full/partial uploads, GPU-written source and ordered submissions. All three sampled-upload-only uncompressed formats passed padded-row, nonzero-source-offset upload and full rendered readback tests on forced FL9_1. BC1 passed an offset padded full upload, a partial block replacement and 256-pixel rendered readback. |
-| Texture to texture | Native GPU `CopySubresourceRegion` between compatible RGBA8 or BGRA8 textures, including different mips of one texture, with an explicit checked source box and DEFAULT source and destination resources. Copies within the same subresource and cross-format copies are rejected. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM copies remain unsupported. | Full and partial copies, different overall dimensions, cross-resource and same-resource mip copies, zero-preserving destination and render-to-copy-to-sample. |
-| Texture to buffer | A region is copied to a retained CPU-readable staging texture and mapped; each mapped row is written into the destination GPU buffer at the requested pitch and offset. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM readback are unsupported. | Full and partial RGBA8/BGRA8 source regions, nonzero buffer offsets, row padding and complete image comparison. |
+| Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. RGBA8/BGRA8 linear and sRGB formats share this transfer implementation. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM accept one-mip, one-layer sampled/upload textures only. BC1_UNORM uses 4×4 texel blocks, 8-byte block rows, 4-aligned dimensions and block-aligned update regions. | RGBA8/BGRA8 offset and padded full/partial uploads, GPU-written source and ordered submissions. A strict public test uploaded both sRGB formats and verified their sampled decoding. All three sampled-upload-only uncompressed formats passed padded-row, nonzero-source-offset upload and full rendered readback tests on forced FL9_1. BC1 passed an offset padded full upload, a partial block replacement and 256-pixel rendered readback. |
+| Texture to texture | Native GPU `CopySubresourceRegion` between compatible RGBA8 or BGRA8 linear/sRGB textures, including different mips of one texture, with an explicit checked source box and DEFAULT source and destination resources. Copies within the same subresource and cross-format copies are rejected. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM copies remain unsupported. | Full and partial copies, different overall dimensions, cross-resource and same-resource mip copies, zero-preserving destination and render-to-copy-to-sample. sRGB GPU-to-GPU copies use the common path but have no dedicated public execution case yet. |
+| Texture to buffer | A region is copied to a retained CPU-readable staging texture and mapped; each mapped row is written into the destination GPU buffer at the requested pitch and offset. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM readback are unsupported. | Full and partial RGBA8/BGRA8 linear/sRGB source regions, nonzero buffer offsets, row padding and complete image comparison. Strict sRGB render-target readback matched encoded bytes for both channel orders. |
 
 The strict FL9_1 RTX test checked partial same-texture copies between distinct
 mips in both directions for RGBA8 and BGRA8, including all affected and

@@ -30,10 +30,11 @@ use windows::{
             D3D11_STENCIL_OP_ZERO,
         },
         Dxgi::Common::{
-            DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_SINT,
-            DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SINT, DXGI_FORMAT_R16G16_SNORM,
-            DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
-            DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+            DXGI_FORMAT_R16G16B16A16_SINT, DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SINT,
+            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT,
+            DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UINT,
+            DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
         },
     },
 };
@@ -2583,7 +2584,10 @@ impl RenderPipeline {
             || target.is_some_and(|target| {
                 !matches!(
                     target.format,
-                    wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                    wgt::TextureFormat::Rgba8Unorm
+                        | wgt::TextureFormat::Bgra8Unorm
+                        | wgt::TextureFormat::Rgba8UnormSrgb
+                        | wgt::TextureFormat::Bgra8UnormSrgb
                 )
             })
             || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
@@ -2605,6 +2609,8 @@ impl RenderPipeline {
                 let format = match target.format {
                     wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
                     wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+                    wgt::TextureFormat::Rgba8UnormSrgb => DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    wgt::TextureFormat::Bgra8UnormSrgb => DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
                     _ => return Err(invalid()),
                 };
                 if !format_blendable(unsafe { owner.raw_device().CheckFormatSupport(format) })
