@@ -98,6 +98,10 @@ Bottom level categories:
 
 - Propagate mapped buffer flush failures, release mappings on failure, and invoke device-lost callbacks after releasing the callback lock.
 
+#### Hal
+
+- Allow opt-in D3D11 GPU copies between matching RGBA8/BGRA8 linear and sRGB formats while preserving the stored texel bits.
+
 #### naga
 
 - Add an experimental HLSL vertex-position transform option for downlevel viewport emulation. Existing exhaustive `hlsl::Options` literals must specify the new field.

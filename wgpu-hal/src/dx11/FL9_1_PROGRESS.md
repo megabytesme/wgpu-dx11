@@ -5718,3 +5718,37 @@ combined attachment view succeeds. The focused strict test passed 1/1 and the
 full strict public suite passed 20/20 on the RTX at requested/actual FL9_1;
 public-test Clippy, rustfmt and `git diff --check` passed. No HAL/core code
 changed in this follow-up. Commit: `cdd06e5ca`.
+
+## Checkpoint — compatible linear/sRGB texture copies — `0de479c09`
+
+The public core permits a texture copy between RGBA8 linear and sRGB formats,
+and between their BGRA8 equivalents, because each pair belongs to one DXGI
+format type group. The D3D11 HAL previously required exact DXGI format equality
+and returned `E_INVALIDARG` for these public-valid copies. The HAL now accepts
+only those four symmetric linear/sRGB pairings in addition to exact-format
+copies; unrelated cross-family formats remain rejected. Native copies preserve
+the stored texel bits and do not perform sRGB conversion.
+
+A strict public wgpu test uploaded asymmetric 4×4 patterns into both RGBA8 and
+BGRA8 linear textures, copied each to its sRGB partner and then back to linear,
+and read back both intermediate and round-trip textures through 256-byte rows.
+All 32 checked pixels matched their original bytes exactly on the NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and
+actual FL9_1, `software=false`.
+
+Verification (Rust 1.93.1, Visual Studio x64 developer environment, Cargo
+`-j16`):
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_texture_copies_preserve_bits_at_fl91 -- --nocapture --test-threads=1`: 1/1 physical GPU test passed.
+- The complete strict public suite passed 21/21, with no skips; every test selected the RTX at forced FL9_1.
+- The complete private HAL suite passed 350/350 under strict hardware mode, including the new format-family CPU test and existing GPU rendering/transfer tests.
+- The controlled core D3D11 fixture passed 89/89, including selected physical adapter enumeration and core-to-HAL GPU execution.
+- DX12 core regression passed 85/85.
+- HAL and public wgpu-test Clippy, changed Rust file rustfmt check and `git diff --check` passed.
+
+The initial invocation outside `VsDevCmd` lacked `link.exe`; rerunning in the
+installed Visual Studio environment succeeded. `VsDevCmd` continues to print
+`vError: Unknown error` in its banner, but all MSVC builds, links and test runs
+completed successfully. Public HWND presentation remains gated by the
+cross-layer `Present` reentrancy deadlock; the mission continues with the
+remaining public core/HAL audit and scheduler design.

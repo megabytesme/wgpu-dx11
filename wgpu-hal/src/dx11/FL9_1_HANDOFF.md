@@ -1507,6 +1507,16 @@ core. The D16 public test separately rejects its unsupported stencil-only view.
 See the latest `FL9_1_PROGRESS.md` section for exact commands and the observed
 zero initialization used after depth discard.
 
+Latest transfer contract checkpoint `0de479c09` fixes public-valid D3D11
+copies between RGBA8/BGRA8 linear and sRGB formats. Strict forced-FL9_1 GPU
+readback verified both format families copy to sRGB and back without changing
+any stored bytes. Verification passed: private HAL 350/350, public wgpu
+21/21, controlled core fixture 89/89 and DX12 core 85/85; HAL/public-test
+Clippy and formatting/diff checks passed. Continue the public core/HAL audit;
+HWND surface support remains gated on resolving `Present` reentrancy without
+violating D3D11 context serialization. Exact commands and evidence are in
+`FL9_1_PROGRESS.md`.
+
 Worktree is expected clean after the forthcoming progress-journal commit.
 Next continue the public core/HAL contract audit and evaluate remaining
 depth/stencil aspect and pass combinations. Public HWND surface capabilities

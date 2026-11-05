@@ -203,7 +203,11 @@ contract is safe. This plan does not claim WebGPU conformance.
    The RTX forced to 9_1 does not validate legacy overflow behavior. Test selection
    now checks downlevel limit requirements as well as flags. Next continue
    auditing core-valid attachment, viewport and render-state combinations
-   before building the truthful public capability snapshot.
+   before building the truthful public capability snapshot. The audit also
+   found that core permits RGBA8/BGRA8 linear-to-sRGB texture copies while HAL
+   required exact DXGI format equality. The D3D11 copy path now accepts only
+   the corresponding same-family linear/sRGB pairs; strict FL9_1 readback
+   verifies raw-bit preservation for both channel families.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
