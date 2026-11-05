@@ -5179,3 +5179,37 @@ The known Visual Studio `vError: Unknown error` banner remains cosmetic. Public
 HWND presentation, full public capability auditing, historical FL9_1 hardware
 and remaining shader/resource gaps are still outstanding. Next continue the
 reachable-operation audit and investigate the public surface scheduler.
+
+## Checkpoint — explicit texture sample-level validation — `1dd629564`
+
+The FL9_1 projection now includes `DownlevelLimits::texture_sample_level`.
+Core records `ImageSample` operations with `SampleLevel::Exact` for each
+selected entry point and its reachable helper functions, and rejects only the
+selected pipeline entry before HAL. FXC diagnostics reject literal and dynamic
+`textureSampleLevel` under both `ps_4_0_level_9_1` and `ps_4_0_level_9_3`
+(`X4532: texlod not supported on this target`). The diagnostic profile exists
+only to test compiler behavior; this adds no higher-level execution path.
+Implicit sampling and safe sibling entries remain available. The capability
+model separates the hardware threshold from the still-unimplemented backend
+path, and serde defaults preserve older serialized `DownlevelLimits` values.
+
+After the final core validation-order adjustment, the strict public wgpu suite
+passed 12/12 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested/actual FL9_1, `software=false`; no hardware tests skipped. The public
+test rejected direct and helper-forwarded explicit LOD through core while
+creating the implicit-sampling sibling pipeline. Earlier in this same
+implementation run, strict private HAL passed 340/340, the D3D11 core fixture
+passed 85/85, `wgpu-types --features serde` passed 75/75 unit and 14/14 doc
+tests (21 ignored), and the targeted DX12 core suite passed 81/81. Affected
+Clippy and targeted formatting checks passed; only the repository's existing
+HAL/core test warnings were reported. `git diff --check` passed.
+
+Exact final public command:
+
+```powershell
+cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1'
+```
+
+Next inspect image-query operations and continue the core/HAL contract audit.
+The opt-in public adapter remains offscreen-only; synchronous HWND Present
+reentrancy remains unresolved, and historical FL9_1 hardware is untested.

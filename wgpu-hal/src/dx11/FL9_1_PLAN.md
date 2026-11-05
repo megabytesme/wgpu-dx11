@@ -114,6 +114,11 @@ contract is safe. This plan does not claim WebGPU conformance.
    `ps_4_0_level_9_1` projection also disables pixel derivatives and explicit
    texture gradients; selected-entry core validation follows helper calls and
    rejects `dpdx`, `dpdy` and `textureSampleGrad` before HAL.
+   Reachable `textureSampleLevel` calls are separately gated by the selected
+   entry point: FXC rejects both literal and dynamic exact LOD under the 9_1
+   and 9_3 pixel profiles, including when forwarded through a helper. Implicit
+   sampling remains allowed. Continue checking core-valid image queries and
+   other WGSL expressions against the FL9_1 compiler path.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

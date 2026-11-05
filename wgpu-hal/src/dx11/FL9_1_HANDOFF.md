@@ -1343,3 +1343,13 @@ unit tests and 14 doc tests (21 ignored). Exact commands and compiler evidence
 are in `FL9_1_PROGRESS.md`. Continue the public core/HAL contract audit; public
 HWND presentation, historical FL9_1 drivers and remaining shader/resource gaps
 remain unverified.
+
+The latest code checkpoint `1dd629564` gates explicit `textureSampleLevel`
+by selected entry point and reachable helper calls. FXC rejects literal and
+dynamic exact LOD in both 9_1 and 9_3 pixel profiles; the public strict suite
+still passes 12/12 on the forced-FL9_1 RTX and rejects explicit LOD before HAL
+while accepting its implicit-sampling sibling. The full private HAL suite
+passed 340/340 and the core fixture passed 85/85 during this checkpoint.
+Continue auditing image queries and the remaining core/HAL contract. The
+public adapter remains offscreen-only; synchronous HWND Present reentrancy
+and historical-device verification remain outstanding.
