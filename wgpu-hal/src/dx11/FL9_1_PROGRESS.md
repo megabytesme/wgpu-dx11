@@ -5087,3 +5087,51 @@ Public HWND presentation, a complete core/HAL operation audit and testing on
 historical FL9_1 devices remain outstanding.
 
 Code checkpoint commit: `f6e4125fe` (`core: validate FL9_1 texture sample bias limits`).
+
+## Checkpoint — FL9_1 fragment derivative validation — `987f39cd3`
+
+Added `DownlevelLimits::fragment_derivatives`, defaulting to true for backward
+compatibility. The D3D11 hardware model marks the feature unavailable at FL9_1
+and FL9_2 and available from FL9_3, while the current backend implementation
+remains false. Core records derivative and explicit-gradient use per selected
+entry point, follows helper calls, and rejects unsupported fragment pipelines
+before HAL compilation. Naga expression structure is inspected directly; the
+implementation does not parse WGSL or generated HLSL. The FXC test records the
+actual `ps_4_0_level_9_1` diagnostics: `ddx` cannot map to the pixel
+instruction set, and `SampleGrad` is unsupported by `ps_2_0`.
+
+Verification used Rust 1.93.1 and the x64 Visual Studio 2022 developer
+environment. With `WGPU_DX11_REQUIRE_HARDWARE=1`, the full HAL suite passed
+338/338 test functions. GPU cases selected the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), software=false, and explicitly
+requested/selected FL9_1. The selected-entry derivative/gradient negative
+cases ran in the strict public mip test; the public suite passed 11/11 and
+the full core D3D11 fixture suite passed 83/83. The fixture enumerated one
+physical FL9_1 adapter. Some HAL test subcases intentionally report `SKIP`
+after expected rejection of unsupported runtime integer indexing; these are
+not missing-hardware skips, and no strict test silently substituted software.
+The wgpu-types serde suite passed 73/73 plus 14 passing and 21 ignored doc
+tests. The core DX12 unit suite passed 79/79. HAL `dx11,gles`, `wgpu-info`,
+and core DX12 checks passed. Public wgpu, wgpu-types, and HAL Clippy passed;
+core Clippy passed with three pre-existing warnings in the fixture test file,
+and HAL Clippy passed with nine pre-existing warnings in unrelated D3D11
+tests. Targeted formatting for changed crates and `git diff --check` passed.
+Workspace formatting still reports pre-existing differences in committed
+`naga/src/back/hlsl/writer.rs`. MSVC commands printed the existing Visual
+Studio `vError: Unknown error` banner while compiling and linking successfully.
+
+Exact test commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -q -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-types --features serde
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+```
+
+The repository-wide core/HAL audit remains unfinished; public presentation is
+still gated by the existing synchronous DXGI `Present` reentrancy and lock
+ordering problem. Historical FL9_1 hardware has not been tested. Continue
+with shader/core contract gaps, then return to the surface scheduling design.

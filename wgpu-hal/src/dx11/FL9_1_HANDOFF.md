@@ -1313,3 +1313,20 @@ exact commands are in the latest `FL9_1_PROGRESS.md` section. The code
 checkpoint is `f6e4125fe` (`core: validate FL9_1 texture sample bias limits`).
 Public HWND presentation and the remaining operation audit still block full
 completion.
+
+The next checkpoint `987f39cd3` adds a selected-entry fragment-derivative
+limit. Core follows helper calls and rejects `dpdx`, `dpdy` and explicit
+`textureSampleGrad` before HAL on FL9_1; FXC diagnostics confirm those forms
+are unavailable in the selected profile. Strict forced-FL9_1 private HAL,
+public wgpu and core fixture suites passed 338/338, 11/11 and 83/83 tests,
+respectively; the types serde and DX12 core unit suites passed 73/73 and
+79/79. Exact commands, warnings, and hardware identity are in
+`FL9_1_PROGRESS.md`. The public API remains opt-in and offscreen-only.
+
+Recommended next audit: determine whether multiple per-entry constant buffers
+can collectively exceed the FL9_1 pixel shader's 32 float4 constant limit
+despite each declared uniform buffer staying within the current per-binding
+size. FXC tests currently cover the 32/33 boundary for one buffer. Also
+continue auditing other core-accepted shader expressions. The full surface
+gate remains the unresolved synchronous `Present` reentrancy/serialization
+problem; don't enable HWND capabilities until that cross-layer design is safe.
