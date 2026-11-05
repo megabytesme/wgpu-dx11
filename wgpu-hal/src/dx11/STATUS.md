@@ -31,7 +31,9 @@ surface, exercising depth comparison and writes through public wgpu. A second
 strict public test uses the projected R8Unorm sampled/upload format and
 checks 32 pixels at each of two channel values. The primary public draw also
 initializes vertex data through a mapped-at-creation range and reads back the
-result after unmapping.
+result after unmapping. A third strict public test exercises symmetric stencil
+replace/equality on D24S8 and verifies all 64 pixels are green; an asymmetric
+front/back descriptor is rejected by core before the HAL.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

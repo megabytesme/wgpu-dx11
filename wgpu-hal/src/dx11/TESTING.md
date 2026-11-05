@@ -91,6 +91,13 @@ RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and
 `SINGLE_MIP_ONLY`; all 64 pixels are checked, with 32 red values of 64 and 32
 red values of 192. It runs under the same strict hardware command above.
 
+A third strict public test writes stencil reference value 1 over the target,
+renders green where `Equal` succeeds, then attempts a blue draw with reference
+0. All 64 pixels remain green. The same test verifies that asymmetric front/back
+stencil state is rejected by public core validation before HAL. This covers the
+implemented symmetric stencil subset through public wgpu, not two-sided stencil
+support.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a
