@@ -3,17 +3,34 @@
 use std::{
     future::Future,
     num::NonZeroU64,
-    task::{Context, Poll, Waker},
+    sync::Arc,
+    task::{Context, Poll, Wake, Waker},
+    thread,
     time::Duration,
 };
 use wgpu::*;
 
+struct ThreadWaker(thread::Thread);
+
+impl Wake for ThreadWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
 fn poll_ready<T>(future: impl Future<Output = T>) -> T {
     let mut future = std::pin::pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    match future.as_mut().poll(&mut context) {
-        Poll::Ready(value) => value,
-        Poll::Pending => panic!("native D3D11 operation unexpectedly became pending"),
+    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+    let mut context = Context::from_waker(&waker);
+    loop {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(value) => return value,
+            Poll::Pending => thread::park(),
+        }
     }
 }
 
@@ -144,6 +161,69 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         ..Default::default()
     }))
     .expect("request a device within the reported FL9_1 capability projection");
+
+    let texel_load_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 texture-load validation layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let texel_load_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 texture-load validation pipeline layout"),
+        bind_group_layouts: &[Some(&texel_load_layout)],
+        immediate_size: 0,
+    });
+    let texel_load_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 texture-load selected-entry shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n\
+             fn load_helper() -> vec4f { return textureLoad(image, vec2i(0), 0); }\n\
+             @fragment fn loaded() -> @location(0) vec4f { return load_helper(); }\n\
+             @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }"
+                .into(),
+        ),
+    });
+    let texel_load_targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_texel_load_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 selected-entry texture-load pipeline"),
+            layout: Some(&texel_load_pipeline_layout),
+            vertex: VertexState {
+                module: &texel_load_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &texel_load_shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &texel_load_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error(&device, "reachable fragment textureLoad", || {
+        drop(create_texel_load_pipeline("loaded"));
+    });
+    drop(create_texel_load_pipeline("safe"));
+    println!("PASS: public core rejected selected textureLoad and accepted its safe sibling entry");
 
     expect_validation_error(&device, "3D texture creation", || {
         drop(device.create_texture(&TextureDescriptor {

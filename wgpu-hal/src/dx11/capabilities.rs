@@ -361,6 +361,7 @@ impl Capabilities {
                 depth_bias_with_fragment_depth: self.backend.fragment_depth_with_bias,
                 fragment_front_facing: false,
                 fragment_position: false,
+                texture_load: false,
                 vertex_format_mask: self.vertex_input_format_mask(),
             },
         };

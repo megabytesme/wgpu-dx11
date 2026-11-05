@@ -97,6 +97,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     depth_bias_with_fragment_depth: false,
                     fragment_front_facing: false,
                     fragment_position: false,
+                    texture_load: false,
                     vertex_format_mask,
                 },
                 ..Default::default()
@@ -4311,6 +4312,65 @@ fn render_triangle(
         std::println!("PASS: vertex texture sampling rejected by core downlevel limit");
         global.render_pipeline_drop(invalid_pipeline);
         global.shader_module_drop(vertex_texture_shader);
+
+        let (texture_load_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                "@group(0) @binding(7) var image: texture_2d<f32>; fn load_helper() -> vec4f { return textureLoad(image, vec2i(0), 0); } @fragment fn loaded() -> @location(0) vec4f { return load_helper(); } @fragment fn safe() -> @location(0) vec4f { return vec4f(0.5, 0.0, 0.0, 1.0); }",
+            )),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "texture-load shader: {shader_error:?}"
+        );
+        let mut texture_load_descriptor = pipeline_descriptor.clone();
+        texture_load_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .module = texture_load_shader;
+        texture_load_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("loaded"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &texture_load_descriptor, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(
+                    pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
+                        stage: wgt::ShaderStages::FRAGMENT,
+                    }
+                )
+            ),
+            "FL9_1 core validation must reject a reachable textureLoad before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+
+        texture_load_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("safe"));
+        let (safe_pipeline, error) =
+            global.device_create_render_pipeline(device, &texture_load_descriptor, None);
+        assert!(
+            error.is_none(),
+            "safe sibling entry should remain usable: {error:?}"
+        );
+        global.render_pipeline_drop(safe_pipeline);
+        global.shader_module_drop(texture_load_shader);
+        std::println!("PASS: textureLoad is selected-entry gated before the D3D11 HAL");
 
         let mut alpha_target = targets[0].clone().unwrap();
         alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);

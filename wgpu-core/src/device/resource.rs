@@ -5179,6 +5179,23 @@ impl Device {
                         .map_err(stage_err)?;
 
                     let interface = vertex_shader_module.interface.interface();
+                    if !self.downlevel.limits.texture_load
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_texture_load(
+                                    stage.to_naga(),
+                                    &_vertex_entry_point_name,
+                                )
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
                     if !self.downlevel.limits.vertex_index_input
                         && match interface {
                             Some(interface) => interface
@@ -5374,6 +5391,24 @@ impl Device {
                             .map(|ep| ep.as_ref()),
                     )
                     .map_err(stage_err)?;
+
+                if !self.downlevel.limits.texture_load
+                    && match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_texture_load(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    }
+                {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
+                            stage: stage_bit,
+                        },
+                    );
+                }
 
                 if !self.downlevel.limits.fragment_front_facing {
                     let uses_front_facing = match shader_module.interface.interface() {

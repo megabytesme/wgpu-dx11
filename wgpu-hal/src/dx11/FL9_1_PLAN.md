@@ -96,6 +96,10 @@ contract is safe. This plan does not claim WebGPU conformance.
    fixture leaves those flags absent and verifies rejection before HAL. D1/D3
    binding layouts are rejected when their texture dimension limits are zero,
    and storage-texture D2Array layouts now share the array downlevel gate.
+   The selected-entry audit also models `textureLoad` as a downlevel limit and
+   rejects only entries that reach a load through their call graph; safe sibling
+   entries remain usable. Continue auditing other WGSL operations accepted by
+   core but rejected by the private FL9_1 compiler.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

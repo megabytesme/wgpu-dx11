@@ -286,6 +286,7 @@ struct EntryPoint {
     inputs: Vec<Varying>,
     outputs: Vec<Varying>,
     fragment_position_used: bool,
+    texture_load_used: bool,
     resources: Vec<naga::Handle<Resource>>,
     #[allow(unused)]
     spec_constants: Vec<SpecializationConstant>,
@@ -360,6 +361,65 @@ fn collect_call_arguments(
             _ => {}
         }
     }
+}
+
+fn collect_called_functions(
+    block: &naga::Block,
+    called_functions: &mut Vec<naga::Handle<naga::Function>>,
+) {
+    let mut blocks = alloc::vec![block];
+    while let Some(block) = blocks.pop() {
+        for statement in block.iter() {
+            match statement {
+                naga::Statement::Call { function, .. } => called_functions.push(*function),
+                naga::Statement::Block(block) => blocks.push(block),
+                naga::Statement::If { accept, reject, .. } => {
+                    blocks.push(accept);
+                    blocks.push(reject);
+                }
+                naga::Statement::Switch { cases, .. } => {
+                    blocks.extend(cases.iter().map(|case| &case.body));
+                }
+                naga::Statement::Loop {
+                    body, continuing, ..
+                } => {
+                    blocks.push(body);
+                    blocks.push(continuing);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn entry_point_uses_texture_load(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
+    if entry_point
+        .function
+        .expressions
+        .iter()
+        .any(|(_, expression)| matches!(expression, naga::Expression::ImageLoad { .. }))
+    {
+        return true;
+    }
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::ImageLoad { .. }))
+        {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
 }
 
 fn root_function_argument(
@@ -1468,6 +1528,7 @@ impl Interface {
                     info,
                     module_info,
                 ),
+                texture_load_used: entry_point_uses_texture_load(module, entry_point),
                 ..Default::default()
             };
             for arg in entry_point.function.arguments.iter() {
@@ -1668,6 +1729,18 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.fragment_position_used)
+    }
+
+    pub(crate) fn entry_point_uses_texture_load(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.texture_load_used)
     }
 
     pub fn finalize_entry_point_name(
@@ -2398,11 +2471,17 @@ mod tests {
             fn sample_helper() -> vec4f {
                 return textureSampleLevel(image, smp, vec2f(0.5), 0.0);
             }
+            fn load_helper() -> vec4f {
+                return textureLoad(image, vec2i(0), 0);
+            }
             @vertex fn sampled() -> @builtin(position) vec4f {
                 return sample_helper();
             }
             @vertex fn loaded() -> @builtin(position) vec4f {
                 return textureLoad(image, vec2i(0), 0);
+            }
+            @vertex fn loaded_helper() -> @builtin(position) vec4f {
+                return load_helper();
             }
             @vertex fn unused() -> @builtin(position) vec4f {
                 return vec4f(0.0, 0.0, 0.0, 1.0);
@@ -2445,6 +2524,22 @@ mod tests {
                 .unwrap(),
             1
         );
+        for entry in ["loaded", "loaded_helper"] {
+            assert!(interface
+                .entry_point_uses_texture_load(naga::ShaderStage::Vertex, entry)
+                .unwrap());
+        }
+        for entry in ["sampled", "unused"] {
+            assert!(!interface
+                .entry_point_uses_texture_load(naga::ShaderStage::Vertex, entry)
+                .unwrap());
+        }
+        assert!(!interface
+            .entry_point_uses_texture_load(naga::ShaderStage::Fragment, "fragment")
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_texture_load(naga::ShaderStage::Vertex, "missing")
+            .is_err());
         let expected_pair = SamplingPair {
             texture_group: 0,
             texture_binding: 0,

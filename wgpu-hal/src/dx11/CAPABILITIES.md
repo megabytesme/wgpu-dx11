@@ -161,9 +161,12 @@ usage combination must pass the same private HAL path.
 
 For FL9_1, the private shader compiler rejects `textureLoad` / Naga
 `ImageLoad` reachable from the selected entry point unconditionally, including
-when shader runtime checks are disabled. Other entry points in the same module
-are analyzed independently. The native limits proof remains an opt-in
-experiment and is not used to expose texel loads through the production HAL.
+when shader runtime checks are disabled. `DownlevelLimits::texture_load` now
+projects this restriction into core, which follows validated entry-point call
+graphs and rejects only selected vertex or fragment entries that use the
+operation. Other entry points in the same module are analyzed independently.
+The native limits proof remains an opt-in experiment and is not used to expose
+texel loads through the production HAL.
 
 Per-format `SINGLE_MIP_ONLY` metadata reports the current one-mip ceiling for
 R8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, BC1_UNORM and D24S8. RGBA8 and BGRA8

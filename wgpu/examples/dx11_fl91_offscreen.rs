@@ -6,8 +6,9 @@ use std::{
     future::Future,
     num::NonZeroU64,
     path::Path,
-    sync::mpsc,
-    task::{Context, Poll, Waker},
+    sync::{mpsc, Arc},
+    task::{Context, Poll, Wake, Waker},
+    thread,
     time::Duration,
 };
 
@@ -15,12 +16,27 @@ use wgpu::*;
 
 const SIZE: u32 = 32;
 
+struct ThreadWaker(thread::Thread);
+
+impl Wake for ThreadWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
 fn poll_ready<T>(future: impl Future<Output = T>) -> T {
     let mut future = std::pin::pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    match future.as_mut().poll(&mut context) {
-        Poll::Ready(value) => value,
-        Poll::Pending => panic!("native D3D11 operation unexpectedly became pending"),
+    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+    let mut context = Context::from_waker(&waker);
+    loop {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(value) => return value,
+            Poll::Pending => thread::park(),
+        }
     }
 }
 

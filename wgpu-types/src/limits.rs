@@ -1127,6 +1127,12 @@ pub struct DownlevelLimits {
     /// This can be unavailable when the shader backend cannot compile the corresponding input
     /// for its selected shader model.
     pub fragment_position: bool,
+    /// Whether shader entry points may use `textureLoad` operations.
+    ///
+    /// This can be unavailable when the backend cannot preserve texel-load semantics for its
+    /// selected shader model or resource subset.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_load: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1167,6 +1173,7 @@ impl Default for DownlevelLimits {
             depth_bias_with_fragment_depth: true,
             fragment_front_facing: true,
             fragment_position: true,
+            texture_load: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -1215,6 +1222,7 @@ impl DownlevelLimits {
             && (!required.depth_bias_with_fragment_depth || self.depth_bias_with_fragment_depth)
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
+            && (!required.texture_load || self.texture_load)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -1267,6 +1275,7 @@ impl DownlevelCapabilities {
             && self.limits.depth_bias_with_fragment_depth
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
+            && self.limits.texture_load
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
@@ -1554,6 +1563,7 @@ mod tests {
             depth_bias_with_fragment_depth: false,
             fragment_front_facing: false,
             fragment_position: false,
+            texture_load: true,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
@@ -1575,6 +1585,7 @@ mod tests {
             depth_bias_with_fragment_depth: false,
             fragment_front_facing: false,
             fragment_position: false,
+            texture_load: true,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
@@ -1684,6 +1695,7 @@ mod tests {
             "sampled_uint_textures",
             "multisampled_texture_bindings",
             "max_sampler_anisotropy",
+            "texture_load",
         ] {
             object.remove(field);
         }
@@ -1695,6 +1707,7 @@ mod tests {
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);
         assert_eq!(limits.max_sampler_anisotropy, 16);
+        assert!(limits.texture_load);
     }
 
     #[test]
@@ -1759,6 +1772,24 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             fragment_position: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn texture_load_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            texture_load: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_load: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));

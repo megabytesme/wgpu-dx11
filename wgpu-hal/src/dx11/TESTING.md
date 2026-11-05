@@ -183,6 +183,30 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### FL9_1 texture-load validation
+
+The D3D11 projection sets `DownlevelLimits::texture_load` to false. Core
+analyzes selected vertex and fragment entry points, including called helper
+functions, and rejects reachable `textureLoad` operations before private HAL
+pipeline creation. A safe sibling entry point in the same module remains
+usable. This is a backend/compiler subset restriction; the experimental native
+texel-load limit probe is not enabled for application pipelines.
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-types --lib texture_load_is_a_downlevel_capability
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std sampled_texture_count_uses_the_selected_entry_point
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+CPU tests cover direct and helper-reachable loads, safe sibling entry points,
+stage selection and missing names. The strict core fixture exercises the
+selected-device projection before HAL, and the public integration test verifies
+the same validation error through wgpu while a sibling pipeline is accepted.
+The surrounding public render tests execute on the GPU; texture-load rejection
+itself occurs before GPU work.
+
 ### Vertex system-value input validation
 
 The controlled FL9_1 core fixture sets `vertex_index_input` and

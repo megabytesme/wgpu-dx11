@@ -101,6 +101,13 @@ the strict fixture confirms the rejection is a core validation error. This
 prevents unsupported D3D11 vertex texture access from becoming a HAL device
 error if a future adapter reports the current private shader subset.
 
+The selected-entry shader audit also covers `textureLoad`. The D3D11 public
+projection sets `DownlevelLimits::texture_load` to false, and core follows
+validated entry-point calls, including helper functions, to reject only the
+selected stages that use texel loads before HAL pipeline creation. Safe sibling
+entries remain usable. The opt-in native texel-load proof remains separate and
+does not relax the production shader subset.
+
 Core now also applies the FL9_x conditional-NPOT addressing rule to the actual
 texture/sampler pairs used by the selected render-pipeline entry points. Naga's
 validated sampling relationships are retained on the pipeline, while bind

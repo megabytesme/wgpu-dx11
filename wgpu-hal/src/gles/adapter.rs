@@ -987,6 +987,7 @@ impl super::Adapter {
             depth_bias_with_fragment_depth: true,
             fragment_front_facing: true,
             fragment_position: true,
+            texture_load: true,
             vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };
