@@ -82,7 +82,9 @@ impl Instance {
 
         #[cfg(all(windows, feature = "dx11"))]
         if instance_desc.backends.contains(Backends::DX11) {
-            log::warn!("DX11 is experimental and has no usable wgpu backend yet");
+            log::warn!(
+                "DX11 is experimental and currently exposes a restricted FL9_1 offscreen backend"
+            );
         }
 
         #[cfg(all(windows, feature = "dx11"))]
