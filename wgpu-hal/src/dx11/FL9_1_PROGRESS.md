@@ -4901,3 +4901,29 @@ The test does not widen the selected capability projection. Public HWND
 surface capabilities remain unavailable because synchronous `Present` can
 reenter while core queue-order and HAL immediate-context locks are held. The
 contract audit and historical FL9_1 hardware verification remain outstanding.
+
+## Checkpoint — public eight-texture boundary — `98c6879bd`
+
+Added a strict public wgpu test for the selected projection's maximum of eight
+sampled textures per fragment stage. It verifies the reported limit, binds and
+samples eight independently uploaded textures at sparse logical binding
+numbers through one sampler, and checks that every texture contributes to all
+64 output pixels. It also confirms a nine-texture fragment layout fails with a
+public core validation error before HAL.
+
+The focused strict test passed 1/1. The complete `dx11_public` suite passed
+7/7 on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with
+requested and actual FL9_1 and `software=false`. The new test verified
+`[180, 72, 36, 255]` on all 64 pixels; core rejected texture nine. Rust 1.93.1
+wgpu test Clippy, targeted rustfmt and `git diff --check` passed. The Visual
+Studio x64 prompt emitted its existing `vError: Unknown error` banner but
+provided a working linker/toolchain. Exact command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+This tests the existing public count projection and does not enable any new
+resource capability. Historical FL9_1 hardware, the full core/HAL contract
+and public HWND presentation remain outstanding.

@@ -294,3 +294,9 @@ test verifies all 64 pixels contain both contributions and public core rejects
 an incomplete group. Continue the exact core/HAL audit and broaden public
 render coverage. HWND presentation remains gated on safe cross-layer
 serialization and reentrancy handling.
+
+The public path now exercises the entire projected eight-texture fragment
+capacity in one shader. Each sparse-bound uploaded texture affects every
+checked pixel; a ninth fragment texture is rejected by core before HAL. This
+verifies the current count boundary on the RTX forced to FL9_1, not historical
+driver behavior or every shader's instruction budget.

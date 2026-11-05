@@ -115,6 +115,12 @@ uploaded textures contribute to the output; readback verifies all 64 pixels
 are `[104, 128, 24, 255]`. An incomplete group missing binding 42 is rejected
 through public core validation before rendering.
 
+A seventh strict public test uses all eight sampled-texture slots advertised
+for one FL9_1 shader stage. Eight independently uploaded textures at sparse
+bindings each contribute a distinct value through a shared sampler, and all 64
+pixels match `[180, 72, 36, 255]`. A nine-texture fragment layout is rejected
+by core validation before HAL.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

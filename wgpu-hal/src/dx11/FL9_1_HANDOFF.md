@@ -1265,3 +1265,10 @@ rustfmt and `git diff --check` passed. Exact commands are recorded in
 The public adapter remains offscreen-only. Continue auditing the projected
 core/HAL contract and expand representative public rendering; synchronous
 HWND `Present` reentrancy is still unresolved and blocks surface capabilities.
+
+Code commit `98c6879bd` adds public eight-texture boundary coverage: all eight
+sparse-bound resources contribute to a verified image, and core rejects a
+ninth fragment texture against the selected projection. Strict suite result
+and hardware identity are recorded in `FL9_1_PROGRESS.md`. Surface
+reentrancy, the full public contract audit and historical-device validation
+remain open.
