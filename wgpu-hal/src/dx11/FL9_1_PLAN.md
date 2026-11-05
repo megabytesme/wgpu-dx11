@@ -279,7 +279,10 @@ not a repository artifact.
    while verifying same-thread queue write/submit, poll, buffer creation and
    texture creation behavior. Continue testing lifecycle/error and remaining
    reentrancy edges. Preserve the existing CoreWindow path; Windows 10 Mobile
-   ARM32 remains unverified.
+   ARM32 remains unverified. Strict hidden-HWND HAL tests also verify that
+   same-surface `configure` and `acquire_texture` fail promptly while another
+   surface operation owns its operation guard; normal present/resize remains
+   functional afterward.
 7. Audit unsupported operations, synchronization, lifetime and device loss;
    run strict GPU, core, Naga and non-D3D11 regressions and relevant downlevel
    conformance cases. Independently review the public contract. The upstream

@@ -6349,3 +6349,42 @@ commands successfully.
 The next task remains the public core/HAL contract audit. These query results
 describe only the modern RTX 3090 Ti forced to FL9_1; historical FL9_1 drivers
 and ARM32 UWP remain unverified.
+
+## Follow-up — same-surface HWND operation re-entry
+
+Code checkpoint: `be8e58729` (`dx11: test HWND surface operation reentrancy`).
+
+Extended the strict hidden-HWND integration path to hold the surface operation
+guard and call the actual HAL `configure` and `acquire_texture` methods again
+on the owner thread. Both return the explicit `D3D11 surface operation
+already in progress` error without disturbing the configured swap chain. The
+same test then continues through acquire, render/readback, present, resize and
+recreation.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the targeted strict run passed both hidden
+surface tests on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), explicitly requested and actual FL9_1. Both clear and
+clone-sampled paths presented, resized and completed their existing readback
+checks. `rustfmt --check --edition 2021` passed for the changed test file, and
+HAL Clippy passed with the same nine pre-existing warnings. `git diff --check`
+passed.
+
+Command run inside the Visual Studio 2022 x64 developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 fl91_hidden_hwnd -- --nocapture --test-threads=1
+```
+
+An attempted direct `IDXGISwapChain2::GetMaximumFrameLatency` diagnostic
+returned `DXGI_ERROR_INVALID_CALL` for this swap chain, which is created
+without `FRAME_LATENCY_WAITABLE_OBJECT`. The diagnostic was removed without
+changing swap-chain behavior. Microsoft's API documentation states that this
+getter's default is one; explicit waitable-object behavior remains outside
+the current surface contract. The hidden test does not claim to verify the
+latency through that unsupported query path.
+
+Independent read-only audits found no confirmed route from a valid advertised
+operation into a HAL panic and no confirmed public render-pass/surface contract
+violation. Continue the broader public core/HAL audit; historical FL9_1 and
+ARM32 remain unverified.

@@ -1687,3 +1687,25 @@ continue the core/HAL validation audit from the remaining render-pass,
 resource-usage and shader-contract gaps in `FL9_1_PLAN.md`; do not expand
 format exposure without a selected-device query, implementation path and
 actual output test. No history was rewritten or pushed.
+
+## Follow-up — HWND surface re-entry audit
+
+Code commit: `be8e58729` (`dx11: test HWND surface operation reentrancy`).
+
+Strict hidden-HWND tests now call `configure` and `acquire_texture`
+reentrantly while the same surface operation
+guard is held. Both reject with `D3D11 surface operation already in progress`,
+and the normal present/resize/readback flow passes afterward. The targeted
+strict suite passed 2/2 on the physical RTX 3090 Ti at requested/actual
+FL9_1. HAL Clippy passed with nine previously recorded warnings and the changed
+test file passed rustfmt. See the final follow-up section in
+`FL9_1_PROGRESS.md` for the exact command.
+
+An independent HAL scan found no confirmed valid-public-operation route to a
+panic; disabled HAL hooks are protected by uninhabited resource types or core
+capability gates. A separate render-pass/surface review found no confirmed
+contract mismatch. It noted frame-latency observation as a possible test gap;
+DXGI's getter returned `DXGI_ERROR_INVALID_CALL` for the non-waitable chain,
+so no waitable-swapchain behavior was introduced. Microsoft's documented
+default is one. Continue the broad API-contract audit and retain the explicit
+unknowns for historical FL9_1 and ARM32.
