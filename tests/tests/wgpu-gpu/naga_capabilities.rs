@@ -26,11 +26,25 @@ pub fn validate_capabilities(ctx: TestingContext) {
     assert_eq!(diff, Caps::empty());
 }
 
+fn test_limits() -> wgpu::Limits {
+    let mut limits = wgpu::Limits::downlevel_defaults();
+    limits.max_texture_array_layers = 1;
+    limits.max_sampled_textures_per_shader_stage = 8;
+    limits.max_dynamic_uniform_buffers_per_pipeline_layout = 2;
+    limits.max_uniform_buffers_per_shader_stage = 6;
+    limits.max_uniform_buffer_binding_size = 512;
+    limits.max_inter_stage_shader_variables = 8;
+    limits.max_color_attachments = 1;
+    limits.max_color_attachment_bytes_per_sample = 8;
+    limits.max_buffers_and_acceleration_structures_per_shader_stage = 17;
+    limits
+}
+
 #[gpu_test]
 static VALIDATE_CAPABILITIES: GpuTestConfiguration = GpuTestConfiguration::new()
     .parameters(
         TestParameters::default()
             .downlevel_flags(wgpu::DownlevelFlags::empty())
-            .limits(wgpu::Limits::downlevel_defaults()),
+            .limits(test_limits()),
     )
     .run_sync(validate_capabilities);
