@@ -420,3 +420,17 @@ Public vertex input coverage now includes emulated per-instance streams with a
 nonzero `first_instance`; readback verifies the selected instance records and
 the skipped record. The public selected-entry gate rejects `instance_index`,
 which the FL9_1 shader path does not implement.
+
+## Current next implementation task
+
+Split native sampled-resource availability from filtering capability. Microsoft
+documents that a format without `D3D11_FORMAT_SUPPORT_SHADER_SAMPLE` may still
+be used with HLSL `Sample` when the sampler uses point filtering. The current
+HAL rejects that entire path. Investigate the RTX's FL9_1 `R16G16_SNORM` query
+(`0x00021122`: `TEXTURE2D` present, `SHADER_SAMPLE` absent), then attempt a
+non-filtering upload/sample/readback test. If native creation and shader
+execution confirm the documented subset, expose the format only as
+non-filterable and retain strict rejection of filtering samplers. Keep query
+failure distinct from a negative bit and keep the format query-gated. Run the
+strict private/public format tests, adapter projection test, DX12 regression,
+Clippy, rustfmt and diff checks before committing.

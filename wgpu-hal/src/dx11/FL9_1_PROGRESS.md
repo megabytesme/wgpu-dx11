@@ -6088,3 +6088,63 @@ Next, continue the selected-device format and usage audit. Investigate another
 bounded FL9_1 texture-format candidate against both the required-format table
 and actual device query before implementing it. Keep optional formats
 query-gated and the broader core/HAL contract audit active.
+
+## Checkpoint — selected-device sampled-format filterability
+
+Code commit: `4f1ac09a4` (`dx11: report query-backed sampled format filtering`).
+
+For the implemented one-mip sampled/upload formats, a positive
+`D3D11_FORMAT_SUPPORT_SHADER_SAMPLE` query now projects wgpu `FILTERABLE` /
+`SAMPLED_LINEAR`. The same query already gates the private sampled-resource
+path and `sampled_view` classifies the view as filterable from that bit. This
+matches Microsoft's definition that the bit enables HLSL `Sample` with any
+filter. Formats lacking the bit can be point-sampled in native D3D11 when the
+resource format is supported, but this backend still rejects that subset; it
+does not advertise point-only resources by inference.
+
+The strict public R8/RG8 test still checks nearest sampling for both formats.
+It now also renders RG8_UNORM using a linear sampler from two distinct texels;
+all 64 output pixels matched the expected red gradient
+`[72, 88, 104, 120, 136, 152, 168, 184]` across each row (tolerance 2). The
+SNORM public test verifies `FILTERABLE` format flags from positive selected-
+device queries and still uses nearest sampling. No linear SNORM output claim is
+made.
+
+The physical adapter was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`),
+driver `32.0.16.2101`, software=false, requested and actual FL9_1. It reported
+`R8_UNORM=0x0002d3e0` and `R8G8_UNORM=0x0002c320`; both projected
+`FILTERABLE`. `R16G16_SNORM=0x00021122` lacks `SHADER_SAMPLE`, and the current
+path rejects it. Queries for `R16_FLOAT`, `R16G16_FLOAT` and
+`R16G16B16A16_FLOAT` returned `E_FAIL` (`-2147467259`), which is an unavailable
+observation, not proof of hardware absence.
+
+Verification used the Rust 1.93.1 toolchain and Visual Studio 2022 x64 MSVC.
+The strict hardware commands were run from a VS developer environment with
+`WGPU_DX11_REQUIRE_HARDWARE=1`:
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-hal/src/dx11/capabilities.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Results: private HAL 353/353; public D3D11 23/23; physical adapter-selection
+isolation 1/1; DX12 core 86/86. The public suite's Float16x2 vertex-input case
+logged one expected capability skip. Six HAL test subcases rejected unsupported
+runtime-integer shader constructs and consequently omitted only their follow-up
+GPU render; these are intentional negative-coverage paths, not missing-hardware
+skips. HAL Clippy passed with nine existing warnings in unrelated test code;
+public-test Clippy, rustfmt and `git diff --check` passed. The relevant
+capability unit test also passed 1/1. No historical FL9_1 behavior is implied.
+
+The next bounded task is to investigate D3D11's point-only `Sample` behavior
+for a resource format whose `TEXTURE2D` bit is present but `SHADER_SAMPLE` is
+absent. Start with forced-FL9_1 R16G16_SNORM, whose RTX query is positive for
+the resource but lacks the any-filter bit. Verify native texture/SRV creation,
+point-sampler execution and public non-filterable projection before deciding
+whether to expose the conditional subset.

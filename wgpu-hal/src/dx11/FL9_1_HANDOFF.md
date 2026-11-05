@@ -3,20 +3,28 @@
 ## Current mission state — 2026-11-05
 
 This mission remains active. Later checkpoints supersede older status notes
-below. The current branch is `uwp-dx11`, code HEAD is
-`672b6b250d2332eaae0d567f6d6af7f79f8ebbf0`, and the worktree was clean after
-that commit. The opt-in public D3D11 backend includes a constrained offscreen
-and HWND path; it is not WebGPU-compliant. The latest commit adds selected-
-device-gated R8G8_UNORM upload and sampled rendering. The strict RTX 3090 Ti
-test requested/selected FL9_1, observed `R8G8_UNORM` support mask
-`0x0002c320`, and verified 64/64 readback pixels. Full private HAL and public
-D3D11 suites passed 353/353 and 23/23; DX12 core passed 86/86. Exact commands,
-warnings and hardware identity are in `FL9_1_PROGRESS.md`.
+below. The branch is `uwp-dx11`; the latest implementation checkpoint is
+`4f1ac09a4` (`dx11: report query-backed sampled format filtering`). A
+documentation-only journal commit records its verification immediately after
+the implementation commit. The opt-in public D3D11 backend supports a
+conservative offscreen path and a constrained HWND path; it is not
+WebGPU-compliant. Public selected-device format reports now expose
+`FILTERABLE` only for sampled/upload formats with a positive
+`D3D11_FORMAT_SUPPORT_SHADER_SAMPLE` query. A strict RG8_UNORM linear-sampling
+render matched its expected eight-column gradient across 64 pixels. The RTX
+3090 Ti was requested and selected at FL9_1 (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false). Full private HAL and public D3D11 suites
+passed 353/353 and 23/23; the physical adapter-selection regression passed
+1/1 and DX12 core passed 86/86. Exact commands and diagnostics are in
+`FL9_1_PROGRESS.md`.
 
-Continue the selected-device format/usage and public core/HAL contract audits.
-Keep unimplemented formats query-gated, preserve the non-WebGPU capability
-contract, and do not push. Historical FL9_1 drivers and ARM32 UWP execution
-remain unverified.
+The constrained HWND path has hidden-window configure/acquire/present/resize
+and wrong-thread tests. Queue/resource operations during the Present guard are
+rejected when re-entered on the owner thread and serialized for other threads;
+the controlled core fixture exercises these checks. Historical FL9_1 drivers
+and ARM32 UWP execution remain unverified. Continue the selected-device
+format/usage and public core/HAL contract audits; keep optional formats
+query-gated and do not push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
@@ -28,8 +36,9 @@ depth-only prepasses, stencil operations, read-only attachments, depth-bias
 subsets, multiple texture formats and mip views, uniform layouts/ranges, and
 indexed/nonindexed point, line and triangle topologies on a modern RTX 3090 Ti
 explicitly forced to FL9_1. Historical FL9_1 compatibility has not been
-verified. Public HWND presentation and the cross-layer `Present` reentrancy
-deadlock remain unresolved; keep public surface exposure gated.
+verified. Public HWND presentation remains intentionally constrained to its
+tested owner-thread contract; historical drivers and ARM32 UWP remain
+unverified.
 
 The latest core/HAL audit adds a selected-entry
 `textureSampleBaseClampToEdge` downlevel limit. FXC rejects Naga's
