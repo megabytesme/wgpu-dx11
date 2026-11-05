@@ -5933,3 +5933,29 @@ Commit `867122688978524082ada4ba8614a3c3f4f72c3b` contains this implementation,
 the public test and documentation. Continue auditing public core/HAL behavior
 and optional vertex formats. Do not claim that the RTX executed Float16x2 at
 FL9_1 or that a forced modern device validates historical FL9_1 drivers.
+
+## Follow-up — visible FL9_1 frame capture
+
+Re-ran the windowed example with strict hardware mode on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+`software=false`:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=1800'
+```
+
+The run completed 1,800 frames. A second long bounded run was captured and
+closed by posting `WM_CLOSE`; it presented 80,871 frames before the close was
+processed. The client-area PNG was captured at the active monitor's physical
+pixel coordinates after accounting for desktop DPI virtualization, then
+visually inspected. It showed red and green cube faces over the expected dark
+clear color. The temporary image is at
+`%TEMP%\wgpu-dx11-fl91-windowed.png`; it is intentionally not checked into the
+repository. This verifies visible output qualitatively, not deterministic
+per-pixel presentation output; deterministic color/depth validation remains
+covered by the public offscreen readback tests.
+
+The initial capture attempt used DPI-virtualized coordinates and included
+unrelated desktop regions. It was discarded and not used as evidence. The
+final capture used per-monitor-aware coordinates and cropped to the HWND
+client area. No code files changed during this verification.

@@ -1580,4 +1580,11 @@ cover a positive optional query. See the current checkpoint section in
 
 Next continue the public core/HAL contract audit and add focused tests for any
 remaining surface or presentation reentrancy gaps. Historical FL9_1 and ARM32
-UWP execution and independent visual inspection remain unverified.
+UWP execution remain unverified.
+
+The visible-window presentation checkpoint now has an inspected client-area
+capture. A strict physical FL9_1 run completed 1,800 frames; a longer run
+presented 80,871 frames before a clean `WM_CLOSE`. The reviewed frame showed
+distinct red/green cube faces over the clear color. The PNG is temporary at
+`%TEMP%\wgpu-dx11-fl91-windowed.png`, not tracked. Deterministic image checks
+remain covered by offscreen GPU readback tests.

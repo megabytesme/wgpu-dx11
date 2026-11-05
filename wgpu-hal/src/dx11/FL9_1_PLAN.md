@@ -5,8 +5,9 @@ API, with truthful downlevel capabilities, tested textured depth rendering and
 Windows presentation. The opt-in public adapter exposes physical FL9_1 devices
 for offscreen rendering and a constrained HWND surface. Surface use is
 owner-thread-only; hidden lifecycle tests and a bounded visible-window example
-have run at forced FL9_1. The displayed image has not been captured for visual
-inspection. This plan does not claim WebGPU conformance.
+have run at forced FL9_1. A captured client-area frame was visually inspected:
+the rotating cube showed distinct red and green textured faces over the clear
+background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
@@ -22,7 +23,9 @@ checked against the HWND owner thread. The public test verifies two presents
 and resize on a hidden window. A visible example runs a Win32 message pump,
 renders an animated indexed textured cube with depth testing, and handles
 resize; a 60-frame forced-FL9_1 run succeeded. Captured-image verification
-remains open.
+has confirmed the distinct face colors and clear background. The capture was
+made from the live client area on a 150%-scaled desktop; the temporary PNG is
+not a repository artifact.
 
 1. Preserve the tested private backend; continue uniform layout and real
    constant-budget testing. FXC and the forced-FL9_1 RTX accept a dynamically
