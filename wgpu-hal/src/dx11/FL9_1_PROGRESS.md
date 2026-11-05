@@ -5670,3 +5670,41 @@ linking and all test processes completed successfully. The mission remains
 active. Next continue FL9_1 depth/stencil render-pass transition coverage and
 the public core/HAL contract audit; HWND presentation remains off until a safe
 cross-layer scheduling design is established.
+
+## Checkpoint — public D24S8 pass transitions — `24bbe6bce`
+
+Commit `24bbe6bce` adds strict public wgpu coverage for D24S8 depth/stencil
+LOAD, CLEAR and per-aspect DISCARD followed by LOAD. A LOAD pass preserved
+depth 0.5 and stencil 1 together; separate stencil-clear and depth-clear
+comparisons proved each aspect changed independently. Separate stencil and
+depth discard cases then loaded both aspects and verified core initialized the
+discarded subresource before rendering. The depth-discard probe chose an
+incoming 0.25 value with `Less`: it would pass against stale depth 0.5 but
+fails against the core's initialized zero. A sampled D24S8 descriptor was
+rejected by public core; the existing D16 test covers rejection of the
+unsupported stencil-only view. This does not assert native contents after
+discard or historical-driver behavior.
+
+The baseline D24S8 stencil test passed 1/1 on the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested/actual FL9_1. The new
+transition test passed 1/1 on the same physical adapter and verified 320
+pixels: 64 combined LOAD, 64 stencil CLEAR, 64 depth CLEAR, 64 stencil discard
+then LOAD, and 64 depth discard then LOAD. The full strict public D3D11 suite
+passed 20/20, with no skips; every case selected physical hardware at FL9_1.
+
+Exact verification (Rust 1.93.1, Visual Studio x64 developer environment,
+Cargo `-j16`):
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_stencil_replace_and_compare_at_fl91 -- --nocapture --test-threads=1`: 1/1 baseline test passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d24s8_load_clear_discard_transitions_at_fl91 -- --nocapture --test-threads=1`: 1/1 passed with the GPU readback above.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 20/20 passed, 0 failed, 0 ignored; no hardware skips.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std`, targeted rustfmt check and `git diff --check` passed.
+
+The initial depth-discard assertion expected a later `Greater` test to fail,
+but it passed because core initializes the discarded aspect to zero. The final
+`Less` probe now distinguishes the stale 0.5 value from that initialization.
+The private HAL, controlled core fixture, adapter-isolation and DX12 suites
+were not rerun for this public-test-only increment; their recorded results at
+the previous code checkpoint remain separate evidence. Continue the broader
+core/HAL audit, then return to the cross-layer HWND presentation scheduler.
+The public adapter remains opt-in and offscreen-only.

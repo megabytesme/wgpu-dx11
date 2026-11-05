@@ -1489,3 +1489,22 @@ core/HAL contract audit. Do not enable public surface capabilities; HWND
 presentation still needs a safe cross-layer scheduler because DXGI `Present`
 can synchronously reenter the window procedure while core and HAL locks are
 held. Historical FL9_1 and ARM32 UWP execution remain unverified.
+
+## Current checkpoint — D24S8 depth/stencil transitions
+
+Branch `uwp-dx11`, code commit `24bbe6bce`. The new strict public test verifies
+D24S8 LOAD preservation of both aspects, independent depth/stencil CLEAR, and
+per-aspect DISCARD followed by LOAD initialization through core. Strict public
+D3D11 suite passed 20/20 on the RTX 3090 Ti at requested/actual FL9_1; the new
+case checked 320 pixels across five outcomes. Sampled D24S8 is rejected by
+core. The D16 public test separately rejects its unsupported stencil-only view.
+See the latest `FL9_1_PROGRESS.md` section for exact commands and the observed
+zero initialization used after depth discard.
+
+Worktree is expected clean after the forthcoming progress-journal commit.
+Next continue the public core/HAL contract audit and evaluate remaining
+depth/stencil aspect and pass combinations. Public HWND surface capabilities
+remain disabled: synchronous DXGI `Present` may reenter core while its queue
+and HAL context locks are held, and a safe cross-layer scheduling design has
+not been established. Historical FL9_1 hardware and ARM32 UWP remain
+unverified.
