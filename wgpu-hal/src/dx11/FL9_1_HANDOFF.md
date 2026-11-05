@@ -1419,3 +1419,24 @@ behavior, then resume the surface scheduler investigation. Public HWND
 presentation remains gated by unresolved synchronous `Present` reentrancy;
 the public adapter is still opt-in/offscreen-only. Historical FL9_1 drivers
 and ARM32 UWP hardware remain unverified.
+
+## Current checkpoint — fragment sample-mask output gate — `26321bf74`
+
+The FL9_1 projection now disables `DownlevelLimits::fragment_sample_mask_output`.
+WGSL `@builtin(sample_mask)` writes HLSL `SV_Coverage`, and FXC rejects it with
+X4583 for `ps_4_0_level_9_1`. Core validates the selected fragment entry point
+before HAL; a color-only sibling remains accepted. This is a tested compiler
+and validation boundary, not a GPU draw test. The HAL test logs the forced
+FL9_1 RTX 3090 Ti and exact FXC diagnostic. A possible single-sample discard
+emulation remains unimplemented.
+
+Verification passed: strict HAL 345/345, public D3D11 15/15, D3D11 core fixture
+89/89, DX12 core 85/85, types 77/77 and serde types 79/79. HAL/GLES, `wgpu-info`
+and `wgpu-test --tests` checks, all affected Clippy runs, rustfmt and diff checks
+also passed. No strict hardware tests skipped. Nine existing unrelated HAL
+Clippy warnings and fourteen non-serde types unused-import warnings remain.
+See `FL9_1_PROGRESS.md` for exact commands and resolved build/test issues.
+
+Continue the shader/core/HAL compatibility audit. Public HWND presentation is
+still gated on a safe scheduling design for DXGI's synchronous reentrancy;
+historical FL9_1 drivers and ARM32 UWP remain unverified.

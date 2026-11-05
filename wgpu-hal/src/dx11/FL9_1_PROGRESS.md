@@ -5424,3 +5424,51 @@ The code checkpoint is `ed642d768`. Continue the selected-entry shader and
 core/HAL contract audit, then revisit the public HWND presentation scheduler.
 The adapter remains opt-in and offscreen-only; historical FL9_1 drivers and
 ARM32 UWP hardware remain unverified.
+
+## Checkpoint — fragment sample-mask output gate — `26321bf74`
+
+The next selected-entry shader audit found that WGSL fragment
+`@builtin(sample_mask)` output lowers to HLSL `SV_Coverage`, which the
+`ps_4_0_level_9_1` FXC profile rejects with X4583. Core previously accepted
+this operation and could fail only later in the private shader path. Added
+`DownlevelLimits::fragment_sample_mask_output`, defaulting to available for
+other backends and false in the D3D11 FL9_1 projection. Core now checks only
+the selected fragment entry point, rejects before HAL, and permits a safe
+color-only sibling. No shader rewrite is attempted; mapping its low coverage
+bit to discard remains a possible single-sample emulation investigation.
+
+Strict validation used Rust 1.93.1 and Visual Studio 2022 x64 tools. Hardware
+was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+selected as hardware (`software=false`) with requested and actual FL9_1.
+The private profile test isolated the Naga-to-FXC compiler path and observed:
+`error X4583: semantic 'SV_Coverage' unsupported on ps_4_0_level_9_1`. The
+public test confirmed the specific core validation error and acceptance of a
+color-only sibling; it did not submit a draw for the negative pipeline case.
+
+Results:
+
+- Strict private HAL suite: 345 passed, 0 failed, 0 ignored; no hardware skips.
+- Strict public D3D11 suite: 15 passed, 0 failed, 0 ignored; all selected the
+  physical RTX at FL9_1.
+- Strict D3D11 core fixture suite: 89 passed, 0 failed, 0 ignored.
+- Core DX12 regression suite: 85 passed, 0 failed, 0 ignored.
+- `wgpu-types`: 77 passed without serde and 79 passed with serde. The
+  non-serde build reports 14 pre-existing unused serde-import warnings.
+- HAL with D3D11/GLES, `wgpu-info`, and `wgpu-test --tests` checks passed.
+- Clippy passed for HAL, core, wgpu, types, info and test crates. HAL reports
+  nine pre-existing warnings in unrelated test/swapchain/texel-load code.
+- Changed Rust files pass rustfmt; `git diff --check` passes.
+
+During implementation, the first core and type test builds found missing values
+in exhaustive FL9_1 fixture/test literals; these were fixed before the full
+runs. The initial HAL-level compile attempt hit the existing conservative
+runtime-integer guard first, so the compiler diagnostic test calls the same
+production Naga-to-FXC function directly to isolate the profile restriction.
+An optional check invocation using `--features noop` was invalid because
+`noop` is not a `wgpu-hal` Cargo feature; the `noop` module is unconditionally
+compiled in the successful HAL checks and test suite.
+
+The code commit is `26321bf74`. Continue auditing other core-accepted shader
+operations and HAL paths. Public HWND presentation still needs a cross-layer
+scheduling design that avoids synchronous DXGI `Present` reentrancy; historical
+FL9_1 drivers and ARM32 UWP hardware remain unverified.
