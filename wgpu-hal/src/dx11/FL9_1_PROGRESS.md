@@ -4539,3 +4539,24 @@ This covers the maximum group index with one two-group resource configuration;
 it does not prove every resource type or the eight-group aggregate resource
 capacity. Continue the contract audit. The public adapter remains experimental
 and offscreen-only pending broad operation coverage and safe Present scheduling.
+
+## Checkpoint — concurrent public device submissions
+
+Commit `e8f6fe5f2` replaces the sequential second-device smoke operation with
+two concurrent public wgpu workloads. Each independently opened device records
+a clear followed by texture-to-buffer copy, submits, maps and reads back its
+own buffer from a scoped worker thread. The first device produced 64/64 red
+pixels and the second produced 64/64 green pixels. This exercises the shared
+native immediate-context mutex across separate public devices and confirms
+submission, synchronization and readback remain ordered for both queues.
+
+Strict test on 2026-11-05 passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested and actual FL9_1, `software=false`, with
+`WGPU_DX11_REQUIRE_HARDWARE=1`. Exact command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+`cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std`, targeted rustfmt and `git diff --check` passed. No skip or newly introduced warning. This covers concurrent queue submissions on the same adapter/context; it does not establish public presentation concurrency or device-loss behavior. Continue the core/HAL contract audit and retain the offscreen surface gate.
