@@ -99,6 +99,16 @@ fn clear_and_verify(
     readback.unmap();
 }
 
+fn expect_validation_error(device: &Device, label: &str, operation: impl FnOnce()) {
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    operation();
+    let error = poll_ready(scope.pop()).unwrap_or_else(|| panic!("{label} was accepted"));
+    assert!(
+        matches!(error, Error::Validation { .. }),
+        "{label} failed outside public validation: {error:?}"
+    );
+}
+
 #[test]
 fn public_dx11_api_renders_offscreen_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -134,6 +144,71 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         ..Default::default()
     }))
     .expect("request a device within the reported FL9_1 capability projection");
+
+    expect_validation_error(&device, "3D texture creation", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported public FL9_1 3D texture"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        }));
+    });
+    expect_validation_error(&device, "four-sample color texture creation", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported public FL9_1 multisampled texture"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 4,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        }));
+    });
+    expect_validation_error(&device, "unsupported sampled texture format", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported public FL9_1 R32Float texture"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::R32Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        }));
+    });
+    expect_validation_error(&device, "multi-mip D24S8 attachment creation", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported public FL9_1 multi-mip D24S8 texture"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth24PlusStencil8,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        }));
+    });
 
     let target = device.create_texture(&TextureDescriptor {
         label: Some("public DX11 FL9_1 readback target"),
@@ -672,5 +747,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             .join()
             .expect("second public device worker did not panic");
     });
-    println!("PASS: public wgpu D3D11 FL9_1 group-7 sampled resources and group-0 dynamic uniforms; indexed depth rendering matched 32 tinted-red/32 green pixels, dynamic transform update matched 16 blue/32 tinted-red/16 green; concurrent devices read back 64/64 red and green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1; core validation rejected 3D, 4x-MSAA, R32Float sampling and multi-mip D24S8; group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; concurrent devices read back 64/64 red and green pixels");
 }

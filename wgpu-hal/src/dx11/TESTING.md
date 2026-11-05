@@ -31,6 +31,12 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
 ```
 
+The same strict public test submits unsupported descriptors under validation
+error scopes: 3D textures, 4x multisampled color textures, `R32Float` sampled
+textures and two-mip D24S8 attachments. Each must return
+`wgpu::Error::Validation`, confirming the public capability projection rejects
+these paths before the private HAL.
+
 The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
 `32.0.16.2101`, requested and actual FL9_1, and `software=false`. The main
 image matched 32 tinted-red/32 green pixels; a queue write plus dynamic uniform
@@ -39,7 +45,8 @@ subsequent concurrent public-device workloads read back 64/64 red and 64/64
 green pixels. The shader and bind-group layouts use group 7 with binding
 numbers also used in group 0. This is a representative public offscreen
 integration case, not a complete application or adapter-contract audit.
-Presentation remains unavailable.
+Presentation remains unavailable. All four unsupported resource descriptors
+were rejected by public core validation.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag

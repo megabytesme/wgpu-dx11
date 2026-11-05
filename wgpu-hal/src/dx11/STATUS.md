@@ -22,7 +22,9 @@ offset, shifting the image to 16 blue, 32 tinted-red and 16 green pixels. The
 test then submitted independent clear/copy/readback workloads concurrently
 through two public devices from the same adapter; readback verified all 64
 pixels were red on one device and green on the other. This proves these paths
-through the public API, not every operation within the projection.
+through the public API, not every operation within the projection. Error-scope
+checks also confirmed that core rejects 3D textures, 4x MSAA, `R32Float`
+sampling and multi-mip D24S8 before the HAL.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device
