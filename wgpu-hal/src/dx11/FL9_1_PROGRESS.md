@@ -4018,3 +4018,61 @@ The production capability report still needs a full audit against every
 core-valid operation. Device-loss/lifetime review remains open, and HWND
 `Present` lock/reentrancy still blocks public presentation and normal D3D11
 adapter exposure.
+
+## Checkpoint — keep core buffer padding within D3D11 `ByteWidth`
+
+The exact selected-device projection audit found that `max_buffer_size =
+u32::MAX` was not safe for the current core allocation path. Core rounds every
+buffer up to `COPY_BUFFER_ALIGNMENT` and adds one sentinel byte to vertex
+buffers before rounding. A legal request at the old reported maximum could
+therefore reach the HAL as a 4 GiB `ByteWidth`, which cannot fit the native
+32-bit field. The FL9_1 projection now caps the logical request at
+`u32::MAX - COPY_BUFFER_ALIGNMENT`, the largest value for which both the
+vertex sentinel path and ordinary four-byte rounding fit in `ByteWidth`. The
+synthetic projection test and exact-device core fixture assert this value.
+
+On 2026-11-04, all four HAL projection tests passed; the selected-device case
+reported NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, software=false), requested
+FL9_1, actual FL9_1. The strict core fixture passed 81/81 with no skips,
+including the unmodified projection request and resource/view creation test as
+well as existing GPU render/readback cases. HAL Clippy passed. Core test Clippy
+passed with the same three warnings in pre-existing fixture code (one
+collapsible `if` and two needless references); the new test produced no
+warning. Targeted rustfmt passed. An initial invocation outside the Visual
+Studio environment could not find `link.exe`; rerunning through the installed
+VS 2022 developer environment succeeded. That environment continues to print
+its known `Error: Unknown error` banner.
+
+Commands:
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+The limit is derived from core's allocation padding rather than a historical
+GPU guarantee. Large successful allocations are still subject to memory
+availability. Continue auditing the remaining core/HAL descriptor boundary,
+device loss/lifetime behavior and the unimplemented production adapter path.
+
+On 2026-11-05 the exact-projection core test was extended to request a vertex
+buffer one byte above the reported maximum and assert core returns
+`CreateBufferError::MaxBufferSize` before HAL allocation. The strict fixture
+was rerun at 81/81 with no skips on the same RTX 3090 Ti, requested and actual
+FL9_1. The DX12 core regression passed 77/77 and the zero-D3D11-adapter
+isolation test passed 1/1 after the projection change. Core Clippy passed with
+the same three pre-existing fixture warnings and no warning in the new test;
+targeted formatting and `git diff --check` passed.
+
+Additional commands:
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+```

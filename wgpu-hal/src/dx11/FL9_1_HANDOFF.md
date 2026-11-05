@@ -1097,3 +1097,17 @@ enable public adapter enumeration or surface exposure. Full commands and the
 hardware identity are in `FL9_1_PROGRESS.md`. Continue the exhaustive
 core/HAL operation audit, device lifetime/device-loss review, and truthful
 production adapter report. HWND `Present` reentrancy remains unresolved.
+
+Latest buffer-limit correction: FL9_1 now reports `max_buffer_size = u32::MAX -
+COPY_BUFFER_ALIGNMENT` because core adds a sentinel byte to vertex buffers and
+rounds allocations to four bytes before HAL creation. The old `u32::MAX` limit
+could expand beyond D3D11's 32-bit `ByteWidth`. The synthetic projection tests
+and the strict test-injected core adapter both assert the new cap. A logical
+vertex-buffer request one byte above the cap is rejected by core as
+`MaxBufferSize` before HAL. HAL projection tests passed 4/4 and strict core
+fixture passed 81/81 on the RTX 3090 Ti at requested/actual FL9_1; exact
+commands and lint notes are in `FL9_1_PROGRESS.md`. This narrows the test
+projection but does not establish a production adapter contract. Continue the
+full core/HAL audit and lifetime/device-loss review. Normal adapter enumeration
+and surface capabilities remain disabled pending truthful production reporting
+and safe Present scheduling.

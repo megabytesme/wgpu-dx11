@@ -225,6 +225,10 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     assert!(features.is_empty());
     assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
     assert_eq!(
+        capabilities.limits.max_buffer_size,
+        u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
+    );
+    assert_eq!(
         capabilities
             .downlevel
             .limits
@@ -261,6 +265,21 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (device, queue) = global
         .adapter_request_device(adapter_id, &descriptor, None, None)
         .expect("request device with unmodified selected-device projection");
+    let oversized_buffer = crate::resource::BufferDescriptor {
+        label: None,
+        size: capabilities.limits.max_buffer_size + 1,
+        usage: wgt::BufferUsages::VERTEX,
+        mapped_at_creation: false,
+    };
+    let (_, error) = global.device_create_buffer(device, &oversized_buffer, None);
+    assert!(matches!(
+        error,
+        Some(crate::resource::CreateBufferError::MaxBufferSize {
+            requested,
+            maximum
+        }) if requested == capabilities.limits.max_buffer_size + 1
+            && maximum == capabilities.limits.max_buffer_size
+    ));
 
     let texture_desc = |format, usage| wgt::TextureDescriptor {
         label: None,

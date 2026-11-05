@@ -318,7 +318,7 @@ impl Capabilities {
         limits.max_uniform_buffers_per_shader_stage = 1;
         limits.max_uniform_buffer_binding_size = 32 * 16;
         limits.max_vertex_buffers = self.backend.vertex_buffers;
-        limits.max_buffer_size = u64::from(u32::MAX);
+        limits.max_buffer_size = u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT;
         limits.max_vertex_attributes = 16;
         limits.max_vertex_buffer_array_stride = 2048;
         limits.max_inter_stage_shader_variables = 8;
@@ -761,7 +761,10 @@ mod tests {
         assert_eq!(exposed.limits.max_uniform_buffer_binding_size, 512);
         assert_eq!(exposed.limits.max_color_attachments, 1);
         assert_eq!(exposed.limits.max_color_attachment_bytes_per_sample, 8);
-        assert_eq!(exposed.limits.max_buffer_size, u64::from(u32::MAX));
+        assert_eq!(
+            exposed.limits.max_buffer_size,
+            u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
+        );
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
         assert!(!exposed.downlevel.limits.empty_binding_visibility);
         assert!(!exposed.downlevel.limits.sampled_depth_textures);
