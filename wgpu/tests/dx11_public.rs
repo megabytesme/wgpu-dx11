@@ -5511,3 +5511,340 @@ fn public_dx11_srgb_texture_sampling_and_rendering() {
     assert_eq!(render_counts, [64, 64]);
     println!("PASS: RGBA8/BGRA8 sRGB sampling decoded all 128 pixels to [55, 13, 134, 255]; sRGB render targets encoded all 128 pixels with the expected channel order and transfer curve");
 }
+
+#[test]
+fn public_dx11_srgb_mip_chain_sampling_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let formats = [TextureFormat::Rgba8UnormSrgb, TextureFormat::Bgra8UnormSrgb];
+    for format in formats {
+        let features = adapter.get_texture_format_features(format);
+        assert!(
+            features
+                .allowed_usages
+                .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST),
+            "{format:?}: {features:?}"
+        );
+        assert!(features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE));
+        assert!(
+            !features
+                .flags
+                .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY),
+            "{format:?} did not report the queried POT mip path: {features:?}"
+        );
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; RGBA8_SRGB={:?}; BGRA8_SRGB={:?}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb),
+        adapter.get_texture_format_features(TextureFormat::Bgra8UnormSrgb),
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 sRGB mip test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("sRGB mip sampled layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 17,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 23,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("sRGB mip pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("implicitly sample decoded sRGB mip"),
+        source: ShaderSource::Wgsl(
+            "struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
+             @group(0) @binding(17) var image: texture_2d<f32>;\n\
+             @group(0) @binding(23) var smp: sampler;\n\
+             @vertex fn vs(@location(0) p: vec2f, @location(1) uv: vec2f) -> Out { return Out(vec4f(p, 0.5, 1.0), uv); }\n\
+             @fragment fn fs(input: Out) -> @location(0) vec4f { return textureSample(image, smp, input.uv * 2.0); }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("sRGB mip sampling pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 16,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[
+                    VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 8,
+                        shader_location: 1,
+                    },
+                ],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertex_bytes: Vec<u8> = [
+        -1.0f32, -1.0, 0.0, 0.0, 3.0, -1.0, 2.0, 0.0, -1.0, 3.0, 0.0, 2.0,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let vertices = device.create_buffer(&BufferDescriptor {
+        label: Some("sRGB mip fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertices
+        .get_mapped_range_mut(..)
+        .expect("mapped sRGB mip vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertices.unmap();
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 4.0,
+        ..Default::default()
+    });
+    let mip_colors = [
+        [255u8, 0, 0, 255],
+        [128, 64, 192, 255],
+        [0, 0, 255, 255],
+        [255, 255, 0, 255],
+    ];
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("linear sRGB mip output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("sRGB mip readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut verified_pixels = 0usize;
+    for format in formats {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("sRGB mip source"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 4,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (mip, mut color) in mip_colors.into_iter().enumerate() {
+            if format == TextureFormat::Bgra8UnormSrgb {
+                color.swap(0, 2);
+            }
+            let width = 8 >> mip;
+            let height = 8 >> mip;
+            let mut bytes = vec![0u8; height * 256];
+            for y in 0..height {
+                for x in 0..width {
+                    let offset = y * 256 + x * 4;
+                    bytes[offset..offset + 4].copy_from_slice(&color);
+                }
+            }
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: mip as u32,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                &bytes,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(height as u32),
+                },
+                Extent3d {
+                    width: width as u32,
+                    height: height as u32,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("sRGB mip sampled resources"),
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 17,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 23,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("sRGB mip sample commands"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("sRGB mip sample pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_vertex_buffer(0, vertices.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for sRGB mip draw");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("sRGB mip map callback")
+            .expect("map sRGB mip output");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped sRGB mip output");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        &[55, 13, 134, 255],
+                        "{format:?} sRGB mip sample at ({x}, {y})"
+                    );
+                    verified_pixels += 1;
+                }
+            }
+        }
+        readback.unmap();
+    }
+    assert_eq!(verified_pixels, 128);
+    println!("PASS: implicit LOD selected mip 1 for both sRGB formats; 128/128 pixels decoded to [55, 13, 134, 255]");
+}
