@@ -2678,6 +2678,7 @@ impl RenderPipeline {
                         | wgt::TextureFormat::Bgra8UnormSrgb
                         | wgt::TextureFormat::R8Unorm
                         | wgt::TextureFormat::Rg8Unorm
+                        | wgt::TextureFormat::Rgb5g6b5Unorm
                 )
             })
             || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())

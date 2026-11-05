@@ -1709,3 +1709,15 @@ DXGI's getter returned `DXGI_ERROR_INVALID_CALL` for the non-waitable chain,
 so no waitable-swapchain behavior was introduced. Microsoft's documented
 default is one. Continue the broad API-contract audit and retain the explicit
 unknowns for historical FL9_1 and ARM32.
+
+## Follow-up — query-gated B5G6R5 attachment
+
+The current working increment adds selected-query-gated B5G6R5 render-target
+usage behind `TEXTURE_FORMAT_16BIT_PACKED`. A strict public FL9_1 draw into
+the packed target, followed by sampling and RGBA8 readback, passed on the RTX
+3090 Ti; all 64 pixels matched within one UNORM code. The capability projection
+continues to omit blending and copy-source usage. Exact query masks, the
+initial native-whitelist failure and its fix, and the targeted test commands
+are recorded in `FL9_1_PROGRESS.md`. Run the full regression and lint set
+before checkpointing. Continue the broader public core/HAL capability audit;
+historical FL9_1 and ARM32 behavior remain unverified.

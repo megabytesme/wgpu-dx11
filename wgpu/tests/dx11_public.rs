@@ -2484,7 +2484,7 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
 }
 
 #[test]
-fn public_dx11_r8_rg8_render_attachments_at_fl91() {
+fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -2508,8 +2508,9 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
     );
 
     let formats = [
-        (TextureFormat::R8Unorm, [64, 0, 0, 255]),
-        (TextureFormat::Rg8Unorm, [64, 191, 0, 255]),
+        (TextureFormat::R8Unorm, [66, 0, 0, 255]),
+        (TextureFormat::Rg8Unorm, [66, 130, 0, 255]),
+        (TextureFormat::Rgb5g6b5Unorm, [66, 130, 132, 255]),
     ];
     for (format, _) in formats {
         let features = adapter.get_texture_format_features(format);
@@ -2529,26 +2530,39 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
                 && !features
                     .flags
                     .contains(TextureFormatFeatureFlags::BLENDABLE),
-            "R8/RG8 render-target projection must remain non-copyable and non-blendable: {features:?}"
+            "these narrow render-target paths must remain non-copyable and non-blendable: {features:?}"
         );
         println!("Public {format:?} format projection: {features:?}");
     }
 
+    if !adapter
+        .features()
+        .contains(Features::TEXTURE_FORMAT_16BIT_PACKED)
+    {
+        assert!(
+            !required,
+            "strict FL9_1 hardware must expose the queried packed 16-bit format feature"
+        );
+        println!("SKIP: TEXTURE_FORMAT_16BIT_PACKED unavailable");
+        return;
+    }
+
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public DX11 FL9_1 R8/RG8 render-target test"),
-        required_features: Features::empty(),
+        label: Some("public DX11 FL9_1 narrow-format render-target test"),
+        required_features: Features::TEXTURE_FORMAT_16BIT_PACKED,
         required_limits: adapter.limits(),
         ..Default::default()
     }))
     .expect("request device within the FL9_1 projection");
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("sample an R8 or RG8 render target"),
+        label: Some("sample an R8, RG8 or RGB565 render target"),
         source: ShaderSource::Wgsl(
             "struct VertexIn { @location(0) position: vec2f, @location(1) uv: vec2f, }\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }\n\
              @vertex fn vs(input: VertexIn) -> VertexOut { var out: VertexOut; out.position = vec4f(input.position, 0.5, 1.0); out.uv = input.uv; return out; }\n\
              @group(0) @binding(7) var source: texture_2d<f32>;\n\
              @group(0) @binding(42) var source_sampler: sampler;\n\
+             @fragment fn fs_write(input: VertexOut) -> @location(0) vec4f { return vec4f(0.2580645, 0.5079365, 0.516129, 1.0); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(source, source_sampler, input.uv); }"
                 .into(),
         ),
@@ -2622,8 +2636,13 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
         multiview_mask: None,
         cache: None,
     });
+    let write_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("format-specific attachment writer layout"),
+        bind_group_layouts: &[],
+        immediate_size: 0,
+    });
     let sampler = device.create_sampler(&SamplerDescriptor {
-        label: Some("point sampler for R8/RG8 attachment"),
+        label: Some("point sampler for narrow-format attachment"),
         mag_filter: FilterMode::Nearest,
         min_filter: FilterMode::Nearest,
         mipmap_filter: MipmapFilterMode::Nearest,
@@ -2636,7 +2655,7 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
     .flat_map(f32::to_ne_bytes)
     .collect();
     let vertex = device.create_buffer(&BufferDescriptor {
-        label: Some("fullscreen triangle for R8/RG8 attachment"),
+        label: Some("fullscreen triangle for narrow-format attachment"),
         size: vertex_data.len() as u64,
         usage: BufferUsages::VERTEX,
         mapped_at_creation: true,
@@ -2648,7 +2667,7 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
     vertex.unmap();
 
     let output = device.create_texture(&TextureDescriptor {
-        label: Some("R8/RG8 sampled output"),
+        label: Some("narrow-format sampled output"),
         size: Extent3d {
             width: 8,
             height: 8,
@@ -2663,7 +2682,7 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
     });
     let output_view = output.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
-        label: Some("R8/RG8 sampled output readback"),
+        label: Some("narrow-format sampled output readback"),
         size: 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
@@ -2671,7 +2690,7 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
 
     for (format, expected) in formats {
         let source = device.create_texture(&TextureDescriptor {
-            label: Some("R8/RG8 queried render attachment"),
+            label: Some("query-gated narrow-format render attachment"),
             size: Extent3d {
                 width: 8,
                 height: 8,
@@ -2693,7 +2712,7 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
             ..Default::default()
         });
         let group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("R8/RG8 sampled attachment resources"),
+            label: Some("narrow-format sampled attachment resources"),
             layout: &bind_group_layout,
             entries: &[
                 BindGroupEntry {
@@ -2706,21 +2725,64 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
                 },
             ],
         });
+        let write_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("write a query-gated narrow-format attachment"),
+            layout: Some(&write_pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 16,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[
+                        VertexAttribute {
+                            format: VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        VertexAttribute {
+                            format: VertexFormat::Float32x2,
+                            offset: 8,
+                            shader_location: 1,
+                        },
+                    ],
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_write"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("R8/RG8 render, sample and readback commands"),
+            label: Some("narrow-format render, sample and readback commands"),
         });
         {
-            let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("clear R8/RG8 render attachment"),
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("draw into narrow-format render attachment"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &attachment_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Clear(Color {
-                            r: 0.25,
-                            g: 0.75,
-                            b: 0.5,
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
                             a: 1.0,
                         }),
                         store: StoreOp::Store,
@@ -2731,10 +2793,13 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            pass.set_pipeline(&write_pipeline);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
         }
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("sample R8/RG8 attachment"),
+                label: Some("sample narrow-format attachment"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &output_view,
                     depth_slice: None,
@@ -2785,30 +2850,35 @@ fn public_dx11_r8_rg8_render_attachments_at_fl91() {
                 submission_index: Some(submission),
                 timeout: Some(Duration::from_secs(10)),
             })
-            .expect("wait for R8/RG8 attachment sampling");
+            .expect("wait for narrow-format attachment sampling");
         receiver
             .recv_timeout(Duration::from_secs(10))
-            .expect("R8/RG8 attachment map callback")
-            .expect("map R8/RG8 attachment readback");
+            .expect("narrow-format attachment map callback")
+            .expect("map narrow-format attachment readback");
+        let first_pixel;
         {
             let data = readback
                 .slice(..)
                 .get_mapped_range()
                 .expect("mapped output");
+            first_pixel = [data[0], data[1], data[2], data[3]];
             for y in 0..8 {
                 for x in 0..8 {
                     let offset = y * 256 + x * 4;
-                    assert_eq!(
-                        &data[offset..offset + 4],
-                        expected,
-                        "{format:?} render-target sample at ({x}, {y})"
-                    );
+                    for (channel, (&observed, expected)) in
+                        data[offset..offset + 4].iter().zip(expected).enumerate()
+                    {
+                        assert!(
+                            observed.abs_diff(expected) <= 1,
+                            "{format:?} render-target sample at ({x}, {y}) channel {channel}: expected {expected}±1, observed {observed}"
+                        );
+                    }
                 }
             }
         }
         readback.unmap();
         println!(
-            "PASS: FL9_1 {format:?} attachment clear sampled as {expected:?}; 64/64 pixels matched"
+            "PASS: FL9_1 {format:?} attachment draw sampled within one code of {expected:?}; first pixel {first_pixel:?}; 64/64 pixels matched"
         );
     }
 }
@@ -5801,7 +5871,13 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
         assert!(!capabilities
             .allowed_usages
-            .intersects(TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT));
+            .contains(TextureUsages::COPY_SRC));
+        assert_eq!(
+            capabilities
+                .allowed_usages
+                .contains(TextureUsages::RENDER_ATTACHMENT),
+            format == TextureFormat::Rgb5g6b5Unorm
+        );
         capabilities
     });
     let available_features = adapter.features();

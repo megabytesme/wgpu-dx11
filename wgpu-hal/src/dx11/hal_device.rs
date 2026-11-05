@@ -203,7 +203,9 @@ impl crate::Device for Device {
         );
         let sampled_color_target = matches!(
             desc.format,
-            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Unorm
+            wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
+                | wgt::TextureFormat::Rgb5g6b5Unorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
@@ -444,7 +446,9 @@ impl crate::Device for Device {
         );
         let sampled_color_target = matches!(
             format,
-            wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Unorm
+            wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
+                | wgt::TextureFormat::Rgb5g6b5Unorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {

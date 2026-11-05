@@ -208,6 +208,7 @@ pub(super) struct BackendCapabilities {
     pub rg8_unorm_sampled_upload: bool,
     pub r8_unorm_color_attachment: bool,
     pub rg8_unorm_color_attachment: bool,
+    pub rgb565_color_attachment: bool,
     pub rg8_snorm_sampled_upload: bool,
     pub rg16_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
@@ -287,6 +288,7 @@ impl BackendCapabilities {
         rg8_unorm_sampled_upload: true,
         r8_unorm_color_attachment: true,
         rg8_unorm_color_attachment: true,
+        rgb565_color_attachment: true,
         rg8_snorm_sampled_upload: true,
         rg16_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
@@ -647,13 +649,17 @@ impl Capabilities {
             || usage == wgt::TextureUses::COPY_DST
             || usage == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST);
         let sampled_color_attachment = usage.intersects(wgt::TextureUses::COLOR_TARGET)
+            && self.backend.color_attachments != 0
             && matches!(
                 format,
-                wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Unorm
+                wgt::TextureFormat::R8Unorm
+                    | wgt::TextureFormat::Rg8Unorm
+                    | wgt::TextureFormat::Rgb5g6b5Unorm
             )
             && match format {
                 wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_color_attachment,
                 wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_color_attachment,
+                wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_color_attachment,
                 _ => false,
             }
             && (wgt::TextureUses::RESOURCE
@@ -844,9 +850,11 @@ impl Capabilities {
                 let color_attachment_implemented = match format {
                     wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_color_attachment,
                     wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_color_attachment,
+                    wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_color_attachment,
                     _ => false,
                 };
                 if color_attachment_implemented
+                    && self.backend.color_attachments != 0
                     && self
                         .check_private_texture_2d(
                             format,
@@ -2767,6 +2775,142 @@ mod tests {
             missing_backend.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Err(UnsupportedUsage)
         );
+    }
+
+    #[test]
+    fn rgb565_color_attachment_requires_the_selected_device_query() {
+        use TextureRejection::*;
+        let caps = model(FeatureLevel::L9_1);
+        let format = wgt::TextureFormat::Rgb5g6b5Unorm;
+        let sampled_upload = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let target_bits =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0) as u32;
+        let query = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_BLENDABLE.0) as u32;
+
+        assert_eq!(
+            caps.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Ok(())
+        );
+        assert_eq!(
+            caps.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Ok(())
+        );
+        let projected = caps.texture_format_capabilities(format);
+        assert!(projected.contains(
+            FormatCaps::SAMPLED
+                | FormatCaps::SAMPLED_LINEAR
+                | FormatCaps::COPY_DST
+                | FormatCaps::COLOR_ATTACHMENT
+                | FormatCaps::SINGLE_MIP_ONLY
+        ));
+        assert!(!projected.contains(FormatCaps::COLOR_ATTACHMENT_BLEND | FormatCaps::COPY_SRC));
+        assert_eq!(
+            caps.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COPY_SRC | wgt::TextureUses::COLOR_TARGET,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Err(UnsupportedUsage)
+        );
+
+        let mut missing_target = caps;
+        missing_target.driver.rgb565_unorm =
+            Query::Value(query & !(D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32));
+        assert_eq!(
+            missing_target.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Err(DriverFormatUnsupported)
+        );
+        assert!(!missing_target
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::COLOR_ATTACHMENT));
+
+        let mut unavailable_target = caps;
+        unavailable_target.driver.rgb565_unorm = Query::Unavailable(-1);
+        assert_eq!(
+            unavailable_target.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Err(DriverQueryUnavailable)
+        );
+        assert!(unavailable_target
+            .texture_format_capabilities(format)
+            .is_empty());
+
+        let mut point_only_target = caps;
+        point_only_target.driver.rgb565_unorm = Query::Value(target_bits);
+        assert_eq!(
+            point_only_target.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Ok(())
+        );
+        let point_only = point_only_target.texture_format_capabilities(format);
+        assert!(point_only.contains(FormatCaps::SAMPLED | FormatCaps::COLOR_ATTACHMENT));
+        assert!(!point_only.contains(FormatCaps::SAMPLED_LINEAR));
+
+        let mut missing_backend = caps;
+        missing_backend.backend.rgb565_color_attachment = false;
+        assert_eq!(
+            missing_backend.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Err(UnsupportedUsage)
+        );
+        assert!(!missing_backend
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::COLOR_ATTACHMENT));
+
+        missing_backend = caps;
+        missing_backend.backend.color_attachments = 0;
+        assert_eq!(
+            missing_backend.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET,
+                [7, 5],
+                1,
+                1,
+                1
+            ),
+            Err(UnsupportedUsage)
+        );
+        assert!(!missing_backend
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::COLOR_ATTACHMENT));
     }
 
     #[test]

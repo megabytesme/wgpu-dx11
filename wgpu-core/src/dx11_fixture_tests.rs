@@ -877,7 +877,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
                     | hal::TextureFormatCapabilities::COPY_DST
-                    | if format == wgt::TextureFormat::R8Unorm {
+                    | if matches!(
+                        format,
+                        wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rgb5g6b5Unorm
+                    ) {
                         hal::TextureFormatCapabilities::COLOR_ATTACHMENT
                     } else {
                         hal::TextureFormatCapabilities::empty()
@@ -893,7 +896,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 core_caps.allowed_usages,
                 wgt::TextureUsages::COPY_DST
                     | wgt::TextureUsages::TEXTURE_BINDING
-                    | if format == wgt::TextureFormat::R8Unorm {
+                    | if matches!(
+                        format,
+                        wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rgb5g6b5Unorm
+                    ) {
                         wgt::TextureUsages::RENDER_ATTACHMENT
                             | wgt::TextureUsages::TRANSIENT_ATTACHMENT
                     } else {

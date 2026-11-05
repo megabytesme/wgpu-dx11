@@ -705,9 +705,12 @@ queries, unavailable queries and missing backend mappings.
 
 The required FL9_x packed B5G6R5, B5G5R5A1 and B4G4R4A4 formats are now
 implemented as `Rgb5g6b5Unorm`, `Rgb5a1Unorm` and `Rgba4Unorm` with a shared
-native-only feature, individual selected-device format queries, single-mip
-sampled/upload usage, and channel/alpha readback coverage. The RTX 3090 Ti
-forced to FL9_1 reports `0x0026F3A0` for B5G6R5 and `0x000213A0` for both
-alpha-bearing formats; strict public sampling matched all 64 output pixels for
-each format. Render-target, copy-source, readback and mip-chain functionality
-remain unavailable.
+native-only feature and individual selected-device format queries. All three
+support single-mip sampled uploads with channel/alpha readback coverage. The
+query-gated B5G6R5 path also supports single-mip color attachments when the
+selected device reports `RENDER_TARGET`; it remains non-blendable in the
+public projection and has no `COPY_SRC`, direct readback or mip-chain use.
+The RTX 3090 Ti forced to FL9_1 reports `0x0026F3A0` for B5G6R5 and
+`0x000213A0` for both alpha-bearing formats. A strict public test draws to a
+B5G6R5 attachment, samples it and checks all 64 output pixels within one
+UNORM code value.

@@ -11,7 +11,7 @@ of general wgpu support. The
 internal model separates feature-level minima, per-device query results, and
 implemented backend paths. `check_private_texture_2d` is a conservative
 predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_UNORM, R8G8_SNORM,
-R16G16_SNORM, R8G8B8A8_SNORM and BC1_UNORM subsets; it is not a complete
+R16G16_SNORM, R8G8B8A8_SNORM, B5G6R5 and BC1_UNORM subsets; it is not a complete
 texture validation rule.
 A failed query is recorded with its HRESULT and never treated as support.
 Adapter metadata includes the DXGI driver-package version when
@@ -63,7 +63,9 @@ copy-source, render-target or readback support.
 therefore queries the selected device and enables only its single-mip,
 single-layer sampled/upload path when `CheckFormatSupport` reports
 `TEXTURE2D`. `SHADER_SAMPLE` separately controls the `FILTERABLE` projection.
-Render-target, copy-source, readback and mip-chain uses remain unavailable.
+When the same query also reports `RENDER_TARGET`, the backend permits the
+single-mip sampled color-attachment path. It remains non-blendable and has no
+copy-source, direct-readback or mip-chain support.
 The strict public test on the RTX 3090 Ti at forced FL9_1 verified the
 optional path, RG channel stride and linear filtering.
 
@@ -89,7 +91,7 @@ comparison-shadow support are separately queried using `CheckFeatureSupport`;
 a newer runtime or driver may return E_INVALIDARG for an unknown query, which
 is retained as unavailable. `CheckFormatSupport` is queried only for RGBA8,
 BGRA8, RGBA8_SRGB, BGRA8_SRGB, R8_UNORM, R8G8_UNORM, R8G8_SNORM, R16G16_SNORM,
-R8G8B8A8_SNORM, BC1_UNORM, D16_UNORM and D24S8, and
+R8G8B8A8_SNORM, BC1_UNORM, B5G6R5, B5G5R5A1, B4G4R4A4, D16_UNORM and D24S8, and
 `CheckMultisampleQualityLevels` for RGBA8 at four samples.
 A positive bit or quality count is a driver observation, not an implemented HAL
 feature or a guarantee of a valid combination of descriptors. The RGBA8 2D
@@ -240,7 +242,7 @@ for all FL9 GPUs.
 | --- | --- | --- |
 | Device / adapter | Native DXGI discovery excludes software adapters and creates only an explicitly requested FL9_1 device. The public opt-in adapter exposes the selected-device projection and a constrained HWND surface: BGRA8 sRGB FIFO, opaque composition, render-attachment usage, one frame of latency and owner-thread lifecycle. | Strict public wgpu tests select the RTX 3090 Ti, render/read back through group 7 and dynamic uniforms, verify overlapping near/far draws in both orders, concurrently submit through two public devices sharing the selected native device/context, and verify core rejection of unsupported resource/layout requests. A hidden-window lifecycle test configures, presents, resizes and presents again; a visible-window example presents 60 animated textured, indexed, depth-tested frames. The adapter exposes `TEXTURE_FORMAT_16BIT_NORM` only when a queried R16G16_SNORM format is a 2D texture; other public feature support remains empty. It is not WebGPU-compliant. The exhaustive contract audit remains outstanding; visible client-area output has been qualitatively captured and inspected. |
 | Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; vertex+index is rejected at 9_1/9_2. The FL9_1 logical size limit leaves one 4-byte alignment unit below `u32::MAX`, so core's vertex sentinel byte and 4-byte allocation rounding still fit D3D11's `ByteWidth`. Core may carry storage usage bits on an otherwise supported buffer allocation, but FL9_1 native buffers retain a single vertex/index bind and no shader storage binding is implemented. Indirect usage is unsupported. | Copy, map, initialization and ownership tests. Core now requires `VERTEX_STORAGE`, `FRAGMENT_STORAGE` or `COMPUTE_SHADERS` for storage-buffer layouts visible to those stages; writable fragment buffers also require `FRAGMENT_WRITABLE_STORAGE`. The controlled fixture verifies unsupported stage layouts fail before HAL and a storage/copy buffer still uploads, copies and reads back. This does not expose storage access. `UNRESTRICTED_INDEX_BUFFER` and limits describe only part of the buffer contract. |
-| 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private RGBA8 and BGRA8 2D textures have one layer and sample; restricted copy-only, sampled and color-attachment POT textures can have multiple mips. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM are limited to one-mip, one-layer sampled/upload resources and use positive per-device `TEXTURE2D` queries. R8G8_UNORM and R16G16_SNORM have no FL9_1 sampled guarantee; their one-mip sampled/upload paths are conditionally available after a positive `TEXTURE2D` query. R8_UNORM and R8G8_UNORM additionally expose single-mip color-attachment use only after the selected device reports `RENDER_TARGET`; they are not blendable or copy sources. `SHADER_SAMPLE` independently controls filterability. BC1_UNORM additionally requires dimensions aligned to 4×4 blocks and supports block-aligned uploads only. D16_UNORM is a queried single-mip depth-only attachment; D24S8 supports depth/stencil attachments. Microsoft documents that FL9_x D3D11 depth/stencil-bound resources require one mip. Core now represents multi-mip depth/stencil attachment support with `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`; the FL9_1 D3D11 capability projection must leave it absent so invalid descriptors fail before HAL. | Transfer, view, clear and draw readback tests. Padded-offset uploads and sampling for R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM passed on the RTX at FL9_1; the optional R8G8_UNORM path also passed a sparse-bound upload/sample test with distinct channel data. The new strict public test clears R8_UNORM and R8G8_UNORM color attachments, samples their attachment contents and validates all 128 output pixels. A padded BC1 upload plus partial block replacement matched all 256 output pixels. The RTX's R16G16_SNORM query lacks `SHADER_SAMPLE`; strict private/public tests prove point sampling succeeds and filtering is rejected through core validation. The controlled core fixture verifies multi-mip D24S8 attachment creation is rejected by the missing downlevel flag before HAL. Other sampled formats remain non-renderable and cannot be copied from or read back in this private subset. Per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
+| 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private RGBA8 and BGRA8 2D textures have one layer and sample; restricted copy-only, sampled and color-attachment POT textures can have multiple mips. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM are limited to one-mip, one-layer sampled/upload resources and use positive per-device `TEXTURE2D` queries. R8G8_UNORM and R16G16_SNORM have no FL9_1 sampled guarantee; their one-mip sampled/upload paths are conditionally available after a positive `TEXTURE2D` query. R8_UNORM, R8G8_UNORM and packed B5G6R5 additionally expose single-mip color-attachment use only after the selected device reports `RENDER_TARGET`; they are not exposed as blendable or copy sources. B5G6R5 also requires `TEXTURE_FORMAT_16BIT_PACKED`. `SHADER_SAMPLE` independently controls filterability. BC1_UNORM additionally requires dimensions aligned to 4×4 blocks and supports block-aligned uploads only. D16_UNORM is a queried single-mip depth-only attachment; D24S8 supports depth/stencil attachments. Microsoft documents that FL9_x D3D11 depth/stencil-bound resources require one mip. Core now represents multi-mip depth/stencil attachment support with `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`; the FL9_1 D3D11 capability projection must leave it absent so invalid descriptors fail before HAL. | Transfer, view, clear and draw readback tests. Padded-offset uploads and sampling for R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM passed on the RTX at FL9_1; the optional R8G8_UNORM path also passed a sparse-bound upload/sample test with distinct channel data. A strict public test draws into R8_UNORM, R8G8_UNORM and B5G6R5 attachments, samples the resulting contents and validates all 192 output pixels within one UNORM code value. A padded BC1 upload plus partial block replacement matched all 256 output pixels. The RTX's R16G16_SNORM query lacks `SHADER_SAMPLE`; strict private/public tests prove point sampling succeeds and filtering is rejected through core validation. The controlled core fixture verifies multi-mip D24S8 attachment creation is rejected by the missing downlevel flag before HAL. Other sampled formats remain non-renderable and cannot be copied from or read back in this private subset. Per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
 | Texture view dimensions | The D3D11 resource path is limited to 2D, one-layer resources and the private HAL creates only `D2` views. | Core rejects D1/D3 texture creation and binding layouts through explicit downlevel limits, and gates `D2Array`, `Cube` and `CubeArray` layouts/views with explicit downlevel flags before HAL. The array flag also gates storage-texture array layouts. A one-layer texture view can still have array semantics even when `max_texture_array_layers` is one; that limit alone cannot represent the missing dimension. The projection retains inherited nonzero native 1D/3D numeric limits (2048/256) while setting the dimension booleans false; the controlled fixture verifies texture-creation and view rejection before HAL. The public strict test verifies D3 creation is a public validation error. |
 | Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 textures can have mip chains when format support is reported. Sampled suffix views are native; other supported mip ranges use a GPU clone. Color-attachment views select one mip. Sampled and color-attachment usages can coexist, with optional copy usages. Arrays and NPOT mip chains remain unavailable. | Strict FL9_1 tests verify per-mip transfers, attachment rendering, suffix and clone-backed non-suffix sampling on the RTX. Core now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` before forwarding any NPOT mip chain; D3D11 does not set this implementation flag, even when the runtime reports full NPOT support. The public projection rejects unsupported shapes and mip chains. |
 | Samplers | Independent point/linear min/mag, clamp/wrap/mirror and anisotropy up to 2 are implemented in the private HAL. Border addressing and comparison samplers are rejected; core now requires `COMPARISON_SAMPLERS` before forwarding a comparison descriptor. Translated LOD ranges are checked against each used sampled view. | Patterned FL9_1 GPU readback covers filter and address modes, sampled mip levels and sampler switching. The controlled core fixture verifies comparison samplers fail the missing-downlevel check before HAL. Anisotropy 2 creates and samples but visual anisotropic quality is unverified. Public feature/limit representation remains incomplete. |
@@ -502,8 +504,8 @@ create uninitialized resources. The private color HAL accepts one-layer,
 one-sample RGBA8 or BGRA8 2D textures and enforces feature-level size limits.
 R8_UNORM, R8G8_SNORM, R16G16_SNORM and R8G8B8A8_SNORM support only a
 single-mip, single-layer 2D texture with RESOURCE and/or COPY_DST usage; their
-actual `TEXTURE2D` bits are checked at creation. R8_UNORM and R8G8_UNORM also
-support RESOURCE and/or COPY_DST combined with COLOR_TARGET, plus a target-only
+actual `TEXTURE2D` bits are checked at creation. R8_UNORM, R8G8_UNORM and
+B5G6R5 also support RESOURCE and/or COPY_DST combined with COLOR_TARGET, plus a target-only
 use, when the selected format query contains `RENDER_TARGET`. Their attachment
 path has no COPY_SRC and is not blendable. Microsoft's required-format table
 lists R8_UNORM as a FL9_1 texture format without guaranteeing render-target
@@ -523,10 +525,16 @@ its selected-device query reports `TEXTURE2D`. The forced-FL9_1 RTX reported
 texel stride, and a linear sampler produced the expected eight-column
 gradient. The strict RTX R8_UNORM test observed support mask `0x0002d3e0` and
 the optional R8G8_UNORM test observed `0x0002c320`; both include the
-`RENDER_TARGET` bit (`0x00004000`). Their new public path clears each format as
-an attachment, then samples a view of the written texture into RGBA8. The
-readback expectations are `[64, 0, 0, 255]` and `[64, 191, 0, 255]` for all 64
-pixels per format. A missing or failed render-target query omits
+`RENDER_TARGET` bit (`0x00004000`). Their public path draws into each
+attachment, then samples a view of the written texture into RGBA8. The
+the first sampled pixels were `[66, 0, 0, 255]` and `[66, 129, 0, 255]`; all
+64 pixels per format matched within one code value. B5G6R5 also requires the native-only
+`TEXTURE_FORMAT_16BIT_PACKED` feature and a positive per-device query. On the
+RTX at forced FL9_1 it returned `0x0026f3a0`, including both `RENDER_TARGET`
+and `BLENDABLE`; blending remains unexposed until the format-specific blend
+path is implemented and tested. A public draw into B5G6R5 followed by
+sampling matched 64 pixels within one UNORM code of `[66, 130, 132, 255]`.
+A missing or failed render-target query omits
 `COLOR_ATTACHMENT` from the public projection and rejects attachment creation.
 Multiple mips require POT
 dimensions, one of the supported copy-only, sampled or color-attachment usage

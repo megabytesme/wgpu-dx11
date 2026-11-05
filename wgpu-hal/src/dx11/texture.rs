@@ -548,6 +548,7 @@ impl NativeDevice {
             DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => wgt::TextureFormat::Bgra8UnormSrgb,
             DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
             DXGI_FORMAT_R8G8_UNORM => wgt::TextureFormat::Rg8Unorm,
+            DXGI_FORMAT_B5G6R5_UNORM => wgt::TextureFormat::Rgb5g6b5Unorm,
             _ => return Err(invalid()),
         };
         if desc.Width == 0
@@ -637,7 +638,11 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_SNORM
         ) && layers == 1
             && mip_levels == 1
-            && (!render_target || matches!(format, DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_UNORM));
+            && (!render_target
+                || matches!(
+                    format,
+                    DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_UNORM | DXGI_FORMAT_B5G6R5_UNORM
+                ));
         let bc1_sampled = format == DXGI_FORMAT_BC1_UNORM
             && !render_target
             && layers == 1

@@ -151,26 +151,28 @@ selected format projection reports only `TEXTURE_BINDING | COPY_DST` and
 attachment path below. Copy-source, raw readback and mip-chain support are not
 asserted.
 
-### R8/RG8 color attachments
+### R8/RG8/RGB565 color attachments
 
-R8_UNORM and R8G8_UNORM remain single-mip, one-layer, one-sample resources.
-Their color-attachment usage is reported only when the selected device's
+R8_UNORM, R8G8_UNORM and B5G6R5 remain single-mip, one-layer, one-sample
+resources. Their color-attachment usage is reported only when the selected device's
 `CheckFormatSupport` query positively includes
 `D3D11_FORMAT_SUPPORT_RENDER_TARGET` (`0x00004000`). Each native texture has
-both RTV and SRV bind flags; the public test creates separate attachment-only
-and texture-binding-only views, clears the former, samples the latter, and
-checks RGBA8 readback. The formats remain non-blendable and do not support
-`COPY_SRC`.
+both RTV and SRV bind flags; B5G6R5 additionally requires the native-only
+`TEXTURE_FORMAT_16BIT_PACKED` feature. The public test creates separate
+attachment-only and texture-binding-only views, draws into the former, samples
+the latter, and checks RGBA8 readback. None of these paths exposes blending or
+`COPY_SRC`, even when the selected device reports `BLENDABLE`.
 
 On the RTX 3090 Ti at requested/actual FL9_1, the query masks were
-R8_UNORM=`0x0002d3e0` and R8G8_UNORM=`0x0002c320`, both including the render
-target bit. Clearing to `(0.25, 0.75, 0.5, 1.0)` produced `[64, 0, 0, 255]`
-and `[64, 191, 0, 255]` respectively; all 64 output pixels per format are
-checked.
+R8_UNORM=`0x0002d3e0`, R8G8_UNORM=`0x0002c320` and B5G6R5=`0x0026f3a0`,
+each including the render-target bit. The test draws a deterministic color
+into each format, samples the result and checks all 64 pixels per format with
+a one-code tolerance for UNORM conversion. The first observed pixels were
+`[66, 0, 0, 255]`, `[66, 129, 0, 255]` and `[66, 130, 132, 255]`.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_render_attachments_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 -- --nocapture --test-threads=1
 ```
 
 A third strict public test writes stencil reference value 1 over the target,
@@ -330,8 +332,12 @@ cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 packed_16bit_s
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb565_sampled_upload_at_fl91 -- --nocapture --test-threads=1
 ```
 
-This path only supports single-mip 2D `TEXTURE_BINDING | COPY_DST` resources.
-Render-target, copy-source, readback and mip-chain uses remain unavailable.
+The packed sampled/upload path supports single-mip 2D
+`TEXTURE_BINDING | COPY_DST` resources. The query-gated B5G6R5 target path may
+combine `TEXTURE_BINDING`, `COPY_DST` and `RENDER_ATTACHMENT` as supported by
+the private predicate; it still has no copy-source or direct-readback path.
+RGB5A1 and RGBA4 remain sampled/upload-only. These paths do not add mip-chain
+support.
 
 ### Internal FL9_1 capability projection
 

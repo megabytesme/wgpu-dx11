@@ -6388,3 +6388,49 @@ Independent read-only audits found no confirmed route from a valid advertised
 operation into a HAL panic and no confirmed public render-pass/surface contract
 violation. Continue the broader public core/HAL audit; historical FL9_1 and
 ARM32 remain unverified.
+
+## Follow-up — query-gated B5G6R5 color attachment
+
+Extended the selected-device color-attachment subset to packed B5G6R5. The
+capability predicate requires the existing `TEXTURE_FORMAT_16BIT_PACKED`
+support, the format's `TEXTURE2D` query, the backend color-target path and a
+positive `RENDER_TARGET` query. It adds no `COPY_SRC` or blendability, even
+though the selected RTX query also reports the `BLENDABLE` bit. RGB5A1 and
+RGBA4 remain sampled/upload-only.
+
+The first strict execution exposed a native texture-helper whitelist that
+still rejected RGB565 render targets after public/core validation had admitted
+them. Adding B5G6R5 to that guarded native path fixed creation. A public test
+now draws into R8_UNORM, R8G8_UNORM and RGB565 attachments, samples each into
+RGBA8, and validates all 64 pixels within one UNORM code value. The
+first observed pixels were `[66, 0, 0, 255]`, `[66, 129, 0, 255]` and
+`[66, 130, 132, 255]`.
+
+On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested
+and actual FL9_1, the per-format masks were R8=`0x0002d3e0`,
+RG8=`0x0002c320` and B5G6R5=`0x0026f3a0`; all report `RENDER_TARGET`. The
+public strict test passed 1/1, the synthetic capability test passed 1/1, and
+the controlled strict core fixture passed 1/1 (89 filtered tests). Full strict
+regressions then passed: private HAL 357/357, public D3D11 25/25, controlled
+core fixture 1/1 and DX12 core 86/86. The hardware and fixture commands used
+Rust 1.93 in the Visual Studio 2022 x64 environment; the D3D11 runs set
+`WGPU_DX11_REQUIRE_HARDWARE=1`. The HAL and core Clippy runs passed with nine
+existing HAL warnings and one existing core warning; public Clippy was clean.
+Changed-file rustfmt and `git diff --check` passed. `VsDevCmd.bat` continues to
+print its existing `Unknown error` banner while successfully configuring
+MSVC. Historical FL9_1 devices and ARM32 remain unverified.
+
+Exact verification commands, using rustc/cargo 1.93.1:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_buffer_and_offscreen_render_on_hardware -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --lib --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --lib --tests
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/texture.rs wgpu/tests/dx11_public.rs
+git diff --check
+```

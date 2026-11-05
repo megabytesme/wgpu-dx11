@@ -111,10 +111,11 @@ not a repository artifact.
    filterability. The RTX returned `0x0002c320`, and strict public
    upload/sample readback passed. R8_UNORM (`0x0002d3e0`) and R8G8_UNORM now
    additionally expose single-mip render-attachment use after their selected
-   format query reports `RENDER_TARGET`; strict public clear-then-sample
-   readback matched all 64 pixels per format. These attachments are not
-   blendable or copy sources, and direct readback and mip chains remain
-   unsupported. The required
+   format query reports `RENDER_TARGET`; strict public draw-then-sample
+   readback now covers R8_UNORM, R8G8_UNORM and B5G6R5 with all 64 pixels per
+   format checked. B5G6R5 requires `TEXTURE_FORMAT_16BIT_PACKED`. These narrow
+   attachments are not exposed as blendable or copy sources; direct readback
+   and mip chains remain unsupported. The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
    the previously mapped formats, with a core per-format downlevel mask and
    strict GPU verification. Required RGBA8_SRGB and BGRA8_SRGB formats now
@@ -131,7 +132,10 @@ not a repository artifact.
    B5G6R5, B5G5R5A1 and B4G4R4A4 now have individual selected-device queries
    and single-mip sampled/upload support behind `TEXTURE_FORMAT_16BIT_PACKED`;
    forced-FL9_1 public readback covers all three channel layouts and alpha.
-   Continue the format and usage audit from the actual query table.
+   B5G6R5 also has query-gated single-mip render-target support; a public
+   shader draw, sample and readback checks every pixel. The RTX reports
+   `0x0026f3a0` including BLENDABLE, which remains unexposed. Continue the
+   format and usage audit from the actual query table.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex
