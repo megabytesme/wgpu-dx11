@@ -27,7 +27,9 @@ checks also confirmed that core rejects 3D textures, 4x MSAA, `R32Float`
 sampling, multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
 sampled-texture layouts before the HAL. A separate public draw overlays
 near/far surfaces in both draw orders; all 64 readback pixels select the nearer
-surface, exercising depth comparison and writes through public wgpu.
+surface, exercising depth comparison and writes through public wgpu. A second
+strict public test uses the projected R8Unorm sampled/upload format and
+checks 32 pixels at each of two channel values.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device

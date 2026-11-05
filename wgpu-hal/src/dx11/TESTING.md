@@ -55,6 +55,12 @@ orders. Every readback pixel remains the nearer surface's tinted-red value in
 both cases, verifying depth comparison and writes through public wgpu rather
 than only checking that a depth attachment can be created.
 
+A second public test checks `R8Unorm`'s selected-device format report, uploads
+two distinct values, samples them with a non-filtering sampler and renders to
+RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and
+`SINGLE_MIP_ONLY`; all 64 pixels are checked, with 32 red values of 64 and 32
+red values of 192. It runs under the same strict hardware command above.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

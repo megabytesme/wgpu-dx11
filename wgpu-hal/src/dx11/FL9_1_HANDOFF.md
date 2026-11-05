@@ -1189,6 +1189,7 @@ unsupported requests are verified to stop in public core validation. The
 RTX 3090 Ti FL9_1 readback and concurrent two-device tests remain passing.
 Exact command and output are in `FL9_1_PROGRESS.md`. The public integration
 test is a bounded offscreen diagnostic and not a full core/HAL contract audit.
+Code checkpoint: `c5580577e` (`dx11: verify public FL9_1 storage and array rejection`).
 
 Next audit pipeline and render-pass combinations at the public boundary and
 expand the public scene with an explicit depth-ordering case. Public surface
@@ -1201,3 +1202,12 @@ overlap in both draw orders and verifies all pixels select the nearer surface.
 Strict forced-FL9_1 readback, public descriptor/layout rejection cases,
 dynamic uniform updates and concurrent two-device queue work all pass. The
 exact command and hardware evidence are recorded in `FL9_1_PROGRESS.md`.
+Code checkpoint: `6390e4efe` (`dx11: verify public FL9_1 depth ordering`).
+
+A separate strict public test now exercises the selected projection for
+R8Unorm with an upload, non-filtering sample and complete RGBA8 readback. It
+verified 32 pixels at each of two sampled channel values, and the adapter
+reported `COPY_DST | TEXTURE_BINDING`, `SINGLE_MIP_ONLY`, and no filtering
+flag. The exact test command and hardware identity are in
+`FL9_1_PROGRESS.md`. Public HWND presentation and the exhaustive adapter
+contract remain outstanding.

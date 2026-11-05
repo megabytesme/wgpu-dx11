@@ -4585,6 +4585,8 @@ projection; public surfaces remain gated by Present scheduling.
 
 ## Checkpoint — public storage and array-layout rejection
 
+Code checkpoint: `c5580577e` (`dx11: verify public FL9_1 storage and array rejection`).
+
 The strict public integration test now also places a vertex-visible storage
 buffer layout and a fragment-visible `D2Array` sampled-texture layout under
 validation error scopes. Both return `wgpu::Error::Validation` through the
@@ -4609,6 +4611,8 @@ remains unresolved.
 
 ## Checkpoint — public depth-order rendering
 
+Code checkpoint: `6390e4efe` (`dx11: verify public FL9_1 depth ordering`).
+
 The public FL9_1 integration test now draws fully overlapping near and far
 textured surfaces in both draw orders, using the existing public pipeline,
 uniform groups, sampled texture, target and D24S8 attachment. The far surface
@@ -4631,3 +4635,27 @@ application. Public HWND presentation remains gated by the unresolved
 cross-layer Present reentrancy and lock-order design. The prior strict HAL,
 core and DX12 counts are documented above and were not rerun for this
 public-test-only change.
+
+## Checkpoint — public R8Unorm sampling
+
+A second public API integration test now asserts the adapter's selected-device
+R8Unorm format report, creates a `TEXTURE_BINDING | COPY_DST` texture, uploads
+two byte values with a padded source row, samples it with a non-filtering
+sampler at sparse bindings 7 and 42, and renders into RGBA8. The adapter
+reported `TextureUsages(COPY_DST | TEXTURE_BINDING)` and
+`TextureFormatFeatureFlags(SINGLE_MIP_ONLY)`, correctly withholding linear
+filtering. Readback verified all 64 pixels: the left 32 were
+`[64, 0, 0, 255]` and the right 32 `[192, 0, 0, 255]`.
+
+Verification on 2026-11-05, Rust 1.93.1, Visual Studio 2022 x64, strict
+hardware mode:
+
+- `$env:WGPU_DX11_REQUIRE_HARDWARE = '1'; cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 2/2 with no skips on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, `software=false`. The first case includes public core rejection checks, depth ordering in both draw orders, dynamic-uniform rendering and concurrent two-device readback; the second executes the R8 upload/sample/readback.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std` passed without warnings.
+- `rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs` and `git diff --check` passed.
+
+The positive R8 path verifies public format projection through use. Other
+sampled-only formats and their public shader/readback paths remain to be
+audited; BC1 remains unavailable through public wgpu because its aggregate
+compression feature is correctly withheld. HWND surface presentation remains
+blocked on the separate Present reentrancy design.

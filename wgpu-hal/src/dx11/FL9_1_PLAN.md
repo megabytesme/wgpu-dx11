@@ -271,3 +271,8 @@ The same public test now overlays near and far textured geometry in both draw
 orders and verifies that all pixels show the nearer surface. This establishes
 depth-test ordering through public wgpu; a representative desktop application
 and presentation are still outstanding.
+
+The public adapter projection's one-mip R8Unorm sampled/upload path is also
+render-tested: a non-filtering sample from two uploaded values produced the
+expected 64-pixel split. Continue validating other projected format/usage
+combinations at the public boundary.
