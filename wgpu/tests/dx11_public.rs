@@ -9013,6 +9013,43 @@ fn public_dx11_transient_attachments_at_fl91() {
         drop(pass);
         drop(invalid_encoder.finish());
     });
+    expect_validation_error(&device, "read-only transient depth", || {
+        let mut invalid_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("read-only transient depth encoder"),
+        });
+        let pass = invalid_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("read-only transient depth"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &transient_depth_view,
+                depth_ops: None,
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Discard,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        drop(pass);
+        drop(invalid_encoder.finish());
+    });
+    expect_validation_error(&device, "render pass with no attachments", || {
+        let mut invalid_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("empty render pass encoder"),
+        });
+        let pass = invalid_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("empty render pass"),
+            color_attachments: &[],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        drop(pass);
+        drop(invalid_encoder.finish());
+    });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("public transient attachment commands"),
     });
@@ -9123,7 +9160,7 @@ fn public_dx11_transient_attachments_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 transient color clear/draw/discard executed; transient D24S8 clear/draw/discard controlled the stored color result, with 64/64 green pixels; core rejected transient sampling, LOAD and STORE");
+    println!("PASS: public FL9_1 transient color clear/draw/discard executed; transient D24S8 clear/draw/discard controlled the stored color result, with 64/64 green pixels; core rejected transient sampling, invalid LOAD/STORE, read-only transient depth and an empty render pass");
 }
 
 #[test]

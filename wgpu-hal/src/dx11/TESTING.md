@@ -1890,9 +1890,10 @@ cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wg
 On the RTX 3090 Ti at requested and actual FL9_1, the test passed. It checks
 transient color clear/draw/discard execution and transient D24S8 clear/draw/
 discard use in a depth test; the ordinary RGBA8 output was green at all 64
-pixels. Core rejected transient sampling and invalid color/depth load/store
-operations. Invalid render-pass descriptors are checked after finishing their
-isolated encoder because core reports those errors at finish.
+pixels. Core rejected transient sampling, invalid color/depth load/store
+operations, read-only transient depth and render passes with no attachments.
+Invalid render-pass descriptors are checked after finishing their isolated
+encoder because core reports those errors at finish.
 
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
