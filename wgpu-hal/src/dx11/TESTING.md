@@ -10,6 +10,11 @@ window, so visible desktop presentation and a continuous event loop remain
 unverified. This remains experimental; the HAL/core tests do not establish
 complete wgpu or CTS conformance.
 
+Later sections include historical test checkpoints. Statements there that
+public surface capabilities were unavailable or the adapter was offscreen-only
+describe the state at those earlier checkpoints; the current HWND contract is
+summarized above and in `CAPABILITIES.md`.
+
 ### Public offscreen integration test
 
 The public integration test selects DX11 explicitly, asserts the physical
@@ -465,7 +470,7 @@ shader conversion are checked with:
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_integer_vertex_formats_render -- --nocapture --test-threads=1
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_the_fl91_required_input_set -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_required_and_optional_inputs -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 integer_guard_checks_selected_entry_and_level9_profile -- --nocapture --test-threads=1
 ```
 
@@ -495,6 +500,30 @@ with:
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
+
+### Optional FL9_1 half-float vertex inputs
+
+`R16G16_FLOAT` and `R16G16B16A16_FLOAT` are not FL9_1 guarantees; Microsoft's
+required-format table makes their input-assembler support mandatory at FL9_3.
+The HAL maps both, but the selected-device `CheckFormatSupport` query must
+report `IA_VERTEX_BUFFER` before either bit enters `DownlevelLimits` at FL9_1.
+The synthetic capability test covers positive query, absent query and missing
+backend mapping cases. The public test renders a triangle from `Float16x2`
+positions and checks all 64 readback pixels when the device reports support.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_format_projection_intersects_level_driver_and_backend -- --nocapture --test-threads=1
+cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 vertex_formats_map_the_fl91_required_input_set -- --nocapture --test-threads=1
+cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fl91_optional_float16_vertex_input -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested/actual FL9_1, the selected-device projection
+reports `Float16x2=false`; the public test logs `SKIP` for this optional path.
+This is not a successful GPU execution. The synthetic positive model verifies
+that a future device reporting the IA bit will advertise only the mapped
+optional formats. `Float16x4` has the same guarded mapping but does not yet
+have a dedicated execution test.
 
 ### Public FL9_1 sRGB texture formats
 
@@ -1020,13 +1049,13 @@ is unavailable; it does not substitute WARP. These tests cover a substantial
 subset but do not establish that every operation allowed by the projection is
 safe or that the backend is WebGPU-compliant.
 
-The public adapter remains offscreen-only: surface capabilities are absent
-because synchronous DXGI `Present` can reenter application window procedures
-while core queue-ordering and the HAL immediate-context locks are held. Do not
-enable public surface support until a cross-layer scheduling design preserves
-submission order, D3D11 context serialization and safe window-thread
-reentrancy. Continue checking validation, synchronization, device loss,
-resource lifetime, initialization, surface resize and presentation.
+The public adapter now exposes a constrained HWND surface path. Queue work and
+selected context-backed resource operations serialize against `Present`;
+same-thread reentrant mutations are rejected, and configure/acquire/present
+require the window's owner thread. A hidden-window lifecycle test and bounded
+visible example have run at forced FL9_1. Continue testing resize, error and
+reentrancy edges; a displayed-pixel capture and historical FL9_1 surface test
+remain outstanding. This does not make the adapter WebGPU-compliant.
 
 ## 3. Upstream wgpu GPU tests
 

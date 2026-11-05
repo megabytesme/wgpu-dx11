@@ -31,7 +31,8 @@ use windows::{
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-            DXGI_FORMAT_R16G16B16A16_SINT, DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_SINT,
+            DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SINT,
+            DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SINT,
             DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32_FLOAT,
             DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UINT,
             DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -39,9 +40,15 @@ use windows::{
     },
 };
 
-pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 10] = [
+pub(super) const VERTEX_FORMATS: [(wgt::VertexFormat, DXGI_FORMAT, u32); 12] = [
     (wgt::VertexFormat::Uint8x4, DXGI_FORMAT_R8G8B8A8_UINT, 4),
     (wgt::VertexFormat::Unorm8x4, DXGI_FORMAT_R8G8B8A8_UNORM, 4),
+    (wgt::VertexFormat::Float16x2, DXGI_FORMAT_R16G16_FLOAT, 4),
+    (
+        wgt::VertexFormat::Float16x4,
+        DXGI_FORMAT_R16G16B16A16_FLOAT,
+        8,
+    ),
     (wgt::VertexFormat::Sint16x2, DXGI_FORMAT_R16G16_SINT, 4),
     (wgt::VertexFormat::Snorm16x2, DXGI_FORMAT_R16G16_SNORM, 4),
     (
@@ -824,14 +831,21 @@ mod tests {
     }
 
     #[test]
-    fn vertex_formats_map_the_fl91_required_input_set() {
+    fn vertex_formats_map_required_and_optional_inputs() {
         use super::{
-            vertex_format, DXGI_FORMAT_R16G16B16A16_SINT, DXGI_FORMAT_R16G16B16A16_SNORM,
-            DXGI_FORMAT_R16G16_SINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_UINT,
+            vertex_format, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SINT,
+            DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SINT,
+            DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_UINT,
         };
 
         for (format, dxgi, size) in [
             (wgt::VertexFormat::Uint8x4, DXGI_FORMAT_R8G8B8A8_UINT, 4),
+            (wgt::VertexFormat::Float16x2, DXGI_FORMAT_R16G16_FLOAT, 4),
+            (
+                wgt::VertexFormat::Float16x4,
+                DXGI_FORMAT_R16G16B16A16_FLOAT,
+                8,
+            ),
             (wgt::VertexFormat::Sint16x2, DXGI_FORMAT_R16G16_SINT, 4),
             (
                 wgt::VertexFormat::Sint16x4,
@@ -848,7 +862,6 @@ mod tests {
             assert_eq!(vertex_format(format), Some((dxgi, size)));
         }
         assert_eq!(vertex_format(wgt::VertexFormat::Unorm16x2), None);
-        assert_eq!(vertex_format(wgt::VertexFormat::Float16x2), None);
         assert_eq!(vertex_format(wgt::VertexFormat::Uint8x2), None);
     }
 

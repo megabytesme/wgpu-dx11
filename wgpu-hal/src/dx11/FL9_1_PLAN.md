@@ -10,6 +10,10 @@ inspection. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
+Some status descriptions within the audit sections below preserve earlier
+checkpoints. Later commits may supersede them; the opening summary and the
+numbered current tasks are authoritative for the present state.
+
 The public HWND path serializes submissions, queue writes, mapped-buffer
 updates and context-backed resource creation against `Present`. Reentrant
 same-thread operations that would mutate those resources are rejected, while
@@ -243,20 +247,17 @@ remains open.
    one stage. The aggregate BC feature stays
    withheld because only BC1 is implemented. Continue the descriptor and
    feature/format audit before treating the exposed subset as complete.
-6. Complete HWND surface lifecycle while preserving CoreWindow; the private
-   hidden-window path and retained-command-buffer resize are tested, but
-   concurrent presentation requires work. Microsoft documents that DXGI may
-   synchronously send window messages during `Present` and wait for the owning
-   message-pump thread. The current core queue-index lock and HAL immediate-
-   context mutex span `Present`; a callback that reenters wgpu can deadlock.
-   Releasing these locks permits context/DXGI concurrency, which Microsoft
-   documents as invalid. A safe cross-layer scheduling or thread-affinity
-   design is unresolved; do not assume a cooperative window procedure or
-   enable public surface support until it is resolved. A standalone public
-   wgpu offscreen example now selects the physical FL9_1 adapter, renders an
-   indexed textured depth-tested cube and verifies full-image readback. A
-   desktop-window example and presentation remain outstanding until the
-   cross-layer scheduling and lock-order design is resolved.
+6. Keep the narrow HWND surface contract safe and tested alongside CoreWindow.
+   Public operations serialize queue submission, writes, mapping flushes,
+   polling and context-backed creation against `Present`; same-thread
+   reentrant mutations fail safely, while other threads wait. Configure,
+   acquire and present enforce window-thread affinity. Strict hardware tests
+   cover hidden-window configure/present/resize and wrong-thread rejection; a
+   bounded visible example presents an animated textured indexed cube for 60
+   frames at forced FL9_1. Continue testing lifecycle/error and reentrancy
+   edges, and capture visible pixels when a reliable workflow is available.
+   Preserve the existing CoreWindow path; Windows 10 Mobile ARM32 remains
+   unverified.
 7. Audit unsupported operations, synchronization, lifetime and device loss;
    run strict GPU, core, Naga and non-D3D11 regressions and relevant downlevel
    conformance cases. Independently review the public contract. The upstream

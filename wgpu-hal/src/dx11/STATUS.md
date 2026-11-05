@@ -111,8 +111,8 @@ rejects this operation before HAL; the FL9_1 projection reports it unavailable.
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
 D24S8 depth testing and validates all 1,024 offscreen pixels. Strict execution
 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) reported 112 red,
-277 green and 635 blue clear pixels. A desktop window/presentation example is
-still blocked by the unresolved cross-layer `Present` reentrancy design.
+277 green and 635 blue clear pixels. The public HWND surface and bounded
+windowed example are also implemented; see the presentation checkpoint below.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device
@@ -657,8 +657,9 @@ sRGB conversion. Strict FL9_1 readback checks the sRGB intermediate and the
 linear round-trip for both channel families. Other differing formats remain
 rejected.
 
-Do not describe this restricted offscreen adapter as complete wgpu or WebGPU
-support. See [TESTING.md](TESTING.md) for exact public and private test commands.
+Do not describe this restricted experimental adapter as complete wgpu or
+WebGPU support. See [TESTING.md](TESTING.md) for exact public and private test
+commands.
 
 See [TESTING.md](TESTING.md) for the staged validation plan and hardware matrix.
 
@@ -667,3 +668,10 @@ Fragment `@builtin(sample_mask)` output is now represented by
 `SV_Coverage` output as requiring `ps_4_1`; the selected FL9_1 profile is
 `ps_4_0_level_9_1`. FXC rejects the output, while the color-only sibling
 compiles. Core rejects only selected fragment entries that write the mask.
+
+The HAL maps `Float16x2` and `Float16x4` as optional vertex inputs. At FL9_1,
+they are included in the selected adapter's vertex-format mask only when
+`CheckFormatSupport(IA_VERTEX_BUFFER)` succeeds; the feature-level guarantee
+set remains unchanged. The RTX 3090 Ti forced to FL9_1 reports no
+`R16G16_FLOAT` IA support, so the strict public readback test explicitly logs
+that case as a skip. Synthetic capability tests cover the positive path.

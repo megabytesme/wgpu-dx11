@@ -277,7 +277,7 @@ impl BackendCapabilities {
         rg16_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
         bc1_sampled_upload: true,
-        vertex_input_formats: fl91_vertex_formats(),
+        vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
         texture_array_layers: 1,
         sample_count: 1,
@@ -684,9 +684,11 @@ impl Capabilities {
     }
 
     pub fn vertex_input_format_mask(&self) -> u64 {
-        self.hardware.vertex_input_formats
-            & self.driver.vertex_input_formats
-            & self.backend.vertex_input_formats
+        let driver_and_backend =
+            self.driver.vertex_input_formats & self.backend.vertex_input_formats;
+        let guaranteed = self.hardware.vertex_input_formats & driver_and_backend;
+        let optional = optional_vertex_formats() & driver_and_backend;
+        guaranteed | optional
     }
 
     pub fn texture_format_capabilities(
@@ -828,6 +830,11 @@ const fn fl91_vertex_formats() -> u64 {
         | vertex_format_bit(wgt::VertexFormat::Float32x2)
         | vertex_format_bit(wgt::VertexFormat::Float32x3)
         | vertex_format_bit(wgt::VertexFormat::Float32x4)
+}
+
+const fn optional_vertex_formats() -> u64 {
+    vertex_format_bit(wgt::VertexFormat::Float16x2)
+        | vertex_format_bit(wgt::VertexFormat::Float16x4)
 }
 
 #[cfg(test)]
@@ -1380,16 +1387,44 @@ mod tests {
     fn vertex_format_projection_intersects_level_driver_and_backend() {
         let mut fl91 = model(FeatureLevel::L9_1);
         let baseline = fl91_vertex_formats();
+        let optional = optional_vertex_formats();
+        assert_eq!(fl91.hardware.vertex_input_formats, baseline);
+        assert_eq!(fl91.backend.vertex_input_formats, baseline | optional);
+        assert_eq!(fl91.vertex_input_format_mask(), baseline | optional);
+        assert_eq!(
+            fl91.wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .vertex_format_mask,
+            baseline | optional
+        );
+
+        fl91.driver.vertex_input_formats &= !optional;
         assert_eq!(fl91.vertex_input_format_mask(), baseline);
         assert_eq!(
-            fl91.vertex_input_format_mask() & vertex_format_bit(wgt::VertexFormat::Float16x2),
-            0
+            fl91.wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .vertex_format_mask,
+            baseline
+        );
+
+        fl91.driver.vertex_input_formats |= optional;
+        fl91.backend.vertex_input_formats &= !vertex_format_bit(wgt::VertexFormat::Float16x4);
+        assert_eq!(
+            fl91.vertex_input_format_mask(),
+            baseline | vertex_format_bit(wgt::VertexFormat::Float16x2)
         );
 
         fl91.driver.vertex_input_formats &= !vertex_format_bit(wgt::VertexFormat::Sint16x2);
         assert_eq!(
             fl91.vertex_input_format_mask(),
-            baseline & !vertex_format_bit(wgt::VertexFormat::Sint16x2)
+            (baseline & !vertex_format_bit(wgt::VertexFormat::Sint16x2))
+                | vertex_format_bit(wgt::VertexFormat::Float16x2)
         );
 
         let fl93 = model(FeatureLevel::L9_3);
@@ -1399,7 +1434,7 @@ mod tests {
         );
         assert_eq!(
             fl93.vertex_input_format_mask() & vertex_format_bit(wgt::VertexFormat::Float16x2),
-            0
+            vertex_format_bit(wgt::VertexFormat::Float16x2)
         );
     }
 

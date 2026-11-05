@@ -5885,3 +5885,50 @@ Next continue the public core/HAL contract audit, including additional
 reentrant and resize edge cases, and independently inspect the visible output
 when a visual-capture workflow is available. Historical FL9_1 behavior remains
 unverified.
+
+## Checkpoint in progress — optional half-float vertex inputs
+
+The required DXGI format table makes `R16G16_FLOAT` and
+`R16G16B16A16_FLOAT` input-assembler support mandatory from FL9_3, not FL9_1.
+The HAL now maps both formats but keeps them out of FL9_1 hardware guarantees.
+The capability projection includes either only after the selected FL9_1
+device's `CheckFormatSupport(IA_VERTEX_BUFFER)` query succeeds and the backend
+mapping is present. Synthetic tests cover positive, absent-query and missing-
+backend cases, including the resulting wgpu `DownlevelLimits` mask.
+
+The RTX 3090 Ti (`0x10de:0x2203`, NVIDIA driver `32.0.16.2101`) was requested
+and confirmed at FL9_1. Its public selected-device projection reports
+`Float16x2=false`. The strict public test therefore logged
+`SKIP: selected FL9_1 device does not report IA support for R16G16_FLOAT`; no
+half-float draw is claimed as GPU-executed. `Float16x4` shares the same query
+and mapping path and has no separate rendering test yet.
+
+Verification after the code change: private HAL suite 351/351; public strict
+D3D11 suite 23/23 test functions with one capability-based optional-path skip
+(22 other public GPU tests executed); controlled core fixture 90/90; strict
+physical adapter selection 1/1; core DX12 regression 86/86. HAL Clippy passed
+with nine existing warnings outside this change; public-test Clippy passed
+cleanly. Changed Rust files pass Rust 1.93 rustfmt and `git diff --check`.
+The first core test invocation omitted `wgsl` and MSVC environment setup; it
+failed at build configuration/link resolution and passed on the corrected
+MSVC command below.
+
+Commands run (Visual Studio 2022 x64 developer environment, bounded Cargo
+parallelism `-j32`):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/capabilities.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+After committing this checkpoint, continue auditing public core/HAL behavior
+and optional vertex formats. Do not claim that the RTX executed Float16x2 at
+FL9_1 or that a forced modern device validates historical FL9_1 drivers.

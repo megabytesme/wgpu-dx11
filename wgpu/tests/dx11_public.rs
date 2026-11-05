@@ -1738,6 +1738,207 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
 }
 
 #[test]
+fn public_dx11_fl91_optional_float16_vertex_input() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    let supported = downlevel
+        .limits
+        .supports_vertex_format(VertexFormat::Float16x2);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; Float16x2={supported}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    if !supported {
+        println!("SKIP: selected FL9_1 device does not report IA support for R16G16_FLOAT");
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 optional Float16x2 vertex input"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("Float16x2 vertex input shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.25, 0.75, 0.125, 1.0); }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 Float16x2 vertex input pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 4,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float16x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let vertices = [0xbc00u16, 0xbc00, 0x4700, 0xbc00, 0xbc00, 0x4700];
+    let vertex_bytes: Vec<u8> = vertices.into_iter().flat_map(u16::to_le_bytes).collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("half-float fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("mapped half-float vertex buffer")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("Float16x2 vertex input readback target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("Float16x2 vertex input readback"),
+        size: 256 * 8,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("Float16x2 vertex input encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("Float16x2 vertex input render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for Float16x2 vertex input render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("Float16x2 readback map callback")
+        .expect("map Float16x2 readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[64, 191, 32, 255],
+                    "Float16x2 rendered pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: FL9_1 IA R16G16_FLOAT input rendered; 64/64 pixels matched [64, 191, 32, 255]");
+}
+
+#[test]
 fn public_dx11_r8_sampled_upload_renders_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
