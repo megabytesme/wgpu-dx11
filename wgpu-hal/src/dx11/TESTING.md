@@ -6,9 +6,10 @@ reported feature set is empty, and the downlevel contract is not WebGPU-
 compliant. A narrow public HWND surface is available with BGRA8 sRGB FIFO,
 opaque composition, render-attachment usage and one frame of latency. Configure,
 acquire and present are owner-thread-only. The strict public test uses a hidden
-window, so visible desktop presentation and a continuous event loop remain
-unverified. This remains experimental; the HAL/core tests do not establish
-complete wgpu or CTS conformance.
+window. The bounded visible example pumps events, presents an animated cube
+for 1,800 frames, and has a client-area capture showing distinct red and green
+textured faces over the clear background. This remains experimental; the
+HAL/core tests do not establish complete wgpu or CTS conformance.
 
 Later sections include historical test checkpoints. Statements there that
 public surface capabilities were unavailable or the adapter was offscreen-only
@@ -1053,9 +1054,11 @@ The public adapter now exposes a constrained HWND surface path. Queue work and
 selected context-backed resource operations serialize against `Present`;
 same-thread reentrant mutations are rejected, and configure/acquire/present
 require the window's owner thread. A hidden-window lifecycle test and bounded
-visible example have run at forced FL9_1. Continue testing resize, error and
-reentrancy edges; a displayed-pixel capture and historical FL9_1 surface test
-remain outstanding. This does not make the adapter WebGPU-compliant.
+visible example have run at forced FL9_1. The visible example's client-area
+capture has been inspected; deterministic pixel validation continues through
+offscreen readback tests. Continue testing resize, error and reentrancy edges;
+historical FL9_1 surface behavior remains outstanding. This does not make the
+adapter WebGPU-compliant.
 
 ## 3. Upstream wgpu GPU tests
 

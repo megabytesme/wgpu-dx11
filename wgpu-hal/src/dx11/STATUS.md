@@ -2,13 +2,20 @@
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
-for offscreen rendering through the public wgpu API. It reports no wgpu
-features, does not claim WebGPU compliance, and reports no surface
-capabilities. The implementation remains experimental and restrictions not
-representable through current core limits still need auditing. Feature level
-9_1 is a tested target, not evidence of historical-driver compatibility. See
-[CAPABILITIES.md](CAPABILITIES.md) for the capability matrix and validation
-gaps.
+for offscreen rendering and a constrained Win32 HWND surface through the public
+wgpu API. The HWND path reports BGRA8 sRGB FIFO, opaque composition,
+render-attachment usage and one frame of latency; configure, acquire and
+present are restricted to the creating thread. It reports no wgpu features
+and does not claim WebGPU compliance. The implementation remains experimental
+and restrictions not representable through current core limits still need
+auditing. Feature level 9_1 is a tested target, not evidence of
+historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
+the capability matrix and validation gaps.
+
+Some detailed status bullets below preserve earlier checkpoints. Later
+implementation checkpoints supersede their earlier surface and exposure
+statements; the current contract is summarized above and in
+[CAPABILITIES.md](CAPABILITIES.md).
 
 The strict public integration test uses ordinary adapter enumeration and
 validated wgpu APIs for group 0 uniforms and sampled resources at group 7, the

@@ -2,10 +2,12 @@
 
 The opt-in `dx11` feature now enumerates physical DXGI adapters that can create
 the explicitly requested FL9_1 device and exposes the selected-device
-capability projection for offscreen wgpu rendering. The reported feature set is
-empty and the downlevel contract is not WebGPU-compliant. `surface_capabilities`
-still returns `None`, so no public presentation surface is exposed. This is a
-restricted FL9_1 adapter report, not a claim of general wgpu support. The
+capability projection for public wgpu rendering. Its constrained Win32 HWND
+surface contract is BGRA8 sRGB FIFO, opaque composition, render-attachment
+usage and one frame of latency; configure, acquire and present are
+owner-thread-only. The reported feature set is empty and the downlevel contract
+is not WebGPU-compliant. This is a restricted FL9_1 adapter report, not a claim
+of general wgpu support. The
 internal model separates feature-level minima, per-device query results, and
 implemented backend paths. `check_private_texture_2d` is a conservative
 predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_SNORM,
@@ -303,7 +305,7 @@ or emulates that restriction is unresolved. Indexed batches use their separate
 index limits. Large native start offsets still need historical-driver testing.
 | Queries / synchronization / readback | Native event queries back the private fence; this is not a public query-set implementation. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover device-loss HRESULT classification. Core rejects occlusion query sets when `OCCLUSION_QUERY` is absent; timestamp queries require a feature. The private HAL rejects both, and some destroy paths for resources that cannot be created still panic. Actual device removal/recovery, synchronization after a failed event query, all lifetime/error paths and debug-layer diagnostics remain unverified. |
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and shader storage bindings. Core may retain storage bits for transfer-capable buffers but does not bind them as storage. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences. The controlled core fixture checks stage-specific storage-buffer layout rejection before HAL. No compute/storage feature is exposed; feature/limit gating alone remains insufficient for public device exposure. |
-| Presentation | FL9 hardware can support display through platform/format-specific paths. The private backend retains the WinRT CoreWindow path and exposes a constrained Win32 HWND surface through opt-in public wgpu: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. Configure, acquire and present are owner-thread-only. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-window configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. Surface pixel capture, further lifecycle/error edges, device loss and historical driver behavior remain unverified. This is not general surface or WebGPU support. |
+| Presentation | FL9 hardware can support display through platform/format-specific paths. The private backend retains the WinRT CoreWindow path and exposes a constrained Win32 HWND surface through opt-in public wgpu: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. Configure, acquire and present are owner-thread-only. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-window configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. Further lifecycle/error edges, device loss and historical driver behavior remain unverified. This is not general surface or WebGPU support. |
 
 For FL9_1/9_2, default buffers have exactly one native vertex or index bind:
 copy-only, mapped and uniform-source buffers use an internal vertex bind, while
