@@ -49,6 +49,12 @@ integration case, not a complete application or adapter-contract audit.
 Presentation remains unavailable. All six unsupported resource requests were
 rejected by public core validation.
 
+The public test also draws fully overlapping near and far textured surfaces
+with the same depth-tested pipeline, in both far-then-near and near-then-far
+orders. Every readback pixel remains the nearer surface's tinted-red value in
+both cases, verifying depth comparison and writes through public wgpu rather
+than only checking that a depth attachment can be created.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

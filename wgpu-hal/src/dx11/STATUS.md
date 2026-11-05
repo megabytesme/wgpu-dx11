@@ -25,7 +25,9 @@ pixels were red on one device and green on the other. This proves these paths
 through the public API, not every operation within the projection. Error-scope
 checks also confirmed that core rejects 3D textures, 4x MSAA, `R32Float`
 sampling, multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
-sampled-texture layouts before the HAL.
+sampled-texture layouts before the HAL. A separate public draw overlays
+near/far surfaces in both draw orders; all 64 readback pixels select the nearer
+surface, exercising depth comparison and writes through public wgpu.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device

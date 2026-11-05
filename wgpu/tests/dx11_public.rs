@@ -720,6 +720,129 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     }
     readback.unmap();
 
+    let depth_positions = [
+        [-2.0f32, -2.0],
+        [2.0, -2.0],
+        [-2.0, 2.0],
+        [2.0, -2.0],
+        [2.0, 2.0],
+        [-2.0, 2.0],
+    ];
+    let mut depth_vertices = Vec::with_capacity(12 * 20);
+    for (z, uv) in [(0.75f32, 0.75f32), (0.25, 0.25)] {
+        for [x, y] in depth_positions {
+            depth_vertices.extend([x, y, z, uv, uv].into_iter().flat_map(f32::to_ne_bytes));
+        }
+    }
+    let depth_vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("public DX11 FL9_1 overlapping depth vertices"),
+        size: depth_vertices.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&depth_vertex, 0, &depth_vertices);
+    for near_first in [false, true] {
+        let label = if near_first {
+            "public DX11 FL9_1 near then far depth pass"
+        } else {
+            "public DX11 FL9_1 far then near depth pass"
+        };
+        let mut depth_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+        {
+            let mut pass = depth_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some(label),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLUE),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: Some(Operations {
+                        load: LoadOp::Clear(0),
+                        store: StoreOp::Store,
+                    }),
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &uniforms_group, &[0, 0]);
+            pass.set_bind_group(7, &texture_group, &[]);
+            pass.set_vertex_buffer(0, depth_vertex.slice(..));
+            if near_first {
+                pass.draw(6..12, 0..1);
+                pass.draw(0..6, 0..1);
+            } else {
+                pass.draw(0..6, 0..1);
+                pass.draw(6..12, 0..1);
+            }
+        }
+        depth_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let depth_submission = queue.submit([depth_encoder.finish()]);
+        let (depth_sender, depth_receiver) = std::sync::mpsc::channel();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            depth_sender.send(result).unwrap()
+        });
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(depth_submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for public depth-order submission");
+        depth_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("public depth-order map callback")
+            .expect("map public depth-order readback");
+        {
+            let data = readback.slice(..).get_mapped_range().expect("mapped data");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    let actual = &data[offset..offset + 4];
+                    for (channel, (&observed, expected)) in
+                        actual.iter().zip([128, 0, 0, 255]).enumerate()
+                    {
+                        assert!(
+                            observed.abs_diff(expected) <= 1,
+                            "{label} pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                        );
+                    }
+                }
+            }
+        }
+        readback.unmap();
+    }
+
     let (second_device, second_queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("second public DX11 FL9_1 device"),
         required_features: Features::empty(),
@@ -777,5 +900,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             .join()
             .expect("second public device worker did not panic");
     });
-    println!("PASS: public wgpu D3D11 FL9_1; core rejected 3D, 4x-MSAA, R32Float, multi-mip D24S8, vertex storage and D2Array layouts; group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; concurrent devices read back 64/64 red and green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1; core rejected 3D, 4x-MSAA, R32Float, multi-mip D24S8, vertex storage and D2Array layouts; indexed group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; overlapping near/far geometry rendered red in both draw orders; concurrent devices read back 64/64 red and green pixels");
 }

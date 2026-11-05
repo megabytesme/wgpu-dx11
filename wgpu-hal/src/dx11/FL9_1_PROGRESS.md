@@ -4606,3 +4606,28 @@ validation-boundary evidence, not a complete audit of all legal bind-group
 entries. Continue checking public core operations that can pass current limits
 and gates. The adapter is still offscreen-only, and window Present reentrancy
 remains unresolved.
+
+## Checkpoint — public depth-order rendering
+
+The public FL9_1 integration test now draws fully overlapping near and far
+textured surfaces in both draw orders, using the existing public pipeline,
+uniform groups, sampled texture, target and D24S8 attachment. The far surface
+uses the sampled green texel and the near surface the sampled red texel. Each
+of the 64 readback pixels remained tinted red for both orders, so the result
+depends on depth comparison and writes rather than draw order. This upgrades
+the public depth evidence beyond attachment creation and non-overlapping
+geometry.
+
+Verification on 2026-11-05 used strict hardware mode on the NVIDIA GeForce
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual
+FL9_1, `software=false`:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 1/1, including both depth orders, all six public validation rejections, dynamic uniform image update and concurrent two-device readback.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std` passed with no warnings.
+- `rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs` and `git diff --check` passed.
+
+This is still an offscreen diagnostic, not a representative desktop
+application. Public HWND presentation remains gated by the unresolved
+cross-layer Present reentrancy and lock-order design. The prior strict HAL,
+core and DX12 counts are documented above and were not rerun for this
+public-test-only change.

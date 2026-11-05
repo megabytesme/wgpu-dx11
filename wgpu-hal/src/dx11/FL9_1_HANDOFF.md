@@ -1195,3 +1195,9 @@ expand the public scene with an explicit depth-ordering case. Public surface
 capabilities remain disabled because synchronous DXGI Present can reenter core
 while queue and context locks are held; historical FL9_1 behavior remains
 unverified.
+
+The latest public-only increment also renders the same near/far textured
+overlap in both draw orders and verifies all pixels select the nearer surface.
+Strict forced-FL9_1 readback, public descriptor/layout rejection cases,
+dynamic uniform updates and concurrent two-device queue work all pass. The
+exact command and hardware evidence are recorded in `FL9_1_PROGRESS.md`.

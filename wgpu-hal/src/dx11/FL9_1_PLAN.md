@@ -266,3 +266,8 @@ layouts and D2Array sampled-texture layouts, alongside unsupported 3D,
 multisampled, format and mip requests. These checks expand the tested public
 validation boundary but do not complete the core/HAL audit or the required
 desktop presentation path.
+
+The same public test now overlays near and far textured geometry in both draw
+orders and verifies that all pixels show the nearer surface. This establishes
+depth-test ordering through public wgpu; a representative desktop application
+and presentation are still outstanding.
