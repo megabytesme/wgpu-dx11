@@ -1,15 +1,17 @@
 # FL9_1 handoff
 
-**Outcome: PARTIALLY COMPLETE.** The mission is active. Ordinary wgpu D3D11
-adapter enumeration remains disabled; controlled core-fixture tests do not
-constitute a public adapter. The private HAL has tested D24S8 depth/stencil,
+**Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
+`dx11` backend enumerates physical adapters that successfully create an FL9_1
+device and exposes a conservative public offscreen projection. A standalone
+public wgpu example now renders and validates an indexed textured depth-tested
+3D cube. The adapter is not WebGPU-compliant, and public surface capabilities
+remain unavailable. The private HAL has tested D24S8 depth/stencil,
 depth-only prepasses, stencil operations, read-only attachments, depth-bias
 subsets, multiple texture formats and mip views, uniform layouts/ranges, and
 indexed/nonindexed point, line and triangle topologies on a modern RTX 3090 Ti
 explicitly forced to FL9_1. Historical FL9_1 compatibility has not been
 verified. Public HWND presentation and the cross-layer `Present` reentrancy
-deadlock remain unresolved; keep both ordinary adapter and public surface
-exposure gated.
+deadlock remain unresolved; keep public surface exposure gated.
 
 ## Current checkpoint — internal FL9_1 capability projection — `dfc93078a`
 

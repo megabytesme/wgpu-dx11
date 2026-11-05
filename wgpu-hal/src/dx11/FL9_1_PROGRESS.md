@@ -4681,3 +4681,40 @@ Verification on 2026-11-05, Rust 1.93.1, Visual Studio 2022 x64:
 
 Mapped-at-creation is now verified through public vertex use. Arbitrary public
 buffer mapping and GPU-write/read synchronization still require broader audit.
+
+## Checkpoint — public textured 3D offscreen example
+
+Commit `4c2b6237944c153963f91bf8d5ea590506a64a83`
+(`dx11: add public FL9_1 offscreen cube example`) adds a
+standalone public-API example. It enumerates the opt-in D3D11 backend's
+physical adapter, verifies the explicitly selected FL9_1 identity, creates a
+restricted public device, uploads a two-color texture and transform,
+initializes indexed cube geometry through mapped-at-creation buffers, and
+renders a depth-tested 3D scene to an offscreen RGBA8 target. It waits for
+queue completion, maps the readback and validates every pixel against the two
+texture colors or blue clear color. An optional argument saves the verified
+image as PPM.
+
+The first execution exposed a fixture error: generated indices were truncated
+to 40 bytes although 36 Uint16 indices require 72 bytes. Core rejected the
+draw before GPU execution. The index generator was corrected to append all
+six indices for each of six faces, then strict execution passed.
+
+Verification on 2026-11-05 used Rust 1.93.1 and the Visual Studio 2022 x64
+developer environment. Exact command:
+
+```powershell
+cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+```
+
+The NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`)
+reported requested/actual FL9_1 and `software=false`. Readback validated 112
+red pixels, 277 green pixels and 635 blue background pixels, 1,024 total.
+Example-target `cargo +1.93 clippy --offline -j16 -p wgpu --examples
+--no-default-features --features dx11,wgsl,std`, targeted rustfmt and
+`git diff --check` passed. The Visual Studio shell printed its existing
+`vError: Unknown error` banner, but the x64 build and execution completed.
+
+This advances the public offscreen example requirement. It does not resolve
+the safe HWND `Present` reentrancy/scheduling design, so public surface
+capabilities remain unavailable.

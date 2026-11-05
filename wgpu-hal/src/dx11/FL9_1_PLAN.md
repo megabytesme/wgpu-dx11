@@ -172,9 +172,11 @@ contract is safe. This plan does not claim WebGPU conformance.
    Releasing these locks permits context/DXGI concurrency, which Microsoft
    documents as invalid. A safe cross-layer scheduling or thread-affinity
    design is unresolved; do not assume a cooperative window procedure or
-   enable public surface support until it is resolved. Build public
-   wgpu offscreen and desktop examples selecting real D3D11 and forcing 9_1.
-   Verify an indexed textured depth-tested 3D scene, readback and presentation.
+   enable public surface support until it is resolved. A standalone public
+   wgpu offscreen example now selects the physical FL9_1 adapter, renders an
+   indexed textured depth-tested cube and verifies full-image readback. A
+   desktop-window example and presentation remain outstanding until the
+   cross-layer scheduling and lock-order design is resolved.
 7. Audit unsupported operations, synchronization, lifetime and device loss;
    run strict GPU, core, Naga and non-D3D11 regressions and relevant downlevel
    conformance cases. Independently review the public contract.

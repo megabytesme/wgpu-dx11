@@ -60,6 +60,31 @@ The same public render initializes its vertex input with
 draw. Its later GPU readback confirms that the core staging copy committed the
 mapped contents before vertex use.
 
+### Public FL9_1 textured 3D example
+
+`wgpu/examples/dx11_fl91_offscreen.rs` is a standalone public-API diagnostic.
+It selects an enumerated physical D3D11 adapter only after explicit FL9_1
+device creation, reports the adapter identifiers and driver, then renders an
+indexed, textured, depth-tested cube into an offscreen target. The example
+maps vertex and index data at creation, uploads a texture and transform,
+submits through a public queue, waits for completion and checks all 1,024
+pixels against the texture colors and clear color. Pass an optional output path
+to save the verified image as PPM.
+
+Run in a Visual Studio x64 developer shell. The example itself requires a
+physical FL9_1 adapter and exits with an error when one is unavailable; it
+does not substitute WARP.
+
+```powershell
+cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+```
+
+On the RTX 3090 Ti the run reported vendor `0x10de`, device `0x2203`, driver
+`32.0.16.2101`, requested/actual FL9_1 and `software=false`; readback contained
+112 red, 277 green and 635 blue background pixels. This is public offscreen
+execution evidence. It does not provide a window, presentation or surface
+capabilities.
+
 A second public test checks `R8Unorm`'s selected-device format report, uploads
 two distinct values, samples them with a non-filtering sampler and renders to
 RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and

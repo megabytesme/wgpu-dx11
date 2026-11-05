@@ -33,6 +33,13 @@ checks 32 pixels at each of two channel values. The primary public draw also
 initializes vertex data through a mapped-at-creation range and reads back the
 result after unmapping.
 
+`wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
+selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
+D24S8 depth testing and validates all 1,024 offscreen pixels. Strict execution
+on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) reported 112 red,
+277 green and 635 blue clear pixels. A desktop window/presentation example is
+still blocked by the unresolved cross-layer `Present` reentrancy design.
+
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device
 rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
