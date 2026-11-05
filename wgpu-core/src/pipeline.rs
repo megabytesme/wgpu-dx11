@@ -803,6 +803,8 @@ pub enum CreateRenderPipelineError {
     UnsupportedTextureLoad { stage: wgt::ShaderStages },
     #[error("Texture queries are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureQuery { stage: wgt::ShaderStages },
+    #[error("textureSampleBaseClampToEdge is not supported in the {stage:?} shader by this downlevel adapter")]
+    UnsupportedTextureSampleBaseClampToEdge { stage: wgt::ShaderStages },
     #[error(
         "Texture sample bias is not supported in the {stage:?} shader by this downlevel adapter"
     )]
@@ -905,6 +907,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedFragmentPosition
             | Self::UnsupportedTextureLoad { .. }
             | Self::UnsupportedTextureQuery { .. }
+            | Self::UnsupportedTextureSampleBaseClampToEdge { .. }
             | Self::UnsupportedTextureSampleBias { .. }
             | Self::UnsupportedFragmentDerivatives
             | Self::UnsupportedTextureSampleLevel { .. }

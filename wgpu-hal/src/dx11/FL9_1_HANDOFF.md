@@ -13,6 +13,14 @@ explicitly forced to FL9_1. Historical FL9_1 compatibility has not been
 verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep public surface exposure gated.
 
+The latest core/HAL audit adds a selected-entry
+`textureSampleBaseClampToEdge` downlevel limit. FXC rejects Naga's
+`GetDimensions`/`SampleLevel` lowering with X4532 in both 9_1 and 9_3 pixel
+profiles; public validation now catches direct and helper-reached use before
+HAL while allowing safe sibling entries. Targeted, strict public, core fixture,
+DX12 and full HAL suites passed; the physical RTX 3090 Ti executed the strict
+FL9_1 GPU cases. Details are in `FL9_1_PROGRESS.md`.
+
 Latest code checkpoint `3b1d4f964` handles indexed LineStrip and TriangleStrip
 draws with no vertex-rate inputs. Replay reads current index-buffer contents,
 matches restart after signed base-vertex resolution, splits runs and issues

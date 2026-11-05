@@ -1145,6 +1145,12 @@ pub struct DownlevelLimits {
     /// instructions.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_query: bool,
+    /// Whether shader entry points may use `textureSampleBaseClampToEdge`.
+    ///
+    /// This operation may lower to texture-dimension queries and explicit level sampling even
+    /// though the WGSL builtin does not expose either operation directly.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_sample_base_clamp_to_edge: bool,
     /// Whether sampled texture operations may specify an explicit mip level.
     ///
     /// This models shader-profile support for `textureSampleLevel`; implicit
@@ -1225,6 +1231,7 @@ impl Default for DownlevelLimits {
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,
+            texture_sample_base_clamp_to_edge: true,
             texture_sample_level: true,
             texture_load: true,
             max_texture_sample_bias: u32::MAX,
@@ -1283,6 +1290,8 @@ impl DownlevelLimits {
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
             && (!required.texture_query || self.texture_query)
+            && (!required.texture_sample_base_clamp_to_edge
+                || self.texture_sample_base_clamp_to_edge)
             && (!required.texture_sample_level || self.texture_sample_level)
             && (!required.texture_load || self.texture_load)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
@@ -1346,6 +1355,7 @@ impl DownlevelCapabilities {
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
             && self.limits.texture_query
+            && self.limits.texture_sample_base_clamp_to_edge
             && self.limits.texture_sample_level
             && self.limits.texture_load
             && self.limits.max_texture_sample_bias
@@ -1643,6 +1653,7 @@ mod tests {
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
+            texture_sample_base_clamp_to_edge: false,
             texture_sample_level: false,
             texture_load: true,
             max_texture_sample_bias: 3,
@@ -1673,6 +1684,7 @@ mod tests {
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
+            texture_sample_base_clamp_to_edge: false,
             texture_sample_level: false,
             texture_load: true,
             max_texture_sample_bias: 3,
@@ -1839,9 +1851,27 @@ mod tests {
         .is_webgpu_compliant());
     }
 
+    #[test]
+    fn texture_sample_base_clamp_to_edge_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            texture_sample_base_clamp_to_edge: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_sample_base_clamp_to_edge: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
     #[cfg(feature = "serde")]
     #[test]
-    fn previous_downlevel_limits_serde_shape_defaults_new_binding_caps() {
+    fn previous_downlevel_limits_serde_shape_defaults_new_caps() {
         let mut serialized = serde_json::to_value(DownlevelLimits::default()).unwrap();
         let object = serialized.as_object_mut().unwrap();
         for field in [
@@ -1854,6 +1884,7 @@ mod tests {
             "max_fragment_shader_uniform_vectors",
             "max_sampler_anisotropy",
             "texture_query",
+            "texture_sample_base_clamp_to_edge",
             "texture_load",
             "texture_sample_level",
             "max_texture_sample_bias",
@@ -1874,6 +1905,7 @@ mod tests {
         assert_eq!(limits.max_fragment_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_sampler_anisotropy, 16);
         assert!(limits.texture_query);
+        assert!(limits.texture_sample_base_clamp_to_edge);
         assert!(limits.texture_load);
         assert!(limits.texture_sample_level);
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);

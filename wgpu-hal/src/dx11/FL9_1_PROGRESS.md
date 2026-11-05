@@ -2,6 +2,35 @@
 
 ## Current position — 2026-11-05
 
+## Checkpoint — gate base-clamp sampling for 10Level9 — pending
+
+Added `DownlevelLimits::texture_sample_base_clamp_to_edge` and wired it into
+selected-entry core validation. Naga IR marks
+`textureSampleBaseClampToEdge` as `ImageSample { clamp_to_edge: true }`; core
+tracks that operation through helper calls and rejects it before HAL only for
+the selected vertex or fragment entry point. The FL9_1 projection derives the
+limit conservatively from both hardware and backend texture-query and explicit
+LOD support. It remains unavailable in the current backend at every level.
+The public strict test covers direct and helper-reached errors and a safe
+sibling entry. An FXC test establishes X4532 under both 9_1 and 9_3 pixel
+profiles and successful compilation under `ps_5_0`.
+
+Verification (Rust 1.93.1, Visual Studio 2022 x64 developer prompt, Cargo
+`-j16`): targeted wgpu-types (default and serde), selected-entry core, FXC,
+strict public D3D11, strict core fixture and full private HAL suites passed;
+the latter executed forced-FL9_1 GPU tests on the RTX 3090 Ti. Totals were
+types 75/75 (serde 77/77), core fixture 87/87, DX12 core 83/83, public D3D11
+13/13 and private HAL 344/344. The public and HAL suites selected the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+`software=false`) at requested and actual FL9_1. Targeted HAL and core
+Clippy passed with nine and three pre-existing warnings respectively; wgpu
+and serde-enabled types Clippy passed without warnings. HAL `dx11,gles` check,
+changed-file rustfmt and `git diff --check` passed. No hardware test skipped.
+
+The limit is additive to public `DownlevelLimits`; older serialized capability
+snapshots default it to `true` to preserve existing behavior. See
+`CAPABILITIES.md` for the compiler evidence and `TESTING.md` for reproduction.
+
 ## Checkpoint — indexed strips without vertex-rate inputs — `3b1d4f964`
 
 Extended the no-vertex-rate indexed fast path to LineStrip and TriangleStrip.

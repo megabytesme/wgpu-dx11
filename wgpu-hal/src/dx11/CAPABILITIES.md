@@ -742,6 +742,16 @@ before HAL. The model treats queries as a feature-level shader guarantee from
 10_0 onward, but the current backend implementation remains false for every
 level. This gate is profile/compiler-driven; it is not a driver format query.
 
+`textureSampleBaseClampToEdge` has a separate selected-entry limit. Naga lowers
+it to a clamped image sample at level zero, and the current HLSL writer emits
+`GetDimensions` plus `SampleLevel`. FXC reports X4532 for this lowering under
+`ps_4_0_level_9_1` and `ps_4_0_level_9_3`; the shader-model 5 control compiles.
+The D3D11 projection enables the limit only when both queried hardware and
+backend support for texture queries and explicit-level sampling are present.
+The current implementation therefore reports it unavailable at every level.
+Core rejects only selected entries that reach the builtin, including through
+helpers; an unused declaration or safe sibling entry is unaffected.
+
 `wgpu-core/src/device/resource.rs` rejects D3D11 passthrough shader modules
 with `NotCompiledForBackend`; it does not use an unreachable arm. The matching
 test in `tests/tests/wgpu-gpu/naga_capabilities.rs` records that behavior. This

@@ -990,6 +990,7 @@ impl super::Adapter {
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,
+            texture_sample_base_clamp_to_edge: true,
             texture_sample_level: true,
             texture_load: true,
             max_texture_sample_bias: u32::MAX,

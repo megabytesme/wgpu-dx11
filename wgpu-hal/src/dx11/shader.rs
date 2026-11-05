@@ -783,6 +783,61 @@ mod tests {
     }
 
     #[test]
+    fn level_9_pixel_profiles_reject_base_clamp_to_edge_sampling() {
+        let source = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(23) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }";
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Texture2dFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 23,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::PixelLevel9_3] {
+            let error = compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "main",
+                profile,
+                &bindings,
+            )
+            .expect_err("10Level9 pixel profiles cannot lower base-clamp sampling");
+            let NagaCompileError::Compilation(error) = error else {
+                panic!("expected an FXC diagnostic for {profile:?}: {error:?}");
+            };
+            std::println!("{profile:?} base-clamp sampling: {}", error.message);
+            assert!(error.message.contains("X4532"), "{error:?}");
+        }
+        compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel5_0,
+            &bindings,
+        )
+        .expect("full shader model supports the generated base-clamp helper");
+    }
+
+    #[test]
     fn creates_level_9_1_shader_objects() -> windows::core::Result<()> {
         use crate::dx11::{enumerate_native_adapters, FeatureLevel};
         use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;

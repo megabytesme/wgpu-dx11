@@ -665,16 +665,24 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
 
     let texture_query_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 texture-query validation layout"),
-        entries: &[BindGroupLayoutEntry {
-            binding: 7,
-            visibility: ShaderStages::FRAGMENT,
-            ty: BindingType::Texture {
-                sample_type: TextureSampleType::Float { filterable: true },
-                view_dimension: TextureViewDimension::D2,
-                multisampled: false,
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            BindGroupLayoutEntry {
+                binding: 23,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
     });
     let texture_query_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 texture-query pipeline layout"),
@@ -685,12 +693,16 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         label: Some("FL9_1 image-query selected-entry shader"),
         source: ShaderSource::Wgsl(
             "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(23) var smp: sampler;\n\
              fn dimensions() -> vec2u { return textureDimensions(image); }\n\
-             struct VertexOut { @builtin(position) position: vec4f }\n\
-             @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0)); }\n\
+             fn sample_base_clamp(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0), vec2f(0.5)); }\n\
              @fragment fn direct() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0); }\n\
              @fragment fn helper() -> @location(0) vec4f { return vec4f(vec2f(dimensions()), 0.0, 1.0); }\n\
              @fragment fn levels() -> @location(0) vec4f { return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0); }\n\
+             @fragment fn base_clamp_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }\n\
+             @fragment fn base_clamp_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_base_clamp(uv); }\n\
              @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }"
                 .into(),
         ),
@@ -731,8 +743,16 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             || drop(create_texture_query_pipeline(entry)),
         );
     }
+    for entry in ["base_clamp_direct", "base_clamp_helper"] {
+        expect_validation_error_containing(
+            &device,
+            "selected textureSampleBaseClampToEdge",
+            "textureSampleBaseClampToEdge is not supported",
+            || drop(create_texture_query_pipeline(entry)),
+        );
+    }
     drop(create_texture_query_pipeline("safe"));
-    println!("PASS: public core rejected selected textureDimensions/textureNumLevels use before HAL and compiled a safe sibling entry");
+    println!("PASS: public core rejected selected texture queries and textureSampleBaseClampToEdge before HAL, including helper use, and compiled a safe sibling entry");
 
     expect_validation_error(&device, "3D texture creation", || {
         drop(device.create_texture(&TextureDescriptor {

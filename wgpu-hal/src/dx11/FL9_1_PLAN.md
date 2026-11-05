@@ -129,8 +129,11 @@ contract is safe. This plan does not claim WebGPU conformance.
    sampling remains allowed. Selected-entry `textureDimensions` and
    `textureNumLevels` use is now gated by a downlevel limit; the current FL9_1
    HLSL compiler path rejects image-query lowering before HAL, while safe
-   sibling entries remain usable. Continue checking other WGSL expressions
-   against the FL9_1 compiler path.
+   sibling entries remain usable. `textureSampleBaseClampToEdge` has its own
+   selected-entry gate because its HLSL lowering uses image queries and
+   explicit-level sampling; both 9_1 and 9_3 pixel profiles reject it with
+   FXC X4532, including through a helper. Continue checking other WGSL
+   expressions against the FL9_1 compiler path.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

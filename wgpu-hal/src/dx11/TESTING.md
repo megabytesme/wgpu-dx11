@@ -165,6 +165,15 @@ entries remain accepted. The D3D11 projection keeps this implementation limit
 false even though the hardware model records query support from feature level
 10_0 onward.
 
+The separate `texture_sample_base_clamp_to_edge` limit covers the WGSL
+`textureSampleBaseClampToEdge` builtin. Its Naga HLSL lowering uses both
+`GetDimensions` and `SampleLevel`; FXC reports X4532 for
+`ps_4_0_level_9_1` and `ps_4_0_level_9_3`, while the shader-model 5 control
+compiles. CPU core tests cover direct use, helper reachability, safe sibling
+entry points and the default-supported projection. The strict public FL9_1
+test verifies that the selected-entry gate produces a validation error before
+HAL for direct and helper-reached use.
+
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
 unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within

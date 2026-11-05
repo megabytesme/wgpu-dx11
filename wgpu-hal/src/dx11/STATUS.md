@@ -95,6 +95,11 @@ X3548 in both tested 9_1 and 9_3 pixel profiles. The selected-entry
 unused query entries do not block safe siblings. The FL9_1 public projection
 reports this limit unavailable, and `wgpu-info` displays it.
 
+`textureSampleBaseClampToEdge` is gated separately: Naga lowers it through
+`GetDimensions` and `SampleLevel`, which FXC rejects with X4532 in both tested
+10Level9 pixel profiles. The selected-entry limit follows helper calls and
+rejects this operation before HAL; the FL9_1 projection reports it unavailable.
+
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
 D24S8 depth testing and validates all 1,024 offscreen pixels. Strict execution

@@ -398,6 +398,10 @@ impl Capabilities {
                 fragment_position: false,
                 texture_load: false,
                 texture_query: self.hardware.texture_query && self.backend.texture_query,
+                texture_sample_base_clamp_to_edge: self.hardware.texture_query
+                    && self.hardware.texture_sample_level
+                    && self.backend.texture_query
+                    && self.backend.texture_sample_level,
                 max_texture_sample_bias: 3,
                 texture_sample_bias_dynamic: false,
                 texture_sample_bias_offset: false,
@@ -829,6 +833,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.vertex_index_input);
         assert!(!exposed.downlevel.limits.instance_index_input);
         assert!(!exposed.downlevel.limits.texture_query);
+        assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);
         assert!(!exposed.downlevel.limits.texture_sample_level);
         assert_eq!(
             exposed

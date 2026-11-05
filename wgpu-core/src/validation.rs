@@ -288,6 +288,7 @@ struct EntryPoint {
     fragment_position_used: bool,
     texture_load_used: bool,
     texture_query_used: bool,
+    texture_sample_base_clamp_to_edge_used: bool,
     resources: Vec<naga::Handle<Resource>>,
     uniform_constant_vectors: u32,
     #[allow(unused)]
@@ -584,6 +585,41 @@ fn entry_point_uses_texture_query(module: &naga::Module, entry_point: &naga::Ent
         }
         let function = &module.functions[handle];
         if uses_query(function) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
+}
+
+fn entry_point_uses_texture_sample_base_clamp_to_edge(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> bool {
+    let uses_base_clamp = |function: &naga::Function| {
+        function.expressions.iter().any(|(_, expression)| {
+            matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    clamp_to_edge: true,
+                    ..
+                }
+            )
+        })
+    };
+    if uses_base_clamp(&entry_point.function) {
+        return true;
+    }
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if uses_base_clamp(function) {
             return true;
         }
         collect_called_functions(&function.body, &mut called_functions);
@@ -1699,6 +1735,8 @@ impl Interface {
                 ),
                 texture_load_used: entry_point_uses_texture_load(module, entry_point),
                 texture_query_used: entry_point_uses_texture_query(module, entry_point),
+                texture_sample_base_clamp_to_edge_used:
+                    entry_point_uses_texture_sample_base_clamp_to_edge(module, entry_point),
                 texture_sample_biases: entry_point_texture_sample_biases(module, entry_point),
                 fragment_derivatives_used: entry_point_uses_fragment_derivatives(
                     module,
@@ -1962,6 +2000,20 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.texture_query_used && !limits.texture_query)
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.texture_sample_base_clamp_to_edge_used
+            && !limits.texture_sample_base_clamp_to_edge)
     }
 
     pub(crate) fn entry_point_uses_unsupported_texture_sample_bias(
@@ -3244,6 +3296,69 @@ mod tests {
             .unwrap());
         assert!(interface
             .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            fn sample_base_clamp(uv: vec2f) -> vec4f {
+                return textureSampleBaseClampToEdge(image, smp, uv);
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBaseClampToEdge(image, smp, uv);
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return sample_base_clamp(uv);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            texture_sample_base_clamp_to_edge: false,
+            ..Default::default()
+        };
+
+        for entry in ["direct", "helper"] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fl91,
+                )
+                .unwrap());
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &wgt::DownlevelLimits::default(),
+                )
+                .unwrap());
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+                naga::ShaderStage::Fragment,
+                "safe",
+                &fl91,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
                 naga::ShaderStage::Fragment,
                 "missing",
                 &fl91,
