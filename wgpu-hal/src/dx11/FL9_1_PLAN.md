@@ -445,14 +445,13 @@ The 16-bit normalized and packed format audit is recorded in
 device, the packed Windows 8 family is filterable, and the remaining R16 query
 results provide no additional sampled candidates. Follow-up R32 and D32
 queries produced no texture or depth candidate. R8_UNORM, R8G8_UNORM and
-B5G6R5 now have query-gated single-mip color attachment, GPU copy and CPU
-readback support. Strict public GPU readback validates partial copies for all
-three formats, including untouched texels, nonzero destination origin and
-padded rows. The new copy test starts from uploaded resources; next extend the
-public attachment test to combine `COLOR_TARGET`, `RESOURCE` and `COPY_SRC`,
-then copy and read back rendered narrow-format contents. This validates the
-full query-gated attachment-to-copy path. Continue the public core/HAL contract
-audit from these bounded format reports. Add another format only when its
-selected-device query, native resource/view path and representative GPU output
-can all be validated. Keep unsupported usages out of the projection and
-preserve historical FL9_1 and ARM32 as unverified targets.
+B5G6R5 have query-gated single-mip color attachment, GPU copy and CPU readback
+support. Strict public GPU tests validate partial copies for all three
+formats, including untouched texels, nonzero destination origins and padded
+rows. They also render into each format with `RESOURCE | COLOR_TARGET |
+COPY_SRC`, copy the attachment to a padded readback buffer and check all 64
+native texels. Continue the public core/HAL contract audit, beginning with
+read-only depth/stencil render-pass combinations permitted by core. Add another
+format only when its selected-device query, native resource/view path and
+representative GPU output can all be validated. Keep unsupported usages out of
+the projection and preserve historical FL9_1 and ARM32 as unverified targets.

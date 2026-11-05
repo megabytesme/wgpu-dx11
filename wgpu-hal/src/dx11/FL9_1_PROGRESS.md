@@ -6508,3 +6508,50 @@ cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,
 rustfmt --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/texture.rs wgpu/tests/dx11_public.rs
 git diff --check
 ```
+
+## Follow-up — rendered narrow-format copy/readback
+
+Code checkpoint `52b573401` extends the selected-device `COPY_SRC` proof to
+the combined `RESOURCE | COLOR_TARGET | COPY_SRC` usage for R8_UNORM,
+R8G8_UNORM and B5G6R5. The public test renders a constant color into each
+attachment, samples the result into RGBA8, and also copies the native attachment
+to a nonzero-offset readback buffer with 256-byte rows. It checks all 64
+sampled pixels, all 64 raw texels, the offset prefix and row padding. This
+covers contents produced by rendering, in addition to the prior partial-copy
+test that began from uploads.
+
+R8's sampled and raw red values were `[66]`; RG8 sampled `[66, 130]` while its
+native copied bytes were `[66, 129]`; RGB565 decoded to `[66, 130, 132]` and
+its packed bytes matched the corresponding 5:6:5 quantization. The raw RG8
+green check allows a one-code difference from the RGBA8 sampled result, so it
+checks every texel without hard-coding the RTX driver's intermediate rounding.
+Follow-up code checkpoint `2d3520c39` applies this tolerance and reruns the
+strict suite.
+
+Strict hardware mode passed the focused rendered-attachment test and the full
+public suite, 26/26, on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, physical adapter, software=false), requested and actual
+FL9_1. One optional Float16x2 input branch was visibly skipped because the
+selected FL9_1 device did not report IA support; no hardware test was skipped.
+The combined-usage synthetic capability case passed 1/1. The targeted
+strict HAL suite had passed 359/359 immediately before this test-only
+extension; HAL and public Clippy passed, with nine pre-existing HAL warnings
+and no public warnings. Rustfmt and `git diff --check` passed.
+
+Exact strict command, run with Rust 1.93.1 in the Visual Studio 2022 x64
+environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 narrow_optional_copy_sources_require_render_target_support_and_backend_paths -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --lib --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+The tested format masks remain R8=`0x0002d3e0`, RG8=`0x0002c320` and
+B5G6R5=`0x0026f3a0`; each has `RENDER_TARGET`. These results apply to the
+modern RTX forced to FL9_1 and do not verify historical FL9_1 drivers or ARM32
+UWP. Next audit core-valid read-only depth/stencil render-pass combinations.

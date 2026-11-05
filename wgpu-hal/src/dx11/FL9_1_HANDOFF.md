@@ -3,27 +3,26 @@
 ## Current mission state — 2026-11-05
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`; latest implementation commit `877c4e9bc` adds
-query-gated copy and readback paths for R8_UNORM, R8G8_UNORM and B5G6R5. The
-opt-in public D3D11 backend supports a conservative offscreen path and a
-constrained HWND path; it is not WebGPU-compliant. The new test forced the RTX
-3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) to requested
-and actual FL9_1 and checked all 24 texels and padded rows for each format
-after a partial GPU texture copy. Strict HAL passed 359/359, public D3D11
-26/26, the controlled core fixture 1/1, selected adapter enumeration 1/1,
-and core DX12 86/86. Exact commands and query masks are in
-`FL9_1_PROGRESS.md`.
+The branch is `uwp-dx11`; implementation commit `52b573401` adds strict
+readback directly from rendered R8_UNORM, R8G8_UNORM and B5G6R5
+attachments. The opt-in public D3D11 backend supports a conservative offscreen
+path and a constrained HWND path; it is not WebGPU-compliant. The full strict
+public D3D11 suite passed 26/26 after rounding-tolerance follow-up `2d3520c39`
+on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), explicitly requested and actual FL9_1. Each
+new attachment case checked 64 sampled RGBA8 pixels, 64 raw copied texels,
+the nonzero output offset and row padding. The earlier transfer checkpoint
+passed private HAL 359/359, the controlled core fixture 1/1, selected adapter
+enumeration 1/1 and core DX12 86/86. The synthetic combined-usage capability
+case passed; HAL/public Clippy, rustfmt and diff checks passed. Exact commands,
+quantization observations and query masks are in `FL9_1_PROGRESS.md`.
 
 The constrained HWND path has hidden-window configure/acquire/present/resize
 and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. The tested partial-copy path
-starts from an uploaded texture; next extend the public render-target test to
-combine `COLOR_TARGET`, `RESOURCE` and `COPY_SRC`, then copy/read back rendered
-R8, RG8 and RGB565 contents. This verifies the full query-gated attachment to
-copy path. Keep optional formats query-gated and do not push.
+format/usage and public core/HAL contract audits. The next bounded audit is read-only depth/stencil render-pass combinations that core permits; preserve the read-only attachment rules and add a strict public test for any combination not already covered. Keep optional formats query-gated and do not push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
