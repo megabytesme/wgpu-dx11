@@ -5472,3 +5472,24 @@ The code commit is `26321bf74`. Continue auditing other core-accepted shader
 operations and HAL paths. Public HWND presentation still needs a cross-layer
 scheduling design that avoids synchronous DXGI `Present` reentrancy; historical
 FL9_1 drivers and ARM32 UWP hardware remain unverified.
+
+## Checkpoint — FL9_1 sample-index validation — `7f48be505`
+
+The next shader-contract audit confirmed that `@builtin(sample_index)` does
+not require another FL9_1-specific pipeline limit: core passes the selected
+adapter's `DownlevelFlags::MULTISAMPLED_SHADING` into Naga validation, and the
+FL9_1 projection omits that flag. Added a strict public regression which opens
+the physical device at forced FL9_1, verifies that a fragment entry using
+`sample_index` fails through the expected Naga capability diagnostic, and
+verifies a single-sample shader module remains accepted. This is a validation
+test, not a GPU draw. The code-only checkpoint is `7f48be505`.
+
+Verification used Rust 1.93.1 and the VS 2022 x64 environment:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_sample_index_without_multisampled_shading -- --nocapture --test-threads=1`: passed 1/1 on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, `software=false`.
+- `rustfmt +1.93 --check wgpu/tests/dx11_public.rs` and `git diff --check`: passed.
+
+The full HAL/public/core suites were not rerun for this isolated regression.
+Continue the selected shader/core/HAL audit and the HWND presentation
+scheduling investigation. Historical FL9_1 hardware and ARM32 UWP remain
+unverified.

@@ -1440,3 +1440,17 @@ See `FL9_1_PROGRESS.md` for exact commands and resolved build/test issues.
 Continue the shader/core/HAL compatibility audit. Public HWND presentation is
 still gated on a safe scheduling design for DXGI's synchronous reentrancy;
 historical FL9_1 drivers and ARM32 UWP remain unverified.
+
+## Current checkpoint — FL9_1 sample-index validation — `7f48be505`
+
+Core already rejects `@builtin(sample_index)` during WGSL/Naga validation
+because the FL9_1 projection omits `DownlevelFlags::MULTISAMPLED_SHADING`.
+The strict public regression passed 1/1 on the NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1; it
+confirmed the capability error and acceptance of a single-sample shader. No
+GPU draw was performed by this validation-only case. Exact command and scope
+are in `FL9_1_PROGRESS.md`.
+
+Continue auditing shader and core/HAL contracts, then return to safe HWND
+presentation scheduling. The adapter remains opt-in/offscreen-only;
+historical FL9_1 hardware and ARM32 UWP remain unverified.

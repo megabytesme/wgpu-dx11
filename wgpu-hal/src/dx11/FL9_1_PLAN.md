@@ -138,7 +138,10 @@ contract is safe. This plan does not claim WebGPU conformance.
    `SV_Coverage`, which Microsoft documents as writable only from `ps_4_1`,
    while FL9_1 compiles `ps_4_0_level_9_1`. FXC rejection and the selected-entry
    core error are tested; a possible single-sample discard emulation remains
-   unimplemented.
+   unimplemented. Fragment `@builtin(sample_index)` is already rejected at
+   WGSL/Naga validation because the FL9_1 projection omits
+   `MULTISAMPLED_SHADING`; a strict public regression now confirms this path
+   and acceptance of a single-sample shader.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`
