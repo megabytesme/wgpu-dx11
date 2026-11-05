@@ -138,6 +138,12 @@ constant helper calls. The same public test confirms that a multi-mip R8
 texture is rejected because the selected format projection marks R8 as
 single-mip-only.
 
+The same strict test also expects core validation errors for direct and
+helper-reached `dpdx` / `dpdy` and `textureSampleGrad` entry points. CPU-only
+Naga interface tests verify selected-entry and helper-call tracking. An FXC
+compiler test records that `ddx` cannot map to `ps_4_0_level_9_1` and
+`SampleGrad` is unsupported by that profile.
+
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
 unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within

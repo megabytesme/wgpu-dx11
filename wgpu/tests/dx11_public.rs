@@ -3073,6 +3073,8 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             "@group(0) @binding(17) var levels: texture_2d<f32>;\n\
              @group(0) @binding(23) var mip_sampler: sampler;\n\
              fn sample_with_bias(uv: vec2f, bias: f32) -> vec4f { return textureSampleBias(levels, mip_sampler, uv, bias); }\n\
+             fn sample_with_grad(uv: vec2f) -> vec4f { return textureSampleGrad(levels, mip_sampler, uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01)); }\n\
+             fn derivative_fn(uv: vec2f) -> vec2f { return dpdy(uv); }\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.5, 1.0), uv); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(levels, mip_sampler, input.uv * 2.0); }\n\
@@ -3082,7 +3084,11 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
              @fragment fn bias_dynamic(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, input.uv.x); }\n\
              @fragment fn bias_helper_dynamic(input: VertexOut) -> @location(0) vec4f { return sample_with_bias(input.uv, input.uv.x); }\n\
              @fragment fn bias_out_of_range(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 4.0); }\n\
-             @fragment fn bias_offset(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 1.0, vec2i(0, 0)); }"
+             @fragment fn bias_offset(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 1.0, vec2i(0, 0)); }\n\
+             @fragment fn derivative_direct(input: VertexOut) -> @location(0) vec4f { return vec4f(dpdx(input.uv), 0.0, 1.0); }\n\
+             @fragment fn derivative_helper(input: VertexOut) -> @location(0) vec4f { return vec4f(derivative_fn(input.uv), 0.0, 1.0); }\n\
+             @fragment fn gradient_direct(input: VertexOut) -> @location(0) vec4f { return textureSampleGrad(levels, mip_sampler, input.uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01)); }\n\
+             @fragment fn gradient_helper(input: VertexOut) -> @location(0) vec4f { return sample_with_grad(input.uv); }"
                 .into(),
         ),
     });
@@ -3144,6 +3150,10 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         "bias_helper_dynamic",
         "bias_out_of_range",
         "bias_offset",
+        "derivative_direct",
+        "derivative_helper",
+        "gradient_direct",
+        "gradient_helper",
     ] {
         expect_validation_error(&device, &format!("unsupported {entry_point}"), || {
             drop(create_pipeline(entry_point));
@@ -3269,7 +3279,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 selected the expected mip colors across 256 pixels; core/HAL rejected dynamic, helper-dynamic, out-of-range and offset bias forms");
+    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 selected the expected mip colors across 256 pixels; core rejected unsupported bias, derivative and explicit-gradient forms before HAL");
 }
 
 #[test]

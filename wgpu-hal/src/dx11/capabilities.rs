@@ -36,6 +36,7 @@ pub(super) struct HardwareGuarantees {
     pub depth_stencil_mip_levels: bool,
     pub geometry_shader: bool,
     pub compute_shader: bool,
+    pub fragment_derivatives: bool,
     pub vertex_texture_sampling: bool,
     pub two_sided_stencil: bool,
     pub r8_unorm_sampled_texture: bool,
@@ -84,6 +85,7 @@ impl HardwareGuarantees {
             depth_stencil_mip_levels: level.as_raw() >= L10_0.as_raw(),
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
+            fragment_derivatives: level.as_raw() >= L9_3.as_raw(),
             vertex_texture_sampling: level.as_raw() >= L10_0.as_raw(),
             two_sided_stencil: level != L9_1,
             r8_unorm_sampled_texture: true,
@@ -206,6 +208,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_index_input: bool,
     pub instance_index_input: bool,
     pub vertex_texture_sampling: bool,
+    pub fragment_derivatives: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub d24s8_stencil_operations: bool,
@@ -270,6 +273,7 @@ impl BackendCapabilities {
         vertex_index_input: false,
         instance_index_input: false,
         vertex_texture_sampling: false,
+        fragment_derivatives: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
         d24s8_stencil_operations: true,
@@ -365,6 +369,8 @@ impl Capabilities {
                 max_texture_sample_bias: 3,
                 texture_sample_bias_dynamic: false,
                 texture_sample_bias_offset: false,
+                fragment_derivatives: self.hardware.fragment_derivatives
+                    && self.backend.fragment_derivatives,
                 vertex_format_mask: self.vertex_input_format_mask(),
             },
         };
@@ -909,13 +915,83 @@ mod tests {
     #[test]
     fn feature_level_guarantees_are_specific_and_do_not_promote_backend() {
         let expected = [
-            (FeatureLevel::L9_1, 2048, 1, 128, false, false, false, false),
-            (FeatureLevel::L9_2, 2048, 1, 2048, false, false, false, true),
-            (FeatureLevel::L9_3, 4096, 4, 8192, false, false, false, true),
-            (FeatureLevel::L10_0, 8192, 8, 8192, true, false, true, true),
-            (FeatureLevel::L10_1, 8192, 8, 8192, true, false, true, true),
-            (FeatureLevel::L11_0, 16384, 8, 16384, true, true, true, true),
-            (FeatureLevel::L11_1, 16384, 8, 16384, true, true, true, true),
+            (
+                FeatureLevel::L9_1,
+                2048,
+                1,
+                128,
+                false,
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                FeatureLevel::L9_2,
+                2048,
+                1,
+                2048,
+                false,
+                false,
+                false,
+                true,
+                false,
+            ),
+            (
+                FeatureLevel::L9_3,
+                4096,
+                4,
+                8192,
+                false,
+                false,
+                false,
+                true,
+                true,
+            ),
+            (
+                FeatureLevel::L10_0,
+                8192,
+                8,
+                8192,
+                true,
+                false,
+                true,
+                true,
+                true,
+            ),
+            (
+                FeatureLevel::L10_1,
+                8192,
+                8,
+                8192,
+                true,
+                false,
+                true,
+                true,
+                true,
+            ),
+            (
+                FeatureLevel::L11_0,
+                16384,
+                8,
+                16384,
+                true,
+                true,
+                true,
+                true,
+                true,
+            ),
+            (
+                FeatureLevel::L11_1,
+                16384,
+                8,
+                16384,
+                true,
+                true,
+                true,
+                true,
+                true,
+            ),
         ];
         for (
             level,
@@ -926,6 +1002,7 @@ mod tests {
             compute,
             depth_stencil_mip_levels,
             two_sided_stencil,
+            fragment_derivatives,
         ) in expected
         {
             let caps = model(level);
@@ -940,6 +1017,8 @@ mod tests {
                 depth_stencil_mip_levels
             );
             assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
+            assert_eq!(caps.hardware.fragment_derivatives, fragment_derivatives);
+            assert!(!caps.backend.fragment_derivatives);
             assert!(
                 caps.hardware.vertex_input_formats & fl91_vertex_formats() == fl91_vertex_formats()
             );

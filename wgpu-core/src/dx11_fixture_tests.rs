@@ -101,6 +101,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     max_texture_sample_bias: 3,
                     texture_sample_bias_dynamic: false,
                     texture_sample_bias_offset: false,
+                    fragment_derivatives: false,
                     vertex_format_mask,
                 },
                 ..Default::default()

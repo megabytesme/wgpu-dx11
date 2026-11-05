@@ -63,9 +63,13 @@ rejects the unsupported `instance_index` builtin.
 The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
 bias and texel offsets. Core's per-entry analysis follows helper calls, so
 unsupported bias forms produce public validation errors instead of HAL
-compiler errors. `wgpu-info` prints all three limits. Synthetic tests cover
-fractional literals and entry-point isolation; this does not claim full
-`textureSampleBias` support.
+compiler errors. The FL9_1 projection also disables fragment derivatives and
+explicit texture gradients; core rejects selected-entry `dpdx`, `dpdy` and
+`textureSampleGrad`, including helper calls. FXC diagnostics show `ddx` cannot
+map to the level-9_1 instruction set and `SampleGrad` is unsupported by
+`ps_2_0`. `wgpu-info` prints these downlevel limits. Synthetic tests cover
+fractional bias, derivative helpers and entry-point isolation; this does not
+claim full biased or explicit-gradient sampling support.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

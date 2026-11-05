@@ -991,6 +991,7 @@ impl super::Adapter {
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
             texture_sample_bias_offset: true,
+            fragment_derivatives: true,
             vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };

@@ -292,6 +292,7 @@ struct EntryPoint {
     spec_constants: Vec<SpecializationConstant>,
     sampling_pairs: FastHashSet<(naga::Handle<Resource>, naga::Handle<Resource>)>,
     texture_sample_biases: Vec<TextureSampleBias>,
+    fragment_derivatives_used: bool,
     workgroup_size: [u32; 3],
     dual_source_blending: bool,
     task_payload_size: Option<u32>,
@@ -455,6 +456,43 @@ fn entry_point_texture_sample_biases(
         collect_called_functions(&function.body, &mut called_functions);
     }
     biases
+}
+
+fn function_uses_fragment_derivatives(function: &naga::Function) -> bool {
+    function.expressions.iter().any(|(_, expression)| {
+        matches!(
+            *expression,
+            naga::Expression::Derivative { .. }
+                | naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Gradient { .. },
+                    ..
+                }
+        )
+    })
+}
+
+fn entry_point_uses_fragment_derivatives(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> bool {
+    if function_uses_fragment_derivatives(&entry_point.function) {
+        return true;
+    }
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function_uses_fragment_derivatives(function) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
 }
 
 fn entry_point_uses_texture_load(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
@@ -1595,6 +1633,10 @@ impl Interface {
                 ),
                 texture_load_used: entry_point_uses_texture_load(module, entry_point),
                 texture_sample_biases: entry_point_texture_sample_biases(module, entry_point),
+                fragment_derivatives_used: entry_point_uses_fragment_derivatives(
+                    module,
+                    entry_point,
+                ),
                 ..Default::default()
             };
             for arg in entry_point.function.arguments.iter() {
@@ -1830,6 +1872,21 @@ impl Interface {
                     None => !limits.texture_sample_bias_dynamic,
                 }
         }))
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_fragment_derivatives(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(stage == naga::ShaderStage::Fragment
+            && entry_point.fragment_derivatives_used
+            && !limits.fragment_derivatives)
     }
 
     pub fn finalize_entry_point_name(
@@ -2764,6 +2821,95 @@ mod tests {
         }
         assert!(interface
             .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn fragment_derivative_limits_follow_selected_entry_and_helper_calls() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            fn derivative_helper(uv: vec2f) -> vec2f { return dpdy(uv); }
+            fn gradient_helper(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01));
+            }
+            @fragment fn direct_derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return vec4f(dpdx(uv), 0.0, 1.0);
+            }
+            @fragment fn helper_derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return vec4f(derivative_helper(uv), 0.0, 1.0);
+            }
+            @fragment fn explicit_gradient(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01));
+            }
+            @fragment fn helper_gradient(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return gradient_helper(uv);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            @vertex fn vertex_safe() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            fragment_derivatives: false,
+            ..Default::default()
+        };
+
+        for entry in [
+            "direct_derivative",
+            "helper_derivative",
+            "explicit_gradient",
+            "helper_gradient",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_fragment_derivatives(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &fl91,
+                    )
+                    .unwrap(),
+                "{entry} should be rejected"
+            );
+            assert!(
+                !interface
+                    .entry_point_uses_unsupported_fragment_derivatives(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &wgt::DownlevelLimits::default(),
+                    )
+                    .unwrap(),
+                "unrestricted capabilities must allow {entry}"
+            );
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_derivatives(
+                naga::ShaderStage::Fragment,
+                "safe",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_derivatives(
+                naga::ShaderStage::Vertex,
+                "vertex_safe",
+                &fl91,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_derivatives(
                 naga::ShaderStage::Fragment,
                 "missing",
                 &fl91,

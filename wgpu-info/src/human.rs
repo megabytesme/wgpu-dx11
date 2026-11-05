@@ -302,6 +302,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             max_texture_sample_bias,
             texture_sample_bias_dynamic,
             texture_sample_bias_offset,
+            fragment_derivatives,
             vertex_format_mask,
         },
         flags,
@@ -346,6 +347,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tMaximum absolute texture sample bias: {max_texture_sample_bias}")?;
     writeln!(output, "\t\tDynamic texture sample bias: {texture_sample_bias_dynamic}")?;
     writeln!(output, "\t\tTexture sample bias offsets: {texture_sample_bias_offset}")?;
+    writeln!(output, "\t\tFragment shader derivatives: {fragment_derivatives}")?;
     writeln!(output, "\t\tVertex format mask: {vertex_format_mask:#018x}")?;
     let max_downlevel_flag_width = wgpu::DownlevelFlags::max_debug_print_width();
     for bit in wgpu::DownlevelFlags::all().iter() {

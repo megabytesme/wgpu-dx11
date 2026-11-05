@@ -618,6 +618,26 @@ mod tests {
     }
 
     #[test]
+    fn level_9_1_pixel_profile_rejects_derivative_instructions() {
+        let sources = [
+            (
+                "ddx",
+                "float4 main(float2 uv : TEXCOORD0) : SV_TARGET { return float4(ddx(uv), 0.0, 1.0); }",
+            ),
+            (
+                "SampleGrad",
+                "Texture2D<float4> image : register(t0); SamplerState image_sampler : register(s0); float4 main(float2 uv : TEXCOORD0) : SV_TARGET { return image.SampleGrad(image_sampler, uv, float2(0.01, 0.0), float2(0.0, 0.01)); }",
+            ),
+        ];
+        for (label, source) in sources {
+            let error = compile_hlsl(source, "main", ShaderProfile::PixelLevel9_1)
+                .expect_err("FL9_1 profile must reject derivative instructions");
+            std::println!("FL9_1 {label} FXC diagnostic: {}", error.message);
+            assert!(!error.message.is_empty());
+        }
+    }
+
+    #[test]
     fn creates_level_9_1_shader_objects() -> windows::core::Result<()> {
         use crate::dx11::{enumerate_native_adapters, FeatureLevel};
         use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;

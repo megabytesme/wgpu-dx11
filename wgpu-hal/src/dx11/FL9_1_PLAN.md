@@ -104,7 +104,10 @@ contract is safe. This plan does not claim WebGPU conformance.
    offset), and selected-entry core validation follows helper calls so
    unsupported bias forms fail before HAL. Strict public readback verifies
    implicit sampling and -3/+1/+3 literal bias mip selection. Continue the
-   shader audit for additional core-accepted compiler failures.
+   shader audit for additional core-accepted compiler failures. The
+   `ps_4_0_level_9_1` projection also disables pixel derivatives and explicit
+   texture gradients; selected-entry core validation follows helper calls and
+   rejects `dpdx`, `dpdy` and `textureSampleGrad` before HAL.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

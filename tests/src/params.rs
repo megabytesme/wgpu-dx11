@@ -30,6 +30,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         max_texture_sample_bias: 0,
         texture_sample_bias_dynamic: false,
         texture_sample_bias_offset: false,
+        fragment_derivatives: false,
         vertex_format_mask: 0,
     },
     shader_model: wgpu::ShaderModel::Sm2,

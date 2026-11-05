@@ -1145,6 +1145,9 @@ pub struct DownlevelLimits {
     /// Whether `textureSampleBias` may specify a constant texel offset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_bias_offset: bool,
+    /// Whether fragment shaders may use derivatives or explicit texture gradients.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub fragment_derivatives: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1194,6 +1197,7 @@ impl Default for DownlevelLimits {
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
             texture_sample_bias_offset: true,
+            fragment_derivatives: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -1246,6 +1250,7 @@ impl DownlevelLimits {
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
             && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
             && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
+            && (!required.fragment_derivatives || self.fragment_derivatives)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -1303,6 +1308,7 @@ impl DownlevelCapabilities {
                 >= DownlevelLimits::default().max_texture_sample_bias
             && self.limits.texture_sample_bias_dynamic
             && self.limits.texture_sample_bias_offset
+            && self.limits.fragment_derivatives
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5
@@ -1594,6 +1600,7 @@ mod tests {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
+            fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         let required = DownlevelLimits {
@@ -1619,6 +1626,7 @@ mod tests {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
+            fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
@@ -1732,6 +1740,7 @@ mod tests {
             "max_texture_sample_bias",
             "texture_sample_bias_dynamic",
             "texture_sample_bias_offset",
+            "fragment_derivatives",
         ] {
             object.remove(field);
         }
@@ -1747,6 +1756,7 @@ mod tests {
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);
         assert!(limits.texture_sample_bias_dynamic);
         assert!(limits.texture_sample_bias_offset);
+        assert!(limits.fragment_derivatives);
     }
 
     #[test]
@@ -1845,17 +1855,23 @@ mod tests {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
+            fragment_derivatives: false,
             ..DownlevelLimits::default()
         };
         assert!(available.check_limits(&DownlevelLimits {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
+            fragment_derivatives: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));
         assert!(!available.check_limits(&DownlevelLimits {
             max_texture_sample_bias: 4,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            fragment_derivatives: true,
             ..DownlevelLimits::default()
         }));
         assert!(!DownlevelCapabilities {
