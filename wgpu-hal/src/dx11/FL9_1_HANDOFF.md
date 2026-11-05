@@ -1665,3 +1665,25 @@ D32_FLOAT and D32_FLOAT_S8X24_UINT on that selected device. Neither R32 format
 reported `TEXTURE2D`; D32 queries were unavailable. Do not expand formats from
 those results. Exact query masks and the strict command are in
 `FL9_1_PROGRESS.md`.
+
+## Current checkpoint — query-backed R8/RG8 attachments
+
+Code commit: `a6d958664` (`dx11: enable query-gated R8/RG8 color attachments`).
+
+This commit adds single-mip R8_UNORM and R8G8_UNORM color
+attachments when the selected device's `CheckFormatSupport` query positively
+reports `RENDER_TARGET`. Both remain non-blendable, single layer, single sample
+and unavailable as copy sources or direct readback. Strict public wgpu
+readback on the RTX 3090 Ti forced to FL9_1 verified exactly 64 pixels of
+`[64, 0, 0, 255]` for R8 and 64 pixels of `[64, 191, 0, 255]` for RG8 after
+clear and sample. The full HAL suite passed 356/356, public D3D11 passed
+25/25, core fixture passed 90/90, DX12 core passed 86/86, and selected
+capability tests passed 28/28. Strict runs kept optional hardware skips
+visible; details are in `FL9_1_PROGRESS.md`.
+
+This is a modern-device observation, not proof for historical 9_1 hardware or
+ARM32 UWP. Public D3D11 selection remains explicit opt-in. The next task is to
+continue the core/HAL validation audit from the remaining render-pass,
+resource-usage and shader-contract gaps in `FL9_1_PLAN.md`; do not expand
+format exposure without a selected-device query, implementation path and
+actual output test. No history was rewritten or pushed.

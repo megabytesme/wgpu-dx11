@@ -109,9 +109,12 @@ not a repository artifact.
    not a required FL9_1 sampled format, is exposed only after a positive
    selected-device `TEXTURE2D` query; `SHADER_SAMPLE` separately controls
    filterability. The RTX returned `0x0002c320`, and strict public
-   upload/sample readback passed. Both retain
-   sampled/upload-only restrictions. Color-target, copy-source, readback and
-   mip-chain uses remain unsupported. The required
+   upload/sample readback passed. R8_UNORM (`0x0002d3e0`) and R8G8_UNORM now
+   additionally expose single-mip render-attachment use after their selected
+   format query reports `RENDER_TARGET`; strict public clear-then-sample
+   readback matched all 64 pixels per format. These attachments are not
+   blendable or copy sources, and direct readback and mip chains remain
+   unsupported. The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
    the previously mapped formats, with a core per-format downlevel mask and
    strict GPU verification. Required RGBA8_SRGB and BGRA8_SRGB formats now
@@ -432,8 +435,10 @@ The 16-bit normalized and packed format audit is recorded in
 `CAPABILITIES.md`: R16G16_SNORM remains point-only on this selected FL9_1
 device, the packed Windows 8 family is filterable and sampled/upload-only, and
 the remaining R16 query results provide no additional sampled candidates.
-Follow-up R32 and D32 queries on the selected FL9_1 RTX likewise produced no
-texture or depth candidate. Continue the public core/HAL contract audit from
+Follow-up R32 and D32 queries produced no texture or depth candidate. The
+latest R8_UNORM and R8G8_UNORM queries additionally establish single-mip color
+attachment support on the selected device; core and public readback now cover
+the query-gated projection. Continue the public core/HAL contract audit from
 those bounded format reports. Add another format only when its selected-device
 query, native resource/view path and representative GPU output can all be
 validated. Keep unsupported usages out of the projection and preserve

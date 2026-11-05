@@ -6293,3 +6293,59 @@ cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 fl91_wgpu_proj
 Continue the public core/HAL contract audit. The format query evidence remains
 specific to the modern RTX forced to FL9_1; historical drivers and ARM32 UWP
 remain unverified.
+
+## Follow-up — query-backed R8/RG8 color attachments
+
+Code checkpoint: `a6d958664` (`dx11: enable query-gated R8/RG8 color attachments`).
+
+Extended the one-mip R8_UNORM and R8G8_UNORM paths to support color-attachment
+usage when the selected device reports `D3D11_FORMAT_SUPPORT_RENDER_TARGET`.
+The hardware guarantee, driver query, backend implementation and public
+projection remain separate: R8_UNORM is a required FL9_1 texture format but
+render-target support is not guaranteed; R8G8_UNORM is itself an optional
+format. Both are reported with `RENDER_ATTACHMENT` only after a positive
+per-format query and remain single-mip, single-layer, single-sample and
+non-blendable. Neither exposes `COPY_SRC` or direct readback. The existing
+sampled/upload path is preserved.
+
+The strict public test creates a dual-bound source texture for each format,
+clears it through an attachment-only view, samples its contents through a
+separate texture-binding view and reads an RGBA8 output. On the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+and actual FL9_1, `CheckFormatSupport` returned R8_UNORM=`0x0002d3e0` and
+R8G8_UNORM=`0x0002c320`. Both include `RENDER_TARGET` (`0x00004000`), while
+the separate `BLENDABLE` bit is not projected. The clear value
+`(0.25, 0.75, 0.5, 1.0)` sampled as `[64, 0, 0, 255]` for R8_UNORM and
+`[64, 191, 0, 255]` for R8G8_UNORM; all 128 output pixels matched exactly.
+
+The capability model tests positive, missing-query, unsupported-bit and
+backend-disabled cases. Synthetic queries also verify that a point-only
+format can retain attachment support without `SHADER_SAMPLE`, which controls
+filterability separately. The shared private sampled-format test now expects
+native target creation only for R8/RG8 when the actual query contains the
+render-target bit. The controlled core fixture checks the new R8 projection;
+the public GPU test also exercises both formats through core validation.
+
+Verification used Rust 1.93.1 in the Visual Studio 2022 x64 environment. With
+`WGPU_DX11_REQUIRE_HARDWARE=1`, the private HAL suite passed 356/356, including
+the selected-device capability diagnostic; six shader-execution subcases
+printed `SKIP` after separately confirming that unsupported integer-indexing
+shaders are rejected. The complete public D3D11 suite passed 25/25, including
+the new two-format GPU test; one optional Float16x2 input-format case skipped
+because the selected device reports no IA support. The complete controlled
+D3D11 core fixture passed 90/90, including adapter projection and public
+enumeration, and DX12 core passed 86/86.
+
+The relevant CPU capability subset passed 28/28. Clippy passed for HAL, core
+and the public test target. HAL retains nine pre-existing warnings and core
+one pre-existing collapsible-if warning; the public test target was warning
+free. `git diff --check` passed. Workspace formatting check still reports five
+pre-existing formatting differences in `naga/src/back/hlsl/writer.rs`; all
+changed Rust files pass formatting checks. No Naga formatting changes were
+made. The Visual Studio developer-shell setup continues to print its existing
+`Unknown error` banner despite resolving the MSVC tools and running all
+commands successfully.
+
+The next task remains the public core/HAL contract audit. These query results
+describe only the modern RTX 3090 Ti forced to FL9_1; historical FL9_1 drivers
+and ARM32 UWP remain unverified.
