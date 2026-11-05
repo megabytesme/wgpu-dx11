@@ -54,6 +54,9 @@ descriptor is rejected by core.
 A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
 wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
 projected formats are non-filterable and single-mip-only.
+An eleventh strict test verifies emulated per-instance vertex streams and a
+nonzero first-instance range (20 green, 20 yellow and 472 blue pixels); core
+rejects the unsupported `instance_index` builtin.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

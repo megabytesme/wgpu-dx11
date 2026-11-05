@@ -5020,3 +5020,29 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 The public offscreen contract and tested format subset are broader, but public
 HWND presentation, the full reachable-operation audit and historical FL9_1
 drivers remain outstanding.
+
+## Checkpoint — public instanced vertex streams — `aeb41c79e`
+
+Added a public strict GPU case using one per-vertex triangle stream plus a
+second `VertexStepMode::Instance` stream containing per-instance offsets and
+colors. `draw(0..3, 1..3)` selects records two and three; readback contains 20
+green, 20 yellow and 472 blue clear pixels, with no pixels from the skipped
+first red instance. This verifies both the emulated instance-rate binding and
+nonzero `first_instance` behavior through public core/HAL submission. The same
+test constructs a vertex entry that declares `instance_index` and confirms
+core rejects the pipeline before HAL.
+
+The focused strict test passed 1/1. The complete strict public wgpu suite
+passed 11/11 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested and actual FL9_1, `software=false`. Rust 1.93.1 test Clippy,
+targeted rustfmt and `git diff --check` passed. The Visual Studio x64 prompt
+printed its existing `vError: Unknown error` banner, but build, link and GPU
+execution succeeded. Exact command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+Public adapter presentation, the remaining core/HAL operation audit and
+historical FL9_1 devices remain outstanding.

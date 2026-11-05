@@ -141,6 +141,12 @@ unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within
 one channel value. It confirms the selected format reports allow sampling and
 uploads, but not filtering, and remain single-mip-only.
 
+An eleventh strict public test draws per-instance offsets and colors from a
+second vertex stream using `draw(0..3, 1..3)`. It verifies that the nonzero
+first-instance range selects the second and third records, while the skipped
+first record remains absent. It also confirms a vertex entry declaring
+`instance_index` is rejected by public core validation.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

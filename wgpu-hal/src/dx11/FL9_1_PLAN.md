@@ -316,3 +316,8 @@ Public Rg8Snorm and Rgba8Snorm capabilities now have upload, sample and
 conversion readback coverage through ordinary wgpu. The exact selected-device
 reports remain non-filterable and single-mip-only; all 64 output pixels matched
 the signed-to-unorm shader conversion.
+
+Public vertex input coverage now includes emulated per-instance streams with a
+nonzero `first_instance`; readback verifies the selected instance records and
+the skipped record. The public selected-entry gate rejects `instance_index`,
+which the FL9_1 shader path does not implement.

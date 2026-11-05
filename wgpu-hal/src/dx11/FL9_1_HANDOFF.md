@@ -1295,3 +1295,10 @@ strict public suite passes 10/10. A read-only texture/view/copy audit found no
 new undocumented contract gap; BC1 edge-partial upload limits remain the
 already documented private-HAL restriction. Full core/HAL auditing and safe
 HWND presentation remain open.
+
+Code commit `aeb41c79e` adds public per-instance vertex-stream rendering with
+`first_instance = 1`, validating two selected instance records and leaving the
+first record absent. Public core also rejects `instance_index`. The strict
+public suite now passes 11/11 on forced FL9_1; see `FL9_1_PROGRESS.md` for
+pixel counts and the exact command. The public presentation and comprehensive
+core/HAL audit are still unresolved.

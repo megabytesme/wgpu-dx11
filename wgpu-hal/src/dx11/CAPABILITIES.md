@@ -181,6 +181,11 @@ Public `Rg8Snorm` and `Rgba8Snorm` tests also verify the selected-device
 signed-normalized resources were sampled through wgpu and their converted
 values matched all 64 RGBA8 output pixels. Other SNORM formats and usages are
 not implied.
+Public rendering also verifies the implemented per-instance vertex-stream
+emulation with a nonzero first-instance range. The skipped first record does
+not render, the next two records produce distinct colors, and all other pixels
+retain the clear color. Core rejects `instance_index` entry points because the
+selected FL9_1 contract does not expose that system value.
 
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample
