@@ -4739,3 +4739,36 @@ The current core review remains focused on any core-valid operation that can
 reach unsupported HAL behavior. The public adapter still reports no surface
 capabilities; the known synchronous HWND `Present` reentrancy design remains
 the presentation blocker.
+
+## Checkpoint — selected FL9_1 texture-load validation
+
+Commit `a3a6a177c` (`dx11: gate FL9_1 texture loads in core`) adds
+`DownlevelLimits::texture_load`. Other backends keep the default enabled; the
+D3D11 selected-device projection disables it. Core records Naga `ImageLoad`
+usage per entry point, follows validated helper calls iteratively, and rejects
+only the selected vertex or fragment entry that uses a texture load. The
+pipeline error is a validation error and occurs before HAL compilation. A safe
+sibling entry in the same shader module remains usable. The production HAL
+restriction is unchanged; the optional native texel-load experiment remains
+disabled. The public strict test/example future poller now waits using a
+thread-unparking waker instead of panicking if an operation is pending.
+
+Verification on 2026-11-05 used pinned Rust 1.93.1 and Visual Studio 2022 x64:
+
+- `cargo +1.93 test --offline -j16 -p wgpu-types --lib texture_load_is_a_downlevel_capability` passed 1/1; the full wgpu-types library suite passed 70/70, and the old-shape serde compatibility test passed 1/1.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std sampled_texture_count_uses_the_selected_entry_point` passed 1/1. It covers direct and helper-reachable loads, unrelated sibling entries, stage selection and missing entry names.
+- With `WGPU_DX11_REQUIRE_HARDWARE=1`, the full controlled core fixture suite passed 81/81 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1. The targeted rerun passed 1/1 and logged the selected-entry textureLoad rejection before HAL, then completed the fixture's rendering/readback cases.
+- The strict public wgpu test passed 2/2 on the physical RTX at requested/actual FL9_1 with `software=false`. It printed the core rejection/safe-sibling pass; the public depth-tested render, dynamic uniform, transitions, concurrent-device reads and R8 sample checks passed.
+- The standalone public cube example passed on the same device and validated 112 red, 277 green and 635 blue-clear pixels (1,024 total).
+- The private D3D11 HAL suite passed 337/337 under strict hardware mode; the targeted DX12 core regression passed 77/77. The HAL/GLES/Vulkan check passed.
+- Clippy passed for wgpu-types (with serde), wgpu-core fixture, HAL with DX11/GLES/Vulkan, and wgpu tests/examples. Pinned rustfmt on changed Rust files and `git diff --check` passed.
+
+The first public-test invocation omitted the Visual Studio developer environment
+and failed at link time (`link.exe` not found); rerunning through
+`VsDevCmd.bat -arch=x64 -host_arch=x64` passed. The developer prompt continues
+to print `vError: Unknown error` while providing the working x64 toolchain.
+Git also reports its existing LF-to-CRLF working-copy warnings on edited Rust
+files. Public presentation, a complete core/HAL contract audit and historical
+FL9_1 hardware remain outstanding. Next, investigate the D3D11 HWND Present
+path and core queue/context locking; do not expose surface capabilities unless
+the reentrancy and surface lifecycle are safely resolved.

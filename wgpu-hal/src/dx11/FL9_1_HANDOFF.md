@@ -13,6 +13,13 @@ explicitly forced to FL9_1. Historical FL9_1 compatibility has not been
 verified. Public HWND presentation and the cross-layer `Present` reentrancy
 deadlock remain unresolved; keep public surface exposure gated.
 
+Latest core/HAL contract checkpoint: `a3a6a177c` adds the public downlevel
+`texture_load` limit and rejects selected FL9_1 shader entries that reach
+Naga `ImageLoad`, including through helper functions, before HAL pipeline
+creation. Safe sibling entries remain accepted. Strict core and public tests
+pass on forced FL9_1 hardware. Public HWND presentation remains the next
+architectural investigation; see `FL9_1_PROGRESS.md` for exact test commands.
+
 ## Current checkpoint — internal FL9_1 capability projection — `dfc93078a`
 
 `Capabilities::wgpu_projection` now builds a selected-device FL9_1 snapshot of
