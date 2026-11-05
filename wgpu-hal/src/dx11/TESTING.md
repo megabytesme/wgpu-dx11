@@ -98,6 +98,11 @@ stencil state is rejected by public core validation before HAL. This covers the
 implemented symmetric stencil subset through public wgpu, not two-sided stencil
 support.
 
+A fourth strict public test blends a premultiplied red overlay over opaque blue
+with identical color and alpha equations. All 64 pixels read back as
+`[128, 0, 128, 255]`. Separate color/alpha equations and source-alpha-saturated
+factors are each rejected by core validation before HAL.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

@@ -33,7 +33,10 @@ checks 32 pixels at each of two channel values. The primary public draw also
 initializes vertex data through a mapped-at-creation range and reads back the
 result after unmapping. A third strict public test exercises symmetric stencil
 replace/equality on D24S8 and verifies all 64 pixels are green; an asymmetric
-front/back descriptor is rejected by core before the HAL.
+front/back descriptor is rejected by core before the HAL. A fourth strict test
+verifies premultiplied blending produces 64 `[128, 0, 128, 255]` pixels and
+that separate-alpha and source-alpha-saturated blend descriptors are rejected
+before HAL.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
