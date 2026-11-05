@@ -4268,3 +4268,6 @@ Next continue auditing the exact core/HAL contract, with priority on resource
 layout and render-pass combinations that remain core-legal but unsupported by
 the private backend. The production adapter and public surface gates stay
 closed; synchronous HWND `Present` reentrancy remains unresolved.
+
+The stage-specific uniform fixture and its verification record were committed
+as `2ae141279`.

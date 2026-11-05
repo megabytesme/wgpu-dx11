@@ -1145,6 +1145,7 @@ passed. See the latest progress entry for commands and rounding tolerance.
 Next continue the exact core/HAL contract audit. Public adapter enumeration
 and surface capabilities remain disabled; synchronous HWND `Present`
 reentrancy and the broader public capability snapshot remain blockers.
+The stage-specific uniform fixture was committed as `2ae141279`.
 
 The production adapter remains absent, and the known synchronous HWND
 `Present` reentrancy deadlock remains unresolved. Keep normal enumeration and
