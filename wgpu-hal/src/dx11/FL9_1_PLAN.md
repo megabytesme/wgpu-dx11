@@ -105,8 +105,12 @@ not a repository artifact.
    compute support and GPU argument validation, so the public validation path
    cannot currently expose a private CPU-staging emulation independently.
    R8_UNORM is implemented as a queried single-mip sampled/upload format. Its
-   2D upload and nearest sampling pass on forced FL9_1; color-target,
-   copy-source, readback and mip-chain uses remain unsupported. The required
+   2D upload and nearest sampling pass on forced FL9_1. R8G8_UNORM, which is
+   not a required FL9_1 sampled format, is exposed only after a positive
+   selected-device `TEXTURE2D | SHADER_SAMPLE` query; the RTX returned
+   `0x0002c320`, and strict public upload/sample readback passed. Both retain
+   sampled/upload-only restrictions. Color-target, copy-source, readback and
+   mip-chain uses remain unsupported. The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
    the previously mapped formats, with a core per-format downlevel mask and
    strict GPU verification. Required RGBA8_SRGB and BGRA8_SRGB formats now

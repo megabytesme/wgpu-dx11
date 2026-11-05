@@ -133,6 +133,19 @@ RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and
 `SINGLE_MIP_ONLY`; all 64 pixels are checked, with 32 red values of 64 and 32
 red values of 192. It runs under the same strict hardware command above.
 
+The same public test checks the optional `Rg8Unorm` projection. It is exposed
+only after the selected device reports both `TEXTURE2D` and `SHADER_SAMPLE`;
+the synthetic capability test covers positive, unavailable and incomplete
+queries. When unavailable, the public case prints an explicit capability
+`SKIP` while retaining the R8 baseline result. On 2026-11-05, the RTX 3090 Ti
+at requested and actual FL9_1 returned `0x0002c320` for `R8G8_UNORM`. The test
+uploaded two distinct RG texels and sampled their red channel into an 8×8
+RGBA8 target; all 64 pixels matched (32 with red 64, 32 with red 192), proving
+the two-byte texel stride in the actual upload and sampling path. The selected
+format projection reports only `TEXTURE_BINDING | COPY_DST` and
+`SINGLE_MIP_ONLY`; no render-target, copy-source, readback or mip-chain support
+is asserted.
+
 A third strict public test writes stencil reference value 1 over the target,
 renders green where `Equal` succeeds, then attempts a blue draw with reference
 0. All 64 pixels remain green. The same test verifies that asymmetric front/back

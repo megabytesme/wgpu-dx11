@@ -192,6 +192,7 @@ impl crate::Device for Device {
         let sampled_upload = matches!(
             desc.format,
             wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Rg8Snorm
                 | wgt::TextureFormat::Rg16Snorm
                 | wgt::TextureFormat::Rgba8Snorm
@@ -282,7 +283,8 @@ impl crate::Device for Device {
             Dxgi::Common::{
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
                 DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
@@ -291,6 +293,7 @@ impl crate::Device for Device {
             wgt::TextureFormat::Rgba8UnormSrgb => DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
             wgt::TextureFormat::Bgra8UnormSrgb => DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
             wgt::TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM,
+            wgt::TextureFormat::Rg8Unorm => DXGI_FORMAT_R8G8_UNORM,
             wgt::TextureFormat::Rg8Snorm => DXGI_FORMAT_R8G8_SNORM,
             wgt::TextureFormat::Rg16Snorm => DXGI_FORMAT_R16G16_SNORM,
             wgt::TextureFormat::Rgba8Snorm => DXGI_FORMAT_R8G8B8A8_SNORM,
@@ -378,7 +381,8 @@ impl crate::Device for Device {
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
                 DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
                 DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM,
             },
         };
         let native = self.native.texture_desc(texture).map_err(device_error)?;
@@ -388,6 +392,7 @@ impl crate::Device for Device {
             DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
             DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => wgt::TextureFormat::Bgra8UnormSrgb,
             DXGI_FORMAT_R8_UNORM => wgt::TextureFormat::R8Unorm,
+            DXGI_FORMAT_R8G8_UNORM => wgt::TextureFormat::Rg8Unorm,
             DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
             DXGI_FORMAT_R16G16_SNORM => wgt::TextureFormat::Rg16Snorm,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
@@ -403,6 +408,7 @@ impl crate::Device for Device {
         let sampled_upload = matches!(
             format,
             wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Rg8Snorm
                 | wgt::TextureFormat::Rg16Snorm
                 | wgt::TextureFormat::Rgba8Snorm

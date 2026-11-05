@@ -2235,6 +2235,153 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
     }
     readback.unmap();
     println!("PASS: public FL9_1 R8Unorm upload and non-filtering sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
+
+    let rg8_features = adapter.get_texture_format_features(TextureFormat::Rg8Unorm);
+    println!("Public Rg8Unorm format projection: {rg8_features:?}");
+    if !rg8_features
+        .allowed_usages
+        .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST)
+    {
+        println!("SKIP: selected FL9_1 device does not report R8G8_UNORM texture sampling support");
+        return;
+    }
+    assert!(
+        !rg8_features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE),
+        "Rg8Unorm is conservatively projected for non-filtering sampling: {rg8_features:?}"
+    );
+    let rg8_texture = device.create_texture(&TextureDescriptor {
+        label: Some("public FL9_1 sampled RG8 texture"),
+        size: Extent3d {
+            width: 2,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut rg8_data = vec![0; 256];
+    rg8_data[..4].copy_from_slice(&[64, 240, 192, 16]);
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &rg8_texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &rg8_data,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(1),
+        },
+        Extent3d {
+            width: 2,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let rg8_view = rg8_texture.create_view(&TextureViewDescriptor::default());
+    let rg8_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public FL9_1 sampled RG8 resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&rg8_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let mut rg8_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = rg8_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public FL9_1 RG8 sampling pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &rg8_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 0..1);
+    }
+    rg8_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let rg8_submission = queue.submit([rg8_encoder.finish()]);
+    let (rg8_sender, rg8_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        rg8_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(rg8_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public RG8 sampled render");
+    rg8_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public RG8 readback map callback")
+        .expect("map public RG8 readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected = if x < 4 {
+                    [64, 0, 0, 255]
+                } else {
+                    [192, 0, 0, 255]
+                };
+                let offset = y * 256 + x * 4;
+                let actual = &data[offset..offset + 4];
+                for (channel, (&observed, expected)) in actual.iter().zip(expected).enumerate() {
+                    assert!(
+                        observed.abs_diff(expected) <= 1,
+                        "RG8 sampled pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 Rg8Unorm upload and non-filtering sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
 }
 
 #[test]

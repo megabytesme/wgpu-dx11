@@ -22,8 +22,8 @@ use windows::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
                 DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8_UNORM,
-                DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -233,7 +233,7 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             height: 1,
             bytes: 1,
         }),
-        DXGI_FORMAT_R8G8_SNORM => Ok(TextureBlockLayout {
+        DXGI_FORMAT_R8G8_UNORM | DXGI_FORMAT_R8G8_SNORM => Ok(TextureBlockLayout {
             width: 1,
             height: 1,
             bytes: 2,
@@ -405,6 +405,7 @@ impl NativeDevice {
             || !matches!(
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
+                    | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
@@ -441,6 +442,7 @@ impl NativeDevice {
             || !matches!(
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
+                    | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
@@ -471,6 +473,7 @@ impl NativeDevice {
         let filterable = if matches!(
             desc.Format,
             DXGI_FORMAT_R8_UNORM
+                | DXGI_FORMAT_R8G8_UNORM
                 | DXGI_FORMAT_R8G8_SNORM
                 | DXGI_FORMAT_R16G16_SNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
@@ -608,6 +611,7 @@ impl NativeDevice {
         let uncompressed_sampled = matches!(
             format,
             DXGI_FORMAT_R8_UNORM
+                | DXGI_FORMAT_R8G8_UNORM
                 | DXGI_FORMAT_R8G8_SNORM
                 | DXGI_FORMAT_R16G16_SNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
@@ -669,6 +673,7 @@ impl NativeDevice {
             usage: if matches!(
                 format,
                 DXGI_FORMAT_R8_UNORM
+                    | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
@@ -1107,6 +1112,14 @@ mod tests {
     extern crate std;
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
+
+    #[test]
+    fn rg8_unorm_transfer_layout_uses_two_bytes_per_texel() -> Result<()> {
+        let layout = format_block_layout(DXGI_FORMAT_R8G8_UNORM)?;
+        assert_eq!(layout.row_bytes(3)?, 6);
+        assert_eq!(layout.byte_len(3, 2)?, 12);
+        Ok(())
+    }
 
     #[test]
     fn wraps_only_owned_bgra_render_target_backbuffers() -> Result<()> {

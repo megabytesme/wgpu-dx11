@@ -131,7 +131,7 @@ public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8_UNORM, R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM, BC1_UNORM, D16_UNORM and D24S8 are always
+R8_UNORM, R8G8_UNORM, R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM, BC1_UNORM, D16_UNORM and D24S8 are always
 single-mip in the private implementation. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
@@ -323,6 +323,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
   offset and all 80 sampled output pixels. Render-target, copy-source, readback
   and mip-chain uses remain unsupported.
+- R8G8_UNORM is not a required FL9_1 sampled format. Its one-mip,
+  single-layer sampled/upload path is exposed only when the selected device
+  reports `TEXTURE2D | SHADER_SAMPLE`. The forced-FL9_1 RTX returned
+  `0x0002c320`; a strict public upload/sample test verified 64 pixels and the
+  two-byte texel stride. Render-target, copy-source, readback and mip-chain
+  uses remain unsupported.
 - R8G8_SNORM has the same queried one-mip sampled/upload subset. A strict
   forced-FL9_1 test verifies padded signed two-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).

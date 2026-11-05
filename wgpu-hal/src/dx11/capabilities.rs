@@ -15,7 +15,7 @@ use windows::Win32::Graphics::{
         DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
         DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
         DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
     },
 };
 
@@ -178,6 +178,7 @@ pub(super) struct DriverCapabilities {
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
     pub r8_unorm: Query<u32>,
+    pub rg8_unorm: Query<u32>,
     pub rg8_snorm: Query<u32>,
     pub rg16_snorm: Query<u32>,
     pub rgba8_snorm: Query<u32>,
@@ -198,6 +199,7 @@ pub(super) struct BackendCapabilities {
     pub rgba8_srgb_single_mip_transfers: bool,
     pub bgra8_srgb_single_mip_transfers: bool,
     pub r8_unorm_sampled_upload: bool,
+    pub rg8_unorm_sampled_upload: bool,
     pub rg8_snorm_sampled_upload: bool,
     pub rg16_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
@@ -273,6 +275,7 @@ impl BackendCapabilities {
         rgba8_srgb_single_mip_transfers: true,
         bgra8_srgb_single_mip_transfers: true,
         r8_unorm_sampled_upload: true,
+        rg8_unorm_sampled_upload: true,
         rg8_snorm_sampled_upload: true,
         rg16_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
@@ -545,6 +548,7 @@ impl Capabilities {
                 full_npot: query_full_npot(device),
                 comparison_shadow: Query::from_result(comparison_shadow),
                 r8_unorm: format(windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM),
+                rg8_unorm: format(DXGI_FORMAT_R8G8_UNORM),
                 rg8_snorm: format(DXGI_FORMAT_R8G8_SNORM),
                 rg16_snorm: format(DXGI_FORMAT_R16G16_SNORM),
                 rgba8_snorm: format(DXGI_FORMAT_R8G8B8A8_SNORM),
@@ -571,6 +575,7 @@ impl Capabilities {
             wgt::TextureFormat::Rgba8UnormSrgb => (self.driver.rgba8_srgb, false),
             wgt::TextureFormat::Bgra8UnormSrgb => (self.driver.bgra8_srgb, false),
             wgt::TextureFormat::R8Unorm => (self.driver.r8_unorm, true),
+            wgt::TextureFormat::Rg8Unorm => (self.driver.rg8_unorm, true),
             wgt::TextureFormat::Rg8Snorm => (self.driver.rg8_snorm, true),
             wgt::TextureFormat::Rg16Snorm => (self.driver.rg16_snorm, true),
             wgt::TextureFormat::Rgba8Snorm => (self.driver.rgba8_snorm, true),
@@ -598,6 +603,8 @@ impl Capabilities {
         if sampled_upload
             && (mips != 1
                 || (format == wgt::TextureFormat::R8Unorm && !self.backend.r8_unorm_sampled_upload)
+                || (format == wgt::TextureFormat::Rg8Unorm
+                    && !self.backend.rg8_unorm_sampled_upload)
                 || (format == wgt::TextureFormat::Rg8Snorm
                     && !self.backend.rg8_snorm_sampled_upload)
                 || (format == wgt::TextureFormat::Rg16Snorm
@@ -729,6 +736,7 @@ impl Capabilities {
         if matches!(
             format,
             wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Rg8Snorm
                 | wgt::TextureFormat::Rg16Snorm
                 | wgt::TextureFormat::Rgba8Snorm
@@ -885,6 +893,7 @@ mod tests {
                 full_npot: Query::Value(true),
                 comparison_shadow: Query::Value(true),
                 r8_unorm: Query::Value(u32::MAX),
+                rg8_unorm: Query::Value(u32::MAX),
                 rg8_snorm: Query::Value(u32::MAX),
                 rg16_snorm: Query::Value(u32::MAX),
                 rgba8_snorm: Query::Value(u32::MAX),
@@ -1140,7 +1149,7 @@ mod tests {
             native.feature_level()
         );
         std::println!(
-            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG16_SNORM={:?}; BC1={:?}; D16_UNORM={:?} projected={:?}",
+            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG8_UNORM={:?}; RG16_SNORM={:?}; BC1={:?}; D16_UNORM={:?} projected={:?}",
             projection.capabilities.limits.max_texture_dimension_2d,
             projection.capabilities.limits.max_sampled_textures_per_shader_stage,
             projection.capabilities.limits.max_samplers_per_shader_stage,
@@ -1149,6 +1158,7 @@ mod tests {
             projection.capabilities.downlevel.limits.max_sampler_anisotropy,
             projection.capabilities.downlevel.flags,
             caps.driver.full_npot,
+            caps.driver.rg8_unorm,
             caps.driver.rg16_snorm,
             caps.driver.bc1_unorm,
             caps.driver.depth16_unorm,
@@ -1577,6 +1587,7 @@ mod tests {
         let mut caps = model(FeatureLevel::L9_1);
         for format in [
             wgt::TextureFormat::R8Unorm,
+            wgt::TextureFormat::Rg8Unorm,
             wgt::TextureFormat::Rg8Snorm,
             wgt::TextureFormat::Rg16Snorm,
             wgt::TextureFormat::Rgba8Snorm,
@@ -1620,6 +1631,7 @@ mod tests {
         let mut caps = model(FeatureLevel::L9_1);
         caps.driver.rgba8 = Query::Unavailable(-1);
         caps.driver.r8_unorm = Query::Unavailable(-1);
+        caps.driver.rg8_unorm = Query::Unavailable(-1);
         caps.driver.rg16_snorm = Query::Unavailable(-1);
         caps.driver.depth24_stencil8 = Query::Unavailable(-1);
         caps.driver.depth16_unorm = Query::Unavailable(-1);
@@ -1628,6 +1640,9 @@ mod tests {
             .is_empty());
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::R8Unorm)
+            .is_empty());
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Rg8Unorm)
             .is_empty());
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
@@ -2267,6 +2282,55 @@ mod tests {
         queried.backend.r8_unorm_sampled_upload = false;
         assert_eq!(
             queried.check_private_texture_2d(r8, sampled_upload, [7, 5], 1, 1, 1),
+            Err(UnsupportedUsage)
+        );
+    }
+
+    #[test]
+    fn rg8_unorm_is_optional_and_limited_to_single_mip_sampled_uploads() {
+        use TextureRejection::*;
+        let caps = model(FeatureLevel::L9_1);
+        let format = wgt::TextureFormat::Rg8Unorm;
+        let sampled_upload = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+
+        assert_eq!(
+            caps.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Ok(())
+        );
+        assert!(caps
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY));
+
+        let mut unavailable = caps;
+        unavailable.driver.rg8_unorm = Query::Unavailable(-1);
+        assert_eq!(
+            unavailable.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Err(DriverQueryUnavailable)
+        );
+        assert!(unavailable.texture_format_capabilities(format).is_empty());
+
+        let mut missing_sampling = caps;
+        missing_sampling.driver.rg8_unorm =
+            Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
+        assert_eq!(
+            missing_sampling.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert_eq!(
+            caps.check_private_texture_2d(format, sampled_upload, [8, 8], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert_eq!(
+            caps.check_private_texture_2d(format, wgt::TextureUses::COLOR_TARGET, [7, 5], 1, 1, 1),
+            Err(UnsupportedUsage)
+        );
+
+        let mut missing_backend = caps;
+        missing_backend.backend.rg8_unorm_sampled_upload = false;
+        assert_eq!(
+            missing_backend.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Err(UnsupportedUsage)
         );
     }
