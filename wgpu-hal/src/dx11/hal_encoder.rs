@@ -1469,10 +1469,6 @@ impl crate::CommandEncoder for CommandEncoder {
             if index_count == 0 || instance_count == 0 {
                 return;
             }
-            if vertices.is_empty() {
-                self.reject();
-                return;
-            }
             let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
             else {
                 self.reject();
@@ -1548,10 +1544,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 }
             }
             if index_count == 0 || instance_count == 0 {
-                return;
-            }
-            if vertices.is_empty() {
-                self.reject();
                 return;
             }
             let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)

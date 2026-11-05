@@ -236,8 +236,7 @@ pub(super) struct BackendCapabilities {
     pub two_sided_stencil: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
-    /// Restricted stream emulation; excludes `vertex_index`, `instance_index`,
-    /// and instance-only indexed strips.
+    /// Restricted stream emulation; excludes `vertex_index` and `instance_index`.
     pub restricted_instance_rate_streams: bool,
     pub queries: bool,
 }

@@ -939,7 +939,11 @@ impl CommandBuffer {
                         instances,
                         instance_bindings,
                     } => {
-                        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        context.IASetPrimitiveTopology(if vertices.is_empty() {
+                            D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
+                        } else {
+                            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+                        });
                         let result = binding.draw_triangle_strips(
                             context,
                             *first,

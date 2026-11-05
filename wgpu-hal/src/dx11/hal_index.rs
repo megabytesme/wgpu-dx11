@@ -90,6 +90,69 @@ impl IndexBinding {
 
     #[expect(
         clippy::too_many_arguments,
+        reason = "Restricted indexed-strip replay carries source and FL9_1 draw bounds"
+    )]
+    fn direct_strip_draw_counts(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base: i32,
+        restart: u32,
+        min_vertices: u32,
+        max_vertices: u32,
+    ) -> Result<Vec<u32>> {
+        if !self.contains_range(first, count)
+            || (count != 0 && first.checked_add(count - 1).is_none())
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let index_size = if self.is_u32() { 4usize } else { 2usize };
+        let start = usize::try_from(self.offset)
+            .ok()
+            .and_then(|offset| {
+                usize::try_from(first)
+                    .ok()?
+                    .checked_mul(index_size)
+                    .and_then(|first| offset.checked_add(first))
+            })
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(&self.staging, &self.buffer);
+            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&self.staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let read = |i: usize| {
+                let ptr = mapped.pData.cast::<u8>().add(start + i * index_size);
+                if self.is_u32() {
+                    core::ptr::read_unaligned(ptr.cast::<u32>())
+                } else {
+                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
+                }
+            };
+            let counts = plan_indexed_strip_draw_counts(
+                read,
+                count as usize,
+                base,
+                restart,
+                min_vertices,
+                max_vertices,
+            );
+            context.Unmap(&self.staging, 0);
+            counts
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
         reason = "Indexed point replay needs stream and instance state"
     )]
     pub(super) fn draw_points(
@@ -184,15 +247,13 @@ impl IndexBinding {
     ) -> Result<()> {
         let (max_indices, instances) = draw_limits;
         instance_bindings.validate(instances)?;
-        if vertices.is_empty()
-            || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
-                !offset.is_multiple_of(4)
-                    || !stride.is_multiple_of(4)
-                    || *extent == 0
-                    || (*stride != 0 && *extent > *stride)
-                    || !extent.is_multiple_of(4)
-            })
-            || !self.contains_range(first, count)
+        if vertices.iter().any(|(_, _, offset, _, stride, extent)| {
+            !offset.is_multiple_of(4)
+                || !stride.is_multiple_of(4)
+                || *extent == 0
+                || (*stride != 0 && *extent > *stride)
+                || !extent.is_multiple_of(4)
+        }) || !self.contains_range(first, count)
             || max_indices < 2
             || (count != 0 && first.checked_add(count - 1).is_none())
         {
@@ -202,16 +263,36 @@ impl IndexBinding {
             return Ok(());
         }
 
-        let mut layouts = Vec::new();
-        layouts
-            .try_reserve_exact(vertices.len())
-            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-        layouts.extend(vertices.iter().map(|v| (v.3, v.4, v.5)));
         let restart = match self.format {
             wgt::IndexFormat::Uint16 => u32::from(u16::MAX),
             wgt::IndexFormat::Uint32 => u32::MAX,
         };
 
+        if vertices.is_empty() {
+            let max_vertices = u32::from(self.max_index).saturating_add(1).min(max_indices);
+            let counts = self.direct_strip_draw_counts(
+                context,
+                first,
+                count,
+                base,
+                restart,
+                2,
+                max_vertices,
+            )?;
+            for instance in 0..instances {
+                instance_bindings.bind(context, instance)?;
+                for count in &counts {
+                    unsafe { context.Draw(*count, 0) };
+                }
+            }
+            return Ok(());
+        }
+
+        let mut layouts = Vec::new();
+        layouts
+            .try_reserve_exact(vertices.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        layouts.extend(vertices.iter().map(|v| (v.3, v.4, v.5)));
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
             context.CopyResource(&self.staging, &self.buffer);
@@ -450,15 +531,13 @@ impl IndexBinding {
     ) -> Result<()> {
         let (max_vertices, instances) = draw_limits;
         instance_bindings.validate(instances)?;
-        if vertices.is_empty()
-            || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
-                !offset.is_multiple_of(4)
-                    || !stride.is_multiple_of(4)
-                    || *extent == 0
-                    || (*stride != 0 && *extent > *stride)
-                    || !extent.is_multiple_of(4)
-            })
-            || !self.contains_range(first, count)
+        if vertices.iter().any(|(_, _, offset, _, stride, extent)| {
+            !offset.is_multiple_of(4)
+                || !stride.is_multiple_of(4)
+                || *extent == 0
+                || (*stride != 0 && *extent > *stride)
+                || !extent.is_multiple_of(4)
+        }) || !self.contains_range(first, count)
             || max_vertices < 3
             || !max_vertices.is_multiple_of(3)
             || (count != 0 && first.checked_add(count - 1).is_none())
@@ -469,16 +548,39 @@ impl IndexBinding {
             return Ok(());
         }
 
-        let mut layouts = Vec::new();
-        layouts
-            .try_reserve_exact(vertices.len())
-            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-        layouts.extend(vertices.iter().map(|v| (v.3, v.4, v.5)));
         let restart = match self.format {
             wgt::IndexFormat::Uint16 => u32::from(u16::MAX),
             wgt::IndexFormat::Uint32 => u32::MAX,
         };
 
+        if vertices.is_empty() {
+            let max_vertices = u32::from(self.max_index)
+                .saturating_add(1)
+                .min(max_vertices)
+                .min(65_534);
+            let counts = self.direct_strip_draw_counts(
+                context,
+                first,
+                count,
+                base,
+                restart,
+                3,
+                max_vertices,
+            )?;
+            for instance in 0..instances {
+                instance_bindings.bind(context, instance)?;
+                for count in &counts {
+                    unsafe { context.Draw(*count, 0) };
+                }
+            }
+            return Ok(());
+        }
+
+        let mut layouts = Vec::new();
+        layouts
+            .try_reserve_exact(vertices.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        layouts.extend(vertices.iter().map(|v| (v.3, v.4, v.5)));
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
             context.CopyResource(&self.staging, &self.buffer);
@@ -1360,6 +1462,62 @@ fn multi_u32_index_in_bounds(
     })
 }
 
+fn plan_indexed_strip_draw_counts(
+    read: impl Fn(usize) -> u32,
+    count: usize,
+    base: i32,
+    restart: u32,
+    min_vertices: u32,
+    max_vertices: u32,
+) -> Result<Vec<u32>> {
+    if min_vertices < 2 || max_vertices < min_vertices {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+
+    let mut counts = Vec::new();
+    let mut run = 0u32;
+    for index in 0..count {
+        let effective = i64::from(read(index)) + i64::from(base);
+        if effective == i64::from(restart) {
+            append_strip_draw_counts(&mut counts, run, min_vertices, max_vertices)?;
+            run = 0;
+        } else {
+            run = run
+                .checked_add(1)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            if run == max_vertices {
+                counts
+                    .try_reserve(1)
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                counts.push(max_vertices);
+                run = min_vertices - 1;
+            }
+        }
+    }
+    append_strip_draw_counts(&mut counts, run, min_vertices, max_vertices)?;
+    Ok(counts)
+}
+
+fn append_strip_draw_counts(
+    counts: &mut Vec<u32>,
+    mut remaining: u32,
+    min_vertices: u32,
+    max_vertices: u32,
+) -> Result<()> {
+    while remaining >= min_vertices {
+        let batch = remaining.min(max_vertices);
+        counts
+            .try_reserve(1)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        counts.push(batch);
+        if batch == remaining {
+            break;
+        }
+        remaining -= batch - (min_vertices - 1);
+    }
+    Ok(())
+}
+
 fn for_each_indexed_triangle_strip_batch(
     read: impl Fn(usize) -> u32,
     count: usize,
@@ -2169,9 +2327,50 @@ mod tests {
     use super::{
         classify_indices, classify_u32_indices, for_each_indexed_triangle_strip_batch,
         for_each_window, multi_u32_index_in_bounds, plan_indexed_line_strips, plan_indexed_lines,
-        plan_u16_draw, plan_u32_windows, rebased_vertex_offset, IndexDecision, IndexPlan,
-        IndexedLineSegment, U32Decision, U32Segment,
+        plan_indexed_strip_draw_counts, plan_u16_draw, plan_u32_windows, rebased_vertex_offset,
+        IndexDecision, IndexPlan, IndexedLineSegment, U32Decision, U32Segment,
     };
+
+    #[test]
+    fn indexed_strip_draw_counts_preserve_restart_runs_and_batch_overlaps() {
+        let indices = [1, 2, 3, u16::MAX as u32 - 1, 4, 5, 6, 7, 8];
+        let lines = plan_indexed_strip_draw_counts(
+            |i| indices[i],
+            indices.len(),
+            1,
+            u32::from(u16::MAX),
+            2,
+            4,
+        )
+        .unwrap();
+        assert_eq!(lines, [3, 4, 2]);
+
+        let triangles = plan_indexed_strip_draw_counts(
+            |i| indices[i],
+            indices.len(),
+            1,
+            u32::from(u16::MAX),
+            3,
+            4,
+        )
+        .unwrap();
+        assert_eq!(triangles, [3, 4, 3]);
+
+        let negative_indices = [0, 1, 2];
+        assert_eq!(
+            plan_indexed_strip_draw_counts(
+                |i| negative_indices[i],
+                negative_indices.len(),
+                -1,
+                u32::from(u16::MAX),
+                2,
+                8,
+            )
+            .unwrap(),
+            [3]
+        );
+        assert!(plan_indexed_strip_draw_counts(|_| 0, 1, 0, 0, 3, 2).is_err());
+    }
 
     #[test]
     fn indexed_line_strips_split_restart_runs_and_overlap_at_the_draw_limit() {

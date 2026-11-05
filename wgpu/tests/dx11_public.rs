@@ -4422,7 +4422,7 @@ fn public_dx11_instance_rate_vertex_streams_at_fl91() {
 }
 
 #[test]
-fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
+fn public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -4490,36 +4490,38 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
         attributes: &attributes,
     })];
     let empty_buffers: [Option<VertexBufferLayout<'_>>; 0] = [];
-    let make_pipeline = |topology, entry_point, buffers: &[Option<VertexBufferLayout<'_>>]| {
-        device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("FL9_1 indexed list without vertex-rate inputs"),
-            layout: None,
-            vertex: VertexState {
-                module: &shader,
-                entry_point: Some(entry_point),
-                compilation_options: PipelineCompilationOptions::default(),
-                buffers,
-            },
-            primitive: PrimitiveState {
-                topology,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                targets: &[Some(ColorTargetState {
-                    format: TextureFormat::Rgba8Unorm,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        })
-    };
+    let make_pipeline =
+        |topology, entry_point, buffers: &[Option<VertexBufferLayout<'_>>], strip_index_format| {
+            device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("FL9_1 indexed list without vertex-rate inputs"),
+                layout: None,
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    buffers,
+                },
+                primitive: PrimitiveState {
+                    topology,
+                    strip_index_format,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    targets: &[Some(ColorTargetState {
+                        format: TextureFormat::Rgba8Unorm,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
     let pipelines = [
         (
             PrimitiveTopology::TriangleList,
@@ -4528,8 +4530,14 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
                 PrimitiveTopology::TriangleList,
                 "vs_instance",
                 &instance_buffers,
+                None,
             ),
-            make_pipeline(PrimitiveTopology::TriangleList, "vs_empty", &empty_buffers),
+            make_pipeline(
+                PrimitiveTopology::TriangleList,
+                "vs_empty",
+                &empty_buffers,
+                None,
+            ),
         ),
         (
             PrimitiveTopology::LineList,
@@ -4538,21 +4546,27 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
                 PrimitiveTopology::LineList,
                 "vs_instance",
                 &instance_buffers,
+                None,
             ),
-            make_pipeline(PrimitiveTopology::LineList, "vs_empty", &empty_buffers),
+            make_pipeline(
+                PrimitiveTopology::LineList,
+                "vs_empty",
+                &empty_buffers,
+                None,
+            ),
         ),
     ];
     let index_buffers = [
         (
             IndexFormat::Uint16,
-            [u16::MAX, 200, 201, 202]
+            [u16::MAX, 200, 201, 202, u16::MAX - 1, 203, 204, 205]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect::<Vec<_>>(),
         ),
         (
             IndexFormat::Uint32,
-            [u32::MAX, 200, 201, 202]
+            [u32::MAX, 200, 201, 202, u32::MAX - 1, 203, 204, 205]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect::<Vec<_>>(),
@@ -4573,6 +4587,54 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
         buffer.unmap();
         (format, buffer)
     });
+    let line_strip_u16_instance = make_pipeline(
+        PrimitiveTopology::LineStrip,
+        "vs_instance",
+        &instance_buffers,
+        Some(IndexFormat::Uint16),
+    );
+    let line_strip_u16_empty = make_pipeline(
+        PrimitiveTopology::LineStrip,
+        "vs_empty",
+        &empty_buffers,
+        Some(IndexFormat::Uint16),
+    );
+    let triangle_strip_u16_instance = make_pipeline(
+        PrimitiveTopology::TriangleStrip,
+        "vs_instance",
+        &instance_buffers,
+        Some(IndexFormat::Uint16),
+    );
+    let triangle_strip_u16_empty = make_pipeline(
+        PrimitiveTopology::TriangleStrip,
+        "vs_empty",
+        &empty_buffers,
+        Some(IndexFormat::Uint16),
+    );
+    let line_strip_u32_instance = make_pipeline(
+        PrimitiveTopology::LineStrip,
+        "vs_instance",
+        &instance_buffers,
+        Some(IndexFormat::Uint32),
+    );
+    let line_strip_u32_empty = make_pipeline(
+        PrimitiveTopology::LineStrip,
+        "vs_empty",
+        &empty_buffers,
+        Some(IndexFormat::Uint32),
+    );
+    let triangle_strip_u32_instance = make_pipeline(
+        PrimitiveTopology::TriangleStrip,
+        "vs_instance",
+        &instance_buffers,
+        Some(IndexFormat::Uint32),
+    );
+    let triangle_strip_u32_empty = make_pipeline(
+        PrimitiveTopology::TriangleStrip,
+        "vs_empty",
+        &empty_buffers,
+        Some(IndexFormat::Uint32),
+    );
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 instance-only indexed target"),
         size: Extent3d {
@@ -4597,7 +4659,7 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
     let render = |pipeline: &RenderPipeline,
                   instance_only: bool,
                   count: u32,
-                  indexed: Option<(&Buffer, IndexFormat)>|
+                  indexed: Option<(&Buffer, IndexFormat, u32, i32)>|
      -> Vec<u8> {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("FL9_1 indexed list comparison"),
@@ -4623,9 +4685,9 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
             if instance_only {
                 pass.set_vertex_buffer(0, instances.slice(..));
             }
-            if let Some((indices, format)) = indexed {
+            if let Some((indices, format, first, base)) = indexed {
                 pass.set_index_buffer(indices.slice(..), format);
-                pass.draw_indexed(1..(1 + count), -200, 0..2);
+                pass.draw_indexed(first..(first + count), base, 0..2);
             } else {
                 pass.draw(0..count, 0..2);
             }
@@ -4691,7 +4753,12 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
                     .all(|pixel| pixel == [0, 0, 255, 255]));
             }
             for (format, index) in &index_buffers {
-                let indexed = render(pipeline, instance_only, *count, Some((index, *format)));
+                let indexed = render(
+                    pipeline,
+                    instance_only,
+                    *count,
+                    Some((index, *format, 1, -200)),
+                );
                 assert_eq!(
                     indexed, direct,
                     "{topology:?}, {format:?}, instance-only={instance_only}"
@@ -4699,5 +4766,50 @@ fn public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91() {
             }
         }
     }
-    println!("PASS: public indexed LineList/TriangleList with instance-only or no vertex inputs matched direct draws for Uint16/Uint32");
+    for (format, index, cases) in [
+        (
+            IndexFormat::Uint16,
+            &index_buffers[0].1,
+            [
+                (
+                    &line_strip_u16_instance,
+                    &line_strip_u16_empty,
+                    PrimitiveTopology::LineStrip,
+                ),
+                (
+                    &triangle_strip_u16_instance,
+                    &triangle_strip_u16_empty,
+                    PrimitiveTopology::TriangleStrip,
+                ),
+            ],
+        ),
+        (
+            IndexFormat::Uint32,
+            &index_buffers[1].1,
+            [
+                (
+                    &line_strip_u32_instance,
+                    &line_strip_u32_empty,
+                    PrimitiveTopology::LineStrip,
+                ),
+                (
+                    &triangle_strip_u32_instance,
+                    &triangle_strip_u32_empty,
+                    PrimitiveTopology::TriangleStrip,
+                ),
+            ],
+        ),
+    ] {
+        for (instance_pipeline, empty_pipeline, topology) in cases {
+            for (pipeline, instance_only) in [(instance_pipeline, true), (empty_pipeline, false)] {
+                let direct = render(pipeline, instance_only, 7, None);
+                let indexed = render(pipeline, instance_only, 7, Some((index, format, 1, 1)));
+                assert_eq!(
+                    indexed, direct,
+                    "{topology:?}, {format:?}, instance-only={instance_only}"
+                );
+            }
+        }
+    }
+    println!("PASS: public indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32, including restart runs");
 }

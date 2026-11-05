@@ -403,7 +403,8 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
 }
 
 #[test]
-fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::core::Result<()> {
+fn fl91_indexed_primitives_without_vertex_rate_inputs_match_nonindexed() -> windows::core::Result<()>
+{
     use crate::dx11::{buffer::NativeBuffer, hal_pipeline::RenderPipeline};
 
     let adapters = enumerate_native_adapters()?;
@@ -500,7 +501,7 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
     let constants = naga::back::PipelineConstants::default();
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
     let empty_vertex_buffers: [Option<crate::VertexBufferLayout<'_>>; 0] = [];
-    let make_pipeline = |topology, instance_only| unsafe {
+    let make_pipeline = |topology, instance_only, strip_index_format| unsafe {
         device
             .create_render_pipeline(&crate::RenderPipelineDescriptor {
                 label: None,
@@ -520,6 +521,7 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
                 },
                 primitive: wgt::PrimitiveState {
                     topology,
+                    strip_index_format,
                     ..Default::default()
                 },
                 depth_stencil: None,
@@ -536,18 +538,18 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
             })
             .expect("FL9_1 instance-only pipeline")
     };
-    let triangle_list_instance = make_pipeline(wgt::PrimitiveTopology::TriangleList, true);
-    let line_list_instance = make_pipeline(wgt::PrimitiveTopology::LineList, true);
-    let triangle_list_empty = make_pipeline(wgt::PrimitiveTopology::TriangleList, false);
-    let line_list_empty = make_pipeline(wgt::PrimitiveTopology::LineList, false);
+    let triangle_list_instance = make_pipeline(wgt::PrimitiveTopology::TriangleList, true, None);
+    let line_list_instance = make_pipeline(wgt::PrimitiveTopology::LineList, true, None);
+    let triangle_list_empty = make_pipeline(wgt::PrimitiveTopology::TriangleList, false, None);
+    let line_list_empty = make_pipeline(wgt::PrimitiveTopology::LineList, false, None);
     let mut index_buffers = Vec::new();
     for format in [wgt::IndexFormat::Uint16, wgt::IndexFormat::Uint32] {
         let bytes = match format {
-            wgt::IndexFormat::Uint16 => [u16::MAX, 200, 201, 202]
+            wgt::IndexFormat::Uint16 => [u16::MAX, 200, 201, 202, u16::MAX - 1, 203, 204, 205]
                 .into_iter()
                 .flat_map(u16::to_ne_bytes)
                 .collect::<Vec<_>>(),
-            wgt::IndexFormat::Uint32 => [u32::MAX, 200, 201, 202]
+            wgt::IndexFormat::Uint32 => [u32::MAX, 200, 201, 202, u32::MAX - 1, 203, 204, 205]
                 .into_iter()
                 .flat_map(u32::to_ne_bytes)
                 .collect::<Vec<_>>(),
@@ -565,6 +567,46 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
         native.write_byte_buffer(&buffer, 0, &bytes)?;
         index_buffers.push((format, buffer));
     }
+    let line_strip_u16_instance = make_pipeline(
+        wgt::PrimitiveTopology::LineStrip,
+        true,
+        Some(wgt::IndexFormat::Uint16),
+    );
+    let line_strip_u16_empty = make_pipeline(
+        wgt::PrimitiveTopology::LineStrip,
+        false,
+        Some(wgt::IndexFormat::Uint16),
+    );
+    let triangle_strip_u16_instance = make_pipeline(
+        wgt::PrimitiveTopology::TriangleStrip,
+        true,
+        Some(wgt::IndexFormat::Uint16),
+    );
+    let triangle_strip_u16_empty = make_pipeline(
+        wgt::PrimitiveTopology::TriangleStrip,
+        false,
+        Some(wgt::IndexFormat::Uint16),
+    );
+    let line_strip_u32_instance = make_pipeline(
+        wgt::PrimitiveTopology::LineStrip,
+        true,
+        Some(wgt::IndexFormat::Uint32),
+    );
+    let line_strip_u32_empty = make_pipeline(
+        wgt::PrimitiveTopology::LineStrip,
+        false,
+        Some(wgt::IndexFormat::Uint32),
+    );
+    let triangle_strip_u32_instance = make_pipeline(
+        wgt::PrimitiveTopology::TriangleStrip,
+        true,
+        Some(wgt::IndexFormat::Uint32),
+    );
+    let triangle_strip_u32_empty = make_pipeline(
+        wgt::PrimitiveTopology::TriangleStrip,
+        false,
+        Some(wgt::IndexFormat::Uint32),
+    );
     let extent = wgt::Extent3d {
         width: 8,
         height: 8,
@@ -632,7 +674,7 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
     let mut render = |pipeline: &RenderPipeline,
                       instance_only: bool,
                       count: u32,
-                      indexed: Option<(wgt::IndexFormat, &NativeBuffer)>|
+                      indexed: Option<(wgt::IndexFormat, &NativeBuffer, u32, i32)>|
      -> windows::core::Result<Vec<u8>> {
         let command = unsafe {
             encoder.begin_encoding(None).unwrap();
@@ -644,19 +686,17 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
                     crate::BufferBinding::new_unchecked(&instance_data, 0, None),
                 );
             }
-            if let Some((format, indices)) = indexed {
+            if let Some((format, indices, first, base)) = indexed {
                 encoder.set_index_buffer(
                     crate::BufferBinding::new_unchecked(indices, 0, None),
                     format,
                 );
-                encoder.draw_indexed(1, count, -200, 0, 2);
+                encoder.draw_indexed(first, count, base, 0, 2);
             } else {
                 encoder.draw(0, count, 0, 2);
             }
             encoder.end_render_pass();
-            encoder
-                .end_encoding()
-                .expect("instance-only indexed list draw")
+            encoder.end_encoding().expect("instance-only indexed draw")
         };
         fence_value += 1;
         unsafe {
@@ -685,7 +725,57 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
             let direct = render(pipeline, instance_only, count, None)?;
             assert_eq!(direct.len(), 8 * 8 * 4);
             for (format, index) in &index_buffers {
-                let indexed = render(pipeline, instance_only, count, Some((*format, index)))?;
+                let indexed = render(
+                    pipeline,
+                    instance_only,
+                    count,
+                    Some((*format, index, 1, -200)),
+                )?;
+                assert_eq!(
+                    indexed, direct,
+                    "{topology:?}, {format:?}, instance-only={instance_only}"
+                );
+            }
+        }
+    }
+    for (format, index, cases) in [
+        (
+            wgt::IndexFormat::Uint16,
+            &index_buffers[0].1,
+            [
+                (
+                    &line_strip_u16_instance,
+                    &line_strip_u16_empty,
+                    wgt::PrimitiveTopology::LineStrip,
+                ),
+                (
+                    &triangle_strip_u16_instance,
+                    &triangle_strip_u16_empty,
+                    wgt::PrimitiveTopology::TriangleStrip,
+                ),
+            ],
+        ),
+        (
+            wgt::IndexFormat::Uint32,
+            &index_buffers[1].1,
+            [
+                (
+                    &line_strip_u32_instance,
+                    &line_strip_u32_empty,
+                    wgt::PrimitiveTopology::LineStrip,
+                ),
+                (
+                    &triangle_strip_u32_instance,
+                    &triangle_strip_u32_empty,
+                    wgt::PrimitiveTopology::TriangleStrip,
+                ),
+            ],
+        ),
+    ] {
+        for (pipeline_instance, pipeline_empty, topology) in cases {
+            for (pipeline, instance_only) in [(pipeline_instance, true), (pipeline_empty, false)] {
+                let direct = render(pipeline, instance_only, 7, None)?;
+                let indexed = render(pipeline, instance_only, 7, Some((format, index, 1, 1)))?;
                 assert_eq!(
                     indexed, direct,
                     "{topology:?}, {format:?}, instance-only={instance_only}"
@@ -694,7 +784,7 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
         }
     }
     std::println!(
-        "PASS: indexed LineList/TriangleList with no vertex-rate inputs matched equivalent direct draws for Uint16/Uint32; instance-only and empty layouts"
+        "PASS: indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32; restart runs, instance-only and empty layouts"
     );
     unsafe {
         for (_, index) in index_buffers {
@@ -707,6 +797,14 @@ fn fl91_indexed_lists_with_instance_only_streams_match_nonindexed() -> windows::
         device.destroy_render_pipeline(line_list_instance);
         device.destroy_render_pipeline(triangle_list_empty);
         device.destroy_render_pipeline(line_list_empty);
+        device.destroy_render_pipeline(line_strip_u16_instance);
+        device.destroy_render_pipeline(line_strip_u16_empty);
+        device.destroy_render_pipeline(triangle_strip_u16_instance);
+        device.destroy_render_pipeline(triangle_strip_u16_empty);
+        device.destroy_render_pipeline(line_strip_u32_instance);
+        device.destroy_render_pipeline(line_strip_u32_empty);
+        device.destroy_render_pipeline(triangle_strip_u32_instance);
+        device.destroy_render_pipeline(triangle_strip_u32_empty);
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
     }
