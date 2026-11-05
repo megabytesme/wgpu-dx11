@@ -136,13 +136,16 @@ red values of 192. It runs under the same strict hardware command above.
 The same public test checks the optional `Rg8Unorm` projection. It is exposed
 only after the selected device reports both `TEXTURE2D` and `SHADER_SAMPLE`;
 the synthetic capability test covers positive, unavailable and incomplete
-queries. When unavailable, the public case prints an explicit capability
-`SKIP` while retaining the R8 baseline result. On 2026-11-05, the RTX 3090 Ti
-at requested and actual FL9_1 returned `0x0002c320` for `R8G8_UNORM`. The test
+queries. A positive `SHADER_SAMPLE` bit means `Sample` supports any filter;
+the strict test verifies both nearest sampling and a linear-filter gradient.
+When unavailable, the public case prints an explicit capability `SKIP` while
+retaining the R8 baseline result. On 2026-11-05, the RTX 3090 Ti at requested
+and actual FL9_1 returned `0x0002c320` for `R8G8_UNORM`. The nearest test
 uploaded two distinct RG texels and sampled their red channel into an 8×8
 RGBA8 target; all 64 pixels matched (32 with red 64, 32 with red 192), proving
-the two-byte texel stride in the actual upload and sampling path. The selected
-format projection reports only `TEXTURE_BINDING | COPY_DST` and
+the two-byte texel stride in the actual upload and sampling path. The linear
+test produced the expected eight-column gradient in all 64 output pixels. The
+selected format projection reports only `TEXTURE_BINDING | COPY_DST` and
 `SINGLE_MIP_ONLY`; no render-target, copy-source, readback or mip-chain support
 is asserted.
 
@@ -232,8 +235,9 @@ HAL for direct and helper-reached use.
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
 unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within
-one channel value. It confirms the selected format reports allow sampling and
-uploads, but not filtering, and remain single-mip-only.
+one channel value. Both format projections permit filtering because their
+selected-device `SHADER_SAMPLE` bits are set, though this rendering case uses
+nearest sampling. They remain single-mip-only.
 
 An eleventh strict public test draws per-instance offsets and colors from a
 second vertex stream using `draw(0..3, 1..3)`. It verifies that the nonzero
@@ -1304,8 +1308,9 @@ block-row pitch, replaces the block at [4,0] with a second padded upload, and
 checks all 256 pixels after sampling. Its format mask was `0x000213a0` and
 filtered sampling was reported. The uncompressed sampled/upload-only formats
 and BC1 do not support render-target, copy-source, readback or mip-chain
-operations in this private subset. R8_UNORM linear filtering lacks visual
-execution coverage.
+operations in this private subset. RG8_UNORM linear filtering has visual
+execution coverage; R8_UNORM and the SNORM formats have query-backed
+filterability but only nearest-sampling readback coverage.
 
 ### Non-filtering sampler layouts
 

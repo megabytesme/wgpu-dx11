@@ -753,7 +753,7 @@ impl Capabilities {
                 )
                 .is_ok();
             return if supported {
-                Caps::SAMPLED | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
+                Caps::SAMPLED | Caps::SAMPLED_LINEAR | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
             } else {
                 Caps::empty()
             };
@@ -1094,6 +1094,10 @@ mod tests {
 
     #[test]
     fn fl91_wgpu_projection_matches_the_selected_physical_device() -> windows::core::Result<()> {
+        use windows::Win32::Graphics::Dxgi::Common::{
+            DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16_FLOAT,
+        };
+
         let required =
             std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
         let adapters = match super::super::enumerate_native_adapters() {
@@ -1131,6 +1135,17 @@ mod tests {
         };
         assert_eq!(native.feature_level(), FeatureLevel::L9_1);
         let caps = Capabilities::query(&native);
+        let optional_float_formats = [
+            ("R16_FLOAT", DXGI_FORMAT_R16_FLOAT),
+            ("R16G16_FLOAT", DXGI_FORMAT_R16G16_FLOAT),
+            ("R16G16B16A16_FLOAT", DXGI_FORMAT_R16G16B16A16_FLOAT),
+        ]
+        .map(|(name, format)| {
+            (
+                name,
+                Query::from_result(unsafe { native.raw_device().CheckFormatSupport(format) }),
+            )
+        });
         let projection = caps
             .wgpu_projection()
             .expect("the selected FL9_1 path has a wgpu capability projection");
@@ -1164,6 +1179,7 @@ mod tests {
             caps.driver.depth16_unorm,
             caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
         );
+        std::println!("Optional float texture format queries at FL9_1: {optional_float_formats:?}");
         let selected_vertex_formats = super::super::hal_pipeline::VERTEX_FORMATS
             .iter()
             .filter_map(|(format, _, _)| {
@@ -1595,11 +1611,12 @@ mod tests {
         ] {
             let reported = caps.texture_format_capabilities(format);
             assert!(reported.contains(
-                FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY
+                FormatCaps::SAMPLED
+                    | FormatCaps::SAMPLED_LINEAR
+                    | FormatCaps::COPY_DST
+                    | FormatCaps::SINGLE_MIP_ONLY
             ));
-            assert!(!reported.intersects(
-                FormatCaps::COPY_SRC | FormatCaps::COLOR_ATTACHMENT | FormatCaps::SAMPLED_LINEAR
-            ));
+            assert!(!reported.intersects(FormatCaps::COPY_SRC | FormatCaps::COLOR_ATTACHMENT));
         }
 
         let depth = caps.texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8);
@@ -2299,9 +2316,12 @@ mod tests {
             caps.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Ok(())
         );
-        assert!(caps
-            .texture_format_capabilities(format)
-            .contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY));
+        assert!(caps.texture_format_capabilities(format).contains(
+            FormatCaps::SAMPLED
+                | FormatCaps::SAMPLED_LINEAR
+                | FormatCaps::COPY_DST
+                | FormatCaps::SINGLE_MIP_ONLY
+        ));
 
         let mut unavailable = caps;
         unavailable.driver.rg8_unorm = Query::Unavailable(-1);
@@ -2456,6 +2476,7 @@ mod tests {
         );
         assert!(queried.texture_format_capabilities(format).contains(
             crate::TextureFormatCapabilities::SAMPLED
+                | crate::TextureFormatCapabilities::SAMPLED_LINEAR
                 | crate::TextureFormatCapabilities::COPY_DST
                 | crate::TextureFormatCapabilities::SINGLE_MIP_ONLY
         ));

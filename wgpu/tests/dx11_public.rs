@@ -1966,10 +1966,10 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         .allowed_usages
         .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST));
     assert!(
-        !r8_features
+        r8_features
             .flags
             .contains(TextureFormatFeatureFlags::FILTERABLE),
-        "R8 is projected for non-filtering sampling: {r8_features:?}"
+        "R8 filtering requires a positive selected-device shader-sample query: {r8_features:?}"
     );
     println!("Public R8Unorm format projection: {r8_features:?}");
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -2029,7 +2029,7 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
                 binding: 7,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: false },
+                    sample_type: TextureSampleType::Float { filterable: true },
                     view_dimension: TextureViewDimension::D2,
                     multisampled: false,
                 },
@@ -2038,7 +2038,7 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
             BindGroupLayoutEntry {
                 binding: 42,
                 visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
         ],
@@ -2234,7 +2234,7 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 R8Unorm upload and non-filtering sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
+    println!("PASS: public FL9_1 R8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
 
     let rg8_features = adapter.get_texture_format_features(TextureFormat::Rg8Unorm);
     println!("Public Rg8Unorm format projection: {rg8_features:?}");
@@ -2246,10 +2246,10 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         return;
     }
     assert!(
-        !rg8_features
+        rg8_features
             .flags
             .contains(TextureFormatFeatureFlags::FILTERABLE),
-        "Rg8Unorm is conservatively projected for non-filtering sampling: {rg8_features:?}"
+        "Rg8Unorm filtering requires a positive selected-device shader-sample query: {rg8_features:?}"
     );
     let rg8_texture = device.create_texture(&TextureDescriptor {
         label: Some("public FL9_1 sampled RG8 texture"),
@@ -2381,7 +2381,106 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 Rg8Unorm upload and non-filtering sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
+    println!("PASS: public FL9_1 Rg8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
+
+    let linear_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let linear_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public FL9_1 linearly sampled RG8 resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&rg8_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&linear_sampler),
+            },
+        ],
+    });
+    let mut linear_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = linear_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public FL9_1 RG8 linear sampling pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &linear_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 0..1);
+    }
+    linear_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let linear_submission = queue.submit([linear_encoder.finish()]);
+    let (linear_sender, linear_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        linear_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(linear_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public RG8 linear sampled render");
+    linear_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public RG8 linear readback map callback")
+        .expect("map public RG8 linear readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        let expected_red = [72u8, 88, 104, 120, 136, 152, 168, 184];
+        for y in 0..8 {
+            for (x, expected_red) in expected_red.into_iter().enumerate() {
+                let offset = y * 256 + x * 4;
+                let actual = &data[offset..offset + 4];
+                let expected = [expected_red, 0, 0, 255];
+                for (channel, (&observed, expected)) in actual.iter().zip(expected).enumerate() {
+                    assert!(
+                        observed.abs_diff(expected) <= 2,
+                        "RG8 linear sampled pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 Rg8Unorm linear filtering produced the expected 8-column gradient across 64 pixels");
 }
 
 #[test]
@@ -4840,10 +4939,10 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             "{format:?}: {features:?}"
         );
         assert!(
-            !features
+            features
                 .flags
                 .contains(TextureFormatFeatureFlags::FILTERABLE),
-            "{format:?}: {features:?}"
+            "{format:?} shader-sample support should permit filtering: {features:?}"
         );
         assert!(
             features
@@ -4859,7 +4958,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         assert!(rg16_features
             .flags
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
-        assert!(!rg16_features
+        assert!(rg16_features
             .flags
             .contains(TextureFormatFeatureFlags::FILTERABLE));
     } else {

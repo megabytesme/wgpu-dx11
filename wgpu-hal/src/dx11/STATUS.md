@@ -62,7 +62,9 @@ helper-forwarded, out-of-range and offset bias forms before HAL. A multi-mip R8
 descriptor is also rejected by core.
 A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
 wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
-projected formats are non-filterable and single-mip-only.
+projected formats are filterable and single-mip-only; this draw uses nearest
+sampling, while the positive selected-device `SHADER_SAMPLE` query permits any
+filter.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels); core
 rejects the unsupported `instance_index` builtin.
@@ -321,13 +323,16 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - R8_UNORM is supported for single-mip, single-layer 2D sampled textures with
   RESOURCE and/or COPY_DST usage, subject to a positive device format query.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
-  offset and all 80 sampled output pixels. Render-target, copy-source, readback
-  and mip-chain uses remain unsupported.
+  offset and all 80 sampled output pixels. A positive `SHADER_SAMPLE` query
+  reports `FILTERABLE`; D3D11 point-only sampling when that bit is absent is
+  not implemented. Render-target, copy-source, readback and mip-chain uses
+  remain unsupported.
 - R8G8_UNORM is not a required FL9_1 sampled format. Its one-mip,
   single-layer sampled/upload path is exposed only when the selected device
   reports `TEXTURE2D | SHADER_SAMPLE`. The forced-FL9_1 RTX returned
   `0x0002c320`; a strict public upload/sample test verified 64 pixels and the
-  two-byte texel stride. Render-target, copy-source, readback and mip-chain
+  two-byte texel stride. A second pass verifies linear filtering with an
+  eight-column gradient. Render-target, copy-source, readback and mip-chain
   uses remain unsupported.
 - R8G8_SNORM has the same queried one-mip sampled/upload subset. A strict
   forced-FL9_1 test verifies padded signed two-channel data through GPU
@@ -339,7 +344,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
   forced to FL9_1 reports `0x00021122`, without `SHADER_SAMPLE`; strict HAL and
   public tests verify the format is rejected and not exposed. Synthetic tests
   cover a positive query, but the conditional positive GPU path remains
-  unverified.
+  unverified. D3D11 permits point-only sampling for some formats without the
+  bit, but this backend currently rejects those resources.
 - R8G8B8A8_SNORM has the same queried one-mip sampled/upload subset. A strict
   forced-FL9_1 test verifies padded signed four-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).

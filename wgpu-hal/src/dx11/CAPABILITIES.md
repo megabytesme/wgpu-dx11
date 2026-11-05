@@ -233,9 +233,11 @@ confirmed core rejects multi-mip R8 because that queried format is projected
 with `SINGLE_MIP_ONLY`. This does not imply multi-mip support for other formats
 or NPOT chains.
 Public `Rg8Snorm` and `Rgba8Snorm` tests also verify the selected-device
-`TEXTURE_BINDING | COPY_DST`, non-filterable, single-mip projection. Both
-signed-normalized resources were sampled through wgpu and their converted
-values matched all 64 RGBA8 output pixels. Other SNORM formats and usages are
+`TEXTURE_BINDING | COPY_DST`, filterable, single-mip projection. Their strict
+render test uses nearest sampling and verifies signed-normalized conversion in
+all 64 RGBA8 output pixels; the selected-device `SHADER_SAMPLE` query also
+permits any filter for these formats. A separate RG8_UNORM test verifies linear
+filtering with an eight-value readback gradient. Other formats and usages are
 not implied.
 Public rendering also verifies the implemented per-instance vertex-stream
 emulation with a nonzero first-instance range. The skipped first record does
@@ -462,13 +464,15 @@ resources. The private color HAL accepts one-layer, one-sample RGBA8 or BGRA8
 R8G8_UNORM, R16G16_SNORM and R8G8B8A8_SNORM support only a single-mip, single-layer 2D texture with RESOURCE
 and/or COPY_DST usage; their actual `TEXTURE2D | SHADER_SAMPLE` bits are
 checked at creation. They are not render targets, copy sources or readback
-sources. `SHADER_SAMPLE` also determines whether these views are treated as
-filterable. R8G8_UNORM is not a required FL9_1 sampled format and is exposed
-only after its selected-device query reports both bits. The forced-FL9_1 RTX
-reported `0x0002c320`; a strict public upload/sample test verified the
-two-byte texel stride by reading 64 output pixels. The strict RTX
-R8_UNORM test observed support mask `0x0002d3e0` and
-verified nearest sampling only. Multiple mips require POT
+sources. The backend requires `SHADER_SAMPLE` for this implemented path; a
+positive bit means HLSL `Sample` supports any filter, while D3D11 permits
+point-only sampling for a resource format without that bit. Point-only
+formats are not yet admitted by this backend. R8G8_UNORM is not a required
+FL9_1 sampled format and is exposed only after its selected-device query
+reports both bits. The forced-FL9_1 RTX reported `0x0002c320`; strict public
+readback verified nearest sampling and the two-byte texel stride, and a linear
+sampler produced the expected eight-column gradient. The strict RTX R8_UNORM
+test observed support mask `0x0002d3e0` and verified nearest sampling. Multiple mips require POT
 dimensions, one of the supported copy-only, sampled or color-attachment usage
 combinations and positive per-format
 `D3D11_FORMAT_SUPPORT_MIP`, texture and shader-sample bits; copy-source usage
