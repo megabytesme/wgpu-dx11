@@ -6040,3 +6040,51 @@ Clippy passes with three pre-existing warnings in `dx11_fixture_tests.rs`
 in the new assertions. The full controlled fixture suite was not rerun; the
 changed test passed individually, and the previous checkpoint recorded the
 full fixture at 90/90.
+
+## Checkpoint — optional R8G8_UNORM sampled upload at forced FL9_1
+
+Code commit `672b6b250d2332eaae0d567f6d6af7f79f8ebbf0` adds a queried
+`DXGI_FORMAT_R8G8_UNORM` path for one-mip, one-layer sampled/upload textures.
+It is not treated as an FL9_1 guarantee: the selected device must positively
+report both `D3D11_FORMAT_SUPPORT_TEXTURE2D` and
+`D3D11_FORMAT_SUPPORT_SHADER_SAMPLE`, and unavailable or incomplete query
+results remain unsupported. Backend transfer layout uses two bytes per texel.
+The path does not expose render-target, copy-source, readback or mip-chain
+uses, and the wgpu projection omits `FILTERABLE`.
+
+The strict physical device was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`),
+driver `32.0.16.2101`, software=false, requested and selected FL9_1. The native
+query was `Value(181024)` (`0x0002c320`). The public test uploaded two
+distinct RG texels, sampled the red channel and read back the 8×8 RGBA8 target;
+all 64 pixels matched, with 32 left pixels `[64, 0, 0, 255]` and 32 right
+pixels `[192, 0, 0, 255]`. The existing R8 baseline in the same test also
+matched all 64 pixels. The different red values catch a mistaken one-byte
+texel stride in the actual upload and sample path.
+
+Verification used Rust 1.93.1 and Visual Studio 2022 x64 MSVC. Strict hardware
+mode was enabled for hardware tests:
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/texture.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Results: private HAL passed 353/353, including the synthetic optional-query
+and two-byte layout tests plus forced-FL9_1 GPU rendering. The public D3D11
+suite passed 23/23; the RG8 and R8 image paths both executed on hardware. The
+separate optional Float16x2 vertex-format test logged its expected capability
+skip. The physical D3D11 adapter-isolation test passed 1/1 and DX12 core passed
+86/86. HAL Clippy passed with nine pre-existing warnings outside this change;
+public-test Clippy, changed-file rustfmt and `git diff --check` passed. No
+historical FL9_1 driver result is implied.
+
+Next, continue the selected-device format and usage audit. Investigate another
+bounded FL9_1 texture-format candidate against both the required-format table
+and actual device query before implementing it. Keep optional formats
+query-gated and the broader core/HAL contract audit active.

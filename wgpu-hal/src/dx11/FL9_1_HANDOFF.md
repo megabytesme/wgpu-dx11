@@ -1,5 +1,23 @@
 # FL9_1 handoff
 
+## Current mission state — 2026-11-05
+
+This mission remains active. Later checkpoints supersede older status notes
+below. The current branch is `uwp-dx11`, code HEAD is
+`672b6b250d2332eaae0d567f6d6af7f79f8ebbf0`, and the worktree was clean after
+that commit. The opt-in public D3D11 backend includes a constrained offscreen
+and HWND path; it is not WebGPU-compliant. The latest commit adds selected-
+device-gated R8G8_UNORM upload and sampled rendering. The strict RTX 3090 Ti
+test requested/selected FL9_1, observed `R8G8_UNORM` support mask
+`0x0002c320`, and verified 64/64 readback pixels. Full private HAL and public
+D3D11 suites passed 353/353 and 23/23; DX12 core passed 86/86. Exact commands,
+warnings and hardware identity are in `FL9_1_PROGRESS.md`.
+
+Continue the selected-device format/usage and public core/HAL contract audits.
+Keep unimplemented formats query-gated, preserve the non-WebGPU capability
+contract, and do not push. Historical FL9_1 drivers and ARM32 UWP execution
+remain unverified.
+
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
 device and exposes a conservative public projection for offscreen rendering
