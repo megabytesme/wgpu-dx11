@@ -159,7 +159,10 @@ all 64 output pixels green, plus premultiplied blending with all pixels
 `[128, 0, 128, 255]`. Asymmetric stencil faces, separate-alpha equations and
 source-alpha-saturated factors are rejected before HAL. This confirms the
 implemented symmetric stencil and same-equation blend subsets, not two-sided
-stencil or separate-alpha support.
+stencil or separate-alpha support. A strict public shader also samples two
+independent textures through sparse logical bindings 7 and 42 and one shared
+sampler at 100; all 64 readback pixels include both sampled contributions.
+Public core rejects the incomplete bind group before command submission.
 
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample

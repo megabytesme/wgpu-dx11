@@ -286,3 +286,11 @@ combinations at the public boundary.
 The indexed public scene now fills its vertex buffer through a mapped-at-
 creation range before unmapping and drawing; successful FL9_1 readback
 verifies the staged mapping contents reached GPU vertex input.
+
+The public offscreen integration now also samples two independently uploaded
+textures at sparse bindings 7 and 42 through one sampler at binding 100. The
+layout, WGSL declaration and bind-group entry orders differ; the strict GPU
+test verifies all 64 pixels contain both contributions and public core rejects
+an incomplete group. Continue the exact core/HAL audit and broaden public
+render coverage. HWND presentation remains gated on safe cross-layer
+serialization and reentrancy handling.

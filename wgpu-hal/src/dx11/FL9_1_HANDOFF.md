@@ -1249,3 +1249,19 @@ and unmaps before drawing; readback verifies the mapped bytes reached GPU
 vertex fetch. The strict two-test public suite and wgpu Clippy pass on the RTX
 at forced FL9_1. Exact commands and results are in `FL9_1_PROGRESS.md`.
 Code checkpoint: `8be26c25f` (`dx11: verify public mapped vertex initialization`).
+
+## Latest checkpoint — public sparse multi-texture sampling
+
+Code commit `6280e36df` adds a sixth strict public offscreen test. On the RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual FL9_1,
+textures at logical bindings 7 and 42 were sampled through one sampler at 100.
+The bind-group layout, WGSL declarations and bind-group entries used different
+orders. GPU readback verified all 64 pixels as `[104, 128, 24, 255]`, with both
+textures contributing. Public core rejected an incomplete group missing
+binding 42. The complete strict public suite passed 6/6; Clippy, targeted
+rustfmt and `git diff --check` passed. Exact commands are recorded in
+`FL9_1_PROGRESS.md`.
+
+The public adapter remains offscreen-only. Continue auditing the projected
+core/HAL contract and expand representative public rendering; synchronous
+HWND `Present` reentrancy is still unresolved and blocks surface capabilities.

@@ -108,6 +108,13 @@ inside an 8×8 target. Readback confirms 24 green pixels inside and 40 unchanged
 blue pixels outside. The same test submits an out-of-target viewport and
 confirms core rejects it before HAL under the selected FL9_1 projection.
 
+A sixth strict public test declares two fragment textures at sparse logical
+bindings 7 and 42, plus one shared sampler at binding 100. The bind-group
+layout, WGSL declarations and runtime entries use different orders. Both
+uploaded textures contribute to the output; readback verifies all 64 pixels
+are `[104, 128, 24, 255]`. An incomplete group missing binding 42 is rejected
+through public core validation before rendering.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

@@ -4869,3 +4869,35 @@ The safe public HWND presentation redesign remains the largest outstanding
 cross-layer task. Independent audit evidence for the synchronous message-pump
 and lock interaction is in the previous checkpoint above. Continue with other
 bounded public FL9_1 functionality while surface capabilities remain disabled.
+
+## Checkpoint — public sparse multi-texture sampling — `6280e36df`
+
+Added a strict public wgpu integration test that declares two independently
+uploaded fragment textures at logical bindings 7 and 42 and a shared sampler
+at binding 100. Bind-group layout entries, WGSL declarations and runtime group
+entries are deliberately ordered differently, exercising sparse logical
+identities through core, HAL allocation, shader compilation and D3D11 runtime
+binding. A shader adds both sampled colors. It also attempts to create an
+incomplete group without binding 42 and verifies that public core returns a
+validation error.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 x64 environment on
+2026-11-05. The focused strict test passed 1/1. The complete strict command
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+passed 6/6. Every test selected the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with requested and actual FL9_1 and
+`software=false`. The new case verified all 64 pixels as
+`[104, 128, 24, 255]`. `cargo +1.93 clippy --offline -j16 -p wgpu --tests
+--no-default-features --features dx11,wgsl,std`, targeted rustfmt and
+`git diff --check` passed. Visual Studio printed its existing
+`vError: Unknown error` banner while providing the working x64 toolchain.
+
+The test does not widen the selected capability projection. Public HWND
+surface capabilities remain unavailable because synchronous `Present` can
+reenter while core queue-order and HAL immediate-context locks are held. The
+contract audit and historical FL9_1 hardware verification remain outstanding.

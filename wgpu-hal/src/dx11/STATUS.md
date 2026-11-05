@@ -38,6 +38,9 @@ verifies premultiplied blending produces 64 `[128, 0, 128, 255]` pixels and
 that separate-alpha and source-alpha-saturated blend descriptors are rejected
 before HAL. A fifth strict test verifies a 4×6 scissor through public wgpu
 (24 green and 40 blue pixels) and core rejection of an out-of-target viewport.
+A sixth strict public test samples two textures at sparse bindings 7 and 42
+through a shared sampler at 100; all 64 pixels match the sum of both uploaded
+colors. An incomplete bind group is rejected by core validation.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
