@@ -2,6 +2,7 @@
 
 use std::{
     future::Future,
+    num::NonZeroU64,
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -117,7 +118,32 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     );
     let sampled_view = sampled.create_view(&TextureViewDescriptor::default());
     let sampler = device.create_sampler(&SamplerDescriptor::default());
-    let group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+    let uniforms_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("public DX11 FL9_1 stage uniform layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(64),
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 17,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(16),
+                },
+                count: None,
+            },
+        ],
+    });
+    let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("public DX11 FL9_1 sparse sampled layout"),
         entries: &[
             BindGroupLayoutEntry {
@@ -138,9 +164,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             },
         ],
     });
-    let group = device.create_bind_group(&BindGroupDescriptor {
+    let texture_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("public DX11 FL9_1 sampled resources"),
-        layout: &group_layout,
+        layout: &texture_layout,
         entries: &[
             BindGroupEntry {
                 binding: 7,
@@ -152,19 +178,59 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             },
         ],
     });
+    let transform_data: Vec<u8> = [
+        1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.25, 1.0,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let transform = device.create_buffer(&BufferDescriptor {
+        label: Some("public DX11 FL9_1 vertex transform uniform"),
+        size: transform_data.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&transform, 0, &transform_data);
+    let tint_data: Vec<u8> = [0.5f32, 1.0, 1.0, 1.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let tint = device.create_buffer(&BufferDescriptor {
+        label: Some("public DX11 FL9_1 fragment tint uniform"),
+        size: tint_data.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&tint, 0, &tint_data);
+    let uniforms_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public DX11 FL9_1 stage uniforms"),
+        layout: &uniforms_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 3,
+                resource: transform.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 17,
+                resource: tint.as_entire_binding(),
+            },
+        ],
+    });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("public DX11 FL9_1 pipeline layout"),
-        bind_group_layouts: &[Some(&group_layout)],
+        bind_group_layouts: &[Some(&uniforms_layout), Some(&texture_layout)],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("public DX11 FL9_1 textured shader"),
         source: ShaderSource::Wgsl(
-            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
-             @group(0) @binding(42) var image_sampler: sampler;\n\
+            "@group(0) @binding(3) var<uniform> transform: mat4x4f;\n\
+             @group(0) @binding(17) var<uniform> tint: vec4f;\n\
+             @group(1) @binding(7) var image: texture_2d<f32>;\n\
+             @group(1) @binding(42) var image_sampler: sampler;\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
-             @vertex fn vs(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 1.0), uv); }\n\
-             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }"
+             @vertex fn vs(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(transform * vec4f(position, 1.0), uv); }\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv) * tint; }"
                 .into(),
         ),
     });
@@ -284,7 +350,8 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &group, &[]);
+        pass.set_bind_group(0, &uniforms_group, &[]);
+        pass.set_bind_group(1, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
         pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
@@ -331,15 +398,18 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         for y in 0..8 {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
-                assert_eq!(
-                    &data[offset..offset + 4],
-                    if x < 4 {
-                        &[255, 0, 0, 255]
-                    } else {
-                        &[0, 255, 0, 255]
-                    },
-                    "pixel ({x}, {y})"
-                );
+                let expected = if x < 4 {
+                    [128, 0, 0, 255]
+                } else {
+                    [0, 255, 0, 255]
+                };
+                let actual = &data[offset..offset + 4];
+                for (channel, (&actual, expected)) in actual.iter().zip(expected).enumerate() {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "pixel ({x}, {y}) channel {channel}: expected {expected}, observed {actual}"
+                    );
+                }
             }
         }
     }
@@ -448,5 +518,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         }
     }
     second_readback.unmap();
-    println!("PASS: public wgpu D3D11 FL9_1 indexed textured depth rendering; 32 red/32 green pixels matched; a second device clear/readback matched 64/64 green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1 two-group stage uniforms and indexed textured depth rendering; 32 tinted-red/32 green pixels matched; a second device clear/readback matched 64/64 green pixels");
 }
