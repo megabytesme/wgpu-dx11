@@ -1216,3 +1216,4 @@ The main public render now initializes vertex input through `mapped_at_creation`
 and unmaps before drawing; readback verifies the mapped bytes reached GPU
 vertex fetch. The strict two-test public suite and wgpu Clippy pass on the RTX
 at forced FL9_1. Exact commands and results are in `FL9_1_PROGRESS.md`.
+Code checkpoint: `8be26c25f` (`dx11: verify public mapped vertex initialization`).

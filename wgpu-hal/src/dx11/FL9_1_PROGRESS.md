@@ -4664,6 +4664,8 @@ blocked on the separate Present reentrancy design.
 
 ## Checkpoint — public mapped-at-creation vertex upload
 
+Code checkpoint: `8be26c25f` (`dx11: verify public mapped vertex initialization`).
+
 The indexed textured public scene now creates its vertex buffer with
 `mapped_at_creation`, fills the mapped range, and unmaps before command
 recording. Its strict GPU render/readback verifies that core's initialization
