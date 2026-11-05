@@ -5947,7 +5947,16 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         usage: TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
-    let depth_view = depth.create_view(&TextureViewDescriptor::default());
+    let depth_view = depth.create_view(&TextureViewDescriptor {
+        aspect: TextureAspect::DepthOnly,
+        ..Default::default()
+    });
+    expect_validation_error(&device, "stencil-only view of D16", || {
+        drop(depth.create_view(&TextureViewDescriptor {
+            aspect: TextureAspect::StencilOnly,
+            ..Default::default()
+        }));
+    });
     let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
         .into_iter()
         .flat_map(f32::to_ne_bytes)
@@ -6123,5 +6132,129 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         }
         readback.unmap();
     }
-    println!("PASS: public FL9_1 D16 depth attachment; near geometry won both draw orders, 128/128 green pixels; core rejected mips and stencil state");
+
+    for clear_depth_between_passes in [false, true] {
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 D16 load and clear transitions"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 D16 initial depth pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.set_pipeline(&near);
+            pass.draw(0..3, 0..1);
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 D16 load or clear pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: if clear_depth_between_passes {
+                            LoadOp::Clear(1.0)
+                        } else {
+                            LoadOp::Load
+                        },
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.set_pipeline(&far);
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &color,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for D16 load/clear passes");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("D16 load/clear readback callback")
+            .expect("map D16 load/clear readback");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped D16 load/clear data");
+            let expected = if clear_depth_between_passes {
+                [255, 0, 0, 255]
+            } else {
+                [0, 255, 0, 255]
+            };
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "D16 clear between passes {clear_depth_between_passes}, pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+    }
+    println!("PASS: public FL9_1 D16 depth attachment; near geometry won both draw orders, LOAD preserved depth, CLEAR reset depth, 128/128 pass-transition pixels validated; core rejected mips, stencil view, stencil state");
 }

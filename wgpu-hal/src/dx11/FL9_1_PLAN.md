@@ -34,10 +34,11 @@ contract is safe. This plan does not claim WebGPU conformance.
    budget cases still need coverage.
 2. Extend depth/stencil coverage from the implemented D16 depth-only and D24S8
    attachment paths. D16 uses a required-format guarantee intersected with a
-   selected-device query and is single-mip; a strict public test verifies depth
-   ordering in both draw orders and core rejects stencil and multi-mip use.
-   Continue testing independent load/clear/store behavior, unsupported views,
-   and remaining render-pass combinations before widening public capability claims.
+   selected-device query and is single-mip; strict public tests verify depth
+   ordering in both draw orders, `DepthOnly` view use, rejection of stencil and
+   multi-mip use, preservation across a second-pass LOAD and reset by CLEAR.
+   Continue testing independent store/discard behavior, unsupported views and
+   remaining render-pass combinations before widening public capability claims.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. A controlled core test

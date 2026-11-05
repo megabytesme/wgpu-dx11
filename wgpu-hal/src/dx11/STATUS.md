@@ -138,11 +138,13 @@ per-device format queries. A strict public test verifies sRGB decoding from
 both upload formats and sRGB encoding to both render-target formats across
 128 sampled and 128 rendered pixels. A dedicated sRGB mip-chain execution test
 also uploads four-level POT chains for both formats and verifies that implicit
-LOD sampling selects mip 1 in all 128 readback pixels. The new D16_UNORM
-public test reports only render-attachment/transient usage and
-SINGLE_MIP_ONLY, then verifies near geometry wins over far geometry in both
-draw orders across 128 readback pixels. Mip reporting remains conditional on
-the selected format query and the existing POT mip implementation.
+LOD sampling selects mip 1 in all 128 readback pixels. The D16_UNORM public
+test reports only render-attachment/transient usage and SINGLE_MIP_ONLY. It
+verifies near geometry wins over far geometry in both draw orders, a
+`DepthOnly` view is accepted while `StencilOnly` is rejected, LOAD preserves
+depth between passes and CLEAR resets it. Readback checks 128 pixels for draw
+order and another 128 for pass transitions. Mip reporting remains conditional
+on the selected format query and the existing POT mip implementation.
 
 The complete strict private HAL suite passes 347/347, the controlled core
 fixture suite passes 89/89, core's explicit physical-adapter enumeration test
