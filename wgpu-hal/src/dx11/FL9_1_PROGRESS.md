@@ -6619,3 +6619,39 @@ git diff --check
 Next: exercise transient attachments through public wgpu/core/HAL with valid
 clear/discard operations and verify the supported non-persistent semantics.
 Continue the broader render-pass and core/HAL contract audit afterward.
+
+## Follow-up — public transient attachment passes
+
+Code checkpoint `d224dcd3e` adds strict public wgpu coverage for the existing
+transient attachment implementation. It creates transient RGBA8 and D24S8
+resources, rejects sampled transient usage, color LOAD/STORE, and depth LOAD,
+then submits a transient color clear/draw/discard pass and a transient D24S8
+clear/draw/discard pass. In the latter, a near green draw writes depth and a
+far red draw fails; all 64 pixels in the ordinary stored color target are
+green. Discarded transient data is not read back because public usage forbids
+preserving it. These D3D11 textures use ordinary allocations; no memoryless
+behavior or memory savings are claimed.
+
+Invalid render-pass descriptor errors are deferred by core until the parent
+encoder is finished. The negative checks therefore finish isolated encoders
+before popping their error scopes. The first focused run initially appeared to
+accept transient LOAD because the test popped the scope before finishing; after
+following core's error path and correcting the test, the strict focused test
+passed 1/1 and the full public suite passed 27/27. Hardware was the physical
+NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false),
+requested and actual FL9_1. No GPU test skipped; the optional Float16x2 IA
+branch printed its explicit unsupported-capability skip. Public Clippy,
+rustfmt and diff checks passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_transient_attachments_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: test that core rejects read-only transient depth and a render pass with
+no attachments before either reaches the private HAL. Continue the remaining
+render-pass/core-HAL contract audit afterward.
