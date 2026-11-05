@@ -4560,3 +4560,25 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 ```
 
 `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std`, targeted rustfmt and `git diff --check` passed. No skip or newly introduced warning. This covers concurrent queue submissions on the same adapter/context; it does not establish public presentation concurrency or device-loss behavior. Continue the core/HAL contract audit and retain the offscreen surface gate.
+
+## Checkpoint — public unsupported-resource validation
+
+Commit `4efecaf6e` adds negative checks through the ordinary public adapter and
+device. With a validation error scope around each operation, core rejects:
+
+- D3 texture creation while the selected FL9_1 projection disables 3D textures.
+- 4x RGBA8 render-target creation while the backend's sample-count support is one.
+- `R32Float` sampled texture creation because that format is not in the selected implementation projection.
+- A two-mip D24S8 render attachment under the single-mip FL9_x restriction.
+
+Each captured error was `wgpu::Error::Validation`, demonstrating that the
+public core boundary rejects these requests before they reach the private HAL.
+The strict public FL9_1 test still passed 1/1 on the RTX 3090 Ti at requested
+and actual FL9_1, `software=false`, including group-7 sampled resources,
+dynamic uniform transform readback and concurrent clear/readback on two
+devices. Clippy, targeted rustfmt and `git diff --check` passed. Exact command
+and execution evidence are in the preceding concurrent-device checkpoint.
+
+This is a focused negative set, not a complete per-format/usage audit. Keep
+checking every core-valid resource and command against HAL before widening the
+projection; public surfaces remain gated by Present scheduling.
