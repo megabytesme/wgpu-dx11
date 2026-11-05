@@ -1881,6 +1881,77 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             VertexCase::DisjointCloneMip(wgt::TextureFormat::Bgra8Unorm),
         );
     }
+
+    let queue_ref = global.hub.queues.get(queue);
+    let _present_guard = queue_ref
+        .begin_present()
+        .expect("outer presentation guard must be acquired");
+    assert!(matches!(
+        global.queue_write_buffer(queue, source, 0, &[0x5a; 4]),
+        Err(crate::device::queue::QueueWriteError::PresentationInProgress)
+    ));
+    assert!(matches!(
+        global.queue_submit(queue, &[]),
+        Err((
+            _,
+            crate::device::queue::QueueSubmitError::PresentationInProgress
+        ))
+    ));
+    assert!(matches!(
+        global.device_poll(device, wgt::PollType::Poll),
+        Err(crate::device::WaitIdleError::Timeout)
+    ));
+
+    let (reentrant_buffer, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("create buffer during present")),
+            size: 16,
+            usage: wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(
+        matches!(
+            error,
+            Some(crate::resource::CreateBufferError::Device(
+                crate::device::DeviceError::PresentationInProgress
+            ))
+        ),
+        "reentrant buffer creation returned {error:?}"
+    );
+    global.buffer_drop(reentrant_buffer);
+
+    let (reentrant_texture, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: Some(Cow::Borrowed("create texture during present")),
+            size: wgt::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: Vec::new(),
+        },
+        None,
+    );
+    assert!(matches!(
+        error,
+        Some(crate::resource::CreateTextureError::Device(
+            crate::device::DeviceError::PresentationInProgress
+        ))
+    ));
+    global.texture_drop(reentrant_texture);
+    drop(_present_guard);
+    drop(queue_ref);
+    std::println!("PASS: public core queue and context-backed resource operations reject same-thread present reentry");
+
     let (failed_map, error) = global.device_create_buffer(
         device,
         &wgt::BufferDescriptor {
@@ -2024,6 +2095,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         .is_err());
     global.buffer_drop(failed_map);
     std::println!("PASS: injected D3D11 invalidate OOM reached map callback and released shadow");
+
     global.command_buffer_drop(command);
     global.command_encoder_drop(encoder);
     global.buffer_drop(source);

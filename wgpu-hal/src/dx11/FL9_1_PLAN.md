@@ -262,10 +262,12 @@ not a repository artifact.
    acquire and present enforce window-thread affinity. Strict hardware tests
    cover hidden-window configure/present/resize and wrong-thread rejection; a
    bounded visible example presents an animated textured indexed cube for 60
-   frames at forced FL9_1. Continue testing lifecycle/error and reentrancy
-   edges, and capture visible pixels when a reliable workflow is available.
-   Preserve the existing CoreWindow path; Windows 10 Mobile ARM32 remains
-   unverified.
+   frames at forced FL9_1. A captured live client area has been visually
+   inspected, and the controlled core fixture holds the presentation guard
+   while verifying same-thread queue write/submit, poll, buffer creation and
+   texture creation behavior. Continue testing lifecycle/error and remaining
+   reentrancy edges. Preserve the existing CoreWindow path; Windows 10 Mobile
+   ARM32 remains unverified.
 7. Audit unsupported operations, synchronization, lifetime and device loss;
    run strict GPU, core, Naga and non-D3D11 regressions and relevant downlevel
    conformance cases. Independently review the public contract. The upstream

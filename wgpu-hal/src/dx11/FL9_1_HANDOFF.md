@@ -1603,3 +1603,16 @@ Next continue the public core/HAL contract audit and surface reentrancy edge
 tests. Keep the opt-in adapter's limited contract explicit; historical FL9_1
 drivers, ARM32 UWP, and GPU execution of optional IA formats remain
 unverified. Do not push.
+
+## Follow-up — core Present-guard reentrancy coverage
+
+The current working tree adds core fixture assertions that acquire the
+production queue presentation guard and exercise queue write, queue submit,
+device poll, buffer creation and texture creation reentrantly on the same
+thread. The targeted forced-FL9_1 fixture passed on the RTX 3090 Ti at actual
+L9_1. It verifies guard responses, not DXGI callback delivery during Present.
+Exact command and first-run resolution are in `FL9_1_PROGRESS.md`. Run
+core-test Clippy, formatting and diff checks, then commit this focused test
+and documentation update. Continue the public core/HAL contract audit after
+that checkpoint; this does not establish that every possible callback API is
+safe or that historical drivers behave identically.

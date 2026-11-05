@@ -877,7 +877,11 @@ clone-sampling case can be selected with
 requested and actual FL9_1 it read BGRA `[0, 0, 255, 255]`, present returned
 `Ok`, and resize succeeded while the completed command buffer remained retained.
 A hidden-window test does not verify visible public presentation or concurrent
-surface use. Synchronous window callbacks can still deadlock on reentry.
+surface use. The controlled core fixture holds the same presentation guard and
+verifies that queue writes and submissions return validation errors, polling
+times out, and buffer/texture creation is rejected on same-thread reentry.
+This simulates the active guard; it does not force DXGI to deliver a window
+callback during `Present`.
 
 From an x64 Visual Studio developer shell, require physical hardware with
 `$env:WGPU_DX11_REQUIRE_HARDWARE = "1"` in PowerShell, then run:

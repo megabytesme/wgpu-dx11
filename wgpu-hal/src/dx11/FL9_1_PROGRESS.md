@@ -6003,3 +6003,36 @@ passed 90/90, physical adapter selection 1/1, and DX12 core 86/86. HAL Clippy
 passed with nine existing warnings outside this change; public-test Clippy,
 changed-file rustfmt and `git diff --check` passed. No optional-format GPU
 execution or historical-driver behavior is claimed.
+
+## Checkpoint — same-thread Present reentrancy coverage
+
+The controlled D3D11 core fixture now enters the production
+`QueuePresentGuard` and invokes core operations on the same thread. It verifies
+queue writes and submissions return `PresentationInProgress`, device polling
+returns `Timeout`, and buffer/texture creation return the explicit
+`DeviceError::PresentationInProgress`. Invalid resource IDs are dropped after
+the creation checks. This exercises core behavior under the guard that wraps
+native `Present`; it does not make DXGI deliver a window callback during the
+test. The existing hidden-window public test still covers configure, acquire,
+present, resize and owner-thread rejection.
+
+The first test placement came after an existing injected OOM that deliberately
+marks the fixture device lost, so resource creation correctly returned
+`DeviceLost`. The reentrancy checks were moved before that failure injection;
+the final strict test passed on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested/actual FL9_1, `software=false`:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1'
+```
+
+Result: 1 targeted core fixture passed, 89 tests filtered out. Its full
+readback workload also passed, including 64-pixel color checks across the
+existing draw cases, plus the new guard assertions. The initial expected
+failure during the device-lost phase was an ordering error in the new test,
+not a backend failure. Rust 1.93 rustfmt and `git diff --check` pass. Core
+Clippy passes with three pre-existing warnings in `dx11_fixture_tests.rs`
+(one collapsible conditional and two unnecessary slice references); none are
+in the new assertions. The full controlled fixture suite was not rerun; the
+changed test passed individually, and the previous checkpoint recorded the
+full fixture at 90/90.
