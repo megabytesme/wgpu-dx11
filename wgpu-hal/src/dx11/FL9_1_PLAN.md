@@ -38,8 +38,9 @@ contract is safe. This plan does not claim WebGPU conformance.
    ordering in both draw orders, `DepthOnly` view use, rejection of stencil and
    multi-mip use, preservation across a second-pass LOAD and reset by CLEAR.
    A discard followed by LOAD also verifies that stale depth does not affect
-   rendering. Continue testing independent store/discard behavior, unsupported
-   views and remaining render-pass combinations before widening public claims.
+   rendering. Next verify public D24S8 depth/stencil LOAD, CLEAR and discard
+   transitions, including unsupported aspects and preservation of both
+   subresources, before widening public claims.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. A controlled core test

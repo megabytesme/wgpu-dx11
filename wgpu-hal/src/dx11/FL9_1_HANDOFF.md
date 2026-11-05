@@ -1462,3 +1462,30 @@ The mission remains active. Continue the shader/core/HAL and format audit, then
 return to safe HWND presentation scheduling. The public adapter is
 opt-in/offscreen-only; public surface capabilities remain unavailable.
 Historical FL9_1 hardware and ARM32 UWP remain unverified.
+
+## Current checkpoint — optional R16G16_SNORM query gate — `95a7d50e8`
+
+R16G16_SNORM is not a required FL9_1 shader-sample format: Microsoft lists
+`TEXTURE2D` at 9_1 and `SHADER_SAMPLE` from 9_2. The model records no static
+FL9_1 sampling guarantee and requires a positive selected-device query for the
+narrow single-mip sampled/upload path. The RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) forced to FL9_1 returned `0x00021122`, without `SHADER_SAMPLE`.
+The private HAL rejects it, the public adapter reports no usages, and public
+texture creation fails validation. Synthetic tests cover a positive query; the
+conditional positive upload/sample path remains unverified on hardware.
+
+Strict verification on this physical adapter: private HAL 349/349, public
+D3D11 19/19, D3D11 core fixture 89/89, adapter enumeration 1/1, DX12 core
+85/85. No strict hardware skips. HAL and public Clippy plus changed-file
+rustfmt and `git diff --check` passed; nine existing unrelated HAL Clippy
+warnings remain. Exact commands and output are recorded in
+`FL9_1_PROGRESS.md`.
+
+Resume from branch `uwp-dx11`, code checkpoint `95a7d50e8`, then progress-log
+checkpoint commit. The tree currently has only the pending progress and
+handoff journal edits. Next task: inspect and test D24S8 depth/stencil
+render-pass load/store/discard transitions through public wgpu, then resume the
+core/HAL contract audit. Do not enable public surface capabilities; HWND
+presentation still needs a safe cross-layer scheduler because DXGI `Present`
+can synchronously reenter the window procedure while core and HAL locks are
+held. Historical FL9_1 and ARM32 UWP execution remain unverified.

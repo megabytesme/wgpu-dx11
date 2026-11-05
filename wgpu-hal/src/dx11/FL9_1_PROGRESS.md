@@ -5628,3 +5628,45 @@ rustfmt and `git diff --check` passed. The full private HAL, core fixture and
 DX12 suites were not rerun for this test-only increment; their latest results
 remain 347/347, 89/89, and 85/85 respectively at `d0efe2753`. Continue with
 other validated render-pass combinations and the core/HAL audit.
+
+## Checkpoint — query-gated R16G16_SNORM sampling — `95a7d50e8`
+
+Microsoft's required DXGI format table distinguishes `R16G16_SNORM` 2D texture
+support at FL9_1 from `SHADER_SAMPLE`, required beginning at FL9_2. The
+capability model now records that distinction; an FL9_1 path is considered
+only when the selected device's format query positively reports both
+`TEXTURE2D` and `SHADER_SAMPLE`. It remains single-mip sampled/upload only.
+
+The physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) was explicitly created at FL9_1 and returned
+`R16G16_SNORM CheckFormatSupport=0x00021122`, which lacks `SHADER_SAMPLE`.
+The capability projection reports no usages, private HAL texture creation
+rejects the format, and the public test observes the same validation error.
+The strict public SNORM test still sampled R8G8_SNORM and R8G8B8A8_SNORM and
+matched all 64 output pixels. Synthetic capability tests cover a complete
+positive query and reject incomplete or unavailable queries. A conditional
+padded upload/sample path is implemented, but no GPU has exercised that
+positive branch; no R16G16_SNORM sampled execution is claimed.
+
+Verification (Rust 1.93.1, Visual Studio MSVC environment):
+
+- The full strict private HAL suite passed 349/349. The R16G16_SNORM case was
+  a GPU-query-driven rejection check on this adapter; other suite hardware
+  cases executed normally with strict hardware selection.
+- The full strict public D3D11 suite passed 19/19 with no skips. Its SNORM case
+  verified R16G16_SNORM is not exposed and rejected by core, and validated the
+  supported R8G8/RGBA8 SNORM pixel output.
+- The capability-model tests passed 24/24; the final focused optional-query
+  test passed 1/1. The private query-gated hardware test passed 1/1 and the
+  public SNORM integration test passed 1/1 on the RTX.
+- The D3D11 core fixture passed 89/89; physical-adapter enumeration passed
+  1/1; the DX12 core regression passed 85/85.
+- HAL and public D3D11 Clippy passed. HAL reported nine existing warnings in
+  unrelated code; public Clippy had no warning. Changed-file rustfmt and
+  `git diff --check` passed.
+
+The `VsDevCmd.bat` banner included `vError: Unknown error` but MSVC compilation,
+linking and all test processes completed successfully. The mission remains
+active. Next continue FL9_1 depth/stencil render-pass transition coverage and
+the public core/HAL contract audit; HWND presentation remains off until a safe
+cross-layer scheduling design is established.
