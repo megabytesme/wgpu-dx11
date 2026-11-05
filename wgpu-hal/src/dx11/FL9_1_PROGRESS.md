@@ -154,6 +154,73 @@ rustfmt --edition 2021 --check tests/src/params.rs wgpu-core/src/device/resource
 git diff --check
 ```
 
+## Checkpoint — query-gated R8/RG8/RGB565 copy and readback — `877c4e9bc`
+
+Commit `877c4e9bc` adds the narrow-format copy-source paths and variable-width
+texture readback. FL9_x GPU-to-CPU copies require an internal native
+render-target binding even when the public texture is not a render target. The
+HAL now admits `COPY_SRC` for R8_UNORM, R8G8_UNORM and B5G6R5 only when both
+the backend path and selected device's `RENDER_TARGET` query are positive. HAL
+texture creation adds the native RTV bind for this use. RGB5A1, RGBA4, the
+SNORM formats and BC1 remain excluded. The controlled core fixture derives
+these usage reports from the HAL projection.
+
+The texture-to-buffer path now uses each format's block layout rather than a
+hard-coded four bytes per texel. It checks block alignment and copies mapped
+rows using the D3D11 staging texture's actual `RowPitch`. Existing checked
+offset, pitch and destination-range handling is retained. A CPU test covers
+R8, RG8 and RGB565 layouts with 256-byte rows and a nonzero offset.
+
+The new strict public test explicitly selected the physical NVIDIA RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested FL9_1,
+and confirmed actual FL9_1. At that level, the selected-device masks were
+R8=`0x0002d3e0`, RG8=`0x0002c320`, and B5G6R5=`0x0026f3a0`. For each format,
+the test uploaded padded 5×3 source rows, performed a partial GPU texture copy
+from a nonzero source origin into a differently sized 6×4 destination at a
+nonzero destination origin, then read the complete destination into a buffer
+at offset 16 with 256-byte rows. It verified all 24 texels (six copied and 18
+zero-initialized/preserved) plus padding sentinels. All three formats passed.
+The synthetic capability test rejects the copy-source path when the
+render-target query is missing or the backend implementation switch is false.
+
+Verification used Rust 1.93.1 in the Visual Studio 2022 x64 developer
+environment, with `-j32` and strict hardware mode for GPU suites:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 check --offline -j32 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --lib --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-core --lib --tests --no-default-features --features dx11-test-fixture,std,wgsl
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_transfer.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/tests/dx11/r8_texture.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Results: strict HAL 359/359, public D3D11 26/26, controlled core fixture
+1/1 (89 filtered), physical public adapter selection 1/1 (86 filtered), and
+core DX12 86/86. The full public suite logged one optional Float16x2 input
+format skip because the selected-device query does not report it; no
+hardware-required test skipped for missing hardware. The HAL suite contains
+expected negative shader cases that reject before GPU execution and log their
+GPU-only subcase as skipped. HAL Clippy passed with nine existing unrelated
+warnings, core Clippy with one existing warning, and public Clippy without
+warnings. Changed-file rustfmt, HAL check and `git diff --check` passed. A
+direct Cargo invocation outside the VS developer shell initially failed to
+find `link.exe`; rerunning within `VsDevCmd.bat` passed. The first full HAL
+run after implementation exposed two stale synthetic expectations; they were
+updated to distinguish RGB565's implemented path and the suite then passed.
+
+An independent read-only review found no concrete mismatch in the new path.
+It confirmed the FL9_x render-target bind requirement, query/implementation
+gating, checked transfer layout and use of native mapped row pitch. Historical
+FL9_1 behavior and ARM32 UWP remain unverified. Continue the public core/HAL
+format and operation audit.
+
 Continue by auditing whether every projected numeric limit, per-format usage
 and accepted core command is implemented by the D3D11 path. Public D3D11
 enumeration and public HWND surface exposure remain gated; the forced RTX

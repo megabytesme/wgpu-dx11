@@ -448,8 +448,11 @@ queries produced no texture or depth candidate. R8_UNORM, R8G8_UNORM and
 B5G6R5 now have query-gated single-mip color attachment, GPU copy and CPU
 readback support. Strict public GPU readback validates partial copies for all
 three formats, including untouched texels, nonzero destination origin and
-padded rows. Continue the public core/HAL contract audit from these bounded
-format reports. Add another format only when its selected-device query, native
-resource/view path and representative GPU output can all be validated. Keep
-unsupported usages out of the projection and preserve historical FL9_1 and
-ARM32 as unverified targets.
+padded rows. The new copy test starts from uploaded resources; next extend the
+public attachment test to combine `COLOR_TARGET`, `RESOURCE` and `COPY_SRC`,
+then copy and read back rendered narrow-format contents. This validates the
+full query-gated attachment-to-copy path. Continue the public core/HAL contract
+audit from these bounded format reports. Add another format only when its
+selected-device query, native resource/view path and representative GPU output
+can all be validated. Keep unsupported usages out of the projection and
+preserve historical FL9_1 and ARM32 as unverified targets.

@@ -3,16 +3,15 @@
 ## Current mission state — 2026-11-05
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`; latest implementation commit `6c6b28d64` adds
-query-backed point-only sampled textures and core filterability validation.
-The opt-in public D3D11 backend supports a conservative offscreen path and a
-constrained HWND path; it is not WebGPU-compliant. Sampled/upload formats now
-require the queried `TEXTURE2D` bit, while `SHADER_SAMPLE` separately controls
-`FILTERABLE`. Strict FL9_1 private and public tests executed point sampling of
-`R16G16_SNORM` on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
-software=false; format query `0x00021122`) and verified that filtering is
-rejected. Final strict HAL, public D3D11 and core D3D11 suites passed 355/355,
-23/23 and 87/87; DX12 core passed 86/86. Exact commands and diagnostics are in
+The branch is `uwp-dx11`; latest implementation commit `877c4e9bc` adds
+query-gated copy and readback paths for R8_UNORM, R8G8_UNORM and B5G6R5. The
+opt-in public D3D11 backend supports a conservative offscreen path and a
+constrained HWND path; it is not WebGPU-compliant. The new test forced the RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) to requested
+and actual FL9_1 and checked all 24 texels and padded rows for each format
+after a partial GPU texture copy. Strict HAL passed 359/359, public D3D11
+26/26, the controlled core fixture 1/1, selected adapter enumeration 1/1,
+and core DX12 86/86. Exact commands and query masks are in
 `FL9_1_PROGRESS.md`.
 
 The constrained HWND path has hidden-window configure/acquire/present/resize
@@ -20,9 +19,11 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits; next inspect the remaining
-16-bit normalized format family. Keep optional formats query-gated and do not
-push.
+format/usage and public core/HAL contract audits. The tested partial-copy path
+starts from an uploaded texture; next extend the public render-target test to
+combine `COLOR_TARGET`, `RESOURCE` and `COPY_SRC`, then copy/read back rendered
+R8, RG8 and RGB565 contents. This verifies the full query-gated attachment to
+copy path. Keep optional formats query-gated and do not push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
