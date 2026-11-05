@@ -347,6 +347,8 @@ impl WebGpuError for DeviceMismatch {
 pub enum DeviceError {
     #[error("Parent device is lost")]
     Lost,
+    #[error("This operation cannot run reentrantly while presenting a surface")]
+    PresentationInProgress,
     #[error("Not enough memory left.")]
     OutOfMemory,
     #[error(transparent)]
@@ -357,6 +359,7 @@ impl WebGpuError for DeviceError {
     fn webgpu_error_type(&self) -> ErrorType {
         match self {
             Self::DeviceMismatch(e) => e.webgpu_error_type(),
+            Self::PresentationInProgress => ErrorType::Validation,
             Self::Lost => ErrorType::DeviceLost,
             Self::OutOfMemory => ErrorType::OutOfMemory,
         }

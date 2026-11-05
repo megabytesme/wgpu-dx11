@@ -5791,3 +5791,66 @@ contained one DX11 adapter. The broader harness currently exercises almost
 none of the public projection because its default requested limits exceed the
 FL9_1 limits. The Deno CTS package still does not enable DX11, and this
 non-WebGPU-compliant adapter must not be exposed to a conformance runner.
+
+## Checkpoint — serialized public HWND presentation — pending
+
+The explicit `dx11` backend now reports a deliberately narrow public surface
+contract for valid HWNDs: BGRA8 sRGB FIFO, opaque composition, render-attachment
+usage and one frame of latency. Configure, acquire and present are restricted
+to the HWND owner thread. A queue submission gate serializes queue submissions,
+writes, mapping flushes, polling, surface configuration and selected
+context-backed resource creation against `Present`. Same-thread reentrant work
+that could mutate queue or mapping state is rejected. A HAL thread-affinity
+query lets core reject the wrong thread before it waits on queue serialization.
+The existing D3D11 default-backend selection is unchanged; callers must opt in
+to `dx11`.
+
+On the RTX 3090 Ti (`0x10de:0x2203`, NVIDIA driver `32.0.16.2101`), the device
+was explicitly requested and confirmed at FL9_1 with `software=false`. The
+public HWND test configured 64×64, rendered a clear, presented, dropped the old
+backbuffer view, resized to 80×48, rendered and presented again, then verified
+wrong-thread acquisition was rejected. The window was hidden: this proves
+surface lifecycle and GPU presentation calls, not visible desktop output or a
+continuously pumped message loop. Public D3D11 is still experimental and not
+WebGPU-compliant.
+
+Verification (Rust 1.93.1, Visual Studio 2022 x64 developer environment,
+Cargo `-j32`):
+
+- Strict private HAL suite: 351/351; strict D3D11 core fixture: 90/90; strict
+  public D3D11 integration: 22/22, no failures or hardware skips. The public
+  tests executed against the physical adapter at requested/actual FL9_1. The
+  focused public HWND test passed 1/1 after the final HAL thread-affinity hook.
+- Core DX12 regression: 86/86.
+- Strict public adapter-selection test: 1/1; it explicitly enumerated the
+  physical FL9_1 adapter through the opt-in D3D11 path. Normal backend
+  priorities remain unchanged.
+- Core and HAL Clippy passed with three and nine existing unrelated warnings;
+  public-test Clippy was clean. Changed-file rustfmt and `git diff --check`
+  passed. Workspace `cargo fmt --all -- --check` still reports the existing
+  unrelated formatting differences in `naga/src/back/hlsl/writer.rs`.
+
+The initial resize attempt failed because the test retained a view of the old
+swapchain buffer; dropping that view before reconfiguration fixed the test.
+Cross-thread acquisition is tested only after the final present because the
+public core maps the HAL's wrong-thread surface error to `Lost` for that
+surface. Exact commands (Rust 1.93.1):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+
+& cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 -- --nocapture --test-threads=1'
+& cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1'
+& cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1'
+cargo +1.93 clippy --offline -j32 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --config skip_children=true --check wgpu-core/src/device/mod.rs wgpu-core/src/device/queue.rs wgpu-core/src/device/resource.rs wgpu-core/src/present.rs wgpu-core/src/resource.rs wgpu-hal/src/lib.rs wgpu-hal/src/dynamic/surface.rs wgpu-hal/src/dx11/adapter.rs wgpu-hal/src/dx11/surface.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: add a native visible-window example with a real Windows message pump and
+exercise a textured, indexed, depth-tested scene. Then continue the public
+core/HAL contract audit. Visible output and historical FL9_1 behavior remain
+unverified.

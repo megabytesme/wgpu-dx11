@@ -2,11 +2,20 @@
 
 The objective is a usable explicit D3D11 backend through the public native wgpu
 API, with truthful downlevel capabilities, tested textured depth rendering and
-Windows presentation. The opt-in public adapter now exposes physical FL9_1
-devices for offscreen rendering; public surfaces remain disabled until their
-contract is safe. This plan does not claim WebGPU conformance.
+Windows presentation. The opt-in public adapter exposes physical FL9_1 devices
+for offscreen rendering and a constrained HWND surface. Surface use is
+owner-thread-only and has hidden-window verification so far. This plan does not
+claim WebGPU conformance.
 
 ## Ordered work and gates
+
+The public HWND path serializes submissions, queue writes, mapped-buffer
+updates and context-backed resource creation against `Present`. Reentrant
+same-thread operations that would mutate those resources are rejected, while
+other threads wait for presentation to finish. Configure/acquire/present are
+checked against the HWND owner thread. The public test verifies two presents
+and resize on a hidden window; a visible event-loop example and display
+verification remain open.
 
 1. Preserve the tested private backend; continue uniform layout and real
    constant-budget testing. FXC and the forced-FL9_1 RTX accept a dynamically

@@ -2,10 +2,10 @@
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
-device and exposes a conservative public offscreen projection. A standalone
-public wgpu example now renders and validates an indexed textured depth-tested
-3D cube. The adapter is not WebGPU-compliant, and public surface capabilities
-remain unavailable. The private HAL has tested D24S8 depth/stencil,
+device and exposes a conservative public projection for offscreen rendering
+and a constrained HWND surface. A standalone public wgpu example renders and
+validates an indexed textured depth-tested 3D cube. The adapter is not
+WebGPU-compliant. The private HAL has tested D24S8 depth/stencil,
 depth-only prepasses, stencil operations, read-only attachments, depth-bias
 subsets, multiple texture formats and mip views, uniform layouts/ranges, and
 indexed/nonindexed point, line and triangle topologies on a modern RTX 3090 Ti
@@ -1535,3 +1535,28 @@ remain disabled: synchronous DXGI `Present` may reenter core while its queue
 and HAL context locks are held, and a safe cross-layer scheduling design has
 not been established. Historical FL9_1 hardware and ARM32 UWP remain
 unverified.
+
+## Current checkpoint — serialized public HWND presentation — pending
+
+The newest working-tree increment replaces the former surface gate with a
+narrow public HWND contract: BGRA8 sRGB FIFO, opaque composition,
+render-attachment usage and one frame of latency. Configure/acquire/present
+are owner-thread-only. Core serializes submissions, queue writes, map flushes,
+polling and selected resource operations with Present; same-thread reentrant
+operations that could mutate queue state fail safely. The default backend
+priority is unchanged, and the adapter remains opt-in and non-WebGPU-compliant.
+
+Strict verification passed on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested/actual FL9_1, software=false: private HAL
+351/351, controlled core fixture 90/90, public D3D11 22/22 with no skips, and
+DX12 core 86/86. The public HWND test rendered, presented, resized from 64×64
+to 80×48, presented again and rejected wrong-thread acquisition. It used a
+hidden HWND; visible display output and a continuous message pump are not yet
+verified. Clippy and changed-file formatting passed; existing unrelated
+warnings and the Naga workspace-format discrepancy are recorded in
+`FL9_1_PROGRESS.md`.
+
+Next implement and run a native visible-window example, then continue the
+public core/HAL contract audit. Do not treat the hidden surface smoke test as
+visible presentation verification. Historical FL9_1 and ARM32 UWP execution
+remain unverified.

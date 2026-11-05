@@ -1,6 +1,6 @@
 //! Physical D3D11 adapters restricted to the implemented FL9_1 contract.
 
-use alloc::{string::String, sync::Arc};
+use alloc::{string::String, sync::Arc, vec};
 
 #[derive(Debug)]
 enum AdapterInner {
@@ -208,9 +208,22 @@ impl crate::Adapter for Adapter {
     }
     unsafe fn surface_capabilities(
         &self,
-        _: &super::Surface,
+        surface: &super::Surface,
     ) -> Option<crate::SurfaceCapabilities> {
-        None
+        if !surface.supports_public_presentation() {
+            return None;
+        }
+        Some(crate::SurfaceCapabilities {
+            formats: vec![wgt::SurfaceFormatCapabilities {
+                format: wgt::TextureFormat::Bgra8Unorm,
+                color_spaces: wgt::SurfaceColorSpaces::SRGB,
+            }],
+            maximum_frame_latency: 1..=1,
+            current_extent: None,
+            usage: wgt::TextureUses::COLOR_TARGET,
+            present_modes: vec![wgt::PresentMode::Fifo],
+            composite_alpha_modes: vec![wgt::CompositeAlphaMode::Opaque],
+        })
     }
     unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp {
         wgt::PresentationTimestamp::INVALID_TIMESTAMP

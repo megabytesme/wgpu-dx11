@@ -303,6 +303,14 @@ impl Queue {
     pub fn present(&self, surface: &Surface) -> Result<Status, SurfaceError> {
         profiling::scope!("Queue::present");
 
+        let raw_surface = surface
+            .raw(self.device.backend())
+            .ok_or(SurfaceError::Invalid)?;
+        if !raw_surface.is_present_on_current_thread() {
+            return Err(SurfaceError::Invalid);
+        }
+        let _present_guard = self.begin_present().ok_or(SurfaceError::Invalid)?;
+
         let texture = {
             let mut presentation = surface.presentation.lock();
             let present = match presentation.as_mut() {
@@ -347,12 +355,7 @@ impl Queue {
         let result = match inner {
             None => return Err(SurfaceError::TextureDestroyed),
             Some(resource::TextureInner::Surface { raw }) => {
-                let raw_surface = surface.raw(device.backend()).unwrap();
                 let raw_queue = self.raw();
-                // [`wgpu_hal::Queue::present`] requires the queue to be synchronized with submit calls and
-                // other present calls. Locking command indices prevents submits which must increment the
-                // submission index, and by `write`ing prevents other present calls.
-                let _command_indices = device.command_indices.write();
                 unsafe { raw_queue.present(raw_surface, raw) }
             }
             _ => unreachable!(),

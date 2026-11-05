@@ -172,8 +172,8 @@ range tests, swapchain ordering and texel-load proof code.
 The internal per-format projection now resides in `Capabilities` and combines
 the actual device's format query with the selected feature level and implemented
 backend paths. Both enumerated adapters and the test fixture call this
-projection. The public adapter is restricted to offscreen use; presentation
-remains gated because `surface_capabilities` is `None`.
+projection. The public adapter is restricted to offscreen use plus the tested
+BGRA8 sRGB HWND surface path described below.
 
 Core's controlled FL9_1 capability snapshot now also marks
 `DownlevelLimits::depth_bias_with_fragment_depth` unavailable. A pipeline with
@@ -617,17 +617,21 @@ opts into that feature locally for coverage.
 
 ## Remaining public contract and completion gates
 
-- The public adapter is FL9_1-only and offscreen-only. The public integration
+- The public adapter is FL9_1-only. The public integration
 test verifies adapter selection, device/queue creation, sparse multi-group
 texture/sampler and stage-visible dynamic uniform bindings, indexed textured
 depth-tested rendering, transform updates, concurrent device submissions and
 pixel readback. The public test is still a bounded diagnostic scene, not a
 representative application or a complete contract audit.
-- `surface_capabilities` returns `None`. Although private HAL HWND tests can
-render, present and resize, synchronous DXGI `Present` can reenter wgpu while
-core queue-index and HAL immediate-context locks are held. A safe cross-layer
-scheduler or thread-affinity design remains unresolved; do not expose public
-surfaces until it is addressed.
+- The narrow public HWND surface path reports BGRA8 sRGB FIFO, opaque
+  composition, render-attachment usage and one frame of latency. Configure,
+  acquire and present are restricted to the HWND's creating thread. A queue
+  gate serializes submission, writes, mapping flushes, polling and
+  context-backed resource creation against Present; same-thread reentrant work
+  is rejected before queue or mapping state changes. The strict public test
+  configures, clears, presents, resizes and presents again, then confirms
+  wrong-thread acquisition is rejected. It uses a hidden window; visible
+  desktop presentation and a continuously pumped event loop remain unverified.
 - The public capability projection and core/HAL audit still need independent
 review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
@@ -637,8 +641,8 @@ comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
 - Device removal/recovery, event-query failure retention, some destroy paths,
-historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and public
-HWND presentation remain unverified.
+historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and visible
+desktop HWND presentation remain unverified.
 
 The public texture-copy path now accepts RGBA8↔RGBA8-sRGB and BGRA8↔BGRA8-sRGB
 copies that core already considers format-compatible. The D3D11 path retains

@@ -18,6 +18,8 @@ pub struct DynAcquiredSurfaceTexture {
 }
 
 pub trait DynSurface: DynResource {
+    fn is_present_on_current_thread(&self) -> bool;
+
     unsafe fn configure(
         &self,
         device: &dyn DynDevice,
@@ -36,6 +38,10 @@ pub trait DynSurface: DynResource {
 }
 
 impl<S: Surface + DynResource> DynSurface for S {
+    fn is_present_on_current_thread(&self) -> bool {
+        S::is_present_on_current_thread(self)
+    }
+
     unsafe fn configure(
         &self,
         device: &dyn DynDevice,

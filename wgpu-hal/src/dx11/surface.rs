@@ -134,6 +134,20 @@ impl Surface {
             Window::Core(_) => None,
         }
     }
+    pub(super) fn supports_public_presentation(&self) -> bool {
+        self.hwnd().is_some_and(|hwnd| unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, None) != 0
+        })
+    }
+    fn is_window_thread(&self) -> bool {
+        match self.hwnd() {
+            Some(hwnd) => unsafe {
+                windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, None)
+                    == windows::Win32::System::Threading::GetCurrentThreadId()
+            },
+            None => true,
+        }
+    }
     pub(super) fn core_window(&self) -> windows::core::Result<ICoreWindow> {
         match &self.window {
             Window::Core(window) => window.resolve(),
@@ -739,6 +753,11 @@ impl Surface {
         device: &Arc<NativeDevice>,
         mut texture: SurfaceTexture,
     ) -> Result<(), crate::SurfaceError> {
+        if !self.is_window_thread() {
+            return Err(crate::SurfaceError::Other(
+                "D3D11 HWND presentation must run on the window thread",
+            ));
+        }
         let _operation = self.begin_operation()?;
         let configured = self
             .configured
@@ -785,6 +804,11 @@ fn supported_config(config: &crate::SurfaceConfiguration) -> bool {
 
 impl crate::Surface for Surface {
     type A = super::Api;
+
+    fn is_present_on_current_thread(&self) -> bool {
+        self.is_window_thread()
+    }
+
     unsafe fn configure(
         &self,
         device: &super::Device,
@@ -793,6 +817,11 @@ impl crate::Surface for Surface {
         if !supported_config(config) {
             return Err(crate::SurfaceError::Other(
                 "unsupported D3D11 surface configuration",
+            ));
+        }
+        if !self.is_window_thread() {
+            return Err(crate::SurfaceError::Other(
+                "D3D11 HWND configuration must run on the window thread",
             ));
         }
         let _operation = self.begin_operation()?;
@@ -843,6 +872,11 @@ impl crate::Surface for Surface {
         _timeout: Option<Duration>,
         fence: &super::fence::NativeFence,
     ) -> Result<crate::AcquiredSurfaceTexture<Self::A>, crate::SurfaceError> {
+        if !self.is_window_thread() {
+            return Err(crate::SurfaceError::Other(
+                "D3D11 HWND acquisition must run on the window thread",
+            ));
+        }
         let _operation = self.begin_operation()?;
         let configured = self
             .configured
@@ -881,6 +915,57 @@ mod hwnd_surface_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Surface as _;
+
+    #[test]
+    fn hwnd_present_thread_check_is_owner_thread_only() {
+        use windows::{
+            core::w,
+            Win32::{
+                Foundation::HWND,
+                UI::WindowsAndMessaging::{
+                    CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPED,
+                },
+            },
+        };
+
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                w!("wgpu D3D11 owner-thread test"),
+                WS_OVERLAPPED,
+                0,
+                0,
+                16,
+                16,
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+        .expect("create hidden test HWND");
+        struct WindowGuard(HWND);
+        impl Drop for WindowGuard {
+            fn drop(&mut self) {
+                unsafe {
+                    let _ = DestroyWindow(self.0);
+                }
+            }
+        }
+        let _window = WindowGuard(hwnd);
+        let surface = Arc::new(Surface::from_hwnd(
+            NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
+        ));
+        assert!(surface.is_present_on_current_thread());
+        let worker_surface = surface.clone();
+        assert!(
+            !std::thread::spawn(move || worker_surface.is_present_on_current_thread())
+                .join()
+                .expect("owner-thread check worker")
+        );
+    }
 
     #[test]
     fn driver_internal_error_marks_surface_device_lost() {

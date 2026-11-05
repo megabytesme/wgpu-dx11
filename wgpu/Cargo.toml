@@ -281,6 +281,12 @@ portable-atomic.workspace = true
 # Used in doc-tests
 bytemuck.workspace = true
 
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [build-dependencies]
 cfg_aliases.workspace = true
 

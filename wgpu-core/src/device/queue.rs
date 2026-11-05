@@ -6,6 +6,7 @@ use core::{
     ptr::NonNull,
     sync::atomic::Ordering,
 };
+use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use smallvec::SmallVec;
 use thiserror::Error;
 use wgt::{
@@ -49,10 +50,38 @@ use crate::{device::resource::CommandIndices, resource::RawResourceAccess};
 
 pub struct Queue {
     raw: Box<dyn hal::DynQueue>,
+    submission_gate: QueueSubmissionGate,
     pub(crate) pending_writes: Mutex<PendingWrites>,
     life_tracker: Mutex<LifetimeTracker>,
     // The device needs to be dropped last (`Device.zero_buffer` might be referenced by the encoder in pending writes).
     pub(crate) device: Arc<Device>,
+}
+
+#[derive(Default)]
+struct QueueSubmissionGate {
+    submission: ReentrantMutex<()>,
+    present: ReentrantMutex<()>,
+}
+
+impl QueueSubmissionGate {
+    fn lock_submission(&self) -> ReentrantMutexGuard<'_, ()> {
+        self.submission.lock()
+    }
+
+    fn begin_present(&self) -> Option<QueuePresentGuard<'_>> {
+        let submission_guard = self.lock_submission();
+        if self.present.is_owned_by_current_thread() {
+            return None;
+        }
+        Some(QueuePresentGuard {
+            _submission_guard: submission_guard,
+            _present_guard: self.present.lock(),
+        })
+    }
+
+    fn is_presenting_on_current_thread(&self) -> bool {
+        self.present.is_owned_by_current_thread()
+    }
 }
 
 impl Queue {
@@ -104,6 +133,7 @@ impl Queue {
         Ok(Queue {
             raw,
             device,
+            submission_gate: QueueSubmissionGate::default(),
             pending_writes: Mutex::new(rank::QUEUE_PENDING_WRITES, pending_writes),
             life_tracker: Mutex::new(rank::QUEUE_LIFE_TRACKER, LifetimeTracker::new()),
         })
@@ -111,6 +141,18 @@ impl Queue {
 
     pub(crate) fn raw(&self) -> &dyn hal::DynQueue {
         self.raw.as_ref()
+    }
+
+    pub(crate) fn lock_submission(&self) -> ReentrantMutexGuard<'_, ()> {
+        self.submission_gate.lock_submission()
+    }
+
+    pub(crate) fn begin_present(&self) -> Option<QueuePresentGuard<'_>> {
+        self.submission_gate.begin_present()
+    }
+
+    pub(crate) fn is_presenting_on_current_thread(&self) -> bool {
+        self.submission_gate.is_presenting_on_current_thread()
     }
 
     #[track_caller]
@@ -126,9 +168,10 @@ impl Queue {
         &self,
         texture: &Arc<Texture>,
     ) -> Result<(), DeviceError> {
+        let submission_guard = self.lock_submission();
         let snatch_guard = self.device.snatchable_lock.read();
         let submission = self
-            .allocate_submission(snatch_guard)
+            .allocate_submission(submission_guard, snatch_guard)
             .map_err(|(_index, e)| e)?;
         let device = &self.device;
 
@@ -271,6 +314,8 @@ crate::impl_storage_item!(Queue);
 impl Drop for Queue {
     fn drop(&mut self) {
         resource_log!("Drop {}", self.error_ident());
+
+        let _submission_guard = self.lock_submission();
 
         // On Vulkan, pending presents are not tracked by fences.
         // wait_for_idle covers both fence-tracked submissions and pending presents.
@@ -534,6 +579,8 @@ pub enum QueueWriteError {
     DestroyedResource(#[from] DestroyedResourceError),
     #[error(transparent)]
     InvalidResource(#[from] InvalidResourceError),
+    #[error("Cannot write queue staging data recursively while presenting a surface")]
+    PresentationInProgress,
 }
 
 impl From<InvalidOrDestroyedResourceError> for QueueWriteError {
@@ -553,6 +600,7 @@ impl WebGpuError for QueueWriteError {
             Self::MemoryInitFailure(e) => e.webgpu_error_type(),
             Self::DestroyedResource(e) => e.webgpu_error_type(),
             Self::InvalidResource(e) => e.webgpu_error_type(),
+            Self::PresentationInProgress => ErrorType::Validation,
         }
     }
 }
@@ -566,6 +614,8 @@ pub enum QueueSubmitError {
     DestroyedResource(#[from] DestroyedResourceError),
     #[error("{0} is still mapped")]
     BufferStillMapped(ResourceErrorIdent),
+    #[error("Cannot submit recursively while presenting a surface")]
+    PresentationInProgress,
     #[error(transparent)]
     InvalidResource(#[from] InvalidResourceError),
     #[error(transparent)]
@@ -590,7 +640,9 @@ impl WebGpuError for QueueSubmitError {
             Self::CommandEncoder(e) => e.webgpu_error_type(),
             Self::ValidateAsActionsError(e) => e.webgpu_error_type(),
             Self::InvalidResource(e) => e.webgpu_error_type(),
-            Self::DestroyedResource(_) | Self::BufferStillMapped(_) => ErrorType::Validation,
+            Self::DestroyedResource(_)
+            | Self::BufferStillMapped(_)
+            | Self::PresentationInProgress => ErrorType::Validation,
         }
     }
 }
@@ -604,6 +656,7 @@ impl WebGpuError for QueueSubmitError {
 /// [`submit`]: `PendingSubmission::submit`
 pub(crate) struct PendingSubmission<'a> {
     queue: &'a Queue,
+    _submission_guard: ReentrantMutexGuard<'a, ()>,
     snatch_guard: SnatchGuard<'a>,
     command_index_guard: RwLockWriteGuard<'a, CommandIndices>,
     // Command buffers to be executed, along with trackers for the resources they use.
@@ -613,6 +666,11 @@ pub(crate) struct PendingSubmission<'a> {
     // deadlocking from the same surface texture being submitted multiple times.
     surface_textures: FastHashMap<*const Texture, Arc<Texture>>,
     pub index: SubmissionIndex,
+}
+
+pub(crate) struct QueuePresentGuard<'a> {
+    _submission_guard: ReentrantMutexGuard<'a, ()>,
+    _present_guard: ReentrantMutexGuard<'a, ()>,
 }
 
 pub(crate) struct SubmissionResult<'a> {
@@ -640,6 +698,11 @@ impl Queue {
         profiling::scope!("Queue::write_buffer");
         api_log!("Queue::write_buffer");
 
+        if self.is_presenting_on_current_thread() {
+            return Err(QueueWriteError::PresentationInProgress);
+        }
+
+        let _submission_guard = self.lock_submission();
         self.device.check_is_valid()?;
 
         let data_size = data.len() as wgt::BufferAddress;
@@ -698,6 +761,11 @@ impl Queue {
         profiling::scope!("Queue::create_staging_buffer");
         resource_log!("Queue::create_staging_buffer");
 
+        if self.is_presenting_on_current_thread() {
+            return Err(QueueWriteError::PresentationInProgress);
+        }
+
+        let _submission_guard = self.lock_submission();
         self.device.check_is_valid()?;
 
         let staging_buffer = StagingBuffer::new(&self.device, buffer_size)?;
@@ -714,6 +782,11 @@ impl Queue {
     ) -> Result<(), QueueWriteError> {
         profiling::scope!("Queue::write_staging_buffer");
 
+        if self.is_presenting_on_current_thread() {
+            return Err(QueueWriteError::PresentationInProgress);
+        }
+
+        let _submission_guard = self.lock_submission();
         self.device.check_is_valid()?;
 
         let buffer = buffer.get()?;
@@ -865,6 +938,11 @@ impl Queue {
         profiling::scope!("Queue::write_texture");
         api_log!("Queue::write_texture");
 
+        if self.is_presenting_on_current_thread() {
+            return Err(QueueWriteError::PresentationInProgress);
+        }
+
+        let _submission_guard = self.lock_submission();
         self.device.check_is_valid()?;
 
         let dst = destination.texture;
@@ -1294,8 +1372,12 @@ impl Queue {
         buffer: &Arc<Buffer>,
         snatch_guard: SnatchGuard,
     ) -> Result<(), BufferAccessError> {
+        if self.is_presenting_on_current_thread() {
+            return Err(BufferAccessError::PresentationInProgress);
+        }
+        let submission_guard = self.lock_submission();
         let submission = self
-            .allocate_submission(snatch_guard)
+            .allocate_submission(submission_guard, snatch_guard)
             .map_err(|(_index, e)| e)?;
 
         let pending_writes = self.pending_writes.lock();
@@ -1309,9 +1391,10 @@ impl Queue {
     }
 
     fn flush_pending_writes(&self) -> Result<Option<SubmissionIndex>, DeviceError> {
+        let submission_guard = self.lock_submission();
         let snatch_guard = self.device.snatchable_lock.read();
         let submission = self
-            .allocate_submission(snatch_guard)
+            .allocate_submission(submission_guard, snatch_guard)
             .map_err(|(_index, e)| e)?;
         let submit_index = submission.index;
         let pending_writes = self.pending_writes.lock();
@@ -1357,9 +1440,20 @@ impl Queue {
         profiling::scope!("Queue::submit");
         api_log!("Queue::submit");
 
+        if self.is_presenting_on_current_thread() {
+            let index = {
+                let mut indices = self.device.command_indices.write();
+                indices.active_submission_index += 1;
+                indices.active_submission_index
+            };
+            return Err((index, QueueSubmitError::PresentationInProgress));
+        }
+
+        let _queue_guard = self.lock_submission();
+        let submission_guard = self.lock_submission();
         let snatch_guard = self.device.snatchable_lock.read();
         let mut submission = self
-            .allocate_submission(snatch_guard)
+            .allocate_submission(submission_guard, snatch_guard)
             .map_err(|(index, e)| (index, e.into()))?;
         let submit_index = submission.index;
 
@@ -1561,6 +1655,8 @@ impl Queue {
             Ok(closures)
         };
 
+        drop(_queue_guard);
+
         let callbacks = match res {
             Ok(ok) => ok,
             Err(e) => return Err((submit_index, e)),
@@ -1600,6 +1696,7 @@ impl Queue {
     /// submission is needed.
     fn allocate_submission<'a>(
         &'a self,
+        submission_guard: ReentrantMutexGuard<'a, ()>,
         snatch_guard: SnatchGuard<'a>,
     ) -> Result<PendingSubmission<'a>, (SubmissionIndex, DeviceError)> {
         let mut command_index_guard = self.device.command_indices.write();
@@ -1612,6 +1709,7 @@ impl Queue {
 
         let submission = PendingSubmission {
             queue: self,
+            _submission_guard: submission_guard,
             snatch_guard,
             command_index_guard,
             executions: Vec::new(),
@@ -1644,6 +1742,7 @@ impl Queue {
     ) -> Result<SubmissionResult<'a>, DeviceError> {
         let PendingSubmission {
             queue: _,
+            _submission_guard,
             snatch_guard,
             command_index_guard,
             mut executions,
@@ -2125,4 +2224,35 @@ fn validate_command_buffer(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod submission_gate_tests {
+    use super::{Arc, QueueSubmissionGate};
+    use core::time::Duration;
+    use std::{sync::mpsc, thread};
+
+    #[test]
+    fn present_gate_rejects_nested_present_and_serializes_other_threads() {
+        let gate = Arc::new(QueueSubmissionGate::default());
+        let present_guard = gate.begin_present().expect("first present");
+        assert!(gate.is_presenting_on_current_thread());
+        assert!(gate.begin_present().is_none());
+        drop(gate.lock_submission());
+
+        let worker_gate = gate.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let _guard = worker_gate.lock_submission();
+            acquired_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(acquired_rx.recv_timeout(Duration::from_millis(20)).is_err());
+        drop(present_guard);
+        acquired_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.join().unwrap();
+        assert!(!gate.is_presenting_on_current_thread());
+    }
 }

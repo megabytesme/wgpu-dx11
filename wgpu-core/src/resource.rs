@@ -323,6 +323,8 @@ pub enum BufferAccessError {
     Device(#[from] DeviceError),
     #[error("Buffer map failed")]
     Failed,
+    #[error("Buffer mapping cannot flush queue work while presenting a surface")]
+    PresentationInProgress,
     #[error(transparent)]
     DestroyedResource(#[from] DestroyedResourceError),
     #[error("Buffer is already mapped")]
@@ -391,6 +393,7 @@ impl WebGpuError for BufferAccessError {
             Self::DestroyedResource(e) => e.webgpu_error_type(),
 
             Self::Failed
+            | Self::PresentationInProgress
             | Self::AlreadyMapped
             | Self::MapAlreadyPending
             | Self::MissingBufferUsage(_)
@@ -755,6 +758,8 @@ impl Buffer {
         }
 
         let submit_index = {
+            let queue = device.get_queue();
+            let _submission_guard = queue.as_ref().map(|queue| queue.lock_submission());
             let snatch_guard = device.snatchable_lock.read();
             if let Err(e) = self.check_destroyed(&snatch_guard) {
                 return Err((op, e.into()));
@@ -777,7 +782,7 @@ impl Buffer {
                 };
             }
 
-            if let Some(queue) = device.get_queue().as_ref() {
+            if let Some(queue) = queue.as_ref() {
                 match queue.flush_writes_for_buffer(self, snatch_guard) {
                     Err(err) => {
                         let state = mem::replace(&mut *self.map_state.lock(), BufferMapState::Idle);
@@ -988,6 +993,14 @@ impl Buffer {
 
     fn unmap_inner(self: &Arc<Self>) -> Result<Option<BufferMapPendingClosure>, BufferAccessError> {
         let device = &self.device;
+        let queue = device.get_queue();
+        let _submission_guard = queue.as_ref().map(|queue| queue.lock_submission());
+        if queue
+            .as_ref()
+            .is_some_and(|queue| queue.is_presenting_on_current_thread())
+        {
+            return Err(BufferAccessError::PresentationInProgress);
+        }
         let snatch_guard = device.snatchable_lock.read();
         let raw_buf = self.try_raw(&snatch_guard)?;
         let map_state = mem::replace(&mut *self.map_state.lock(), BufferMapState::Idle);
@@ -1016,7 +1029,7 @@ impl Buffer {
                     }
                 };
 
-                if let Some(queue) = device.get_queue() {
+                if let Some(queue) = queue.as_ref() {
                     let region = wgt::BufferSize::new(self.size).map(|size| hal::BufferCopy {
                         src_offset: 0,
                         dst_offset: 0,

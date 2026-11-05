@@ -679,6 +679,15 @@ pub trait Instance: Sized + WasmNotSendSync {
 pub trait Surface: WasmNotSendSync {
     type A: Api;
 
+    /// Whether presentation-related operations may run on the current thread.
+    ///
+    /// Most backends are not restricted to a window-owning thread. Backends
+    /// with a thread-affine native window can reject calls before core waits
+    /// for queue serialization.
+    fn is_present_on_current_thread(&self) -> bool {
+        true
+    }
+
     /// Configure `self` to use `device`.
     ///
     /// # Safety

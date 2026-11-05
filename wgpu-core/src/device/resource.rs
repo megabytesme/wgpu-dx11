@@ -1095,6 +1095,17 @@ impl Device {
         self.queue.get().as_ref()?.upgrade()
     }
 
+    pub(crate) fn check_present_reentrancy(&self) -> Result<(), DeviceError> {
+        if self
+            .get_queue()
+            .is_some_and(|queue| queue.is_presenting_on_current_thread())
+        {
+            Err(DeviceError::PresentationInProgress)
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn set_queue(&self, queue: &Arc<Queue>) {
         assert!(self.queue.set(Arc::downgrade(queue)).is_ok());
     }
@@ -1118,6 +1129,14 @@ impl Device {
         &self,
         poll_type: wgt::PollType<crate::SubmissionIndex>,
     ) -> (UserClosures, Result<wgt::PollStatus, WaitIdleError>) {
+        let queue = self.get_queue();
+        if queue
+            .as_ref()
+            .is_some_and(|queue| queue.is_presenting_on_current_thread())
+        {
+            return (UserClosures::default(), Err(WaitIdleError::Timeout));
+        }
+        let _submission_guard = queue.as_ref().map(|queue| queue.lock_submission());
         let snatch_guard = self.snatchable_lock.read();
         let (mut user_closures, result) = self.maintain(poll_type, snatch_guard);
 
@@ -1333,7 +1352,10 @@ impl Device {
         self: &Arc<Self>,
         desc: &resource::BufferDescriptor,
     ) -> Result<Arc<Buffer>, resource::CreateBufferError> {
+        let queue = self.get_queue();
+        let _submission_guard = queue.as_ref().map(|queue| queue.lock_submission());
         self.check_is_valid()?;
+        self.check_present_reentrancy()?;
 
         if desc.size > self.limits.max_buffer_size {
             return Err(resource::CreateBufferError::MaxBufferSize {
@@ -1728,7 +1750,10 @@ impl Device {
     ) -> Result<Arc<Texture>, resource::CreateTextureError> {
         use resource::{CreateTextureError, TextureDimensionError};
 
+        let queue = self.get_queue();
+        let _submission_guard = queue.as_ref().map(|queue| queue.lock_submission());
         self.check_is_valid()?;
+        self.check_present_reentrancy()?;
 
         if desc.usage.is_empty() || desc.usage.contains_unknown_bits() {
             return Err(CreateTextureError::InvalidUsage(desc.usage));
@@ -3812,7 +3837,10 @@ impl Device {
 
         let layout = desc.layout;
 
+        let queue = self.get_queue();
+        let _submission_guard = queue.as_ref().map(|queue| queue.lock_submission());
         self.check_is_valid()?;
+        self.check_present_reentrancy()?;
         layout.same_device(self)?;
         layout.check_is_valid()?;
 
@@ -6167,6 +6195,13 @@ impl Device {
                     Ok(caps) => caps,
                     Err(_) => break 'error E::UnsupportedQueueFamily,
                 };
+                let surface_raw = match surface.raw(self.backend()) {
+                    Some(surface) => surface,
+                    None => break 'error E::UnsupportedQueueFamily,
+                };
+                if !surface_raw.is_present_on_current_thread() {
+                    break 'error E::InvalidSurface;
+                }
 
                 let mut hal_view_formats = Vec::new();
                 for format in config.view_formats.iter() {
@@ -6227,6 +6262,11 @@ impl Device {
                 }
 
                 // Wait for all work to finish before configuring the surface.
+                let queue = self.get_queue().unwrap();
+                let _submission_guard = queue.lock_submission();
+                if queue.is_presenting_on_current_thread() {
+                    break 'error E::GpuWaitTimeout;
+                }
                 let snatch_guard = self.snatchable_lock.read();
 
                 let maintain_result;
@@ -6272,7 +6312,6 @@ impl Device {
                 //
                 // https://github.com/gfx-rs/wgpu/issues/4105
 
-                let surface_raw = surface.raw(self.backend()).unwrap();
                 match unsafe { surface_raw.configure(self.raw(), &hal_config) } {
                     Ok(()) => (),
                     Err(error) => {

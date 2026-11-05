@@ -1,13 +1,14 @@
 # Direct3D 11 validation plan
 
-The `dx11` feature now enumerates only physical adapters that create the
-explicitly requested FL9_1 device, and uses the selected-device capability
-projection for offscreen public wgpu use. The reported feature set is empty,
-the downlevel contract is not WebGPU-compliant, and no surface capabilities are
-reported. This remains experimental, and the existing HAL/core tests do not
-establish complete wgpu or CTS conformance. Do not widen the projection until
-core-valid operations are audited against the HAL; some restrictions cannot be
-expressed by `Limits` alone.
+The `dx11` feature enumerates only physical adapters that create the explicitly
+requested FL9_1 device and pass the selected-device capability projection. The
+reported feature set is empty, and the downlevel contract is not WebGPU-
+compliant. A narrow public HWND surface is available with BGRA8 sRGB FIFO,
+opaque composition, render-attachment usage and one frame of latency. Configure,
+acquire and present are owner-thread-only. The strict public test uses a hidden
+window, so visible desktop presentation and a continuous event loop remain
+unverified. This remains experimental; the HAL/core tests do not establish
+complete wgpu or CTS conformance.
 
 ### Public offscreen integration test
 
@@ -46,8 +47,25 @@ subsequent concurrent public-device workloads read back 64/64 red and 64/64
 green pixels. The shader and bind-group layouts use group 7 with binding
 numbers also used in group 0. This is a representative public offscreen
 integration case, not a complete application or adapter-contract audit.
-Presentation remains unavailable. All six unsupported resource requests were
+All six unsupported resource requests were
 rejected by public core validation.
+
+### Public HWND surface smoke test
+
+The public surface test creates a hidden top-level HWND, requests a compatible
+physical FL9_1 adapter, configures a 64×64 BGRA8 sRGB FIFO surface, clears and
+presents a frame, drops its view, resizes to 80×48, and presents a second
+frame. It then verifies that acquisition from a different thread is rejected.
+The D3D11 surface operations must run on the HWND's creating thread. A shared
+queue gate serializes submissions, writes, mapping flushes, polling and
+context-backed resource creation against `Present`; same-thread reentrant work
+returns a validation/surface error. The test is not a visible display or
+message-loop test.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
+```
 
 The public test also draws fully overlapping near and far textured surfaces
 with the same depth-tested pipeline, in both far-then-near and near-then-far

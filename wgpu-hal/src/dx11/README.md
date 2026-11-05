@@ -6,10 +6,19 @@ device explicitly requested at FL9_1 and pass the implemented capability
 projection. Software adapters are excluded. D3D11 remains opt-in and does not
 change default backend selection.
 
-The adapter can be used for offscreen rendering through the public wgpu API,
-but it reports no wgpu features, is not WebGPU-compliant, and does not expose
-surface capabilities. A public offscreen example renders an indexed,
-textured, depth-tested cube and checks full-image readback:
+The adapter can be used for offscreen rendering and a constrained native HWND
+surface through the public wgpu API. It reports no wgpu features and is not
+WebGPU-compliant. HWND surfaces currently expose only BGRA8 sRGB FIFO
+presentation, opaque composition, one frame of latency and render-attachment
+usage. Configure, acquire and present must run on the HWND's creating thread.
+Queue submissions, writes, mapped-buffer updates and context-backed resource
+creation are serialized against Present; same-thread reentrant work that would
+touch queue/context state is rejected. Drop views of the previous backbuffer
+before reconfiguring a resized surface. The strict test uses a hidden HWND, so
+visible desktop presentation remains unverified.
+
+A public offscreen example renders an indexed, textured, depth-tested cube and
+checks full-image readback:
 
 ```powershell
 cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
@@ -17,7 +26,8 @@ cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-defaul
 
 The strict public integration test requires physical FL9_1 hardware and rejects
 missing hardware, software substitution, device-creation failures and wrong
-readback:
+readback. It also checks hidden HWND configure, render, present, resize and
+owner-thread behavior:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -40,9 +50,8 @@ is a native diagnostic. It tries a descending feature-level list and separately
 requests FL9_1; it reports DXGI identity and device-creation failures without
 claiming wgpu compatibility.
 
-The HAL retains private CoreWindow and borrowed HWND swapchain paths, with
-hidden-window tests for clear, readback, present, resize and recreation. They
-do not establish visible desktop presentation or safe concurrent/reentrant
-use. Public `surface_capabilities` remains unavailable until queue ordering,
-immediate-context serialization and DXGI message-pump reentrancy have a safe
-cross-layer design.
+The HAL retains private CoreWindow and borrowed HWND swapchain paths. Hidden
+window tests cover clear, readback, present, resize and recreation; a strict
+public test covers HWND configure, render, present, resize and owner-thread
+acquisition rejection. These tests do not establish visible desktop
+presentation or ARM32 CoreWindow runtime behavior.

@@ -2,7 +2,7 @@
 
 use std::{
     future::Future,
-    num::NonZeroU64,
+    num::{NonZeroIsize, NonZeroU64},
     sync::Arc,
     task::{Context, Poll, Wake, Waker},
     thread,
@@ -140,6 +140,225 @@ fn expect_validation_error_containing(
         format!("{error:?}").contains(expected),
         "{label} produced the wrong validation error: {error:?}"
     );
+}
+
+#[test]
+fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
+    use windows::{
+        core::w,
+        Win32::{
+            Foundation::HWND,
+            UI::WindowsAndMessaging::{
+                CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPED,
+            },
+        },
+    };
+
+    struct WindowGuard(HWND);
+
+    impl Drop for WindowGuard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = DestroyWindow(self.0);
+            }
+        }
+    }
+
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let hwnd = match unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            w!("wgpu D3D11 FL9_1 public surface test"),
+            WS_OVERLAPPED,
+            0,
+            0,
+            64,
+            64,
+            None,
+            None,
+            None,
+            None,
+        )
+    } {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            assert!(!required, "strict mode requires a test HWND: {error}");
+            println!("SKIP: could not create a test HWND: {error}");
+            return;
+        }
+    };
+    let _window = WindowGuard(hwnd);
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let surface = unsafe {
+        instance.create_surface_unsafe(SurfaceTargetUnsafe::RawHandle {
+            raw_display_handle: Some(rwh::WindowsDisplayHandle::new().into()),
+            raw_window_handle: rwh::Win32WindowHandle::new(
+                NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
+            )
+            .into(),
+        })
+    }
+    .expect("create public D3D11 HWND surface");
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        compatible_surface: Some(&surface),
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                required,
+                "strict mode requires a physical FL9_1 surface adapter: {error}"
+            );
+            println!("SKIP: no physical D3D11 adapter supports the HWND surface: {error}");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=public HWND present",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let capabilities = surface.get_capabilities(&adapter);
+    assert_eq!(capabilities.formats, [TextureFormat::Bgra8Unorm]);
+    assert!(capabilities
+        .color_spaces(TextureFormat::Bgra8Unorm)
+        .contains(SurfaceColorSpaces::SRGB));
+    assert_eq!(capabilities.present_modes, [PresentMode::Fifo]);
+    assert_eq!(capabilities.alpha_modes, [CompositeAlphaMode::Opaque]);
+    assert_eq!(capabilities.usages, TextureUsages::RENDER_ATTACHMENT);
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 HWND presentation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the FL9_1 projection");
+    let mut configuration = SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: TextureFormat::Bgra8Unorm,
+        color_space: SurfaceColorSpace::Srgb,
+        width: 64,
+        height: 64,
+        present_mode: PresentMode::Fifo,
+        desired_maximum_frame_latency: 1,
+        alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![],
+    };
+    surface.configure(&device, &configuration);
+    println!("PASS: public HWND surface configured at 64x64");
+
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("public D3D11 HWND acquisition failed: {result:?}"),
+    };
+    assert_eq!((frame.texture.width(), frame.texture.height()), (64, 64));
+    let view = frame.texture.create_view(&TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public HWND clear"),
+    });
+    {
+        let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public HWND clear"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 0.15,
+                        g: 0.4,
+                        b: 0.75,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    let submission = queue.submit([encoder.finish()]);
+    queue.present(frame);
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public D3D11 HWND submission");
+
+    drop(view);
+    configuration.width = 80;
+    configuration.height = 48;
+    surface.configure(&device, &configuration);
+    println!("PASS: public HWND surface resized to 80x48");
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("public D3D11 HWND acquisition after resize failed: {result:?}"),
+    };
+    assert_eq!((frame.texture.width(), frame.texture.height()), (80, 48));
+    let view = frame.texture.create_view(&TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public HWND resized clear"),
+    });
+    {
+        let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public HWND resized clear"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 0.75,
+                        g: 0.2,
+                        b: 0.1,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    let submission = queue.submit([encoder.finish()]);
+    queue.present(frame);
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for resized public D3D11 HWND submission");
+
+    drop(view);
+    let (returned_surface, wrong_thread_rejected) = thread::spawn(move || {
+        let result = surface.get_current_texture();
+        let rejected = matches!(result, CurrentSurfaceTexture::Lost);
+        drop(result);
+        (surface, rejected)
+    })
+    .join()
+    .expect("wrong-thread surface acquisition test");
+    drop(returned_surface);
+    assert!(
+        wrong_thread_rejected,
+        "acquisition must stay on the HWND thread"
+    );
+    println!("PASS: public HWND rendered, presented, rejected wrong-thread acquisition and resized to 80x48");
 }
 
 #[test]
