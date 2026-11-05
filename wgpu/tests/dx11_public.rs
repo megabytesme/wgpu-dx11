@@ -8747,6 +8747,240 @@ fn public_dx11_srgb_mip_chain_sampling_at_fl91() {
 }
 
 #[test]
+fn public_dx11_dont_care_load_overwrite_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 DontCare render-pass test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("DontCare load full-overwrite shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs_near(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.25, 1.0); }\n\
+             @vertex fn vs_far(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.75, 1.0); }\n\
+             @fragment fn fs_red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn fs_green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = |vertex_entry, fragment_entry, depth_compare| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("DontCare load full-overwrite pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth16Unorm,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(depth_compare),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let near = pipeline("vs_near", "fs_red", CompareFunction::Always);
+    let far = pipeline("vs_far", "fs_green", CompareFunction::Less);
+    // SAFETY: the first full-screen draw writes every color and depth pixel before the later depth test.
+    let dont_care = unsafe { LoadOpDontCare::enabled() };
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("DontCare load fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map DontCare triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex.unmap();
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("DontCare load color output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let depth = device.create_texture(&TextureDescriptor {
+        label: Some("DontCare load D16 depth"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth16Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&TextureViewDescriptor {
+        aspect: TextureAspect::DepthOnly,
+        ..Default::default()
+    });
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("DontCare load readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("DontCare load command encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("color and depth DontCare load full overwrite"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::DontCare(dont_care),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::DontCare(dont_care),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_pipeline(&near);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&far);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for DontCare load execution");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("DontCare load readback callback")
+        .expect("map DontCare load output");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped DontCare load output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[255, 0, 0, 255],
+                    "DontCare color/depth load pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 color and depth LoadOp::DontCare; full overwrite produced [255, 0, 0, 255] at all 64 pixels");
+}
+
+#[test]
 fn public_dx11_transient_attachments_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

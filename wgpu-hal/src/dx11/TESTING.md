@@ -1895,6 +1895,19 @@ operations, read-only transient depth and render passes with no attachments.
 Invalid render-pass descriptors are checked after finishing their isolated
 encoder because core reports those errors at finish.
 
+### Public `LoadOp::DontCare`
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_dont_care_load_overwrite_at_fl91 -- --nocapture --test-threads=1
+```
+
+The test constructs `LoadOp::DontCare` with its required unsafe token only
+because a full-screen `Always` draw writes every color and depth pixel before
+the later `Less` depth test. On the RTX 3090 Ti at requested and actual FL9_1,
+all 64 pixels read back as `[255, 0, 0, 255]`. No undefined pre-pass contents
+are read.
+
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,

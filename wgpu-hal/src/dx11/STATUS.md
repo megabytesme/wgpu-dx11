@@ -481,6 +481,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   depth/stencil clear/draw/discard controlling a readable color result. Core
   validation rejects transient sampling, invalid LOAD/STORE operations,
   read-only transient depth and render passes with no attachments.
+- A strict public `LoadOp::DontCare` test overwrites every color and D16 depth
+  pixel before later reads. The near draw writes every depth value, the farther
+  draw fails, and all 64 stored color pixels match.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
