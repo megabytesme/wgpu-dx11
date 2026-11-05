@@ -57,6 +57,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    whose index span exceeds the native FL9_1 window. Strict private readback
    compares both index formats against equivalent triangle lists across front
    face and cull settings; the controlled core fixture verifies both formats.
+   Indexed LineList and TriangleList with only instance-rate or no vertex-rate
+   inputs now validate the index range and replay a matching nonindexed draw
+   sequence; strict private and public readbacks compare Uint16/Uint32 cases to
+   direct draws. PointList retains its previously tested instance-only path.
+   Indexed strips still require vertex-rate streams so restart runs can be
+   preserved. `vertex_index` and `instance_index` remain unsupported.
    Broader instance semantics and indirect draws remain unavailable. Microsoft
    marks native `DrawInstancedIndirect` and `DrawIndexedInstancedIndirect` as
    unsupported at 9_1; wgpu-core's `INDIRECT_EXECUTION` flag is also coupled to

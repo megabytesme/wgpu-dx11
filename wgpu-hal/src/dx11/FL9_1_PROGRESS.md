@@ -5253,8 +5253,59 @@ cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --featu
 
 The D3D11 implementation and regression tests are committed in
 `38b5a0077488f7ebe7131516cc2d3de5a0d9c0c2`. Exact commands are in
-`TESTING.md` and this checkpoint. Continue the exact
-core/HAL contract audit; the next shader gap is selected-entry indexed draw
-behavior for pipelines with only instance-rate vertex streams. Public HWND
-presentation remains gated by the unresolved synchronous `Present`
-reentrancy/serialization design, and historical FL9_1 hardware is untested.
+`TESTING.md` and this checkpoint. Continue the exact core/HAL contract audit.
+Public HWND presentation remains gated by the unresolved synchronous
+`Present` reentrancy/serialization design, and historical FL9_1 hardware is
+untested.
+
+## Checkpoint — indexed lists without vertex-rate inputs — `d96650d72`
+
+Indexed LineList and TriangleList draws no longer fail solely because the
+pipeline has only instance-rate or no vertex-rate inputs. Since FL9_1 shader
+validation rejects `vertex_index`, index values and `base_vertex` cannot affect
+vertex data in these cases. HAL still validates pipeline/resource state,
+instance-stream bounds and the requested index-buffer range, then records a
+nonindexed list draw with the original primitive count and instance bindings.
+Layouts with vertex-rate inputs retain the existing indexed emulation path.
+Indexed strips still require vertex-rate inputs so restart runs and strip
+connectivity remain explicit. PointList's separately tested instance-only
+path is unchanged.
+
+The new private and public tests cover LineList and TriangleList with Uint16
+and Uint32 index buffers, nonzero first-index, negative base-vertex, two
+instances, instance-rate-only input and an empty vertex layout. Full readbacks
+match the equivalent nonindexed draws; the degenerate triangle cases also
+assert that the cleared image remains unchanged.
+
+Strict execution used Rust 1.93.1 and Visual Studio 2022 x64 tools. The physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) was selected
+as hardware (`software=false`) and explicitly requested and observed at FL9_1.
+There were no missing-hardware skips. Results after the code commit:
+
+- Private HAL suite: 342 passed, 0 failed, 0 ignored. The new test exercised
+  eight indexed/direct comparisons across topology, layout and index format.
+- Public `wgpu` integration suite: 13 passed, 0 failed, 0 ignored. The new
+  public test exercised the same eight comparisons through core and HAL.
+- Strict D3D11 core fixture suite: 86 passed, 0 failed, 0 ignored.
+- DX12 core regression suite: 82 passed, 0 failed, 0 ignored.
+- HAL Clippy completed with nine existing test/code warnings; no warning came
+  from this patch. `wgpu` test Clippy completed without warnings.
+- Rustfmt checks on the three changed Rust files and `git diff --check` passed.
+  Workspace `cargo fmt --all -- --check` still reports formatting differences
+  in the untouched, committed `naga/src/back/hlsl/writer.rs`; that unrelated
+  file was not reformatted.
+
+Exact strict commands (run from the Visual Studio x64 developer environment):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+```
+
+The code commit is `d96650d72`. Continue auditing operations that core
+accepts but the private HAL cannot execute, then return to the public surface
+scheduler design. Public adapter access remains opt-in/offscreen-only;
+historical FL9_1 drivers remain untested.

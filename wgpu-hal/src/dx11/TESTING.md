@@ -501,9 +501,27 @@ the green gather does not cover it. The expected green pixel therefore
 distinguishes instance-outer ordering from segment-outer ordering, which would
 leave it red.
 The controlled core fixture's instance-rate case produced 32 red and 32 green
-pixels. Indexed triangle draws containing only instance-rate streams and shaders
-using `instance_index` remain unsupported. These results do not establish general
+pixels. Pipelines using `instance_index` remain unsupported. Indexed triangle
+and line lists with only instance-rate/no vertex-rate streams are covered below;
+indexed strips without vertex-rate streams remain unsupported because restart
+markers partition primitive runs. These results do not establish general
 instancing or historical FL9_1-driver behavior.
+
+The instance-only indexed-list case is covered through both the private HAL and
+public wgpu API:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_indexed_lists_with_instance_only_streams_match_nonindexed -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_lists_with_no_vertex_rate_inputs_at_fl91 -- --nocapture --test-threads=1
+```
+
+The strict runs request and assert FL9_1 on the physical RTX 3090 Ti. For both
+LineList and TriangleList, Uint16 and Uint32 indexed images match equivalent
+nonindexed draws using either instance-rate-only input or no vertex inputs.
+Each indexed draw uses a nonzero first index and negative base vertex; core/HAL
+still validate the bound index range. Indexed strips remain rejected for these
+layouts because the backend must preserve restart-run boundaries.
 
 With strict hardware mode enabled, run the point-input execution test with:
 

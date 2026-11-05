@@ -1360,7 +1360,21 @@ docs (21 ignored), and core DX12 82/82. GPU cases used the RTX 3090 Ti at
 requested/actual FL9_1 with software=false. Exact evidence is in
 `FL9_1_PROGRESS.md` and `TESTING.md`.
 
-Continue auditing core-legal indexed draws when only instance-rate streams
-exist, then return to the rest of the core/HAL contract. The public adapter
-remains offscreen-only; synchronous HWND Present reentrancy and
-historical-device verification remain outstanding.
+## Current checkpoint — indexed lists without vertex-rate inputs — `d96650d72`
+
+The private HAL now accepts indexed LineList and TriangleList draws whose
+pipeline has only instance-rate inputs or no vertex inputs. It validates the
+index range but replays the corresponding nonindexed primitive count because
+FL9_1 shader validation excludes `vertex_index`. Indexed strips still require
+vertex-rate inputs so restart segmentation is preserved. Strict HAL and public
+wgpu readback cover Uint16/Uint32, nonzero first-index, negative base-vertex,
+instance-only layouts and empty layouts. Full suites passed: HAL 342/342,
+public wgpu 13/13, D3D11 core fixture 86/86, and DX12 core 82/82. All hardware
+tests selected the RTX 3090 Ti at requested/actual FL9_1 with `software=false`;
+none skipped for absent hardware. Exact commands and lint/format details are in
+`FL9_1_PROGRESS.md`.
+
+Continue the public core/HAL contract audit and the surface scheduler
+investigation. The opt-in adapter remains offscreen-only because synchronous
+HWND `Present` reentrancy is unresolved. Historical FL9_1 drivers and ARM32
+UWP execution remain unverified.
