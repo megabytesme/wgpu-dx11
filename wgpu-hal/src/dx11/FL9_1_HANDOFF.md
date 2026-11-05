@@ -1454,6 +1454,13 @@ full strict private HAL suite passed 347/347, public suite 19/19, core fixture
 commands and diagnostics are recorded in `FL9_1_PROGRESS.md` and
 `TESTING.md`. Historical hardware remains unverified.
 
+Checkpoint `0cba1afbb` extends the D16 case to verify an explicit `DepthOnly`
+view, core rejection of `StencilOnly`, depth preservation across a second-pass
+LOAD, and depth reset by CLEAR. Readback matched 128/128 pass-transition pixels
+in addition to the 128/128 depth-order pixels. The full strict public suite
+passed 19/19 with no skips; the earlier full HAL/core/DX12 suites remain those
+recorded for `d0efe2753`. The D16 path still has no discard-specific test.
+
 The mission remains active. Continue the shader/core/HAL and format audit, then
 return to safe HWND presentation scheduling. The public adapter is
 opt-in/offscreen-only; public surface capabilities remain unavailable.

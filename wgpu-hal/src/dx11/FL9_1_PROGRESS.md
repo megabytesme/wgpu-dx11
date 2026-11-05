@@ -5588,3 +5588,23 @@ require render attachment and forbid sampled/copy usages. No implementation
 failure remained. Continue depth/load/store and general core/HAL contract
 coverage; safe public HWND presentation is still blocked on cross-layer DXGI
 Present scheduling, and historical FL9_1 plus ARM32 UWP remain unverified.
+
+## Checkpoint — D16 view and pass transitions — `0cba1afbb`
+
+Extended the public strict D16 test to use an explicit `DepthOnly` view and
+confirm that core rejects `StencilOnly`. Added two successive render-pass
+cases: a second pass using LOAD retains the first pass's near depth and rejects
+a farther fragment; a second pass using CLEAR resets the depth and accepts the
+farther fragment. GPU readback matched all 128 transition pixels (64 per
+case). The original draw-order cases still match all 128 pixels.
+
+The first full-suite attempt failed because the view edit was accidentally
+applied to an earlier D24 test. That change was restored, and the view checks
+were scoped to the D16 test. The strict full public suite then passed 19/19 on
+the physical RTX 3090 Ti, vendor/device `0x10de:0x2203`, driver
+`32.0.16.2101`, requested/actual FL9_1, `software=false`, with zero skips.
+`cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public
+--no-default-features --features dx11,wgsl,std`, changed-file rustfmt and
+`git diff --check` passed. The test does not exercise D16 discard semantics.
+Next continue validated depth/render-pass combinations and the wider
+core/HAL audit.
