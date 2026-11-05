@@ -3236,3 +3236,364 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
     readback.unmap();
     println!("PASS: public FL9_1 uploaded and sampled a four-level RGBA8 mip chain; 64 pixels selected the green level-1 image, and core rejected an R8 mip chain");
 }
+
+#[test]
+fn public_dx11_snorm_sampled_uploads_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let rg_features = adapter.get_texture_format_features(TextureFormat::Rg8Snorm);
+    let rgba_features = adapter.get_texture_format_features(TextureFormat::Rgba8Snorm);
+    for (format, features) in [
+        (TextureFormat::Rg8Snorm, rg_features),
+        (TextureFormat::Rgba8Snorm, rgba_features),
+    ] {
+        assert!(
+            features
+                .allowed_usages
+                .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST),
+            "{format:?}: {features:?}"
+        );
+        assert!(
+            !features
+                .flags
+                .contains(TextureFormatFeatureFlags::FILTERABLE),
+            "{format:?}: {features:?}"
+        );
+        assert!(
+            features
+                .flags
+                .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY),
+            "{format:?}: {features:?}"
+        );
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={rg_features:?}; Rgba8Snorm={rgba_features:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 SNORM sampled upload test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let rg_texture = device.create_texture(&TextureDescriptor {
+        label: Some("public FL9_1 Rg8Snorm sampled texture"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg8Snorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut rg_data = vec![0; 8 * 256];
+    for y in 0..8 {
+        for x in 0..8 {
+            let offset = y * 256 + x * 2;
+            rg_data[offset..offset + 2].copy_from_slice(&[64, (-64i8) as u8]);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &rg_texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &rg_data,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(8),
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let rgba_texture = device.create_texture(&TextureDescriptor {
+        label: Some("public FL9_1 Rgba8Snorm sampled texture"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Snorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut rgba_data = vec![0; 8 * 256];
+    for y in 0..8 {
+        for x in 0..8 {
+            let offset = y * 256 + x * 4;
+            rgba_data[offset..offset + 4].copy_from_slice(&[1, (-2i8) as u8, 32, (-4i8) as u8]);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &rgba_texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &rgba_data,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(8),
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let rg_view = rg_texture.create_view(&TextureViewDescriptor::default());
+    let rgba_view = rgba_texture.create_view(&TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("public FL9_1 SNORM sampled layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 100,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: false },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: false },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
+    });
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public FL9_1 SNORM sampled resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&rg_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::TextureView(&rgba_view),
+            },
+            BindGroupEntry {
+                binding: 100,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("public FL9_1 SNORM pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("public FL9_1 SNORM sampled shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(100) var nearest_sampler: sampler;\n\
+             @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
+             @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, 1.0); }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("public FL9_1 SNORM pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("public FL9_1 SNORM output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 SNORM fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map SNORM fullscreen triangle")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 SNORM readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 SNORM commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public FL9_1 SNORM pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for SNORM sampled render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("SNORM readback callback")
+        .expect("map SNORM readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                for (channel, expected) in [192u8, 63, 160, 255].into_iter().enumerate() {
+                    let observed = data[offset + channel];
+                    assert!(
+                        observed.abs_diff(expected) <= 1,
+                        "SNORM pixel ({x}, {y}) channel {channel}: expected {expected}, got {observed}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 Rg8Snorm and Rgba8Snorm uploads sampled with signed normalization; all 64 pixels matched [192, 63, 160, 255] within ±1");
+}
