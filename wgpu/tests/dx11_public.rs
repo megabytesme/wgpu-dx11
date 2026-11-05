@@ -8747,6 +8747,386 @@ fn public_dx11_srgb_mip_chain_sampling_at_fl91() {
 }
 
 #[test]
+fn public_dx11_transient_attachments_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+    for format in [
+        TextureFormat::Rgba8Unorm,
+        TextureFormat::Depth24PlusStencil8,
+    ] {
+        let features = adapter.get_texture_format_features(format);
+        assert!(
+            features
+                .allowed_usages
+                .contains(TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT),
+            "{format:?}: {features:?}"
+        );
+        println!("Transient {format:?}: {features:?}");
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 transient attachment test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    let transient_usages = TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT;
+    expect_validation_error(&device, "sampled transient color texture", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("invalid sampled transient color"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: transient_usages | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        }));
+    });
+
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("readable transient depth test color target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let transient_color = device.create_texture(&TextureDescriptor {
+        label: Some("transient color target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: transient_usages,
+        view_formats: &[],
+    });
+    let transient_color_view = transient_color.create_view(&TextureViewDescriptor {
+        usage: Some(transient_usages),
+        ..Default::default()
+    });
+    let transient_depth = device.create_texture(&TextureDescriptor {
+        label: Some("transient D24S8 depth target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24PlusStencil8,
+        usage: transient_usages,
+        view_formats: &[],
+    });
+    let transient_depth_view = transient_depth.create_view(&TextureViewDescriptor {
+        usage: Some(transient_usages),
+        ..Default::default()
+    });
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("transient attachment depth-order shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs_near(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.25, 1.0); }\n\
+             @vertex fn vs_far(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.75, 1.0); }\n\
+             @fragment fn fs_green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }\n\
+             @fragment fn fs_red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = |vertex_entry, fragment_entry, depth_stencil| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("transient attachment test pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let depth_state = DepthStencilState {
+        format: TextureFormat::Depth24PlusStencil8,
+        depth_write_enabled: Some(true),
+        depth_compare: Some(CompareFunction::Less),
+        stencil: StencilState::default(),
+        bias: DepthBiasState::default(),
+    };
+    let near = pipeline("vs_near", "fs_green", Some(depth_state.clone()));
+    let far = pipeline("vs_far", "fs_red", Some(depth_state));
+    let color_only = pipeline("vs_far", "fs_red", None);
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("transient attachment fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map transient triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("transient depth test readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    expect_validation_error(&device, "transient color LOAD", || {
+        let mut invalid_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("invalid transient color LOAD encoder"),
+        });
+        let pass = invalid_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("invalid transient color LOAD"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &transient_color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Discard,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        drop(pass);
+        drop(invalid_encoder.finish());
+    });
+    expect_validation_error(&device, "transient color STORE", || {
+        let mut invalid_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("invalid transient color STORE encoder"),
+        });
+        let pass = invalid_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("invalid transient color STORE"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &transient_color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        drop(pass);
+        drop(invalid_encoder.finish());
+    });
+    expect_validation_error(&device, "transient depth LOAD", || {
+        let mut invalid_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("invalid transient depth LOAD encoder"),
+        });
+        let pass = invalid_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("invalid transient depth LOAD"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &transient_depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Discard,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Discard,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        drop(pass);
+        drop(invalid_encoder.finish());
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public transient attachment commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("valid transient color clear and discard"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &transient_color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Discard,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&color_only);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("transient D24S8 depth affects stored color"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &transient_depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Discard,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Discard,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_pipeline(&near);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&far);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for transient attachment execution");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("transient attachment readback callback")
+        .expect("map transient depth test output");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped transient depth test output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[0, 255, 0, 255],
+                    "transient depth test pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 transient color clear/draw/discard executed; transient D24S8 clear/draw/discard controlled the stored color result, with 64/64 green pixels; core rejected transient sampling, LOAD and STORE");
+}
+
+#[test]
 fn public_dx11_d16_depth_attachment_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

@@ -1880,17 +1880,30 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture
 ```
 
+### Public transient attachment pass
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_transient_attachments_at_fl91 -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested and actual FL9_1, the test passed. It checks
+transient color clear/draw/discard execution and transient D24S8 clear/draw/
+discard use in a depth test; the ordinary RGBA8 output was green at all 64
+pixels. Core rejected transient sampling and invalid color/depth load/store
+operations. Invalid render-pass descriptors are checked after finishing their
+isolated encoder because core reports those errors at finish.
+
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,
 mapped readback and explicit teardown. It checks all 64 copied bytes and all
 64 rendered pixels, including the 32-red/32-green render. It also validates
 unsupported transient formats and usages and creates transient textures and
-views; it does not execute a transient render pass through core. Its restricted
-numeric limits and format capabilities do not constitute a safe general adapter
-contract. The fixture verifies that core's format-feature query preserves the
-HAL's RGBA8, D24S8, BC1-only and unsupported-BC results. It also verifies core
-rejects asymmetric stencil state with the missing
+views. Its restricted numeric limits and format capabilities do not constitute
+a safe general adapter contract. The fixture verifies that core's format-feature
+query preserves the HAL's RGBA8, D24S8, BC1-only and unsupported-BC results. It
+also verifies that core rejects asymmetric stencil state with the missing
 `TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL. Full-channel
 straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`, while the
 same blend with alpha writes masked creates through the existing HAL path.

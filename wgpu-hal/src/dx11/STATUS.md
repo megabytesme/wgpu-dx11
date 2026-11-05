@@ -476,7 +476,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled
-  and copy usages are rejected for these private textures and views.
+  and copy usages are rejected for these textures and views. Strict public
+  FL9_1 execution covers transient color clear/draw/discard and transient D24S8
+  depth/stencil clear/draw/discard controlling a readable color result. Core
+  validation rejects transient sampling and invalid LOAD/STORE operations.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
