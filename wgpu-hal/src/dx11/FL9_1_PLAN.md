@@ -279,7 +279,12 @@ the offscreen adapter uses this projection.
 The selected-entry depth-bias mismatch is now represented in core's
 `DownlevelLimits` and covered by the controlled fixture. Next audit remaining
 core-valid depth/stencil and render-pass combinations. The tested FL9_1 FXC
-profile rejects fragment `@builtin(front_facing)`, and Microsoft documents
+profile also rejects `SV_Depth` without `SV_Target0` at zero bias with X4530;
+the new `fragment_depth_without_color_target_0` limit makes core reject only
+that selected output shape before HAL, while structured color-plus-depth
+remains compilable. Continue checking core-valid shader output shapes against
+FXC before widening the projection. The tested FL9_1 FXC profile also rejects
+fragment `@builtin(front_facing)`, and Microsoft documents
 that 9_x pixel shaders cannot read fragment `@builtin(position)`. Core now
 represents these with selected-entry `DownlevelLimits` gates, so safe sibling
 entries remain usable. Continue auditing shader and render-state combinations

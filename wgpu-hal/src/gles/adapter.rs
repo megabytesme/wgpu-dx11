@@ -987,6 +987,7 @@ impl super::Adapter {
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
             depth_bias_with_fragment_depth: true,
+            fragment_depth_without_color_target_0: true,
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,

@@ -1922,6 +1922,29 @@ impl Interface {
             .contains(&Varying::BuiltIn(BuiltIn::FragDepth)))
     }
 
+    pub(crate) fn entry_point_uses_unsupported_fragment_depth_without_color_target_0(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        if limits.fragment_depth_without_color_target_0 {
+            return Ok(false);
+        }
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        let writes_depth = entry_point
+            .outputs
+            .contains(&Varying::BuiltIn(BuiltIn::FragDepth));
+        let writes_color_target_0 = entry_point
+            .outputs
+            .iter()
+            .any(|output| matches!(output, Varying::Local { location: 0, .. }));
+        Ok(writes_depth && !writes_color_target_0)
+    }
+
     pub(crate) fn entry_point_uses_front_facing(
         &self,
         stage: naga::ShaderStage,
@@ -3359,6 +3382,80 @@ mod tests {
             .unwrap());
         assert!(interface
             .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn fragment_depth_without_color_target_0_follows_selected_entry() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct DepthAndColor {
+                @location(0) color: vec4f,
+                @builtin(frag_depth) depth: f32,
+            }
+            struct LocationOneAndDepth {
+                @location(1) color: vec4f,
+                @builtin(frag_depth) depth: f32,
+            }
+            @fragment fn depth_only() -> @builtin(frag_depth) f32 { return 0.5; }
+            @fragment fn depth_and_color() -> DepthAndColor {
+                return DepthAndColor(vec4f(1.0), 0.5);
+            }
+            @fragment fn other_location_and_depth() -> LocationOneAndDepth {
+                return LocationOneAndDepth(vec4f(1.0), 0.5);
+            }
+            @fragment fn color_only() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            fragment_depth_without_color_target_0: false,
+            ..Default::default()
+        };
+
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_depth_without_color_target_0(
+                naga::ShaderStage::Fragment,
+                "depth_only",
+                &fl91,
+            )
+            .unwrap());
+        for entry in ["depth_and_color", "color_only"] {
+            assert!(!interface
+                .entry_point_uses_unsupported_fragment_depth_without_color_target_0(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fl91,
+                )
+                .unwrap());
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_depth_without_color_target_0(
+                naga::ShaderStage::Fragment,
+                "other_location_and_depth",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_depth_without_color_target_0(
+                naga::ShaderStage::Fragment,
+                "depth_only",
+                &wgt::DownlevelLimits::default(),
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_depth_without_color_target_0(
                 naga::ShaderStage::Fragment,
                 "missing",
                 &fl91,

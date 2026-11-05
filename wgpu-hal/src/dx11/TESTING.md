@@ -639,6 +639,13 @@ from the same module succeeded with nonzero bias. These results do not establish
 bias arithmetic precision on historical FL9 hardware, nor a public adapter
 contract.
 
+The direct-only `@builtin(frag_depth)` entry in that shader is separately
+rejected at zero bias through
+`DownlevelLimits::fragment_depth_without_color_target_0`; FXC requires
+`SV_Target0` and reports X4530 otherwise. The controlled core fixture and a
+strict public wgpu test verify that this error is returned before HAL, while
+the same module's structured color-plus-depth entry successfully compiles.
+
 The controlled core fixture reports
 `DownlevelLimits::depth_bias_with_fragment_depth = false`. It verifies that a
 selected `frag_depth` entry plus nonzero bias returns

@@ -298,9 +298,11 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             src_alpha_saturated_blend,
             viewport_rectangles_outside_target,
             depth_bias_with_fragment_depth,
+            fragment_depth_without_color_target_0,
             fragment_front_facing,
             fragment_position,
             texture_query,
+            texture_sample_base_clamp_to_edge,
             texture_sample_level,
             texture_load,
             max_texture_sample_bias,
@@ -343,6 +345,10 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tMaximum sampler anisotropy: {max_sampler_anisotropy}")?;
     writeln!(
         output,
+        "\t\tFragment depth without color target 0: {fragment_depth_without_color_target_0}"
+    )?;
+    writeln!(
+        output,
         "\t\tSource-alpha-saturated blending: {src_alpha_saturated_blend}"
     )?;
     writeln!(
@@ -356,6 +362,10 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tFragment front-facing input: {fragment_front_facing}")?;
     writeln!(output, "\t\tFragment position input: {fragment_position}")?;
     writeln!(output, "\t\tTexture image queries: {texture_query}")?;
+    writeln!(
+        output,
+        "\t\tTexture sample base clamp to edge: {texture_sample_base_clamp_to_edge}"
+    )?;
     writeln!(output, "\t\tExplicit texture sample level: {texture_sample_level}")?;
     writeln!(output, "\t\tTexture loads: {texture_load}")?;
     writeln!(output, "\t\tMaximum absolute texture sample bias: {max_texture_sample_bias}")?;

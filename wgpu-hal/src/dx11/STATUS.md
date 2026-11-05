@@ -138,6 +138,11 @@ same module remains allowed. The capability is represented separately from
 the native `DEPTH_BIAS_CLAMP` flag because this is a backend implementation
 restriction, not a feature-level guarantee.
 
+An independent selected-entry limit now rejects zero-bias `frag_depth` output
+without `@location(0)`, matching FXC X4530. The structured color-plus-depth
+entry remains accepted and compiles. The limit checks specifically for target
+0; unrelated color locations do not satisfy the 10Level9 profile requirement.
+
 The controlled FL9_1 core fixture reports
 `DownlevelLimits::fragment_front_facing = false` and
 `DownlevelLimits::fragment_position = false`. The tested `ps_4_0_level_9_1`

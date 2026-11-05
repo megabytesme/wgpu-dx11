@@ -360,6 +360,15 @@ FL9 hardware remains unverified. See
 [D3D11 depth bias](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-output-merger-stage-depth-bias)
 and [10Level9 rasterizer restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
 
+The FL9_1 projection also disables
+`DownlevelLimits::fragment_depth_without_color_target_0`. FXC rejects a
+fragment shader that writes `SV_Depth` without `SV_Target0` with X4530, even at
+zero depth bias, while a shader returning both `@location(0)` color and
+`frag_depth` compiles. Core follows the selected entry point and rejects only
+the missing-target-0 shape before HAL. A color output at another location does
+not satisfy this profile requirement. This restriction reflects the current
+10Level9 compiler path; it is not a general FL9_1 hardware claim.
+
 | Transfer | Implementation and restrictions | Coverage |
 | --- | --- | --- |
 | Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM accept one-mip, one-layer sampled/upload textures only. BC1_UNORM uses 4×4 texel blocks, 8-byte block rows, 4-aligned dimensions and block-aligned update regions. | RGBA8/BGRA8 offset and padded full/partial uploads, GPU-written source and ordered submissions. All three sampled-upload-only uncompressed formats passed padded-row, nonzero-source-offset upload and full rendered readback tests on forced FL9_1. BC1 passed an offset padded full upload, a partial block replacement and 256-pixel rendered readback. |

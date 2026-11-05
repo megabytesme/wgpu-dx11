@@ -4833,3 +4833,87 @@ fn public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91() {
     }
     println!("PASS: public indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32, including restart runs");
 }
+
+#[test]
+fn public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 fragment-depth output test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 fragment depth output forms"),
+        source: ShaderSource::Wgsl(
+            "struct ColorAndDepth { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };\n\
+             @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.5, 1.0); }\n\
+             @fragment fn depth_only() -> @builtin(frag_depth) f32 { return 0.5; }\n\
+             @fragment fn color_and_depth() -> ColorAndDepth { return ColorAndDepth(vec4f(1.0, 0.0, 0.0, 1.0), 0.5); }"
+                .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let depth_stencil = DepthStencilState {
+        format: TextureFormat::Depth24PlusStencil8,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(CompareFunction::Always),
+        stencil: StencilState::default(),
+        bias: DepthBiasState::default(),
+    };
+    let pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 fragment depth output pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(depth_stencil.clone()),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error_containing(
+        &device,
+        "direct-only fragment depth output",
+        "without a color target at @location(0)",
+        || drop(pipeline("depth_only")),
+    );
+    drop(pipeline("color_and_depth"));
+    println!("PASS: core rejected direct-only frag_depth before FXC and accepted the structured color+depth output");
+}

@@ -795,6 +795,10 @@ pub enum CreateRenderPipelineError {
     UnsupportedInstanceIndexInput,
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
     UnsupportedDepthBiasWithFragmentDepth,
+    #[error(
+        "A fragment entry point that writes frag_depth without a color target at @location(0) is not supported by this downlevel adapter"
+    )]
+    UnsupportedFragmentDepthWithoutColorTarget0,
     #[error("Fragment `@builtin(front_facing)` is not supported by this downlevel adapter")]
     UnsupportedFragmentFrontFacing,
     #[error("Fragment `@builtin(position)` input is not supported by this downlevel adapter")]
@@ -903,6 +907,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedVertexIndexInput
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDepthBiasWithFragmentDepth
+            | Self::UnsupportedFragmentDepthWithoutColorTarget0
             | Self::UnsupportedFragmentFrontFacing
             | Self::UnsupportedFragmentPosition
             | Self::UnsupportedTextureLoad { .. }

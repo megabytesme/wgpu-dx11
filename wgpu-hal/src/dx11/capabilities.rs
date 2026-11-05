@@ -233,6 +233,7 @@ pub(super) struct BackendCapabilities {
     pub d24s8_triangle_slope_depth_bias: bool,
     pub d24s8_depth_bias_clamp: bool,
     pub fragment_depth_with_bias: bool,
+    pub fragment_depth_without_color_target_0: bool,
     pub two_sided_stencil: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
@@ -302,6 +303,7 @@ impl BackendCapabilities {
         d24s8_triangle_slope_depth_bias: true,
         d24s8_depth_bias_clamp: false,
         fragment_depth_with_bias: false,
+        fragment_depth_without_color_target_0: false,
         two_sided_stencil: false,
         instancing: false,
         instancing_without_instance_inputs: true,
@@ -394,6 +396,9 @@ impl Capabilities {
                 src_alpha_saturated_blend: self.backend.src_alpha_saturated_blend,
                 viewport_rectangles_outside_target: false,
                 depth_bias_with_fragment_depth: self.backend.fragment_depth_with_bias,
+                fragment_depth_without_color_target_0: self
+                    .backend
+                    .fragment_depth_without_color_target_0,
                 fragment_front_facing: false,
                 fragment_position: false,
                 texture_load: false,
@@ -830,6 +835,12 @@ mod tests {
         );
         assert!(!exposed.downlevel.limits.texture_1d);
         assert!(!exposed.downlevel.limits.texture_3d);
+        assert!(
+            !exposed
+                .downlevel
+                .limits
+                .fragment_depth_without_color_target_0
+        );
         assert!(!exposed.downlevel.limits.vertex_index_input);
         assert!(!exposed.downlevel.limits.instance_index_input);
         assert!(!exposed.downlevel.limits.texture_query);
@@ -1154,6 +1165,7 @@ mod tests {
             assert!(caps.backend.d24s8_triangle_slope_depth_bias);
             assert!(!caps.backend.d24s8_depth_bias_clamp);
             assert!(!caps.backend.fragment_depth_with_bias);
+            assert!(!caps.backend.fragment_depth_without_color_target_0);
             assert!(caps.backend.dynamic_uniform_offsets);
             assert!(caps.backend.uniform_binding_sizes_unaligned_16);
         }

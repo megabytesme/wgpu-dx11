@@ -1129,6 +1129,11 @@ pub struct DownlevelLimits {
     ///
     /// Adapters that cannot preserve this combination reject the pipeline during validation.
     pub depth_bias_with_fragment_depth: bool,
+    /// Whether a fragment entry point writing `frag_depth` may omit `@location(0)` output.
+    ///
+    /// Some shader profiles require `SV_Target0` even when the only observable output is depth.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub fragment_depth_without_color_target_0: bool,
     /// Whether fragment entry points may declare `@builtin(front_facing)`.
     ///
     /// This can be unavailable when the shader backend cannot compile the corresponding input
@@ -1228,6 +1233,7 @@ impl Default for DownlevelLimits {
             src_alpha_saturated_blend: true,
             viewport_rectangles_outside_target: true,
             depth_bias_with_fragment_depth: true,
+            fragment_depth_without_color_target_0: true,
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,
@@ -1287,6 +1293,8 @@ impl DownlevelLimits {
             && (!required.viewport_rectangles_outside_target
                 || self.viewport_rectangles_outside_target)
             && (!required.depth_bias_with_fragment_depth || self.depth_bias_with_fragment_depth)
+            && (!required.fragment_depth_without_color_target_0
+                || self.fragment_depth_without_color_target_0)
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
             && (!required.texture_query || self.texture_query)
@@ -1352,6 +1360,7 @@ impl DownlevelCapabilities {
             && self.limits.src_alpha_saturated_blend
             && self.limits.viewport_rectangles_outside_target
             && self.limits.depth_bias_with_fragment_depth
+            && self.limits.fragment_depth_without_color_target_0
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
             && self.limits.texture_query
@@ -1650,6 +1659,7 @@ mod tests {
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
+            fragment_depth_without_color_target_0: false,
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
@@ -1681,6 +1691,7 @@ mod tests {
             src_alpha_saturated_blend: false,
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
+            fragment_depth_without_color_target_0: false,
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
@@ -1883,6 +1894,7 @@ mod tests {
             "max_vertex_shader_uniform_vectors",
             "max_fragment_shader_uniform_vectors",
             "max_sampler_anisotropy",
+            "fragment_depth_without_color_target_0",
             "texture_query",
             "texture_sample_base_clamp_to_edge",
             "texture_load",
@@ -1904,6 +1916,7 @@ mod tests {
         assert_eq!(limits.max_vertex_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_fragment_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_sampler_anisotropy, 16);
+        assert!(limits.fragment_depth_without_color_target_0);
         assert!(limits.texture_query);
         assert!(limits.texture_sample_base_clamp_to_edge);
         assert!(limits.texture_load);
@@ -1940,6 +1953,24 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             depth_bias_with_fragment_depth: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn fragment_depth_without_color_target_0_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            fragment_depth_without_color_target_0: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            fragment_depth_without_color_target_0: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));
