@@ -14,13 +14,30 @@ use windows::{
                 D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::DXGI_SAMPLE_DESC,
+            Dxgi::Common::{
+                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_SAMPLE_DESC,
+            },
         },
     },
 };
 
 fn invalid() -> Error {
     Error::from_hresult(E_INVALIDARG)
+}
+
+fn texture_formats_copy_compatible(
+    source: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    destination: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+) -> bool {
+    source == destination
+        || matches!(
+            (source, destination),
+            (DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+                | (DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM)
+                | (DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
+                | (DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_B8G8R8A8_UNORM)
+        )
 }
 
 fn copy_layout(
@@ -165,7 +182,10 @@ impl NativeDevice {
         destination: &NativeTexture,
         region: &crate::TextureCopy,
     ) -> Result<TextureToTexture> {
-        if self.texture_desc(source)?.Format != self.texture_desc(destination)?.Format {
+        if !texture_formats_copy_compatible(
+            self.texture_desc(source)?.Format,
+            self.texture_desc(destination)?.Format,
+        ) {
             return Err(invalid());
         }
         let (source, src_size, source_subresource) =
@@ -507,6 +527,34 @@ mod tests {
         size.width = 4;
         base.origin.y = 2;
         assert!(!block_aligned_box(&base, &size, bc1));
+    }
+
+    #[test]
+    fn texture_copy_compatibility_matches_rgba_and_bgra_srgb_families() {
+        assert!(texture_formats_copy_compatible(
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        ));
+        assert!(texture_formats_copy_compatible(
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+        ));
+        assert!(texture_formats_copy_compatible(
+            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+        ));
+        assert!(texture_formats_copy_compatible(
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+            DXGI_FORMAT_B8G8R8A8_UNORM,
+        ));
+        assert!(!texture_formats_copy_compatible(
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT_B8G8R8A8_UNORM,
+        ));
+        assert!(!texture_formats_copy_compatible(
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+        ));
     }
 
     #[test]

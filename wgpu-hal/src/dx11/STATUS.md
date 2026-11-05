@@ -640,6 +640,13 @@ remain isolated proofs.
 historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and public
 HWND presentation remain unverified.
 
+The public texture-copy path now accepts RGBA8↔RGBA8-sRGB and BGRA8↔BGRA8-sRGB
+copies that core already considers format-compatible. The D3D11 path retains
+the native same-type-group requirement; it copies stored bits and performs no
+sRGB conversion. Strict FL9_1 readback checks the sRGB intermediate and the
+linear round-trip for both channel families. Other differing formats remain
+rejected.
+
 Do not describe this restricted offscreen adapter as complete wgpu or WebGPU
 support. See [TESTING.md](TESTING.md) for exact public and private test commands.
 

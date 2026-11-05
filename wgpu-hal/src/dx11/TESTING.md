@@ -480,6 +480,17 @@ cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --te
 cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_mip_chain_sampling_at_fl91 -- --nocapture --test-threads=1
 ```
 
+The public copy test verifies DXGI typeless-family compatibility between
+linear and sRGB RGBA8/BGRA8 formats. It copies a patterned texture from linear
+to sRGB and back to linear, then reads both outputs through padded rows and
+checks every texel byte. This establishes raw-bit preservation for these format
+pairs; it does not claim color conversion during GPU copies.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_srgb_texture_copies_preserve_bits_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public FL9_1 D16 depth-only attachment
 
 The D16 format is a feature-level 9_1 required depth attachment format, but the

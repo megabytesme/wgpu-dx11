@@ -5599,6 +5599,260 @@ fn public_dx11_rejects_sample_index_without_multisampled_shading() {
 }
 
 #[test]
+fn public_dx11_srgb_texture_copies_preserve_bits_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 sRGB copy test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let format_pairs = [
+        (TextureFormat::Rgba8Unorm, TextureFormat::Rgba8UnormSrgb),
+        (TextureFormat::Bgra8Unorm, TextureFormat::Bgra8UnormSrgb),
+    ];
+    for (linear, srgb) in format_pairs {
+        for format in [linear, srgb] {
+            let usages = adapter.get_texture_format_features(format).allowed_usages;
+            assert!(
+                usages.contains(TextureUsages::COPY_SRC | TextureUsages::COPY_DST),
+                "{format:?}: {usages:?}"
+            );
+        }
+    }
+
+    const WIDTH: u32 = 4;
+    const HEIGHT: u32 = 4;
+    const ROW_PITCH: u32 = 256;
+    const IMAGE_PITCH: u64 = ROW_PITCH as u64 * HEIGHT as u64;
+    let mut textures = Vec::new();
+    let mut expected_images = Vec::new();
+    for (linear, srgb) in format_pairs {
+        let source = device.create_texture(&TextureDescriptor {
+            label: Some("linear sRGB-copy source"),
+            size: Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: linear,
+            usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let middle = device.create_texture(&TextureDescriptor {
+            label: Some("sRGB-copy intermediate"),
+            size: Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: srgb,
+            usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let destination = device.create_texture(&TextureDescriptor {
+            label: Some("linear sRGB-copy destination"),
+            size: Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: linear,
+            usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let mut upload = vec![0; (ROW_PITCH * HEIGHT) as usize];
+        let mut expected = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let rgba = [
+                    (13 + 37 * x + 3 * y) as u8,
+                    (29 + 5 * x + 41 * y) as u8,
+                    (47 + 23 * x + 11 * y) as u8,
+                    255,
+                ];
+                let pixel = if linear == TextureFormat::Bgra8Unorm {
+                    [rgba[2], rgba[1], rgba[0], rgba[3]]
+                } else {
+                    rgba
+                };
+                let offset = (y * ROW_PITCH + x * 4) as usize;
+                upload[offset..offset + 4].copy_from_slice(&pixel);
+                expected.extend_from_slice(&pixel);
+            }
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(HEIGHT),
+            },
+            Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        textures.push((source, middle, destination));
+        expected_images.push((linear, srgb, expected));
+    }
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("sRGB-compatible copy readback"),
+        size: IMAGE_PITCH * 4,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("sRGB-compatible texture copies"),
+    });
+    for (index, (source, middle, destination)) in textures.iter().enumerate() {
+        encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: source,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: middle,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: middle,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: destination,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        for (output_index, texture) in [middle, destination].into_iter().enumerate() {
+            encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: TexelCopyBufferLayout {
+                        offset: IMAGE_PITCH * (index as u64 * 2 + output_index as u64),
+                        bytes_per_row: Some(ROW_PITCH),
+                        rows_per_image: Some(HEIGHT),
+                    },
+                },
+                Extent3d {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for compatible sRGB copies");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("sRGB copy readback callback")
+        .expect("map sRGB copy readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped sRGB-compatible copy data");
+        for (index, (linear, srgb, expected)) in expected_images.iter().enumerate() {
+            for (output_index, name) in ["sRGB intermediate", "linear roundtrip"]
+                .into_iter()
+                .enumerate()
+            {
+                let base = IMAGE_PITCH as usize * (index * 2 + output_index);
+                for y in 0..HEIGHT as usize {
+                    for x in 0..WIDTH as usize {
+                        let pixel = y * ROW_PITCH as usize + x * 4;
+                        let expected_pixel = &expected[(y * WIDTH as usize + x) * 4..][..4];
+                        assert_eq!(
+                            &data[base + pixel..base + pixel + 4],
+                            expected_pixel,
+                            "{linear:?} → {srgb:?} → {linear:?}, {name} pixel ({x}, {y})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: RGBA8 and BGRA8 linear↔sRGB GPU copies preserved all 32 intermediate and round-trip pixels bit-for-bit at forced FL9_1");
+}
+
+#[test]
 fn public_dx11_srgb_texture_sampling_and_rendering() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
