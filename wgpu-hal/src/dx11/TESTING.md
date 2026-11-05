@@ -134,10 +134,11 @@ RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and
 red values of 192. It runs under the same strict hardware command above.
 
 The same public test checks the optional `Rg8Unorm` projection. It is exposed
-only after the selected device reports both `TEXTURE2D` and `SHADER_SAMPLE`;
-the synthetic capability test covers positive, unavailable and incomplete
-queries. A positive `SHADER_SAMPLE` bit means `Sample` supports any filter;
-the strict test verifies both nearest sampling and a linear-filter gradient.
+after the selected device reports `TEXTURE2D`; the synthetic capability test
+covers positive, unavailable and incomplete queries. A positive
+`SHADER_SAMPLE` bit means `Sample` supports any filter; without it, the
+backend limits use to point filtering. The strict test verifies nearest
+sampling and, on this device, a linear-filter gradient.
 When unavailable, the public case prints an explicit capability `SKIP` while
 retaining the R8 baseline result. On 2026-11-05, the RTX 3090 Ti at requested
 and actual FL9_1 returned `0x0002c320` for `R8G8_UNORM`. The nearest test
@@ -1271,11 +1272,12 @@ driver behavior or general public adapter support.
 Microsoft lists R8_UNORM (legacy L8), R8G8_SNORM (legacy V8U8),
 R8G8B8A8_SNORM (legacy Q8W8V8U8) and BC1_UNORM (legacy DXT1) as FL9_1 2D
 shader-sample formats. `R16G16_SNORM` has a FL9_1 2D-texture guarantee, but
-its required `SHADER_SAMPLE` support begins at FL9_2. At FL9_1, the backend
-allows it only when the selected device query positively reports sampling.
-The backend checks the selected device's actual
-`TEXTURE2D | SHADER_SAMPLE` bits and supports only single-mip sampled/upload
-textures. BC1 dimensions and updates must be aligned to complete 4×4 blocks.
+its required `SHADER_SAMPLE` support begins at FL9_2. D3D11 permits
+point-filtered sampling when a selected device reports `TEXTURE2D` without
+`SHADER_SAMPLE`; the backend reports that format as non-filterable. A failed
+query or missing `TEXTURE2D` bit is rejected. These formats support only
+single-mip sampled/upload textures. BC1 dimensions and updates must be
+aligned to complete 4×4 blocks.
 Run the synthetic capability checks and strict hardware tests with:
 
 ```powershell
@@ -1297,12 +1299,14 @@ value for conversion rounding. On the RTX 3090 Ti, R8_UNORM, R8G8_SNORM and
 R8G8B8A8_SNORM returned masks `0x0002d3e0`, `0x00021320` and `0x000213a0`;
 all reported filtered-sampling support, while the tests use nearest filtering.
 At forced FL9_1, `R16G16_SNORM` returned `0x00021122`, which lacks
-`SHADER_SAMPLE`; the strict private test verifies HAL rejection instead of
-counting it as a successful sample. The strict public SNORM test verifies the
-format remains absent from the adapter projection, confirms public texture
-creation is rejected, and still validates the R8G8/RGBA8 SNORM draws. A
-synthetic positive query exercises the conditional capability projection, but
-the R16G16 positive upload/sample path has not run on hardware.
+`SHADER_SAMPLE` but includes `TEXTURE2D`. The strict private test uploaded
+padded R16G16_SNORM texels, point-sampled them into an RGBA8 target and matched
+all 80 pixels. The public adapter reports `TEXTURE_FORMAT_16BIT_NORM` and
+non-filterable sampled/upload usages; a filterable bind-group layout fails
+core validation, while the non-filtering sampler path matched all 64 output
+pixels. The test therefore validates both the optional native behavior and
+the rejection boundary. This forced modern driver does not establish behavior
+on historical FL9_1 hardware.
 The BC1 test uploads an 8×8 block-compressed image from offset 8 with a 24-byte
 block-row pitch, replaces the block at [4,0] with a second padded upload, and
 checks all 256 pixels after sampling. Its format mask was `0x000213a0` and

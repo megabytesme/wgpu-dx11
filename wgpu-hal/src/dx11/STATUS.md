@@ -5,8 +5,9 @@ explicit FL9_1 device and exposes the selected-device capability projection
 for offscreen rendering and a constrained Win32 HWND surface through the public
 wgpu API. The HWND path reports BGRA8 sRGB FIFO, opaque composition,
 render-attachment usage and one frame of latency; configure, acquire and
-present are restricted to the creating thread. It reports no wgpu features
-and does not claim WebGPU compliance. The implementation remains experimental
+present are restricted to the creating thread. It exposes the native-only
+`TEXTURE_FORMAT_16BIT_NORM` feature only when a selected-device query reports
+the required 2D format support, and does not claim WebGPU compliance. The implementation remains experimental
 and restrictions not representable through current core limits still need
 auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
@@ -324,12 +325,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
   RESOURCE and/or COPY_DST usage, subject to a positive device format query.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
   offset and all 80 sampled output pixels. A positive `SHADER_SAMPLE` query
-  reports `FILTERABLE`; D3D11 point-only sampling when that bit is absent is
-  not implemented. Render-target, copy-source, readback and mip-chain uses
+  reports `FILTERABLE`; when the bit is absent but `TEXTURE2D` is present, the
+  backend supports point-only sampling. Render-target, copy-source, readback and mip-chain uses
   remain unsupported.
 - R8G8_UNORM is not a required FL9_1 sampled format. Its one-mip,
   single-layer sampled/upload path is exposed only when the selected device
-  reports `TEXTURE2D | SHADER_SAMPLE`. The forced-FL9_1 RTX returned
+  reports `TEXTURE2D`; `SHADER_SAMPLE` controls filterability. The forced-FL9_1 RTX returned
   `0x0002c320`; a strict public upload/sample test verified 64 pixels and the
   two-byte texel stride. A second pass verifies linear filtering with an
   eight-column gradient. Render-target, copy-source, readback and mip-chain
@@ -339,13 +340,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
   Render-target, copy-source, readback and mip-chain uses remain unsupported.
 - R16G16_SNORM is not guaranteed to support shader sampling at FL9_1; the
-  required-format table raises that guarantee to FL9_2. The private upload and
-  sample path is conditional on a positive selected-device query. The RTX
-  forced to FL9_1 reports `0x00021122`, without `SHADER_SAMPLE`; strict HAL and
-  public tests verify the format is rejected and not exposed. Synthetic tests
-  cover a positive query, but the conditional positive GPU path remains
-  unverified. D3D11 permits point-only sampling for some formats without the
-  bit, but this backend currently rejects those resources.
+  required-format table raises `SHADER_SAMPLE` to FL9_2. The selected device
+  can still support point-only sampling when it reports `TEXTURE2D`. The RTX
+  forced to FL9_1 reports `0x00021122`, without `SHADER_SAMPLE`; strict HAL
+  and public tests upload, point-sample and validate readback, while core
+  rejects a filtering layout from the queried format flags. Public use also
+  requires `TEXTURE_FORMAT_16BIT_NORM`. The format remains single-mip,
+  sampled/upload-only and is not renderable or readable back through a buffer.
 - R8G8B8A8_SNORM has the same queried one-mip sampled/upload subset. A strict
   forced-FL9_1 test verifies padded signed four-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).

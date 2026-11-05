@@ -460,8 +460,16 @@ impl Capabilities {
             downlevel,
             cooperative_matrix_properties: alloc::vec::Vec::new(),
         };
+        let features = if self
+            .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
+            .contains(crate::TextureFormatCapabilities::SAMPLED)
+        {
+            wgt::Features::TEXTURE_FORMAT_16BIT_NORM
+        } else {
+            wgt::Features::empty()
+        };
         Some(WgpuCapabilityProjection {
-            features: wgt::Features::empty(),
+            features,
             capabilities,
         })
     }
@@ -669,7 +677,11 @@ impl Capabilities {
             return Err(DriverQueryUnavailable);
         };
         let required = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
-            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
+            | if sampled_upload {
+                0
+            } else {
+                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
+            }
             | if mips > 1 {
                 D3D11_FORMAT_SUPPORT_MIP.0 as u32
             } else {
@@ -753,7 +765,21 @@ impl Capabilities {
                 )
                 .is_ok();
             return if supported {
-                Caps::SAMPLED | Caps::SAMPLED_LINEAR | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
+                let mut result = Caps::SAMPLED | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY;
+                let format_query = match format {
+                    wgt::TextureFormat::R8Unorm => self.driver.r8_unorm,
+                    wgt::TextureFormat::Rg8Unorm => self.driver.rg8_unorm,
+                    wgt::TextureFormat::Rg8Snorm => self.driver.rg8_snorm,
+                    wgt::TextureFormat::Rg16Snorm => self.driver.rg16_snorm,
+                    wgt::TextureFormat::Rgba8Snorm => self.driver.rgba8_snorm,
+                    wgt::TextureFormat::Bc1RgbaUnorm => self.driver.bc1_unorm,
+                    _ => unreachable!("the sampled upload format was checked above"),
+                };
+                if matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0)
+                {
+                    result |= Caps::SAMPLED_LINEAR;
+                }
+                result
             } else {
                 Caps::empty()
             };
@@ -993,7 +1019,9 @@ mod tests {
                 | wgt::DownlevelFlags::CUBE_TEXTURES
                 | wgt::DownlevelFlags::OCCLUSION_QUERY
         ));
-        assert!(projection.features.is_empty());
+        assert!(projection
+            .features
+            .contains(wgt::Features::TEXTURE_FORMAT_16BIT_NORM));
         assert!(!exposed.downlevel.is_webgpu_compliant());
     }
 
@@ -1075,6 +1103,7 @@ mod tests {
         let mut caps = model(FeatureLevel::L9_1);
         caps.driver.full_npot = Query::Unavailable(-1);
         caps.driver.bc1_unorm = Query::Unavailable(-1);
+        caps.driver.rg16_snorm = Query::Unavailable(-1);
         let projection = caps.wgpu_projection().unwrap();
 
         assert!(
@@ -1087,9 +1116,33 @@ mod tests {
         assert!(!projection
             .features
             .contains(wgt::Features::TEXTURE_COMPRESSION_BC));
+        assert!(!projection
+            .features
+            .contains(wgt::Features::TEXTURE_FORMAT_16BIT_NORM));
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Bc1RgbaUnorm)
             .is_empty());
+    }
+
+    #[test]
+    fn point_sampled_rg16_norm_exposes_only_the_required_format_feature() {
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.rg16_snorm = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
+        let projection = caps.wgpu_projection().unwrap();
+
+        assert!(projection
+            .features
+            .contains(wgt::Features::TEXTURE_FORMAT_16BIT_NORM));
+        let format = caps.texture_format_capabilities(wgt::TextureFormat::Rg16Snorm);
+        assert!(format.contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST));
+        assert!(!format.contains(FormatCaps::SAMPLED_LINEAR));
+
+        caps.driver.rg16_snorm = Query::Unavailable(-1);
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(wgt::Features::TEXTURE_FORMAT_16BIT_NORM));
     }
 
     #[test]
@@ -2293,8 +2346,12 @@ mod tests {
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
         assert_eq!(
             queried.check_private_texture_2d(r8, sampled_upload, [7, 5], 1, 1, 1),
-            Err(DriverFormatUnsupported)
+            Ok(())
         );
+        let point_only = queried.texture_format_capabilities(r8);
+        assert!(point_only
+            .contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY));
+        assert!(!point_only.contains(FormatCaps::SAMPLED_LINEAR));
         queried = caps;
         queried.backend.r8_unorm_sampled_upload = false;
         assert_eq!(
@@ -2336,8 +2393,12 @@ mod tests {
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
         assert_eq!(
             missing_sampling.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
-            Err(DriverFormatUnsupported)
+            Ok(())
         );
+        let point_only = missing_sampling.texture_format_capabilities(format);
+        assert!(point_only
+            .contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY));
+        assert!(!point_only.contains(FormatCaps::SAMPLED_LINEAR));
         assert_eq!(
             caps.check_private_texture_2d(format, sampled_upload, [8, 8], 1, 2, 1),
             Err(UnsupportedShape)
@@ -2409,6 +2470,14 @@ mod tests {
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Ok(())
         );
+        queried.driver.rg8_snorm = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
+        assert_eq!(
+            queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Ok(())
+        );
+        let point_only = queried.texture_format_capabilities(format);
+        assert!(point_only.contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST));
+        assert!(!point_only.contains(FormatCaps::SAMPLED_LINEAR));
         queried.driver.rg8_snorm =
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32));
         assert_eq!(
@@ -2483,11 +2552,22 @@ mod tests {
         queried.driver.rg16_snorm = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
         assert_eq!(
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
-            Err(DriverFormatUnsupported)
+            Ok(())
         );
-        assert!(queried.texture_format_capabilities(format).is_empty());
+        let point_only = queried.texture_format_capabilities(format);
+        assert!(point_only.contains(
+            crate::TextureFormatCapabilities::SAMPLED
+                | crate::TextureFormatCapabilities::COPY_DST
+                | crate::TextureFormatCapabilities::SINGLE_MIP_ONLY
+        ));
+        assert!(!point_only.contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
         queried.driver.rg16_snorm =
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
+        assert_eq!(
+            queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
+            Ok(())
+        );
+        queried.driver.rg16_snorm = Query::Value(0);
         assert_eq!(
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Err(DriverFormatUnsupported)
@@ -2498,6 +2578,65 @@ mod tests {
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Err(UnsupportedUsage)
         );
+    }
+
+    #[test]
+    fn sampled_upload_filterability_requires_the_any_filter_query_bit() {
+        use TextureRejection::*;
+
+        let mut caps = model(FeatureLevel::L9_1);
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let any_filter = D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32;
+        for format in [
+            wgt::TextureFormat::R8Unorm,
+            wgt::TextureFormat::Rg8Unorm,
+            wgt::TextureFormat::Rg8Snorm,
+            wgt::TextureFormat::Rg16Snorm,
+            wgt::TextureFormat::Rgba8Snorm,
+            wgt::TextureFormat::Bc1RgbaUnorm,
+        ] {
+            let set_query = |caps: &mut Capabilities, query| match format {
+                wgt::TextureFormat::R8Unorm => caps.driver.r8_unorm = query,
+                wgt::TextureFormat::Rg8Unorm => caps.driver.rg8_unorm = query,
+                wgt::TextureFormat::Rg8Snorm => caps.driver.rg8_snorm = query,
+                wgt::TextureFormat::Rg16Snorm => caps.driver.rg16_snorm = query,
+                wgt::TextureFormat::Rgba8Snorm => caps.driver.rgba8_snorm = query,
+                wgt::TextureFormat::Bc1RgbaUnorm => caps.driver.bc1_unorm = query,
+                _ => unreachable!(),
+            };
+
+            set_query(&mut caps, Query::Value(texture2d));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Ok(()),
+                "{format:?} resource-only sampling"
+            );
+            let point_only = caps.texture_format_capabilities(format);
+            assert!(
+                point_only.contains(
+                    FormatCaps::SAMPLED | FormatCaps::COPY_DST | FormatCaps::SINGLE_MIP_ONLY
+                ),
+                "{format:?}: {point_only:?}"
+            );
+            assert!(
+                !point_only.contains(FormatCaps::SAMPLED_LINEAR),
+                "{format:?}"
+            );
+
+            set_query(&mut caps, Query::Value(texture2d | any_filter));
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SAMPLED_LINEAR));
+
+            set_query(&mut caps, Query::Unavailable(-1));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Err(DriverQueryUnavailable),
+                "{format:?} unavailable query"
+            );
+            assert!(caps.texture_format_capabilities(format).is_empty());
+        }
     }
 
     #[test]
@@ -2558,8 +2697,11 @@ mod tests {
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
         assert_eq!(
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
-            Err(DriverFormatUnsupported)
+            Ok(())
         );
+        assert!(!queried
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
         queried = caps;
         queried.backend.rgba8_snorm_sampled_upload = false;
         assert_eq!(
@@ -2624,8 +2766,11 @@ mod tests {
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
         assert_eq!(
             query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
-            Err(DriverFormatUnsupported)
+            Ok(())
         );
+        assert!(!query
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
         query = caps;
         query.hardware.bc1_unorm_sampled_texture = false;
         assert_eq!(

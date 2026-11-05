@@ -57,9 +57,8 @@ fn sample_upload(
     let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
     assert_eq!(native.feature_level(), FeatureLevel::L9_1);
     let format_support = unsafe { native.raw_device().CheckFormatSupport(native_format) }?;
-    let required_support =
-        (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
-    assert_eq!(format_support & required_support, required_support);
+    let resource_support = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+    assert_eq!(format_support & resource_support, resource_support);
     std::println!(
         "Hardware: {:?}; requested and actual FL9_1; {format_name} support=0x{format_support:08x}; filtered-sampling={}",
         adapter.identity(),
@@ -643,8 +642,7 @@ fn fl91_rg8_snorm_padded_upload_samples_both_signed_channels() -> windows::core:
 #[test]
 fn fl91_rg16_snorm_is_query_gated_and_samples_when_supported() -> windows::core::Result<()> {
     use windows::Win32::Graphics::{
-        Direct3D11::{D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D},
-        Dxgi::Common::DXGI_FORMAT_R16G16_SNORM,
+        Direct3D11::D3D11_FORMAT_SUPPORT_TEXTURE2D, Dxgi::Common::DXGI_FORMAT_R16G16_SNORM,
     };
 
     let adapters = enumerate_native_adapters()?;
@@ -662,8 +660,7 @@ fn fl91_rg16_snorm_is_query_gated_and_samples_when_supported() -> windows::core:
             .raw_device()
             .CheckFormatSupport(DXGI_FORMAT_R16G16_SNORM)
     }?;
-    let required_support =
-        (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+    let required_support = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
     std::println!(
         "Hardware: {:?}; requested and actual FL9_1; R16G16_SNORM support=0x{format_support:08x}",
         adapter.identity()
@@ -692,7 +689,7 @@ fn fl91_rg16_snorm_is_query_gated_and_samples_when_supported() -> windows::core:
             "unsupported R16G16_SNORM sampling was accepted"
         );
         std::println!(
-            "PASS: selected FL9_1 driver does not report R16G16_SNORM shader sampling; HAL rejected the sampled texture"
+            "PASS: selected FL9_1 driver does not report R16G16_SNORM as a 2D texture; HAL rejected it"
         );
         return Ok(());
     }

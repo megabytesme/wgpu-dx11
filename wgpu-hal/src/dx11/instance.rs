@@ -94,6 +94,7 @@ impl crate::Instance for Instance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Adapter as _;
     use crate::Instance as _;
     use core::ptr::NonNull;
     use raw_window_handle::{WinRtWindowHandle, XlibDisplayHandle};
@@ -114,7 +115,21 @@ mod tests {
                 assert_eq!(adapter.info.backend, wgt::Backend::Dx11);
                 assert_eq!(adapter.info.driver, "D3D11");
                 assert!(adapter.info.driver_info.contains("FL9_1"));
-                assert!(adapter.features.is_empty());
+                if adapter
+                    .features
+                    .contains(wgt::Features::TEXTURE_FORMAT_16BIT_NORM)
+                {
+                    let rg16 = unsafe {
+                        adapter
+                            .adapter
+                            .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
+                    };
+                    assert!(rg16.contains(
+                        crate::TextureFormatCapabilities::SAMPLED
+                            | crate::TextureFormatCapabilities::COPY_DST
+                    ));
+                    assert!(!rg16.contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
+                }
                 assert!(!adapter.capabilities.downlevel.is_webgpu_compliant());
             }
             std::println!("PASS: exposed {} physical FL9_1 adapter(s)", adapters.len());

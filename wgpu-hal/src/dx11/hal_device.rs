@@ -302,8 +302,12 @@ impl crate::Device for Device {
         };
         let support =
             unsafe { self.native.raw_device().CheckFormatSupport(format) }.map_err(device_error)?;
-        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0)
-            as u32
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | if sampled_upload {
+                0
+            } else {
+                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            }) as u32
             | if desc.mip_level_count > 1 {
                 D3D11_FORMAT_SUPPORT_MIP.0 as u32
             } else {

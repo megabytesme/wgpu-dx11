@@ -4203,14 +4203,9 @@ impl Device {
                         (Tst::Depth, Tst::Depth) |
                         // if we expect non-filterable, accept anything float
                         (Tst::Float { filterable: false }, Tst::Float { .. }) |
-                        // if we expect filterable, require it
-                        (Tst::Float { filterable: true }, Tst::Float { filterable: true }) |
                         // if we expect non-filterable, also accept depth
                         (Tst::Float { filterable: false }, Tst::Depth) => {}
-                    // if we expect filterable, also accept Float that is defined as
-                    // unfilterable if filterable feature is explicitly enabled (only hit
-                    // if wgt::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES is
-                    // enabled)
+                    // Use the selected adapter's format capability on downlevel backends too.
                     (Tst::Float { filterable: true }, Tst::Float { .. })
                         if view.format_features.flags
                             .contains(wgt::TextureFormatFeatureFlags::FILTERABLE) => {}

@@ -107,8 +107,9 @@ not a repository artifact.
    R8_UNORM is implemented as a queried single-mip sampled/upload format. Its
    2D upload and nearest sampling pass on forced FL9_1. R8G8_UNORM, which is
    not a required FL9_1 sampled format, is exposed only after a positive
-   selected-device `TEXTURE2D | SHADER_SAMPLE` query; the RTX returned
-   `0x0002c320`, and strict public upload/sample readback passed. Both retain
+   selected-device `TEXTURE2D` query; `SHADER_SAMPLE` separately controls
+   filterability. The RTX returned `0x0002c320`, and strict public
+   upload/sample readback passed. Both retain
    sampled/upload-only restrictions. Color-target, copy-source, readback and
    mip-chain uses remain unsupported. The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
@@ -117,12 +118,13 @@ not a repository artifact.
    have independent device queries and public sampled/render-target paths;
    strict FL9_1 readback verifies decoding and encoding for both channel
    orders. The public suite also samples four-level POT chains of both formats
-   and verifies implicit LOD selects mip 1. An R16G16_SNORM investigation
-   found that the required FL9_1 table guarantees 2D texture use but requires
-   shader sampling only from FL9_2. The model therefore does not promote it at
-   FL9_1; a positive selected-device query can enable the narrow one-mip path.
-   The RTX forced to FL9_1 returns `0x00021122` without `SHADER_SAMPLE`, and
-   private/public tests verify rejection. Continue adding narrowly verified
+   and verifies implicit LOD selects mip 1. The required FL9_1 table
+   guarantees R16G16_SNORM as a 2D texture but requires `SHADER_SAMPLE` only
+   from FL9_2. The RTX forced to FL9_1 returns `0x00021122`: it supports the
+   2D resource but lacks any-filter support. Private and public tests verified
+   point-filtered upload/sample/readback while core rejects a filtering bind.
+   The public adapter exposes `TEXTURE_FORMAT_16BIT_NORM` only after the
+   selected query establishes 2D support. Continue adding narrowly verified
    formats and usage combinations.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
@@ -423,14 +425,13 @@ which the FL9_1 shader path does not implement.
 
 ## Current next implementation task
 
-Split native sampled-resource availability from filtering capability. Microsoft
-documents that a format without `D3D11_FORMAT_SUPPORT_SHADER_SAMPLE` may still
-be used with HLSL `Sample` when the sampler uses point filtering. The current
-HAL rejects that entire path. Investigate the RTX's FL9_1 `R16G16_SNORM` query
-(`0x00021122`: `TEXTURE2D` present, `SHADER_SAMPLE` absent), then attempt a
-non-filtering upload/sample/readback test. If native creation and shader
-execution confirm the documented subset, expose the format only as
-non-filterable and retain strict rejection of filtering samplers. Keep query
-failure distinct from a negative bit and keep the format query-gated. Run the
-strict private/public format tests, adapter projection test, DX12 regression,
-Clippy, rustfmt and diff checks before committing.
+Continue the selected-device format audit from the verified point-only
+`R16G16_SNORM` path. Inspect another FL9_1 optional sampled format family,
+beginning with the remaining 16-bit normalized DXGI formats. Compare actual
+`TEXTURE2D`, `SHADER_SAMPLE`, copy and render-target query bits with the
+backend's restricted implementation and wgpu feature gates. Add a format only
+when texture/view creation and representative GPU output can be tested; keep
+unsupported usages out of the capability projection. Preserve separate
+point-only and filterable reports and exercise core's queried-format
+validation. Continue the public core/HAL contract audit and keep historical
+FL9_1 drivers and ARM32 execution explicitly unverified.

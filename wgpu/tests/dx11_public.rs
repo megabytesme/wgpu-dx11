@@ -4954,13 +4954,13 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     let rg16_sampled = rg16_features
         .allowed_usages
         .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
+    let rg16_filterable = rg16_features
+        .flags
+        .contains(TextureFormatFeatureFlags::FILTERABLE);
     if rg16_sampled {
         assert!(rg16_features
             .flags
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
-        assert!(rg16_features
-            .flags
-            .contains(TextureFormatFeatureFlags::FILTERABLE));
     } else {
         assert!(rg16_features.allowed_usages.is_empty());
         assert!(rg16_features.flags.is_empty());
@@ -4969,9 +4969,16 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={rg_features:?}; Rg16Snorm={rg16_features:?}; Rgba8Snorm={rgba_features:?}",
         info.name, info.vendor, info.device, info.driver_info
     );
+    let available_features = adapter.features();
+    let required_features = if rg16_sampled {
+        assert!(available_features.contains(Features::TEXTURE_FORMAT_16BIT_NORM));
+        Features::TEXTURE_FORMAT_16BIT_NORM
+    } else {
+        Features::empty()
+    };
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 SNORM sampled upload test"),
-        required_features: Features::empty(),
+        required_features,
         required_limits: adapter.limits(),
         ..Default::default()
     }))
@@ -5132,6 +5139,52 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     let rg16_view = rg16_texture
         .as_ref()
         .map(|texture| texture.create_view(&TextureViewDescriptor::default()));
+    if rg16_sampled && !rg16_filterable {
+        let rg16_view = rg16_view.as_ref().expect("sampled Rg16Snorm view");
+        let filtering_sampler = device.create_sampler(&SamplerDescriptor {
+            min_filter: FilterMode::Linear,
+            mag_filter: FilterMode::Linear,
+            ..Default::default()
+        });
+        expect_validation_error(&device, "filtering a point-only Rg16Snorm format", || {
+            let filtering_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("FL9_1 point-only format rejects filtering layout"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 13,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Texture {
+                            sample_type: TextureSampleType::Float { filterable: true },
+                            view_dimension: TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 100,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+            drop(device.create_bind_group(&BindGroupDescriptor {
+                label: Some("invalid filtering bind group for Rg16Snorm"),
+                layout: &filtering_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 13,
+                        resource: BindingResource::TextureView(rg16_view),
+                    },
+                    BindGroupEntry {
+                        binding: 100,
+                        resource: BindingResource::Sampler(&filtering_sampler),
+                    },
+                ],
+            }));
+        });
+        println!("PASS: core rejected filtering sampler use for point-only Rg16Snorm");
+    }
     let sampler = device.create_sampler(&SamplerDescriptor {
         mag_filter: FilterMode::Nearest,
         min_filter: FilterMode::Nearest,

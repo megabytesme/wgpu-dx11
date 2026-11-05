@@ -7,8 +7,9 @@ projection. Software adapters are excluded. D3D11 remains opt-in and does not
 change default backend selection.
 
 The adapter can be used for offscreen rendering and a constrained native HWND
-surface through the public wgpu API. It reports no wgpu features and is not
-WebGPU-compliant. HWND surfaces currently expose only BGRA8 sRGB FIFO
+surface through the public wgpu API. It exposes the native-only
+`TEXTURE_FORMAT_16BIT_NORM` feature only when a selected-device query reports
+the required 2D format support; it is not WebGPU-compliant. HWND surfaces currently expose only BGRA8 sRGB FIFO
 presentation, opaque composition, one frame of latency and render-attachment
 usage. Configure, acquire and present must run on the HWND's creating thread.
 Queue submissions, writes, mapped-buffer updates and context-backed resource
