@@ -148,11 +148,12 @@ contract is safe. This plan does not claim WebGPU conformance.
    reports and explicit unsupported 1D/3D shape gates. A strict public wgpu
    integration test selects the physical RTX 3090 Ti, requests devices within
    the projection, uploads and samples a texture at sparse bindings, binds
-   separate vertex transform and fragment tint uniforms across two groups,
-   performs indexed depth-tested draws, updates the transform between
-   submissions using a dynamic uniform offset, and verifies both images by
-   readback. Continue auditing the full core/HAL contract before widening the
-   projection.
+   separate vertex transform and fragment tint uniforms in group 0, sampled
+   resources in group 7 of an eight-position layout, and reuses binding indices
+   across those groups. It performs indexed depth-tested draws, updates the
+   transform between submissions using a dynamic uniform offset, and verifies
+   both images by readback. Continue auditing the full core/HAL contract before
+   widening the projection.
    Logical binding indices remain capped by the wgpu index limit while actual
    resource counts use separate backend limits. The projection exposes six
    uniform buffers per shader stage so disjoint vertex/fragment bindings fit

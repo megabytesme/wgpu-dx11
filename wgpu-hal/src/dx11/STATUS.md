@@ -11,9 +11,11 @@ representable through current core limits still need auditing. Feature level
 gaps.
 
 The strict public integration test uses ordinary adapter enumeration and
-validated wgpu APIs for a two-group layout with sparse sampled bindings,
-vertex- and fragment-visible uniforms, indexed drawing, D24S8 depth testing,
-submission and full 8×8 readback. On the RTX 3090 Ti forced to FL9_1, it
+validated wgpu APIs for group 0 uniforms and sampled resources at group 7, the
+highest position in an eight-group pipeline layout. It intentionally reuses
+binding numbers 3 and 17 across those groups. The draw includes
+vertex- and fragment-visible dynamic uniforms, indexed geometry, D24S8 depth
+testing, submission and full 8×8 readback. On the RTX 3090 Ti forced to FL9_1, it
 verified 32 tinted-red and 32 green pixels. A queue write updated an aligned
 dynamic-uniform range and a second submission selected it with a dynamic
 offset, shifting the image to 16 blue, 32 tinted-red and 16 green pixels. A

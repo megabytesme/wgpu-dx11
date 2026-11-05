@@ -4515,3 +4515,27 @@ extends the positive evidence to ordinary public wgpu adapter/device/queue
 calls. Invalid offset rejection and all dynamic range combinations remain
 part of the wider contract audit. Public surfaces remain unavailable pending
 safe Present scheduling.
+
+## Checkpoint — public maximum bind-group position
+
+The public integration now places sampled texture/sampler resources in group
+7, the final slot of the adapter's reported eight-group limit, and reuses
+logical binding numbers 3 and 17 already used by group-0 vertex/fragment
+uniforms. The pipeline layout includes all eight positions with empty gaps.
+This proves the selected D3D11 HAL/compiler mapping retains `(group, binding)`
+identity and uses separate native uniform/texture/sampler namespaces for this
+cross-group configuration.
+
+Strict execution on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) passed 1/1 at requested and actual FL9_1, with
+`software=false`. The initial readback matched 32 tinted-red/32 green pixels;
+the queue-uploaded dynamic transform selected at offset 256 shifted the second
+readback to 16 blue/32 tinted-red/16 green pixels; a second public device
+matched 64/64 green pixels. Public wgpu Clippy, targeted rustfmt and diff
+checks passed. The exact strict test command remains the public test command
+in the preceding checkpoint.
+
+This covers the maximum group index with one two-group resource configuration;
+it does not prove every resource type or the eight-group aggregate resource
+capacity. Continue the contract audit. The public adapter remains experimental
+and offscreen-only pending broad operation coverage and safe Present scheduling.

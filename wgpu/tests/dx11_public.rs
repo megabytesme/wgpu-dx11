@@ -147,7 +147,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         label: Some("public DX11 FL9_1 sparse sampled layout"),
         entries: &[
             BindGroupLayoutEntry {
-                binding: 7,
+                binding: 3,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
                     sample_type: TextureSampleType::Float { filterable: true },
@@ -157,7 +157,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                 count: None,
             },
             BindGroupLayoutEntry {
-                binding: 42,
+                binding: 17,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
@@ -169,11 +169,11 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         layout: &texture_layout,
         entries: &[
             BindGroupEntry {
-                binding: 7,
+                binding: 3,
                 resource: BindingResource::TextureView(&sampled_view),
             },
             BindGroupEntry {
-                binding: 42,
+                binding: 17,
                 resource: BindingResource::Sampler(&sampler),
             },
         ],
@@ -222,7 +222,16 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("public DX11 FL9_1 pipeline layout"),
-        bind_group_layouts: &[Some(&uniforms_layout), Some(&texture_layout)],
+        bind_group_layouts: &[
+            Some(&uniforms_layout),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&texture_layout),
+        ],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -230,8 +239,8 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         source: ShaderSource::Wgsl(
             "@group(0) @binding(3) var<uniform> transform: mat4x4f;\n\
              @group(0) @binding(17) var<uniform> tint: vec4f;\n\
-             @group(1) @binding(7) var image: texture_2d<f32>;\n\
-             @group(1) @binding(42) var image_sampler: sampler;\n\
+             @group(7) @binding(3) var image: texture_2d<f32>;\n\
+             @group(7) @binding(17) var image_sampler: sampler;\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
              @vertex fn vs(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(transform * vec4f(position, 1.0), uv); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv) * tint; }"
@@ -355,7 +364,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &uniforms_group, &[0, 0]);
-        pass.set_bind_group(1, &texture_group, &[]);
+        pass.set_bind_group(7, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
         pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
@@ -456,7 +465,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &uniforms_group, &[256, 0]);
-        pass.set_bind_group(1, &texture_group, &[]);
+        pass.set_bind_group(7, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
         pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
@@ -627,5 +636,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         }
     }
     second_readback.unmap();
-    println!("PASS: public wgpu D3D11 FL9_1 two-group stage uniforms and indexed textured depth rendering; dynamic transform offset shifted the second frame; first frame matched 32 tinted-red/32 green pixels, second frame matched 16 blue/32 tinted-red/16 green; second-device clear/readback matched 64/64 green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1 group-7 sampled resources and group-0 dynamic uniforms; indexed depth rendering matched 32 tinted-red/32 green pixels, dynamic transform update matched 16 blue/32 tinted-red/16 green; second-device clear/readback matched 64/64 green pixels");
 }

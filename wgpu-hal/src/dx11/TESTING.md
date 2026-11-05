@@ -13,9 +13,10 @@ expressed by `Limits` alone.
 
 The public integration test selects DX11 explicitly, asserts the physical
 FL9_1 adapter identity and driver version, and requests a device within the
-adapter's reported limits. It uploads a two-color texture, binds it in group 1
-at sparse logical bindings 7 and 42, and binds a dynamic vertex transform at
-group 0 binding 3 and dynamic fragment tint at group 0 binding 17. An indexed
+adapter's reported limits. It uploads a two-color texture, binds it in group 7
+at logical bindings 3 and 17, and binds a dynamic vertex transform at group 0
+binding 3 and dynamic fragment tint at group 0 binding 17. This exercises all
+eight bind-group positions while reusing binding numbers across groups. An indexed
 textured scene uses those stage-visible uniforms with a D24S8 depth attachment.
 Readback checks all 64 pixels: 32 tinted-red pixels and 32 green pixels from
 the depth-tested indexed draw. The test writes a translated transform into a
@@ -34,9 +35,10 @@ The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
 `32.0.16.2101`, requested and actual FL9_1, and `software=false`. The main
 image matched 32 tinted-red/32 green pixels; a queue write plus dynamic uniform
 offset shifted the second image to 16 blue/32 tinted-red/16 green pixels; the
-second device readback matched all 64 green pixels. This is a representative
-public offscreen integration case, not a complete application or adapter-
-contract audit. Presentation remains unavailable.
+second device readback matched all 64 green pixels. The shader and bind-group
+layouts use group 7 with binding numbers also used in group 0. This is a
+representative public offscreen integration case, not a complete application
+or adapter-contract audit. Presentation remains unavailable.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
