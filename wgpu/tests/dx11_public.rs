@@ -17,6 +17,88 @@ fn poll_ready<T>(future: impl Future<Output = T>) -> T {
     }
 }
 
+fn clear_and_verify(
+    device: &Device,
+    queue: &Queue,
+    target: &Texture,
+    readback: &Buffer,
+    clear: Color,
+    expected: [u8; 4],
+    label: &'static str,
+) {
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let mut encoder =
+        device.create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
+    {
+        let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(clear),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for concurrent public D3D11 submission");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("concurrent readback map callback")
+        .expect("map concurrent GPU readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "{label} pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+}
+
 #[test]
 fn public_dx11_api_renders_offscreen_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -554,87 +636,41 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let second_target_view = second_target.create_view(&TextureViewDescriptor::default());
     let second_readback = second_device.create_buffer(&BufferDescriptor {
         label: Some("second public DX11 FL9_1 readback"),
         size: 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let mut second_encoder =
-        second_device.create_command_encoder(&CommandEncoderDescriptor::default());
-    {
-        let _pass = second_encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("second public DX11 FL9_1 clear pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &second_target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(Color::GREEN),
-                    store: StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
+    std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            clear_and_verify(
+                &device,
+                &queue,
+                &target,
+                &readback,
+                Color::RED,
+                [255, 0, 0, 255],
+                "first concurrent public device clear",
+            )
         });
-    }
-    second_encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &second_target,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &second_readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(8),
-            },
-        },
-        Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-    );
-    let second_submission = second_queue.submit([second_encoder.finish()]);
-    let (second_sender, second_receiver) = std::sync::mpsc::channel();
-    second_readback
-        .slice(..)
-        .map_async(MapMode::Read, move |result| {
-            second_sender.send(result).unwrap()
+        let second = scope.spawn(|| {
+            clear_and_verify(
+                &second_device,
+                &second_queue,
+                &second_target,
+                &second_readback,
+                Color::GREEN,
+                [0, 255, 0, 255],
+                "second concurrent public device clear",
+            )
         });
-    second_device
-        .poll(PollType::Wait {
-            submission_index: Some(second_submission),
-            timeout: Some(Duration::from_secs(10)),
-        })
-        .expect("wait for second public D3D11 submission");
-    second_receiver
-        .recv_timeout(Duration::from_secs(10))
-        .expect("second readback map callback")
-        .expect("map second GPU readback");
-    {
-        let data = second_readback
-            .slice(..)
-            .get_mapped_range()
-            .expect("second mapped data");
-        for y in 0..8 {
-            for x in 0..8 {
-                let offset = y * 256 + x * 4;
-                assert_eq!(
-                    &data[offset..offset + 4],
-                    &[0, 255, 0, 255],
-                    "second device pixel ({x}, {y})"
-                );
-            }
-        }
-    }
-    second_readback.unmap();
-    println!("PASS: public wgpu D3D11 FL9_1 group-7 sampled resources and group-0 dynamic uniforms; indexed depth rendering matched 32 tinted-red/32 green pixels, dynamic transform update matched 16 blue/32 tinted-red/16 green; second-device clear/readback matched 64/64 green pixels");
+        first
+            .join()
+            .expect("first public device worker did not panic");
+        second
+            .join()
+            .expect("second public device worker did not panic");
+    });
+    println!("PASS: public wgpu D3D11 FL9_1 group-7 sampled resources and group-0 dynamic uniforms; indexed depth rendering matched 32 tinted-red/32 green pixels, dynamic transform update matched 16 blue/32 tinted-red/16 green; concurrent devices read back 64/64 red and green pixels");
 }

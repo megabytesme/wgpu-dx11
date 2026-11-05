@@ -18,10 +18,11 @@ vertex- and fragment-visible dynamic uniforms, indexed geometry, D24S8 depth
 testing, submission and full 8×8 readback. On the RTX 3090 Ti forced to FL9_1, it
 verified 32 tinted-red and 32 green pixels. A queue write updated an aligned
 dynamic-uniform range and a second submission selected it with a dynamic
-offset, shifting the image to 16 blue, 32 tinted-red and 16 green pixels. A
-second wgpu device from the same adapter independently cleared and read back
-64 green pixels. This proves these paths through the public API, not every
-operation within the projection.
+offset, shifting the image to 16 blue, 32 tinted-red and 16 green pixels. The
+test then submitted independent clear/copy/readback workloads concurrently
+through two public devices from the same adapter; readback verified all 64
+pixels were red on one device and green on the other. This proves these paths
+through the public API, not every operation within the projection.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device

@@ -22,9 +22,9 @@ Readback checks all 64 pixels: 32 tinted-red pixels and 32 green pixels from
 the depth-tested indexed draw. The test writes a translated transform into a
 256-byte-aligned range and selects it with a dynamic offset between submissions;
 the second frame contains 16 blue, 32 tinted-red and 16 green pixels. It then
-opens a second public device from the same adapter and verifies a separate
-64-pixel clear and readback. Strict mode turns missing physical hardware into a
-test failure:
+submits independent clear/copy/readback workloads concurrently through the
+first and a second public device from the same adapter. Strict mode turns
+missing physical hardware into a test failure:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -34,11 +34,12 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
 `32.0.16.2101`, requested and actual FL9_1, and `software=false`. The main
 image matched 32 tinted-red/32 green pixels; a queue write plus dynamic uniform
-offset shifted the second image to 16 blue/32 tinted-red/16 green pixels; the
-second device readback matched all 64 green pixels. The shader and bind-group
-layouts use group 7 with binding numbers also used in group 0. This is a
-representative public offscreen integration case, not a complete application
-or adapter-contract audit. Presentation remains unavailable.
+offset shifted the second image to 16 blue/32 tinted-red/16 green pixels. The
+subsequent concurrent public-device workloads read back 64/64 red and 64/64
+green pixels. The shader and bind-group layouts use group 7 with binding
+numbers also used in group 0. This is a representative public offscreen
+integration case, not a complete application or adapter-contract audit.
+Presentation remains unavailable.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
