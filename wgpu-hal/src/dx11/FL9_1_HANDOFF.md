@@ -1210,4 +1210,4 @@ verified 32 pixels at each of two sampled channel values, and the adapter
 reported `COPY_DST | TEXTURE_BINDING`, `SINGLE_MIP_ONLY`, and no filtering
 flag. The exact test command and hardware identity are in
 `FL9_1_PROGRESS.md`. Public HWND presentation and the exhaustive adapter
-contract remain outstanding.
+contract remain outstanding. Code checkpoint: `b965940ff` (`dx11: verify public FL9_1 R8 sampling`).

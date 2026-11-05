@@ -4638,6 +4638,8 @@ public-test-only change.
 
 ## Checkpoint — public R8Unorm sampling
 
+Code checkpoint: `b965940ff` (`dx11: verify public FL9_1 R8 sampling`).
+
 A second public API integration test now asserts the adapter's selected-device
 R8Unorm format report, creates a `TEXTURE_BINDING | COPY_DST` texture, uploads
 two byte values with a padded source row, samples it with a non-filtering
