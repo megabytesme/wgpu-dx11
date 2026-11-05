@@ -33,7 +33,8 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 
 The same strict public test submits unsupported descriptors under validation
 error scopes: 3D textures, 4x multisampled color textures, `R32Float` sampled
-textures and two-mip D24S8 attachments. Each must return
+textures, two-mip D24S8 attachments, vertex-visible storage-buffer layouts and
+`D2Array` sampled-texture layouts. Each must return
 `wgpu::Error::Validation`, confirming the public capability projection rejects
 these paths before the private HAL.
 
@@ -45,8 +46,8 @@ subsequent concurrent public-device workloads read back 64/64 red and 64/64
 green pixels. The shader and bind-group layouts use group 7 with binding
 numbers also used in group 0. This is a representative public offscreen
 integration case, not a complete application or adapter-contract audit.
-Presentation remains unavailable. All four unsupported resource descriptors
-were rejected by public core validation.
+Presentation remains unavailable. All six unsupported resource requests were
+rejected by public core validation.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag

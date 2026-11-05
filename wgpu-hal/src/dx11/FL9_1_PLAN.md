@@ -257,3 +257,12 @@ a backend restriction whose FXC acceptance is unverified. The opt-in
 offscreen-only adapter reports the selected FL9_1 projection; continue the
 core/HAL audit before widening its contract. Public surface presentation is
 still disabled.
+
+The public offscreen integration now exercises sparse group-0 uniforms and
+group-7 sampled bindings, indexed textured depth-tested output, dynamic
+uniform updates and two concurrently submitting public devices. Its error
+scopes additionally verify that core rejects vertex-visible storage-buffer
+layouts and D2Array sampled-texture layouts, alongside unsupported 3D,
+multisampled, format and mip requests. These checks expand the tested public
+validation boundary but do not complete the core/HAL audit or the required
+desktop presentation path.

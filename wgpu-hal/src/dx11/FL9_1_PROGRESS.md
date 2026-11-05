@@ -4582,3 +4582,27 @@ and execution evidence are in the preceding concurrent-device checkpoint.
 This is a focused negative set, not a complete per-format/usage audit. Keep
 checking every core-valid resource and command against HAL before widening the
 projection; public surfaces remain gated by Present scheduling.
+
+## Checkpoint — public storage and array-layout rejection
+
+The strict public integration test now also places a vertex-visible storage
+buffer layout and a fragment-visible `D2Array` sampled-texture layout under
+validation error scopes. Both return `wgpu::Error::Validation` through the
+selected physical adapter, complementing the existing 3D, 4x-MSAA,
+`R32Float`, and multi-mip D24S8 rejection cases. The valid indexed textured
+depth-tested draw, sparse group-7 resource mapping, dynamic transform update,
+and concurrent independent-device queue/readback workloads still execute.
+
+Verification on 2026-11-05, Rust 1.93.1, Visual Studio 2022 x64, strict
+hardware mode:
+
+- `$env:WGPU_DX11_REQUIRE_HARDWARE = '1'; cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1` passed 1/1 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, `software=false`. All six unsupported requests were rejected by public core validation. Readback remained 32 tinted-red/32 green, then 16 blue/32 tinted-red/16 green after the dynamic transform; concurrent devices read 64/64 red and 64/64 green pixels.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std` passed without warnings.
+- `rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs` and `git diff --check` passed. Git printed only its existing LF-to-CRLF working-copy notice.
+
+The Visual Studio developer-shell banner included `vError: Unknown error`;
+the x64 environment was usable and Cargo completed successfully. This is
+validation-boundary evidence, not a complete audit of all legal bind-group
+entries. Continue checking public core operations that can pass current limits
+and gates. The adapter is still offscreen-only, and window Present reentrancy
+remains unresolved.

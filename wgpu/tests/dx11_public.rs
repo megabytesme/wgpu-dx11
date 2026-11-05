@@ -209,6 +209,36 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             view_formats: &[],
         }));
     });
+    expect_validation_error(&device, "vertex storage-buffer layout", || {
+        drop(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("unsupported public FL9_1 vertex storage layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(16),
+                },
+                count: None,
+            }],
+        }));
+    });
+    expect_validation_error(&device, "2D-array sampled-texture layout", || {
+        drop(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("unsupported public FL9_1 array texture layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        }));
+    });
 
     let target = device.create_texture(&TextureDescriptor {
         label: Some("public DX11 FL9_1 readback target"),
@@ -747,5 +777,5 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             .join()
             .expect("second public device worker did not panic");
     });
-    println!("PASS: public wgpu D3D11 FL9_1; core validation rejected 3D, 4x-MSAA, R32Float sampling and multi-mip D24S8; group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; concurrent devices read back 64/64 red and green pixels");
+    println!("PASS: public wgpu D3D11 FL9_1; core rejected 3D, 4x-MSAA, R32Float, multi-mip D24S8, vertex storage and D2Array layouts; group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; concurrent devices read back 64/64 red and green pixels");
 }

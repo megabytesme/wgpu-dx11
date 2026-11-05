@@ -24,7 +24,8 @@ through two public devices from the same adapter; readback verified all 64
 pixels were red on one device and green on the other. This proves these paths
 through the public API, not every operation within the projection. Error-scope
 checks also confirmed that core rejects 3D textures, 4x MSAA, `R32Float`
-sampling and multi-mip D24S8 before the HAL.
+sampling, multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
+sampled-texture layouts before the HAL.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device
@@ -467,10 +468,11 @@ opts into that feature locally for coverage.
 ## Remaining public contract and completion gates
 
 - The public adapter is FL9_1-only and offscreen-only. The public integration
-test currently verifies adapter selection, device/queue creation, a vertex
-buffer draw, submission and pixel readback. The required richer indexed,
-textured, multi-uniform, depth-tested scene through public wgpu remains to be
-added.
+test verifies adapter selection, device/queue creation, sparse multi-group
+texture/sampler and stage-visible dynamic uniform bindings, indexed textured
+depth-tested rendering, transform updates, concurrent device submissions and
+pixel readback. The public test is still a bounded diagnostic scene, not a
+representative application or a complete contract audit.
 - `surface_capabilities` returns `None`. Although private HAL HWND tests can
 render, present and resize, synchronous DXGI `Present` can reenter wgpu while
 core queue-index and HAL immediate-context locks are held. A safe cross-layer

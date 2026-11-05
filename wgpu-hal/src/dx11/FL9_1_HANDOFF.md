@@ -1179,3 +1179,19 @@ Commits `1e21ed312`, `e8f6fe5f2` and `4efecaf6e` extend the ordinary public inte
 The same public test uses error scopes and confirms core validation rejects D3 texture creation, 4x multisampled RGBA8, sampled R32Float and two-mip D24S8. Clippy, targeted rustfmt and diff checks passed. Exact command and hardware identity are in `FL9_1_PROGRESS.md`.
 
 Continue the exact capability and core/HAL contract audit, then extend the public scene toward a larger representative 3D workload. The adapter remains experimental and offscreen-only. Public surface capability is unavailable until safe HWND Present scheduling resolves queue-lock and immediate-context reentrancy. Historical FL9_1 hardware remains untested.
+
+## Latest continuation — public layout rejection coverage
+
+The public strict test also now rejects vertex-visible storage-buffer and
+fragment-visible `D2Array` sampled-texture layouts through validation error
+scopes. Together with the earlier texture descriptor negatives, six
+unsupported requests are verified to stop in public core validation. The
+RTX 3090 Ti FL9_1 readback and concurrent two-device tests remain passing.
+Exact command and output are in `FL9_1_PROGRESS.md`. The public integration
+test is a bounded offscreen diagnostic and not a full core/HAL contract audit.
+
+Next audit pipeline and render-pass combinations at the public boundary and
+expand the public scene with an explicit depth-ordering case. Public surface
+capabilities remain disabled because synchronous DXGI Present can reenter core
+while queue and context locks are held; historical FL9_1 behavior remains
+unverified.
