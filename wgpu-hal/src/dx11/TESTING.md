@@ -55,6 +55,11 @@ orders. Every readback pixel remains the nearer surface's tinted-red value in
 both cases, verifying depth comparison and writes through public wgpu rather
 than only checking that a depth attachment can be created.
 
+The same public render initializes its vertex input with
+`mapped_at_creation`, fills the mapped range, and unmaps before encoding the
+draw. Its later GPU readback confirms that the core staging copy committed the
+mapped contents before vertex use.
+
 A second public test checks `R8Unorm`'s selected-device format report, uploads
 two distinct values, samples them with a non-filtering sampler and renders to
 RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and

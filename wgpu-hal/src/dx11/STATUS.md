@@ -29,7 +29,9 @@ sampled-texture layouts before the HAL. A separate public draw overlays
 near/far surfaces in both draw orders; all 64 readback pixels select the nearer
 surface, exercising depth comparison and writes through public wgpu. A second
 strict public test uses the projected R8Unorm sampled/upload format and
-checks 32 pixels at each of two channel values.
+checks 32 pixels at each of two channel values. The primary public draw also
+initializes vertex data through a mapped-at-creation range and reads back the
+result after unmapping.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device

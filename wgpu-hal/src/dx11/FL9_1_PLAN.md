@@ -276,3 +276,7 @@ The public adapter projection's one-mip R8Unorm sampled/upload path is also
 render-tested: a non-filtering sample from two uploaded values produced the
 expected 64-pixel split. Continue validating other projected format/usage
 combinations at the public boundary.
+
+The indexed public scene now fills its vertex buffer through a mapped-at-
+creation range before unmapping and drawing; successful FL9_1 readback
+verifies the staged mapping contents reached GPU vertex input.

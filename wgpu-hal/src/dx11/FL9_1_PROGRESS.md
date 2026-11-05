@@ -4661,3 +4661,21 @@ sampled-only formats and their public shader/readback paths remain to be
 audited; BC1 remains unavailable through public wgpu because its aggregate
 compression feature is correctly withheld. HWND surface presentation remains
 blocked on the separate Present reentrancy design.
+
+## Checkpoint — public mapped-at-creation vertex upload
+
+The indexed textured public scene now creates its vertex buffer with
+`mapped_at_creation`, fills the mapped range, and unmaps before command
+recording. Its strict GPU render/readback verifies that core's initialization
+staging copy reaches D3D11 vertex input correctly. The queue-based texture,
+uniform, index and dynamic-range uploads remain in the same test, so this
+extends public transfer coverage without replacing those paths.
+
+Verification on 2026-11-05, Rust 1.93.1, Visual Studio 2022 x64:
+
+- Strict command from the R8Unorm checkpoint passed 2/2 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, `software=false`, with no skips. The indexed depth-tested image and both explicit depth-order images matched; R8 upload/sample matched 32 `[64, 0, 0, 255]` and 32 `[192, 0, 0, 255]` pixels.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std` passed without warnings.
+- Targeted rustfmt and `git diff --check` passed.
+
+Mapped-at-creation is now verified through public vertex use. Arbitrary public
+buffer mapping and GPU-write/read synchronization still require broader audit.

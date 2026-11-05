@@ -493,9 +493,15 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         label: Some("public DX11 FL9_1 textured depth vertices"),
         size: vertex_data.len() as u64,
         usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
+        mapped_at_creation: true,
     });
-    queue.write_buffer(&vertex, 0, &vertex_data);
+    {
+        let mut mapped = vertex
+            .get_mapped_range_mut(..)
+            .expect("map initial public vertex data");
+        mapped.copy_from_slice(&vertex_data);
+    }
+    vertex.unmap();
     let index_upload = device.create_buffer(&BufferDescriptor {
         label: Some("public DX11 FL9_1 index upload"),
         size: 8,
