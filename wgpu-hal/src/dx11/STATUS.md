@@ -44,6 +44,10 @@ colors. An incomplete bind group is rejected by core validation.
 A seventh strict test samples eight independent textures at sparse bindings,
 verifies every contribution in all 64 output pixels, and confirms a ninth
 fragment texture is rejected at core validation.
+An eighth strict test verifies a padded, offset buffer-to-texture upload,
+partial copy between differently sized textures with nonzero origins, and
+full texture readback; all 36 destination texels match the expected patch and
+preserved background.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

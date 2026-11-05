@@ -121,6 +121,14 @@ bindings each contribute a distinct value through a shared sampler, and all 64
 pixels match `[180, 72, 36, 255]`. A nine-texture fragment layout is rejected
 by core validation before HAL.
 
+An eighth strict public test initializes two RGBA8 textures, copies a 2×2
+region from a mapped buffer with a nonzero source offset and padded row pitch,
+then copies that region between differently sized textures at nonzero source
+and destination origins. It copies the final 6×6 destination to a padded
+readback buffer and verifies every texel, including all unchanged green
+pixels. The test exercises buffer-to-texture, texture-to-texture and
+texture-to-buffer paths in one ordered submission.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a

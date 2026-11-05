@@ -4927,3 +4927,33 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 This tests the existing public count projection and does not enable any new
 resource capability. Historical FL9_1 hardware, the full core/HAL contract
 and public HWND presentation remain outstanding.
+
+## Checkpoint — public texture-transfer roundtrip — `118918d40`
+
+Added a public strict GPU test that starts with an 8×8 RGBA8 texture, updates
+its 2×2 region from a mapped copy buffer at nonzero byte offset 16 and 256-byte
+row pitch, copies that region from source origin `(2, 3)` to destination
+origin `(3, 2)` between 8×8 and 6×6 textures, then reads the complete 6×6
+destination using a 256-byte readback pitch. The source rows contain four
+distinct colors; the destination starts green. All 36 pixels matched the
+expected 2×2 patch while the other 32 pixels retained green. The mapped upload
+buffer and textures remain alive through ordered submission and map completion.
+
+The focused strict test passed 1/1. The complete public integration suite
+passed 8/8 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with
+requested and actual FL9_1 and `software=false`. The initial compile caught an
+incorrect direct index on `BufferViewMut`; the test now writes two mapped
+subranges through `get_mapped_range_mut` and no compiler warning remains.
+Rust 1.93.1 wgpu test Clippy, targeted rustfmt and `git diff --check` passed.
+Visual Studio's existing prompt banner was emitted, but its x64 compiler and
+linker worked. Command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+This verifies the projected RGBA8 copy usages through public core and the HAL;
+it does not establish all texture combinations or historical FL9_1 driver
+behavior. Public HWND presentation and the exhaustive capability audit remain
+outstanding.

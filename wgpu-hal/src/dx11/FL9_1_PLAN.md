@@ -300,3 +300,9 @@ capacity in one shader. Each sparse-bound uploaded texture affects every
 checked pixel; a ninth fragment texture is rejected by core before HAL. This
 verifies the current count boundary on the RTX forced to FL9_1, not historical
 driver behavior or every shader's instruction budget.
+
+A public transfer test now sends a nonzero-offset, padded-row mapped buffer
+through a partial buffer-to-texture update, copies a 2×2 source box between
+different texture dimensions at nonzero origins, and reads all 36 destination
+texels back through a padded buffer layout. The test also verifies untouched
+destination texels retain their prior values.

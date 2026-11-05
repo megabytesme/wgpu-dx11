@@ -167,6 +167,10 @@ Another strict public shader uses the full projected eight sampled textures
 per stage through sparse logical bindings and verifies each contribution in
 the output. Core rejects a ninth texture layout before HAL, matching the
 projected limit rather than advertising a broader resource count.
+The public transfer test also verifies a mapped-buffer upload with offset 16
+and 256-byte row pitch, a 2×2 copy between 8×8 and 6×6 textures at nonzero
+origins, and a 6×6 readback with padded rows. All 36 output texels matched,
+including the preserved destination background.
 
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample

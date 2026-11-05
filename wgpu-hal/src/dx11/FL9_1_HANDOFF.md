@@ -1272,3 +1272,11 @@ ninth fragment texture against the selected projection. Strict suite result
 and hardware identity are recorded in `FL9_1_PROGRESS.md`. Surface
 reentrancy, the full public contract audit and historical-device validation
 remain open.
+
+Code commit `118918d40` adds public transfer coverage for a nonzero source
+buffer offset, padded upload rows, partial buffer-to-texture update, a
+nonzero-origin texture copy between 8×8 and 6×6 resources, and padded
+texture-to-buffer readback. All 36 output pixels matched, including unchanged
+destination texels. The strict public suite now passes 8/8 on the forced-FL9_1
+RTX. The full public contract audit, historical hardware and safe HWND
+presentation remain outstanding.
