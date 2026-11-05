@@ -733,6 +733,15 @@ be switched on with this allocator. Enabling it requires coordinated register
 reservations and collision tests. The active sampled path does not reserve
 those slots or enable the proof.
 
+The selected-entry `texture_query` downlevel limit covers WGSL image queries
+such as `textureDimensions` and `textureNumLevels`. D3D11's 10Level9 pixel
+profiles reject Naga's `GetDimensions` lowering with FXC X3548 for FL9_1 and
+FL9_3; the documented float-out overload also cannot be mapped by those
+profiles. Core follows helper calls and rejects only the selected entry point
+before HAL. The model treats queries as a feature-level shader guarantee from
+10_0 onward, but the current backend implementation remains false for every
+level. This gate is profile/compiler-driven; it is not a driver format query.
+
 `wgpu-core/src/device/resource.rs` rejects D3D11 passthrough shader modules
 with `NotCompiledForBackend`; it does not use an unreachable arm. The matching
 test in `tests/tests/wgpu-gpu/naga_capabilities.rs` records that behavior. This

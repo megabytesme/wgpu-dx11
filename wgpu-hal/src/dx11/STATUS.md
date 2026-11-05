@@ -88,6 +88,13 @@ sampling is unaffected. The static feature-level model marks this capability
 available starting at 10_0, while this backend's current implementation flag is
 false.
 
+Texture image queries are also modeled separately. FXC rejects Naga's
+`GetDimensions` output for `textureDimensions` and `textureNumLevels` with
+X3548 in both tested 9_1 and 9_3 pixel profiles. The selected-entry
+`texture_query` limit rejects direct and helper-reached queries before HAL;
+unused query entries do not block safe siblings. The FL9_1 public projection
+reports this limit unavailable, and `wgpu-info` displays it.
+
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
 D24S8 depth testing and validates all 1,024 offscreen pixels. Strict execution

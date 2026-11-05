@@ -5229,6 +5229,24 @@ impl Device {
                             },
                         );
                     }
+                    if !self.downlevel.limits.texture_query
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_unsupported_texture_query(
+                                    stage.to_naga(),
+                                    &_vertex_entry_point_name,
+                                    &self.downlevel.limits,
+                                )
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedTextureQuery {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
                     if !self.downlevel.limits.vertex_index_input
                         && match interface {
                             Some(interface) => interface
@@ -5521,6 +5539,25 @@ impl Device {
                 {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
+                            stage: stage_bit,
+                        },
+                    );
+                }
+
+                if !self.downlevel.limits.texture_query
+                    && match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_texture_query(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                                &self.downlevel.limits,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    }
+                {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedTextureQuery {
                             stage: stage_bit,
                         },
                     );

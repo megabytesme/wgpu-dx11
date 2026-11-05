@@ -711,6 +711,78 @@ mod tests {
     }
 
     #[test]
+    fn level_9_pixel_profiles_reject_texture_queries() {
+        let cases = [
+            (
+                "dimensions",
+                "let size = textureDimensions(image); return vec4f(vec2f(size), 0.0, 1.0);",
+            ),
+            (
+                "dimensions_level",
+                "let size = textureDimensions(image, 0); return vec4f(vec2f(size), 0.0, 1.0);",
+            ),
+            (
+                "levels",
+                "let levels = textureNumLevels(image); return vec4f(f32(levels), 0.0, 0.0, 1.0);",
+            ),
+        ];
+        let bindings = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Texture2dFloat,
+        }];
+        for (label, query) in cases {
+            let source = alloc::format!(
+                "@group(0) @binding(7) var image: texture_2d<f32>; @fragment fn main() -> @location(0) vec4f {{ {query} }}"
+            );
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::PixelLevel9_3] {
+                let error = compile_naga_with_bindings(
+                    &module,
+                    &info,
+                    naga::ShaderStage::Fragment,
+                    "main",
+                    profile,
+                    &bindings,
+                )
+                .expect_err("texture queries are unavailable in 10Level9 pixel profiles");
+                let NagaCompileError::Compilation(error) = error else {
+                    panic!("Naga failed before FXC for {profile:?} {label}: {error:?}");
+                };
+                std::println!("{profile:?} {label}: {}", error.message);
+                assert!(error.message.contains("X3548"), "{error:?}");
+            }
+            compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "main",
+                ShaderProfile::Pixel5_0,
+                &bindings,
+            )
+            .expect("full shader model profile supports GetDimensions");
+        }
+
+        let float_query = "Texture2D<float4> image : register(t0); float4 main() : SV_TARGET { float width, height; image.GetDimensions(width, height); return float4(width, height, 0.0, 1.0); }";
+        for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::PixelLevel9_3] {
+            let error = compile_hlsl(float_query, "main", profile)
+                .expect_err("the float-output GetDimensions overload is unavailable at level 9");
+            assert!(error.message.contains("X4532"), "{error:?}");
+        }
+        compile_hlsl(float_query, "main", ShaderProfile::Pixel5_0)
+            .expect("full shader model profile supports the float-output GetDimensions overload");
+    }
+
+    #[test]
     fn creates_level_9_1_shader_objects() -> windows::core::Result<()> {
         use crate::dx11::{enumerate_native_adapters, FeatureLevel};
         use windows::Win32::Graphics::Direct3D11::ID3D11ClassLinkage;

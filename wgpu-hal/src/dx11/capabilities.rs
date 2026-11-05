@@ -39,6 +39,7 @@ pub(super) struct HardwareGuarantees {
     pub geometry_shader: bool,
     pub compute_shader: bool,
     pub fragment_derivatives: bool,
+    pub texture_query: bool,
     pub texture_sample_level: bool,
     pub vertex_texture_sampling: bool,
     pub two_sided_stencil: bool,
@@ -96,6 +97,7 @@ impl HardwareGuarantees {
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
             fragment_derivatives: level.as_raw() >= L9_3.as_raw(),
+            texture_query: level.as_raw() >= L10_0.as_raw(),
             texture_sample_level: level.as_raw() >= L10_0.as_raw(),
             vertex_texture_sampling: level.as_raw() >= L10_0.as_raw(),
             two_sided_stencil: level != L9_1,
@@ -222,6 +224,7 @@ pub(super) struct BackendCapabilities {
     pub instance_index_input: bool,
     pub vertex_texture_sampling: bool,
     pub fragment_derivatives: bool,
+    pub texture_query: bool,
     pub texture_sample_level: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
@@ -290,6 +293,7 @@ impl BackendCapabilities {
         instance_index_input: false,
         vertex_texture_sampling: false,
         fragment_derivatives: false,
+        texture_query: false,
         texture_sample_level: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
@@ -393,6 +397,7 @@ impl Capabilities {
                 fragment_front_facing: false,
                 fragment_position: false,
                 texture_load: false,
+                texture_query: self.hardware.texture_query && self.backend.texture_query,
                 max_texture_sample_bias: 3,
                 texture_sample_bias_dynamic: false,
                 texture_sample_bias_offset: false,
@@ -823,6 +828,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.texture_3d);
         assert!(!exposed.downlevel.limits.vertex_index_input);
         assert!(!exposed.downlevel.limits.instance_index_input);
+        assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_level);
         assert_eq!(
             exposed
@@ -1085,6 +1091,11 @@ mod tests {
             assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
             assert_eq!(caps.hardware.fragment_derivatives, fragment_derivatives);
             assert!(!caps.backend.fragment_derivatives);
+            assert_eq!(
+                caps.hardware.texture_query,
+                level.as_raw() >= FeatureLevel::L10_0.as_raw()
+            );
+            assert!(!caps.backend.texture_query);
             assert_eq!(
                 caps.hardware.texture_sample_level,
                 level.as_raw() >= FeatureLevel::L10_0.as_raw()

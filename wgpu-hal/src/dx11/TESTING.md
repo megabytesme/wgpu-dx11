@@ -155,6 +155,16 @@ capture the profile diagnostics. This capability is modeled as available at
 FL10_0 and above, but the current D3D11 backend execution profile remains
 FL9_1-only.
 
+FXC also rejects `GetDimensions`-based HLSL emitted for `textureDimensions`,
+level-specific dimensions and `textureNumLevels` with X3548 under both
+`ps_4_0_level_9_1` and `ps_4_0_level_9_3`. The float-output HLSL overload does
+not map to either 10Level9 pixel instruction set; the full shader-model 5
+control compiles. Core's `texture_query` limit rejects these operations in the
+selected entry point, including helper calls, before HAL, while safe sibling
+entries remain accepted. The D3D11 projection keeps this implementation limit
+false even though the hardware model records query support from feature level
+10_0 onward.
+
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
 unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within

@@ -663,6 +663,77 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     drop(create_sample_level_pipeline("implicit"));
     println!("PASS: public core rejected reachable explicit textureSampleLevel before HAL and compiled the implicit-sampling sibling");
 
+    let texture_query_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 texture-query validation layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let texture_query_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 texture-query pipeline layout"),
+        bind_group_layouts: &[Some(&texture_query_layout)],
+        immediate_size: 0,
+    });
+    let texture_query_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 image-query selected-entry shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             fn dimensions() -> vec2u { return textureDimensions(image); }\n\
+             struct VertexOut { @builtin(position) position: vec4f }\n\
+             @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0)); }\n\
+             @fragment fn direct() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0); }\n\
+             @fragment fn helper() -> @location(0) vec4f { return vec4f(vec2f(dimensions()), 0.0, 1.0); }\n\
+             @fragment fn levels() -> @location(0) vec4f { return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0); }\n\
+             @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }"
+                .into(),
+        ),
+    });
+    let texture_query_targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_texture_query_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 texture-query entry pipeline"),
+            layout: Some(&texture_query_pipeline_layout),
+            vertex: VertexState {
+                module: &texture_query_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &texture_query_shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &texture_query_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    for entry in ["direct", "helper", "levels"] {
+        expect_validation_error_containing(
+            &device,
+            "selected texture image query",
+            "Texture queries are not supported",
+            || drop(create_texture_query_pipeline(entry)),
+        );
+    }
+    drop(create_texture_query_pipeline("safe"));
+    println!("PASS: public core rejected selected textureDimensions/textureNumLevels use before HAL and compiled a safe sibling entry");
+
     expect_validation_error(&device, "3D texture creation", || {
         drop(device.create_texture(&TextureDescriptor {
             label: Some("unsupported public FL9_1 3D texture"),
