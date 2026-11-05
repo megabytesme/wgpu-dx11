@@ -295,6 +295,57 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         usage,
         view_formats: Vec::new(),
     };
+
+    for dimension in [wgt::TextureDimension::D1, wgt::TextureDimension::D3] {
+        let mut desc = texture_desc(
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureUsages::TEXTURE_BINDING,
+        );
+        desc.dimension = dimension;
+        let (_, error) = global.device_create_texture(device, &desc, None);
+        assert!(
+            matches!(
+                error,
+                Some(crate::resource::CreateTextureError::InvalidDimension(
+                    crate::resource::TextureDimensionError::UnsupportedDimension(actual)
+                )) if actual == dimension
+            ),
+            "the projected FL9_1 device must reject {dimension:?} textures in core: {error:?}"
+        );
+    }
+
+    let (single_layer_texture, error) = global.device_create_texture(
+        device,
+        &texture_desc(
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureUsages::TEXTURE_BINDING,
+        ),
+        None,
+    );
+    assert!(error.is_none(), "single-layer test texture: {error:?}");
+    for dimension in [
+        wgt::TextureViewDimension::D2Array,
+        wgt::TextureViewDimension::Cube,
+        wgt::TextureViewDimension::CubeArray,
+    ] {
+        let (_, error) = global.texture_create_view(
+            single_layer_texture,
+            &crate::resource::TextureViewDescriptor {
+                dimension: Some(dimension),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            matches!(
+                error,
+                Some(crate::resource::CreateTextureViewError::MissingDownlevelFlags(_))
+            ),
+            "the projected FL9_1 device must reject {dimension:?} views in core before HAL: {error:?}"
+        );
+    }
+    global.texture_drop(single_layer_texture);
+
     for format in [
         wgt::TextureFormat::Rgba8Unorm,
         wgt::TextureFormat::Bgra8Unorm,
@@ -414,6 +465,32 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             "projected D24S8 view must create through core and HAL: {error:?}"
         );
         global.texture_view_drop(view);
+        for aspect in [
+            wgt::TextureAspect::DepthOnly,
+            wgt::TextureAspect::StencilOnly,
+        ] {
+            let (_, error) = global.texture_create_view(
+                texture,
+                &crate::resource::TextureViewDescriptor {
+                    range: wgt::ImageSubresourceRange {
+                        aspect,
+                        ..Default::default()
+                    },
+                    usage: Some(depth_usage),
+                    ..Default::default()
+                },
+                None,
+            );
+            assert!(
+                matches!(
+                    error,
+                    Some(
+                        crate::resource::CreateTextureViewError::TextureViewFormatNotRenderable(_)
+                    )
+                ),
+                "projected FL9_1 D24S8 aspect view {aspect:?} must fail before HAL: {error:?}"
+            );
+        }
         global.texture_drop(texture);
     } else {
         assert!(!required, "strict projection requires a D24S8 attachment");

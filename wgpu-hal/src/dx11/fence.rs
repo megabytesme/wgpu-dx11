@@ -92,17 +92,55 @@ impl NativeDevice {
             .try_reserve(1)
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         let context = self.immediate_context();
+        let mut replay_error = None;
         for command in commands {
-            command.replay(&context)?;
+            if let Err(error) = command.replay(&context) {
+                replay_error = Some(error);
+                break;
+            }
         }
         unsafe {
             context.End(&query);
-            // Ensure progress even when there is no swap-chain presentation.
             context.Flush();
+        }
+        if let Some(error) = replay_error {
+            drop(context);
+            drop(state);
+            self.wait_for_event(&query)?;
+            return Err(error);
         }
         state.pending.push_back(PendingEvent { value, query });
         state.last_signaled = state.last_signaled.max(value);
         Ok(())
+    }
+
+    fn wait_for_event(&self, query: &ID3D11Asynchronous) -> Result<()> {
+        loop {
+            let context = self.immediate_context();
+            let raw_context: &ID3D11DeviceContext = &context;
+            let status = unsafe {
+                (Interface::vtable(raw_context).GetData)(
+                    raw_context.as_raw(),
+                    query.as_raw(),
+                    core::ptr::null_mut(),
+                    0,
+                    D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
+                )
+            };
+            if status == S_OK {
+                return Ok(());
+            }
+            if status == S_FALSE {
+                unsafe {
+                    self.raw_device().GetDeviceRemovedReason()?;
+                }
+                drop(context);
+                std::thread::sleep(core::time::Duration::from_millis(1));
+                continue;
+            }
+            status.ok()?;
+            return Err(Error::from_hresult(E_FAIL));
+        }
     }
 
     /// Wait until all previously issued immediate-context work has completed.
@@ -199,7 +237,7 @@ mod tests {
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
     use alloc::vec;
-    use std::time::Duration;
+    use core::time::Duration;
 
     #[test]
     fn batched_copy_submission_is_ordered_and_validates_before_work() -> Result<()> {

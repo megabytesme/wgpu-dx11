@@ -124,9 +124,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   but no storage-buffer shader binding is implemented. Core requires the
   relevant stage downlevel flags and the controlled fixture confirms unsupported
   vertex, fragment and compute storage layouts are rejected before HAL.
-- Texture resources and views remain 2D-only. Core rejects D1/D3 binding
-  layouts when the corresponding limits are zero, and requires explicit
-  downlevel flags for 2D-array, cube and cube-array binding layouts and views;
+- Texture resources and views remain 2D-only. The internal projection retains
+  inherited numeric 1D/3D limits of 2048/256 but marks both dimension
+  capabilities unavailable; core rejects those texture dimensions before HAL.
+  It also requires explicit downlevel flags for 2D-array, cube and cube-array
+  binding layouts and views;
   storage-texture array layouts use the same array gate. A one-layer 2D-array
   view is rejected before reaching the HAL. Core also gates NPOT mip chains
   with `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`; D3D11 leaves it absent because

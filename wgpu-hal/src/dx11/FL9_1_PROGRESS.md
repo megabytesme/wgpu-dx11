@@ -4076,3 +4076,70 @@ cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --featu
 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
 cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
 ```
+
+## Checkpoint — drain partial command replay failures (uncommitted)
+
+The lifetime audit found that native replay may fail after earlier commands in
+the same submission have already reached the immediate context. Core tracks
+completion only after HAL submission succeeds, so returning immediately could
+release the borrowed command buffers before that partial work completes. HAL
+now ends and flushes an event query on replay failure, then synchronously waits
+for that query before returning the original replay error. The failed submission
+does not advance or signal the queue fence. A test-only encoder case records a
+real buffer copy followed by an injected failure; the strict hardware test
+checks the copied bytes after the error and verifies the fence value remains
+unsignaled. If the event query itself fails, the wait error is returned; actual
+device-removal recovery and retention after an unqueryable device remain open.
+
+The exact-projection core fixture additionally verifies that the selected
+FL9_1 projection rejects D1/D3 texture creation and D2Array/Cube/CubeArray view
+creation in core, including a one-layer array view. It also rejects
+DepthOnly/StencilOnly D24S8 render views before HAL. `CAPABILITIES.md` and
+`STATUS.md` now accurately state that numeric 1D/3D limits remain 2048/256 while
+the downlevel dimension booleans are false; the limits alone do not enable
+those shapes.
+
+Rust 1.93.1 / Visual Studio x64 checks on 2026-11-05, run locally on
+`Ben-Desktop` from `C:\dev\personal\wgpu` with 32 Cargo jobs:
+
+- Strict partial-replay test: 1/1 on NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, software=false), requested and actual FL9_1. A real GPU
+  buffer copy executed before the injected replay error; its output was intact
+  after return and the failed submission did not signal its fence.
+- Strict private D3D11 HAL suite: 337/337 Rust tests, zero failures. The suite
+  exercised hardware rendering, transfers, fences, readback, texture formats,
+  and lifetime cases on the same physical GPU. Several unsupported shader
+  experiments explicitly skipped their draw phase after expected compiler
+  rejection; those skips are not GPU passes.
+- Strict controlled core fixture: 81/81 tests, zero failures. The selected RTX
+  3090 Ti ran at requested/actual FL9_1; core rendering/readback and projection
+  validation executed, including the new pre-HAL shape rejections. Strict mode
+  had no missing-hardware skips.
+- DX12 core regression: 77/77. Ordinary D3D11 zero-adapter isolation: 1/1.
+- HAL Clippy passed with nine existing warnings in untouched HAL tests; core
+  Clippy passed with the same three pre-existing fixture warnings. The initial
+  run identified two warnings in the new test code; both were fixed and HAL
+  Clippy rerun clean of new warnings.
+- Targeted rustfmt and `git diff --check` passed.
+
+Commands (Visual Studio x64 developer environment):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 replay_failure_reaches_queue_and_does_not_signal_fence -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std requesting_dx11_does_not_expose_a_stub_adapter -- --nocapture
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/command.rs wgpu-hal/src/dx11/fence.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+The changes remain uncommitted at HEAD `e2a8f153d6ba725b76b6b01fb81e27bd88506ec3`.
+Continue the failure-path/device-loss audit and the truthful production
+adapter work. Normal adapter enumeration and public surface capabilities remain
+disabled; synchronous HWND `Present` reentrancy is still unresolved.

@@ -1009,6 +1009,13 @@ impl CopyEncoder<'_> {
             self.copies.into_iter().map(NativeCommand::Copy).collect(),
         )
     }
+
+    #[cfg(test)]
+    pub(crate) fn finish_with_injected_failure(self) -> CommandBuffer {
+        let mut commands: Vec<_> = self.copies.into_iter().map(NativeCommand::Copy).collect();
+        commands.push(NativeCommand::InjectedFailure);
+        CommandBuffer::from_commands(self.device, commands)
+    }
 }
 
 #[cfg(test)]
@@ -1309,18 +1316,39 @@ mod tests {
         use alloc::sync::Arc;
         let adapters = enumerate_native_adapters()?;
         let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            assert!(std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_none_or(|v| v != "1"));
+            std::println!("SKIP: no physical D3D11 adapter");
             return Ok(());
         };
         let device = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested FL9_1; actual FL9_1",
+            adapter.identity()
+        );
         let queue = crate::dx11::Queue::new(device.clone());
         let fence = device.create_native_fence();
-        let commands =
-            CommandBuffer::from_commands(&device, alloc::vec![NativeCommand::InjectedFailure]);
+        let source = device.create_byte_buffer(16)?;
+        let destination = device.create_byte_buffer(16)?;
+        device.write_byte_buffer(&source, 0, &[0x6d; 16])?;
+        device.write_byte_buffer(&destination, 0, &[0; 16])?;
+        let region = crate::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: core::num::NonZeroU64::new(16).unwrap(),
+        };
+        let mut encoder = device.create_copy_encoder();
+        encoder.copy_buffer(&source, &destination, &region)?;
+        let commands = encoder.finish_with_injected_failure();
         let result = unsafe { crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)) };
         assert_eq!(result, Err(crate::DeviceError::Unexpected));
         assert!(device
             .wait_native_fence(&fence, 1, Some(core::time::Duration::ZERO))
             .is_err());
+        assert_eq!(
+            device.read_byte_buffer(&destination, 0, 16)?,
+            vec![0x6d; 16]
+        );
         Ok(())
     }
 
