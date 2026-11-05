@@ -2120,9 +2120,9 @@ mod tests {
             std::println!("Driver queries: {:?}", caps.driver);
             std::println!("Backend implementation: {:?}", caps.backend);
             std::println!(
-                "RGBA8 driver blendable: {}; public adapter: {}",
+                "RGBA8 driver blendable: {}; FL9_1 offscreen projection: {}",
                 caps.rgba8_blendable(),
-                caps.public_adapter_supported()
+                caps.wgpu_projection().is_some()
             );
             assert_eq!(caps.hardware.level, FeatureLevel::L9_1);
             assert_eq!(caps.hardware.texture_2d_dimension, 2048);
@@ -2148,7 +2148,6 @@ mod tests {
                     4
                 )
                 .is_err());
-            assert!(!caps.public_adapter_supported());
             gpu_started.store(true, core::sync::atomic::Ordering::Relaxed);
             indexed_triangle(native)?;
             Ok(true)

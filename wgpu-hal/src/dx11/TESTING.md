@@ -1,10 +1,36 @@
 # Direct3D 11 validation plan
 
-The backend is experimental and normal adapter enumeration is deliberately
-empty. The existing HAL tests and local experiments do not establish WebGPU or
-CTS conformance. Do not expose an adapter using placeholder capabilities to make
-a test pass: many restrictions, including specific binding layouts, cannot be
+The `dx11` feature now enumerates only physical adapters that create the
+explicitly requested FL9_1 device, and uses the selected-device capability
+projection for offscreen public wgpu use. The reported feature set is empty,
+the downlevel contract is not WebGPU-compliant, and no surface capabilities are
+reported. This remains experimental, and the existing HAL/core tests do not
+establish complete wgpu or CTS conformance. Do not widen the projection until
+core-valid operations are audited against the HAL; some restrictions cannot be
 expressed by `Limits` alone.
+
+### Public offscreen integration test
+
+The public integration test selects DX11 explicitly, asserts the physical
+FL9_1 adapter identity and driver version, and requests a device within the
+adapter's reported limits. It uploads a two-color texture, binds it at sparse
+logical bindings 7 and 42, and renders an indexed textured scene with a D24S8
+depth attachment. Readback checks all 64 pixels: 32 red front-facing pixels
+and 32 green pixels from the depth-tested indexed draw. It then opens a second
+public device from the same adapter and verifies a separate 64-pixel clear and
+readback. Strict mode turns missing physical hardware into a test failure:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
+`32.0.16.2101`, requested and actual FL9_1, and `software=false`. The main
+image matched 32 red/32 green pixels; the second device readback matched all 64
+green pixels. This is a representative public offscreen integration case, not
+a complete application or adapter-contract audit. Presentation remains
+unavailable.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
@@ -56,8 +82,8 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 
 `Capabilities::wgpu_projection` is exercised against synthetic records and an
 explicitly selected physical adapter. It returns a snapshot only for an
-actually created FL9_1 device. The core fixture consumes the projected limits,
-alignments and downlevel gates, but ordinary D3D11 enumeration stays empty. The
+actually created FL9_1 device. Both ordinary opt-in D3D11 enumeration and the
+core fixture consume the projected limits, alignments and downlevel gates. The
 fixture locally opts into aggregate BC support only to test the private BC1
 path; the production projection withholds `TEXTURE_COMPRESSION_BC` because the
 backend does not implement the complete BCn format family.
@@ -163,9 +189,9 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 ```
 
 The hardware fixture requested and selected FL9_1 on the RTX 3090 Ti and
-printed its RGBA8, D24S8 and BC1 core format projections. It also asserted
-normal D3D11 HAL enumeration is empty. These checks do not constitute a public
-adapter contract.
+printed its RGBA8, D24S8 and BC1 core format projections. It now also checks
+that normal HAL enumeration exposes a physical adapter using the same
+projection. These checks cover the reported subset, not every wgpu operation.
 
 The fixture also prints and asserts RGBA8/BGRA8 `SINGLE_MIP_ONLY` against the
 selected device's `D3D11_FORMAT_SUPPORT_MIP` query. The RTX 3090 Ti reports MIP
@@ -324,7 +350,7 @@ out-of-range draw is rejected during encoding. The controlled core `PointInput`
 fixture checked all 64 pixels; its initial fixture buffer limit was adjusted from
 one to two so it could create the intended layout. Before implementation the HAL
 baseline failed because the pipeline rejected point inputs. Historical FL9_1
-behavior has not been verified. Public adapter enumeration remains disabled.
+behavior has not been verified. Public surface capabilities remain unavailable.
 
 With strict hardware mode enabled, run the indexed-point test and CPU planners:
 
@@ -526,7 +552,7 @@ with a one-unit per-channel rounding tolerance; an observed left pixel was
 `[128, 0, 63, 191]`. Its unsafe adapter fixture reports blendability only after
 a positive driver format query, and cannot express the backend's restricted
 blend-state subset. These tests do not establish behavior on historical FL9_1
-drivers, enable sRGB formats or enable normal public adapter enumeration.
+drivers, enable sRGB formats or enable public surface capabilities.
 FL9_1 does not guarantee separate alpha blending: the production path rejects
 those modes with both RGB and alpha writes. Some older full-channel blend tests
 explicitly opt into a test-only RTX diagnostic and do not establish portability;
@@ -895,8 +921,8 @@ order and the original descriptor's filter class. The initial strict baseline
 rejected the NonFiltering layout. The controlled core fixture also verifies
 comparison-sampler creation returns the missing `COMPARISON_SAMPLERS` downlevel
 flag before calling the D3D11 HAL. Comparison samplers remain unsupported;
-historical drivers remain unverified, and normal public D3D11 adapter enumeration
-remains disabled.
+historical drivers remain unverified, and public surface capabilities remain
+unavailable.
 
 ### Sampled-resource visibility
 
@@ -914,8 +940,8 @@ Actual sampling by the selected vertex entry was rejected before drawing. A
 controlled core case checked 64 pixels. CPU tests cover per-binding stage
 mapping, layout identity and selected-entry guards. The initial strict baseline
 rejected the combined-visibility layout. These results do not establish vertex
-shader resource support or historical-driver behavior; public enumeration remains
-disabled.
+shader resource support or historical-driver behavior; the adapter reports no
+surface capabilities.
 
 ### Unfilterable-float layout bindings
 
@@ -936,7 +962,7 @@ The controlled core test checked 64 pixels and rejected its invalid filtering
 pair. CPU tests cover cross-group relationships, helper and entry-point selection,
 and layout identity. The pre-change strict baseline rejected bind-group layout
 creation. This layout support adds no texture formats, and historical hardware
-and ordinary public adapter exposure remain unverified.
+and the broader public adapter contract remain unverified.
 
 ### COPY_DST-only POT mip uploads
 
@@ -955,7 +981,7 @@ into a separate render-target-capable texture for readback. The original
 render-target-view use. A controlled core case submitted three writes, waited
 for completion and verified forbidden view/readback validation; no core
 readback of the upload-only texture is claimed. Historical hardware remains
-unverified and ordinary public adapter enumeration remains disabled.
+unverified and public surface capabilities remain unavailable.
 
 ### NPOT mip capability gate
 
@@ -1073,8 +1099,8 @@ source mips on each draw; the per-draw copies and additional allocation have a
 performance cost. The original resource is retained for alias checks. Native
 suffix views do not need this clone. Format prerequisites are queried; missing
 support skips the applicable case in normal mode and fails strict mode.
-Historical drivers remain unverified and ordinary public enumeration remains
-disabled.
+Historical drivers remain unverified and public surface capabilities remain
+unavailable.
 
 ### Individual color-attachment mip views
 
@@ -1090,8 +1116,8 @@ fixture checked all 43 pixels for each format and submitted a render-only mip
 pass, which has no direct readback. This path requires POT dimensions and
 `COLOR_TARGET` with optional `RESOURCE`, `COPY_SRC` and/or `COPY_DST`;
 `TRANSIENT` is not supported in the same chain. Each attachment view selects one mip.
-Historical hardware remains unverified and ordinary public enumeration stays
-disabled.
+Historical hardware remains unverified and public surface capabilities remain
+unavailable.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -1105,7 +1131,7 @@ for both formats. Native sampled suffix views include the resource's last mip;
 non-suffix sampled views use clones. Attachment views and dual-use views select
 one mip. Use in distinct passes is supported. Same-pass use is supported for
 disjoint native suffix and clone-backed SRVs and attachment mips. Historical
-devices and public adapter exposure remain unresolved.
+historical devices and the broader public adapter contract remain unresolved.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -1138,7 +1164,7 @@ core fixture checked all mip texels for both formats and rejected a same-mip
 copy. The pre-change strict baseline rejected a valid distinct-mip copy. Native
 copies use an explicit source box between DEFAULT resources. Same-subresource
 copies remain rejected; historical FL9 drivers remain unverified and public
-D3D11 adapter enumeration remains disabled.
+public D3D11 surface capabilities remain unavailable.
 
 ### Same-resource disjoint native mip views
 
@@ -1158,7 +1184,7 @@ permits input and output views of disjoint subresources. The separate
 [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
 warns against simultaneously binding a texture for sampling and rendering;
 it does not prove D3D11 behavior on historical FL9 drivers. Those drivers remain
-unverified, and normal public D3D11 adapter enumeration remains disabled.
+unverified, and public D3D11 surface capabilities remain unavailable.
 
 ### Same-resource disjoint clone-backed mip views
 
@@ -1178,7 +1204,7 @@ Before each clone refresh, replay snapshots and unbinds the current RTV and DSV,
 clears pixel shader resource slots, copies the selected mips, restores the
 attachments and rebinds the pixel shader resources. This adds attachment
 transitions to the existing per-draw copy cost. Historical FL9 drivers remain
-unverified; ordinary public adapter enumeration remains disabled.
+unverified; public surface capabilities remain unavailable.
 
 ### FL9_1 uniform bindings
 
@@ -1223,7 +1249,7 @@ The controlled core fixture passed short bindings of those sizes, including a
 scalar with a dynamic offset, with 64 checked pixels per render. Its synthetic
 downlevel flags enable `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`; the initial core
 test without that flag rejected the shader as `UnalignedShader`. This is a
-fixture setting, not public adapter exposure. Binding materialization uses CPU
+fixture setting, not a capability in the public projection. Binding materialization uses CPU
 scratch and a mapped staging buffer, which can stall. An odd-sized native copy
 is not verified on historical FL9_1 drivers.
 The additional strict `fl91_short_uniform_dynamic_copy_and_odd_source_end`
@@ -1245,7 +1271,7 @@ It rejects runtime integer values, operations, conversions and bitcasts,
 integer-containing uniforms or interfaces, switches, and non-folded global
 initializers and overrides. Proven static literal indices and float-only shader
 paths remain available; analysis limits fail closed. These restrictions do not
-establish general integer shader support or enable public adapter exposure.
+establish general integer shader support or broaden the public shader contract.
 
 ### FL9_1 depth attachments
 
@@ -1319,7 +1345,7 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 ```
 
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
-device into core, without enabling ordinary adapter enumeration. The test uses
+device into core separately from ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,
 mapped readback and explicit teardown. It checks all 64 copied bytes and all
 64 rendered pixels, including the 32-red/32-green render. It also validates
@@ -1362,7 +1388,7 @@ yellow pixels. A separate wide Uint32 strip readback contained 15 yellow
 pixels, including the asserted gathered-edge pixel.
 
 The controlled core fixture also creates indexed LineList pipelines and submits
-Uint16 and Uint32 draws while ordinary D3D11 adapter enumeration remains empty:
+Uint16 and Uint32 draws through its separately injected test adapter:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -1371,13 +1397,14 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 
 Both indexed LineList draws and both indexed LineStrip draws read back red
 pixels. This exercises core command recording through the explicitly injected
-test device; it does not expose a normal adapter.
+test device; the public offscreen adapter path is covered separately by
+`wgpu/tests/dx11_public.rs`.
 
 Indexed TriangleStrip uses the same controlled core fixture. Its Uint16 and
 Uint32 cases select a nonzero first index and signed base vertex that resolves
 an ordinary value to the strip-restart marker. Each run renders 12 red pixels;
-the fixture asserts the complete expected color result while ordinary adapter
-enumeration remains disabled.
+the fixture asserts the complete expected color result through the explicitly
+injected test device.
 
 The private `fl91_nonindexed_triangle_strip_winding_and_first_vertex` GPU test
 also exercises indexed TriangleStrip. It compares Uint16 and Uint32 restart

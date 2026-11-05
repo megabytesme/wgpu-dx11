@@ -1,19 +1,29 @@
 # Direct3D 11 backend status
 
-The `dx11` backend is experimental. Normal adapter enumeration returns no
-adapters: the current implementation does not meet wgpu's general device
-contract, and its restrictions cannot all be expressed as wgpu limits.
-Feature level 9_1 is a target for restricted compatibility work; it is not
-evidence of full WebGPU conformance. See [CAPABILITIES.md](CAPABILITIES.md)
-for the internal capability model, FL9_1 inventory and validation gaps.
+The opt-in `dx11` backend now enumerates physical adapters that can create an
+explicit FL9_1 device and exposes the selected-device capability projection
+for offscreen rendering through the public wgpu API. It reports no wgpu
+features, does not claim WebGPU compliance, and reports no surface
+capabilities. The implementation remains experimental and restrictions not
+representable through current core limits still need auditing. Feature level
+9_1 is a tested target, not evidence of historical-driver compatibility. See
+[CAPABILITIES.md](CAPABILITIES.md) for the capability matrix and validation
+gaps.
+
+The strict public integration test uses ordinary adapter enumeration and
+validated wgpu APIs for a sparse-bound texture upload, indexed draw, D24S8
+depth test, submission and full 8×8 readback. On the RTX 3090 Ti forced to
+FL9_1, it verified 32 red and 32 green pixels; a second wgpu device from the
+same adapter independently cleared and read back 64 green pixels. This proves
+these paths through the public API, not every operation within the projection.
 
 Core gates multi-mip depth/stencil attachment textures on
 `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`. Microsoft's [10Level9 device
 rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
 require a single mip for depth/stencil-bound resources at FL9_1 through FL9_3;
 the controlled FL9_1 core fixture verifies the descriptor is rejected before
-the private HAL. D24S8 remains single-mip in the private implementation, and
-normal adapter enumeration remains disabled.
+the private HAL. D24S8 remains single-mip in the private implementation; the
+public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
@@ -26,9 +36,9 @@ multi-mip gap that device-wide NPOT and depth-attachment flags cannot express.
 
 The internal per-format projection now resides in `Capabilities` and combines
 the actual device's format query with the selected feature level and implemented
-backend paths. The test-only core adapter calls this same projection, while
-normal D3D11 enumeration remains empty. This is a tested building block, not a
-public adapter capability report.
+backend paths. Both enumerated adapters and the test fixture call this
+projection. The public adapter is restricted to offscreen use; presentation
+remains gated because `surface_capabilities` is `None`.
 
 Core's controlled FL9_1 capability snapshot now also marks
 `DownlevelLimits::depth_bias_with_fragment_depth` unavailable. A pipeline with
@@ -99,8 +109,8 @@ by the HAL. Core rejects unreported attributes before HAL. The private input
 layout now maps `Uint8x4`, `Sint16x2` and `Sint16x4` in addition to its previous
 formats; direct integer-vector-to-float conversion is the only newly accepted
 runtime integer shader operation. The forced-FL9_1 RTX test exercises all three
-formats in one draw and validates every pixel. No public adapter reports this
-mask yet, and other layout and draw restrictions remain.
+formats in one draw and validates every pixel. The public selected-device
+projection reports this mask; other layout and draw restrictions remain.
 
 Core now also models whether viewport rectangles may extend beyond the active
 render target with `DownlevelLimits::viewport_rectangles_outside_target`. The
@@ -185,7 +195,7 @@ all out-of-target rectangles. Other backends keep the default true capability.
   test-only native GPU-to-GPU copy to a separate readable render-target texture.
   Core submitted three writes, waited for completion and rejected forbidden
   view/readback uses; it did not read back the upload-only texture. Historical
-  FL9 drivers remain unverified, and public enumeration remains disabled.
+  FL9 drivers remain unverified; public surfaces remain unavailable.
 - Copies between distinct mips of one supported texture use native DEFAULT to
   DEFAULT `CopySubresourceRegion` with an explicit source box. Strict RTX tests
   checked partial copies in both directions with full padded readback for RGBA8
@@ -231,7 +241,7 @@ all out-of-target rectangles. Other backends keep the default true capability.
   demonstrating depth preservation. [D3D11.3 §5.3.1](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
   permits disjoint subresource input/output; the [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
   warns against simultaneous texture and render-target binding. Historical FL9
-  drivers remain unverified, and public adapter enumeration remains disabled.
+  drivers remain unverified, and public surfaces remain unavailable.
 - POT RGBA8/BGRA8 mip chains now accept every nonempty combination of
   `RESOURCE`, `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`, gated by the matching
   backend path and queried format bits. Strict FL9_1 tests sample zero-initialized
@@ -268,7 +278,7 @@ all out-of-target rectangles. Other backends keep the default true capability.
   the controlled core fixture checks positive and negative constant bias. FXC
   rejected a direct-only zero-bias `frag_depth` entry with X4530, while a
   structured color-and-depth zero-bias entry compiled. FL9 historical bias
-  precision remains unverified; public adapter enumeration remains disabled.
+  precision remains unverified; public surfaces remain unavailable.
 - Single-sample pipeline masks reach the D3D11 output merger. Because FL9_1
   rejects a zero native `SampleMask`, a zero wgpu mask is translated to
   `0xffff_fffe`, which masks sample zero while satisfying the native nonzero
@@ -306,8 +316,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
   No additional unfilterable formats or comparison samplers are supported.
   Core now rejects comparison sampler creation when the adapter omits
   `DownlevelFlags::COMPARISON_SAMPLERS`; the controlled FL9_1 fixture verifies
-  rejection before HAL. Historical drivers remain unverified and public
-  enumeration stays disabled.
+  rejection before HAL. Historical drivers remain unverified; public surface
+  capabilities remain unavailable.
 - Sampled texture and sampler bindings accept `FRAGMENT` and
   `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.
   Actual vertex-stage sampling remains rejected. Two strict RTX images covered
@@ -347,7 +357,7 @@ all out-of-target rectangles. Other backends keep the default true capability.
   the controlled core fixture checked 64 pixels with a one-unit rounding
   tolerance. The unsafe fixture reports blendability only on a positive driver
   format query and cannot represent the restricted blend-state subset.
-  sRGB formats and normal public adapter exposure remain unsupported. Historical
+  sRGB formats and broader public use remain unsupported. Historical
   FL9_1 driver behavior remains unverified.
 - FL9_1 rejects straight alpha, inversion and vignette blending when both RGB and alpha
   are written because separate alpha is not guaranteed. Core now requires
@@ -439,32 +449,37 @@ all out-of-target rectangles. Other backends keep the default true capability.
   indexed triangle on FL9_1 with pixel readback. It is not an adapter or a
   capability-conformance test.
 
-The internal FL9_1 wgpu-types projection now supplies conservative limits,
-alignments, downlevel gates and selected-device format reports to the controlled
-core fixture. It is not used by ordinary enumeration. The projection withholds
-the aggregate BC compression feature because only BC1 is implemented; the
-private BC1 core case opts into that feature locally for coverage. A public
-adapter still needs a complete feature/format contract and the remaining
-core/HAL audit.
+The selected-device projection now supplies conservative limits, alignments,
+downlevel gates, features and per-format reports to both ordinary adapter
+enumeration and the controlled core fixture. It withholds the aggregate BC
+compression feature because only BC1 is implemented; the private BC1 core case
+opts into that feature locally for coverage.
 
-## Before a public adapter
+## Remaining public contract and completion gates
 
-- Build a reproducible, tightly scoped core-integration test without
-  presenting placeholder capabilities as a usable adapter.
-- Implement or honestly gate the general binding layouts, shader inputs,
-  texture formats/dimensions/mips/arrays, sampler modes, render states and
-  buffer usages required by valid wgpu applications. Several restrictions,
-  including specific bind-group shapes, cannot be described by `Limits`.
-- Complete indexed and instanced rendering, remaining depth/stencil paths and other
-  operations needed by many applications. On 9_1 the native index format is
-  restricted to 16-bit and index values to 65,534; combined vertex/index bindings
-  on 9_1/9_2 need emulation. Additional topologies and shader-visible IDs still
-  need implementation or validation for full wgpu semantics.
-- Feature level 9_1 has no native compute shaders; applications relying on
-  compute or storage need alternatives. The opt-in Naga texel-load/dimensions
-  experiments remain isolated proofs and are not enabled in the HAL.
-- Validate real device format/features, target-specific UWP imports, shader
-  semantics, device loss, synchronization and presentation on each target.
-  Test-only success must not be presented as public adapter support.
+- The public adapter is FL9_1-only and offscreen-only. The public integration
+test currently verifies adapter selection, device/queue creation, a vertex
+buffer draw, submission and pixel readback. The required richer indexed,
+textured, multi-uniform, depth-tested scene through public wgpu remains to be
+added.
+- `surface_capabilities` returns `None`. Although private HAL HWND tests can
+render, present and resize, synchronous DXGI `Present` can reenter wgpu while
+core queue-index and HAL immediate-context locks are held. A safe cross-layer
+scheduler or thread-affinity design remains unresolved; do not expose public
+surfaces until it is addressed.
+- The public capability projection and core/HAL audit still need independent
+review across every valid pipeline, texture, buffer, mapping, render-pass and
+error path. Current strict tests cover a broad subset but do not prove every
+request permitted by the limits.
+- Compute, storage access, queries, indirect draws, multisampling, arrays,
+comparison samplers, several shader builtins and unrestricted WGSL remain
+unavailable and are gated or rejected. The texel-load/dimensions experiments
+remain isolated proofs.
+- Device removal/recovery, event-query failure retention, some destroy paths,
+historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and public
+HWND presentation remain unverified.
+
+Do not describe this restricted offscreen adapter as complete wgpu or WebGPU
+support. See [TESTING.md](TESTING.md) for exact public and private test commands.
 
 See [TESTING.md](TESTING.md) for the staged validation plan and hardware matrix.

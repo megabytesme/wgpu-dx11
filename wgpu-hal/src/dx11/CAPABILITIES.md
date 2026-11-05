@@ -1,13 +1,21 @@
 # D3D11 capability and public-adapter contract
 
-This is an inventory of the private backend, not a wgpu capability report.
-Ordinary D3D11 adapter enumeration remains empty. The internal model separates
-feature-level minima, per-device query results, the restricted implementation,
-and the public-adapter gate. `check_private_texture_2d` is a conservative
+The opt-in `dx11` feature now enumerates physical DXGI adapters that can create
+the explicitly requested FL9_1 device and exposes the selected-device
+capability projection for offscreen wgpu rendering. The reported feature set is
+empty and the downlevel contract is not WebGPU-compliant. `surface_capabilities`
+still returns `None`, so no public presentation surface is exposed. This is a
+restricted FL9_1 adapter report, not a claim of general wgpu support. The
+internal model separates feature-level minima, per-device query results, and
+implemented backend paths. `check_private_texture_2d` is a conservative
 predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_SNORM,
 R8G8B8A8_SNORM and BC1_UNORM subsets; it is not a complete texture validation
 rule.
 A failed query is recorded with its HRESULT and never treated as support.
+Adapter metadata includes the DXGI driver-package version when
+`IDXGIAdapter::CheckInterfaceSupport(IDXGIDevice)` succeeds; older or
+unsupported runtimes leave it unavailable. See Microsoft's
+[`CheckInterfaceSupport` contract](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiadapter-checkinterfacesupport).
 
 ## Feature-level and driver facts
 
@@ -122,18 +130,20 @@ mip-chain, non-block-aligned dimensions and BC1 sRGB views remain unavailable.
 
 ## FL9_1 inventory and gaps
 
-All rows block public exposure until their gaps are addressed or safe validation
-is established. Hardware availability below means the FL9_1 contract, not a
-claim about a particular driver's optional capabilities. Test names refer to
-private HAL tests; success on one modern adapter is not proof for all FL9 GPUs.
+The public adapter exposes only the capability projection and operations
+covered by core validation; remaining row-specific gaps block expanding that
+contract. Hardware availability below means the FL9_1 contract, not a claim
+about a particular driver's optional capabilities. Test names refer to private
+HAL tests unless stated otherwise; success on one modern adapter is not proof
+for all FL9 GPUs.
 
 | Category | Hardware and private implementation | Coverage; wgpu mapping and remaining work |
 | --- | --- | --- |
-| Device / adapter | Native DXGI hardware discovery and explicitly selected feature levels exist. HAL adapter is uninhabited and enumeration is empty. | Hardware probe and zero-adapter tests. No `Limits`, `Features`, `DownlevelCapabilities`, format capability set, or wgpu device is advertised. A new adapter must be truthful and satisfy every valid operation it permits. |
+| Device / adapter | Native DXGI discovery excludes software adapters and creates only an explicitly requested FL9_1 device. The HAL exposes the selected-device projection for offscreen use; surface capabilities remain `None`. | Strict public wgpu smoke test enumerates/selects the RTX 3090 Ti, creates a public device and verifies an offscreen draw/readback. The adapter reports no wgpu features and is not WebGPU-compliant. The full public app, exhaustive contract audit and surface lifecycle remain outstanding. |
 | Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; vertex+index is rejected at 9_1/9_2. The FL9_1 logical size limit leaves one 4-byte alignment unit below `u32::MAX`, so core's vertex sentinel byte and 4-byte allocation rounding still fit D3D11's `ByteWidth`. Core may carry storage usage bits on an otherwise supported buffer allocation, but FL9_1 native buffers retain a single vertex/index bind and no shader storage binding is implemented. Indirect usage is unsupported. | Copy, map, initialization and ownership tests. Core now requires `VERTEX_STORAGE`, `FRAGMENT_STORAGE` or `COMPUTE_SHADERS` for storage-buffer layouts visible to those stages; writable fragment buffers also require `FRAGMENT_WRITABLE_STORAGE`. The controlled fixture verifies unsupported stage layouts fail before HAL and a storage/copy buffer still uploads, copies and reads back. This does not expose storage access. `UNRESTRICTED_INDEX_BUFFER` and limits describe only part of the buffer contract. |
 | 2D textures / formats / views | FL9_1 supports multiple native formats subject to individual format flags. Private RGBA8 and BGRA8 2D textures have one layer and sample; restricted copy-only, sampled and color-attachment POT textures can have multiple mips. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM are limited to one-mip, one-layer sampled/upload resources and use positive per-device 2D/shader-sample queries. BC1_UNORM additionally requires dimensions aligned to 4×4 blocks and supports block-aligned uploads only. D24S8 remains single-mip and attachment-only. Microsoft documents that FL9_x D3D11 depth/stencil-bound resources require one mip. Core now represents multi-mip depth/stencil attachment support with `DownlevelFlags::DEPTH_TEXTURE_MULTI_MIP`; the FL9_1 D3D11 capability projection must leave it absent so invalid descriptors fail before HAL. | Transfer, view, clear and draw readback tests. Padded-offset uploads and sampling for the three sampled-upload-only uncompressed formats passed on the RTX at FL9_1; a padded BC1 upload plus partial block replacement matched all 256 output pixels. The controlled core fixture verifies multi-mip D24S8 attachment creation is rejected by the missing downlevel flag before HAL. These formats remain non-renderable and cannot be copied from or read back in this private subset. Per-format capabilities and numeric limits must match creation, copies, initialization and view behavior. Other formats and dimensions need implementation or validation. |
-| Texture view dimensions | The D3D11 resource path is limited to 2D, one-layer resources and the private HAL creates only `D2` views. | Core rejects D1/D3 texture creation and binding layouts through explicit downlevel limits, and gates `D2Array`, `Cube` and `CubeArray` layouts/views with explicit downlevel flags before HAL. The array flag also gates storage-texture array layouts. A one-layer texture view can still have array semantics even when `max_texture_array_layers` is one; that limit alone cannot represent the missing dimension. The projection retains inherited nonzero native 1D/3D numeric limits (2048/256) while setting the dimension booleans false; the controlled core fixture verifies texture-creation and view rejection before HAL. Public exposure remains gated. |
-| Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 textures can have mip chains when format support is reported. Sampled suffix views are native; other supported mip ranges use a GPU clone. Color-attachment views select one mip. Sampled and color-attachment usages can coexist, with optional copy usages. Arrays and NPOT mip chains remain unavailable. | Strict FL9_1 tests verify per-mip transfers, attachment rendering, suffix and clone-backed non-suffix sampling on the RTX. Core now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` before forwarding any NPOT mip chain; D3D11 does not set this implementation flag, even when the runtime reports full NPOT support. Public exposure remains blocked. |
+| Texture view dimensions | The D3D11 resource path is limited to 2D, one-layer resources and the private HAL creates only `D2` views. | Core rejects D1/D3 texture creation and binding layouts through explicit downlevel limits, and gates `D2Array`, `Cube` and `CubeArray` layouts/views with explicit downlevel flags before HAL. The array flag also gates storage-texture array layouts. A one-layer texture view can still have array semantics even when `max_texture_array_layers` is one; that limit alone cannot represent the missing dimension. The projection retains inherited nonzero native 1D/3D numeric limits (2048/256) while setting the dimension booleans false; the controlled core fixture verifies texture-creation and view rejection before HAL. The public projection keeps these gates disabled. |
+| Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 textures can have mip chains when format support is reported. Sampled suffix views are native; other supported mip ranges use a GPU clone. Color-attachment views select one mip. Sampled and color-attachment usages can coexist, with optional copy usages. Arrays and NPOT mip chains remain unavailable. | Strict FL9_1 tests verify per-mip transfers, attachment rendering, suffix and clone-backed non-suffix sampling on the RTX. Core now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` before forwarding any NPOT mip chain; D3D11 does not set this implementation flag, even when the runtime reports full NPOT support. The public projection rejects unsupported shapes and mip chains. |
 | Samplers | Independent point/linear min/mag, clamp/wrap/mirror and anisotropy up to 2 are implemented in the private HAL. Border addressing and comparison samplers are rejected; core now requires `COMPARISON_SAMPLERS` before forwarding a comparison descriptor. Translated LOD ranges are checked against each used sampled view. | Patterned FL9_1 GPU readback covers filter and address modes, sampled mip levels and sampler switching. The controlled core fixture verifies comparison samplers fail the missing-downlevel check before HAL. Anisotropy 2 creates and samples but visual anisotropic quality is unverified. Public feature/limit representation remains incomplete. |
 | Bind groups / registers | Up to eight private groups may contain uniforms, sampled textures and samplers, with aggregate limits of thirteen uniforms, eight textures and sixteen samplers. The internal wgpu projection exposes at most six uniform buffers per shader stage, keeping the worst-case union of disjoint vertex and fragment bindings within the thirteen-slot allocator. | Sparse multi-group, dynamic-offset, pipeline-transition, cross-group sampled-texture and exact-projection two-uniform core GPU tests cover selected configurations. The controlled core fixture now draws with a fragment uniform in group 0 and the sampled texture/sampler in group 1; this verifies core layout selection, Naga/FXC mapping, HAL group indices and readback for that combination. It does not verify every combination or the eight-group maximum. FXC limits distinct sampled relationships and constants. Counts in `Limits` cannot represent all shader, visibility, compatibility or cross-group restrictions. Public exposure remains blocked. |
 | Vertex / index formats | The FL9_1 required IA subset is `Uint8x4`, `Unorm8x4`, `Sint16x2`, `Snorm16x2`, `Sint16x4`, `Snorm16x4` and `Float32` through `Float32x4`. These are guaranteed minima, intersected with `CheckFormatSupport(IA_VERTEX_BUFFER)` on the selected device and the HAL mapping table. Private pipelines accept up to sixteen sparse vertex- or instance-rate streams, including zero-stride constant streams. Integer IA inputs are limited to direct `i32`/`u32` vector-to-float conversion in the FL9_1 vertex profile; integer arithmetic and other runtime integer semantics remain rejected. Attributes retain four-byte alignment. Multi-slot configurations support triangle and point lists, nonindexed line and triangle strips, and Uint16/Uint32 indexed triangle, point and line lists with translation when needed. Indexed LineStrip and TriangleStrip use CPU restart splitting; native FL9 strip-cut support is not assumed. On FL9_1, overlapping elements in a logical stream are assigned to distinct native slots bound to the same buffer. | `DownlevelLimits::vertex_format_mask` carries the format-specific support subset into core; unsupported attributes are rejected before HAL. Strict forced-FL9_1 readback now exercises all three newly implemented integer formats together and checks 64/64 output pixels. Existing indexed and non-indexed readback, sparse-slot, overlap, zero-stride, SNORM vertex, strip and rejected-index tests remain applicable. The runtime query and static model are tested synthetically across recognized feature-level identities. Overlapping physical reads, stream offsets, maximum strides and older-driver behavior remain unverified. SNORM vertex support does not imply SNORM texture support. |
@@ -324,7 +334,7 @@ mip, copied to another mip of that texture and sampled its clone-backed view;
 each checked 64 blue pixels. Controlled core tests checked all mip texels for
 both formats and rejected a same-mip copy. Before the change, the strict
 baseline rejected a valid distinct-mip copy. Historical FL9 hardware remains
-unverified, and this does not enable public adapter enumeration.
+unverified; the opt-in public adapter remains offscreen-only.
 
 HAL texture creation eagerly uploads zeroes before returning, including for
 partial-write targets and each mip of a supported chain. Allocation and uploads
@@ -369,8 +379,9 @@ copy into a separate render-target-capable texture, then read that texture;
 the original texture still rejects logical copy-source, readback, sampled-view
 and render-target-view use. The controlled core test submitted three writes and
 checked completion and forbidden view/readback validation; it did not read
-back the upload-only texture. Historical drivers remain unverified and ordinary
-public adapter enumeration remains disabled.
+back the upload-only texture. Historical driver support remains unverified;
+public offscreen adapter enumeration is available under the explicit `dx11`
+backend, while surface capabilities remain unavailable.
 
 Sampled multi-mip textures use `COPY_DST | RESOURCE` with optional `COPY_SRC`,
 or `RESOURCE | COLOR_TARGET` with optional `COPY_SRC` and/or `COPY_DST`.
@@ -431,7 +442,8 @@ cases verified the same depth-preserving output for both formats.
 [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
 warns against binding a texture as both render target and texture at draw time;
 that API statement does not establish historical FL9 D3D11 driver behavior.
-Historical hardware remains unverified, and ordinary public enumeration is disabled.
+Historical hardware remains unverified; ordinary opt-in enumeration currently
+exposes only the conservative FL9_1 offscreen projection.
 
 HAL transfer commands use explicit regions. No staging-to-default native copy with
 a null source box is used, avoiding the documented 9_x corruption case for
@@ -439,8 +451,8 @@ mismatched dimensions or destination offsets. Core validates empty regions and
 returns before calling HAL; direct private HAL empty-region transfers remain
 rejected. Broad texture formats, multisampling, NPOT mip chains and arrays
 remain unsupported. A modern GPU forced to 9_1 does not
-validate every historical runtime or driver; public adapter exposure remains
-disabled.
+validate every historical runtime or driver; the experimental offscreen
+adapter does not enable public surface capabilities.
 
 ## FL9_1 sampler contract
 
@@ -470,26 +482,25 @@ ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a
 fractional linear-mipmap blend; direct and indexed draws rejected incompatible
 samplers. This restricted implementation does not cover all valid biased sampling.
 
-The backend does not expose a public adapter. The boolean anisotropy flag
-indicates availability, while `DownlevelLimits::max_sampler_anisotropy` reports
-the cap separately; the selected FL9_1 projection reports 2. Core clamps the
-requested sampler value to this maximum, and strict core fixture tests create
-native samplers for requests 2, 3 and 16. This does not establish visual
-anisotropic quality on minified textures or validate historical FL9_1 drivers.
+The public offscreen adapter reports anisotropy availability through the
+`ANISOTROPIC_FILTERING` flag and the cap through
+`DownlevelLimits::max_sampler_anisotropy`; the selected FL9_1 projection
+reports 2. Core clamps the requested sampler value to this maximum, and strict
+core fixture tests create native samplers for requests 2, 3 and 16. This does
+not establish visual anisotropic quality on minified textures or validate
+historical FL9_1 drivers.
 
-The nondefault `dx11-test-fixture` feature provides an unsafe, non-enumerated
-adapter solely for a controlled core integration test. Normal `Adapter::open`
-still fails. Format projection is centralized in the internal
-`Capabilities::texture_format_capabilities` method: it intersects the selected
-device's positive `CheckFormatSupport` results with feature-level shape limits
-and backend implementation switches. The fixture delegates to this same
-method for RGBA8, BGRA8, sampled-upload formats and D24S8, but no normal adapter
-enumeration consumes it. The method is not a complete public adapter report.
-The fixture supplies test-only limits and no surface capabilities; it checks
-transient texture/view creation and invalid usage or format rejection, but does
-not exercise transient render passes through core. It verifies core buffer
-operations and an offscreen triangle, not ordinary public adapter selection or
-presentation.
+The nondefault `dx11-test-fixture` feature still provides an unsafe adapter for
+controlled core integration tests and synthetic capability overrides. Normal
+adapter opening now uses the same selected-device projection, while the
+fixture-specific constructor remains outside enumeration. Format projection
+is centralized in `Capabilities::texture_format_capabilities`: it intersects
+positive `CheckFormatSupport` results with feature-level shape limits and
+backend implementation switches. Both enumerated adapters and fixtures use
+this method for RGBA8, BGRA8, sampled-upload formats and D24S8. Public
+surface capabilities remain unavailable. The controlled fixture additionally
+tests transient descriptors and validation cases; it does not exercise
+transient render passes through core.
 
 ## Logical binding translation
 
@@ -523,8 +534,9 @@ covered helper-function sampling and a selected-entry transition; a core case
 checked 64 pixels and rejected an invalid filtering pair. CPU tests cover
 cross-group pairs, helper and entry-point selection, and layout identity. The
 pre-change strict baseline rejected the texture layout. This adds no new
-unfilterable formats or comparison samplers. Historical drivers remain unverified
-and public adapter enumeration remains disabled.
+unfilterable formats or comparison samplers. Historical drivers remain
+unverified; public offscreen adapter support does not widen this resource
+contract.
 Render-pass boundaries clear context state.
 
 Sampled texture and sampler entries may declare `FRAGMENT` or
@@ -535,7 +547,7 @@ rejected before drawing. Two strict FL9_1 RTX images checked fragment sampling
 and a transition between these layouts; a controlled core case checked 64
 pixels. CPU mapping and compiler guards cover stage identity and selected
 vertex entries. The original strict baseline rejected the combined layout.
-Historical FL9 drivers remain unverified, and public enumeration remains empty.
+Historical FL9 drivers remain unverified; no public surface is reported.
 
 ## Private uniform-buffer contract
 
@@ -592,8 +604,9 @@ historical-driver behavior for an
 odd-sized buffer copy remains unverified. The controlled core fixture enables
 `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED` to test these ranges and rendered with a
 dynamic offset. Without this flag core rejected its short uniform shader. The
-fixture flag is not a public adapter capability; normal enumeration remains
-disabled. The selected-device FL9_1 core projection permits two dynamic
+fixture flag is not a public adapter capability; the public projection uses the
+selected device's native capability query without this override. The
+selected-device FL9_1 core projection permits two dynamic
 uniform buffers per pipeline layout. Strict core readback uses logical
 bindings 17 (vertex) and 23 (fragment), with a base offset of 256 bytes and
 dynamic offsets of 256 and 512 bytes respectively; geometry and sampled color
@@ -649,7 +662,8 @@ after a source update. Synthetic tests exercise restrictive
 capabilities; the RTX driver reports full NPOT support even when forced to FL9_1.
 The HAL returns its existing generic `DeviceError::Unexpected` on draw rejection.
 Binding arrays, comparison samplers, storage and vertex sampling remain
-unavailable; normal adapter enumeration remains disabled.
+unavailable; the public projection remains FL9_1-only and reports no surface
+capabilities.
 
 The disabled texel-load proof reserves `t0`, `s15` and `b13`; it cannot simply
 be switched on with this allocator. Enabling it requires coordinated register
@@ -684,9 +698,8 @@ additions, while 10Level9 exposes D3D9-era shader behavior; this mapping does
 not claim that these semantics are impossible on every implementation.
 
 `primitive_index` is separately gated by optional
-`Features::PRIMITIVE_INDEX`; a future D3D11 adapter must not advertise that
-feature while the HAL rejects it. The public capability projection and normal
-adapter enumeration remain disabled. [Microsoft HLSL semantics](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics)
+`Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise
+that feature while the HAL rejects it. [Microsoft HLSL semantics](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics)
 and [10Level9 device rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
 are references for the hardware model, not substitutes for the tested FXC
 profile.
@@ -695,9 +708,9 @@ profile.
 
 `Capabilities::wgpu_projection` builds a conservative wgpu-types snapshot only
 when the selected device actually runs at FL9_1. It intersects selected-level
-facts, driver queries and backend paths. The controlled core fixture consumes
-this snapshot, but regular D3D11 adapter enumeration remains disabled and the
-snapshot is not a public adapter report.
+facts, driver queries and backend paths. Ordinary opt-in D3D11 enumeration uses
+this same snapshot for physical adapters, and the controlled core fixture also
+consumes it with additional synthetic restrictions where needed.
 
 The projection preserves the native 2048×2048 2D minimum and logical binding
 indices through 999. The binding-index limit is distinct from implementation

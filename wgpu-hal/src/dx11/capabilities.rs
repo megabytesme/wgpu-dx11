@@ -696,10 +696,6 @@ impl Capabilities {
         }
         result
     }
-
-    pub fn public_adapter_supported(&self) -> bool {
-        false
-    }
 }
 
 const fn vertex_format_bit(format: wgt::VertexFormat) -> u64 {
@@ -803,7 +799,6 @@ mod tests {
         ));
         assert!(projection.features.is_empty());
         assert!(!exposed.downlevel.is_webgpu_compliant());
-        assert!(!caps.public_adapter_supported());
     }
 
     #[test]
@@ -991,7 +986,6 @@ mod tests {
             assert!(!caps.backend.fragment_depth_with_bias);
             assert!(caps.backend.dynamic_uniform_offsets);
             assert!(caps.backend.uniform_binding_sizes_unaligned_16);
-            assert!(!caps.public_adapter_supported());
         }
         let fl9 = model(FeatureLevel::L9_1);
         assert_eq!(fl9.hardware.max_vertex_index, 65_534);
@@ -1259,7 +1253,6 @@ mod tests {
             assert!(caps.backend.restricted_instance_rate_streams);
             assert!(caps.backend.instancing_without_instance_inputs);
             assert!(!caps.backend.instancing);
-            assert!(!caps.public_adapter_supported());
         }
     }
 
@@ -1332,7 +1325,6 @@ mod tests {
                 Err(DriverFormatUnsupported)
             );
         }
-        assert!(!caps.public_adapter_supported());
     }
 
     #[test]
@@ -1627,7 +1619,6 @@ mod tests {
             check(&restricted, bgra, copy, [8, 4], 1, 2, 1),
             Err(DriverFormatUnsupported)
         );
-        assert!(!caps.public_adapter_supported());
     }
 
     #[test]
@@ -1742,7 +1733,6 @@ mod tests {
         optional_unknown.driver.comparison_shadow = Query::Unavailable(-1);
         assert_eq!(check(&optional_unknown, rgba, usage, 8, 8, 1, 1, 1), Ok(()));
         assert!(!optional_unknown.backend.depth_stencil);
-        assert!(!optional_unknown.public_adapter_supported());
     }
 
     #[test]

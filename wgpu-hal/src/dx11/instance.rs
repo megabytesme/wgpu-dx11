@@ -1,9 +1,9 @@
-//! D3D11 HAL instance. Adapter enumeration deliberately remains empty.
+//! D3D11 HAL instance with an explicitly restricted FL9_1 adapter contract.
 
-use alloc::{string::String, vec::Vec};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
-/// Experimental D3D11 instance with no usable adapters yet.
+/// Experimental D3D11 instance exposing only physical adapters with the FL9_1 path.
 #[derive(Debug)]
 pub struct Instance;
 
@@ -41,7 +41,53 @@ impl crate::Instance for Instance {
         &self,
         _: Option<&super::Surface>,
     ) -> Vec<crate::ExposedAdapter<Self::A>> {
-        Vec::new()
+        let adapters = match super::enumerate_native_adapters() {
+            Ok(adapters) => adapters,
+            Err(error) => {
+                log::warn!("D3D11 adapter enumeration failed: {error}");
+                return Vec::new();
+            }
+        };
+        adapters
+            .into_iter()
+            .filter_map(|adapter| {
+                if adapter.identity().software {
+                    return None;
+                }
+                let identity = adapter.identity().clone();
+                let driver_version = adapter.driver_version();
+                let native = match adapter.open_device(&[super::FeatureLevel::L9_1]) {
+                    Ok(native) => native,
+                    Err(error) => {
+                        log::debug!(
+                            "D3D11 adapter {:?} cannot create the required FL9_1 device: {error}",
+                            identity.name
+                        );
+                        return None;
+                    }
+                };
+                if native.feature_level() != super::FeatureLevel::L9_1 {
+                    log::warn!(
+                        "D3D11 adapter {:?} returned {:?} for an explicit FL9_1 request",
+                        identity.name,
+                        native.feature_level()
+                    );
+                    return None;
+                }
+                let Some(exposed) = super::Adapter::expose_native(
+                    &identity,
+                    driver_version.as_deref(),
+                    Arc::new(native),
+                ) else {
+                    log::debug!(
+                        "D3D11 adapter {:?} has no implemented FL9_1 capability projection",
+                        identity.name
+                    );
+                    return None;
+                };
+                Some(exposed)
+            })
+            .collect()
     }
 }
 
@@ -53,9 +99,26 @@ mod tests {
     use raw_window_handle::{WinRtWindowHandle, XlibDisplayHandle};
 
     #[test]
-    fn incomplete_instance_exposes_no_adapters_and_rejects_unsupported_handles() {
+    fn instance_rejects_unsupported_handles_and_projects_only_fl91_hardware() {
         let instance = Instance;
-        assert!(unsafe { instance.enumerate_adapters(None) }.is_empty());
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let adapters = unsafe { instance.enumerate_adapters(None) };
+        if adapters.is_empty() {
+            assert!(
+                !required,
+                "strict mode requires an exposed physical FL9_1 adapter"
+            );
+            std::println!("SKIP: no physical adapter with an FL9_1 capability projection");
+        } else {
+            for adapter in &adapters {
+                assert_eq!(adapter.info.backend, wgt::Backend::Dx11);
+                assert_eq!(adapter.info.driver, "D3D11");
+                assert!(adapter.info.driver_info.contains("FL9_1"));
+                assert!(adapter.features.is_empty());
+                assert!(!adapter.capabilities.downlevel.is_webgpu_compliant());
+            }
+            std::println!("PASS: exposed {} physical FL9_1 adapter(s)", adapters.len());
+        }
         let other_display = RawDisplayHandle::Xlib(XlibDisplayHandle::new(None, 0));
         let untouched = RawWindowHandle::WinRt(WinRtWindowHandle::new(NonNull::dangling()));
         assert!(unsafe { instance.create_surface(other_display, untouched) }.is_err());

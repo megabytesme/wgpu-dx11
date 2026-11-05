@@ -12,7 +12,7 @@ use windows::{
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
             },
             Dxgi::{
-                CreateDXGIFactory2, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1,
+                CreateDXGIFactory2, IDXGIAdapter, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1,
                 DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_NOT_FOUND,
             },
         },
@@ -81,6 +81,18 @@ impl NativeAdapter {
     /// Adapter identity as reported by DXGI.
     pub fn identity(&self) -> &AdapterIdentity {
         &self.identity
+    }
+
+    /// Driver-package version when DXGI exposes it for this adapter.
+    pub fn driver_version(&self) -> Option<String> {
+        let version = unsafe { self.raw.CheckInterfaceSupport(&IDXGIDevice::IID) }.ok()? as u64;
+        Some(alloc::format!(
+            "{}.{}.{}.{}",
+            version >> 48,
+            (version >> 32) & 0xffff,
+            (version >> 16) & 0xffff,
+            version & 0xffff
+        ))
     }
 
     /// Create an owned native device using the caller's preferred levels.

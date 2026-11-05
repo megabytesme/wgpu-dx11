@@ -1,18 +1,48 @@
-//! No D3D11 adapters are exposed until the device implementation is complete.
+//! Physical D3D11 adapters restricted to the implemented FL9_1 contract.
 
-#[cfg(feature = "dx11-test-fixture")]
-use alloc::sync::Arc;
+use alloc::{string::String, sync::Arc};
 
 #[derive(Debug)]
 enum AdapterInner {
+    Native(Arc<super::NativeDevice>),
     #[cfg(feature = "dx11-test-fixture")]
     Fixture(Arc<super::NativeDevice>),
 }
 
-/// Adapter enumeration remains disabled.
+/// An adapter restricted to the implemented FL9_1 capability projection.
 #[derive(Debug)]
 pub struct Adapter {
     inner: AdapterInner,
+}
+
+impl Adapter {
+    pub(super) fn expose_native(
+        identity: &super::AdapterIdentity,
+        driver_version: Option<&str>,
+        native: Arc<super::NativeDevice>,
+    ) -> Option<crate::ExposedAdapter<super::Api>> {
+        let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+        let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+        info.name = identity.name.clone();
+        info.vendor = identity.vendor_id;
+        info.device = identity.device_id;
+        info.driver = String::from("D3D11");
+        info.driver_info = match driver_version {
+            Some(version) => {
+                alloc::format!("FL9_1; physical DXGI adapter; driver version {version}")
+            }
+            None => String::from("FL9_1; physical DXGI adapter; driver version unavailable"),
+        };
+
+        Some(crate::ExposedAdapter {
+            adapter: Self {
+                inner: AdapterInner::Native(native),
+            },
+            info,
+            features: projection.features,
+            capabilities: projection.capabilities,
+        })
+    }
 }
 
 #[cfg(feature = "dx11-test-fixture")]
@@ -20,26 +50,34 @@ impl Adapter {
     /// Returns the conservative FL9_1 wgpu capability projection for this selected test device.
     #[doc(hidden)]
     pub fn test_fixture_wgpu_capabilities(&self) -> Option<(wgt::Features, crate::Capabilities)> {
-        let AdapterInner::Fixture(native) = &self.inner;
+        let AdapterInner::Fixture(native) = &self.inner else {
+            return None;
+        };
         let projection = super::capabilities::Capabilities::query(native).wgpu_projection()?;
         Some((projection.features, projection.capabilities))
     }
 
     /// Reports whether the selected device has unrestricted NPOT sampling.
     pub fn test_fixture_unrestricted_npot_sampling(&self) -> bool {
-        let AdapterInner::Fixture(native) = &self.inner;
+        let AdapterInner::Fixture(native) = &self.inner else {
+            return false;
+        };
         super::capabilities::Capabilities::query(native).unrestricted_npot_texture_sampling()
     }
 
     /// Returns the selected device's implemented and driver-supported vertex-format mask.
     pub fn test_fixture_vertex_format_mask(&self) -> u64 {
-        let AdapterInner::Fixture(native) = &self.inner;
+        let AdapterInner::Fixture(native) = &self.inner else {
+            return 0;
+        };
         super::capabilities::Capabilities::query(native).vertex_input_format_mask()
     }
 
     /// Reports the selected feature level's per-primitive texture repeat limit.
     pub fn test_fixture_max_texture_repeat_per_primitive(&self) -> u32 {
-        let AdapterInner::Fixture(native) = &self.inner;
+        let AdapterInner::Fixture(native) = &self.inner else {
+            return 0;
+        };
         super::capabilities::HardwareGuarantees::for_level(native.feature_level())
             .max_texture_repeat_per_primitive
     }
@@ -66,7 +104,9 @@ impl Adapter {
             D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
             D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
         };
-        let AdapterInner::Fixture(native) = &self.inner;
+        let AdapterInner::Fixture(native) = &self.inner else {
+            return Err(crate::DeviceError::Unexpected);
+        };
         let support = unsafe { native.raw_device().CheckFormatSupport(format) }
             .map_err(super::hal_device::device_error)?;
         let required = (D3D11_FORMAT_SUPPORT_MIP.0
@@ -105,6 +145,10 @@ impl Adapter {
     /// use must remain within the controlled private HAL test subset.
     pub unsafe fn open_test_fixture(&self) -> crate::OpenDevice<super::Api> {
         match &self.inner {
+            AdapterInner::Native(native) => crate::OpenDevice {
+                device: super::Device::new(native.clone()),
+                queue: super::Queue::new(native.clone()),
+            },
             AdapterInner::Fixture(native) => crate::OpenDevice {
                 device: super::Device::new(native.clone()),
                 queue: super::Queue::new(native.clone()),
@@ -127,6 +171,10 @@ impl crate::Adapter for Adapter {
         #[cfg(feature = "dx11-test-fixture")]
         {
             match &self.inner {
+                AdapterInner::Native(native) => Ok(crate::OpenDevice {
+                    device: super::Device::new(native.clone()),
+                    queue: super::Queue::new(native.clone()),
+                }),
                 AdapterInner::Fixture(native) => Ok(crate::OpenDevice {
                     device: super::Device::new(native.clone()),
                     queue: super::Queue::new(native.clone()),
@@ -135,7 +183,12 @@ impl crate::Adapter for Adapter {
         }
         #[cfg(not(feature = "dx11-test-fixture"))]
         {
-            match self.inner {}
+            match &self.inner {
+                AdapterInner::Native(native) => Ok(crate::OpenDevice {
+                    device: super::Device::new(native.clone()),
+                    queue: super::Queue::new(native.clone()),
+                }),
+            }
         }
     }
     unsafe fn texture_format_capabilities(
@@ -146,6 +199,9 @@ impl crate::Adapter for Adapter {
         match self.inner {
             #[cfg(feature = "dx11-test-fixture")]
             AdapterInner::Fixture(ref native) => {
+                super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
+            }
+            AdapterInner::Native(ref native) => {
                 super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
             }
         }

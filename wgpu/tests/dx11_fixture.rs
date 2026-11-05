@@ -42,7 +42,7 @@ fn public_wgpu_textured_depth_on_forced_fl91() {
     );
 
     let instance = unsafe { Instance::from_hal::<hal::dx11::Api>(hal::dx11::Instance) };
-    assert!(enumerate(&instance).is_empty());
+    assert!(!enumerate(&instance).is_empty());
     let hal_instance = unsafe { instance.as_hal::<hal::dx11::Api>() }.unwrap();
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(hal_instance, native) }.unwrap();
     let open = unsafe { fixture.open_test_fixture() };
@@ -119,7 +119,7 @@ fn public_wgpu_textured_depth_on_forced_fl91() {
         },
     };
     let adapter = unsafe { instance.create_adapter_from_hal(exposed) };
-    assert!(enumerate(&instance).is_empty());
+    assert!(!enumerate(&instance).is_empty());
     let (device, queue) = unsafe {
         adapter.create_device_from_hal(
             open,

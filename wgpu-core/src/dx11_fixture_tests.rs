@@ -217,7 +217,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         )
     };
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
-    assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
+    assert!(!unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
     let (features, capabilities) = fixture
         .test_fixture_wgpu_capabilities()
@@ -576,7 +576,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     global.device_drop(device);
     global.adapter_drop(adapter_id);
     std::println!(
-        "PASS: unmodified selected-device limits, downlevel and format projection requested a core device and created all projected RGBA8/BGRA8 usage combinations; ordinary enumeration remained empty"
+        "PASS: unmodified selected-device projection created a core device and all projected RGBA8/BGRA8 usage combinations; public FL9_1 enumeration is enabled"
     );
 }
 
@@ -605,7 +605,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         Global::from_hal_instance::<hal::dx11::Api>("dx11 controlled fixture", hal::dx11::Instance)
     });
     let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
-    assert!(unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
+    assert!(!unsafe { hal::Instance::enumerate_adapters(instance, None) }.is_empty());
     let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
     let driver_unrestricted_npot = fixture.test_fixture_unrestricted_npot_sampling();
     let vertex_format_mask = fixture.test_fixture_vertex_format_mask();

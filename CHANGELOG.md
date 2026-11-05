@@ -71,6 +71,7 @@ Bottom level categories:
 
 #### Hal
 
+- The experimental opt-in `dx11` feature enumerates physical FL9_1 adapters for offscreen rendering; it does not report surface capabilities.
 - `Device::invalidate_mapped_ranges` now returns a `Result` so invalidation failures can be handled without exposing stale mapped data.
 - `Device::flush_mapped_ranges` now returns a `Result` so flush failures can be handled before using mapped writes on the GPU.
 - HAL adapters with occlusion query support must report the new `DownlevelFlags::OCCLUSION_QUERY` flag. Custom adapters and stored flag sets may need updating.

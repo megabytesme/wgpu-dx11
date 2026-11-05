@@ -2,8 +2,9 @@
 
 The objective is a usable explicit D3D11 backend through the public native wgpu
 API, with truthful downlevel capabilities, tested textured depth rendering and
-Windows presentation. The public adapter remains disabled until the contract
-below is met. This plan does not claim WebGPU conformance.
+Windows presentation. The opt-in public adapter now exposes physical FL9_1
+devices for offscreen rendering; public surfaces remain disabled until their
+contract is safe. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
@@ -142,9 +143,13 @@ below is met. This plan does not claim WebGPU conformance.
 5. Implement a truthful hardware adapter, device limits/features/downlevel and
    per-format reports. Audit every core-valid command against HAL behavior;
    restrict safely or implement/emulate it. No placeholder capabilities.
-   An internal FL9_1-only wgpu-types projection now feeds the controlled core
-   fixture, including selected-device format reports and explicit unsupported
-   1D/3D shape gates. It is not connected to ordinary adapter enumeration.
+   An FL9_1-only wgpu-types projection now feeds the controlled core fixture
+   and ordinary opt-in adapter enumeration, including selected-device format
+   reports and explicit unsupported 1D/3D shape gates. A strict public wgpu
+   integration test selects the physical RTX 3090 Ti, requests devices within
+   the projection, uploads and samples a texture at sparse bindings, performs
+   indexed depth-tested draws, and verifies the full image by readback. Continue
+   auditing the full core/HAL contract before widening the projection.
    Logical binding indices remain capped by the wgpu index limit while actual
    resource counts use separate backend limits. The projection exposes six
    uniform buffers per shader stage so disjoint vertex/fragment bindings fit
@@ -153,7 +158,7 @@ below is met. This plan does not claim WebGPU conformance.
    uniform through the same selected-device projection, and rejects seven in
    one stage. The aggregate BC feature stays
    withheld because only BC1 is implemented. Continue the descriptor and
-   feature/format audit before treating the projection as a public report.
+   feature/format audit before treating the exposed subset as complete.
 6. Complete HWND surface lifecycle while preserving CoreWindow; the private
    hidden-window path and retained-command-buffer resize are tested, but
    concurrent presentation requires work. Microsoft documents that DXGI may
@@ -192,11 +197,12 @@ target, readback, sRGB and mip-chain uses remain unsupported. The controlled
 core fixture now validates BC1 through texture creation, queue upload, binding,
 rendering and readback, and creates its device via `adapter_request_device`
 and the test-only HAL `Adapter::open`. It still injects hand-selected limits
-and does not represent the public adapter contract. Next audit the public
-HAL/core adapter capability boundary and build a truthful, testable capability
-snapshot without enabling ordinary DXGI enumeration. Keep the public adapter
-and HWND surface gates closed until every core-legal operation in that snapshot
-is implemented or rejected. Latest code checkpoints `983eea619` and
+and does not by itself represent the public adapter contract. The opt-in
+production adapter now uses that same selected-device projection for
+offscreen-only public wgpu access. Continue auditing the public HAL/core
+capability boundary and every core-legal operation; do not widen the current
+projection until those operations are implemented or rejected. Keep HWND
+surface capabilities unavailable. Latest code checkpoints `983eea619` and
 `834cd9856` add core validation and cross-backend reporting for multi-mip
 depth/stencil attachments. The earlier `6f7f12978` added native FL9_1
 slope-scaled triangle depth bias; checkpoint
@@ -211,20 +217,20 @@ left by the separate NPOT-mipmap and depth-attachment gates.
 Per-format projection is centralized in
 `Capabilities::texture_format_capabilities`, which intersects positive
 selected-device format queries with feature-level shape checks and implemented
-backend paths. The test-only core adapter delegates to this internal method;
-it remains outside ordinary adapter enumeration. Projection tests cover
-missing/negative queries and unsupported backend paths. Next continue the
-descriptor and render-pass audit for core-valid requests the private HAL cannot
-execute, without treating this helper as a public adapter report.
+backend paths. Both the opt-in production adapter and the test-only core
+fixture delegate to this internal method. Projection tests cover missing/
+negative queries and unsupported backend paths. Continue the descriptor and
+render-pass audit for core-valid requests the private HAL cannot execute; the
+public offscreen route remains experimental and does not complete this audit.
 
 The latest audit found a core/HAL pipeline mismatch: core permits nonzero depth
 bias when the selected fragment entry point writes `frag_depth`, while the
-private HAL rejects it. Next add a narrow selected-entry validation gate before
-HAL pipeline creation and test that unused depth-writing entries do not trigger
-it. The per-format RGBA8/BGRA8 mip projection now honors missing driver MIP
-support and disabled backend mip paths; the strict RTX fixture reports MIP
-support for both formats at FL9_1. Public adapter and HWND surface exposure
-remain gated.
+private HAL rejects it. A narrow selected-entry validation gate now rejects
+that case before HAL pipeline creation, while unused depth-writing entries do
+not trigger it. The per-format RGBA8/BGRA8 mip projection honors missing driver
+MIP support and disabled backend mip paths; the strict RTX fixture reports MIP
+support for both formats at FL9_1. Public HWND surface exposure remains gated;
+the offscreen adapter uses this projection.
 
 The selected-entry depth-bias mismatch is now represented in core's
 `DownlevelLimits` and covered by the controlled fixture. Next audit remaining
@@ -232,10 +238,10 @@ core-valid depth/stencil and render-pass combinations. The tested FL9_1 FXC
 profile rejects fragment `@builtin(front_facing)`, and Microsoft documents
 that 9_x pixel shaders cannot read fragment `@builtin(position)`. Core now
 represents these with selected-entry `DownlevelLimits` gates, so safe sibling
-entries remain usable. Continue auditing shader and render-state combinations,
-then design a truthful production adapter capability snapshot.
-The public adapter and HWND surface must stay gated until the snapshot covers
-every operation it permits.
+entries remain usable. Continue auditing shader and render-state combinations
+against the currently exposed projection; do not widen it until every permitted
+operation is implemented or safely rejected. Public surface capabilities
+remain unavailable.
 
 The selected-entry audit now also covers vertex system-value inputs. The
 controlled FL9_1 profile reports `vertex_index_input` and `instance_index_input`
@@ -243,6 +249,7 @@ as unavailable; core rejects declarations before HAL and permits safe sibling
 entries. The backend-generated `SV_VertexID` interface fails to compile with
 FXC X4555 under the tested FL9_1 vertex profile. This records the
 compiler/backend boundary, not a hardware guarantee. `instance_index` remains
-a backend restriction whose FXC acceptance is unverified. Continue the
-core/HAL audit and build a testable production capability snapshot without
-enabling normal enumeration.
+a backend restriction whose FXC acceptance is unverified. The opt-in
+offscreen-only adapter reports the selected FL9_1 projection; continue the
+core/HAL audit before widening its contract. Public surface presentation is
+still disabled.
