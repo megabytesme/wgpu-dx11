@@ -60,6 +60,15 @@ An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels); core
 rejects the unsupported `instance_index` builtin.
 
+A twelfth strict public test verifies the FL9_1 aggregate fragment uniform
+budget across two sparse bindings: all 32 float4 vectors contribute to the
+rendered result, and core rejects a 33-vector pipeline before HAL. The selected
+device reports separate 255-vector vertex and 32-vector fragment limits; core
+counts the complete layout footprint of each statically used uniform in the
+selected entry point, which is conservative for partially read structures.
+The full strict public suite now passes 12/12 on the RTX 3090 Ti at requested
+and actual FL9_1.
+
 The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
 bias and texel offsets. Core's per-entry analysis follows helper calls, so
 unsupported bias forms produce public validation errors instead of HAL

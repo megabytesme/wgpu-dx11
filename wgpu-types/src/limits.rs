@@ -1085,6 +1085,18 @@ pub struct DownlevelLimits {
     /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
     /// applies to vertex shaders. WebGPU's baseline guarantee is 16.
     pub max_sampled_textures_per_vertex_stage: u32,
+    /// Maximum aggregate number of 16-byte uniform vectors available to a vertex entry point.
+    ///
+    /// Downlevel adapters may conservatively count the complete layout of each statically used
+    /// uniform binding. Bindings unused by the selected entry point do not consume this limit.
+    #[cfg_attr(feature = "serde", serde(default = "default_max_uniform_vectors"))]
+    pub max_vertex_shader_uniform_vectors: u32,
+    /// Maximum aggregate number of 16-byte uniform vectors available to a fragment entry point.
+    ///
+    /// Downlevel adapters may conservatively count the complete layout of each statically used
+    /// uniform binding. Bindings unused by the selected entry point do not consume this limit.
+    #[cfg_attr(feature = "serde", serde(default = "default_max_uniform_vectors"))]
+    pub max_fragment_shader_uniform_vectors: u32,
     /// Whether non-power-of-two textures may use repeat addressing when sampled.
     ///
     /// This is false on APIs that expose conditional NPOT support and whose driver does not
@@ -1172,6 +1184,11 @@ fn default_max_texture_sample_bias() -> u32 {
     u32::MAX
 }
 
+#[cfg(feature = "serde")]
+fn default_max_uniform_vectors() -> u32 {
+    u32::MAX
+}
+
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
@@ -1185,6 +1202,8 @@ impl Default for DownlevelLimits {
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
+            max_vertex_shader_uniform_vectors: u32::MAX,
+            max_fragment_shader_uniform_vectors: u32::MAX,
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
             max_sampler_anisotropy: 16,
@@ -1236,6 +1255,9 @@ impl DownlevelLimits {
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
+            && self.max_vertex_shader_uniform_vectors >= required.max_vertex_shader_uniform_vectors
+            && self.max_fragment_shader_uniform_vectors
+                >= required.max_fragment_shader_uniform_vectors
             && (!required.unrestricted_npot_texture_sampling
                 || self.unrestricted_npot_texture_sampling)
             && self.max_texture_repeat_per_primitive >= required.max_texture_repeat_per_primitive
@@ -1296,6 +1318,10 @@ impl DownlevelCapabilities {
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
                 >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
+            && self.limits.max_vertex_shader_uniform_vectors
+                >= DownlevelLimits::default().max_vertex_shader_uniform_vectors
+            && self.limits.max_fragment_shader_uniform_vectors
+                >= DownlevelLimits::default().max_fragment_shader_uniform_vectors
             && self.limits.unrestricted_npot_texture_sampling
             && self.limits.max_texture_repeat_per_primitive == u32::MAX
             && self.limits.src_alpha_saturated_blend
@@ -1588,6 +1614,8 @@ mod tests {
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
+            max_vertex_shader_uniform_vectors: 4,
+            max_fragment_shader_uniform_vectors: 8,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             max_sampler_anisotropy: 2,
@@ -1614,6 +1642,8 @@ mod tests {
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
+            max_vertex_shader_uniform_vectors: 3,
+            max_fragment_shader_uniform_vectors: 8,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             max_sampler_anisotropy: 2,
@@ -1661,6 +1691,33 @@ mod tests {
         }
         .is_webgpu_compliant());
         assert!(DownlevelCapabilities::default().is_webgpu_compliant());
+    }
+
+    #[test]
+    fn shader_uniform_vector_limits_are_numeric_downlevel_limits() {
+        let available = DownlevelLimits {
+            max_vertex_shader_uniform_vectors: 255,
+            max_fragment_shader_uniform_vectors: 32,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            max_vertex_shader_uniform_vectors: 255,
+            max_fragment_shader_uniform_vectors: 32,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_vertex_shader_uniform_vectors: 256,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_fragment_shader_uniform_vectors: 33,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
     }
 
     #[test]
@@ -1735,6 +1792,8 @@ mod tests {
             "sampled_sint_textures",
             "sampled_uint_textures",
             "multisampled_texture_bindings",
+            "max_vertex_shader_uniform_vectors",
+            "max_fragment_shader_uniform_vectors",
             "max_sampler_anisotropy",
             "texture_load",
             "max_texture_sample_bias",
@@ -1751,6 +1810,8 @@ mod tests {
         assert!(limits.sampled_sint_textures);
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);
+        assert_eq!(limits.max_vertex_shader_uniform_vectors, u32::MAX);
+        assert_eq!(limits.max_fragment_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_sampler_anisotropy, 16);
         assert!(limits.texture_load);
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);

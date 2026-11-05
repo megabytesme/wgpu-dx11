@@ -979,6 +979,8 @@ impl super::Adapter {
                 gl.get_parameter_i32(glow::MAX_VERTEX_TEXTURE_IMAGE_UNITS)
             }
             .max(0) as u32,
+            max_vertex_shader_uniform_vectors: u32::MAX,
+            max_fragment_shader_uniform_vectors: u32::MAX,
             unrestricted_npot_texture_sampling: true,
             max_texture_repeat_per_primitive: u32::MAX,
             max_sampler_anisotropy,

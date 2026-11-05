@@ -1357,9 +1357,12 @@ unverified; public surface capabilities remain unavailable.
 ### FL9_1 uniform bindings
 
 ```powershell
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 sparse_uniform_allocation -- --nocapture
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 level9_constant_budgets_and_multiple_buffers_compile -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 sparse_uniform_allocation -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 level9_constant_budgets_and_multiple_buffers_compile -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std uniform_constant_vectors_use_selected_entry_point_resources -- --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-types --features serde shader_uniform_vector_limits_are_numeric_downlevel_limits -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_enforces_fl91_aggregate_uniform_constants -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_constant_profile_boundary_creates_on_hardware -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_c254_and_pixel_c31_change_rendered_output -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_uniform_ranges -- --nocapture --test-threads=1
@@ -1372,8 +1375,11 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 int
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
-The first two are CPU/compiler tests. The profile-boundary hardware diagnostic
-asks FXC to compile a vertex shader with a dynamically indexed 255-element
+The allocation, Naga and FXC checks above are CPU/compiler tests. The strict
+public aggregate-budget case reads all 32 fragment vectors from two sparse
+uniform bindings and verifies 64 pixels; core validation rejects a 33-vector
+pipeline before HAL. The profile-boundary hardware diagnostic asks FXC to
+compile a vertex shader with a dynamically indexed 255-element
 constant array, then creates that shader on the explicitly forced-FL9_1 device.
 Its companion compiler test confirms 256 and 257 elements fail at register
 index 256. The diagnostic does not draw the shader. A separate c254/c31 test

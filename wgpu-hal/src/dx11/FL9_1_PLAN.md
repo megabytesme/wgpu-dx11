@@ -25,7 +25,13 @@ contract is safe. This plan does not claim WebGPU conformance.
    uniform buffers per pipeline layout; strict readback exercises distinct
    vertex- and fragment-visible offsets, and core rejects three at bind-group
    layout creation. Continue checking shader instruction pressure and other
-   untested layout shapes with checked translation.
+   untested layout shapes with checked translation. The selected FL9_1
+   projection now reports 255 vertex and 32 fragment uniform float4 vectors;
+   core conservatively counts complete statically used uniform layouts per
+   selected entry point. Strict public readback used all 32 fragment vectors
+   across two sparse bindings, while core rejected 33 before HAL. Per-stage
+   aggregate validation is implemented; broader WGSL packing and instruction
+   budget cases still need coverage.
 2. Implement depth/stencil textures, views, initialization, render-pass
    attachments and depth state incrementally. Verify overlapping geometry in
    both draw orders on forced FL9_1, and independent load/clear/store behavior.

@@ -783,6 +783,12 @@ pub enum CreateRenderPipelineError {
     TooManyBuffersAndAccelerationStructuresInVertexStage { given: u32, limit: u32 },
     #[error("The number of sampled textures used by the vertex stage {given} exceeds the downlevel limit {limit}")]
     TooManySampledTexturesInVertexStage { given: u32, limit: u32 },
+    #[error("The number of uniform vectors used by the {stage:?} stage {given} exceeds the downlevel limit {limit}")]
+    TooManyUniformVectors {
+        stage: wgt::ShaderStages,
+        given: u32,
+        limit: u32,
+    },
     #[error("Vertex `@builtin(vertex_index)` is not supported by this downlevel adapter")]
     UnsupportedVertexIndexInput,
     #[error("Vertex `@builtin(instance_index)` is not supported by this downlevel adapter")]
@@ -887,6 +893,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManyBindGroupsPlusVertexBuffers { .. }
             | Self::TooManyBuffersAndAccelerationStructuresInVertexStage { .. }
             | Self::TooManySampledTexturesInVertexStage { .. }
+            | Self::TooManyUniformVectors { .. }
             | Self::UnsupportedVertexIndexInput
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDepthBiasWithFragmentDepth

@@ -26,6 +26,26 @@ fn level9_constant_budgets_and_multiple_buffers_compile() {
         );
         assert_eq!(result.is_ok(), count <= 32);
     }
+    for (first, second, accepted) in [(16, 16, true), (17, 16, false)] {
+        let mut source = alloc::format!(
+            "cbuffer A : register(b0) {{ float4 a[{first}]; }}; cbuffer B : register(b1) {{ float4 b[{second}]; }}; float4 main() : SV_Target {{ return "
+        );
+        for (name, count) in [("a", first), ("b", second)] {
+            for index in 0..count {
+                if !(name == "a" && index == 0) {
+                    source.push_str(" + ");
+                }
+                source.push_str(&alloc::format!("{name}[{index}]"));
+            }
+        }
+        source.push_str("; }");
+        let result = compile_hlsl(&source, "main", ShaderProfile::PixelLevel9_1);
+        std::println!(
+            "{first}+{second} referenced pixel constants across buffers: {:?}",
+            result.as_ref().map(|_| ()).map_err(|e| &e.message)
+        );
+        assert_eq!(result.is_ok(), accepted);
+    }
     for count in [255, 256, 257] {
         let source = alloc::format!(
             "cbuffer C : register(b0) {{ float4 c[{count}]; }}; float4 main(float4 p : POSITION) : SV_Position {{ return c[(int)p.x]; }}"

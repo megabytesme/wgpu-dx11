@@ -89,6 +89,8 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
+                    max_vertex_shader_uniform_vectors: 255,
+                    max_fragment_shader_uniform_vectors: 32,
                     unrestricted_npot_texture_sampling: false,
                     max_texture_repeat_per_primitive: max_texture_repeat,
                     max_sampler_anisotropy: 1,

@@ -5179,6 +5179,23 @@ impl Device {
                         .map_err(stage_err)?;
 
                     let interface = vertex_shader_module.interface.interface();
+                    let uniform_vectors = match interface {
+                        Some(interface) => interface
+                            .entry_point_uniform_constant_vectors(
+                                stage.to_naga(),
+                                &_vertex_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => u32::MAX,
+                    };
+                    let uniform_limit = self.downlevel.limits.max_vertex_shader_uniform_vectors;
+                    if uniform_vectors > uniform_limit {
+                        return Err(pipeline::CreateRenderPipelineError::TooManyUniformVectors {
+                            stage: stage_bit,
+                            given: uniform_vectors,
+                            limit: uniform_limit,
+                        });
+                    }
                     if match interface {
                         Some(interface) => interface
                             .entry_point_uses_unsupported_texture_sample_bias(
@@ -5407,6 +5424,24 @@ impl Device {
                             .map(|ep| ep.as_ref()),
                     )
                     .map_err(stage_err)?;
+
+                let uniform_vectors = match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uniform_constant_vectors(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                        )
+                        .map_err(stage_err)?,
+                    None => u32::MAX,
+                };
+                let uniform_limit = self.downlevel.limits.max_fragment_shader_uniform_vectors;
+                if uniform_vectors > uniform_limit {
+                    return Err(pipeline::CreateRenderPipelineError::TooManyUniformVectors {
+                        stage: stage_bit,
+                        given: uniform_vectors,
+                        limit: uniform_limit,
+                    });
+                }
 
                 if match shader_module.interface.interface() {
                     Some(interface) => interface

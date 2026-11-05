@@ -26,6 +26,8 @@ pub(super) struct HardwareGuarantees {
     pub max_vertex_index: u32,
     pub max_primitives_per_draw: u32,
     pub max_texture_repeat_per_primitive: u32,
+    pub legacy_vertex_shader_constant_vectors: Option<u32>,
+    pub legacy_fragment_shader_constant_vectors: Option<u32>,
     pub src_alpha_saturated_blend: bool,
     pub vertex_input_formats: u64,
     pub conditional_npot: bool,
@@ -68,6 +70,11 @@ impl HardwareGuarantees {
             } else {
                 0
             };
+        let (legacy_vertex_shader_constant_vectors, legacy_fragment_shader_constant_vectors) =
+            match level {
+                L9_1 | L9_2 | L9_3 => (Some(255), Some(32)),
+                L10_0 | L10_1 | L11_0 | L11_1 => (None, None),
+            };
         Self {
             level,
             texture_2d_dimension,
@@ -75,6 +82,8 @@ impl HardwareGuarantees {
             max_vertex_index,
             max_primitives_per_draw,
             max_texture_repeat_per_primitive,
+            legacy_vertex_shader_constant_vectors,
+            legacy_fragment_shader_constant_vectors,
             src_alpha_saturated_blend: level.as_raw() >= L10_0.as_raw(),
             vertex_input_formats,
             conditional_npot: level.as_raw() < L10_0.as_raw(),
@@ -199,6 +208,8 @@ pub(super) struct BackendCapabilities {
     pub samplers_total: u32,
     pub uniform_bindings_per_group: u32,
     pub uniform_bindings_total: u32,
+    pub max_vertex_shader_uniform_vectors: u32,
+    pub max_fragment_shader_uniform_vectors: u32,
     pub uniform_bind_groups: u32,
     pub sampled_bindings_group_zero_only: bool,
     pub dynamic_uniform_offsets: bool,
@@ -264,6 +275,8 @@ impl BackendCapabilities {
         samplers_total: super::hal_bind_group::MAX_SAMPLERS as u32,
         uniform_bindings_per_group: super::hal_bind_group::MAX_UNIFORMS as u32,
         uniform_bindings_total: super::hal_bind_group::MAX_UNIFORMS as u32,
+        max_vertex_shader_uniform_vectors: 255,
+        max_fragment_shader_uniform_vectors: 32,
         uniform_bind_groups: crate::MAX_BIND_GROUPS as u32,
         sampled_bindings_group_zero_only: false,
         dynamic_uniform_offsets: true,
@@ -357,6 +370,16 @@ impl Capabilities {
                 } else {
                     0
                 },
+                max_vertex_shader_uniform_vectors: self
+                    .hardware
+                    .legacy_vertex_shader_constant_vectors
+                    .expect("FL9_1 must have a legacy vertex constant guarantee")
+                    .min(self.backend.max_vertex_shader_uniform_vectors),
+                max_fragment_shader_uniform_vectors: self
+                    .hardware
+                    .legacy_fragment_shader_constant_vectors
+                    .expect("FL9_1 must have a legacy fragment constant guarantee")
+                    .min(self.backend.max_fragment_shader_uniform_vectors),
                 unrestricted_npot_texture_sampling: self.unrestricted_npot_texture_sampling(),
                 max_texture_repeat_per_primitive: self.hardware.max_texture_repeat_per_primitive,
                 max_sampler_anisotropy: self.backend.max_sampler_anisotropy,
@@ -772,6 +795,14 @@ mod tests {
             u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
         );
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
+        assert_eq!(
+            exposed.downlevel.limits.max_vertex_shader_uniform_vectors,
+            255
+        );
+        assert_eq!(
+            exposed.downlevel.limits.max_fragment_shader_uniform_vectors,
+            32
+        );
         assert!(!exposed.downlevel.limits.empty_binding_visibility);
         assert!(!exposed.downlevel.limits.sampled_depth_textures);
         assert!(!exposed.downlevel.limits.sampled_sint_textures);
@@ -817,6 +848,34 @@ mod tests {
             let projection = model(level).wgpu_projection();
             assert_eq!(projection.is_some(), level == FeatureLevel::L9_1);
         }
+    }
+
+    #[test]
+    fn legacy_shader_constant_guarantees_follow_feature_level() {
+        for level in [FeatureLevel::L9_1, FeatureLevel::L9_2, FeatureLevel::L9_3] {
+            let hardware = HardwareGuarantees::for_level(level);
+            assert_eq!(hardware.legacy_vertex_shader_constant_vectors, Some(255));
+            assert_eq!(hardware.legacy_fragment_shader_constant_vectors, Some(32));
+        }
+        for level in [
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            let hardware = HardwareGuarantees::for_level(level);
+            assert_eq!(hardware.legacy_vertex_shader_constant_vectors, None);
+            assert_eq!(hardware.legacy_fragment_shader_constant_vectors, None);
+        }
+
+        assert_eq!(
+            BackendCapabilities::CURRENT.max_vertex_shader_uniform_vectors,
+            255
+        );
+        assert_eq!(
+            BackendCapabilities::CURRENT.max_fragment_shader_uniform_vectors,
+            32
+        );
     }
 
     #[test]

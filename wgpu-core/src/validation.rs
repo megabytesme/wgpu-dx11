@@ -288,6 +288,7 @@ struct EntryPoint {
     fragment_position_used: bool,
     texture_load_used: bool,
     resources: Vec<naga::Handle<Resource>>,
+    uniform_constant_vectors: u32,
     #[allow(unused)]
     spec_constants: Vec<SpecializationConstant>,
     sampling_pairs: FastHashSet<(naga::Handle<Resource>, naga::Handle<Resource>)>,
@@ -1658,6 +1659,23 @@ impl Interface {
                 }
             }
 
+            ep.uniform_constant_vectors = ep
+                .resources
+                .iter()
+                .filter_map(|&handle| {
+                    let resource = &resources[handle];
+                    if resource.class != naga::AddressSpace::Uniform {
+                        return None;
+                    }
+                    match &resource.ty {
+                        ResourceType::Buffer { size } => {
+                            Some(size.get().div_ceil(16).min(u64::from(u32::MAX)) as u32)
+                        }
+                        _ => None,
+                    }
+                })
+                .fold(0u32, u32::saturating_add);
+
             for key in info.sampling_set.iter() {
                 ep.sampling_pairs
                     .insert((resource_mapping[&key.image], resource_mapping[&key.sampler]));
@@ -1741,6 +1759,18 @@ impl Interface {
             })
             .count();
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
+    pub(crate) fn entry_point_uniform_constant_vectors(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<u32, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.uniform_constant_vectors)
     }
 
     pub(crate) fn sampling_pairs_used(
@@ -2704,6 +2734,73 @@ mod tests {
             .is_empty());
         assert!(interface
             .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
+            .is_err());
+    }
+
+    #[test]
+    fn uniform_constant_vectors_use_selected_entry_point_resources() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(3) var<uniform> first: array<vec4f, 17>;
+            @group(0) @binding(42) var<uniform> second: array<vec4f, 15>;
+            @group(0) @binding(99) var<uniform> unused: array<vec4f, 64>;
+
+            fn read_first() -> vec4f {
+                return first[16];
+            }
+
+            @vertex fn vertex_main() -> @builtin(position) vec4f {
+                return first[0];
+            }
+
+            @fragment fn fragment_main() -> @location(0) vec4f {
+                return read_first() + second[14];
+            }
+
+            @fragment fn second_only() -> @location(0) vec4f {
+                return second[0];
+            }
+
+            @fragment fn no_uniforms() -> @location(0) vec4f {
+                return vec4f(1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+
+        assert_eq!(
+            interface
+                .entry_point_uniform_constant_vectors(naga::ShaderStage::Fragment, "fragment_main")
+                .unwrap(),
+            32
+        );
+        assert_eq!(
+            interface
+                .entry_point_uniform_constant_vectors(naga::ShaderStage::Vertex, "vertex_main")
+                .unwrap(),
+            17
+        );
+        assert_eq!(
+            interface
+                .entry_point_uniform_constant_vectors(naga::ShaderStage::Fragment, "second_only")
+                .unwrap(),
+            15
+        );
+        assert_eq!(
+            interface
+                .entry_point_uniform_constant_vectors(naga::ShaderStage::Fragment, "no_uniforms")
+                .unwrap(),
+            0
+        );
+        assert!(interface
+            .entry_point_uniform_constant_vectors(naga::ShaderStage::Fragment, "missing")
             .is_err());
     }
 

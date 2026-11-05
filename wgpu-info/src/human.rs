@@ -288,6 +288,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             sampled_uint_textures,
             multisampled_texture_bindings,
             max_sampled_textures_per_vertex_stage,
+            max_vertex_shader_uniform_vectors,
+            max_fragment_shader_uniform_vectors,
             vertex_index_input,
             instance_index_input,
             unrestricted_npot_texture_sampling,
@@ -317,6 +319,14 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(
         output,
         "\t\tMax sampled textures per vertex stage: {max_sampled_textures_per_vertex_stage}"
+    )?;
+    writeln!(
+        output,
+        "\t\tMax vertex shader uniform vectors: {max_vertex_shader_uniform_vectors}"
+    )?;
+    writeln!(
+        output,
+        "\t\tMax fragment shader uniform vectors: {max_fragment_shader_uniform_vectors}"
     )?;
     writeln!(output, "\t\tVertex index input: {vertex_index_input}")?;
     writeln!(output, "\t\tInstance index input: {instance_index_input}")?;

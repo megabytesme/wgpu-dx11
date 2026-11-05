@@ -127,6 +127,345 @@ fn expect_validation_error(device: &Device, label: &str, operation: impl FnOnce(
 }
 
 #[test]
+fn public_dx11_enforces_fl91_aggregate_uniform_constants() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .max_vertex_shader_uniform_vectors,
+        255
+    );
+    assert_eq!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .max_fragment_shader_uniform_vectors,
+        32
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; uniform vectors VS={} PS={}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .max_vertex_shader_uniform_vectors,
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .max_fragment_shader_uniform_vectors
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 aggregate constant test"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request a device within the FL9_1 projection");
+
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 aggregate constant layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 aggregate constant pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_bytes = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect::<Vec<_>>();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 aggregate constant triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped vertex buffer")
+        .copy_from_slice(&vertex_bytes);
+    vertex_buffer.unmap();
+
+    let make_uniform_data = |count: usize, index: usize, value: f32| {
+        let mut data = vec![[0.0f32; 4]; count];
+        data[index][0] = value;
+        data[index][3] = 0.5;
+        data.iter()
+            .flatten()
+            .flat_map(|component| component.to_ne_bytes())
+            .collect::<Vec<_>>()
+    };
+    let first_data = make_uniform_data(16, 15, 0.25);
+    let second_data = make_uniform_data(16, 15, 0.5);
+    let create_uniform = |label, data: &[u8]| {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            size: data.len() as u64,
+            usage: BufferUsages::UNIFORM,
+            mapped_at_creation: true,
+        });
+        buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("mapped uniform buffer")
+            .copy_from_slice(data);
+        buffer.unmap();
+        buffer
+    };
+    let first_uniform = create_uniform("FL9_1 first 17-vector uniform", &first_data);
+    let second_uniform = create_uniform("FL9_1 second 15-vector uniform", &second_data);
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 32-vector fragment group"),
+        layout: &bind_group_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 3,
+                resource: first_uniform.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: second_uniform.as_entire_binding(),
+            },
+        ],
+    });
+    let sum_32_vectors = (0..16)
+        .map(|index| format!("first[{index}]"))
+        .chain((0..16).map(|index| format!("second[{index}]")))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let shader_source = format!(
+        "@group(0) @binding(3) var<uniform> first: array<vec4f, 16>;\n\
+         @group(0) @binding(42) var<uniform> second: array<vec4f, 16>;\n\
+         @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f {{ return vec4f(p, 0.0, 1.0); }}\n\
+         @fragment fn fs() -> @location(0) vec4f {{ return {sum_32_vectors}; }}"
+    );
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 32-vector shader"),
+        source: ShaderSource::Wgsl(shader_source.into()),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 32-vector pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let too_many_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 33-vector shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(3) var<uniform> first: array<vec4f, 17>;\n\
+             @group(0) @binding(42) var<uniform> second: array<vec4f, 16>;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(first[16].x + second[15].x, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 rejected 33-vector pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &too_many_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &too_many_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    }));
+    match poll_ready(scope.pop()).expect("33 fragment vectors must fail validation") {
+        Error::Validation { description, .. } => {
+            assert!(description.contains("uniform vectors"), "{description}");
+            assert!(description.contains("33"), "{description}");
+            assert!(description.contains("32"), "{description}");
+        }
+        error => panic!("unexpected 33-vector error: {error:?}"),
+    }
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 aggregate uniform target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 aggregate uniform readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 aggregate uniform render"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 aggregate uniform pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for aggregate uniform rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("aggregate uniform readback callback")
+        .expect("map aggregate uniform output");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[191, 0, 0, 255],
+                    "aggregate uniform pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: two sparse fragment uniforms used 32 vectors; 33 were rejected; 64/64 pixels matched [191, 0, 0, 255]");
+}
+
+#[test]
 fn public_dx11_api_renders_offscreen_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();

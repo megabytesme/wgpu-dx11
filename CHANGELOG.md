@@ -69,6 +69,7 @@ Bottom level categories:
 - Add `DownlevelLimits::texture_load` so backends can reject selected shader entry points that use unsupported texel loads.
 - Add downlevel limits for the maximum literal texture sample bias, dynamic bias and texel offsets so backends can reject unsupported sampling forms before HAL compilation.
 - Add a downlevel fragment-derivatives limit so backends can reject unsupported `dpdx`, `dpdy` and explicit texture-gradient operations before HAL compilation.
+- Add stage-specific downlevel uniform-vector budgets and validate aggregate selected-entry-point uniform layouts before pipeline creation.
 - Add `DownlevelLimits::max_sampler_anisotropy` so core can clamp sampler anisotropy to the selected adapter's supported maximum.
 - Add downlevel texture-dimension capabilities so adapters can reject unsupported 1D and 3D texture shapes even when their hardware limits are non-zero.
 

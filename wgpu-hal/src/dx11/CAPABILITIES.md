@@ -610,7 +610,25 @@ This establishes execution of those final tested registers on the RTX, not
 dynamic indexing or historical-driver behavior; the private WGSL path still
 rejects runtime integer indexing. Instruction pressure and compiler packing
 can impose earlier limits on ordinary shaders. FXC errors fail pipeline
-creation.
+creation. FL9_1's usable profile budget is 255 vertex float4 constants and 32
+pixel constants; Microsoft documents the selected-feature-level limits for
+`VSSetConstantBuffers` and `PSSetConstantBuffers` in the
+[10Level9 context reference](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context).
+The selected FL9_1 capability projection reports 255 vertex vectors and 32
+fragment vectors, intersected with the backend limits and confirmed against
+FXC. Core counts the full 16-byte layout footprint of each statically used
+uniform binding for the selected entry point, including helper calls, and
+rejects a pipeline before HAL if the aggregate exceeds that stage's budget.
+Unused uniforms do not count. This is deliberately conservative when a shader
+reads only part of a declared uniform structure. FXC compiles 16+16 referenced
+pixel vectors across two constant buffers and rejects 17+16 at register 32.
+A strict public FL9_1 draw reads all 32 vectors from two sparse uniform
+bindings and verifies the expected output; core rejects a 33-vector pipeline.
+The current public projection additionally limits each binding to 512 bytes
+and each stage to six bindings, so vertex aggregate usage cannot reach FXC's
+255-vector ceiling through public layouts. Higher feature levels use a
+different constant-buffer model and are intentionally not projected by this
+FL9_1-only backend.
 
 Ranges use four-byte-aligned offsets and nonzero sizes of at most 64 KiB;
 the logical size need not be a multiple of 16. At bind replay the exact range
