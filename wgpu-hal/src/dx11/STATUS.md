@@ -36,7 +36,8 @@ replace/equality on D24S8 and verifies all 64 pixels are green; an asymmetric
 front/back descriptor is rejected by core before the HAL. A fourth strict test
 verifies premultiplied blending produces 64 `[128, 0, 128, 255]` pixels and
 that separate-alpha and source-alpha-saturated blend descriptors are rejected
-before HAL.
+before HAL. A fifth strict test verifies a 4×6 scissor through public wgpu
+(24 green and 40 blue pixels) and core rejection of an out-of-target viewport.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with

@@ -81,7 +81,10 @@ render-command validation before the HAL is called. Rectangles contained by
 the target continue through the normal shader path. The HAL's private clipped
 viewport path remains available when its adjusted shader exists, but the
 controlled FL9_1 core fixture reports the conservative false capability and
-tests the rejection. Other backends retain the default true capability.
+tests the rejection. The strict public wgpu test also verifies a 4×6 scissor
+inside an 8×8 target (24 green and 40 unchanged blue pixels) and confirms an
+out-of-target viewport is rejected before HAL. Other backends retain the
+default true capability.
 
 ## Recorded forced-FL9_1 observation
 

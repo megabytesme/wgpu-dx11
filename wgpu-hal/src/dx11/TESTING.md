@@ -103,6 +103,11 @@ with identical color and alpha equations. All 64 pixels read back as
 `[128, 0, 128, 255]`. Separate color/alpha equations and source-alpha-saturated
 factors are each rejected by core validation before HAL.
 
+A fifth strict public test draws a fullscreen triangle through a 4×6 scissor
+inside an 8×8 target. Readback confirms 24 green pixels inside and 40 unchanged
+blue pixels outside. The same test submits an out-of-target viewport and
+confirms core rejects it before HAL under the selected FL9_1 projection.
+
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
 before reaching HAL. This validates the core boundary; it does not execute a
