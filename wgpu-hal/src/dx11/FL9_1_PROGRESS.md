@@ -6661,3 +6661,32 @@ git diff --check
 Next: exercise public `LoadOp::DontCare` on color and depth attachments with
 full writes that make the resulting color deterministic. Continue the
 remaining render-pass/core-HAL contract audit afterward.
+
+## Follow-up — public color/depth `LoadOp::DontCare`
+
+Code checkpoint `7538ada21` adds a strict public wgpu pass using
+`LoadOp::DontCare` for both an RGBA8 color target and D16 depth. The test uses
+the required unsafe token only with a full-screen first draw: depth compare
+Always writes every depth sample and color blending is disabled, so every
+color/depth pixel is overwritten before the subsequent Less test or any
+readback. The later, farther draw fails the newly written depth test. Strict
+FL9_1 readback found `[255, 0, 0, 255]` at all 64 pixels.
+
+The focused strict test passed 1/1 on the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested and actual
+FL9_1. The full public test suite passed 28/28; it logged one optional
+Float16x2 IA capability skip and no hardware-execution skips. Public Clippy,
+rustfmt and diff checks passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_dont_care_load_overwrite_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: verify that a color target's discarded contents are initialized before
+subsequent GPU readback, rather than exposing retained D3D11 texture contents.
+Continue the render-pass and core/HAL contract audit afterward.
