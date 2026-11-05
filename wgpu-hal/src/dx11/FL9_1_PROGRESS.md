@@ -6203,6 +6203,8 @@ formats gated on positive queries and actual resource/view execution.
 
 ## Checkpoint — query-backed packed 16-bit sampled texture family
 
+Code commit: `552a4d019` (`dx11: add query-backed FL9_1 packed texture formats`).
+
 The D3D11 format model now includes feature-gated `Rgb5g6b5Unorm`,
 `Rgb5a1Unorm` and `Rgba4Unorm`. Each format has an independent
 `CheckFormatSupport` result; the shared native-only

@@ -1646,6 +1646,8 @@ safe or that historical drivers behave identically.
 
 ## Current checkpoint — query-backed packed 16-bit sampled formats
 
+Code commit: `552a4d019` (`dx11: add query-backed FL9_1 packed texture formats`).
+
 The selected-device format audit includes RGB565, RGB5A1 and RGBA4 single-mip
 sampled uploads behind `TEXTURE_FORMAT_16BIT_PACKED`. Strict FL9_1 public
 readback passed all three formats on the RTX 3090 Ti. The private HAL suite
