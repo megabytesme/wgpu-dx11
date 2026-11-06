@@ -14440,6 +14440,253 @@ fn public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91() {
 }
 
 #[test]
+fn public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 bundle dynamic-offset test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(17) var<uniform> color: vec4f;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {\n\
+                 return vec4f(position, 0.5, 1.0);\n\
+             }\n\
+             @fragment fn fs() -> @location(0) vec4f { return color; }"
+                .into(),
+        ),
+    });
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 17,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let mut uniform_bytes = vec![0; 512];
+    uniform_bytes[..16].copy_from_slice(bytemuck::cast_slice(&[1.0f32, 0.0, 0.0, 1.0]));
+    uniform_bytes[256..272].copy_from_slice(bytemuck::cast_slice(&[0.0f32, 1.0, 0.0, 1.0]));
+    let uniform = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 bundle dynamic uniform ranges"),
+        size: uniform_bytes.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&uniform, 0, &uniform_bytes);
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 bundle dynamic uniform group"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &uniform,
+                offset: 0,
+                size: NonZeroU64::new(16),
+            }),
+        }],
+    });
+    let vertices = [
+        -1.0f32, -1.0, 0.0, -1.0, -1.0, 1.0, -1.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 1.0, -1.0,
+        0.0, 1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+    ];
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 bundle dynamic-offset vertices"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, bytemuck::cast_slice(&vertices));
+
+    let make_bundle = |label, dynamic_offset, vertex_range| {
+        let mut bundle = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+            label: Some(label),
+            color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+            depth_stencil: None,
+            sample_count: 1,
+            multiview: None,
+        });
+        bundle.set_pipeline(&pipeline);
+        bundle.set_bind_group(0, &bind_group, &[dynamic_offset]);
+        bundle.set_vertex_buffer(0, vertex.slice(..));
+        bundle.draw(vertex_range, 0..1);
+        bundle.finish(&RenderBundleDescriptor { label: Some(label) })
+    };
+    let left_bundle = make_bundle("left dynamic-offset bundle", 0, 0..6);
+    let right_bundle = make_bundle("right dynamic-offset bundle", 256, 6..12);
+    drop(bind_group);
+    drop(uniform);
+    drop(vertex);
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 dynamic-offset bundle submission"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 dynamic-offset bundle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.execute_bundles([&left_bundle, &right_bundle]);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 dynamic-offset render bundles");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("dynamic-offset bundle readback callback")
+        .expect("map dynamic-offset bundle readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    &[255, 0, 0, 255]
+                } else {
+                    &[0, 255, 0, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "dynamic-offset bundle pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: consecutive render bundles selected distinct 256-byte dynamic uniform offsets; all 64 pixels matched both expected colors after source resources were dropped");
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
