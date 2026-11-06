@@ -1415,6 +1415,20 @@ are in `FL9_1_PROGRESS.md`. Continue the public core/HAL contract audit; public
 HWND presentation, historical FL9_1 drivers and remaining shader/resource gaps
 remain unverified.
 
+## Follow-up — D24S8 outputless fragment verification
+
+The public test `public_dx11_outputless_fragment_depth_stencil_pass_at_fl91`
+now exercises the outputless conditional-discard fragment with D24S8. Its
+first pass writes depth and replaces stencil with 7 only for non-discarded
+fragments. Later readback passes independently verify stencil and depth:
+discarded pixels pass stencil-equal-zero and depth-less-than, while surviving
+pixels fail both comparisons. All 128 pixels across the two output images
+matched on the RTX 3090 Ti at requested/actual FL9_1. The full strict public
+suite passed 38/38; one optional Float16x2 IA branch was explicitly skipped
+for absent selected-device support. Code/test and journal commits are
+`016f04844` and `5ae420357`; the D24S8 follow-up is ready for its own
+verification checkpoint. Continue the broad core/HAL contract audit.
+
 The latest code checkpoint `1dd629564` gates explicit `textureSampleLevel`
 by selected entry point and reachable helper calls. FXC rejects literal and
 dynamic exact LOD in both 9_1 and 9_3 pixel profiles; the public strict suite
@@ -1760,3 +1774,16 @@ nonzero color locations; there is no confirmed compiler issue. Next audit:
 test the outputless fragment path with D24S8 stencil state, then resume the
 broader core/HAL render-pass audit. Historical FL9_1 drivers and ARM32 UWP
 remain unverified.
+
+## Follow-up — outputless fragments with D24S8 stencil
+
+Commit `967b1af89` (`dx11: verify outputless FL9_1 fragments with D24S8`)
+adds a strict public stencil interaction test and updates capability/testing
+notes. On the physical RTX 3090 Ti forced to FL9_1, outputless fragment
+discard left stencil and depth unchanged on the left half; later stencil and
+depth comparisons independently rendered red and green there while the
+surviving half remained blue. Both complete 8×8 results matched. The full
+strict public D3D11 suite passed 38/38; the optional Float16x2 IA branch was
+explicitly skipped for lack of selected-device support. Rustfmt, public-test
+Clippy and `git diff --check` passed. Continue the broader core/HAL
+render-pass contract audit.

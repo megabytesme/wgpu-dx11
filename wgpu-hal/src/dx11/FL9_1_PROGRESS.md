@@ -6361,6 +6361,31 @@ Continue the public core/HAL contract audit. The format query evidence remains
 specific to the modern RTX forced to FL9_1; historical drivers and ARM32 UWP
 remain unverified.
 
+## Follow-up — outputless fragments with D24S8 stencil
+
+Commit `967b1af89` (`dx11: verify outputless FL9_1 fragments with D24S8`)
+adds a strict public test for a targetless outputless fragment in a D24S8 pass.
+The shader discards the left half and writes depth plus stencil reference 7 on
+the surviving half. A later stencil-equality pass renders red only where
+discard left stencil at zero; a separate depth comparison renders green only
+where discard left depth at its clear value. The other half remains blue in
+both results. All 128 pixels across the two readbacks matched.
+
+The complete strict public D3D11 suite passed 38/38 on the NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1, software=false).
+The optional Float16x2 IA branch logged its expected capability skip. Exact
+focused and suite commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_outputless_fragment_depth_stencil_pass_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+Rustfmt, public-test Clippy and `git diff --check` passed. Next resume the
+broader core/HAL render-pass contract audit. Historical FL9_1 drivers and
+ARM32 UWP remain unverified.
+
 ## Follow-up — query-backed R8/RG8 color attachments
 
 Code checkpoint: `a6d958664` (`dx11: enable query-gated R8/RG8 color attachments`).
@@ -6854,3 +6879,38 @@ only unmatched nonzero color locations; it is not known to fail. Next: verify
 outputless targetless-fragment behavior with D24S8 stencil state, then continue
 the broader core/HAL render-pass audit. Historical FL9_1 and ARM32 execution
 remain unverified.
+
+## Follow-up — outputless fragment depth and stencil effects
+
+Commit `016f04844` added the outputless fragment wrapper after the installed
+FL9_1 FXC rejected Naga's direct `void` pixel shader with X4530. Commit
+`5ae420357` recorded its validation. This follow-up adds a public test for the
+same pipeline shape with a D24S8 target and stencil `Replace` enabled. The
+discarded half retains depth 1 and stencil 0; the surviving half receives
+depth 0.25 and stencil 7. A later stencil-equality comparison renders red on
+the discarded half only. A separate depth comparison renders green there only.
+Both images were read back and all 128 pixels matched.
+
+The focused test passed 1/1 and the complete strict public D3D11 suite passed
+38/38 on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested/actual FL9_1, hardware adapter. The optional Float16x2 IA input
+branch printed SKIP because the selected device does not report that format's
+IA support. `git diff --check` and changed-file rustfmt passed. The outputless
+fragment implementation, existing 360-test HAL suite, core adapter selection
+and DX12 regressions were already verified in commit `016f04844`; this
+follow-up changed only public test coverage and documentation.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_outputless_fragment_depth_stencil_pass_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Code/test commit `016f04844` is followed by documentation/test-journal commit
+`5ae420357`, which recorded the D16 checkpoint. This D24S8 test and its
+documentation are the current follow-up. Next: continue the core/HAL
+render-pass and pipeline-state audit, resolving concrete public contract
+mismatches with narrow tests. Historical FL9_1 devices and ARM32 UWP remain
+unverified.
