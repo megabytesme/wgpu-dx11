@@ -2,14 +2,14 @@
 
 ## Current position — 2026-11-06
 
-Latest verified code checkpoint: `d921da527` (`dx11: test sparse sampler
-group transitions`). The strict public suite passed 50/50 at forced
-FL9_1 with one optional Float16x2 input-format subcase explicitly skipped.
-The latest test places two independently sampled textures and samplers across
-four sparse bind groups, replaces one sampler group between draws, and
-validates both nearest/linear results by readback.
-Continue the core/HAL capability audit and public operation coverage; this
-does not complete the mission.
+Latest verified code checkpoint: `680b048ed` (`dx11: add query-gated FL9_1
+cube sampling`). The strict public D3D11 suite passed 51/51 at forced FL9_1,
+the private HAL suite passed 370/370, the core fixture suite passed 96/96,
+and the DX12 core regression suite passed 92/92. The RTX 3090 Ti positively
+reported cube support for the implemented formats; six uploaded RGBA8 faces
+were sampled across 96 checked pixels. One optional Float16x2 input-format
+subcase explicitly skipped. Continue the core/HAL capability audit and public
+operation coverage; this does not complete the mission.
 
 ## Checkpoint — gate base-clamp sampling for 10Level9 — pending
 
@@ -7974,7 +7974,7 @@ software=false), requested/actual FL9_1:
 Continue with the remaining core/HAL contract audit, prioritizing any operation
 the public projection accepts but the D3D11 path cannot execute correctly.
 
-## Verified cube-texture increment — 2026-11-06
+## Verified cube-texture increment — `680b048ed` — 2026-11-06
 
 The opt-in public D3D11 path now supports single-mip, single-sample RGBA8 cube
 resources with six uploaded faces and sampled cube views. The selected-device
