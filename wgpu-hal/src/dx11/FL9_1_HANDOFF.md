@@ -3,8 +3,8 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`; its latest code checkpoint
-is `4960d50f3` (`dx11: verify render bundle pass state at FL9_1`). The
-strict public D3D11 suite passed 59/59 on the physical RTX 3090 Ti
+is `47a0bce53` (`core: preserve pass stencil reference in render bundles`).
+The strict public D3D11 suite passed 60/60 on the physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`,
 software=false), requested and actual FL9_1. The public suite explicitly
 reported one unsupported Float16x2 input-format subcase; it is not counted as
@@ -17,9 +17,13 @@ dropped. A further pair uses writable D16 depth from a bundle; the farther
 draw correctly fails against the first bundle's depth write, and all 64 color
 pixels remain red. A single bundle also ran twice while pass-level scissor and
 blend constants changed; readback verified all 64 red/green pixels.
-private HAL suite, controlled core fixture, adapter enumeration and DX12
-results were rerun at checkpoint `f04b4f93e`; the current changes add public
-integration tests only. The CoreWindow admission check
+One further test found that Core failed to replay the pass stencil reference
+after changing to a bundle pipeline. Core now reapplies that value after each
+bundle pipeline that uses it; the test stores references 1 and 2 in separate
+scissor regions and verifies stencil-based red/green output across all pixels.
+The 60-test public suite, core fixture (100/100), and DX12 core suite (92/92)
+were rerun after this Core change. The private HAL suite and adapter
+enumeration test last passed at checkpoint `f04b4f93e`. The CoreWindow admission check
 passes CPU coverage and x64/ARM32-UWP compilation, but UWP runtime behavior
 remains unverified. Public CoreWindow surface capabilities remain withheld.
 

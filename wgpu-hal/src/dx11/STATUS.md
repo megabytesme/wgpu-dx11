@@ -104,6 +104,11 @@ draw fails depth across all 64 pixels. One bundle can also execute twice while
 the pass changes its scissor rectangle and blend constant; strict FL9_1
 readback verifies both regions and confirms pass-level state survives bundle
 execution. Other bundle state combinations remain part of the API audit.
+The public stencil-reference bundle test also exposed a Core replay mismatch:
+render-bundle pipeline changes did not restore the render pass's dynamic
+stencil reference. Core now reapplies it after each bundle pipeline that uses
+stencil reference state; forced-FL9_1 comparison draws verify separate red and
+green regions.
 
 Some detailed status bullets below preserve earlier checkpoints. Later
 implementation checkpoints supersede their earlier surface and exposure

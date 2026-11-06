@@ -2,8 +2,8 @@
 
 ## Current position — 2026-11-06
 
-Latest code checkpoint: `4960d50f3` (`dx11: verify render bundle pass state
-at FL9_1`). The strict public D3D11 suite passed 59/59; the private
+Latest code checkpoint: `47a0bce53` (`core: preserve pass stencil reference
+in render bundles`). The strict public D3D11 suite passed 60/60; the private
 HAL suite passed 376/376, controlled core fixture 100/100, physical adapter
 test 1/1 and DX12 core regression 92/92 at the preceding HAL checkpoint
 `f04b4f93e`. The strict D3D11 tests selected the RTX 3090 Ti
@@ -42,6 +42,44 @@ warning. Rustfmt still reports pre-existing formatting differences at other
 locations in `dx11_public.rs`; the new test formatted cleanly. `git diff
 --check` passed. This closes a bundle-state coverage gap, not the public
 core/HAL contract audit.
+
+## Core contract fix — stencil references in render bundles — `47a0bce53`
+
+A strict public test exposed a core/HAL mismatch. Core forwarded
+`set_stencil_reference` for direct draws, but `RenderBundle::execute` replayed
+bundle pipeline changes directly through HAL without restoring the render
+pass's current dynamic reference. Bundle draws therefore wrote stencil zero
+even when the pass had set reference 1 or 2. Render-bundle replay now reapplies
+the pass reference immediately after each bundle pipeline that uses stencil
+reference state. The test executes one bundle twice with different references,
+then compares stencil in a later pass; all 64 output pixels are red/green as
+expected on forced FL9_1.
+
+Verification used Rust 1.93.1, Visual Studio 2022 Build Tools x64, and strict
+hardware mode:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/command/bundle.rs wgpu-core/src/command/render.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The focused hardware case passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, software=false), requested and actual FL9_1. The full
+public suite passed 60/60; the optional Float16x2 IA subcase remained a
+recognizable capability skip. Core fixture tests passed 100/100 and the DX12
+core suite passed 92/92. Both Clippy commands passed with three existing
+fixture warnings and the existing HAL too-many-arguments warning. Rustfmt
+showed only the known older reflows elsewhere in `dx11_public.rs`; modified
+Core files and the new test region are formatted. `git diff --check` passed.
+This closes one reachable public contract mismatch; it does not close the
+broader capability audit.
 
 The read-only Lumia Device Portal probe for `/api/os/devicefamily` timed out
 from this machine. No device state was changed. Windows 10 Mobile ARM32

@@ -180,6 +180,17 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91 -- --nocapture --test-threads=1
 ```
 
+The stencil-reference bundle test executes one bundle twice with different
+pass-level references and scissor rectangles. Later comparison draws verify
+the references were stored in the correct regions. This also covers Core's
+reapplication of the pass reference after a bundle selects a stencil-using
+pipeline.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91 -- --nocapture --test-threads=1
+```
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91 -- --nocapture --test-threads=1

@@ -721,7 +721,11 @@ also verifies that the farther of two bundled draws fails depth after the
 near bundle writes it. One bundle executed twice in a pass now verifies that
 pass-level scissor and blend-constant values survive bundle execution; the
 two halves of the 64-pixel target read back exact red and green. Continue
-checking remaining render-bundle state and the broader core/HAL contract.
+checking remaining render-bundle state and the broader core/HAL contract. A
+strict D24S8 case found that Core replayed bundle pipelines without restoring
+the render pass's dynamic stencil reference. Core now reapplies the current
+reference after each bundle pipeline that uses it; two stencil write values
+from one bundle produce independently verified red and green halves.
 
 ## Follow-up — mapped-view destruction safety
 
