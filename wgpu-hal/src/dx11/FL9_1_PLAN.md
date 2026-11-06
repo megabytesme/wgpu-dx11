@@ -41,7 +41,7 @@ public contract. This is profile/compiler evidence and does not establish
 historical-driver behavior. Continue auditing other core-valid shader and
 render-state combinations.
 
-### Latest public binding checkpoint — three sparse bind groups (`db3f95c7c`)
+### Latest public binding checkpoint — independent pairs across sparse groups (`b89865ca5`)
 
 The strict public wgpu integration binds stage-visible uniforms in group 0,
 the sampled texture's sampler in group 4 and the texture in group 7. The
@@ -52,6 +52,15 @@ tinted-yellow pixels. The complete strict public D3D11 test binary passed
 subcase remains an explicit query-based skip. Aggregate layout edge cases and
 additional group transitions still need audit. See `FL9_1_PROGRESS.md` for
 the exact tests.
+
+The sparse multi-texture test now also places two independent texture/sampler
+pairs at groups 1/4 and 6/7 using sparse logical bindings. Patterned data and
+nearest versus linear filtering make sampler-slot swaps observable; all 64
+pixels match the checked output on forced FL9_1. A public Repeat sampler probe
+was rejected by core because it cannot prove arbitrary interpolated
+coordinates stay within the FL9_1 repeat bound. Keep that validation intact;
+the next focused task is testing a sampler-group state transition while the
+other groups and pipeline remain bound.
 
 ### Render-bundle checkpoint — strip restart and pipeline transition (`f98b72200`)
 
@@ -591,4 +600,6 @@ core can unmap and release the backend allocation. `MapContext::reset` checks
 for active subranges before clearing its mapped range, so a caught panic keeps
 the map state usable. A strict FL9_1 test verifies two disjoint views remain
 readable after a rejected destruction and that destruction succeeds once both
-views are dropped. Continue with the selected-entry dynamic-loop/FXC mismatch.
+views are dropped. The selected-entry dynamic-loop/FXC mismatch is now gated
+and tested. Continue with a public sampler-group transition test, then resume
+the selected-entry and core/HAL contract audit.

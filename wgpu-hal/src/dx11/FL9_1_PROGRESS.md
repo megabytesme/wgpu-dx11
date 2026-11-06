@@ -2,11 +2,13 @@
 
 ## Current position — 2026-11-06
 
-Latest verified code checkpoint: `70341b011` (`dx11: verify FL9_1
-instance-index rejection`), following the selected-entry WGSL-loop gate in
-`62d12ecd4`. The detailed test evidence is in the final follow-up entry below.
-Continue the selected-entry WGSL/FXC and core/HAL contract audit; this does
-not complete the mission.
+Latest verified code checkpoint: `b89865ca5` (`dx11: verify sparse
+cross-group sampling pairs`). The strict public suite passed 50/50 at forced
+FL9_1 with one optional Float16x2 input-format subcase explicitly skipped.
+The latest test places two independently sampled textures and samplers across
+four sparse bind groups and validates nearest/linear results by readback.
+Continue the core/HAL capability audit and public operation coverage; this
+does not complete the mission.
 
 ## Checkpoint — gate base-clamp sampling for 10Level9 — pending
 
@@ -7866,3 +7868,32 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
 cargo +1.93 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
 ```
+
+## Checkpoint — independent sampled pairs across sparse public groups (`b89865ca5`)
+
+Extended `public_dx11_sparse_multi_texture_sampling_at_fl91` from two textures
+sharing one sampler in group 0 to two independently sampled texture/sampler
+pairs across groups 1/4 and 6/7. The WGSL declarations use sparse bindings
+7, 100, 42 and 17 in an order different from group and layout order. Patterned
+RGBA8 inputs are sampled at a coordinate where nearest and linear filtering
+produce different results. Forced-FL9_1 readback checked all 64 pixels against
+`[40, 43±1, 0, 255]`, exercising each pair and its sampler register through
+public wgpu/core/HAL.
+
+A Repeat-addressing version of the probe was rejected during public sampler
+creation because core cannot prove that interpolated coordinates remain under
+the FL9_1 `max_texture_repeat` bound. This is expected capability validation;
+no limit or validation rule was weakened. Repeat remains covered only by
+bounded private-HAL tests.
+
+Verification on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), requested/actual FL9_1:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sparse_multi_texture_sampling_at_fl91 -- --nocapture --test-threads=1`: 1/1 passed; all 64 pixels matched.
+- The complete strict public D3D11 test binary passed 50/50; the optional Float16x2 input-format subcase explicitly skipped because the selected FL9_1 device did not report `IA_VERTEX_BUFFER` support for `R16G16_FLOAT`.
+- Public-test Clippy and Rustfmt passed. `git diff --check` passed.
+
+The next focused test should replace only one sampler group between draws while
+retaining both textures, the other sampler, and the pipeline, then validate the
+two outputs independently. Continue the full selected-entry/core/HAL audit;
+this checkpoint does not complete the mission.
