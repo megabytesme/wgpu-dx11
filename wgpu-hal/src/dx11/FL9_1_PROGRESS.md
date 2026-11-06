@@ -7048,3 +7048,69 @@ Next: continue checking selected-entry shader operations and render-pipeline
 states that core accepts against the D3D11 FL9_1 path. Do not enable a path
 until it is implemented or rejected through core validation. Historical FL9_1
 devices and ARM32 UWP remain unverified.
+
+## Follow-up — compute-stage textureGather gate and profile boundary — `31ac3d2ef`
+
+The selected-entry gather check now covers compute pipelines as well as render
+pipelines. It runs after core validates the chosen compute entry's bindings and
+before HAL pipeline creation, returning a validation error when the stage-
+agnostic `DownlevelLimits::texture_gather` is false. Naga CPU analysis covers
+direct and helper-reached compute gathers, and verifies that a positive limit
+permits them. The FXC test also checks the exact `ps_4_1` boundary and compiles
+a compute gather under `cs_5_0`.
+
+The hardware model's single gather boolean applies to all WGSL stages, so its
+static guarantee now begins at FL11_0: SM4.1 covers vertex/geometry/pixel
+Gather, while compute gather4 requires SM5. FL9_1 remains false and the
+backend still does not execute gather. This avoids implying compute support at
+FL10_1 from the graphics-only SM4.1 guarantee.
+
+Validation on 2026-11-06, using pinned Rust 1.93.1 and the Visual Studio
+developer environment:
+
+- Strict private D3D11 HAL suite: 361/361 passed. Hardware cases selected the
+  physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+  `32.0.16.2101`), explicitly requested and confirmed FL9_1, software=false.
+- Strict public D3D11 suite: 38/38 passed on the same physical adapter and
+  selected level. Its optional Float16x2 IA branch explicitly skipped because
+  the selected device lacks the queried format support. Gather itself was
+  rejected before HAL and was not issued to the GPU.
+- Core gather selected-entry/helper/compute analysis: 1/1; the adjacent
+  explicit-LOD selected-entry test: 1/1; exact FXC gather profile test: 1/1.
+  FXC rejected `ps_4_0_level_9_1` with X4532 (`cannot map expression to
+  pixel shader instruction set`) and accepted `ps_4_1`, `ps_5_0`, and
+  `cs_5_0` controls.
+- DX12 core regression: 89/89; selected DX11 adapter enumeration test: 1/1;
+  wgpu-types gather-limit test: 1/1.
+- Core Clippy passed without warnings. HAL Clippy passed with nine pre-existing
+  test-code warnings in unrelated files. The wgpu-types test emitted 14
+  pre-existing unused serde-import warnings because serde was not enabled.
+  Changed Rust files passed rustfmt and `git diff --check` passed.
+
+The first compile of the compute gate found a moved `ShaderStageForValidation`
+use after `check_stage`; the implementation now uses the fixed Naga and wgpu
+compute-stage constants after that consuming call. No test failures remain.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl texture_gather_limits_follow_selected_entry_and_helpers -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl explicit_texture_sample_level_limits_follow_selected_entry_and_helpers -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib texture_gather -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-types --lib texture_gather_is_a_downlevel_capability
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11,std,wgsl --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/device/resource.rs wgpu-core/src/pipeline.rs wgpu-core/src/validation.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/shader.rs wgpu-types/src/limits.rs
+git diff --check
+```
+
+Independent review identified the next shader-contract probe: `@interpolate(sample)`
+may emit a shader-model-4.1-only HLSL modifier, while the FL9_1 fixture omits
+`DownlevelFlags::MULTISAMPLED_SHADING`. Confirm the exact FXC profile boundary,
+then add a selected-entry core gate only if the profile evidence supports it.
+Historical FL9_1 devices and ARM32 UWP remain unverified.
