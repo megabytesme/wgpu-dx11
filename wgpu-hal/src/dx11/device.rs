@@ -19,6 +19,9 @@ use windows::{
     },
 };
 
+#[cfg(any(test, feature = "dx11-test-fixture"))]
+use windows::core::HRESULT;
+
 /// A native D3D feature level; this alone does not imply WebGPU support.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -133,6 +136,8 @@ impl NativeAdapter {
             raw: device.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             immediate: Mutex::new(context.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             level,
+            #[cfg(any(test, feature = "dx11-test-fixture"))]
+            injected_oom_check_status: Mutex::new(None),
             #[cfg(test)]
             diagnostic_separate_alpha: false,
         })
@@ -145,6 +150,8 @@ pub struct NativeDevice {
     raw: ID3D11Device,
     immediate: Mutex<ID3D11DeviceContext>,
     level: FeatureLevel,
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    injected_oom_check_status: Mutex<Option<HRESULT>>,
     #[cfg(test)]
     diagnostic_separate_alpha: bool,
 }
@@ -166,6 +173,21 @@ impl NativeDevice {
     /// The feature level selected when creating this native device.
     pub fn feature_level(&self) -> FeatureLevel {
         self.level
+    }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_remove_device_on_next_oom_check(&self) {
+        *self.injected_oom_check_status.lock() =
+            Some(windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED);
+    }
+
+    pub(crate) fn check_device_removed_reason(&self) -> Result<()> {
+        #[cfg(any(test, feature = "dx11-test-fixture"))]
+        if let Some(status) = self.injected_oom_check_status.lock().take() {
+            return Err(Error::from_hresult(status));
+        }
+        unsafe { self.raw.GetDeviceRemovedReason() }
     }
 
     // HAL internals must hold the guard for every immediate-context operation.

@@ -29,6 +29,12 @@ impl Device {
     pub(super) fn native(&self) -> &Arc<super::device::NativeDevice> {
         &self.native
     }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_remove_device_on_next_oom_check(&self) {
+        self.native.test_fixture_remove_device_on_next_oom_check();
+    }
 }
 
 pub(super) fn classify_device_error(code: windows::core::HRESULT) -> DeviceError {
@@ -952,7 +958,9 @@ impl crate::Device for Device {
     }
 
     fn check_if_oom(&self) -> Result<(), DeviceError> {
-        unsafe { self.native.raw_device().GetDeviceRemovedReason() }.map_err(device_error)
+        self.native
+            .check_device_removed_reason()
+            .map_err(device_error)
     }
 }
 

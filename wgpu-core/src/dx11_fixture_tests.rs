@@ -1203,6 +1203,112 @@ fn fl91_core_fence_wait_device_loss_is_propagated_once() {
 }
 
 #[test]
+fn fl91_core_removed_reason_callback_can_reenter_device_poll() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let driver_version = adapter.driver_version();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!("Hardware: {identity:?}; driver={driver_version:?}; requested and actual FL9_1; removed-reason error injection is synthetic");
+
+    let global = Arc::new(unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 synthetic removed-reason device-loss fixture",
+            hal::dx11::Instance,
+        )
+    });
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled FL9_1 core device");
+
+    unsafe {
+        global
+            .device_as_hal::<hal::dx11::Api>(device)
+            .expect("D3D11 device")
+            .test_fixture_remove_device_on_next_oom_check();
+    }
+    let (lost_sender, lost_receiver) = std::sync::mpsc::channel();
+    let callback_global = global.clone();
+    global.device_set_device_lost_closure(
+        device,
+        Box::new(move |reason, message| {
+            let poll_result = callback_global.device_poll(device, wgt::PollType::Poll);
+            lost_sender.send((reason, message, poll_result)).unwrap();
+        }),
+    );
+
+    let (poll_sender, poll_receiver) = std::sync::mpsc::channel();
+    let poll_global = global.clone();
+    let poll_thread = std::thread::spawn(move || {
+        let result = poll_global.device_poll(device, wgt::PollType::Poll);
+        poll_sender.send(result.is_ok()).unwrap();
+    });
+    assert!(poll_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("removed-reason failure and reentrant callback poll must not deadlock"));
+    poll_thread.join().expect("device poll thread");
+    let (reason, message, callback_poll_result) = lost_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("device-lost callback after removed-reason error");
+    assert_eq!(reason, wgt::DeviceLostReason::Unknown);
+    assert!(!message.is_empty());
+    assert!(callback_poll_result.is_ok());
+    assert!(matches!(
+        global.queue_submit(queue, &[]),
+        Err((
+            _,
+            crate::device::queue::QueueSubmitError::Queue(crate::device::DeviceError::Lost)
+        ))
+    ));
+    assert!(matches!(
+        lost_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!("PASS: synthetic removed-reason device loss propagated through core polling and fired the reentrant callback once");
+}
+
+#[test]
 fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
