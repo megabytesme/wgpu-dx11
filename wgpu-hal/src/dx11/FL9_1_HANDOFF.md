@@ -3,18 +3,22 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `62d12ecd4`
-(`dx11: reject unsupported FL9_1 shader loops`). Core now rejects a selected
+The branch is `uwp-dx11`, latest code checkpoint is `70341b011`
+(`dx11: verify FL9_1 instance-index rejection`), following `62d12ecd4`
+(`dx11: reject unsupported FL9_1 shader loops`). Core rejects a selected
 vertex or fragment entry point that reaches WGSL loop IR through helper calls,
 because Naga's current D3D11 HLSL lowering emits dynamically bounded loops
 that FXC rejects for the FL9_1 profiles. The backend's `shader_loops` downlevel
 limit is false; static/dynamic profile guarantees remain modeled separately.
-Safe sibling entry points are accepted. Details and exact commands are in
+Safe sibling entry points are accepted. A new FXC compiler test also confirms
+that `SV_InstanceID` is rejected with X4016 under `vs_4_0_level_9_1`, including
+unused direct and structure-member declarations; the safe sibling and
+`vs_5_0` control compile. Details and exact commands are in
 `FL9_1_PROGRESS.md`.
 
 Strict physical tests ran on the NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`), hardware adapter, requested and
-actual FL9_1. Latest results: private HAL 366/366, public D3D11 49/49,
+actual FL9_1. Latest results: private HAL 367/367, public D3D11 49/49,
 controlled core fixture 96/96 and DX12 core 92/92. The optional Float16x2 IA
 subcase visibly skipped because the selected device did not report its input
 format support. `wgpu-types` passed 85 unit tests and the serde compatibility

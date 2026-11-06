@@ -30,6 +30,17 @@ restriction selected-entry-aware and backed by a compiler or hardware test;
 do not enable normal D3D11 enumeration or infer historical-driver behavior
 from the modern RTX test system.
 
+### Current compiler-boundary check — `instance_index` (`70341b011`)
+
+The previously documented unverified `instance_index` profile behavior is now
+tested through Naga HLSL generation and FXC. The `vs_4_0_level_9_1` profile
+rejects generated `SV_InstanceID` with X4016 for used and unused direct and
+structure-member declarations; a safe sibling and a `vs_5_0` used-input
+control compile. The existing selected-entry core gate remains the safe
+public contract. This is profile/compiler evidence and does not establish
+historical-driver behavior. Continue auditing other core-valid shader and
+render-state combinations.
+
 Some status descriptions within the audit sections below preserve earlier
 checkpoints. Later commits may supersede them; the opening summary and the
 numbered current tasks are authoritative for the present state.

@@ -2,10 +2,11 @@
 
 ## Current position — 2026-11-06
 
-Latest verified code checkpoint: `62d12ecd4` (`dx11: reject unsupported
-FL9_1 shader loops`). The detailed test evidence is in the final follow-up
-entry below. Continue the selected-entry WGSL/FXC and core/HAL contract audit;
-this does not complete the mission.
+Latest verified code checkpoint: `70341b011` (`dx11: verify FL9_1
+instance-index rejection`), following the selected-entry WGSL-loop gate in
+`62d12ecd4`. The detailed test evidence is in the final follow-up entry below.
+Continue the selected-entry WGSL/FXC and core/HAL contract audit; this does
+not complete the mission.
 
 ## Checkpoint — gate base-clamp sampling for 10Level9 — pending
 
