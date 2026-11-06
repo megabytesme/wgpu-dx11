@@ -2155,6 +2155,14 @@ pub enum CreateTextureViewError {
         total: u32,
     },
     #[error(
+        "This adapter requires 3D texture views to include the lowest mip level; view starts at {base_mip_level}, spans {mip_level_count}, and the texture has {total} mip levels"
+    )]
+    Texture3DViewMustIncludeLowestMip {
+        base_mip_level: u32,
+        mip_level_count: u32,
+        total: u32,
+    },
+    #[error(
         "`TextureView` starts at array layer {base_array_layer} and spans {array_layer_count}) \
         array layers, but the texture view only has {total} total layer(s)"
     )]
@@ -2224,6 +2232,7 @@ impl WebGpuError for CreateTextureViewError {
             | Self::ZeroMipLevelCount
             | Self::ZeroArrayLayerCount
             | Self::TooManyMipLevels { .. }
+            | Self::Texture3DViewMustIncludeLowestMip { .. }
             | Self::TooManyArrayLayers { .. }
             | Self::InvalidArrayLayerCount { .. }
             | Self::InvalidAspect { .. }

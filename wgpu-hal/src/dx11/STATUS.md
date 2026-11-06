@@ -906,3 +906,13 @@ helper functions and leaves unrelated entry points usable. The hardware/
 compiler and core validation tests are recorded in `FL9_1_PROGRESS.md`. This
 remains a backend implementation gap rather than a claim that all FL9_1
 hardware lacks static vertex loops.
+
+## Query-gated 3D mip sampling
+
+POT RGBA8 3D textures may use mip chains when the selected device reports
+`D3D11_FORMAT_SUPPORT_MIP` and the backend path is enabled. Uploads target each
+mip separately. FL9_1 views must include the lowest mip, so core rejects
+non-suffix 3D views through `DownlevelLimits::texture_3d_non_suffix_mip_views`.
+The strict RTX 3090 Ti test sampled three uploaded mip levels at requested and
+actual FL9_1; all 64 output pixels matched. GPU copies and readback for 3D
+textures remain unsupported.

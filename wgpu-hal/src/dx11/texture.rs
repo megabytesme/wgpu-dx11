@@ -350,6 +350,7 @@ impl NativeDevice {
         width: u32,
         height: u32,
         depth: u32,
+        mip_levels: u32,
     ) -> Result<NativeTexture> {
         let maximum = super::capabilities::HardwareGuarantees::for_level(self.feature_level())
             .texture_3d_dimension;
@@ -359,6 +360,8 @@ impl NativeDevice {
             || width > maximum
             || height > maximum
             || depth > maximum
+            || mip_levels == 0
+            || mip_levels > width.max(height).max(depth).ilog2() + 1
             || !width.is_power_of_two()
             || !height.is_power_of_two()
             || !depth.is_power_of_two()
@@ -369,7 +372,7 @@ impl NativeDevice {
             Width: width,
             Height: height,
             Depth: depth,
-            MipLevels: 1,
+            MipLevels: mip_levels,
             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
@@ -386,7 +389,7 @@ impl NativeDevice {
             width,
             height,
             depth,
-            mip_levels: 1,
+            mip_levels,
             layers: 1,
             dimension: wgt::TextureDimension::D3,
             format: desc.Format,
@@ -579,16 +582,28 @@ impl NativeDevice {
                 || !desc.Height.is_power_of_two()
                 || !desc.Depth.is_power_of_two()
                 || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
-                || desc.MipLevels != 1
+                || (desc.MipLevels > 1
+                    && (view.usage != wgt::TextureUses::RESOURCE
+                        || !super::capabilities::Capabilities::query(self).texture_3d_mipmaps()))
                 || desc.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 == 0
                 || view_desc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE3D
-                || view.mip_base != 0
-                || view.mip_count != 1
+                || view.mip_count == 0
+                || view.mip_base >= desc.MipLevels
+                || view.mip_base.checked_add(view.mip_count) != Some(desc.MipLevels)
                 || view.usage != wgt::TextureUses::RESOURCE
             {
                 return Err(invalid());
             }
-            return Ok((resource.clone(), [desc.Width, desc.Height, desc.Depth], 1, true));
+            return Ok((
+                resource.clone(),
+                [
+                    (desc.Width >> view.mip_base).max(1),
+                    (desc.Height >> view.mip_base).max(1),
+                    (desc.Depth >> view.mip_base).max(1),
+                ],
+                view.mip_count,
+                true,
+            ));
         }
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         let mut view_desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
@@ -1096,8 +1111,6 @@ impl NativeDevice {
                 || depth_stencil
                 || dimension != wgt::TextureViewDimension::D3
                 || usage != wgt::TextureUses::RESOURCE
-                || mip_base != 0
-                || mip_count != 1
             {
                 return Err(invalid());
             }
@@ -1105,7 +1118,7 @@ impl NativeDevice {
             let mut desc = D3D11_TEXTURE3D_DESC::default();
             unsafe { texture_3d.GetDesc(&mut desc) };
             if desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
-                || desc.MipLevels != 1
+                || mip_base.checked_add(mip_count) != Some(desc.MipLevels)
                 || desc.Width == 0
                 || desc.Height == 0
                 || desc.Depth == 0
@@ -1127,8 +1140,8 @@ impl NativeDevice {
                         ViewDimension: D3D11_SRV_DIMENSION_TEXTURE3D,
                         Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                             Texture3D: D3D11_TEX3D_SRV {
-                                MostDetailedMip: 0,
-                                MipLevels: 1,
+                                MostDetailedMip: mip_base,
+                                MipLevels: mip_count,
                             },
                         },
                     }),

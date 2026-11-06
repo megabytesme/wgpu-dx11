@@ -165,6 +165,7 @@ pub(super) struct BufferToTexture3D {
     source: ID3D11Buffer,
     staging: ID3D11Buffer,
     texture: ID3D11Texture3D,
+    mip_level: u32,
     source_box: D3D11_BOX,
     destination_box: D3D11_BOX,
     row_pitch: u32,
@@ -197,7 +198,6 @@ impl NativeDevice {
         let size = &region.size;
         let layout = &region.buffer_layout;
         if texture.dimension != wgt::TextureDimension::D3
-            || base.mip_level != 0
             || base.array_layer != 0
             || base.aspect != crate::FormatAspects::COLOR
             || texture.format != DXGI_FORMAT_R8G8B8A8_UNORM
@@ -208,11 +208,12 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
-        let (width, height, _, _) = super::texture::subresource_layout(texture, 0, 0)?;
+        let (width, height, _, _) = super::texture::subresource_layout(texture, base.mip_level, 0)?;
+        let depth = (texture.depth >> base.mip_level).max(1);
         let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
         let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
         let back = base.origin.z.checked_add(size.depth).ok_or_else(invalid)?;
-        if right > width || bottom > height || back > texture.depth {
+        if right > width || bottom > height || back > depth {
             return Err(invalid());
         }
         let block = format_block_layout(texture.format)?;
@@ -245,6 +246,7 @@ impl NativeDevice {
             source: native_source,
             staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             texture: texture.raw.as_3d()?.clone(),
+            mip_level: base.mip_level,
             source_box: D3D11_BOX {
                 left: offset,
                 right: end,
@@ -511,7 +513,7 @@ impl BufferToTexture3D {
             }
             context.UpdateSubresource(
                 &self.texture,
-                0,
+                self.mip_level,
                 Some(&self.destination_box),
                 mapped.pData,
                 self.row_pitch,

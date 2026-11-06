@@ -37,8 +37,10 @@ operations. Prioritize validation boundaries and lifetime/device-loss paths,
 and keep optional format reports query-gated.
 
 The current resource audit includes a narrow query-gated RGBA8 3D
-sampled/upload path. It does not enable 3D texture copies, readback, render
-attachments, storage or mip chains. Preserve those negative limits while
+sampled/upload path. Mip chains are enabled only when the selected device's
+format query positively reports mip support; 3D views must include the
+lowest mip as required by FL9_1. It does not enable 3D texture copies,
+readback, render attachments or storage. Preserve those negative limits while
 validating the public copy and shader paths.
 
 The optional-format audit also found that a synthetic `BLENDABLE`-without-

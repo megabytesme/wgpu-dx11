@@ -969,6 +969,12 @@ impl super::Adapter {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            texture_3d_usage_mask: wgt::TextureUsages::all().bits(),
+            texture_3d_format_mask: u32::MAX,
+            texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: true,
+            texture_3d_texture_copies: true,
+            npot_texture_3d: true,
             max_texture_cube_dimension: unsafe {
                 gl.get_parameter_i32(glow::MAX_CUBE_MAP_TEXTURE_SIZE)
             }

@@ -85,6 +85,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     texture_3d_usage_mask: 0,
                     texture_3d_format_mask: 0,
                     texture_3d_mipmaps: false,
+                    texture_3d_non_suffix_mip_views: false,
                     texture_3d_texture_copies: false,
                     npot_texture_3d: false,
                     max_texture_cube_dimension: 0,
@@ -482,11 +483,62 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         );
         invalid = volume_desc.clone();
         invalid.mip_level_count = 2;
-        let (_, error) = global.device_create_texture(device, &invalid, None);
-        assert!(
-            matches!(error, Some(crate::resource::CreateTextureError::InvalidMipLevelCount { maximum: 1, .. })),
-            "unsupported volume mip chains must be rejected in core: {error:?}"
-        );
+        if capabilities.downlevel.limits.texture_3d_mipmaps {
+            let (mipped_volume, error) = global.device_create_texture(device, &invalid, None);
+            assert!(error.is_none(), "queried FL9_1 volume mip chain: {error:?}");
+            let (_, error) = global.texture_create_view(
+                mipped_volume,
+                &crate::resource::TextureViewDescriptor {
+                    dimension: Some(wgt::TextureViewDimension::D3),
+                    range: wgt::ImageSubresourceRange {
+                        aspect: wgt::TextureAspect::All,
+                        base_mip_level: 0,
+                        mip_level_count: Some(1),
+                        base_array_layer: 0,
+                        array_layer_count: Some(1),
+                    },
+                    ..Default::default()
+                },
+                None,
+            );
+            assert!(
+                matches!(
+                    error,
+                    Some(crate::resource::CreateTextureViewError::Texture3DViewMustIncludeLowestMip { .. })
+                ),
+                "FL9_1 volume views must include the lowest mip: {error:?}"
+            );
+            let (suffix_view, error) = global.texture_create_view(
+                mipped_volume,
+                &crate::resource::TextureViewDescriptor {
+                    dimension: Some(wgt::TextureViewDimension::D3),
+                    range: wgt::ImageSubresourceRange {
+                        aspect: wgt::TextureAspect::All,
+                        base_mip_level: 1,
+                        mip_level_count: Some(1),
+                        base_array_layer: 0,
+                        array_layer_count: Some(1),
+                    },
+                    ..Default::default()
+                },
+                None,
+            );
+            assert!(error.is_none(), "FL9_1 volume suffix view: {error:?}");
+            global.texture_view_drop(suffix_view);
+            global.texture_drop(mipped_volume);
+        } else {
+            let (_, error) = global.device_create_texture(device, &invalid, None);
+            assert!(
+                matches!(
+                    error,
+                    Some(crate::resource::CreateTextureError::InvalidMipLevelCount {
+                        maximum: 1,
+                        ..
+                    })
+                ),
+                "unqueried volume mip chains must be rejected in core: {error:?}"
+            );
+        }
 
         let (source_2d, error) = global.device_create_texture(
             device,

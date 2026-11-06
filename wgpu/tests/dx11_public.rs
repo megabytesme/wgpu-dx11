@@ -15495,7 +15495,10 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
         return;
     }
     assert_eq!(adapter.limits().max_texture_dimension_3d, 256);
-    assert!(!downlevel.limits.texture_3d_mipmaps);
+    println!(
+        "FL9_1 3D volume mip support: {}",
+        downlevel.limits.texture_3d_mipmaps
+    );
     assert!(!downlevel.limits.texture_3d_texture_copies);
     assert_eq!(
         downlevel.limits.texture_3d_usage_mask,
@@ -15547,7 +15550,12 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
             view_formats: &[],
         }));
     });
-    expect_validation_error(&device, "3D mip chain", || {
+    let unsupported_mip_count = if downlevel.limits.texture_3d_mipmaps {
+        4
+    } else {
+        2
+    };
+    expect_validation_error(&device, "unsupported 3D mip chain", || {
         drop(device.create_texture(&TextureDescriptor {
             label: Some("unsupported FL9_1 volume mip chain"),
             size: Extent3d {
@@ -15555,7 +15563,7 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
                 height: 4,
                 depth_or_array_layers: 4,
             },
-            mip_level_count: 2,
+            mip_level_count: unsupported_mip_count,
             sample_count: 1,
             dimension: TextureDimension::D3,
             format: TextureFormat::Rgba8Unorm,
@@ -15904,6 +15912,196 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
         assert_eq!(checked, 64);
     }
     readback.unmap();
+
+    if downlevel.limits.texture_3d_mipmaps {
+        let mip_volume = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 3D mipmapped volume"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+            mip_level_count: 3,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (mip_level, dimension, color) in [
+            (0, 4, [210, 20, 30, 255]),
+            (1, 2, [20, 220, 40, 255]),
+            (2, 1, [30, 50, 230, 255]),
+        ] {
+            let mut data = vec![0; dimension as usize * dimension as usize * 256];
+            for z in 0..dimension as usize {
+                for y in 0..dimension as usize {
+                    for x in 0..dimension as usize {
+                        let offset = (z * dimension as usize + y) * 256 + x * 4;
+                        data[offset..offset + 4].copy_from_slice(&color);
+                    }
+                }
+            }
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &mip_volume,
+                    mip_level,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                &data,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(dimension),
+                },
+                Extent3d {
+                    width: dimension,
+                    height: dimension,
+                    depth_or_array_layers: dimension,
+                },
+            );
+        }
+        let upload_submission = queue.submit([]);
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(upload_submission.clone()),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for FL9_1 3D mip uploads");
+        println!("3D mip upload submission: {upload_submission:?}");
+
+        let mip_view_scope = device.push_error_scope(ErrorFilter::Validation);
+        let invalid_view = mip_volume.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D3),
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+        drop(invalid_view);
+        assert!(poll_ready(mip_view_scope.pop()).is_some());
+
+        let mip_views = [
+            mip_volume.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D3),
+                base_mip_level: 0,
+                mip_level_count: Some(3),
+                ..Default::default()
+            }),
+            mip_volume.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D3),
+                base_mip_level: 1,
+                mip_level_count: Some(2),
+                ..Default::default()
+            }),
+            mip_volume.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D3),
+                base_mip_level: 2,
+                mip_level_count: Some(1),
+                ..Default::default()
+            }),
+        ];
+        let mip_groups = mip_views.map(|mip_view| {
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some("FL9_1 suffix 3D mip view binding"),
+                layout: &layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: BindingResource::TextureView(&mip_view),
+                    },
+                    BindGroupEntry {
+                        binding: 42,
+                        resource: BindingResource::Sampler(&sampler),
+                    },
+                ],
+            })
+        });
+
+        let mut mip_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 3D mip sampling and readback"),
+        });
+        {
+            let mut pass = mip_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 3D suffix mip sampling"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            for quad in 0..4 {
+                pass.set_bind_group(0, &mip_groups[quad.min(2)], &[]);
+                pass.draw(quad as u32 * 6..(quad as u32 + 1) * 6, 0..1);
+            }
+        }
+        mip_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([mip_encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for FL9_1 3D mip sampling");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("3D mip readback callback")
+            .expect("map FL9_1 3D mip output");
+        {
+            let pixels = readback.slice(..).get_mapped_range().unwrap();
+            let mip_colors = [[210, 20, 30, 255], [20, 220, 40, 255], [30, 50, 230, 255]];
+            for y in 0..8usize {
+                for x in 0..8usize {
+                    let quad = (y / 4) * 2 + x / 4;
+                    let expected = mip_colors[quad.min(2)];
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &pixels[offset..offset + 4],
+                        expected,
+                        "3D mip sample pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!("PASS: FL9_1 3D suffix mip views sampled three uploaded mip levels; 64/64 pixels matched");
+    } else {
+        println!("SKIP: selected FL9_1 RGBA8 3D format query did not report mip support");
+    }
 
     let zeroed_volume = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 zero-initialized 3D volume"),

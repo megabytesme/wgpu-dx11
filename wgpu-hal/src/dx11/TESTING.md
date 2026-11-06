@@ -56,11 +56,16 @@ uploads a patterned 4×4×4 RGBA8 volume with 256-byte row pitch, applies a
 single-voxel update from a nonzero source offset, samples all four depth slices
 through sparse bindings 7 and 42, and verifies 64 pixels. A second volume is
 partially written and rendered to verify zero initialization for all untouched
-texels; another 64 pixels are checked. NPOT dimensions, a non-RGBA8 format,
-render-attachment usage and a mip chain are rejected through public validation
-scopes. The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) passed at
-requested and actual FL9_1. The test proves this driver's selected-level path,
-not behavior on historical 9_1 hardware.
+texels; another 64 pixels are checked. When the selected RGBA8 query reports
+`D3D11_FORMAT_SUPPORT_MIP`, the test uploads three levels of a 4×4×4 volume,
+submits the uploads, then samples mip 0, 1 and 2 through three suffix views and
+checks all 64 output pixels. A view that omits the lowest mip and an overlong
+mip chain are rejected through public validation scopes. Without the query,
+the test instead verifies that a multi-mip request is rejected. NPOT
+dimensions, a non-RGBA8 format and render-attachment usage are also rejected.
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) reports mip support
+and passed at requested and actual FL9_1. The test proves this driver's
+selected-level path, not behavior on historical 9_1 hardware.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

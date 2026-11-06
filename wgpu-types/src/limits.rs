@@ -1067,6 +1067,9 @@ pub struct DownlevelLimits {
     /// Whether 3D texture mip chains are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d_mipmaps: bool,
+    /// Whether 3D texture views may omit the resource's lowest mip level.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_3d_non_suffix_mip_views: bool,
     /// Whether copies directly between 3D textures are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d_texture_copies: bool,
@@ -1327,6 +1330,7 @@ impl Default for DownlevelLimits {
             texture_3d_usage_mask: crate::TextureUsages::all().bits(),
             texture_3d_format_mask: u32::MAX,
             texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: true,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             max_texture_cube_dimension: u32::MAX,
@@ -1460,6 +1464,8 @@ impl DownlevelLimits {
                     && self.texture_3d_format_mask & required.texture_3d_format_mask
                         == required.texture_3d_format_mask
                     && (!required.texture_3d_mipmaps || self.texture_3d_mipmaps)
+                    && (!required.texture_3d_non_suffix_mip_views
+                        || self.texture_3d_non_suffix_mip_views)
                     && (!required.texture_3d_texture_copies || self.texture_3d_texture_copies)
                     && (!required.npot_texture_3d || self.npot_texture_3d)))
             && self.max_texture_cube_dimension >= required.max_texture_cube_dimension
@@ -1549,6 +1555,7 @@ impl DownlevelCapabilities {
             && self.limits.texture_3d_usage_mask == crate::TextureUsages::all().bits()
             && self.limits.texture_3d_format_mask == u32::MAX
             && self.limits.texture_3d_mipmaps
+            && self.limits.texture_3d_non_suffix_mip_views
             && self.limits.texture_3d_texture_copies
             && self.limits.npot_texture_3d
             && self.limits.max_texture_cube_dimension
@@ -2006,6 +2013,36 @@ mod tests {
             npot_texture_3d: false,
             ..DownlevelLimits::default()
         }));
+        let suffix_mips = DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(suffix_mips.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!suffix_mips.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: true,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
         assert!(available.check_limits(&DownlevelLimits {
             texture_3d: false,
             ..DownlevelLimits::default()
@@ -2021,6 +2058,7 @@ mod tests {
             texture_3d_usage_mask: crate::TextureUsages::all().bits(),
             texture_3d_format_mask: u32::MAX,
             texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: true,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
@@ -2069,6 +2107,7 @@ mod tests {
             texture_3d_usage_mask: crate::TextureUsages::all().bits(),
             texture_3d_format_mask: u32::MAX,
             texture_3d_mipmaps: true,
+            texture_3d_non_suffix_mip_views: true,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,

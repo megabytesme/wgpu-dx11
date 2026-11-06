@@ -257,6 +257,7 @@ pub(super) struct BackendCapabilities {
     pub rgba8_multisample_resolve: bool,
     pub texture_3d_sampling: bool,
     pub texture_3d_upload: bool,
+    pub texture_3d_mipmaps: bool,
     pub alpha_to_coverage: bool,
     pub vertex_buffers: u32,
     pub zero_input_vertex_pipeline: bool,
@@ -351,6 +352,7 @@ impl BackendCapabilities {
         rgba8_multisample_resolve: true,
         texture_3d_sampling: true,
         texture_3d_upload: true,
+        texture_3d_mipmaps: true,
         alpha_to_coverage: false,
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
         zero_input_vertex_pipeline: true,
@@ -441,6 +443,12 @@ impl Capabilities {
         }
     }
 
+    pub fn texture_3d_mipmaps(&self) -> bool {
+        self.texture_3d_format_mask() != 0
+            && self.backend.texture_3d_mipmaps
+            && matches!(self.driver.rgba8, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0)
+    }
+
     pub fn wgpu_projection(&self) -> Option<WgpuCapabilityProjection> {
         if self.hardware.level != FeatureLevel::L9_1 {
             return None;
@@ -515,7 +523,8 @@ impl Capabilities {
                     0
                 },
                 texture_3d_format_mask,
-                texture_3d_mipmaps: false,
+                texture_3d_mipmaps: texture_3d_sampling && self.texture_3d_mipmaps(),
+                texture_3d_non_suffix_mip_views: false,
                 texture_3d_texture_copies: false,
                 npot_texture_3d: false,
                 max_texture_cube_dimension: if cube_texture_sampling {
@@ -1351,6 +1360,31 @@ mod tests {
         let projection = supported.wgpu_projection().expect("FL9_1 projection");
         assert!(projection.capabilities.downlevel.limits.texture_3d);
         assert_eq!(projection.capabilities.limits.max_texture_dimension_3d, 256);
+        assert!(!projection.capabilities.downlevel.limits.texture_3d_mipmaps);
+
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        let mut mip_supported = supported;
+        mip_supported.driver.rgba8 = Query::Value(required | mip);
+        assert!(mip_supported.texture_3d_mipmaps());
+        let mip_projection = mip_supported.wgpu_projection().expect("FL9_1 projection");
+        assert!(
+            mip_projection
+                .capabilities
+                .downlevel
+                .limits
+                .texture_3d_mipmaps
+        );
+        assert!(
+            !mip_projection
+                .capabilities
+                .downlevel
+                .limits
+                .texture_3d_non_suffix_mip_views
+        );
+
+        let mut disabled_mips = mip_supported;
+        disabled_mips.backend.texture_3d_mipmaps = false;
+        assert!(!disabled_mips.texture_3d_mipmaps());
 
         for query in [
             Query::Unavailable(-1),
@@ -1364,6 +1398,7 @@ mod tests {
             let projection = caps.wgpu_projection().expect("FL9_1 projection");
             assert!(!projection.capabilities.downlevel.limits.texture_3d);
             assert_eq!(projection.capabilities.limits.max_texture_dimension_3d, 0);
+            assert!(!projection.capabilities.downlevel.limits.texture_3d_mipmaps);
         }
 
         for disable in [0, 1] {
@@ -1534,7 +1569,8 @@ mod tests {
         assert!(!exposed.downlevel.limits.supports_texture_3d_format(
             wgt::TextureFormat::Rg8Unorm
         ));
-        assert!(!exposed.downlevel.limits.texture_3d_mipmaps);
+        assert!(exposed.downlevel.limits.texture_3d_mipmaps);
+        assert!(!exposed.downlevel.limits.texture_3d_non_suffix_mip_views);
         assert!(!exposed.downlevel.limits.texture_3d_texture_copies);
         assert!(!exposed.downlevel.limits.npot_texture_3d);
         assert!(

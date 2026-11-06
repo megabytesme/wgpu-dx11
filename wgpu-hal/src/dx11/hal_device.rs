@@ -206,7 +206,7 @@ impl crate::Device for Device {
                 || !wgt::TextureUses::COPY_DST
                     .union(wgt::TextureUses::RESOURCE)
                     .contains(desc.usage)
-                || desc.mip_level_count != 1
+                || (desc.mip_level_count > 1 && !capabilities.texture_3d_mipmaps())
                 || desc.sample_count != 1
                 || desc.size.width == 0
                 || desc.size.height == 0
@@ -227,21 +227,27 @@ impl crate::Device for Device {
                     desc.size.width,
                     desc.size.height,
                     desc.size.depth_or_array_layers,
+                    desc.mip_level_count,
                 )
                 .map_err(device_error)?;
-            let byte_count = (desc.size.width as usize)
-                .checked_mul(desc.size.height as usize)
-                .and_then(|value| value.checked_mul(desc.size.depth_or_array_layers as usize))
-                .and_then(|value| value.checked_mul(4))
-                .ok_or(DeviceError::OutOfMemory)?;
-            let mut zeroes = Vec::new();
-            zeroes
-                .try_reserve_exact(byte_count)
-                .map_err(|_| DeviceError::OutOfMemory)?;
-            zeroes.resize(byte_count, 0);
-            self.native
-                .write_texture_volume_bytes(&texture, 0, &zeroes)
-                .map_err(device_error)?;
+            for mip in 0..desc.mip_level_count {
+                let width = (desc.size.width >> mip).max(1);
+                let height = (desc.size.height >> mip).max(1);
+                let depth = (desc.size.depth_or_array_layers >> mip).max(1);
+                let byte_count = (width as usize)
+                    .checked_mul(height as usize)
+                    .and_then(|value| value.checked_mul(depth as usize))
+                    .and_then(|value| value.checked_mul(4))
+                    .ok_or(DeviceError::OutOfMemory)?;
+                let mut zeroes = Vec::new();
+                zeroes
+                    .try_reserve_exact(byte_count)
+                    .map_err(|_| DeviceError::OutOfMemory)?;
+                zeroes.resize(byte_count, 0);
+                self.native
+                    .write_texture_volume_bytes(&texture, mip, &zeroes)
+                    .map_err(device_error)?;
+            }
             texture.set_usage(desc.usage);
             return Ok(texture);
         }
@@ -543,14 +549,23 @@ impl crate::Device for Device {
                 .native
                 .texture_3d_desc(texture)
                 .map_err(device_error)?;
+            let mip_base = desc.range.base_mip_level;
+            let mip_count = desc
+                .range
+                .mip_level_count
+                .unwrap_or(native.MipLevels.saturating_sub(mip_base));
             if desc.format != wgt::TextureFormat::Rgba8Unorm
                 || desc.dimension != wgt::TextureViewDimension::D3
                 || desc.usage != wgt::TextureUses::RESOURCE
-                || desc.range.base_mip_level != 0
-                || desc.range.mip_level_count != Some(1)
+                || !metadata_view_range_valid(
+                    &desc.range,
+                    wgt::TextureFormat::Rgba8Unorm,
+                    native.MipLevels,
+                    1,
+                )
+                || mip_base.checked_add(mip_count) != Some(native.MipLevels)
                 || desc.range.base_array_layer != 0
                 || desc.range.array_layer_count != Some(1)
-                || native.MipLevels != 1
                 || native.Format != DXGI_FORMAT_R8G8B8A8_UNORM
                 || !texture.supports_usage(desc.usage)
             {
@@ -565,7 +580,7 @@ impl crate::Device for Device {
                     false,
                     desc.usage,
                     desc.dimension,
-                    (0, 1),
+                    (mip_base, mip_count),
                 )
                 .map_err(device_error);
         }

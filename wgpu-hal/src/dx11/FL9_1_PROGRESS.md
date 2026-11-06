@@ -8394,3 +8394,57 @@ DX11 code, including older sections outside the new 3D test; no unrelated
 workspace reformat was applied. `git diff --check` passed. This x64 forced-level
 test does not establish behavior on historical FL9_1 drivers or Windows Mobile
 ARM32.
+
+## Query-gated FL9_1 3D mip sampling — 2026-11-06
+
+Extended the narrow RGBA8 3D sampled/upload path to accept mip chains only when
+the selected device's format support query positively reports
+`D3D11_FORMAT_SUPPORT_MIP` and the backend path is enabled. Every mip is
+zero-initialized and uploaded independently. The core projection exposes this
+optional limit and rejects 3D shader-resource views that omit the resource's
+lowest mip, matching the 10Level9 FL9_1 SRV rule. Texture copies, readback,
+render-target use and storage remain disabled for 3D textures.
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the public test
+requested and asserted FL9_1, observed the positive mip query, uploaded
+distinctive 4³, 2³ and 1³ levels with padded rows, submitted the uploads,
+created only suffix views, sampled three levels and verified all 64 output
+pixels exactly. It also confirmed that a view omitting the lowest mip is
+rejected. This is forced-level execution on a modern driver; it does not
+validate historical FL9_1 devices.
+
+The core fixture now follows the reported capability: it accepts a queried
+3D mip chain, rejects a non-suffix view, and accepts a suffix view; it checks
+that a multi-mip descriptor is rejected when the optional query path is absent.
+The first full fixture run found an outdated single-mip expectation. The test
+was updated to assert the new query-gated contract, and the full suite then
+passed.
+
+Verification used Rust 1.93.1 and Visual Studio 18 x64. Strict hardware mode
+was enabled for D3D11 commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features gles
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
+cargo +1.93 clippy --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --lib
+cargo +1.93 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+cargo +1.93 clippy --offline -j16 -p wgpu-types --lib --features serde
+cargo +1.93 fmt --all -- --check
+git diff --check
+~~~
+
+Results: private HAL 375/375; public D3D11 integration 54/54; core fixture
+97/97; core adapter-isolation test 1/1, enumerating two FL9_1 physical
+adapters; DX12 core regression 92/92. DX11 and GLES HAL checks passed.
+Clippy passed for HAL, core, public integration and `wgpu-types`; the existing
+HAL `create_hal_view` too-many-arguments warning remains. Workspace formatting
+check reports previously accumulated reflows in Naga and older DX11 sections;
+no unrelated formatting sweep was applied. `git diff --check` passed. Build
+artifacts remain under `E:\CodexTemp\wgpu-fl91-mission-target`.

@@ -2566,6 +2566,18 @@ impl Device {
                 total: level_end,
             });
         }
+        if texture.desc.dimension == wgt::TextureDimension::D3
+            && !self.downlevel.limits.texture_3d_non_suffix_mip_views
+            && mip_level_end != level_end
+        {
+            return Err(
+                resource::CreateTextureViewError::Texture3DViewMustIncludeLowestMip {
+                    base_mip_level: desc.range.base_mip_level,
+                    mip_level_count: resolved_mip_level_count,
+                    total: level_end,
+                },
+            );
+        }
 
         if resolved_array_layer_count == 0 {
             return Err(resource::CreateTextureViewError::ZeroArrayLayerCount);

@@ -1120,14 +1120,18 @@ bindings together cannot exceed that shared allocator. One-dimensional
 textures remain disabled. Three-dimensional resources are exposed only when
 the selected device's RGBA8 query includes `TEXTURE3D | SHADER_SAMPLE` and the
 sampled-upload backend path is present. This narrow path supports POT RGBA8,
-single-mip, single-sample volumes up to the FL9_1 dimension limit of 256, with
-`TEXTURE_BINDING | COPY_DST` usages. Core receives dimension-specific format,
-usage, mip, NPOT and texture-copy limits; it rejects unsupported descriptors
-before HAL. Buffer-to-volume uploads use a source buffer copy to a CPU-readable
-staging buffer followed by `Map` and `UpdateSubresource`, preserving execution
-ordering at the cost of a blocking transfer. 3D `COPY_SRC`, texture-to-texture
-copies, render attachments, storage, mip chains and CPU readback remain
-unavailable.
+single-sample volumes up to the FL9_1 dimension limit of 256, with
+`TEXTURE_BINDING | COPY_DST` usages. Mip chains are exposed only when the
+selected RGBA8 query also includes `D3D11_FORMAT_SUPPORT_MIP` and the backend
+mip path is enabled. Each mip is initialized and uploaded separately; shader
+resource views must include the resource's lowest mip, as required by the
+10Level9 FL9_1 view contract. A new downlevel limit lets core reject
+non-suffix 3D views before HAL. Buffer-to-volume uploads use a source buffer
+copy to a CPU-readable staging buffer followed by `Map` and `UpdateSubresource`,
+preserving execution ordering at the cost of a blocking transfer. 3D
+`COPY_SRC`, texture-to-texture copies, render attachments, storage and CPU
+readback remain unavailable. If the selected format query lacks MIP support,
+the public descriptor remains single-mip.
 The dynamic-uniform pipeline limit is twelve, matching the largest valid
 six-vertex/six-fragment visibility split; one shader stage remains limited to
 six. Other unsupported shader, storage and query paths remain absent from
