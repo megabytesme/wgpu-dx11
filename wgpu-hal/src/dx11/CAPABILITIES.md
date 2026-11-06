@@ -1191,7 +1191,10 @@ offsets from one buffer and verify red/green output after dropping the source
 buffer and bind group. Another pair switches between a uniform-only pipeline
 layout and a texture/sampler-only pipeline layout, verifying both outputs
 after their source resources are dropped. Other bundle state combinations and
-restart topologies remain unverified.
+restart topologies remain unverified. A final test in this group binds a
+writable D16 attachment to two consecutive bundles; the far draw fails depth
+and readback checks all 64 near-red pixels after dropping the source vertex
+buffer.
 
 ## Shader loop control
 

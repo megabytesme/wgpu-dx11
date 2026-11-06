@@ -2,8 +2,8 @@
 
 ## Current position — 2026-11-06
 
-Latest code checkpoint: `c4ae7bfac` (`dx11: test render bundle pipeline
-layout transitions`). The strict public D3D11 suite passed 57/57; the private
+Latest code checkpoint: `735195ef0` (`dx11: test depth attachments in FL9_1
+render bundles`). The strict public D3D11 suite passed 58/58; the private
 HAL suite passed 376/376, controlled core fixture 100/100, physical adapter
 test 1/1 and DX12 core regression 92/92 at the preceding HAL checkpoint
 `f04b4f93e`. The strict D3D11 tests selected the RTX 3090 Ti
@@ -112,6 +112,34 @@ The focused test passed 1/1 and the full strict public test binary passed
 negative format query. Clippy passed with one existing HAL argument-count
 warning. Rustfmt reports three pre-existing differences elsewhere in
 `dx11_public.rs`; the new test is formatted. `git diff --check` passed.
+
+## Checkpoint — depth attachments in render bundles — `735195ef0`
+
+Added a strict public GPU test that executes near-red and far-green draws from
+two render bundles against one writable D16 depth attachment. The bundle
+descriptor marks depth writable and the absent stencil aspect read-only,
+matching the render pass. The near draw writes depth; the far draw fails the
+Less comparison. Readback confirmed all 64 pixels remained exact red after the
+source vertex buffer was dropped. This covers bundle/attachment compatibility
+and depth state through the public core-to-HAL path.
+
+Verification used Rust 1.93.1 and Visual Studio 2022 x64:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_depth_attachment_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The focused hardware test passed 1/1 and the full strict public test binary
+passed 58/58. The optional Float16x2 format subcase printed SKIP after the
+device reported no IA support. Clippy passed with one existing HAL
+argument-count warning. Rustfmt reports three pre-existing differences
+elsewhere in `dx11_public.rs`; the new test is formatted. `git diff --check`
+passed.
 
 ## Checkpoint — render-bundle pipeline/layout transition — `c4ae7bfac`
 

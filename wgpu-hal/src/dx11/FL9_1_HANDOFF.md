@@ -3,9 +3,9 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`; its latest code checkpoint
-is `c4ae7bfac` (`dx11: test render bundle pipeline layout transitions`). The
+is `735195ef0` (`dx11: test depth attachments in FL9_1 render bundles`). The
 strict private HAL suite passed 376/376 and the public D3D11 suite passed
-57/57 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+58/58 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
 software=false), requested and actual FL9_1. The public suite explicitly
 reported one unsupported Float16x2 input-format subcase; it is not counted as
 GPU execution. The new public render-bundle case switches sparse uniform and
@@ -13,7 +13,9 @@ sampled-resource groups, drops their source handles, then validates all 64
 readback pixels. Additional bundle tests select two dynamic uniform offsets
 from one source buffer and switch from a uniform-only layout to a
 texture/sampler layout; both verify output after their source resources are
-dropped. The
+dropped. A further pair uses writable D16 depth from a bundle; the farther
+draw correctly fails against the first bundle's depth write, and all 64 color
+pixels remain red.
 private HAL suite, controlled core fixture, adapter enumeration and DX12
 results were rerun at checkpoint `f04b4f93e`; the current changes add public
 integration tests only. The CoreWindow admission check

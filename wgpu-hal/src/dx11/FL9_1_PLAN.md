@@ -716,8 +716,10 @@ gap. A separate pair of bundles changes a uniform group and sampled-resource
 group, then validates both outputs after releasing their source handles.
 Consecutive bundles also select distinct dynamic uniform offsets and verify
 both images after releasing source resources. A further case changes pipeline
-layout and resource type between bundles. Other bundle state combinations and
-restart topologies still need targeted coverage.
+layout and resource type between bundles. A writable D16 attachment case
+also verifies that the farther of two bundled draws fails depth after the
+near bundle writes it. Other bundle state combinations and restart topologies
+still need targeted coverage.
 
 ## Follow-up — mapped-view destruction safety
 
