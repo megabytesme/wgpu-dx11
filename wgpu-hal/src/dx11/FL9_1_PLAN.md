@@ -11,6 +11,23 @@ background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
+### Compiler boundary — constant texture-sampling offset (9f1617eed)
+
+WGSL 30.0.1 has no standalone textureSampleOffset builtin; its constant texel
+offset form is the final argument to textureSampleBias. The existing
+texture_sample_bias_offset limit and private HAL guard already reject it.
+Coverage now follows direct and helper-reached uses through core, HAL and the
+strict public path. Naga-generated HLSL fails FXC with X4532 under both
+ps_4_0_level_9_1 and ps_4_0_level_9_3, while the SM5 control compiles. No new
+shader capability or production validation path was added. The strict HAL
+suite passed 368/368, public D3D11 passed 50/50, the core fixture passed 96/96
+and DX12-feature core passed 92/92. See FL9_1_PROGRESS.md for the exact
+commands and hardware details.
+
+Continue auditing other core-accepted shader operations and render state
+against the selected FL9_1 compiler and HAL. Keep unsupported operations gated
+before HAL and do not claim historical-driver behavior from the modern RTX.
+
 ### Shader-contract checkpoint — WGSL loops (`62d12ecd4`)
 
 Selected-entry loop detection now follows calls from the chosen render entry
@@ -27,8 +44,8 @@ compiler and physical-device evidence.
 Continue the selected-entry WGSL/FXC audit, prioritizing constructs that core
 accepts but the current FL9_1 HLSL path cannot compile or preserve. Keep each
 restriction selected-entry-aware and backed by a compiler or hardware test;
-do not enable normal D3D11 enumeration or infer historical-driver behavior
-from the modern RTX test system.
+keep D3D11 explicitly opt-in and do not infer historical-driver behavior from
+the modern RTX test system.
 
 ### Compiler-boundary check — `instance_index` (`70341b011`)
 

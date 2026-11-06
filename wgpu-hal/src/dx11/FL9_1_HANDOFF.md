@@ -3,8 +3,8 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `d921da527`
-(`dx11: test sparse sampler group transitions`), following
+The branch is `uwp-dx11`, latest code checkpoint is `9f1617eed`
+(`dx11: verify FL9_1 sample-bias offset rejection`), following
 `f98b72200` (`dx11: test bundle restart pipeline transitions`), `70341b011`
 (`dx11: verify FL9_1 instance-index rejection`) and `62d12ecd4`
 (`dx11: reject unsupported FL9_1 shader loops`). The strict public textured
@@ -25,6 +25,14 @@ that `SV_InstanceID` is rejected with X4016 under `vs_4_0_level_9_1`, including
 unused direct and structure-member declarations; the safe sibling and
 `vs_5_0` control compile. Details and exact commands are in
 `FL9_1_PROGRESS.md`.
+
+The latest checkpoint also verifies the WGSL constant texel-offset form of
+`textureSampleBias`: core and the private HAL reject direct and helper-reached
+uses, and FXC returns X4532 for Naga-generated shaders under both level-9
+profiles while the SM5 control compiles. The full strict HAL suite is now
+368/368; public D3D11 remains 50/50, the core fixture 96/96 and DX12 core
+92/92. See the newest follow-up in `FL9_1_PROGRESS.md`; counts in older
+checkpoint notes below are historical snapshots.
 
 Strict physical tests ran on the NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`), hardware adapter, requested and

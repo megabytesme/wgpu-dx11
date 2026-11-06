@@ -7898,6 +7898,63 @@ The group-7 sampler transition was implemented and verified in the follow-up
 checkpoint below. Continue the full selected-entry/core/HAL audit; this
 checkpoint does not complete the mission.
 
+## Follow-up — FL9_1 constant texture-sampling offsets (9f1617eed)
+
+Rechecked the WGSL/Naga sampling representation instead of adding a new
+capability for a nonexistent textureSampleOffset builtin. WGSL 30.0.1
+represents the constant texel offset as the final argument of
+textureSampleBias. The existing texture_sample_bias_offset limit already
+rejects the operation in core, and the private HAL independently rejects it
+before shader compilation. The coverage now verifies direct and helper-reached
+offset use at all three validation boundaries.
+
+The new Naga-to-FXC regression compiles the biased-offset shader against both
+ps_4_0_level_9_1 and ps_4_0_level_9_3. FXC rejects each with X4532;
+the SM5 control compiles. This is compiler-profile evidence, not evidence about
+historical driver execution. No offset-sampling functionality or public
+capability was added.
+
+Verification on the RTX 3090 Ti (0x10de:0x2203, driver
+32.0.16.2101, software=false), with the public/fixture hardware tests
+requesting and confirming FL9_1:
+
+- The new HAL FXC test passed 1/1 and asserted X4532 for both level-9 profiles
+  plus successful SM5 compilation.
+- Core's selected-entry bias test passed, including a helper that performs
+  biased sampling with a constant offset.
+- The focused strict public sampled-mip test passed 1/1. Core rejected direct
+  and helper-reached offset pipelines before HAL; the supported implicit and
+  literal-bias paths matched 256 pixels.
+- The full strict private HAL suite passed 368/368. Expected unsupported
+  shader subcases emitted explicit GPU-rendering skips after preflight
+  rejection; they are not counted as GPU executions.
+- The full strict public D3D11 test binary passed 50/50. One optional
+  Float16x2 vertex-input subcase remained query-skipped.
+- The strict test-only core fixture suite passed 96/96; the selected-device
+  projection test also passed independently.
+- The DX12-feature core suite passed 92/92.
+- Core Clippy passed with one existing warning in the untouched fixture test
+  at dx11_fixture_tests.rs:4186; HAL Clippy passed with nine existing
+  warnings in untouched files; public-test Clippy passed without warnings.
+  Rustfmt 1.93.1 and git diff --check passed.
+
+Exact commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib level_9_profiles_reject_texture_sample_bias_offsets -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --lib texture_sample_bias_limits_follow_selected_entry_and_helper_calls
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+~~~
+
+Continue auditing other WGSL/core-accepted operations and state combinations
+against the selected FL9_1 compiler and HAL. This checkpoint does not complete
+the mission; historical FL9_1 drivers and ARM32 UWP remain unverified.
+
 ## Checkpoint — sparse sampler-group transition (`d921da527`)
 
 Extended `public_dx11_sparse_multi_texture_sampling_at_fl91` to render two

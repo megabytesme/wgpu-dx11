@@ -24,6 +24,13 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The selected-entry sampler contract also rejects the WGSL constant offset
+variant of texture sampling through the existing bias-offset limit. Direct and
+helper-reached uses are covered by core and private-HAL checks and by the
+strict public sampled-mip test. FXC reports X4532 for the Naga-generated form
+under both FL9_1 and FL9_3; the SM5 control compiles. This remains an
+unsupported operation and does not add shader functionality to the backend.
+
 Public buffer-map invalidation now reserves its temporary staging-readback
 allocation fallibly before mapping the D3D11 staging resource. Allocation
 failure is reported as device out-of-memory instead of panicking or leaving a

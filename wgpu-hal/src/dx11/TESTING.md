@@ -1512,6 +1512,23 @@ filters and anisotropy 1 for every sampling pair used by the selected entry.
 View and LOD compatibility checks still apply; general biased sampling and
 historical-driver behavior remain unverified.
 
+The constant offset accepted by WGSL is the final argument of
+`textureSampleBias`. Its selected-entry core limit and private HAL guard reject
+direct and helper-reached uses at FL9_1. The Naga-to-FXC profile test reproduces
+X4532 under both FL9_1 and FL9_3 and compiles an SM5 control:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib level_9_profiles_reject_texture_sample_bias_offsets -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --lib texture_sample_bias_limits_follow_selected_entry_and_helper_calls
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested/actual FL9_1, the public test rejected both
+direct and helper-reached offset pipelines before HAL; the sibling implicit
+sample and supported literal-bias rendering still matched all 256 checked
+pixels.
+
 ### FL9_1 texture transfers
 
 With strict hardware mode enabled, `cargo test --offline -p wgpu-hal --lib

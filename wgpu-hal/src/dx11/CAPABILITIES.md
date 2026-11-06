@@ -725,7 +725,12 @@ and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
 and historical FL9_1 driver behavior remain unverified. The current compiler
 uses FL9_1 profiles even on higher-level devices; a selected entry point that
 can reach `textureSampleBias` is accepted only for finite literal biases in
-[-3, 3] without a sampling offset. Dynamic biases, out-of-range values and
+[-3, 3] without a sampling offset. WGSL has no separate
+`textureSampleOffset` builtin; the optional constant texel offset belongs to
+`textureSampleBias`. FXC returns X4532 for this biased-offset form under both
+`ps_4_0_level_9_1` and `ps_4_0_level_9_3`, while the SM5 control compiles.
+Core and the private HAL reject direct and helper-reached offset forms before
+shader execution. Dynamic biases, out-of-range values and
 biases passed through helper arguments are rejected, even when the argument is
 a literal. All sampling pairs used by a selected entry containing bias must use
 equal min/mag filters and anisotropy 1; normal view and LOD checks still apply.
