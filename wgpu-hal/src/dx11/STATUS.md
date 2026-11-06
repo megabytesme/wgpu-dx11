@@ -24,6 +24,11 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+Public buffer-map invalidation now reserves its temporary staging-readback
+allocation fallibly before mapping the D3D11 staging resource. Allocation
+failure is reported as device out-of-memory instead of panicking or leaving a
+native resource mapped during unwinding.
+
 Strict public render-bundle tests now cover a nonindexed draw and an indexed
 textured draw at forced FL9_1. The latter drops its source resource handles
 after bundle recording and validates all 64 output pixels after execution.

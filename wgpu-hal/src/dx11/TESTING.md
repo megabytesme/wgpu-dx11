@@ -379,6 +379,19 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### Fallible mapped-buffer readback allocation
+
+`read_byte_buffer` allocates its output with `try_reserve_exact` before it
+creates and maps the staging buffer. Capacity/allocation failure maps to
+`E_OUTOFMEMORY`; no D3D11 resource has been mapped at that point. The CPU-only
+boundary test forces the allocator's capacity-overflow error using
+`usize::MAX`. The strict private HAL suite and public D3D11 suite also exercise
+normal mapped-buffer invalidation and readback on the selected hardware.
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib readback_allocation_reports_out_of_memory_without_panicking
+```
+
 ### FL9_1 packed 16-bit sampled formats
 
 The strict public test checks the selected-device format reports and performs

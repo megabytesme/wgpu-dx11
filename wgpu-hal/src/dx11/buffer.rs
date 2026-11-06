@@ -3,7 +3,7 @@
 //! The private HAL supports restricted buffer usage and CPU-shadow mappings.
 //! Resource initialization and WebGPU usage/limit validation remain future work.
 use super::device::{FeatureLevel, NativeDevice};
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::num::NonZeroU64;
 use parking_lot::Mutex;
 use windows::{
@@ -524,6 +524,7 @@ impl NativeDevice {
         if start == end {
             return Ok(Vec::new());
         }
+        let mut bytes = zeroed_readback(len)?;
         let desc = D3D11_BUFFER_DESC {
             ByteWidth: buffer.size,
             Usage: D3D11_USAGE_STAGING,
@@ -545,7 +546,6 @@ impl NativeDevice {
                 context.Unmap(&staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
-            let mut bytes = vec![0; len];
             core::ptr::copy_nonoverlapping(
                 mapped.pData.cast::<u8>().add(start as usize),
                 bytes.as_mut_ptr(),
@@ -575,12 +575,28 @@ impl NativeDevice {
     }
 }
 
+fn zeroed_readback(len: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(len)
+        .map_err(|_| Error::from_hresult(windows::Win32::Foundation::E_OUTOFMEMORY))?;
+    bytes.resize(len, 0);
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
 
     use super::*;
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
+    use alloc::vec;
+
+    #[test]
+    fn readback_allocation_reports_out_of_memory_without_panicking() {
+        let error = zeroed_readback(usize::MAX).unwrap_err();
+        assert_eq!(error.code(), windows::Win32::Foundation::E_OUTOFMEMORY);
+    }
 
     #[test]
     fn level9_default_buffer_bind_flags_are_portable() {
