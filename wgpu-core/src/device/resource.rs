@@ -5233,6 +5233,11 @@ impl Device {
                     pipeline::CreateRenderPipelineError::AlphaToCoverageRequiresMultisampling,
                 );
             }
+            if desc.multisample.alpha_to_coverage_enabled
+                && !self.downlevel.limits.alpha_to_coverage
+            {
+                return Err(pipeline::CreateRenderPipelineError::UnsupportedAlphaToCoverage);
+            }
             sc
         };
 

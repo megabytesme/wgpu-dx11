@@ -781,6 +781,8 @@ pub enum CreateRenderPipelineError {
     InvalidSampleCount(u32),
     #[error("Alpha-to-coverage requires a multisampled pipeline")]
     AlphaToCoverageRequiresMultisampling,
+    #[error("Alpha-to-coverage is not supported by this downlevel adapter")]
+    UnsupportedAlphaToCoverage,
     #[error("The number of vertex buffers {given} exceeds the limit {limit}")]
     TooManyVertexBuffers { given: u32, limit: u32 },
     #[error("The number of bind groups + vertex buffers {given} exceeds the limit {limit}")]
@@ -921,6 +923,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::DepthStencilState(_)
             | Self::InvalidSampleCount(_)
             | Self::AlphaToCoverageRequiresMultisampling
+            | Self::UnsupportedAlphaToCoverage
             | Self::TooManyVertexBuffers { .. }
             | Self::TooManyBindGroupsPlusVertexBuffers { .. }
             | Self::TooManyBuffersAndAccelerationStructuresInVertexStage { .. }

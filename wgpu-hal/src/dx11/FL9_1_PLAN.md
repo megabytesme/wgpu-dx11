@@ -238,6 +238,11 @@ entry-point selection are covered by a strict public test.
    equivalent nonzero FL9_1 native mask. RGBA8 4x render-and-resolve is
    available only when selected-device format and sample-count queries
    positively establish support; multisampled sampling and depth remain gated.
+   Four-sample resolve does not imply alpha-to-coverage: a dedicated
+   `DownlevelLimits::alpha_to_coverage` capability is false for FL9_1, and the
+   controlled core fixture verifies rejection before HAL. Next close the
+   selected-entry dynamic-loop/FXC mismatch and mapped `BufferView`
+   destruction lifetime issue found in the continuing audit.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`
    for NPOT spatial dimensions when more than one mip is requested; the D3D11
    implementation remains POT-only even when the runtime reports full NPOT.

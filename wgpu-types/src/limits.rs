@@ -1072,6 +1072,9 @@ pub struct DownlevelLimits {
     /// Whether multisampled textures may be declared in sampled texture bindings.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub multisampled_texture_bindings: bool,
+    /// Whether render pipelines may enable alpha-to-coverage when multisampled.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub alpha_to_coverage: bool,
     /// Whether vertex entry points may declare `@builtin(vertex_index)`.
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
@@ -1267,6 +1270,7 @@ impl Default for DownlevelLimits {
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
+            alpha_to_coverage: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
@@ -1329,6 +1333,7 @@ impl DownlevelLimits {
             && (!required.sampled_sint_textures || self.sampled_sint_textures)
             && (!required.sampled_uint_textures || self.sampled_uint_textures)
             && (!required.multisampled_texture_bindings || self.multisampled_texture_bindings)
+            && (!required.alpha_to_coverage || self.alpha_to_coverage)
             && (!required.vertex_index_input || self.vertex_index_input)
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
@@ -1407,6 +1412,7 @@ impl DownlevelCapabilities {
             && self.limits.sampled_sint_textures
             && self.limits.sampled_uint_textures
             && self.limits.multisampled_texture_bindings
+            && self.limits.alpha_to_coverage
             && self.limits.vertex_index_input
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
@@ -1708,6 +1714,27 @@ mod tests {
     }
 
     #[test]
+    fn alpha_to_coverage_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            alpha_to_coverage: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            alpha_to_coverage: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            alpha_to_coverage: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn downlevel_limits_check_minimum_capabilities() {
         let available = DownlevelLimits {
             empty_binding_visibility: true,
@@ -1717,6 +1744,7 @@ mod tests {
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
+            alpha_to_coverage: true,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
@@ -1755,6 +1783,7 @@ mod tests {
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
+            alpha_to_coverage: true,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
@@ -2023,6 +2052,7 @@ mod tests {
             "sampled_sint_textures",
             "sampled_uint_textures",
             "multisampled_texture_bindings",
+            "alpha_to_coverage",
             "max_sampled_texture_sampler_pairs_per_shader_stage",
             "max_vertex_shader_uniform_vectors",
             "max_fragment_shader_uniform_vectors",
@@ -2051,6 +2081,7 @@ mod tests {
         assert!(limits.sampled_sint_textures);
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);
+        assert!(limits.alpha_to_coverage);
         assert_eq!(
             limits.max_sampled_texture_sampler_pairs_per_shader_stage,
             u32::MAX

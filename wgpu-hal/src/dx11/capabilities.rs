@@ -224,6 +224,7 @@ pub(super) struct BackendCapabilities {
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
     pub rgba8_multisample_resolve: bool,
+    pub alpha_to_coverage: bool,
     pub vertex_buffers: u32,
     pub zero_input_vertex_pipeline: bool,
     pub nonindexed_zero_input_points: bool,
@@ -312,6 +313,7 @@ impl BackendCapabilities {
         texture_zero_initialized: true,
         texture_array_layers: 1,
         rgba8_multisample_resolve: true,
+        alpha_to_coverage: false,
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
         zero_input_vertex_pipeline: true,
         nonindexed_zero_input_points: true,
@@ -433,6 +435,7 @@ impl Capabilities {
                 sampled_sint_textures: false,
                 sampled_uint_textures: false,
                 multisampled_texture_bindings: false,
+                alpha_to_coverage: self.backend.alpha_to_coverage,
                 vertex_index_input: self.backend.vertex_index_input,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
@@ -1265,6 +1268,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.sampled_sint_textures);
         assert!(!exposed.downlevel.limits.sampled_uint_textures);
         assert!(!exposed.downlevel.limits.multisampled_texture_bindings);
+        assert!(!exposed.downlevel.limits.alpha_to_coverage);
         assert_eq!(
             exposed.downlevel.flags,
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED

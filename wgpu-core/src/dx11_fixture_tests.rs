@@ -86,6 +86,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     sampled_sint_textures: false,
                     sampled_uint_textures: false,
                     multisampled_texture_bindings: false,
+                    alpha_to_coverage: false,
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
@@ -4249,6 +4250,27 @@ fn render_triangle(
         );
         global.render_pipeline_drop(invalid_pipeline);
         std::println!("PASS: single-sample alpha-to-coverage rejected by core validation");
+
+        let mut unsupported_multisampled_alpha_to_coverage = pipeline_descriptor.clone();
+        unsupported_multisampled_alpha_to_coverage.multisample.count = 4;
+        unsupported_multisampled_alpha_to_coverage.depth_stencil = None;
+        unsupported_multisampled_alpha_to_coverage
+            .multisample
+            .alpha_to_coverage_enabled = true;
+        let (invalid_pipeline, error) = global.device_create_render_pipeline(
+            device,
+            &unsupported_multisampled_alpha_to_coverage,
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::UnsupportedAlphaToCoverage)
+            ),
+            "multisampled alpha-to-coverage must fail the downlevel capability check before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        std::println!("PASS: unsupported multisampled alpha-to-coverage rejected before HAL");
 
         let mut unsupported_format_descriptor = pipeline_descriptor.clone();
         let mut unsupported_buffers = unsupported_format_descriptor.vertex.buffers.to_vec();

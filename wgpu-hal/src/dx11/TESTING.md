@@ -2290,6 +2290,24 @@ The same strict run then cleared the multisampled target blue, rendered with a
 zero WebGPU sample mask and resolved again; all 64 pixels remained exactly
 `[0, 0, 255, 255]`.
 
+### FL9_1 alpha-to-coverage validation
+
+Four-sample RGBA8 render-and-resolve support does not imply alpha-to-coverage
+support. The FL9_1 projection reports
+`DownlevelLimits::alpha_to_coverage = false`, and core rejects a multisampled pipeline enabling it before the HAL.
+The controlled fixture checks this error while retaining the existing separate
+single-sample validation for alpha-to-coverage.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti, requested and actual FL9_1, the fixture's unsupported
+multisampled request was rejected by core before HAL; the rest of the strict
+fixture also completed its real D3D11 operations and readbacks. This does not
+test native alpha-to-coverage rendering.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1

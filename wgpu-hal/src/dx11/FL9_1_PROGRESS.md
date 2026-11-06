@@ -7635,3 +7635,36 @@ Next close the independently identified public core/HAL mismatch for
 alpha-to-coverage on query-supported 4x RGBA8 render targets, then continue the
 selected-entry WGSL/FXC shader audit. Historical FL9_1 drivers, synchronous
 callback delivery and CoreWindow/ARM32 execution remain unverified.
+
+## Follow-up — explicit FL9_1 alpha-to-coverage limit
+
+The optional query-backed four-sample RGBA8 render-and-resolve path did not
+mean alpha-to-coverage was available. `DownlevelLimits::alpha_to_coverage`
+now represents that separate contract; its full-capability default preserves
+other backends, while the selected D3D11 FL9_1 projection reports `false`.
+Core rejects an alpha-to-coverage pipeline after the required multisample-state
+check and before HAL. The controlled fixture tests both single-sample and
+multisampled rejection. No native alpha-to-coverage execution is claimed.
+
+Verification on Rust 1.93.1 with the Visual Studio x64 environment used the
+separate temporary Cargo target `E:\CodexTemp\wgpu-fl91-mission-target`:
+
+- Strict `fl91_core_buffer_and_offscreen_render_on_hardware`: 1/1 passed on
+  the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+  hardware adapter), requested and actual FL9_1. It logged the expected core
+  rejection and completed the fixture's GPU draws, transfers, synchronization
+  and readbacks.
+- `requesting_dx11_exposes_only_fl91_hardware_adapters`: 1/1 passed and
+  enumerated two physical FL9_1 D3D11 adapters through the explicit opt-in
+  backend path.
+- `cargo +1.93 test --offline -j8 -p wgpu-types`: 84 unit tests and 14
+  doctests passed; 21 doctests were intentionally ignored. The no-serde build
+  emitted the existing unused serde-import warnings.
+- Earlier attempts using the repository-local target hit MSVC PDB limits and
+  then exhausted C: during a debug-profile rebuild. Only outputs created by
+  those failed commands were removed; all source changes were preserved. The
+  successful test commands used the E: temporary target.
+
+Next close the selected-entry dynamic-loop/FXC mismatch and the mapped
+`BufferView` destruction lifetime issue found in the continuing core audit.
+Historical FL9_1 behavior and ARM32 UWP remain unverified.

@@ -534,7 +534,7 @@ all out-of-target rectangles. Other backends keep the default true capability.
   requirement. A strict controlled core render preserved all 64 clear-color
   pixels. Optional 4x RGBA8 render-and-resolve is exposed only after positive
   selected-device quality-level and format-support queries; multisampled
-  sampling/depth, other sample counts and alpha-to-coverage remain unsupported.
+  sampling/depth, other sample counts remain unsupported. Alpha-to-coverage is separately gated by `DownlevelLimits::alpha_to_coverage` and rejected by core before HAL.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled
