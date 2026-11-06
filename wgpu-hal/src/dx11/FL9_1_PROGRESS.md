@@ -8835,3 +8835,48 @@ confirmed requested and actual FL9_1, and reported `PASS` with the pixel
 counts above. A fresh read-only Lumia Device Portal `GET /api/os/devicefamily`
 also timed out, as did the earlier probe; Windows Mobile ARM32 remains an
 environmental verification gap.
+
+## BC1 GPU copy-source boundary — 2026-11-06
+
+The FL9_1 private capability projection now permits BC1 as a
+texture-to-texture copy source when the selected device reports the required
+Texture2D support, without requiring an RTV. Core has a new per-format
+texture-to-buffer downlevel limit so BC1 GPU-copy capability cannot imply CPU
+readback. A strict public-core fixture copied a partial BC1 block region into a
+second BC1 texture, sampled the destination, and matched all 64 RGBA8 output
+pixels. It also verified that a BC1 texture-to-buffer copy fails core
+validation before HAL execution. The RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) returned BC1 format mask `0x000213a0` at requested/actual
+FL9_1; this modern forced-level result does not establish behavior on
+historical FL9_1 devices.
+
+Rust 1.93.1 and Visual Studio 2022 Build Tools x64 verification:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-types --lib texture_to_buffer_copy_format_mask_is_a_downlevel_limit
+cargo +1.93 check --offline -j16 -p wgpu-test --lib
+cargo +1.93 clippy --offline -j16 -p wgpu-types --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+git diff --check
+~~~
+
+Results: strict private HAL 376/376; strict core fixture 100/100; strict
+public D3D11 60/60; the explicit adapter isolation test 1/1; DX12 core 92/92;
+the format-mask unit test 1/1; and `wgpu-test` library check passed after
+updating exhaustive downlevel-limit literals for the new field. The public
+suite explicitly skipped its optional Float16x2 input-format subcase because
+the selected adapter did not report R16G16_FLOAT IA support. Types, HAL and
+core Clippy passed with existing unused-serde/qualification, HAL range/test
+layout and argument-count warnings, and fixture style warnings. Workspace
+`cargo fmt --all -- --check` remains nonzero because older Naga, D3D11 and
+public-test sections do not match current rustfmt; the new BC1 code was
+formatted locally and `git diff --check` passes. This is a focused copy-path
+increment; public device-enumeration policy and the broader FL9_1 capability
+audit remain unchanged.

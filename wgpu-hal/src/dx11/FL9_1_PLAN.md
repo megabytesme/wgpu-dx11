@@ -541,10 +541,14 @@ Latest sampled-format increments: R8_UNORM (`268431ec3`), R8G8_SNORM
 (`881640796`), R8G8B8A8_SNORM (`312dba141`) and BC1_UNORM (`6c67e22be`)
 use queried, single-mip sampled/upload paths and strict FL9_1 GPU readback.
 BC1 upload uses 4x4 blocks and 8-byte block rows, including padded pitches,
-nonzero source offsets and aligned partial updates. BC1 copy-source, render
-target, readback, sRGB and mip-chain uses remain unsupported. The controlled
+nonzero source offsets and aligned partial updates. A selected-device-query-
+gated, block-aligned BC1 GPU texture-copy source path now passes a partial-copy
+and sampled-output test. `DownlevelLimits::texture_to_buffer_copy_format_mask`
+keeps BC1 CPU readback unavailable before HAL because FL9_1 cannot copy an
+SRV-only resource to CPU-visible memory. Render-target, sRGB and mip-chain
+uses remain unsupported. The controlled
 core fixture now validates BC1 through texture creation, queue upload, binding,
-rendering and readback, and creates its device via `adapter_request_device`
+rendering and RGBA8 output readback, and creates its device via `adapter_request_device`
 and the test-only HAL `Adapter::open`. It still injects hand-selected limits
 and does not by itself represent the public adapter contract. The opt-in
 production adapter now uses that same selected-device projection for public

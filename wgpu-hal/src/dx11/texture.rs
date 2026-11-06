@@ -504,6 +504,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
+                    | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_B5G6R5_UNORM
             )
             || (desc.MipLevels > 1

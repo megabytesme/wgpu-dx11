@@ -110,6 +110,8 @@ pub enum TransferError {
     InvalidDimensionExternal,
     #[error("Copies involving 3D textures are unavailable on this device")]
     UnsupportedTexture3DCopy,
+    #[error("Copying texture format {0:?} to a buffer is unavailable on this device")]
+    UnsupportedTextureToBufferFormat(wgt::TextureFormat),
     #[error("Buffer offset {0} is not aligned to block size or `COPY_BUFFER_ALIGNMENT`")]
     UnalignedBufferOffset(BufferAddress),
     #[error("Copy size {0} does not respect `COPY_BUFFER_ALIGNMENT`")]
@@ -202,6 +204,7 @@ impl WebGpuError for TransferError {
             | Self::InvalidTextureMipLevel { .. }
             | Self::InvalidDimensionExternal
             | Self::UnsupportedTexture3DCopy
+            | Self::UnsupportedTextureToBufferFormat(..)
             | Self::UnalignedBufferOffset(..)
             | Self::UnalignedCopySize(..)
             | Self::UnalignedCopyWidth
@@ -1303,6 +1306,17 @@ pub(super) fn copy_texture_to_buffer(
             CopySide::Destination,
             copy_size,
         )?;
+
+    if !state
+        .device
+        .downlevel
+        .limits
+        .supports_texture_to_buffer_copy(src_texture.desc.format)
+    {
+        return Err(
+            TransferError::UnsupportedTextureToBufferFormat(src_texture.desc.format).into(),
+        );
+    }
 
     if src_texture.desc.format.is_depth_stencil_format() {
         state

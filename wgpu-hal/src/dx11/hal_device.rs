@@ -283,6 +283,7 @@ impl crate::Device for Device {
             desc.format,
             wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Unorm
+                | wgt::TextureFormat::Bc1RgbaUnorm
                 | wgt::TextureFormat::Rgb5g6b5Unorm
         );
         let supported = wgt::TextureUses::TRANSIENT
@@ -448,9 +449,9 @@ impl crate::Device for Device {
             } else {
                 0
             }
-            | if desc
-                .usage
-                .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC)
+            | if desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
+                || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
+                    && desc.format != wgt::TextureFormat::Bc1RgbaUnorm)
             {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
@@ -480,8 +481,9 @@ impl crate::Device for Device {
                     desc.size.height,
                     desc.mip_level_count,
                     1,
-                    desc.usage
-                        .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
+                    desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
+                        || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
+                            && desc.format != wgt::TextureFormat::Bc1RgbaUnorm),
                     format,
                     desc.sample_count,
                 )

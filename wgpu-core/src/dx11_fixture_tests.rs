@@ -87,6 +87,10 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     texture_3d_mipmaps: false,
                     texture_3d_non_suffix_mip_views: false,
                     multisampled_texture_usage_mask: 0,
+                    texture_to_buffer_copy_format_mask:
+                        !wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                            wgt::TextureFormat::Bc1RgbaUnorm,
+                        ),
                     texture_3d_texture_copies: false,
                     npot_texture_3d: false,
                     max_texture_cube_dimension: 0,
@@ -1373,6 +1377,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         .downlevel
         .limits
         .unrestricted_npot_texture_sampling = false;
+    let texture_to_buffer_mask = projected_capabilities
+        .downlevel
+        .limits
+        .texture_to_buffer_copy_format_mask;
     let limits = projected_capabilities.limits.clone();
     let rgba_mips = fixture
         .test_fixture_copy_only_rgba8_mip_supported()
@@ -1468,6 +1476,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     };
     let bc1_required = hal::TextureFormatCapabilities::SAMPLED
         | hal::TextureFormatCapabilities::COPY_DST
+        | hal::TextureFormatCapabilities::COPY_SRC
         | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY;
     let bc1_supported = bc1_caps.contains(bc1_required);
     assert!(bc1_supported);
@@ -1568,10 +1577,28 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     );
     let bc1_core =
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc1RgbaUnorm);
+    assert_eq!(
+        texture_to_buffer_mask
+            & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                wgt::TextureFormat::Bc1RgbaUnorm,
+            ),
+        0,
+        "BC1 GPU-copy support must not imply CPU readback"
+    );
+    assert_ne!(
+        texture_to_buffer_mask
+            & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                wgt::TextureFormat::Rgba8Unorm,
+            ),
+        0,
+        "the fixture retains its checked RGBA8 readback path"
+    );
     if bc1_supported {
         assert_eq!(
             bc1_core.allowed_usages,
-            wgt::TextureUsages::COPY_DST | wgt::TextureUsages::TEXTURE_BINDING
+            wgt::TextureUsages::COPY_SRC
+                | wgt::TextureUsages::COPY_DST
+                | wgt::TextureUsages::TEXTURE_BINDING
         );
         assert_eq!(
             bc1_core.flags,
@@ -2605,6 +2632,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     if bc1_supported {
         render_triangle(&global, device, queue, VertexCase::Bc1);
+        render_triangle(&global, device, queue, VertexCase::Bc1TextureCopy);
     }
     if rgba_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND) {
         render_triangle(&global, device, queue, VertexCase::PremultipliedBlend);
@@ -3807,6 +3835,7 @@ enum VertexCase {
     DynamicVertexFragmentUniformBindings,
     MultiGroupUniformBindings,
     Bc1,
+    Bc1TextureCopy,
     NpotClampedPairs,
     ViewportOutsideTarget,
     FractionalViewport,
@@ -3824,10 +3853,17 @@ fn render_triangle(
     let zero_sample_mask = case == VertexCase::ZeroSampleMask;
     let non_filtering = matches!(
         case,
-        VertexCase::NonFiltering | VertexCase::UnfilterableFloat | VertexCase::Bc1
+        VertexCase::NonFiltering
+            | VertexCase::UnfilterableFloat
+            | VertexCase::Bc1
+            | VertexCase::Bc1TextureCopy
     );
-    let unfilterable_float = matches!(case, VertexCase::UnfilterableFloat | VertexCase::Bc1);
-    let bc1 = case == VertexCase::Bc1;
+    let unfilterable_float = matches!(
+        case,
+        VertexCase::UnfilterableFloat | VertexCase::Bc1 | VertexCase::Bc1TextureCopy
+    );
+    let bc1 = matches!(case, VertexCase::Bc1 | VertexCase::Bc1TextureCopy);
+    let bc1_texture_copy = case == VertexCase::Bc1TextureCopy;
     let pipeline_constant = matches!(
         case,
         VertexCase::PipelineConstant
@@ -4031,6 +4067,11 @@ fn render_triangle(
                 } else {
                     wgt::TextureUsages::TEXTURE_BINDING
                         | wgt::TextureUsages::COPY_DST
+                        | if bc1_texture_copy {
+                            wgt::TextureUsages::COPY_SRC
+                        } else {
+                            wgt::TextureUsages::empty()
+                        }
                         | if sampled_mips && !no_copy_src {
                             wgt::TextureUsages::COPY_SRC
                         } else {
@@ -4043,6 +4084,27 @@ fn render_triangle(
         )
     };
     assert!(error.is_none(), "sampled texture creation: {error:?}");
+    let bc1_copy_destination = if bc1_texture_copy {
+        let (texture, error) = global.device_create_texture(
+            device,
+            &wgt::TextureDescriptor {
+                label: None,
+                size: sample_extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Bc1RgbaUnorm,
+                usage: wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+                view_formats: Vec::new(),
+            },
+            None,
+        );
+        assert!(error.is_none(), "BC1 copy destination creation: {error:?}");
+        Some(texture)
+    } else {
+        None
+    };
+    let sampled_view_texture = bc1_copy_destination.unwrap_or(sampled);
     let bc1_data = if bc1 {
         let mut data = Vec::with_capacity(32);
         for color in [0x001fu16, 0xffff, 0xf800, 0x07e0] {
@@ -4201,8 +4263,28 @@ fn render_triangle(
                 .expect("sampled last mip upload");
         }
     }
+    if bc1_texture_copy {
+        global
+            .queue_write_texture(
+                queue,
+                &wgt::TexelCopyTextureInfo {
+                    texture: bc1_copy_destination.expect("BC1 copy destination"),
+                    mip_level: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                bc1_data.as_deref().expect("BC1 source data"),
+                &wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(16),
+                    rows_per_image: Some(2),
+                },
+                &sample_extent,
+            )
+            .expect("initialize BC1 copy destination");
+    }
     let (sample_view, error) = global.texture_create_view(
-        sampled,
+        sampled_view_texture,
         &resource::TextureViewDescriptor {
             range: if sampled_mip_suffix {
                 wgt::ImageSubresourceRange {
@@ -5872,6 +5954,80 @@ fn render_triangle(
         None,
     );
     assert!(error.is_none(), "render encoder: {error:?}");
+    if bc1_texture_copy {
+        let destination = bc1_copy_destination.expect("BC1 copy destination");
+        global
+            .command_encoder_copy_texture_to_texture(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture: sampled,
+                    mip_level: 0,
+                    origin: wgt::Origin3d { x: 0, y: 4, z: 0 },
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyTextureInfo {
+                    texture: destination,
+                    mip_level: 0,
+                    origin: wgt::Origin3d { x: 4, y: 4, z: 0 },
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .expect("record BC1 texture-to-texture copy");
+
+        let (invalid_encoder, error) = global.device_create_command_encoder(
+            device,
+            &wgt::CommandEncoderDescriptor::default(),
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "BC1 readback validation encoder: {error:?}"
+        );
+        global
+            .command_encoder_copy_texture_to_buffer(
+                invalid_encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture: sampled,
+                    mip_level: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyBufferInfo {
+                    buffer: readback,
+                    layout: wgt::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(sample_extent.height),
+                    },
+                },
+                &sample_extent,
+            )
+            .expect("record BC1 readback for deferred validation");
+        let (invalid_command, error) = global.command_encoder_finish(
+            invalid_encoder,
+            &wgt::CommandBufferDescriptor::default(),
+            None,
+        );
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some((_, crate::command::CommandEncoderError::Transfer(
+                    crate::command::TransferError::UnsupportedTextureToBufferFormat(format)
+                ))) if *format == wgt::TextureFormat::Bc1RgbaUnorm
+            ),
+            "BC1 texture-to-buffer readback must fail before HAL: {error:?}"
+        );
+        global.command_buffer_drop(invalid_command);
+        global.command_encoder_drop(invalid_encoder);
+        std::println!(
+            "PASS: BC1 GPU copy is allowed while texture-to-buffer readback is rejected by core"
+        );
+    }
     if let Some((green, blue, _)) = render_mip_views {
         for (mip_view, color) in [(green, wgt::Color::GREEN), (blue, wgt::Color::BLUE)] {
             let attachments = [Some(render::RenderPassColorAttachment {
@@ -6375,6 +6531,8 @@ fn render_triangle(
                     &[255, 255, 0, 255]
                 } else if uninitialized_mip {
                     &[0, 0, 0, 0]
+                } else if bc1_texture_copy {
+                    &[255, 0, 0, 255]
                 } else if bc1 {
                     if x < 4 {
                         &[255, 0, 0, 255]
@@ -6458,6 +6616,9 @@ fn render_triangle(
     global.texture_view_drop(sample_view);
     if disjoint_format.is_none() {
         global.texture_drop(sampled);
+    }
+    if let Some(texture) = bc1_copy_destination {
+        global.texture_drop(texture);
     }
     global.texture_view_drop(depth_view);
     global.texture_drop(depth);

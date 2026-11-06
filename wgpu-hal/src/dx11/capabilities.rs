@@ -248,6 +248,7 @@ pub(super) struct BackendCapabilities {
     pub rg16_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
     pub bc1_sampled_upload: bool,
+    pub bc1_texture_to_texture_copy: bool,
     pub packed_16bit_sampled_upload: bool,
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
@@ -343,6 +344,7 @@ impl BackendCapabilities {
         rg16_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
         bc1_sampled_upload: true,
+        bc1_texture_to_texture_copy: true,
         packed_16bit_sampled_upload: true,
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
@@ -528,6 +530,7 @@ impl Capabilities {
                 multisampled_texture_usage_mask: (wgt::TextureUsages::RENDER_ATTACHMENT
                     | wgt::TextureUsages::TRANSIENT_ATTACHMENT)
                     .bits(),
+                texture_to_buffer_copy_format_mask: self.texture_to_buffer_copy_format_mask(),
                 texture_3d_texture_copies: false,
                 npot_texture_3d: false,
                 max_texture_cube_dimension: if cube_texture_sampling {
@@ -713,6 +716,29 @@ impl Capabilities {
         self.cube_texture_format_mask() & rgba8 != 0
     }
 
+    pub fn texture_to_buffer_copy_format_mask(&self) -> u32 {
+        [
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureFormat::Bgra8Unorm,
+            wgt::TextureFormat::Rgba8UnormSrgb,
+            wgt::TextureFormat::Bgra8UnormSrgb,
+            wgt::TextureFormat::R8Unorm,
+            wgt::TextureFormat::Rg8Unorm,
+            wgt::TextureFormat::Rgb5g6b5Unorm,
+        ]
+        .into_iter()
+        .fold(0, |mask, format| {
+            if self
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::COPY_SRC)
+            {
+                mask | wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
+            } else {
+                mask
+            }
+        })
+    }
+
     pub fn unrestricted_npot_texture_sampling(&self) -> bool {
         !self.hardware.conditional_npot || matches!(self.driver.full_npot, Query::Value(true))
     }
@@ -880,6 +906,7 @@ impl Capabilities {
         let copy_source_implemented = match format {
             wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_copy_source,
             wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_copy_source,
+            wgt::TextureFormat::Bc1RgbaUnorm => self.backend.bc1_texture_to_texture_copy,
             wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_copy_source,
             _ => false,
         };
@@ -890,7 +917,9 @@ impl Capabilities {
             _ => false,
         };
         let sampled_copy_source = usage.contains(wgt::TextureUses::COPY_SRC)
-            && copy_source_implemented
+            && (copy_source_implemented
+                || (format == wgt::TextureFormat::Bc1RgbaUnorm
+                    && self.backend.bc1_texture_to_texture_copy))
             && (!usage.contains(wgt::TextureUses::COLOR_TARGET)
                 || copy_source_color_attachment_implemented);
         if sampled_upload
@@ -975,7 +1004,11 @@ impl Capabilities {
             } else {
                 0
             }
-            | if usage.intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC) {
+            | if usage.contains(wgt::TextureUses::COLOR_TARGET)
+                || (usage.contains(wgt::TextureUses::COPY_SRC)
+                    && !(format == wgt::TextureFormat::Bc1RgbaUnorm
+                        && self.backend.bc1_texture_to_texture_copy))
+            {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
                 0
@@ -1155,6 +1188,7 @@ impl Capabilities {
                     wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_copy_source,
                     wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_copy_source,
                     wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_copy_source,
+                    wgt::TextureFormat::Bc1RgbaUnorm => self.backend.bc1_texture_to_texture_copy,
                     _ => false,
                 };
                 if copy_source_implemented
@@ -2620,7 +2654,7 @@ mod tests {
     }
 
     #[test]
-    fn format_projection_reports_only_implemented_sampled_uploads_and_depth() {
+    fn format_projection_reports_only_implemented_sampled_uploads_copies_and_depth() {
         let mut caps = model(FeatureLevel::L9_1);
         for format in [
             wgt::TextureFormat::R8Unorm,
@@ -2641,7 +2675,9 @@ mod tests {
                 reported.contains(FormatCaps::COPY_SRC),
                 matches!(
                     format,
-                    wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Unorm
+                    wgt::TextureFormat::R8Unorm
+                        | wgt::TextureFormat::Rg8Unorm
+                        | wgt::TextureFormat::Bc1RgbaUnorm
                 )
             );
             assert_eq!(
@@ -4083,6 +4119,7 @@ mod tests {
 
         let format = wgt::TextureFormat::Bc1RgbaUnorm;
         let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let copy_source_usage = usage | wgt::TextureUses::COPY_SRC;
         let caps = model(FeatureLevel::L9_1);
         assert!(caps.hardware.bc1_unorm_sampled_texture);
         assert!(caps.backend.bc1_sampled_upload);
@@ -4091,7 +4128,6 @@ mod tests {
             Ok(())
         );
         for invalid_usage in [
-            wgt::TextureUses::COPY_SRC,
             wgt::TextureUses::COLOR_TARGET,
             wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
         ] {
@@ -4100,6 +4136,32 @@ mod tests {
                 Err(UnsupportedUsage)
             );
         }
+        assert_eq!(
+            caps.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1),
+            Ok(())
+        );
+        assert!(caps
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert_eq!(
+            caps.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+            0
+        );
+        let texture2d_only = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let mut copy_query = caps;
+        copy_query.driver.bc1_unorm = Query::Value(texture2d_only);
+        assert_eq!(
+            copy_query.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1,),
+            Ok(()),
+            "BC1 GPU copies must not require an RTV or optional shader-sample query bit"
+        );
+        assert!(copy_query
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert!(!copy_query
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
         for (extent, layers, mips, samples) in [
             ([6, 8], 1, 1, 1),
             ([8, 2], 1, 1, 1),
@@ -4126,6 +4188,10 @@ mod tests {
             query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
             Err(DriverQueryUnavailable)
         );
+        assert_eq!(
+            query.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1),
+            Err(DriverQueryUnavailable)
+        );
         query.driver.bc1_unorm =
             Query::Value(required & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32));
         assert_eq!(
@@ -4145,6 +4211,12 @@ mod tests {
         query.backend.bc1_sampled_upload = false;
         assert_eq!(
             query.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Err(UnsupportedUsage)
+        );
+        query = caps;
+        query.backend.bc1_texture_to_texture_copy = false;
+        assert_eq!(
+            query.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1),
             Err(UnsupportedUsage)
         );
     }

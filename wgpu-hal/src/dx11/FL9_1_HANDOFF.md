@@ -1920,3 +1920,15 @@ strict public D3D11 suite passed 38/38; the optional Float16x2 IA branch was
 explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
+
+## Latest increment — BC1 GPU copy source
+
+BC1 now supports query-gated GPU texture-to-texture copies at FL9_1. A new
+per-format `DownlevelLimits` mask keeps texture-to-buffer readback separate;
+the strict core fixture copied a BC1 block region into another resource,
+sampled the destination and validated 64/64 output pixels, then verified BC1
+readback was rejected before HAL. Current strict counts: private HAL 376/376,
+core fixture 100/100, public D3D11 60/60, adapter isolation 1/1 and DX12 core
+92/92. The optional public Float16x2 vertex-input subcase was skipped by the
+device query. Continue the remaining core/HAL capability audit; this does not
+complete FL9_1 coverage, and older hardware plus ARM32 remain unverified.

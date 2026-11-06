@@ -497,12 +497,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   forced-FL9_1 test verifies padded signed four-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
   Render-target, copy-source, readback and mip-chain uses remain unsupported.
-- BC1_UNORM has a queried one-mip, one-layer sampled/upload subset. Texture
-  dimensions and upload regions must align to 4×4 blocks; rows are measured in
-  eight-byte blocks. A strict forced-FL9_1 test uploads a padded 8×8 pattern,
-  replaces one block through a second upload, then validates all 256 rendered
-  pixels. Copy-source, readback, render-target, mip-chain and sRGB view uses
-  remain unsupported.
+- BC1_UNORM has a queried one-mip, one-layer sampled/upload subset and a
+  block-aligned GPU texture-copy source path. Texture dimensions, upload
+  regions and copy boxes must align to 4×4 blocks; rows are measured in
+  eight-byte blocks. Strict forced-FL9_1 tests copy BC1 into a second sampled
+  texture and match all 64 rendered output pixels. Core's per-format
+  texture-to-buffer limit rejects BC1 CPU readback before HAL. Render-target,
+  mip-chain and sRGB view uses remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.

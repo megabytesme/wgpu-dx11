@@ -1076,6 +1076,16 @@ pub struct DownlevelLimits {
         serde(default = "default_multisampled_texture_usage_mask")
     )]
     pub multisampled_texture_usage_mask: u32,
+    /// Formats that may be used as the source of a texture-to-buffer copy.
+    ///
+    /// Some downlevel backends can copy a texture between GPU resources but cannot safely stage
+    /// that format for CPU-visible buffer readback. The bit assignments are defined by
+    /// [`texture_to_buffer_copy_format_bit`].
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_texture_to_buffer_copy_format_mask")
+    )]
+    pub texture_to_buffer_copy_format_mask: u32,
     /// Whether copies directly between 3D textures are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d_texture_copies: bool,
@@ -1328,6 +1338,11 @@ fn default_multisampled_texture_usage_mask() -> u32 {
 }
 
 #[cfg(feature = "serde")]
+fn default_texture_to_buffer_copy_format_mask() -> u32 {
+    u32::MAX
+}
+
+#[cfg(feature = "serde")]
 fn default_max_sampled_texture_sampler_pairs() -> u32 {
     u32::MAX
 }
@@ -1343,6 +1358,7 @@ impl Default for DownlevelLimits {
             texture_3d_mipmaps: true,
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
+            texture_to_buffer_copy_format_mask: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             max_texture_cube_dimension: u32::MAX,
@@ -1441,6 +1457,40 @@ impl DownlevelLimits {
         crate::TextureUsages::from_bits_retain(self.multisampled_texture_usage_mask).contains(usage)
     }
 
+    /// Returns the bit assigned to a format in the texture-to-buffer copy mask.
+    #[must_use]
+    pub const fn texture_to_buffer_copy_format_bit(format: crate::TextureFormat) -> u32 {
+        match format {
+            crate::TextureFormat::Rgba8Unorm => 1 << 0,
+            crate::TextureFormat::Bgra8Unorm => 1 << 1,
+            crate::TextureFormat::Rgba8UnormSrgb => 1 << 2,
+            crate::TextureFormat::Bgra8UnormSrgb => 1 << 3,
+            crate::TextureFormat::R8Unorm => 1 << 4,
+            crate::TextureFormat::Rg8Unorm => 1 << 5,
+            crate::TextureFormat::Rg8Snorm => 1 << 6,
+            crate::TextureFormat::Rg16Snorm => 1 << 7,
+            crate::TextureFormat::Rgba8Snorm => 1 << 8,
+            crate::TextureFormat::Bc1RgbaUnorm => 1 << 9,
+            crate::TextureFormat::Rgb5g6b5Unorm => 1 << 10,
+            crate::TextureFormat::Rgb5a1Unorm => 1 << 11,
+            crate::TextureFormat::Rgba4Unorm => 1 << 12,
+            crate::TextureFormat::Depth16Unorm => 1 << 13,
+            crate::TextureFormat::Depth24PlusStencil8 => 1 << 14,
+            _ => 0,
+        }
+    }
+
+    /// Returns whether a format may be copied to a buffer on this adapter.
+    #[must_use]
+    pub const fn supports_texture_to_buffer_copy(&self, format: crate::TextureFormat) -> bool {
+        let bit = Self::texture_to_buffer_copy_format_bit(format);
+        if bit == 0 {
+            self.texture_to_buffer_copy_format_mask == u32::MAX
+        } else {
+            self.texture_to_buffer_copy_format_mask & bit != 0
+        }
+    }
+
     /// Returns whether the selected format can be used by a cube texture.
     #[must_use]
     pub const fn supports_texture_cube_format(&self, format: crate::TextureFormat) -> bool {
@@ -1488,6 +1538,8 @@ impl DownlevelLimits {
                     && (!required.npot_texture_3d || self.npot_texture_3d)))
             && self.multisampled_texture_usage_mask & required.multisampled_texture_usage_mask
                 == required.multisampled_texture_usage_mask
+            && self.texture_to_buffer_copy_format_mask & required.texture_to_buffer_copy_format_mask
+                == required.texture_to_buffer_copy_format_mask
             && self.max_texture_cube_dimension >= required.max_texture_cube_dimension
             && self.texture_cube_format_mask & required.texture_cube_format_mask
                 == required.texture_cube_format_mask
@@ -1577,6 +1629,7 @@ impl DownlevelCapabilities {
             && self.limits.texture_3d_mipmaps
             && self.limits.texture_3d_non_suffix_mip_views
             && self.limits.multisampled_texture_usage_mask == crate::TextureUsages::all().bits()
+            && self.limits.texture_to_buffer_copy_format_mask == u32::MAX
             && self.limits.texture_3d_texture_copies
             && self.limits.npot_texture_3d
             && self.limits.max_texture_cube_dimension
@@ -1841,6 +1894,7 @@ pub enum ShaderModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TextureFormat;
     use alloc::{format, string::String, vec::Vec};
 
     #[test]
@@ -2081,6 +2135,7 @@ mod tests {
             texture_3d_mipmaps: true,
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
+            texture_to_buffer_copy_format_mask: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
@@ -2131,6 +2186,7 @@ mod tests {
             texture_3d_mipmaps: true,
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
+            texture_to_buffer_copy_format_mask: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
@@ -2349,6 +2405,39 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn texture_to_buffer_copy_format_mask_is_a_downlevel_limit() {
+        let rgba8 = DownlevelLimits::texture_to_buffer_copy_format_bit(TextureFormat::Rgba8Unorm);
+        let bc1 = DownlevelLimits::texture_to_buffer_copy_format_bit(TextureFormat::Bc1RgbaUnorm);
+        let available = DownlevelLimits {
+            texture_to_buffer_copy_format_mask: rgba8,
+            ..DownlevelLimits::default()
+        };
+
+        assert!(available.supports_texture_to_buffer_copy(TextureFormat::Rgba8Unorm));
+        assert!(!available.supports_texture_to_buffer_copy(TextureFormat::Bc1RgbaUnorm));
+        assert!(!available.supports_texture_to_buffer_copy(TextureFormat::Rgba16Float));
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_to_buffer_copy_format_mask: rgba8,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_to_buffer_copy_format_mask: bc1,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+        assert!(
+            DownlevelLimits::default().supports_texture_to_buffer_copy(TextureFormat::Bc1RgbaUnorm)
+        );
+        assert!(
+            DownlevelLimits::default().supports_texture_to_buffer_copy(TextureFormat::Rgba16Float)
+        );
     }
 
     #[test]

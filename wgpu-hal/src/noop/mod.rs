@@ -196,6 +196,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_3d_mipmaps: true,
                 texture_3d_non_suffix_mip_views: true,
                 multisampled_texture_usage_mask: wgt::TextureUsages::all().bits(),
+                texture_to_buffer_copy_format_mask: u32::MAX,
                 texture_3d_texture_copies: true,
                 npot_texture_3d: true,
                 max_texture_cube_dimension: u32::MAX,

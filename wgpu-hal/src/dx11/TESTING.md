@@ -1747,14 +1747,26 @@ the rejection boundary. This forced modern driver does not establish behavior
 on historical FL9_1 hardware.
 The BC1 test uploads an 8×8 block-compressed image from offset 8 with a 24-byte
 block-row pitch, replaces the block at [4,0] with a second padded upload, and
-checks all 256 pixels after sampling. Its format mask was `0x000213a0` and
-filtered sampling was reported. R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM,
-RGB5A1, RGBA4 and BC1 do not support render-target, copy-source or readback
-operations in this private subset. R8_UNORM, R8G8_UNORM and B5G6R5 have a
-narrower query-gated single-mip render-target, copy and readback path described
-below. RG8_UNORM linear filtering has visual execution coverage; R8_UNORM and
-the SNORM formats have query-backed filterability but only nearest-sampling
-readback coverage.
+checks all 256 pixels after sampling. A second strict core case copies the
+BC1 source into another texture before sampling and validates all 64 target
+pixels. Its format mask was `0x000213a0` and filtered sampling was reported.
+BC1 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
+texture-to-buffer attempt fails core validation because FL9_x cannot safely
+copy an SRV-only BC1 texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM,
+R8G8B8A8_SNORM, RGB5A1 and RGBA4 still do not support render-target,
+copy-source or readback operations in this private subset. R8_UNORM,
+R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
+copy and readback path described below. RG8_UNORM linear filtering has visual
+execution coverage; R8_UNORM and the SNORM formats have query-backed
+filterability but only nearest-sampling readback coverage.
+
+Run the controlled core copy/readback boundary test with strict physical
+hardware required:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
 
 ### Query-gated R8, RG8 and RGB565 copy/readback
 

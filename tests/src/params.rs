@@ -17,6 +17,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         texture_3d_mipmaps: false,
         texture_3d_non_suffix_mip_views: false,
         multisampled_texture_usage_mask: 0,
+        texture_to_buffer_copy_format_mask: 0,
         texture_3d_texture_copies: false,
         npot_texture_3d: false,
         max_texture_cube_dimension: 0,

@@ -53,6 +53,7 @@ Bottom level categories:
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
 - Add selected-device-query-gated FL9_1 RGBA8 3D texture sampling and staged uploads to the opt-in D3D11 backend.
 - Add query-gated R8, RG8 and RGB565 texture copies and CPU readback to the opt-in D3D11 backend.
+- Add query-gated BC1 GPU texture-to-texture copying to the opt-in D3D11 FL9_1 backend.
 - Add query-gated R8, RG8 and RGB565 attachment blending to the opt-in D3D11 backend.
 
 ### Changes
@@ -99,6 +100,7 @@ Bottom level categories:
 - Add `DownlevelLimits::max_sampler_anisotropy` so core can clamp sampler anisotropy to the selected adapter's supported maximum.
 - Add downlevel texture-dimension capabilities so adapters can reject unsupported 1D and 3D texture shapes even when their hardware limits are non-zero.
 - Add downlevel 3D texture format, usage, mip, NPOT and texture-copy limits so core rejects unsupported volume operations before HAL.
+- Add a per-format texture-to-buffer copy downlevel limit so GPU-only copy-source formats are rejected before CPU readback reaches HAL.
 
 #### Hal
 

@@ -115,9 +115,15 @@ fn sample_upload(
                 view_formats: vec![],
             })
         };
+        let usage_supported =
+            if usage == wgt::TextureUses::COPY_SRC && format == wgt::TextureFormat::Bc1RgbaUnorm {
+                format_support & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0
+            } else {
+                render_target_supported
+            };
         assert_eq!(
             result.is_ok(),
-            render_target_supported,
+            usage_supported,
             "{format_name} usage {usage:?} with support {format_support:#010x}: {result:?}"
         );
     }
