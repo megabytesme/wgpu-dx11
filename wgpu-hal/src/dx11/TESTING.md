@@ -1016,6 +1016,17 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_removed_reason_callback_can_reenter_device_poll -- --nocapture --test-threads=1
 ```
 
+Queue destruction also waits for idle. The controlled fixture injects a
+synthetic removed-device result from that wait and verifies the core loss
+callback can poll reentrantly and that queue destruction does not panic. The
+test uses a physical adapter opened at FL9_1; it does not simulate physical
+removal:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_queue_drop_wait_device_loss_is_reported_without_panicking -- --nocapture --test-threads=1
+```
+
 `primitive_index` requires `Features::PRIMITIVE_INDEX`. The FL9_1 projection
 does not expose optional features; this public test verifies the feature set
 and that a device request requiring it is rejected before creation:

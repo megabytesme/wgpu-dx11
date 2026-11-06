@@ -18,6 +18,13 @@ impl Queue {
     pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
         Arc::ptr_eq(&self.device, device)
     }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_remove_device_on_next_wait_for_idle(&self) {
+        self.device
+            .test_fixture_remove_device_on_next_wait_for_idle();
+    }
 }
 
 crate::impl_dyn_resource!(Queue);

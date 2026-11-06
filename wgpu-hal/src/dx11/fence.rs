@@ -177,6 +177,10 @@ impl NativeDevice {
     pub(crate) fn wait_for_copy_idle(&self) -> Result<()> {
         let fence = self.create_native_fence();
         self.submit_copy_batches_signaled(&[], &fence, 1)?;
+        #[cfg(any(test, feature = "dx11-test-fixture"))]
+        if let Some(status) = self.take_test_fixture_wait_for_idle_status() {
+            return Err(Error::from_hresult(status));
+        }
         if self.wait_native_fence(&fence, 1, None)? {
             Ok(())
         } else {

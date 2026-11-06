@@ -8880,3 +8880,35 @@ public-test sections do not match current rustfmt; the new BC1 code was
 formatted locally and `git diff --check` passes. This is a focused copy-path
 increment; public device-enumeration policy and the broader FL9_1 capability
 audit remain unchanged.
+
+## Queue-drop synchronization error path — 2026-11-06
+
+Added a fixture-only wait-for-idle error injection and a controlled core test
+for queue destruction. On the physical RTX 3090 Ti opened at requested/actual
+FL9_1, the injected `DXGI_ERROR_DEVICE_REMOVED` was classified as device loss;
+the lost callback re-entered `device_poll`, fired once, and core queue
+destruction completed without panic. The error is synthetic and does not model
+physical device removal. The focused strict test passed 1/1. The complete
+strict private HAL suite passed 376/376, the strict D3D11 core fixture passed
+101/101, and the DX12 core regression passed 92/92. HAL production checking
+and HAL/core Clippy passed with existing warnings; changed HAL files pass
+rustfmt, while the core fixture still has earlier formatting differences and
+the repository-wide check remains nonzero for pre-existing formatting.
+`git diff --check` passes. This closes a previously uncovered cleanup/error
+path; it does not change production queue behavior or complete the wider
+synchronization/lifetime audit.
+
+Verification commands, run from the Visual Studio 2022 x64 environment with
+Rust 1.93.1 and strict physical-hardware mode for the D3D11 suites:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_queue_drop_wait_device_loss_is_reported_without_panicking -- --test-threads=1 --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+git diff --check
+~~~

@@ -138,6 +138,8 @@ impl NativeAdapter {
             level,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
             injected_oom_check_status: Mutex::new(None),
+            #[cfg(any(test, feature = "dx11-test-fixture"))]
+            injected_wait_for_idle_status: Mutex::new(None),
             #[cfg(test)]
             diagnostic_separate_alpha: false,
         })
@@ -152,6 +154,8 @@ pub struct NativeDevice {
     level: FeatureLevel,
     #[cfg(any(test, feature = "dx11-test-fixture"))]
     injected_oom_check_status: Mutex<Option<HRESULT>>,
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    injected_wait_for_idle_status: Mutex<Option<HRESULT>>,
     #[cfg(test)]
     diagnostic_separate_alpha: bool,
 }
@@ -180,6 +184,17 @@ impl NativeDevice {
     pub fn test_fixture_remove_device_on_next_oom_check(&self) {
         *self.injected_oom_check_status.lock() =
             Some(windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED);
+    }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    pub fn test_fixture_remove_device_on_next_wait_for_idle(&self) {
+        *self.injected_wait_for_idle_status.lock() =
+            Some(windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED);
+    }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    pub(crate) fn take_test_fixture_wait_for_idle_status(&self) -> Option<HRESULT> {
+        self.injected_wait_for_idle_status.lock().take()
     }
 
     pub(crate) fn check_device_removed_reason(&self) -> Result<()> {

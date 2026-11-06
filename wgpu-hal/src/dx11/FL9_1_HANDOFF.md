@@ -1932,3 +1932,9 @@ core fixture 100/100, public D3D11 60/60, adapter isolation 1/1 and DX12 core
 92/92. The optional public Float16x2 vertex-input subcase was skipped by the
 device query. Continue the remaining core/HAL capability audit; this does not
 complete FL9_1 coverage, and older hardware plus ARM32 remain unverified.
+
+The latest controlled cleanup test injects a synthetic device-removal result
+from `wait_for_idle` during core queue destruction. Core reports one lost
+callback, permits callback re-entry to `device_poll`, and finishes queue drop
+without panic on the physical RTX opened at FL9_1. This is error-path coverage
+only; physical removal and the broader lifetime audit remain open.
