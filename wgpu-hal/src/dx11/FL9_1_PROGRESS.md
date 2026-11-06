@@ -6770,3 +6770,39 @@ git diff --check
 
 Next: validate resource retention when a command buffer references a texture
 and view whose public handles are dropped before queue submission.
+
+## Follow-up — resource retention and unsupported-operation gates
+
+Commit `93dd3b3e0` adds a strict public test that records an RGBA8 clear and
+texture-to-buffer copy, drops the texture and view before submission, and
+reads back blue from all 64 pixels. The selected NVIDIA RTX 3090 Ti reports
+physical hardware and requested/actual FL9_1; this verifies command-buffer
+ownership through execution.
+
+Commits `7a409ae67`, `5729e4681` and `9a87d9a0f` add strict public negative
+tests for indirect buffer, compute pipeline and occlusion-query creation. Core
+rejects them using the missing `INDIRECT_EXECUTION`, `COMPUTE_SHADERS` and
+`OCCLUSION_QUERY` capability gates before unsupported HAL entry points. These
+are validation tests, not GPU execution tests.
+
+The focused lifetime test and all three capability-gate tests passed. The full
+strict public suite passed 36/36 on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested/actual FL9_1. One optional
+Float16x2 vertex-input branch was skipped because the selected device lacks
+that format's IA support. Public Clippy, rustfmt and `git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_references_survive_until_submission_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_indirect_buffers_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_compute_pipelines_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_occlusion_queries_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: investigate and test a fragment-stage pipeline with no color targets in a
+depth-only pass. The audit found core permits it while the HAL currently rejects
+it before FXC.

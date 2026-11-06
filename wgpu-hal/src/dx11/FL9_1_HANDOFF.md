@@ -3,17 +3,16 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, HEAD is `ab7b1ec37`, and the working tree was clean
-after the latest public attachment-initialization checkpoint. Recent
-implementation commits verify `StoreOp::Discard` reinitialization before copy,
-SRV sampling and a following attachment `LoadOp::Load`, plus transparent
-initialization when a new attachment is first used with `LoadOp::Load`. The
-preceding checkpoint adds color/depth `LoadOp::DontCare` execution with full
-overwrite. The opt-in
+The branch is `uwp-dx11`, HEAD is `9a87d9a0f`, and the working tree was clean
+after the public validation-gate checkpoint. Recent implementation commits
+verify attachment initialization across discard, load, copy and SRV sampling;
+command-buffer texture/view retention before submission; and core rejection of
+indirect buffers, compute pipelines and occlusion-query sets under the
+selected FL9_1 capability gates. The opt-in
 public D3D11 backend supports a
 conservative offscreen path and a constrained HWND path; it is not
 WebGPU-compliant. The strict public
-suite passed 32/32 on the RTX 3090 Ti (`0x10de:0x2203`, driver
+suite passed 36/36 on the RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`, software=false), explicitly requested and actual FL9_1. The
 D24S8 transition test checked 576 pixels over nine snapshots. The transient
 test checks all 64 pixels of a readable color target controlled by transient
@@ -30,9 +29,8 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. Next verify command-buffer
-resource retention when texture/view handles are dropped before submission,
-then continue with untested public resource and render-pass combinations. Keep
+format/usage and public core/HAL contract audits. Next test a core-legal
+fragment-stage pipeline with no color outputs in a depth-only pass. Keep
 optional formats query-gated. Do not push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in

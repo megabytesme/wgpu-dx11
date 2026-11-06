@@ -443,15 +443,18 @@ which the FL9_1 shader path does not implement.
 The selected-device format and render-pass audits above are recorded in
 `CAPABILITIES.md`. Strict public tests cover query-gated R8_UNORM, R8G8_UNORM
 and B5G6R5 attachments/copies/readback, D24S8 aspect transitions, colorless
-and transient passes, and `LoadOp::DontCare`. Commits `fa305b35b` and
-`664a7626f` verify color discard reinitialization before copy and SRV reads.
-Commit `b2fee049d` verifies it before a later `LoadOp::Load`; a separate strict
-test confirms that a newly created, never-written attachment also reads as
-transparent black when its first use is `LoadOp::Load`.
+and transient passes, and attachment load/store initialization. Commits
+`fa305b35b`, `664a7626f`, and `b2fee049d` verify discarded color is
+reinitialized before copy, SRV sampling and a later `LoadOp::Load`; first-use
+`LoadOp::Load` is also covered. Commit `93dd3b3e0` verifies command-buffer
+retention of a texture and view dropped before submission. Strict public
+negative tests now verify core gates `INDIRECT_EXECUTION`, `COMPUTE_SHADERS`
+and `OCCLUSION_QUERY` before unsupported HAL methods.
 
-Next test command-buffer resource retention through public wgpu: record a
-render-target clear and texture-to-buffer copy, drop the texture and view
-handles before queue submission, and verify the submitted commands still write
-the expected output. Continue the resource-lifetime and core/HAL contract
-audit with concrete untested operations. Keep optional formats query-gated and
-historical FL9_1 and ARM32 behavior explicitly unverified.
+Next exercise a core-legal depth-only pipeline with a fragment stage but no
+color outputs. The current DX11 HAL rejects this shape despite already
+supporting a depth-only output-merger configuration; test an outputless
+fragment shader with discard at forced FL9_1, then support it narrowly if FXC
+accepts the shader and the GPU result is correct. Continue auditing the public
+core/HAL contract. Keep optional formats query-gated and historical FL9_1 and
+ARM32 behavior explicitly unverified.
