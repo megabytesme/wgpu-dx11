@@ -541,11 +541,12 @@ core fixture now validates BC1 through texture creation, queue upload, binding,
 rendering and readback, and creates its device via `adapter_request_device`
 and the test-only HAL `Adapter::open`. It still injects hand-selected limits
 and does not by itself represent the public adapter contract. The opt-in
-production adapter now uses that same selected-device projection for
-offscreen-only public wgpu access. Continue auditing the public HAL/core
-capability boundary and every core-legal operation; do not widen the current
-projection until those operations are implemented or rejected. Keep HWND
-surface capabilities unavailable. Latest code checkpoints `983eea619` and
+production adapter now uses that same selected-device projection for public
+offscreen rendering and a constrained HWND surface. Continue auditing the
+public HAL/core capability boundary and every core-legal operation; do not
+widen the current projection until those operations are implemented or
+rejected. Keep CoreWindow surface capabilities unavailable pending UWP runtime
+coverage. Latest code checkpoints `983eea619` and
 `834cd9856` add core validation and cross-backend reporting for multi-mip
 depth/stencil attachments. The earlier `6f7f12978` added native FL9_1
 slope-scaled triangle depth bias; checkpoint
@@ -564,7 +565,8 @@ backend paths. Both the opt-in production adapter and the test-only core
 fixture delegate to this internal method. Projection tests cover missing/
 negative queries and unsupported backend paths. Continue the descriptor and
 render-pass audit for core-valid requests the private HAL cannot execute; the
-public offscreen route remains experimental and does not complete this audit.
+public offscreen and constrained HWND routes remain experimental and do not
+complete this audit.
 
 The latest audit found a core/HAL pipeline mismatch: core permits nonzero depth
 bias when the selected fragment entry point writes `frag_depth`, while the
@@ -572,8 +574,8 @@ private HAL rejects it. A narrow selected-entry validation gate now rejects
 that case before HAL pipeline creation, while unused depth-writing entries do
 not trigger it. The per-format RGBA8/BGRA8 mip projection honors missing driver
 MIP support and disabled backend mip paths; the strict RTX fixture reports MIP
-support for both formats at FL9_1. Public HWND surface exposure remains gated;
-the offscreen adapter uses this projection.
+support for both formats at FL9_1. The public adapter uses this projection
+for offscreen and constrained HWND access; CoreWindow remains withheld.
 
 The selected-entry depth-bias mismatch is now represented in core's
 `DownlevelLimits` and covered by the controlled fixture. Next audit remaining
@@ -588,8 +590,8 @@ that 9_x pixel shaders cannot read fragment `@builtin(position)`. Core now
 represents these with selected-entry `DownlevelLimits` gates, so safe sibling
 entries remain usable. Continue auditing shader and render-state combinations
 against the currently exposed projection; do not widen it until every permitted
-operation is implemented or safely rejected. Public surface capabilities
-remain unavailable.
+operation is implemented or safely rejected. Public surface capabilities are
+limited to the tested HWND contract; CoreWindow capabilities remain withheld.
 
 The selected-entry audit now also covers vertex system-value inputs. The
 controlled FL9_1 profile reports `vertex_index_input` and `instance_index_input`
@@ -613,8 +615,9 @@ submitting public devices. Its error
 scopes additionally verify that core rejects vertex-visible storage-buffer
 layouts and D2Array sampled-texture layouts, alongside unsupported 3D,
 multisampled, format and mip requests. These checks expand the tested public
-validation boundary but do not complete the core/HAL audit or the required
-desktop presentation path.
+validation boundary but do not complete the core/HAL audit. The bounded
+windowed example now exercises desktop HWND presentation; broader lifecycle,
+device-loss and historical-driver behavior remain unverified.
 
 The same public test now overlays near and far textured geometry in both draw
 orders and verifies that all pixels show the nearer surface. This establishes
@@ -635,8 +638,9 @@ textures at sparse bindings 7 and 42 through one sampler at binding 100. The
 layout, WGSL declaration and bind-group entry orders differ; the strict GPU
 test verifies all 64 pixels contain both contributions and public core rejects
 an incomplete group. Continue the exact core/HAL audit and broaden public
-render coverage. HWND presentation remains gated on safe cross-layer
-serialization and reentrancy handling.
+render coverage. HWND presentation now serializes selected context operations
+and rejects tested same-thread reentry; native callback and lifecycle edge
+coverage remains open.
 
 The public path now exercises the entire projected eight-texture fragment
 capacity in one shader. Each sparse-bound uploaded texture affects every

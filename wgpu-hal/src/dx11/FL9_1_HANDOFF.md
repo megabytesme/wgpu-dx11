@@ -457,7 +457,11 @@ Naga; historical compilers and drivers remain unverified.
 The Dx11 unreachable in core's shader path is specifically in unsafe passthrough,
 not normal validated WGSL; its reachability still needs an audit before exposure.
 
-## Reproduction and latest evidence
+## Historical private-HAL reproduction snapshot
+
+The commands and counts below are an early private-HAL snapshot and are
+superseded by the current public integration results at the top of this file
+and the latest checkpoint in `FL9_1_PROGRESS.md`.
 
 On Windows 11, Rust 1.93.1 and the MSVC developer environment, use
 `CARGO_HOME=C:\dev\personal\wgpu\target\codex-cargo-home`,
