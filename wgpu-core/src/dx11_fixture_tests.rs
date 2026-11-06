@@ -248,7 +248,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         capabilities
             .limits
             .max_dynamic_uniform_buffers_per_pipeline_layout,
-        2
+        12
     );
     assert_eq!(
         capabilities.limits.max_buffer_size,
@@ -326,7 +326,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         "PASS: core rejected seven fragment uniform bindings against the projected limit of six"
     );
     global.bind_group_layout_drop(over_limit_layout);
-    let over_limit_dynamic: Vec<_> = (0..3)
+    let over_limit_dynamic: Vec<_> = (0..13)
         .map(|binding| wgt::BindGroupLayoutEntry {
             binding,
             visibility: wgt::ShaderStages::FRAGMENT,
@@ -352,12 +352,14 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             binding_model::BindingTypeMaxCountError {
                 kind: binding_model::BindingTypeMaxCountErrorKind::DynamicUniformBuffers,
                 zone: binding_model::BindingZone::Pipeline,
-                limit: 2,
-                count: 3,
+                limit: 12,
+                count: 13,
             }
         ))
     ));
-    std::println!("PASS: core rejected three dynamic uniforms against the projected limit of two");
+    std::println!(
+        "PASS: core rejected thirteen dynamic uniforms against the projected limit of twelve"
+    );
     global.bind_group_layout_drop(dynamic_layout);
     let oversized_buffer = crate::resource::BufferDescriptor {
         label: None,
@@ -645,7 +647,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         projected_capabilities
             .limits
             .max_dynamic_uniform_buffers_per_pipeline_layout,
-        2
+        12
     );
     assert_eq!(
         projected_capabilities
@@ -881,6 +883,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             let copy_source = hal_caps.contains(hal::TextureFormatCapabilities::COPY_SRC);
             let color_attachment =
                 hal_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT);
+            let blendable =
+                hal_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND);
             assert_eq!(
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
@@ -898,6 +902,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY
                     | if filterable {
                         hal::TextureFormatCapabilities::SAMPLED_LINEAR
+                    } else {
+                        hal::TextureFormatCapabilities::empty()
+                    }
+                    | if blendable {
+                        hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
                     } else {
                         hal::TextureFormatCapabilities::empty()
                     }
@@ -923,6 +932,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
                     | if filterable {
                         wgt::TextureFormatFeatureFlags::FILTERABLE
+                    } else {
+                        wgt::TextureFormatFeatureFlags::empty()
+                    }
+                    | if blendable {
+                        wgt::TextureFormatFeatureFlags::BLENDABLE
                     } else {
                         wgt::TextureFormatFeatureFlags::empty()
                     }

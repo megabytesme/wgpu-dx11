@@ -7341,3 +7341,76 @@ The selected-query capability is optional, not an FL9_1 guarantee, and the
 RTX result does not establish support on older FL9_1 hardware. Continue the
 public core/HAL operation audit; historical devices and ARM32 UWP remain
 unverified.
+
+## Follow-up — expand the FL9_1 dynamic uniform layout limit
+
+The selected-device projection previously allowed only two dynamic uniform
+buffers per pipeline layout even though the backend already allocates thirteen
+constant-buffer slots and reports six uniform buffers per shader stage. The
+projection now derives the per-stage limit once and allows twelve dynamic
+uniform bindings per layout, the maximum six-vertex/six-fragment split. The
+HAL's thirteen-resource bound and per-stage limits are unchanged.
+
+The new public test uses sparse logical bindings, declared and supplied in
+different orders, with six vertex-visible and six fragment-visible uniforms.
+All ranges share one buffer but use distinct base offsets and nonzero dynamic
+offsets. Two scissored draws switch between the selected and alternate ranges.
+At forced FL9_1 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), every left pixel matched `[60, 72, 84, 96]` and every right
+pixel matched `[239, 203, 215, 227]` (64/64 pixels). Core rejects thirteen
+dynamic entries against the new limit of twelve before HAL.
+
+The first focused render run exposed an incorrect expected-channel rotation in
+the alternate-offset oracle; the observed image was consistent with the data
+selected by the shader, and the corrected strict test passed. The first full
+core-fixture run also exposed an older format assertion that omitted the
+already query-gated `COLOR_ATTACHMENT_BLEND` bit; the fixture now checks that
+bit alongside the other projected format capabilities and the complete rerun
+passed. Neither was an implementation failure.
+
+The capability baseline diagnostic also queried RG8_SNORM (`0x00021320`) and
+RGBA8_SNORM (`0x000213a0`) on the selected FL9_1 device. Both project as
+sampled, filterable, copy-destination and single-mip only; neither query
+contains `RENDER_TARGET`, so these formats provide no additional attachment
+path on this adapter.
+
+Verification, Rust 1.93.1 and Visual Studio x64 environment:
+
+- Focused capability projection baseline passed 1/1 on the physical adapter.
+- Strict public dynamic-uniform test passed 1/1 with the expected two-half
+  image and a 13-entry validation rejection.
+- Full strict private HAL suite passed 363/363. Six shader-boundary cases
+  intentionally reported that their GPU subcase was skipped after the
+  unsupported runtime-integer shader was rejected; those tests validate the
+  rejection path, not rendering.
+- Full strict public D3D11 suite passed 44/44. One optional Float16x2 vertex
+  input branch skipped because the selected device lacks `IA_VERTEX_BUFFER`
+  support for R16G16_FLOAT.
+- Full strict core fixture suite passed 94/94, including selected-device
+  projection checks and core-to-HAL rendering. A prior run before the fixture
+  assertion update had 93 passes and the single stale-format assertion failure.
+- Core DX12 regression suite passed 90/90.
+- HAL Clippy passed with nine existing warnings in unrelated HAL/device,
+  swapchain and texel-load test code. Core fixture Clippy passed with one
+  existing `collapsible_if` warning. Public D3D11 Clippy passed without
+  warnings.
+
+Commands:
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --lib --tests
+cargo +1.93 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-core/src/dx11_fixture_tests.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Checkpoint commit for the verified limit expansion is to be recorded after
+the final diff and formatting checks. Continue the broader core/HAL contract
+audit; the public backend remains experimental, and historical FL9_1 devices
+and ARM32 UWP remain unverified.

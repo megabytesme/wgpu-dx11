@@ -554,10 +554,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - Up to eight groups with thirteen static or dynamic uniform slots, eight sampled
   textures and sixteen samplers in total. The internal wgpu capability
   projection exposes six uniforms per shader stage, ensuring disjoint vertex
-  and fragment bindings fit the shared thirteen-slot allocator. It caps
-  dynamic uniforms at two per pipeline layout; the exact core projection
-  rejects three, and strict core readback exercises two simultaneously across
-  vertex and fragment stages with distinct offsets. A controlled core draw
+  and fragment bindings fit the shared thirteen-slot allocator. The public
+  dynamic uniform limit is twelve per pipeline layout, the maximum disjoint
+  six-vertex/six-fragment split. Strict FL9_1 public readback exercises all
+  twelve sparse ranges from one source buffer and switches their selected
+  offsets between draws; core rejects thirteen before HAL. A controlled core draw
   also places a fragment uniform in group 0 and sampled resources in group 1;
   this verifies one supported two-group combination, not the entire eight-group
   aggregate limit.

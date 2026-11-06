@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### Hal
 
+- Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.

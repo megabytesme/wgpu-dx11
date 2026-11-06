@@ -40,10 +40,11 @@ not a repository artifact.
    both vertex and fragment stages.
    Strict readback also covers nested structures, an asymmetric matrix,
    stride-sensitive arrays and padding. Runtime integer indexing remains
-   unavailable. The selected-device core projection also permits two dynamic
-   uniform buffers per pipeline layout; strict readback exercises distinct
-   vertex- and fragment-visible offsets, and core rejects three at bind-group
-   layout creation. Continue checking shader instruction pressure and other
+   unavailable. The selected-device core projection permits twelve dynamic
+   uniform buffers per pipeline layout, the largest disjoint six-vertex plus
+   six-fragment split within the native allocator. Strict public readback
+   exercises all twelve sparse bindings and switches subranges between draws;
+   core rejects thirteen before HAL. Continue checking shader instruction pressure and other
    untested layout shapes with checked translation. The selected FL9_1
    projection now reports 255 vertex and 32 fragment uniform float4 vectors;
    core conservatively counts complete statically used uniform layouts per

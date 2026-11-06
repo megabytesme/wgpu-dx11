@@ -1064,8 +1064,13 @@ against the selected-device FL9_1 projection. Run
 -- --nocapture --test-threads=1` with `WGPU_DX11_REQUIRE_HARDWARE=1`. Logical
 binding 17 is vertex-visible and uses base/dynamic offsets 256/256; binding 23
 is fragment-visible and uses 256/512. Both alter checked readback pixels. The
-unmodified-projection test separately verifies that core rejects three dynamic
-uniform entries against the reported limit of two.
+unmodified-projection test separately verifies that core rejects thirteen
+dynamic uniform entries against the reported limit of twelve. The public test
+`public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91` executes the
+full six-vertex/six-fragment split using sparse binding numbers and distinct
+dynamic offsets. Two scissored draws select different ranges and validate the
+complete 8×8 readback; it also checks that thirteen dynamic entries fail core
+validation.
 
 The same strict core fixture includes a two-group case: a fragment uniform at
 group 0/binding 17 tints a sampled RGBA8 texture and filtering sampler at

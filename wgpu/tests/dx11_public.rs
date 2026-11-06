@@ -12917,3 +12917,353 @@ fn public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91() {
     readback.unmap();
     println!("PASS: indexed render bundle sampled the retained texture after source handles were dropped; all 64 pixels matched [51, 128, 204, 255]");
 }
+
+#[test]
+fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(limits.max_dynamic_uniform_buffers_per_pipeline_layout, 12);
+    assert_eq!(limits.max_uniform_buffers_per_shader_stage, 6);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; dynamic_uniforms=12 split=6_vertex+6_fragment",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 twelve dynamic uniform test"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request a device within the FL9_1 projection");
+
+    let over_limit: Vec<_> = (0..13)
+        .map(|binding| BindGroupLayoutEntry {
+            binding,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        })
+        .collect();
+    expect_validation_error_containing(
+        &device,
+        "thirteen dynamic uniform bindings",
+        "max_dynamic_uniform_buffers_per_pipeline_layout",
+        || {
+            let _ = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("over-limit dynamic uniform layout"),
+                entries: &over_limit,
+            });
+        },
+    );
+
+    let logical_bindings = [73, 3, 99, 42, 17, 70, 8, 120, 77, 5, 32, 63];
+    let mut layout_entries = Vec::with_capacity(logical_bindings.len());
+    for index in (0..logical_bindings.len()).rev() {
+        layout_entries.push(BindGroupLayoutEntry {
+            binding: logical_bindings[index],
+            visibility: if index < 6 {
+                ShaderStages::VERTEX
+            } else {
+                ShaderStages::FRAGMENT
+            },
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        });
+    }
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("sparse twelve dynamic uniform layout"),
+        entries: &layout_entries,
+    });
+
+    let mut bytes = vec![0u8; logical_bindings.len() * 1024];
+    let selected_offsets: Vec<_> = logical_bindings
+        .iter()
+        .enumerate()
+        .map(|(index, _)| if index % 2 == 0 { 256u32 } else { 512u32 })
+        .collect();
+    for (index, selected_offset) in selected_offsets.iter().copied().enumerate() {
+        let base = index * 1024;
+        for offset in [0usize, 256, 512] {
+            let mut value = [0.0f32; 4];
+            if offset == selected_offset as usize {
+                value[index % 4] = (index + 1) as f32 / 64.0;
+            } else if offset != 0 {
+                value[(index + 1) % 4] = (index + 13) as f32 / 64.0;
+            }
+            let start = base + offset;
+            for (component, float) in value.into_iter().enumerate() {
+                bytes[start + component * 4..start + component * 4 + 4]
+                    .copy_from_slice(&float.to_ne_bytes());
+            }
+        }
+    }
+    let uniforms = device.create_buffer(&BufferDescriptor {
+        label: Some("twelve dynamic uniform ranges"),
+        size: bytes.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&uniforms, 0, &bytes);
+
+    let mut bind_group_entries = Vec::with_capacity(logical_bindings.len());
+    for index in (0..logical_bindings.len()).rev() {
+        bind_group_entries.push(BindGroupEntry {
+            binding: logical_bindings[index],
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &uniforms,
+                offset: (index * 1024) as u64,
+                size: NonZeroU64::new(16),
+            }),
+        });
+    }
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("twelve sparse dynamic uniform ranges"),
+        layout: &layout,
+        entries: &bind_group_entries,
+    });
+    let mut binding_order: Vec<_> = logical_bindings.iter().copied().enumerate().collect();
+    binding_order.sort_by_key(|(_, binding)| *binding);
+    let dynamic_offsets: Vec<_> = binding_order
+        .iter()
+        .map(|(index, _)| selected_offsets[*index])
+        .collect();
+    let alternate_offsets: Vec<_> = binding_order
+        .iter()
+        .map(|(index, _)| {
+            if selected_offsets[*index] == 256 {
+                512
+            } else {
+                256
+            }
+        })
+        .collect();
+
+    let mut wgsl = String::from("struct UniformData { value: vec4f, }\n");
+    for index in (0..6).rev() {
+        wgsl.push_str(&format!(
+            "@group(0) @binding({}) var<uniform> vertex_{index}: UniformData;\n",
+            logical_bindings[index]
+        ));
+    }
+    for index in (6..12).rev() {
+        wgsl.push_str(&format!(
+            "@group(0) @binding({}) var<uniform> fragment_{index}: UniformData;\n",
+            logical_bindings[index]
+        ));
+    }
+    let vertex_sum = (0..6)
+        .map(|index| format!("vertex_{index}.value"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let fragment_sum = (6..12)
+        .map(|index| format!("fragment_{index}.value"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    wgsl.push_str(&format!(
+        "struct VertexOut {{ @builtin(position) position: vec4f, @location(0) color: vec4f, }}\n\
+         @vertex fn vs(@location(0) position: vec2f) -> VertexOut {{\n\
+             return VertexOut(vec4f(position, 0.5, 1.0), {vertex_sum});\n\
+         }}\n\
+         @fragment fn fs(input: VertexOut) -> @location(0) vec4f {{\n\
+             return input.color + {fragment_sum};\n\
+         }}"
+    ));
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("six vertex and six fragment uniform shader"),
+        source: ShaderSource::Wgsl(wgsl.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("twelve uniform pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("twelve uniform FL9_1 pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("twelve uniform readback target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let vertex_bytes: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("twelve uniform fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map twelve uniform triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("twelve uniform readback buffer"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("twelve dynamic uniform draws"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("twelve dynamic uniform render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.set_bind_group(0, &group, &dynamic_offsets);
+        pass.draw(0..3, 0..1);
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.set_bind_group(0, &group, &alternate_offsets);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for twelve dynamic uniform draws");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("twelve uniform readback callback")
+        .expect("map twelve uniform readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped twelve uniform readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected = if x < 4 {
+                    [60, 72, 84, 96]
+                } else {
+                    [239, 203, 215, 227]
+                };
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "twelve dynamic uniform pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: twelve sparse dynamic uniforms (six vertex, six fragment) used distinct nonzero subranges and changed output across two draws; 64/64 pixels validated on the FL9_1 hardware adapter");
+}
