@@ -2,9 +2,8 @@
 
 ## Current position — 2026-11-06
 
-Latest committed checkpoint: `0f62848fa` (`dx11: record public FL9_1 mip
-view checkpoint`), followed by verified core/HAL audit work and the query-gated
-3D sampled/upload increment below. The strict public suite passed 54/54, the
+Latest committed checkpoint: `226d6ebda` (`dx11: audit FL9_1 contracts and add
+3D sampling`), following `0f62848fa`. The strict public suite passed 54/54, the
 private HAL suite 375/375, the core fixture suite 97/97, the targeted core
 adapter test 1/1, and DX12 core regressions 92/92. Strict tests selected the
 RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) at
@@ -8351,7 +8350,7 @@ git diff --check
 Continue the core/HAL contract audit; the mission remains partially complete.
 Historical FL9_1 and Windows Mobile ARM32 behavior remain unverified.
 
-## Verified public resource increment — query-gated FL9_1 3D sampling
+## Verified public resource increment — query-gated FL9_1 3D sampling — `226d6ebda`
 
 The public projection now exposes only the selected device's positively queried
 RGBA8 3D sampled/upload subset: single mip, single sample, POT dimensions up to
