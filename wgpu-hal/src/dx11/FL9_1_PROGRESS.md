@@ -7553,6 +7553,8 @@ item. Historical FL9_1 and ARM32 CoreWindow execution remain unverified.
 
 ## Follow-up — selected-entry sampled relationship limit
 
+Code checkpoint: `0ad9a06f0` (`dx11: enforce FL9_1 sampled pair pipeline limit`).
+
 The core/HAL contract audit confirmed that the private FL9_1 compiler path
 supports sixteen distinct texture/sampler relationships in one shader stage,
 while FXC rejects seventeen. The existing independent public limits of eight

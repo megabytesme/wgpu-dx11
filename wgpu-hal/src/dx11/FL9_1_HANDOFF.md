@@ -3,36 +3,37 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `3774c7a2e`. The most
-recent private HAL suite passed 363/363 with strict physical-hardware mode;
-the full strict public D3D11 suite passed 43/43 on the RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and actual
-FL9_1. Its optional Float16x2 IA branch visibly skips because the selected
-device lacks that format. DX12 core regression last passed 90/90. The latest
-checkpoint query-gates blending for R8, RG8 and RGB565 using each selected
-format's `BLENDABLE` report and verifies actual output. The opt-in
-public D3D11 backend supports a conservative offscreen path and a constrained
-HWND path; it is not WebGPU-compliant. Earlier checkpoints passed 36/36.
-The D24S8 transition test checked 576 pixels over nine snapshots. The transient
-test checks all 64 pixels of a readable color target controlled by transient
-D24S8 depth. The `DontCare` test confirms full color/depth overwrite and 64 red
-pixels. Core rejects sampled transient usage, invalid LOAD/STORE, read-only
-transient depth and empty passes. It uses ordinary D3D11 allocations and makes
-no memoryless claim.
-No GPU test skipped; the optional Float16x2 IA branch reported its visible
-capability skip. Public Clippy, rustfmt and diff checks passed. Earlier
-transfer and adapter regression results are in `FL9_1_PROGRESS.md`.
+The branch is `uwp-dx11`, latest code checkpoint is `0ad9a06f0`
+(`dx11: enforce FL9_1 sampled pair pipeline limit`). The audit added a
+separate numeric downlevel limit of 16 distinct texture/sampler relationships
+per selected shader stage. Core counts Naga's validated selected-entry set and
+rejects excess pairs before HAL; the independent eight-texture and
+sixteen-sampler limits are unchanged. The strict public test accepted 16,
+accepted a one-pair sibling entry point from the same module and rejected 17.
+The private HAL suite still executes the 16-relationship draw with GPU
+readback.
 
-The constrained HWND path has hidden-window configure/acquire/present/resize
-and wrong-thread tests. Queue/resource operations during the Present guard are
-rejected when re-entered on the owner thread and serialized for other threads;
-the controlled core fixture exercises these checks. Historical FL9_1 drivers
-and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. An independent read-only
-review found no confirmed advertised core/HAL mismatch; it identified
-`vertex_index` as a real but already gated feature gap requiring an emulation
-design. Continue the depth/stencil, texture-view and selected-device
-format/usage audit. Keep optional formats query-gated. Do not push.
+Strict physical tests ran on the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), hardware adapter, requested and
+actual FL9_1. Latest results: private HAL 365/365, public D3D11 47/47,
+controlled core fixture 95/95 and DX12 core 91/91. The optional Float16x2 IA
+subcase visibly skipped because the selected device did not report its input
+format support. `wgpu-types` passed 83 unit tests and 14 doctests, plus the
+focused serde-compatibility test. DX11+GLES HAL check, changed-file rustfmt and
+diff checks passed. Core Clippy has one existing fixture warning; HAL Clippy
+has nine existing unrelated warnings; public D3D11 and serde-enabled
+`wgpu-types` Clippy passed without warnings. Exact commands and observations
+are in `FL9_1_PROGRESS.md`.
+
+The preceding mapped-readback OOM fix is commit `d4182610f`. The opt-in public
+D3D11 backend supports a conservative offscreen path and constrained owner-
+thread HWND presentation; it is not WebGPU-compliant. Historical FL9_1 drivers
+and ARM32 UWP execution remain unverified. The development GPU positively
+reports unrestricted NPOT support, so the legacy conditional-NPOT negative
+path is synthetic. A possible synchronous HWND callback reentering
+`unconfigure` while an operation is active remains unconfirmed and open.
+Continue the selected-entry shader/compiler, resource-usage and render-pass
+contract audits; do not treat this checkpoint as completion.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
