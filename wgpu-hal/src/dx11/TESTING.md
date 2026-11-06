@@ -1915,6 +1915,7 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_read_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_sampling_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_load_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_new_color_is_initialized_before_load_at_fl91 -- --nocapture --test-threads=1
 ```
 
 The public test clears an RGBA8 attachment red, discards it, then copies it to
@@ -1935,6 +1936,11 @@ black instead of the prior red contents. Both focused tests passed, and the
 complete strict public suite passed 31/31. The optional Float16x2 input branch
 logged its capability skip; required FL9_1 operations ran on the physical
 adapter.
+
+The companion `public_dx11_new_color_is_initialized_before_load_at_fl91` test
+uses `LoadOp::Load` on a newly created color attachment before any write, then
+stores and reads it back. All 64 pixels are transparent black. The focused
+test passed 1/1; after adding it, the full strict public suite passed 32/32.
 
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses

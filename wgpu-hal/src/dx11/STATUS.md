@@ -494,6 +494,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - A strict public follow-up render pass uses `LoadOp::Load` after color discard;
   copying afterward returns transparent black at all 64 pixels, not the old
   red clear.
+- A new public RGBA8 attachment used first with `LoadOp::Load`, then stored and
+  read back, also returns transparent black at all 64 pixels.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
