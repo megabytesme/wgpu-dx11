@@ -1970,6 +1970,18 @@ also verifies that core rejects asymmetric stencil state with the missing
 straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`, while the
 same blend with alpha writes masked creates through the existing HAL path.
 
+### Public indirect-draw rejection
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_indirect_buffers_at_fl91 -- --nocapture --test-threads=1
+```
+
+The physical FL9_1 adapter reports no `DownlevelFlags::INDIRECT_EXECUTION`.
+Core rejects creation of a `BufferUsages::INDIRECT` argument buffer with a
+validation error naming that gate, before any indirect draw method can reach
+the HAL. The focused strict test passed 1/1.
+
 ### FL9_1 line topologies
 
 ```powershell

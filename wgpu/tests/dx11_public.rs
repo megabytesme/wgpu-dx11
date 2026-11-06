@@ -9787,6 +9787,54 @@ fn public_dx11_texture_references_survive_until_submission_at_fl91() {
 }
 
 #[test]
+fn public_dx11_rejects_indirect_buffers_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(!downlevel.flags.contains(DownlevelFlags::INDIRECT_EXECUTION));
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false indirect_execution=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 indirect validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    expect_validation_error_containing(
+        &device,
+        "FL9_1 indirect argument buffer",
+        "INDIRECT_EXECUTION",
+        || {
+            drop(device.create_buffer(&BufferDescriptor {
+                label: Some("unsupported FL9_1 indirect arguments"),
+                size: 16,
+                usage: BufferUsages::INDIRECT,
+                mapped_at_creation: false,
+            }));
+        },
+    );
+    println!("PASS: public core rejected INDIRECT usage before any D3D11 HAL indirect draw path could execute");
+}
+
+#[test]
 fn public_dx11_transient_attachments_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

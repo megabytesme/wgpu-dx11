@@ -499,6 +499,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - A strict public command-buffer test drops an attachment texture and view
   after recording but before submission; the queued clear/copy still returns
   blue for all 64 pixels.
+- Public core rejects an `INDIRECT` buffer at creation because the selected
+  FL9_1 projection omits `INDIRECT_EXECUTION`; unsupported native indirect draw
+  methods are unreachable through this public capability contract.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
