@@ -3,14 +3,14 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `49b526a86`
-(`dx11: verify indexed strip restart in render bundles`), following
+The branch is `uwp-dx11`, latest code checkpoint is `3f0e6c41f`
+(`dx11: verify bundle strip restart for both index widths`), following
 `70341b011` (`dx11: verify FL9_1 instance-index rejection`) and `62d12ecd4`
 (`dx11: reject unsupported FL9_1 shader loops`). A new public test records a
-Uint16 indexed TriangleStrip with a restart marker in a render bundle, runs at
-forced FL9_1 and validates a complete 16×16 readback. The full strict public
-D3D11 suite passed 50/50; one optional input-format subcase remains an
-explicit capability skip. Core rejects a selected
+Uint16 and Uint32 indexed TriangleStrip with restart markers in render
+bundles, runs at forced FL9_1 and validates 512/512 pixels across two complete
+16×16 readbacks. The full strict public D3D11 suite passed 50/50; one optional
+input-format subcase remains an explicit capability skip. Core rejects a selected
 vertex or fragment entry point that reaches WGSL loop IR through helper calls,
 because Naga's current D3D11 HLSL lowering emits dynamically bounded loops
 that FXC rejects for the FL9_1 profiles. The backend's `shader_loops` downlevel

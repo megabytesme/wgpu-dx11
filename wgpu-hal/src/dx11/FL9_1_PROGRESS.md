@@ -7788,7 +7788,7 @@ test does not require the strict hardware environment. Historical hardware
 behavior remains unverified. Continue with the next selected-entry WGSL/FXC-
 to-core mismatch.
 
-## Follow-up — indexed strip restart inside a public render bundle
+## Follow-up — indexed strip restart inside a public render bundle (`3f0e6c41fe35ea46ad3074e9fab62b9e7d7af8cd`)
 
 Added a strict public wgpu test that records Uint16 and Uint32 TriangleStrip
 draws in separate `RenderBundleEncoder`s, each with a primitive-restart marker
@@ -7814,3 +7814,14 @@ focused strict run passed with 512/512 expected pixels across both index
 formats, and the full strict public suite passed 50/50 with the same explicit
 optional Float16x2 input-format capability skip. Continue with other
 render-bundle state transitions and the broader core/HAL audit.
+
+The full-suite command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The public-test Clippy command (`cargo +1.93 clippy --offline -j2 -p wgpu
+--no-default-features --features dx11,wgsl,std --test dx11_public`), changed
+file Rustfmt check and `git diff --check` also passed.

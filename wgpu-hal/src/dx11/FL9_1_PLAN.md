@@ -41,15 +41,17 @@ public contract. This is profile/compiler evidence and does not establish
 historical-driver behavior. Continue auditing other core-valid shader and
 render-state combinations.
 
-### Latest execution checkpoint — indexed strip restart in render bundles (`49b526a86`)
+### Latest execution checkpoint — Uint16/Uint32 strip restart in render bundles (`3f0e6c41f`)
 
-A strict public D3D11 test records a Uint16 TriangleStrip with a primitive-
-restart marker inside a render bundle, executes it at explicitly forced FL9_1
-and validates all 256 pixels. The 50-test public D3D11 suite passed on the
-RTX 3090 Ti; one optional input-format subcase remains an explicit capability
-skip. This adds coverage for restart splitting through public bundle recording
-and replay, but does not close the broader topology, state-transition or
-historical-driver audit. See `FL9_1_PROGRESS.md` for the command and output.
+A strict public D3D11 test records both Uint16 and Uint32 TriangleStrips with
+primitive-restart markers inside render bundles, executes each at explicitly
+forced FL9_1 and validates all 256 pixels. Both readbacks matched, including
+the unchanged clear gap. The 50-test public D3D11 suite passed on the RTX 3090
+Ti; one optional input-format subcase remains an explicit capability skip.
+This adds coverage for both restart index widths through public bundle
+recording and replay, but does not close the broader topology,
+state-transition or historical-driver audit. See `FL9_1_PROGRESS.md` for the
+commands and output.
 
 Some status descriptions within the audit sections below preserve earlier
 checkpoints. Later commits may supersede them; the opening summary and the
