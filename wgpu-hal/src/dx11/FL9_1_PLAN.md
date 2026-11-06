@@ -440,28 +440,17 @@ which the FL9_1 shader path does not implement.
 
 ## Current next implementation task
 
-The 16-bit normalized and packed format audit is recorded in
-`CAPABILITIES.md`: R16G16_SNORM remains point-only on this selected FL9_1
-device, the packed Windows 8 family is filterable, and the remaining R16 query
-results provide no additional sampled candidates. Follow-up R32 and D32
-queries produced no texture or depth candidate. R8_UNORM, R8G8_UNORM and
-B5G6R5 have query-gated single-mip color attachment, GPU copy and CPU readback
-support. Strict public GPU tests validate partial copies for all three
-formats, including untouched texels, nonzero destination origins and padded
-rows. They also render into each format with `RESOURCE | COLOR_TARGET |
-COPY_SRC`, copy the attachment to a padded readback buffer and check all 64
-native texels. A strict public D24S8 test now checks core-valid read-only depth
-and stencil pass combinations, including each mixed read/write aspect mode and
-rejection of writes to the read-only aspect. The public projection still omits
-`READ_ONLY_DEPTH_STENCIL`, so sampled aliases remain unavailable. Public
-colorless and transient D24S8 depth passes now affect checked color output. The
-strict transient pass exercises color and depth clear/draw/discard; core rejects
-sampled transient usage, invalid LOAD/STORE, read-only transient depth and empty
-passes. Next exercise public `LoadOp::DontCare` for color and depth attachments,
-fully overwrite the affected pixels and validate deterministic output; this
-now passes. Next verify that core reinitializes a color attachment after
-`StoreOp::Discard` before a later copy/read, rather than exposing retained native
-contents. Then continue the core/HAL render-pass contract review. Add another
-format only when its selected-device query, native resource/view path and
-representative GPU output can all be validated. Keep unsupported usages out of
-the projection and preserve historical FL9_1 and ARM32 as unverified targets.
+The selected-device format and render-pass audits above are recorded in
+`CAPABILITIES.md`. Strict public tests cover query-gated R8_UNORM, R8G8_UNORM
+and B5G6R5 attachments/copies/readback, D24S8 aspect transitions, colorless
+and transient passes, and `LoadOp::DontCare`. Commit `fa305b35b` verifies that
+core reinitializes a discarded RGBA8 color attachment before a later copy:
+all 64 readback pixels are transparent black, not the earlier red clear.
+
+Next verify the same discard reinitialization when the later use is a shader
+resource view. Render through the public API, sample the discarded texture in
+a second pass, and check deterministic output. This also exercises the
+render-target-to-SRV state transition. Then continue the core/HAL render-pass
+and resource-usage contract audit, selecting each follow-up from a concrete
+unverified public operation. Keep optional formats query-gated and historical
+FL9_1 and ARM32 behavior explicitly unverified.

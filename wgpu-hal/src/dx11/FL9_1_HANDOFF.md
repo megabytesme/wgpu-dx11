@@ -1,15 +1,16 @@
 # FL9_1 handoff
 
-## Current mission state — 2026-11-05
+## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`; implementation commit `7538ada21` adds public color
-and depth `LoadOp::DontCare` execution with full overwrite. It follows transient
-validation commit `bbceec53d`, transient GPU test `d224dcd3e`, and the colorless
-D24S8 prepass `78b52faf1`. The opt-in public D3D11 backend supports a
+The branch is `uwp-dx11`, HEAD is `fa305b35b`, and the working tree was clean
+when resumed. Its latest implementation commit adds public discarded-color
+reinitialization before copy/read (`StoreOp::Discard`); the preceding checkpoint
+adds color/depth `LoadOp::DontCare` execution with full overwrite. The opt-in
+public D3D11 backend supports a
 conservative offscreen path and a constrained HWND path; it is not
 WebGPU-compliant. The strict public
-suite passed 28/28 on the RTX 3090 Ti (`0x10de:0x2203`, driver
+suite passed 29/29 on the RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`, software=false), explicitly requested and actual FL9_1. The
 D24S8 transition test checked 576 pixels over nine snapshots. The transient
 test checks all 64 pixels of a readable color target controlled by transient
@@ -26,10 +27,10 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. The next bounded audit is to
-check that core initializes a color attachment after `StoreOp::Discard` before
-a later GPU read, rather than exposing retained native contents. Keep optional
-formats query-gated and do not push.
+format/usage and public core/HAL contract audits. Next verify initialization
+after discard when a later pass samples the texture through an SRV; then
+continue with untested public render-pass/resource combinations. Keep optional
+formats query-gated. Do not push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
