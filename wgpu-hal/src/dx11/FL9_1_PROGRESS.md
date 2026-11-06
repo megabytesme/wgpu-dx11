@@ -7410,7 +7410,9 @@ rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-core
 git diff --check
 ```
 
-Checkpoint commit for the verified limit expansion is to be recorded after
-the final diff and formatting checks. Continue the broader core/HAL contract
-audit; the public backend remains experimental, and historical FL9_1 devices
-and ARM32 UWP remain unverified.
+Code checkpoint `bd718635f` (`dx11: expose twelve FL9_1 dynamic uniform
+bindings`) contains the verified limit expansion, public GPU test, fixture
+correction, capability documentation and changelog entry. The tree was clean
+after that commit. Continue the broader core/HAL contract audit; the public
+backend remains experimental, and historical FL9_1 devices and ARM32 UWP
+remain unverified.
