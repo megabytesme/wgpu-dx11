@@ -389,45 +389,44 @@ The autonomous work began with `26739b52d1ae042a6499b578521eb3250f1d9c21`
 
 ## What is and is not usable
 
-No operation currently executes through a public D3D11 wgpu adapter: normal
-adapter enumeration returns zero and the ordinary HAL adapter is uninhabited. A
-nondefault unsafe fixture injects a restricted device into public wgpu and core
-for closed offscreen tests; it is not a general adapter or public example.
-The private path supports restricted WGSL-to-Naga-to-HLSL-to-FXC shaders,
-sampled RGBA8 and BGRA8 textures, single-mip transfers, multiple groups of static and dynamic uniforms,
-triangle rendering with front/back culling, D24S8 native depth comparisons
-(all except emulated Never) and channel masks.
-This is not a general capability report or WebGPU conformance claim. The
-capability matrix in CAPABILITIES.md specifies the tested subset and gaps.
+The `dx11` feature exposes an explicitly selected, opt-in public wgpu adapter
+path. It enumerates physical FL9_1 D3D11 devices and uses a selected-device
+capability projection; the default backend priority is unchanged. A public
+wgpu example renders and validates a textured indexed depth-tested cube offscreen,
+and a separate HWND example visibly presents a bounded 60-frame scene. These
+prove a useful consumer path, not general rendering compatibility.
 
-The private hidden HWND path acquired, rendered, read back, presented and
-resized, but visible desktop presentation has not been verified. CoreWindow
-has prior private diagnostics; Windows 10 Mobile ARM32 and historical FL9_1
-hardware have not been tested. `wait_for_idle` only has GPU event-query evidence,
-not evidence that presentation completed. A synchronous HWND callback can
-deadlock if it reenters context work or waits on the active surface operation.
-This is a public presentation blocker even with context serialization.
+The current public subset includes restricted WGSL-to-Naga-to-HLSL-to-FXC
+shaders, supported sampled and renderable formats, multiple bind groups,
+static/dynamic uniform ranges, texture transfers and views, triangle/line
+rendering, culling, depth/stencil subsets, and validated readback. Exact limits,
+negative gates and unverified combinations are listed in `CAPABILITIES.md`.
+This remains experimental and is not a WebGPU conformance claim.
 
-Before exposing an adapter, core-valid states such as broader primitive and
-vertex layouts, resource shapes and bindings need implementation or safe
-validation. Private HAL errors can currently surface as device loss. Clipped
-viewport emulation can exceed the FXC instruction budget, and the tested FXC
-profile rejects fragment-position and front-facing inputs. Stencil operations,
-read-only depth with sampled aliases, broader formats and mipmaps remain
-incomplete. `Never` depth comparison remains emulated. FL9_1 does not guarantee
-separate-alpha blending; the default path now rejects modes that require it,
-while masked-channel equivalents remain supported. Native compute and UAV storage are not
-FL9_1 guarantees. Do not replace those gaps with fabricated capabilities.
+Public presentation is limited to the tested Win32 HWND contract. The private
+CoreWindow path is not exposed through public surface capabilities. CoreWindow
+construction now verifies dispatcher access and captures the owner thread, but
+there is no UWP render/readback run. ARM32 UWP and historical FL9_1 hardware
+remain unverified. `wait_for_idle` has GPU event-query evidence, not evidence
+that presentation completed.
 
-Core permits draw combinations, layouts and resource shapes outside the private
-subset; the existing downlevel flags alone do
-not make all of them unreachable. A safe public backend needs implementations,
-sound fallbacks or targeted core validation for each such case. The unsafe,
-owner-matched fixture proves buffer and textured indexed depth rendering through
-core and public wgpu calls; it does not make general adapter exposure safe.
-An occlusion-query downlevel flag now rejects unavailable query sets in core
-before they can cause device loss. The D3D11 fixture omits the flag; ordinary
-adapter exposure remains gated.
+The opt-in adapter does not make every core-valid state safe. Continue auditing
+resource shapes, vertex/pipeline combinations, shader/compiler limits, errors
+and lifetimes; add implementations or narrow validation where the public
+projection still permits unsupported operations. Private HAL failures can
+surface as device loss, though synthetic removal paths now verify core
+invalidation and callback behavior. Clipped viewport emulation can exceed FXC
+instruction limits. FL9_1 does not guarantee separate-alpha blending, so the
+backend rejects modes requiring it while retaining tested masked-channel
+cases. Native compute and UAV storage are unavailable in the current FL9_1
+contract. Do not replace these gaps with fabricated capabilities.
+
+Core's downlevel gates reject unsupported vertex/fragment storage layouts and
+occlusion query sets before HAL. The unsafe owner-matched fixture remains
+useful for cases that need internal device access, but public examples and
+integration tests now also exercise ordinary wgpu adapter, device and queue
+creation. Public access stays opt-in and its projected contract still needs
+the remaining audit.
 Private read-only D24S8 passes require load/store of both aspects, no sampled
 aliases and no depth or stencil writes. Keep the public read-only flag off.
 Runtime integer-based vector indexing is now rejected by the conservative
