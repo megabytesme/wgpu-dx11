@@ -357,6 +357,141 @@ pub(super) fn compile_naga_with_viewport(
     compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
 }
 
+pub(super) fn compile_naga_with_synthetic_fragment_output(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    entry: &str,
+    profile: ShaderProfile,
+    bindings: &[ShaderBinding],
+) -> Result<Vec<u8>, NagaCompileError> {
+    let entry_index = module
+        .entry_points
+        .iter()
+        .position(|candidate| {
+            candidate.stage == naga::ShaderStage::Fragment && candidate.name == entry
+        })
+        .ok_or_else(|| NagaCompileError::Translation(String::from("entry point not found")))?;
+    if module.entry_points[entry_index].function.result.is_some() {
+        return compile_naga_with_viewport(
+            module,
+            info,
+            naga::ShaderStage::Fragment,
+            entry,
+            profile,
+            bindings,
+            false,
+        );
+    }
+
+    let mut module = module.clone();
+    synthesize_fragment_color_output(&mut module, entry_index)?;
+    // The original module passed core validation; the new validation pass rebuilds only
+    // Naga's analysis metadata after changing the entry-point call graph and interface.
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .map_err(|error| NagaCompileError::Translation(format!("{error:?}")))?;
+    compile_naga_with_viewport(
+        &module,
+        &info,
+        naga::ShaderStage::Fragment,
+        entry,
+        profile,
+        bindings,
+        false,
+    )
+}
+
+fn synthesize_fragment_color_output(
+    module: &mut naga::Module,
+    entry_index: usize,
+) -> Result<(), NagaCompileError> {
+    let entry = module
+        .entry_points
+        .get_mut(entry_index)
+        .ok_or_else(|| NagaCompileError::Translation(String::from("entry point not found")))?;
+    if entry.stage != naga::ShaderStage::Fragment || entry.function.result.is_some() {
+        return Err(NagaCompileError::Translation(String::from(
+            "synthetic color output requires an outputless fragment entry point",
+        )));
+    }
+    let mut body = core::mem::take(&mut entry.function);
+    let arguments = body.arguments.clone();
+    for argument in &mut body.arguments {
+        argument.binding = None;
+    }
+    let body_function = module.functions.append(body, naga::Span::UNDEFINED);
+    let color_type = module.types.insert(
+        naga::Type {
+            name: None,
+            inner: naga::TypeInner::Vector {
+                size: naga::VectorSize::Quad,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            },
+        },
+        naga::Span::UNDEFINED,
+    );
+    let mut wrapper = naga::Function {
+        arguments,
+        result: Some(naga::FunctionResult {
+            ty: color_type,
+            binding: Some(naga::Binding::Location {
+                location: 0,
+                interpolation: None,
+                sampling: None,
+                blend_src: None,
+                per_primitive: false,
+            }),
+        }),
+        ..naga::Function::default()
+    };
+    let mut call_arguments = Vec::with_capacity(wrapper.arguments.len());
+    for index in 0..wrapper.arguments.len() {
+        let index = u32::try_from(index).map_err(|_| {
+            NagaCompileError::Translation(String::from("too many fragment arguments"))
+        })?;
+        call_arguments.push(wrapper.expressions.append(
+            naga::Expression::FunctionArgument(index),
+            naga::Span::UNDEFINED,
+        ));
+    }
+    let zero = wrapper.expressions.append(
+        naga::Expression::Literal(naga::Literal::F32(0.0)),
+        naga::Span::UNDEFINED,
+    );
+    let color = wrapper.expressions.append(
+        naga::Expression::Compose {
+            ty: color_type,
+            components: alloc::vec![zero; 4],
+        },
+        naga::Span::UNDEFINED,
+    );
+    // FL9_1 FXC requires SV_Target0. The caller binds no RTV, so this value is not observable.
+    wrapper.body.push(
+        naga::Statement::Call {
+            function: body_function,
+            arguments: call_arguments,
+            result: None,
+        },
+        naga::Span::UNDEFINED,
+    );
+    wrapper.body.push(
+        naga::Statement::Emit(wrapper.expressions.range_from(color.index())),
+        naga::Span::UNDEFINED,
+    );
+    wrapper.body.push(
+        naga::Statement::Return { value: Some(color) },
+        naga::Span::UNDEFINED,
+    );
+    module.entry_points[entry_index].function = wrapper;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,6 +710,55 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, NagaCompileError::Compilation(_)));
+    }
+
+    #[test]
+    fn fl91_outputless_discard_fragment_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(7) var<uniform> threshold: vec4f; fn discard_negative(side: f32) { if side < threshold.x { discard; } } @fragment fn main(@location(0) side: f32) { discard_negative(side); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let binding = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            slot: 3,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        let direct = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &binding,
+        )
+        .expect_err("FXC requires SV_Target0 at FL9_1");
+        let NagaCompileError::Compilation(error) = direct else {
+            panic!("expected the FL9_1 FXC diagnostic, got {direct:?}");
+        };
+        std::println!(
+            "FL9_1 outputless fragment FXC diagnostic: {}",
+            error.message
+        );
+        assert!(error.message.contains("SV_Target0"));
+
+        let translated = compile_naga_with_synthetic_fragment_output(
+            &module,
+            &info,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &binding,
+        )
+        .expect("synthesize an unbound color output while preserving fragment execution");
+        assert!(translated.starts_with(b"DXBC"));
     }
 
     #[test]

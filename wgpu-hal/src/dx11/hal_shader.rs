@@ -2565,7 +2565,23 @@ impl ShaderModule {
         bindings: &[ShaderBinding],
         constants: &naga::back::PipelineConstants,
     ) -> Result<Vec<u8>, crate::PipelineError> {
-        self.compile_with_viewport_and_constants(stage, entry, bindings, false, constants)
+        self.compile_with_viewport_and_constants(stage, entry, bindings, false, false, constants)
+    }
+
+    pub(super) fn compile_targetless_fragment_with_bindings_and_constants(
+        &self,
+        entry: &str,
+        bindings: &[ShaderBinding],
+        constants: &naga::back::PipelineConstants,
+    ) -> Result<Vec<u8>, crate::PipelineError> {
+        self.compile_with_viewport_and_constants(
+            naga::ShaderStage::Fragment,
+            entry,
+            bindings,
+            false,
+            true,
+            constants,
+        )
     }
 
     pub(super) fn compile_with_viewport_and_constants(
@@ -2574,6 +2590,7 @@ impl ShaderModule {
         entry: &str,
         bindings: &[ShaderBinding],
         viewport_transform: bool,
+        targetless_fragment: bool,
         constants: &naga::back::PipelineConstants,
     ) -> Result<Vec<u8>, crate::PipelineError> {
         let stages = match stage {
@@ -2690,16 +2707,22 @@ impl ShaderModule {
             ));
         }
         let present = used_shader_bindings(&module, entry_info, bindings);
-        compile_naga_with_viewport(
-            &module,
-            &info,
-            stage,
-            entry,
-            profile,
-            &present,
-            viewport_transform,
-        )
-        .map_err(|error| {
+        let compiled = if targetless_fragment {
+            super::shader::compile_naga_with_synthetic_fragment_output(
+                &module, &info, entry, profile, &present,
+            )
+        } else {
+            compile_naga_with_viewport(
+                &module,
+                &info,
+                stage,
+                entry,
+                profile,
+                &present,
+                viewport_transform,
+            )
+        };
+        compiled.map_err(|error| {
             if matches!(&error, NagaCompileError::Compilation(error) if error.code == windows::Win32::Foundation::E_OUTOFMEMORY.0) {
                 return crate::PipelineError::Device(crate::DeviceError::OutOfMemory);
             }

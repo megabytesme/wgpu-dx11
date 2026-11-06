@@ -458,6 +458,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   depth written without a color target controls the later comparison.
   Aspect-specific views and depth copies remain unsupported; broad public
   depth-stencil capability is still false.
+- A public D16 depth-only pipeline with a result-less fragment stage now
+  compiles and runs at forced FL9_1. FXC rejects the native `void` pixel shader
+  with X4530, so HAL moves the validated fragment body into a helper and adds
+  a synthetic `SV_Target0` return. The DSV-only pass binds no RTV, preserving
+  discard and depth behavior while making the color output unobservable. A
+  conditional-discard test checked 32 red pixels where depth was not written
+  and 32 blue pixels where the later draw failed depth testing.
 - D24S8 triangle pipelines accept signed constant and finite slope-scaled depth
   bias with zero clamp. Core's controlled fixture verifies nonzero clamp is
   rejected by `DEPTH_BIAS_CLAMP` before HAL. Nonzero bias on points or solid

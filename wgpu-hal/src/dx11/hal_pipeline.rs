@@ -2644,7 +2644,7 @@ impl RenderPipeline {
             [] | [None] => None,
             _ => return Err(invalid()),
         };
-        if fragment.is_some() != target.is_some()
+        if (target.is_some() && fragment.is_none())
             || (target.is_none() && desc.depth_stencil.is_none())
         {
             return Err(invalid());
@@ -2879,6 +2879,7 @@ impl RenderPipeline {
             vertex_stage.entry_point,
             &vertex_bindings,
             true,
+            false,
             vertex_stage.constants,
         ) {
             Ok(code) => Some(code),
@@ -2891,12 +2892,22 @@ impl RenderPipeline {
             }
         };
         let pixel_code = if let Some(fragment) = fragment {
-            fragment.module.compile_with_bindings_and_constants(
-                naga::ShaderStage::Fragment,
-                fragment.entry_point,
-                &fragment_bindings,
-                fragment.constants,
-            )?
+            if target.is_none() {
+                fragment
+                    .module
+                    .compile_targetless_fragment_with_bindings_and_constants(
+                        fragment.entry_point,
+                        &fragment_bindings,
+                        fragment.constants,
+                    )?
+            } else {
+                fragment.module.compile_with_bindings_and_constants(
+                    naga::ShaderStage::Fragment,
+                    fragment.entry_point,
+                    &fragment_bindings,
+                    fragment.constants,
+                )?
+            }
         } else {
             super::shader::compile_hlsl(
                 "float4 main() : SV_Target { return float4(0, 0, 0, 0); }",

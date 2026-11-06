@@ -657,6 +657,23 @@ The first test executes public core → HAL → D3D11 → GPU rendering and read
 The second is synthetic CPU-only coverage for unavailable or incomplete
 queries and disabled guarantee/backend inputs.
 
+### Public FL9_1 outputless fragment stage in a depth-only pass
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_outputless_fragment_depth_only_pass_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 fl91_outputless_discard_fragment_compiles_with_fxc -- --nocapture
+```
+
+The public test uses a physical adapter explicitly requested at FL9_1. A
+fragment helper discards the left half of an 8×8 triangle in a DSV-only pass;
+a later farther draw turns those pixels red while the depth-written right half
+remains blue. All 64 pixels are checked after GPU readback. The compiler test
+records the direct FXC X4530 diagnostic for an outputless `void` shader, then
+compiles the backend's synthetic-color wrapper while retaining a sparse
+uniform binding and helper call. No RTV is bound for the targetless pass, so
+the synthetic color cannot reach an application attachment.
+
 ### Public FL9_1 D24S8 depth/stencil pass transitions
 
 The public transition test initializes both D24S8 aspects, then verifies a

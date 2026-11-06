@@ -290,6 +290,15 @@ not render, the next two records produce distinct colors, and all other pixels
 retain the clear color. Core rejects `instance_index` entry points because the
 selected FL9_1 contract does not expose that system value.
 
+A depth-only pipeline may include a fragment entry point with no result. FXC's
+`ps_4_0_level_9_1` compiler rejects Naga's native `void` pixel shader with
+X4530, so HAL wraps only result-less fragment entry points in a helper and
+adds an `SV_Target0` value. The targetless pass binds no render-target view,
+making that synthetic color unobservable while preserving fragment discard.
+A strict public test verifies conditional discard through its effect on later
+depth testing. Fragment results containing color, depth or sample-mask outputs
+are not rewritten; their usual target and downlevel validation still applies.
+
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample
 and (when the usage includes `COLOR_TARGET` or `COPY_SRC`) render-target query
