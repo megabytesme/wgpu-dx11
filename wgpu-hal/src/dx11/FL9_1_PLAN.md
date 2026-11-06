@@ -41,7 +41,19 @@ public contract. This is profile/compiler evidence and does not establish
 historical-driver behavior. Continue auditing other core-valid shader and
 render-state combinations.
 
-### Latest execution checkpoint — strip restart and bundle pipeline transition (`f98b72200`)
+### Latest public binding checkpoint — three sparse bind groups (`db3f95c7c`)
+
+The strict public wgpu integration binds stage-visible uniforms in group 0,
+the sampled texture's sampler in group 4 and the texture in group 7. The
+selected shader samples across the two resource groups. Replacing only group
+7 while retaining groups 0 and 4 changes readback to 32 blue and 32
+tinted-yellow pixels. The complete strict public D3D11 test binary passed
+50/50 on the RTX 3090 Ti at requested/actual FL9_1; its optional Float16x2
+subcase remains an explicit query-based skip. Aggregate layout edge cases and
+additional group transitions still need audit. See `FL9_1_PROGRESS.md` for
+the exact tests.
+
+### Render-bundle checkpoint — strip restart and pipeline transition (`f98b72200`)
 
 The strict public D3D11 test records consecutive Uint16 and Uint32
 TriangleStrip bundles with restart markers, each with different vertex and

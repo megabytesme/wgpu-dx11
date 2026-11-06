@@ -3,15 +3,15 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `f98b72200`
-(`dx11: test bundle restart pipeline transitions`), following
-`70341b011` (`dx11: verify FL9_1 instance-index rejection`) and `62d12ecd4`
-(`dx11: reject unsupported FL9_1 shader loops`). A new public test records a
-Uint16 and Uint32 indexed TriangleStrip with restart markers in consecutive
-render bundles and executes them in one pass with different vertex and
-fragment pipelines. At forced FL9_1, the 16×16 readback matched all 256 pixels
-with 37 green and 37 red from the two bundles. The full strict public D3D11
-suite passed 50/50; one optional input-format subcase remains an explicit
+The branch is `uwp-dx11`, latest code checkpoint is `db3f95c7c`
+(`dx11: validate sampled bindings across sparse groups`), following
+`f98b72200` (`dx11: test bundle restart pipeline transitions`), `70341b011`
+(`dx11: verify FL9_1 instance-index rejection`) and `62d12ecd4`
+(`dx11: reject unsupported FL9_1 shader loops`). The strict public textured
+integration binds uniforms in group 0, a sampler in group 4 and a texture in
+group 7, then replaces only the texture group; forced-FL9_1 readback changes
+to 32 blue and 32 tinted-yellow pixels. The full strict public D3D11 suite
+passed 50/50; one optional input-format subcase remains an explicit
 capability skip. Core rejects a selected
 vertex or fragment entry point that reaches WGSL loop IR through helper calls,
 because Naga's current D3D11 HLSL lowering emits dynamically bounded loops

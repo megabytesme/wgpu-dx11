@@ -7844,7 +7844,7 @@ optional `Float16x2` input-format capability subcase explicitly skipped.
 Public-test Clippy, Rustfmt 1.93.1 and `git diff --check` passed. The exact
 commands are the focused and full-suite commands recorded above.
 
-## Follow-up — sampled resources across three public bind groups
+## Follow-up — sampled resources across three public bind groups (`db3f95c7cd2dc8f8b692b423ee0e36d61d2143e7`)
 
 Expanded the public FL9_1 textured integration to put the vertex transform and
 fragment tint in group 0, the filtering sampler in group 4, and the sampled
