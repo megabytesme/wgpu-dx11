@@ -214,6 +214,8 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_sample_base_clamp_to_edge: true,
                 texture_sample_level: true,
                 texture_load: true,
+                runtime_integer_shader_operations: true,
+                matrix_aggregate_stores: true,
                 max_texture_sample_bias: u32::MAX,
                 texture_sample_bias_dynamic: true,
                 texture_sample_bias_offset: true,

@@ -844,6 +844,17 @@ static literal indices and float-only paths remain available. Matrix-containing 
 in checked and unchecked shaders because Naga's current HLSL special lowering
 can lose writes or omit an index clamp. The conservative guard also rejects
 unrelated stores to such aggregates and shaders exceeding its analysis budget.
+The public FL9_1 projection now represents these two backend restrictions with
+`DownlevelLimits::runtime_integer_shader_operations` and
+`DownlevelLimits::matrix_aggregate_stores`. Core repeats the bounded analysis
+for the selected vertex and fragment entry points, follows helper calls, and
+rejects unsupported pipelines before HAL; safe sibling entry points and direct
+integer-vector-to-float vertex input conversion remain usable. Matrix stores
+through an aggregate containing a two-row matrix remain unsupported, while
+float-only matrix reads are allowed. These are backend/compiler limits, not
+feature-level hardware guarantees. The public regression covers fragment
+integer arithmetic and vertex aggregate stores on the forced-FL9_1 path; CPU
+tests cover helper pointer arguments and entry-point selection.
 General dynamic uniform indexing and broad public adapter exposure remain
 unsupported. GPU coverage exercises multiple
 range bindings, pipeline transitions, a matrix and padded structure, and sampled

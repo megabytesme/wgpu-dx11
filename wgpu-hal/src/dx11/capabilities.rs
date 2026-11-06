@@ -257,6 +257,8 @@ pub(super) struct BackendCapabilities {
     pub fragment_derivatives: bool,
     pub texture_query: bool,
     pub texture_sample_level: bool,
+    pub runtime_integer_shader_operations: bool,
+    pub matrix_aggregate_stores: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub d16_depth_attachment: bool,
@@ -340,6 +342,8 @@ impl BackendCapabilities {
         fragment_derivatives: false,
         texture_query: false,
         texture_sample_level: false,
+        runtime_integer_shader_operations: false,
+        matrix_aggregate_stores: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
         d16_depth_attachment: true,
@@ -461,6 +465,8 @@ impl Capabilities {
                     && self.backend.fragment_derivatives,
                 texture_sample_level: self.hardware.texture_sample_level
                     && self.backend.texture_sample_level,
+                runtime_integer_shader_operations: self.backend.runtime_integer_shader_operations,
+                matrix_aggregate_stores: self.backend.matrix_aggregate_stores,
                 vertex_format_mask: self.vertex_input_format_mask(),
             },
         };
@@ -1145,6 +1151,8 @@ mod tests {
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);
         assert!(!exposed.downlevel.limits.texture_sample_level);
+        assert!(!exposed.downlevel.limits.runtime_integer_shader_operations);
+        assert!(!exposed.downlevel.limits.matrix_aggregate_stores);
         assert_eq!(
             exposed
                 .downlevel

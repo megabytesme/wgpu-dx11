@@ -277,6 +277,16 @@ runtime integer shader operation. The forced-FL9_1 RTX test exercises all three
 formats in one draw and validates every pixel. The public selected-device
 projection reports this mask; other layout and draw restrictions remain.
 
+The public selected-FL9_1 projection also reports that runtime integer shader
+operations and stores through aggregates containing two-row matrices are
+unavailable. Core derives bounded per-entry summaries from validated Naga IR,
+follows helper calls, and rejects only the selected unsupported entry before
+HAL. It retains direct integer-vector-to-float vertex input conversion and
+safe sibling entries. Strict public validation confirms unsupported fragment
+integer arithmetic and vertex matrix aggregate stores fail through core, while
+the CPU analysis tests cover helper pointer stores, safe matrix reads and entry
+selection. These are backend/compiler restrictions, not hardware guarantees.
+
 Core now also models whether viewport rectangles may extend beyond the active
 render target with `DownlevelLimits::viewport_rectangles_outside_target`. The
 controlled FL9_1 fixture reports false and verifies that left-overflowing

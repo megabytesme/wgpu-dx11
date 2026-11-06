@@ -306,6 +306,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             texture_sample_base_clamp_to_edge,
             texture_sample_level,
             texture_load,
+            runtime_integer_shader_operations,
+            matrix_aggregate_stores,
             max_texture_sample_bias,
             texture_sample_bias_dynamic,
             texture_sample_bias_offset,
@@ -366,6 +368,14 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     )?;
     writeln!(output, "\t\tFragment front-facing input: {fragment_front_facing}")?;
     writeln!(output, "\t\tFragment position input: {fragment_position}")?;
+    writeln!(
+        output,
+        "\t\tRuntime integer shader operations: {runtime_integer_shader_operations}"
+    )?;
+    writeln!(
+        output,
+        "\t\tMatrix aggregate stores: {matrix_aggregate_stores}"
+    )?;
     writeln!(output, "\t\tTexture image queries: {texture_query}")?;
     writeln!(
         output,

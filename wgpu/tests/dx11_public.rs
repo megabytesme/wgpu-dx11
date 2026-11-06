@@ -799,6 +799,114 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     drop(create_texel_load_pipeline("safe"));
     println!("PASS: public core rejected selected textureLoad and accepted its safe sibling entry");
 
+    let integer_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 runtime integer validation layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(4),
+            },
+            count: None,
+        }],
+    });
+    let integer_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 runtime integer pipeline layout"),
+        bind_group_layouts: &[Some(&integer_layout)],
+        immediate_size: 0,
+    });
+    let integer_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 runtime integer selected-entry shader"),
+        source: ShaderSource::Wgsl(
+            "struct Values { value: u32 };\n\
+             @group(0) @binding(0) var<uniform> values: Values;\n\
+             fn increment(value: u32) -> u32 { return value + 1u; }\n\
+             @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn unsafe_entry() -> @location(0) vec4f { return vec4f(f32(increment(values.value))); }\n\
+             @fragment fn safe_entry() -> @location(0) vec4f { return vec4f(1.0); }"
+                .into(),
+        ),
+    });
+    let semantic_targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_integer_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 runtime integer pipeline"),
+            layout: Some(&integer_pipeline_layout),
+            vertex: VertexState {
+                module: &integer_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &integer_shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &semantic_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error_containing(
+        &device,
+        "runtime integer semantics in selected fragment entry",
+        "UnsupportedRuntimeIntegerShaderOperations",
+        || drop(create_integer_pipeline("unsafe_entry")),
+    );
+    drop(create_integer_pipeline("safe_entry"));
+
+    let matrix_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 matrix aggregate store selected-entry shader"),
+        source: ShaderSource::Wgsl(
+            "struct Aggregate { transform: mat3x2<f32>, value: f32 };\n\
+             @vertex fn unsafe_entry() -> @builtin(position) vec4f { var data: Aggregate; data.value = 1.0; return vec4f(0.0, 0.0, 0.0, 1.0); }\n\
+             @vertex fn safe_entry() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+                .into(),
+        ),
+    });
+    let create_matrix_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 matrix aggregate store pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &matrix_shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &matrix_shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &semantic_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error_containing(
+        &device,
+        "matrix aggregate store in selected vertex entry",
+        "UnsupportedMatrixAggregateStore",
+        || drop(create_matrix_pipeline("unsafe_entry")),
+    );
+    drop(create_matrix_pipeline("safe_entry"));
+    println!("PASS: public core rejected unsupported selected-entry integer and matrix stores and accepted safe sibling entries");
+
     let sample_level_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 explicit texture-level validation layout"),
         entries: &[

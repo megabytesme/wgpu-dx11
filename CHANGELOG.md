@@ -68,6 +68,7 @@ Bottom level categories:
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
 - Require stage-specific downlevel support before creating storage-buffer layouts.
+- Add downlevel limits for runtime integer shader operations and matrix aggregate stores.
 - Gate unsupported texture binding dimensions and 2D-array storage layouts with device limits and downlevel capabilities.
 - Add a downlevel vertex-format mask so adapters can report input formats individually and core rejects unsupported attributes before HAL.
 - Allow adapters to report single-mip-only texture formats and reject unsupported mip chains before HAL texture creation.

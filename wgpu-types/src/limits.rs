@@ -1174,6 +1174,18 @@ pub struct DownlevelLimits {
     /// selected shader model or resource subset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_load: bool,
+    /// Whether shader entry points may use runtime integer operations.
+    ///
+    /// Some downlevel shader profiles have integer type declarations but do not preserve the
+    /// semantics of runtime integer arithmetic, conversion, comparison or indexing.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub runtime_integer_shader_operations: bool,
+    /// Whether stores through structs or arrays containing matrices are supported.
+    ///
+    /// This can be unavailable when a backend's shader translator cannot preserve aggregate
+    /// matrix store semantics.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub matrix_aggregate_stores: bool,
     /// Maximum absolute literal bias accepted by `textureSampleBias`.
     ///
     /// `u32::MAX` means that no finite backend-specific bound is modeled. A
@@ -1247,6 +1259,8 @@ impl Default for DownlevelLimits {
             texture_sample_base_clamp_to_edge: true,
             texture_sample_level: true,
             texture_load: true,
+            runtime_integer_shader_operations: true,
+            matrix_aggregate_stores: true,
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
             texture_sample_bias_offset: true,
@@ -1310,6 +1324,9 @@ impl DownlevelLimits {
                 || self.texture_sample_base_clamp_to_edge)
             && (!required.texture_sample_level || self.texture_sample_level)
             && (!required.texture_load || self.texture_load)
+            && (!required.runtime_integer_shader_operations
+                || self.runtime_integer_shader_operations)
+            && (!required.matrix_aggregate_stores || self.matrix_aggregate_stores)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
             && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
             && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
@@ -1376,6 +1393,8 @@ impl DownlevelCapabilities {
             && self.limits.texture_sample_base_clamp_to_edge
             && self.limits.texture_sample_level
             && self.limits.texture_load
+            && self.limits.runtime_integer_shader_operations
+            && self.limits.matrix_aggregate_stores
             && self.limits.max_texture_sample_bias
                 >= DownlevelLimits::default().max_texture_sample_bias
             && self.limits.texture_sample_bias_dynamic
@@ -1676,6 +1695,8 @@ mod tests {
             texture_sample_base_clamp_to_edge: false,
             texture_sample_level: false,
             texture_load: true,
+            runtime_integer_shader_operations: false,
+            matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
@@ -1709,6 +1730,8 @@ mod tests {
             texture_sample_base_clamp_to_edge: false,
             texture_sample_level: false,
             texture_load: true,
+            runtime_integer_shader_operations: false,
+            matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
@@ -1716,6 +1739,14 @@ mod tests {
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
         assert!(available.check_limits(&required));
+        assert!(!available.check_limits(&DownlevelLimits {
+            runtime_integer_shader_operations: true,
+            ..required.clone()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            matrix_aggregate_stores: true,
+            ..required.clone()
+        }));
 
         assert!(!available.check_limits(&DownlevelLimits {
             max_texture_repeat_per_primitive: 129,
@@ -1910,6 +1941,8 @@ mod tests {
             "texture_query",
             "texture_sample_base_clamp_to_edge",
             "texture_load",
+            "runtime_integer_shader_operations",
+            "matrix_aggregate_stores",
             "texture_sample_level",
             "max_texture_sample_bias",
             "texture_sample_bias_dynamic",
@@ -1933,6 +1966,8 @@ mod tests {
         assert!(limits.texture_query);
         assert!(limits.texture_sample_base_clamp_to_edge);
         assert!(limits.texture_load);
+        assert!(limits.runtime_integer_shader_operations);
+        assert!(limits.matrix_aggregate_stores);
         assert!(limits.texture_sample_level);
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);
         assert!(limits.texture_sample_bias_dynamic);
@@ -2064,6 +2099,27 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn unsupported_fl9_shader_semantics_are_downlevel_capabilities() {
+        for available in [
+            DownlevelLimits {
+                runtime_integer_shader_operations: false,
+                ..DownlevelLimits::default()
+            },
+            DownlevelLimits {
+                matrix_aggregate_stores: false,
+                ..DownlevelLimits::default()
+            },
+        ] {
+            assert!(!available.check_limits(&DownlevelLimits::default()));
+            assert!(!DownlevelCapabilities {
+                limits: available,
+                ..DownlevelCapabilities::default()
+            }
+            .is_webgpu_compliant());
+        }
     }
 
     #[test]

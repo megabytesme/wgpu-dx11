@@ -807,6 +807,10 @@ pub enum CreateRenderPipelineError {
     UnsupportedFragmentPosition,
     #[error("Texture loads are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureLoad { stage: wgt::ShaderStages },
+    #[error("Runtime integer shader operations are not supported in the {stage:?} shader by this downlevel adapter")]
+    UnsupportedRuntimeIntegerShaderOperations { stage: wgt::ShaderStages },
+    #[error("Stores through aggregates containing matrices are not supported in the {stage:?} shader by this downlevel adapter")]
+    UnsupportedMatrixAggregateStore { stage: wgt::ShaderStages },
     #[error("Texture queries are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureQuery { stage: wgt::ShaderStages },
     #[error("textureSampleBaseClampToEdge is not supported in the {stage:?} shader by this downlevel adapter")]
@@ -914,6 +918,8 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedFragmentFrontFacing
             | Self::UnsupportedFragmentPosition
             | Self::UnsupportedTextureLoad { .. }
+            | Self::UnsupportedRuntimeIntegerShaderOperations { .. }
+            | Self::UnsupportedMatrixAggregateStore { .. }
             | Self::UnsupportedTextureQuery { .. }
             | Self::UnsupportedTextureSampleBaseClampToEdge { .. }
             | Self::UnsupportedTextureSampleBias { .. }

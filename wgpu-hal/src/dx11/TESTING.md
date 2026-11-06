@@ -1841,6 +1841,33 @@ initializers and overrides. Proven static literal indices and float-only shader
 paths remain available; analysis limits fail closed. These restrictions do not
 establish general integer shader support or broaden the public shader contract.
 
+Core exposes the backend restrictions through
+`DownlevelLimits::runtime_integer_shader_operations` and
+`DownlevelLimits::matrix_aggregate_stores`. Selected-entry analysis follows
+reachable helper calls and runs before HAL pipeline creation. The CPU tests
+cover helper-passed integer values, safe direct integer vertex-input conversion,
+matrix aggregate stores through a pointer helper, safe matrix reads and safe
+sibling entry points:
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl fl91_ -- --nocapture
+cargo +1.93 test --offline -j32 -p wgpu-types --lib unsupported_fl9_shader_semantics
+```
+
+The strict public API regression runs in the offscreen test and verifies that
+fragment runtime integer arithmetic and a vertex store through a matrix
+aggregate fail with core validation errors, while the unused safe sibling
+entries compile:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+```
+
+The physical validation run used the RTX 3090 Ti at requested and actual
+FL9_1. It does not establish historical-driver behavior or broader integer
+shader support.
+
 ### FL9_1 depth attachments
 
 ```powershell

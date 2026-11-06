@@ -458,7 +458,15 @@ The full strict public suite passed 38/38,
 including the D24S8 case, on the physical RTX 3090 Ti at requested/actual
 FL9_1. Historical FL9_1 profile behavior remains unverified.
 
-Next add selected-entry core validation for the HAL's FL9_1 integer-semantics
-and matrix-aggregate-store restrictions, preserving directly supported integer
-vertex-input conversions and safe matrix reads. Keep optional formats
-query-gated and historical FL9_1 and ARM32 behavior explicitly unverified.
+The public FL9_1 projection now has separate downlevel limits for runtime
+integer shader operations and stores through aggregates containing two-row
+matrices. Core analyzes validated Naga IR per selected entry, follows helper
+calls and pointer arguments, and rejects unsupported paths before HAL while
+preserving direct integer-vector vertex-input conversion and safe matrix
+reads. Public error-scope checks and CPU analysis tests cover both gates. The
+first full public-suite run exposed an error-precedence regression for fragment
+sample-mask output; the dedicated sample-mask gate now runs before the broad
+integer gate, and the full suite passes. Next continue auditing core-valid
+shader and render-state combinations against the actual HAL. Keep optional
+formats query-gated and historical FL9_1 and ARM32 behavior explicitly
+unverified.
