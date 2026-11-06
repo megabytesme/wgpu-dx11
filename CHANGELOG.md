@@ -114,6 +114,7 @@ Bottom level categories:
 #### WebGPU
 
 - Propagate mapped buffer flush failures, release mappings on failure, and invoke device-lost callbacks after releasing the callback lock.
+- Reject buffer destruction while mapped views remain alive, preserving the memory behind safe `BufferView` references.
 
 #### Hal
 

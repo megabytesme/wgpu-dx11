@@ -522,3 +522,12 @@ An additional strict test records an indexed textured triangle with sparse
 texture/sampler bindings, drops the original source handles after bundle
 recording and validates all 64 pixels after submission. Other bundle state
 combinations and indexed restart behavior still need targeted coverage.
+
+## Follow-up — mapped-view destruction safety
+
+The safe public `Buffer::destroy` API now checks the shared `MapContext` before
+core can unmap and release the backend allocation. `MapContext::reset` checks
+for active subranges before clearing its mapped range, so a caught panic keeps
+the map state usable. A strict FL9_1 test verifies two disjoint views remain
+readable after a rejected destruction and that destruction succeeds once both
+views are dropped. Continue with the selected-entry dynamic-loop/FXC mismatch.

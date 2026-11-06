@@ -331,7 +331,13 @@ impl Buffer {
     }
 
     /// Destroy the associated native resources as soon as possible.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any [`BufferView`] or [`BufferViewMut`] remains alive. Drop all mapped views and
+    /// try again.
     pub fn destroy(&self) {
+        self.map_context.lock().reset();
         self.inner.destroy();
     }
 
@@ -797,12 +803,11 @@ impl MapContext {
 
     /// Record that the buffer is no longer mapped.
     fn reset(&mut self) {
-        self.mapped_range = None;
-
         assert!(
             self.sub_ranges.is_empty(),
             "You cannot unmap a buffer that still has accessible mapped views"
         );
+        self.mapped_range = None;
     }
 
     /// Record that the `size` bytes of the buffer at `offset` are now viewed.

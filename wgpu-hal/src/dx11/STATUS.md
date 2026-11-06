@@ -29,6 +29,11 @@ allocation fallibly before mapping the D3D11 staging resource. Allocation
 failure is reported as device out-of-memory instead of panicking or leaving a
 native resource mapped during unwinding.
 
+The public `Buffer::destroy` path now checks for outstanding mapped views
+before delegating to core unmap/destruction. The check leaves the mapped-range
+state intact on panic; a strict FL9_1 public test verifies both disjoint views
+remain readable and that destruction succeeds after they are dropped.
+
 The selected FL9_1 public projection also reports a separate limit of 16
 distinct sampled texture/sampler relationships per shader entry point. Core
 counts Naga's validated relationships for each selected stage and rejects an

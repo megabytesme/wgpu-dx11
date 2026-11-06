@@ -2149,6 +2149,20 @@ confirming the recorded commands retain the referenced resources through
 execution. The focused test passed 1/1; the full strict public suite passed
 33/33, with the optional Float16x2 input branch visibly capability-skipped.
 
+### Public mapped-view destruction lifetime
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_buffer_destroy_preserves_live_mapped_views -- --nocapture --test-threads=1
+```
+
+Destroying a buffer with a live mapped view now panics before core can unmap
+and release the mapped allocation. The test catches that panic, opens a second
+nonoverlapping 8-byte view to prove the mapping state was preserved, checks
+both views, drops them and then successfully destroys the buffer. The strict
+run selected the RTX 3090 Ti at requested/actual FL9_1. This test exercises
+native mapped-buffer lifetime, not a GPU draw or submission.
+
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,

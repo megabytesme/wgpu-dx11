@@ -1072,6 +1072,70 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
 }
 
 #[test]
+fn public_dx11_buffer_destroy_preserves_live_mapped_views() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=public mapped-view lifetime",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, _queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 mapped-view lifetime test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the FL9_1 projection");
+
+    let buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("mapped-view lifetime"),
+        size: 16,
+        usage: BufferUsages::MAP_READ,
+        mapped_at_creation: true,
+    });
+    {
+        let mut view = buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("mutable mapped range");
+        view.copy_from_slice(&[
+            7, 17, 27, 37, 47, 57, 67, 77, 87, 97, 107, 117, 127, 137, 147, 157,
+        ]);
+    }
+    let first_view = buffer
+        .slice(0..8)
+        .get_mapped_range()
+        .expect("read-only mapped range");
+    let destroy = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.destroy()));
+    assert!(destroy.is_err(), "destroy must reject an outstanding view");
+    let second_view = buffer
+        .slice(8..16)
+        .get_mapped_range()
+        .expect("failed destroy must preserve the active mapped range");
+    assert_eq!(&first_view[..], &[7, 17, 27, 37, 47, 57, 67, 77]);
+    assert_eq!(&second_view[..], &[87, 97, 107, 117, 127, 137, 147, 157]);
+    drop(second_view);
+    drop(first_view);
+    buffer.destroy();
+    println!("PASS: destroying a mapped buffer with a live view failed safely; view contents remained valid and destruction succeeded after drop");
+}
+
+#[test]
 fn public_dx11_api_renders_offscreen_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();

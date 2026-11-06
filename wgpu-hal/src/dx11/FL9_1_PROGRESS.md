@@ -7668,3 +7668,31 @@ separate temporary Cargo target `E:\CodexTemp\wgpu-fl91-mission-target`:
 Next close the selected-entry dynamic-loop/FXC mismatch and the mapped
 `BufferView` destruction lifetime issue found in the continuing core audit.
 Historical FL9_1 behavior and ARM32 UWP remain unverified.
+
+## Follow-up — preserve mapped views during buffer destruction
+
+A safe public `BufferView` owns its API `Buffer` handle but its core backend
+mapping stores a raw pointer into the mapped allocation. Core destruction
+unmaps before destroying native resources, so calling `Buffer::destroy` while
+a mapped view was alive could invalidate that pointer while the view remained
+readable in safe Rust. `Buffer::destroy` now runs the existing `MapContext`
+precondition before dispatching destruction. `MapContext::reset` checks for
+live subranges before clearing `mapped_range`, preserving a usable mapping if
+the panic is caught. The API docs now state the panic and require dropping
+views before retrying.
+
+The strict public test maps a 16-byte buffer at creation, opens an 8-byte view,
+catches the expected destroy panic, then opens a disjoint aligned 8-byte view.
+Both byte sequences remained intact; after dropping both views, destruction
+succeeded. A first draft used a 4-byte second offset and was rejected by the
+D3D11 public mapping alignment requirement; the final test uses aligned ranges.
+This is real D3D11 mapping/lifetime coverage, not a GPU draw or submission.
+
+Verification on Rust 1.93.1 and the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested/actual FL9_1:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_buffer_destroy_preserves_live_mapped_views -- --nocapture --test-threads=1`: 1/1 passed.
+- Changed-file `rustfmt --check` passed. Final Clippy and diff checks are pending.
+
+Next continue closing the selected-entry dynamic-loop/FXC compiler gap before
+broader shader and render-state audits.
