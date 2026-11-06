@@ -6933,3 +6933,66 @@ documentation are the current follow-up. Next: continue the core/HAL
 render-pass and pipeline-state audit, resolving concrete public contract
 mismatches with narrow tests. Historical FL9_1 devices and ARM32 UWP remain
 unverified.
+
+## Checkpoint — selected-entry integer and matrix-store validation — `320c21ab1`
+
+Added `DownlevelLimits::runtime_integer_shader_operations` and
+`DownlevelLimits::matrix_aggregate_stores`. D3D11 FL9_1 reports both false;
+GLES, noop and default adapters report true. The limits participate in limit
+requirements and WebGPU-compliance checks, deserialize as true for older
+serialized snapshots, and appear in `wgpu-info` output. The capability names
+describe backend/compiler behavior, not FL9_1 hardware guarantees.
+
+Core summarizes validated Naga IR per entry point. The bounded integer scan
+follows reachable helper functions and retains the existing direct
+integer-vector-to-float vertex-input conversion. The matrix scan follows
+pointer arguments into helpers and rejects stores through aggregates containing
+two-row matrices, while allowing safe scalar siblings and matrix reads. Scan
+budget exhaustion fails closed. Render-pipeline validation rejects these
+selected entries before HAL. A dedicated fragment sample-mask rejection runs
+before the broad integer gate so the existing precise validation error is
+preserved.
+
+Validation on 2026-11-06:
+
+- The initial strict public suite found the sample-mask error-precedence issue
+  described above (37 passed, one failed); after reordering the gates, the
+  sample-mask test passed 1/1 and the complete suite passed 38/38. The only
+  optional branch skip was Float16x2 IA support, which the selected device
+  does not report.
+- The strict full private D3D11 HAL suite passed 360/360 on the physical RTX
+  3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, requested/actual FL9_1,
+  software=false. Hardware-dependent cases ran with
+  `WGPU_DX11_REQUIRE_HARDWARE=1`.
+- Focused core selected-entry and DX11 adapter-isolation tests passed 3/3;
+  the DX12 core regression suite passed 88/88.
+- The wgpu-types downlevel-limit test passed 1/1. `wgpu-info` and GLES HAL
+  checks compiled successfully.
+- Core and public-test Clippy passed without warnings. HAL Clippy passed with
+  nine pre-existing warnings in HAL tests; wgpu-types Clippy/test emitted 14
+  existing unused serde-import warnings because that command did not enable
+  serde. Changed Rust files passed rustfmt; `git diff --check` passed.
+
+Commands included:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -p wgpu-types --lib unsupported_fl9_shader_semantics
+cargo +1.93 check --offline -p wgpu-info
+cargo +1.93 check --offline -p wgpu-hal --no-default-features --features gles
+cargo +1.93 clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93 clippy --offline -p wgpu-core --no-default-features --features dx11,std,wgsl --tests
+cargo +1.93 clippy --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+cargo +1.93 clippy --offline -p wgpu-types --tests
+rustfmt +1.93 --edition 2021 --check tests/src/params.rs wgpu-core/src/device/resource.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-core/src/pipeline.rs wgpu-core/src/validation.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/noop/mod.rs wgpu-hal/src/gles/adapter.rs wgpu-info/src/human.rs wgpu-types/src/limits.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: continue the core/HAL contract audit with shader entry-point operations
+and render-pass combinations still accepted by core but rejected or unhandled
+by this HAL. Preserve specific existing validation-error precedence when
+adding broader capability gates. Optional formats, historical FL9_1 devices,
+and ARM32 UWP remain separately unverified.
