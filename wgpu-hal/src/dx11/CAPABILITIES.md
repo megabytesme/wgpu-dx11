@@ -507,6 +507,16 @@ entry point before HAL. The private renderer is single-sample, so a future
 semantics-preserving implementation could investigate lowering the low bit
 to discard, but no such rewrite is currently performed.
 
+The FL9_1 projection also disables
+`DownlevelLimits::fragment_non_perspective_interpolation`. Naga emits
+`@interpolate(flat)` as HLSL `nointerpolation` and `@interpolate(linear)` as
+`noperspective`; FXC rejects both modifiers on `ps_4_0_level_9_1` with
+X4568. The vertex profile accepts them on outputs, so core checks only the
+selected fragment entry point's inputs. Perspective and centroid interpolation
+compile and execute. `@interpolate(sample)` remains rejected earlier by Naga's
+existing `MULTISAMPLED_SHADING` capability mapping. This is the tested
+FL9_1 compiler/runtime path, not a separate hardware guarantee.
+
 | Transfer | Implementation and restrictions | Coverage |
 | --- | --- | --- |
 | Buffer to texture | Retained GPU buffer copied to a CPU-readable staging buffer at replay; mapped bytes feed `UpdateSubresource` with an explicit destination box and checked row pitch. This reads GPU contents at execution time, not a CPU shadow. RGBA8/BGRA8 linear and sRGB formats share this transfer implementation. R8_UNORM, R8G8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM accept one-mip, one-layer sampled/upload use; R8_UNORM and R8G8_UNORM may combine upload and color-target use only when the selected query reports `RENDER_TARGET`. R8G8_UNORM is optional and requires a positive `TEXTURE2D` query. R16G16_SNORM has the same restricted path only if the selected device query reports `TEXTURE2D`; `SHADER_SAMPLE` controls filterability. BC1_UNORM uses 4×4 texel blocks, 8-byte block rows, 4-aligned dimensions and block-aligned update regions. | RGBA8/BGRA8 offset and padded full/partial uploads, GPU-written source and ordered submissions. A strict public test uploaded both sRGB formats and verified their sampled decoding. The guaranteed sampled-upload-only uncompressed formats passed padded-row, nonzero-source-offset upload and full rendered readback tests on forced FL9_1. The optional R8G8_UNORM path passed strict public upload and sampled readback on the RTX; R16G16_SNORM point sampling and filtering rejection both passed at forced FL9_1. BC1 passed an offset padded full upload, a partial block replacement and 256-pixel rendered readback. |

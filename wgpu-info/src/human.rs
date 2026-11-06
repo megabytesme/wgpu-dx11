@@ -300,6 +300,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             depth_bias_with_fragment_depth,
             fragment_depth_without_color_target_0,
             fragment_sample_mask_output,
+            fragment_non_perspective_interpolation,
             fragment_front_facing,
             fragment_position,
             texture_query,
@@ -354,6 +355,10 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(
         output,
         "\t\tFragment sample-mask output: {fragment_sample_mask_output}"
+    )?;
+    writeln!(
+        output,
+        "\t\tFragment flat/linear interpolation: {fragment_non_perspective_interpolation}"
     )?;
     writeln!(
         output,

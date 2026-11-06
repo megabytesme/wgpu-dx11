@@ -18,21 +18,29 @@ fn fl91_fragment_flat_interpolation_fxc_boundary() {
     )
     .validate(&module)
     .unwrap();
-    let result = compile_resource_free_naga(
+    let error = compile_resource_free_naga(
         &module,
         &info,
         naga::ShaderStage::Fragment,
         "fs",
         ShaderProfile::PixelLevel9_1,
-    );
-    match result {
-        Ok(_) => std::println!("FL9_1 flat shader compiled; rendering remains unverified"),
-        Err(NagaCompileError::Compilation(error)) => {
-            assert!(error.message.contains("X4568"), "{}", error.message);
-            std::println!("FL9_1 flat interpolation unavailable: {}", error.message);
-        }
-        Err(error) => panic!("unexpected flat shader compilation error: {error:?}"),
-    }
+    )
+    .expect_err("FL9_1 pixel profile must reject flat interpolation");
+    let NagaCompileError::Compilation(error) = error else {
+        panic!("expected FXC to reject flat interpolation: {error:?}");
+    };
+    assert!(error.message.contains("X4568"), "{}", error.message);
+    std::println!("FL9_1 flat interpolation FXC diagnostic: {}", error.message);
+
+    let bytecode = compile_resource_free_naga(
+        &module,
+        &info,
+        naga::ShaderStage::Fragment,
+        "fs",
+        ShaderProfile::Pixel4_1,
+    )
+    .expect("shader-model-4.1 profile accepts flat interpolation");
+    assert!(bytecode.starts_with(b"DXBC"));
 }
 
 #[test]

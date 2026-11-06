@@ -272,6 +272,7 @@ pub(super) struct BackendCapabilities {
     pub fragment_depth_with_bias: bool,
     pub fragment_depth_without_color_target_0: bool,
     pub fragment_sample_mask_output: bool,
+    pub fragment_non_perspective_interpolation: bool,
     pub two_sided_stencil: bool,
     pub instancing: bool,
     pub instancing_without_instance_inputs: bool,
@@ -358,6 +359,7 @@ impl BackendCapabilities {
         fragment_depth_with_bias: false,
         fragment_depth_without_color_target_0: false,
         fragment_sample_mask_output: false,
+        fragment_non_perspective_interpolation: false,
         two_sided_stencil: false,
         instancing: false,
         instancing_without_instance_inputs: true,
@@ -454,6 +456,9 @@ impl Capabilities {
                     .backend
                     .fragment_depth_without_color_target_0,
                 fragment_sample_mask_output: self.backend.fragment_sample_mask_output,
+                fragment_non_perspective_interpolation: self
+                    .backend
+                    .fragment_non_perspective_interpolation,
                 fragment_front_facing: false,
                 fragment_position: false,
                 texture_load: false,
@@ -1151,6 +1156,12 @@ mod tests {
                 .fragment_depth_without_color_target_0
         );
         assert!(!exposed.downlevel.limits.fragment_sample_mask_output);
+        assert!(
+            !exposed
+                .downlevel
+                .limits
+                .fragment_non_perspective_interpolation
+        );
         assert!(!exposed.downlevel.limits.vertex_index_input);
         assert!(!exposed.downlevel.limits.instance_index_input);
         assert!(!exposed.downlevel.limits.texture_query);

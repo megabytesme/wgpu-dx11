@@ -1140,6 +1140,12 @@ pub struct DownlevelLimits {
     /// single-sample rendering.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub fragment_sample_mask_output: bool,
+    /// Whether fragment inputs may use `@interpolate(flat)` or `@interpolate(linear)`.
+    ///
+    /// These interpolation modes may be unavailable in downlevel pixel-shader profiles even
+    /// though the same qualifiers can appear on vertex outputs.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub fragment_non_perspective_interpolation: bool,
     /// Whether fragment entry points may declare `@builtin(front_facing)`.
     ///
     /// This can be unavailable when the shader backend cannot compile the corresponding input
@@ -1259,6 +1265,7 @@ impl Default for DownlevelLimits {
             depth_bias_with_fragment_depth: true,
             fragment_depth_without_color_target_0: true,
             fragment_sample_mask_output: true,
+            fragment_non_perspective_interpolation: true,
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,
@@ -1324,6 +1331,8 @@ impl DownlevelLimits {
             && (!required.fragment_depth_without_color_target_0
                 || self.fragment_depth_without_color_target_0)
             && (!required.fragment_sample_mask_output || self.fragment_sample_mask_output)
+            && (!required.fragment_non_perspective_interpolation
+                || self.fragment_non_perspective_interpolation)
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
             && (!required.texture_query || self.texture_query)
@@ -1395,6 +1404,7 @@ impl DownlevelCapabilities {
             && self.limits.depth_bias_with_fragment_depth
             && self.limits.fragment_depth_without_color_target_0
             && self.limits.fragment_sample_mask_output
+            && self.limits.fragment_non_perspective_interpolation
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
             && self.limits.texture_query
@@ -1698,6 +1708,7 @@ mod tests {
             depth_bias_with_fragment_depth: false,
             fragment_depth_without_color_target_0: false,
             fragment_sample_mask_output: false,
+            fragment_non_perspective_interpolation: false,
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
@@ -1734,6 +1745,7 @@ mod tests {
             depth_bias_with_fragment_depth: false,
             fragment_depth_without_color_target_0: false,
             fragment_sample_mask_output: false,
+            fragment_non_perspective_interpolation: false,
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
@@ -1967,6 +1979,7 @@ mod tests {
             "max_sampler_anisotropy",
             "fragment_depth_without_color_target_0",
             "fragment_sample_mask_output",
+            "fragment_non_perspective_interpolation",
             "texture_query",
             "texture_sample_base_clamp_to_edge",
             "texture_gather",
@@ -1993,6 +2006,7 @@ mod tests {
         assert_eq!(limits.max_sampler_anisotropy, 16);
         assert!(limits.fragment_depth_without_color_target_0);
         assert!(limits.fragment_sample_mask_output);
+        assert!(limits.fragment_non_perspective_interpolation);
         assert!(limits.texture_query);
         assert!(limits.texture_sample_base_clamp_to_edge);
         assert!(limits.texture_gather);
@@ -2068,6 +2082,24 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             fragment_sample_mask_output: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn fragment_non_perspective_interpolation_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            fragment_non_perspective_interpolation: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            fragment_non_perspective_interpolation: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));

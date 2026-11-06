@@ -764,6 +764,15 @@ Fragment `@builtin(sample_mask)` output is now represented by
 `ps_4_0_level_9_1`. FXC rejects the output, while the color-only sibling
 compiles. Core rejects only selected fragment entries that write the mask.
 
+The FL9_1 projection also sets
+`DownlevelLimits::fragment_non_perspective_interpolation` to false. FXC rejects
+fragment `flat` and `linear` interpolation with X4568, while vertex outputs
+with those qualifiers and fragment `centroid` compile. Core rejects only the
+selected fragment entry before HAL. A strict public test renders centroid and
+perspective pipelines and compares all 64 readback pixels. Sample-qualified
+interpolation remains covered by Naga's existing
+`MULTISAMPLED_SHADING` validation capability.
+
 The HAL maps all wgpu vertex formats with direct DXGI IA equivalents except
 Float64 variants. At FL9_1, formats outside the required set enter the
 selected adapter's vertex-format mask only when `CheckFormatSupport`

@@ -939,6 +939,18 @@ compiles a color-only sibling. The strict public test confirms core rejects
 only the selected entry using sample-mask output, before HAL. It does not
 exercise a GPU draw; the device is nevertheless explicitly created at FL9_1.
 
+`cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
+interpolation_modifiers_require_shader_model_4 -- --nocapture` checks
+`flat`, `linear`, and `centroid` on both level-9_1 stages, with higher-profile
+controls. The vertex profile compiles all three. The pixel profile rejects
+`flat` (`nointerpolation`) and `linear` (`noperspective`) with FXC X4568 but
+accepts `centroid`. The strict public test rejects selected fragment entries
+using `flat` or `linear` before HAL and renders both centroid and perspective
+pipelines, comparing all 64 readback pixels. `@interpolate(sample)` is rejected
+at shader-module validation by the existing `MULTISAMPLED_SHADING` capability
+mapping; its strict public regression confirms that the perspective sibling is
+accepted.
+
 The controlled core fixture reports
 `DownlevelLimits::depth_bias_with_fragment_depth = false`. It verifies that a
 selected `frag_depth` entry plus nonzero bias returns

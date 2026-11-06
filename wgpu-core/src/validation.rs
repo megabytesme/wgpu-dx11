@@ -2610,6 +2610,35 @@ impl Interface {
             .contains(&Varying::BuiltIn(BuiltIn::SampleMask)))
     }
 
+    pub(crate) fn entry_point_uses_unsupported_fragment_non_perspective_interpolation(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        if limits.fragment_non_perspective_interpolation || stage != naga::ShaderStage::Fragment {
+            return Ok(false);
+        }
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.inputs.iter().any(|varying| {
+            matches!(
+                varying,
+                Varying::Local {
+                    iv: InterfaceVar {
+                        interpolation: Some(
+                            naga::Interpolation::Flat | naga::Interpolation::Linear
+                        ),
+                        ..
+                    },
+                    ..
+                }
+            )
+        }))
+    }
+
     pub(crate) fn entry_point_uses_front_facing(
         &self,
         stage: naga::ShaderStage,
@@ -4314,6 +4343,86 @@ mod tests {
             .unwrap());
         assert!(interface
             .entry_point_uses_unsupported_fragment_sample_mask_output(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn fragment_non_perspective_interpolation_follows_selected_entry() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct FlatOutput {
+                @builtin(position) position: vec4f,
+                @location(0) @interpolate(flat) value: f32,
+            }
+            @vertex fn flat_vertex() -> FlatOutput {
+                return FlatOutput(vec4f(0.0, 0.0, 0.0, 1.0), 1.0);
+            }
+            @fragment fn flat(@location(0) @interpolate(flat) value: f32) -> @location(0) vec4f {
+                return vec4f(value);
+            }
+            @fragment fn linear(@location(0) @interpolate(linear) value: f32) -> @location(0) vec4f {
+                return vec4f(value);
+            }
+            @fragment fn centroid(@location(0) @interpolate(perspective, centroid) value: f32) -> @location(0) vec4f {
+                return vec4f(value);
+            }
+            @fragment fn perspective(@location(0) @interpolate(perspective) value: f32) -> @location(0) vec4f {
+                return vec4f(value);
+            }
+            @fragment fn no_varying() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            fragment_non_perspective_interpolation: false,
+            ..Default::default()
+        };
+
+        for entry in ["flat", "linear"] {
+            assert!(interface
+                .entry_point_uses_unsupported_fragment_non_perspective_interpolation(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fl91,
+                )
+                .unwrap());
+            assert!(!interface
+                .entry_point_uses_unsupported_fragment_non_perspective_interpolation(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &wgt::DownlevelLimits::default(),
+                )
+                .unwrap());
+        }
+        for entry in ["centroid", "perspective", "no_varying"] {
+            assert!(!interface
+                .entry_point_uses_unsupported_fragment_non_perspective_interpolation(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fl91,
+                )
+                .unwrap());
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_non_perspective_interpolation(
+                naga::ShaderStage::Vertex,
+                "flat_vertex",
+                &fl91,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_non_perspective_interpolation(
                 naga::ShaderStage::Fragment,
                 "missing",
                 &fl91,

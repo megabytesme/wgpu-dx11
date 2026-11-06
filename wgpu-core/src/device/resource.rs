@@ -5567,6 +5567,21 @@ impl Device {
                     )
                     .map_err(stage_err)?;
 
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_fragment_non_perspective_interpolation(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => !self.downlevel.limits.fragment_non_perspective_interpolation,
+                } {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedFragmentNonPerspectiveInterpolation,
+                    );
+                }
+
                 let uniform_vectors = match shader_module.interface.interface() {
                     Some(interface) => interface
                         .entry_point_uniform_constant_vectors(

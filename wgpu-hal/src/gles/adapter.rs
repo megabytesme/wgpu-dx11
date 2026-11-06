@@ -989,6 +989,7 @@ impl super::Adapter {
             depth_bias_with_fragment_depth: true,
             fragment_depth_without_color_target_0: true,
             fragment_sample_mask_output: true,
+            fragment_non_perspective_interpolation: true,
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,

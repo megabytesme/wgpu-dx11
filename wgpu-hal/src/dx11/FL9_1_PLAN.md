@@ -201,7 +201,13 @@ not a repository artifact.
    unimplemented. Fragment `@builtin(sample_index)` is already rejected at
    WGSL/Naga validation because the FL9_1 projection omits
    `MULTISAMPLED_SHADING`; a strict public regression now confirms this path
-   and acceptance of a single-sample shader. WGSL `textureGather` is now a
+   and acceptance of a single-sample shader. FXC rejects fragment
+   `@interpolate(flat)` and `@interpolate(linear)` because their HLSL forms
+   `nointerpolation` and `noperspective` fail with X4568 under
+   `ps_4_0_level_9_1`; core now gates only the selected fragment entry point.
+   Vertex outputs with these modes and fragment centroid interpolation compile.
+   A strict public render confirms centroid and perspective produce identical
+   single-sample readback. WGSL `textureGather` is now a
    stage-agnostic downlevel limit. Microsoft documents HLSL Gather for
    graphics at shader model 4.1 (FL10_1+) and compute gather4 at SM5 (FL11_0);
    the all-stage guarantee therefore begins at FL11_0. FXC rejects the FL9_1

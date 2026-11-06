@@ -985,6 +985,116 @@ mod tests {
     }
 
     #[test]
+    fn sample_interpolation_requires_level_4_1_profile() {
+        let module = naga::front::wgsl::parse_str(
+            "@fragment fn main(@location(0) @interpolate(perspective, sample) value: f32) -> @location(0) vec4f { return vec4f(value, 0.0, 0.0, 1.0); }",
+        )
+        .expect("parse sample-interpolated fragment");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::MULTISAMPLED_SHADING,
+        )
+        .validate(&module)
+        .expect("validate sample-interpolated fragment");
+        let error = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+        )
+        .expect_err("FL9_1 pixel profile must reject sample interpolation");
+        let NagaCompileError::Compilation(error) = error else {
+            panic!("expected FXC to reject sample interpolation: {error:?}");
+        };
+        std::println!(
+            "FL9_1 sample interpolation FXC diagnostic: {}",
+            error.message
+        );
+        assert!(!error.message.is_empty());
+
+        let bytecode = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel4_1,
+            &[],
+        )
+        .expect("shader-model-4.1 compiler accepts sample interpolation");
+        assert!(bytecode.starts_with(b"DXBC"));
+    }
+
+    #[test]
+    fn interpolation_modifiers_require_shader_model_4() {
+        for (name, qualifier) in [
+            ("flat", "flat"),
+            ("linear", "linear"),
+            ("centroid", "perspective, centroid"),
+        ] {
+            let source = format!(
+                "struct Varying {{ @builtin(position) position: vec4f, @location(0) @interpolate({qualifier}) value: f32, }} @vertex fn vs() -> Varying {{ return Varying(vec4f(0.0, 0.0, 0.0, 1.0), 1.0); }} @fragment fn fs(@location(0) @interpolate({qualifier}) value: f32) -> @location(0) vec4f {{ return vec4f(value); }}"
+            );
+            let module = naga::front::wgsl::parse_str(&source)
+                .unwrap_or_else(|error| panic!("{name} interpolation parse failed: {error}"));
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|error| panic!("{name} interpolation validation failed: {error}"));
+
+            for (stage, entry, profile, control_profile) in [
+                (
+                    naga::ShaderStage::Vertex,
+                    "vs",
+                    ShaderProfile::VertexLevel9_1,
+                    ShaderProfile::Vertex5_0,
+                ),
+                (
+                    naga::ShaderStage::Fragment,
+                    "fs",
+                    ShaderProfile::PixelLevel9_1,
+                    ShaderProfile::Pixel4_1,
+                ),
+            ] {
+                let result = compile_naga_with_bindings(&module, &info, stage, entry, profile, &[]);
+                match result {
+                    Ok(bytecode) => {
+                        assert!(bytecode.starts_with(b"DXBC"));
+                        assert!(
+                            stage == naga::ShaderStage::Vertex
+                                || !matches!(name, "flat" | "linear"),
+                            "FL9_1 fragment {name} interpolation must fail"
+                        );
+                        std::println!("FL9_1 {name} {stage:?} interpolation compiled");
+                    }
+                    Err(NagaCompileError::Compilation(error)) => {
+                        assert_eq!(stage, naga::ShaderStage::Fragment);
+                        assert!(matches!(name, "flat" | "linear"));
+                        assert!(error.message.contains("X4568"), "{}", error.message);
+                        std::println!(
+                            "FL9_1 {name} {stage:?} interpolation FXC diagnostic: {}",
+                            error.message
+                        );
+                    }
+                    Err(error) => {
+                        panic!("unexpected {name} {stage:?} compilation error: {error:?}")
+                    }
+                }
+
+                let bytecode =
+                    compile_naga_with_bindings(&module, &info, stage, entry, control_profile, &[])
+                        .unwrap_or_else(|error| {
+                            panic!("higher shader profile rejected {name} {stage:?}: {error:?}")
+                        });
+                assert!(bytecode.starts_with(b"DXBC"));
+            }
+        }
+    }
+
+    #[test]
     fn level_9_pixel_profiles_reject_texture_queries() {
         let cases = [
             (

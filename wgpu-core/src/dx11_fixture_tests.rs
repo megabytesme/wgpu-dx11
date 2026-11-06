@@ -99,6 +99,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     depth_bias_with_fragment_depth: false,
                     fragment_depth_without_color_target_0: false,
                     fragment_sample_mask_output: false,
+                    fragment_non_perspective_interpolation: false,
                     fragment_front_facing: false,
                     fragment_position: false,
                     texture_query: false,

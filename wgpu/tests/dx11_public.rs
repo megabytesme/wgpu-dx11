@@ -7841,13 +7841,234 @@ fn public_dx11_rejects_sample_index_without_multisampled_shading() {
             }));
         },
     );
+    expect_validation_error_containing(
+        &device,
+        "sample-qualified fragment interpolation without multisampled shading",
+        "MULTISAMPLED_SHADING",
+        || {
+            drop(device.create_shader_module(ShaderModuleDescriptor {
+                label: Some("unsupported FL9_1 sample-interpolated shader"),
+                source: ShaderSource::Wgsl(
+                    "@fragment fn fs(@location(0) @interpolate(perspective, sample) value: f32) -> @location(0) vec4f { return vec4f(value, 0.0, 0.0, 1.0); }"
+                        .into(),
+                ),
+            }));
+        },
+    );
     drop(device.create_shader_module(ShaderModuleDescriptor {
         label: Some("supported FL9_1 single-sample shader"),
         source: ShaderSource::Wgsl(
-            "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }".into(),
+            "@fragment fn fs(@location(0) @interpolate(perspective) value: f32) -> @location(0) vec4f { return vec4f(value, 0.0, 0.0, 1.0); }".into(),
         ),
     }));
-    println!("PASS: core rejected sample_index through Naga's multisampled-shading capability and accepted a single-sample shader");
+    println!("PASS: core rejected sample_index and sample-qualified interpolation through Naga's multisampled-shading capability and accepted perspective interpolation");
+}
+
+#[test]
+fn public_dx11_fragment_interpolation_profile_boundaries_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 interpolation profile test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let source = |qualifier: &str| {
+        format!(
+            "struct Varying {{ @builtin(position) position: vec4f, @location(0) @interpolate({qualifier}) value: f32, }} @vertex fn vs(@location(0) vertex: vec3f) -> Varying {{ return Varying(vec4f(vertex.xy, 0.0, 1.0), vertex.z); }} @fragment fn fs(@location(0) @interpolate({qualifier}) value: f32) -> @location(0) vec4f {{ return vec4f(value, 0.0, 0.0, 1.0); }}"
+        )
+    };
+    let create_pipeline = |qualifier: &str| {
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("FL9_1 interpolation mode shader"),
+            source: ShaderSource::Wgsl(source(qualifier).into()),
+        });
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 interpolation mode pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 12,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x3,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    for mode in ["flat", "linear"] {
+        expect_validation_error_containing(
+            &device,
+            &format!("fragment {mode} interpolation"),
+            "UnsupportedFragmentNonPerspectiveInterpolation",
+            || drop(create_pipeline(mode)),
+        );
+    }
+    let centroid_pipeline = create_pipeline("perspective, centroid");
+    let perspective_pipeline = create_pipeline("perspective");
+
+    let vertices = [-1.0f32, -1.0, 0.25, 3.0, -1.0, 0.75, -1.0, 3.0, 0.5];
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 interpolation triangle"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+    let targets_textures: Vec<_> = (0..2)
+        .map(|index| {
+            device.create_texture(&TextureDescriptor {
+                label: Some(if index == 0 {
+                    "centroid interpolation output"
+                } else {
+                    "perspective interpolation output"
+                }),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+                view_formats: &[],
+            })
+        })
+        .collect();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 interpolation readback"),
+        size: 4096,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 interpolation render and compare"),
+    });
+    for (index, (target, pipeline)) in targets_textures
+        .iter()
+        .zip([&centroid_pipeline, &perspective_pipeline])
+        .enumerate()
+    {
+        let view = target.create_view(&TextureViewDescriptor::default());
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 interpolation render pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: index as u64 * 2048,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for interpolation rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("interpolation readback callback")
+        .expect("map interpolation readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &data[2048 + offset..2048 + offset + 4],
+                    "centroid and perspective differ at ({x}, {y})"
+                );
+                assert!(data[offset] >= 63 && data[offset] <= 192);
+                assert_eq!(&data[offset + 1..offset + 4], &[0, 0, 255]);
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: core rejected fragment flat/linear before HAL; FL9_1 centroid and perspective pipelines produced matching 64/64 pixel images");
 }
 
 #[test]
