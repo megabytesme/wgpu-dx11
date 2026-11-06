@@ -491,6 +491,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - A second strict public pass samples a red-cleared, discarded RGBA8 attachment
   through an SRV after switching it from render-target use. Core initialization
   is visible through sampling: all 64 output pixels are transparent black.
+- A strict public follow-up render pass uses `LoadOp::Load` after color discard;
+  copying afterward returns transparent black at all 64 pixels, not the old
+  red clear.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.

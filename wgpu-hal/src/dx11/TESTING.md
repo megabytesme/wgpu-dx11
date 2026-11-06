@@ -1914,6 +1914,7 @@ are read.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_read_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_sampling_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_load_at_fl91 -- --nocapture --test-threads=1
 ```
 
 The public test clears an RGBA8 attachment red, discards it, then copies it to
@@ -1926,9 +1927,14 @@ test samples the same discarded texture through a sparse logical texture and
 sampler binding in a second render pass. The output pass read back transparent
 black at all 64 pixels, confirming initialization before the SRV use and the
 render-target-to-shader-resource transition on the forced-FL9_1 device.
-The sampling test passed 1/1, and the complete strict public suite passed
-30/30. The optional Float16x2 input branch logged its capability skip; all
-required FL9_1 operations ran on the physical adapter.
+
+The companion `public_dx11_discarded_color_is_initialized_before_load_at_fl91`
+test begins a second render pass using `LoadOp::Load` on that discarded
+attachment, stores it and copies it to readback. All 64 pixels are transparent
+black instead of the prior red contents. Both focused tests passed, and the
+complete strict public suite passed 31/31. The optional Float16x2 input branch
+logged its capability skip; required FL9_1 operations ran on the physical
+adapter.
 
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
