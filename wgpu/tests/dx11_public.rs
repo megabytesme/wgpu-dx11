@@ -15463,6 +15463,316 @@ fn public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91() {
 }
 
 #[test]
+fn public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 bundle stencil-reference test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 bundle stencil-reference shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs_write() -> @location(0) vec4f { return vec4f(1.0); }\n\
+             @fragment fn fs_red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn fs_green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let make_pipeline = |label, fragment, stencil_compare, stencil_pass_op, write_mask| {
+        let face = StencilFaceState {
+            compare: stencil_compare,
+            pass_op: stencil_pass_op,
+            ..StencilFaceState::IGNORE
+        };
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth24PlusStencil8,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(CompareFunction::Always),
+                stencil: StencilState {
+                    front: face,
+                    back: face,
+                    read_mask: 0xff,
+                    write_mask: 0xff,
+                },
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let bundle_pipeline = make_pipeline(
+        "FL9_1 bundle stencil write pipeline",
+        "fs_write",
+        CompareFunction::Always,
+        StencilOperation::Replace,
+        ColorWrites::ALL,
+    );
+    let probe_red = make_pipeline(
+        "FL9_1 stencil reference one probe",
+        "fs_red",
+        CompareFunction::Equal,
+        StencilOperation::Keep,
+        ColorWrites::ALL,
+    );
+    let probe_green = make_pipeline(
+        "FL9_1 stencil reference two probe",
+        "fs_green",
+        CompareFunction::Equal,
+        StencilOperation::Keep,
+        ColorWrites::ALL,
+    );
+
+    let vertex_data: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 bundle stencil-reference vertices"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertex_data);
+    let mut bundle_encoder = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+        label: Some("FL9_1 stencil-reference bundle encoder"),
+        color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+        depth_stencil: Some(RenderBundleDepthStencil {
+            format: TextureFormat::Depth24PlusStencil8,
+            depth_read_only: false,
+            stencil_read_only: false,
+        }),
+        sample_count: 1,
+        multiview: None,
+    });
+    bundle_encoder.set_pipeline(&bundle_pipeline);
+    bundle_encoder.set_vertex_buffer(0, vertex.slice(..));
+    bundle_encoder.draw(0..3, 0..1);
+    let bundle = bundle_encoder.finish(&RenderBundleDescriptor {
+        label: Some("FL9_1 stencil-reference bundle"),
+    });
+
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 stencil-reference color output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let depth_stencil = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 bundle stencil-reference D24S8"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24PlusStencil8,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_stencil_view = depth_stencil.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 stencil-reference readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 stencil-reference submission"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 bundle stencil-write pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.set_stencil_reference(1);
+        pass.execute_bundles([&bundle]);
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.set_stencil_reference(2);
+        pass.execute_bundles([&bundle]);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 bundle stencil-reference verification pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_stencil_reference(1);
+        pass.set_pipeline(&probe_red);
+        pass.draw(0..3, 0..1);
+        pass.set_stencil_reference(2);
+        pass.set_pipeline(&probe_green);
+        pass.draw(0..3, 0..1);
+    }
+    drop(vertex);
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 bundle stencil-reference verification");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("stencil-reference readback callback")
+        .expect("map stencil-reference readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    &[255, 0, 0, 255]
+                } else {
+                    &[0, 255, 0, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "bundle stencil-reference pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: two executions of one render bundle stored distinct pass stencil references; comparison draws produced red/green halves and all 64 pixels matched");
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

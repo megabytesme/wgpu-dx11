@@ -1301,6 +1301,7 @@ impl RenderBundle {
         indirect_draw_validation_resources: &mut crate::indirect_validation::DrawResources,
         indirect_draw_validation_batcher: &mut crate::indirect_validation::DrawBatcher,
         snatch_guard: &SnatchGuard,
+        stencil_reference: u32,
     ) -> Result<(), ExecutionError> {
         let mut offsets = self.base.dynamic_offsets.as_slice();
         let mut pipeline_layout = None::<Arc<PipelineLayout>>;
@@ -1341,6 +1342,10 @@ impl RenderBundle {
                                 .expect("RenderPipeline should be valid when executing bundle"),
                         )
                     };
+
+                    if pipeline.flags.contains(PipelineFlags::STENCIL_REFERENCE) {
+                        unsafe { raw.set_stencil_reference(stencil_reference) };
+                    }
 
                     pipeline_layout = Some(
                         pipeline

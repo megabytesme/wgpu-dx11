@@ -3632,12 +3632,14 @@ fn execute_bundle(
         );
     }
 
+    let stencil_reference = state.stencil_reference;
     unsafe {
         bundle.execute(
             state.pass.base.raw_encoder,
             state.pass.base.indirect_draw_validation_resources,
             indirect_draw_validation_batcher,
             state.pass.base.snatch_guard,
+            stencil_reference,
         )
     }
     .map_err(|e| match e {
