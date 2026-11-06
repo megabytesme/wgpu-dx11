@@ -318,11 +318,14 @@ entry-point selection are covered by a strict public test.
    inspected, and the controlled core fixture holds the presentation guard
    while verifying same-thread queue write/submit, poll, buffer creation and
    texture creation behavior. Continue testing lifecycle/error and remaining
-   reentrancy edges. Preserve the existing CoreWindow path; Windows 10 Mobile
-   ARM32 remains unverified. Strict hidden-HWND HAL tests also verify that
-   same-surface `configure` and `acquire_texture` fail promptly while another
-   surface operation owns its operation guard; normal present/resize remains
-   functional afterward.
+   reentrancy edges. `unconfigure` detects same-thread reentry and returns
+   without waiting, while other threads continue to wait for the active
+   operation; CPU tests cover both reservation behaviors. Synchronous native
+   callback delivery remains unverified. Preserve the CoreWindow path;
+   Windows 10 Mobile ARM32 remains unverified. Strict hidden-HWND HAL tests
+   also verify that same-surface `configure` and `acquire_texture` fail
+   promptly while another surface operation owns its operation guard; normal
+   present/resize remains functional afterward.
 7. Audit unsupported operations, synchronization, lifetime and device loss;
    run strict GPU, core, Naga and non-D3D11 regressions and relevant downlevel
    conformance cases. Independently review the public contract. The upstream

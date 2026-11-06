@@ -103,14 +103,26 @@ presents a frame, drops its view, resizes to 80×48, and presents a second
 frame. It then verifies that acquisition from a different thread is rejected.
 The D3D11 surface operations must run on the HWND's creating thread. A shared
 queue gate serializes submissions, writes, mapping flushes, polling and
-context-backed resource creation against `Present`; same-thread reentrant work
-returns a validation/surface error. The test is not a visible display test;
+context-backed resource creation against `Present`; reentrant mutations return
+an error, and same-thread reentrant `unconfigure` logs and returns without
+waiting. The test is not a visible display test;
 use the windowed example below to exercise the message loop and swapchain
 presentation.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
+```
+
+Surface reservation tests verify that `configure` and `acquire_texture` fail
+fast during another operation, `unconfigure` waits when called by another
+thread, and same-thread reentrant `unconfigure` returns without waiting. The
+last case leaves the current configuration intact so the caller can retry
+after the active operation ends. This tests the reservation logic directly;
+it does not force DXGI to deliver a synchronous window callback.
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib unconfigure_ -- --nocapture --test-threads=1
 ```
 
 ### Visible public HWND example

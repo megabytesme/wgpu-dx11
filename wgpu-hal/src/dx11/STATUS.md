@@ -340,8 +340,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   BGRA8 FIFO surfaces for WinRT CoreWindow and borrowed Win32 HWND handles.
   A strict hidden HWND clone-sampling test on the RTX at FL9_1 read BGRA
   `[0, 0, 255, 255]`, returned `Ok` from present and resized with the completed
-  command buffer retained. Visible public presentation and surface concurrency
-  remain unverified; synchronous window callbacks can deadlock on reentry.
+  command buffer retained. Public hidden-HWND presentation, resize and
+  cross-thread waiting are tested. Surface operation reservations track their
+  owner thread; same-thread reentrant `unconfigure` logs and returns without
+  waiting, while cross-thread calls still wait. Native callback delivery and
+  CoreWindow/ARM32 execution remain unverified.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
   Core-internal storage usage bits can accompany a supported transfer buffer,

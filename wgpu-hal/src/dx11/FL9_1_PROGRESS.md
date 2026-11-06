@@ -7607,3 +7607,31 @@ this hardware run.
 Next continue the selected-entry shader/compiler and render-pass contract
 audit. Public exposure remains experimental; historical FL9_1 drivers and
 ARM32 UWP are still unverified.
+
+## Follow-up — same-thread surface unconfigure reentry
+
+Code checkpoint: `94741d7ef` (`dx11: avoid reentrant surface unconfigure deadlock`).
+
+The surface reservation records its owning Rust thread. Cross-thread
+`unconfigure` waits for an active operation as before; same-thread reentry now
+logs and returns immediately, leaving the configured surface available for a
+retry after the operation completes. CPU tests cover both the reentrant
+fail-fast path and cross-thread wait/release behavior. This does not establish
+that DXGI delivers a synchronous window callback during surface operations.
+
+Verification used Rust 1.93.1 and the Visual Studio x64 environment:
+
+- Strict private D3D11 HAL suite: 366/366 passed. The suite exercised real
+  FL9_1 rendering and readback on the NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested and
+  actual FL9_1. The added reservation unit case itself is CPU-only.
+- Focused `unconfigure_` tests after the final source edit: 2/2 passed.
+- Strict public HWND present/resize test: 1/1 passed on the same physical
+  adapter at requested/actual FL9_1.
+- HAL Clippy passed with nine existing warnings outside the changed surface
+  code. Changed-file rustfmt and `git diff --check` passed.
+
+Next close the independently identified public core/HAL mismatch for
+alpha-to-coverage on query-supported 4x RGBA8 render targets, then continue the
+selected-entry WGSL/FXC shader audit. Historical FL9_1 drivers, synchronous
+callback delivery and CoreWindow/ARM32 execution remain unverified.
