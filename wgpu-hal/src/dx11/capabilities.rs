@@ -43,6 +43,7 @@ pub(super) struct HardwareGuarantees {
     pub fragment_derivatives: bool,
     pub texture_query: bool,
     pub texture_sample_level: bool,
+    pub texture_gather: bool,
     pub vertex_texture_sampling: bool,
     pub two_sided_stencil: bool,
     pub r8_unorm_sampled_texture: bool,
@@ -106,6 +107,7 @@ impl HardwareGuarantees {
             fragment_derivatives: level.as_raw() >= L9_3.as_raw(),
             texture_query: level.as_raw() >= L10_0.as_raw(),
             texture_sample_level: level.as_raw() >= L10_0.as_raw(),
+            texture_gather: level.as_raw() >= L10_1.as_raw(),
             vertex_texture_sampling: level.as_raw() >= L10_0.as_raw(),
             two_sided_stencil: level != L9_1,
             r8_unorm_sampled_texture: true,
@@ -257,6 +259,7 @@ pub(super) struct BackendCapabilities {
     pub fragment_derivatives: bool,
     pub texture_query: bool,
     pub texture_sample_level: bool,
+    pub texture_gather: bool,
     pub runtime_integer_shader_operations: bool,
     pub matrix_aggregate_stores: bool,
     pub depth_stencil: bool,
@@ -342,6 +345,7 @@ impl BackendCapabilities {
         fragment_derivatives: false,
         texture_query: false,
         texture_sample_level: false,
+        texture_gather: false,
         runtime_integer_shader_operations: false,
         matrix_aggregate_stores: false,
         depth_stencil: false,
@@ -465,6 +469,7 @@ impl Capabilities {
                     && self.backend.fragment_derivatives,
                 texture_sample_level: self.hardware.texture_sample_level
                     && self.backend.texture_sample_level,
+                texture_gather: self.hardware.texture_gather && self.backend.texture_gather,
                 runtime_integer_shader_operations: self.backend.runtime_integer_shader_operations,
                 matrix_aggregate_stores: self.backend.matrix_aggregate_stores,
                 vertex_format_mask: self.vertex_input_format_mask(),
@@ -1151,6 +1156,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);
         assert!(!exposed.downlevel.limits.texture_sample_level);
+        assert!(!exposed.downlevel.limits.texture_gather);
         assert!(!exposed.downlevel.limits.runtime_integer_shader_operations);
         assert!(!exposed.downlevel.limits.matrix_aggregate_stores);
         assert_eq!(
@@ -1679,6 +1685,11 @@ mod tests {
                 level.as_raw() >= FeatureLevel::L10_0.as_raw()
             );
             assert!(!caps.backend.texture_sample_level);
+            assert_eq!(
+                caps.hardware.texture_gather,
+                level.as_raw() >= FeatureLevel::L10_1.as_raw()
+            );
+            assert!(!caps.backend.texture_gather);
             assert!(
                 caps.hardware.vertex_input_formats & fl91_vertex_formats() == fl91_vertex_formats()
             );

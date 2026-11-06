@@ -895,6 +895,67 @@ mod tests {
     }
 
     #[test]
+    fn texture_gather_is_rejected_by_level_9_1_fxc_profile() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_2d<f32>;\n\
+             @group(0) @binding(1) var smp: sampler;\n\
+             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {\n\
+                 return textureGather(0, image, smp, uv);\n\
+             }",
+        )
+        .expect("parse textureGather shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate textureGather shader");
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 0,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Texture2dFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 1,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let error = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .expect_err("FL9_1 shader profile must reject textureGather");
+        let NagaCompileError::Compilation(error) = error else {
+            panic!("expected FXC to reject textureGather: {error:?}");
+        };
+        std::println!("FL9_1 textureGather FXC diagnostic: {}", error.message);
+        assert!(!error.message.is_empty());
+
+        let bytecode = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel5_0,
+            &bindings,
+        )
+        .expect("shader-model-5 compiler accepts textureGather");
+        assert!(bytecode.starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn level_9_pixel_profiles_reject_texture_queries() {
         let cases = [
             (

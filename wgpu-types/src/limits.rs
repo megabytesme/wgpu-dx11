@@ -1168,6 +1168,12 @@ pub struct DownlevelLimits {
     /// sampling and `textureSampleBias` are reported separately.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_level: bool,
+    /// Whether shader entry points may use `textureGather` operations.
+    ///
+    /// This can be unavailable when the selected shader profile does not support texture gather
+    /// instructions.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_gather: bool,
     /// Whether shader entry points may use `textureLoad` operations.
     ///
     /// This can be unavailable when the backend cannot preserve texel-load semantics for its
@@ -1258,6 +1264,7 @@ impl Default for DownlevelLimits {
             texture_query: true,
             texture_sample_base_clamp_to_edge: true,
             texture_sample_level: true,
+            texture_gather: true,
             texture_load: true,
             runtime_integer_shader_operations: true,
             matrix_aggregate_stores: true,
@@ -1323,6 +1330,7 @@ impl DownlevelLimits {
             && (!required.texture_sample_base_clamp_to_edge
                 || self.texture_sample_base_clamp_to_edge)
             && (!required.texture_sample_level || self.texture_sample_level)
+            && (!required.texture_gather || self.texture_gather)
             && (!required.texture_load || self.texture_load)
             && (!required.runtime_integer_shader_operations
                 || self.runtime_integer_shader_operations)
@@ -1392,6 +1400,7 @@ impl DownlevelCapabilities {
             && self.limits.texture_query
             && self.limits.texture_sample_base_clamp_to_edge
             && self.limits.texture_sample_level
+            && self.limits.texture_gather
             && self.limits.texture_load
             && self.limits.runtime_integer_shader_operations
             && self.limits.matrix_aggregate_stores
@@ -1694,6 +1703,7 @@ mod tests {
             texture_query: false,
             texture_sample_base_clamp_to_edge: false,
             texture_sample_level: false,
+            texture_gather: false,
             texture_load: true,
             runtime_integer_shader_operations: false,
             matrix_aggregate_stores: false,
@@ -1729,6 +1739,7 @@ mod tests {
             texture_query: false,
             texture_sample_base_clamp_to_edge: false,
             texture_sample_level: false,
+            texture_gather: false,
             texture_load: true,
             runtime_integer_shader_operations: false,
             matrix_aggregate_stores: false,
@@ -1887,6 +1898,24 @@ mod tests {
     }
 
     #[test]
+    fn texture_gather_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            texture_gather: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_gather: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn texture_query_is_a_downlevel_capability() {
         let available = DownlevelLimits {
             texture_query: false,
@@ -1940,6 +1969,7 @@ mod tests {
             "fragment_sample_mask_output",
             "texture_query",
             "texture_sample_base_clamp_to_edge",
+            "texture_gather",
             "texture_load",
             "runtime_integer_shader_operations",
             "matrix_aggregate_stores",
@@ -1965,6 +1995,7 @@ mod tests {
         assert!(limits.fragment_sample_mask_output);
         assert!(limits.texture_query);
         assert!(limits.texture_sample_base_clamp_to_edge);
+        assert!(limits.texture_gather);
         assert!(limits.texture_load);
         assert!(limits.runtime_integer_shader_operations);
         assert!(limits.matrix_aggregate_stores);

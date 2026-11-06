@@ -5397,6 +5397,22 @@ impl Device {
                             },
                         );
                     }
+                    if match interface {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_texture_gather(
+                                naga::ShaderStage::Vertex,
+                                &_vertex_entry_point_name,
+                                &self.downlevel.limits,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    } {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedTextureGather {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
                     Some(hal::ProgrammableStage {
                         module: vertex_shader_module.raw(),
                         entry_point: &_vertex_entry_point_name,
@@ -5583,6 +5599,23 @@ impl Device {
                 } {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureSampleLevel {
+                            stage: stage_bit,
+                        },
+                    );
+                }
+
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_texture_gather(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                } {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedTextureGather {
                             stage: stage_bit,
                         },
                     );

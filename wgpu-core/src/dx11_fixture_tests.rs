@@ -104,6 +104,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     texture_query: false,
                     texture_sample_base_clamp_to_edge: false,
                     texture_sample_level: false,
+                    texture_gather: false,
                     texture_load: false,
                     runtime_integer_shader_operations: false,
                     matrix_aggregate_stores: false,

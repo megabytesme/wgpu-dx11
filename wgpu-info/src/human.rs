@@ -305,6 +305,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             texture_query,
             texture_sample_base_clamp_to_edge,
             texture_sample_level,
+            texture_gather,
             texture_load,
             runtime_integer_shader_operations,
             matrix_aggregate_stores,
@@ -382,6 +383,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
         "\t\tTexture sample base clamp to edge: {texture_sample_base_clamp_to_edge}"
     )?;
     writeln!(output, "\t\tExplicit texture sample level: {texture_sample_level}")?;
+    writeln!(output, "\t\tTexture gather: {texture_gather}")?;
     writeln!(output, "\t\tTexture loads: {texture_load}")?;
     writeln!(output, "\t\tMaximum absolute texture sample bias: {max_texture_sample_bias}")?;
     writeln!(output, "\t\tDynamic texture sample bias: {texture_sample_bias_dynamic}")?;

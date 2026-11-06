@@ -113,6 +113,13 @@ sampling is unaffected. The static feature-level model marks this capability
 available starting at 10_0, while this backend's current implementation flag is
 false.
 
+WGSL `textureGather` has its own selected-entry downlevel limit. HLSL Gather
+requires shader model 4.1, available from FL10_1; the FL9_1 public projection
+reports it unavailable. Core follows helper calls and rejects direct or
+indirect gather use before HAL. FXC rejects Naga's Gather lowering under the
+level-9_1 profile while the shader-model-5 compiler control accepts it. The
+backend has no gather execution path yet.
+
 Texture image queries are also modeled separately. FXC rejects Naga's
 `GetDimensions` output for `textureDimensions` and `textureNumLevels` with
 X3548 in both tested 9_1 and 9_3 pixel profiles. The selected-entry

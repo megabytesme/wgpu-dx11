@@ -258,6 +258,30 @@ entry points and the default-supported projection. The strict public FL9_1
 test verifies that the selected-entry gate produces a validation error before
 HAL for direct and helper-reached use.
 
+### Texture gather shader-model boundary
+
+Microsoft documents HLSL `Gather` for shader model 4.1 and higher; that model
+starts at Direct3D 10.1. The current FL9_1 backend therefore disables
+`DownlevelLimits::texture_gather`. The selected-entry analysis checks Naga's
+`ImageSample::gather` expression and follows reachable helper calls. This
+prevents FXC failures from escaping as backend compilation errors while
+allowing an unused gather helper or an implicit-sampling sibling entry.
+
+```powershell
+cargo +1.93 test --offline -j32 -p wgpu-types --lib texture_gather_is_a_downlevel_capability
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl texture_gather_limits_follow_selected_entry_and_helpers
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib texture_gather_is_rejected_by_level_9_1_fxc_profile -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+```
+
+The compiler test records FXC's actual level-9_1 rejection and verifies that
+the same Naga output compiles under the shader-model-5 control profile. The
+strict public test verifies that core rejects direct and helper-reached gather
+before HAL on the selected FL9_1 hardware device and still creates a pipeline
+for its implicit-sampling sibling. This does not claim that the current
+backend implements gather or that the RTX simulates historical FL9_1 drivers.
+
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
 unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within

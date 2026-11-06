@@ -823,6 +823,8 @@ pub enum CreateRenderPipelineError {
     UnsupportedFragmentDerivatives,
     #[error("Explicit texture sample levels are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureSampleLevel { stage: wgt::ShaderStages },
+    #[error("Texture gather is not supported in the {stage:?} shader by this downlevel adapter")]
+    UnsupportedTextureGather { stage: wgt::ShaderStages },
     #[error("Vertex format {format:?} is not supported by this downlevel adapter")]
     UnsupportedVertexFormatOnDownlevelAdapter { format: wgt::VertexFormat },
     #[error("The total number of vertex attributes {given} exceeds the limit {limit}")]
@@ -925,6 +927,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedTextureSampleBias { .. }
             | Self::UnsupportedFragmentDerivatives
             | Self::UnsupportedTextureSampleLevel { .. }
+            | Self::UnsupportedTextureGather { .. }
             | Self::UnsupportedVertexFormatOnDownlevelAdapter { .. }
             | Self::TooManyVertexAttributes { .. }
             | Self::VertexAttributeLocationTooLarge { .. }

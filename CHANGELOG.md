@@ -63,6 +63,7 @@ Bottom level categories:
 - Reject alpha-to-coverage when a render pipeline uses only one sample.
 - Add `DownlevelFlags::TWO_SIDED_STENCIL` so adapters can report whether front and back stencil states may differ.
 - Add `DownlevelLimits::unrestricted_npot_texture_sampling` and validate FL9_x NPOT/repeat compatibility against the sampling pairs used by each render pipeline.
+- Add `DownlevelLimits::texture_gather` so shader-model-limited adapters can reject selected WGSL gather entry points before backend compilation.
 - Add a downlevel per-primitive texture-repeat limit and reject Repeat/MirrorRepeat samplers when core cannot guarantee the device's finite limit.
 - Model source-alpha-saturated blending as a downlevel capability and reject it before HAL on unsupported devices.
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.

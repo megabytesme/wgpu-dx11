@@ -990,6 +990,58 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     drop(create_sample_level_pipeline("implicit"));
     println!("PASS: public core rejected reachable explicit textureSampleLevel before HAL and compiled the implicit-sampling sibling");
 
+    let texture_gather_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 texture-gather selected-entry shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(23) var smp: sampler;\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0), vec2f(0.5)); }\n\
+             fn gather_helper(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv); }\n\
+             @fragment fn gather_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv); }\n\
+             @fragment fn gather_indirect(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_helper(uv); }\n\
+             @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }"
+                .into(),
+        ),
+    });
+    let create_texture_gather_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 texture-gather pipeline"),
+            layout: Some(&sample_level_pipeline_layout),
+            vertex: VertexState {
+                module: &texture_gather_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &texture_gather_shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &sample_level_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    expect_validation_error_containing(
+        &device,
+        "direct textureGather in FL9_1 fragment entry",
+        "UnsupportedTextureGather",
+        || drop(create_texture_gather_pipeline("gather_direct")),
+    );
+    expect_validation_error_containing(
+        &device,
+        "helper textureGather in FL9_1 fragment entry",
+        "UnsupportedTextureGather",
+        || drop(create_texture_gather_pipeline("gather_indirect")),
+    );
+    drop(create_texture_gather_pipeline("implicit"));
+    println!("PASS: public core rejects direct and helper-reached textureGather at FL9_1 and compiles an implicit-sampling sibling");
+
     let texture_query_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 texture-query validation layout"),
         entries: &[

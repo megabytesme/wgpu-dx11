@@ -299,6 +299,7 @@ struct EntryPoint {
     texture_sample_biases: Vec<TextureSampleBias>,
     fragment_derivatives_used: bool,
     texture_sample_level_used: bool,
+    texture_gather_used: bool,
     workgroup_size: [u32; 3],
     dual_source_blending: bool,
     task_payload_size: Option<u32>,
@@ -1123,6 +1124,39 @@ fn entry_point_uses_texture_sample_level(
         }
         let function = &module.functions[handle];
         if function_uses_texture_sample_level(function) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
+}
+
+fn function_uses_texture_gather(function: &naga::Function) -> bool {
+    function.expressions.iter().any(|(_, expression)| {
+        matches!(
+            *expression,
+            naga::Expression::ImageSample {
+                gather: Some(_),
+                ..
+            }
+        )
+    })
+}
+
+fn entry_point_uses_texture_gather(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
+    if function_uses_texture_gather(&entry_point.function) {
+        return true;
+    }
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function_uses_texture_gather(function) {
             return true;
         }
         collect_called_functions(&function.body, &mut called_functions);
@@ -2358,6 +2392,7 @@ impl Interface {
                     module,
                     entry_point,
                 ),
+                texture_gather_used: entry_point_uses_texture_gather(module, entry_point),
                 ..Default::default()
             };
             for arg in entry_point.function.arguments.iter() {
@@ -2745,6 +2780,19 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.texture_sample_level_used && !limits.texture_sample_level)
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_texture_gather(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.texture_gather_used && !limits.texture_gather)
     }
 
     pub fn finalize_entry_point_name(
@@ -3907,6 +3955,78 @@ mod tests {
         }
         assert!(interface
             .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "missing",
+                &fl91,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn texture_gather_limits_follow_selected_entry_and_helpers() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            fn gather_texture(uv: vec2f) -> vec4f {
+                return textureGather(0, image, smp, uv);
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(0, image, smp, uv);
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return gather_texture(uv);
+            }
+            @fragment fn safe(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, uv);
+            }
+            @fragment fn sibling_safe() -> @location(0) vec4f { return vec4f(1.0); }
+            @vertex fn vertex_safe() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            texture_gather: false,
+            ..Default::default()
+        };
+
+        for entry in ["direct", "helper"] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fl91,
+                )
+                .unwrap());
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &wgt::DownlevelLimits::default(),
+                )
+                .unwrap());
+        }
+
+        for (stage, entry) in [
+            (naga::ShaderStage::Fragment, "safe"),
+            (naga::ShaderStage::Fragment, "sibling_safe"),
+            (naga::ShaderStage::Vertex, "vertex_safe"),
+        ] {
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_gather(stage, entry, &fl91)
+                .unwrap());
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_texture_gather(
                 naga::ShaderStage::Fragment,
                 "missing",
                 &fl91,
