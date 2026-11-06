@@ -942,6 +942,17 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib event_poll_error_retains_pending_query -- --nocapture --test-threads=1
 ```
 
+Core polling also checks `GetDeviceRemovedReason` after fence maintenance. The
+test-only removed-reason injection verifies that a lost callback can reenter
+`device_poll` while the original poll is unwinding, and that subsequent queue
+submission is rejected. It runs on an explicitly selected physical FL9_1
+device, but the removed-device result is synthetic:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_removed_reason_callback_can_reenter_device_poll -- --nocapture --test-threads=1
+```
+
 `primitive_index` requires `Features::PRIMITIVE_INDEX`. The FL9_1 projection
 does not expose optional features; this public test verifies the feature set
 and that a device request requiring it is rejected before creation:

@@ -8550,3 +8550,45 @@ pre-existing reflows outside these edits. `git diff --check` passes. The first
 full-suite run took about 89 seconds for HAL; output was buffered while that
 suite ran, not hung. Physical device-loss recovery and historical FL9_1 drivers
 remain unverified.
+
+## Removed-device-reason polling checkpoint — 2026-11-06
+
+Extended the synthetic device-loss coverage to D3D11's ordinary
+`GetDeviceRemovedReason` check. A test-only one-shot HRESULT injection in the
+native device reaches the existing HAL `check_if_oom` path. The core fixture
+opens the physical RTX 3090 Ti explicitly at FL9_1, installs a device-lost
+callback that synchronously calls `device_poll` again, and polls on a worker
+thread with a timeout. The callback returns once, the outer poll completes,
+and subsequent queue submission is rejected. The injected result does not
+simulate hardware removal or recovery. This verifies callback behavior on a
+physical device context, not a physical GPU failure.
+
+Verification used Rust 1.93.1, Visual Studio 2022 Build Tools x64, and strict
+hardware mode for D3D11:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_removed_reason_callback_can_reenter_device_poll -- --test-threads=1 --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1 --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/device.rs wgpu-hal/src/dx11/hal_device.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+~~~
+
+The focused synthetic regression passed 1/1; the full strict core fixture
+passed 100/100, the private HAL suite 375/375, the public D3D11 suite 54/54,
+the explicit public adapter-enumeration test 1/1, and the DX12 core regression
+92/92. The public suite reported the existing optional Float16x2 vertex-input
+subcase skip. Both Clippy commands passed with the previously recorded HAL and
+fixture warnings. Targeted rustfmt reports older formatting differences in
+`hal_device.rs` and earlier regions of `dx11_fixture_tests.rs`; the new code
+follows rustfmt, and `git diff --check` passes.
+
+This closes one more error-notification path, not the broader public core/HAL
+contract audit. The device-loss result remains synthetic, historical FL9_1
+drivers and ARM32 remain unverified, and the mission is still in progress.

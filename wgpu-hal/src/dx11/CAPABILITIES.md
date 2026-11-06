@@ -446,6 +446,12 @@ index limits. Large native start offsets still need historical-driver testing.
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and shader storage bindings. Core may retain storage bits for transfer-capable buffers but does not bind them as storage. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences. The controlled core fixture checks stage-specific storage-buffer layout rejection before HAL. Public strict tests verify core rejects compute-pipeline creation and `INDIRECT` buffer creation before reaching the corresponding unsupported HAL paths. No compute/storage feature is exposed; feature/limit gating alone remains insufficient for public device exposure. |
 | Presentation | FL9 hardware can support display through platform/format-specific paths. The private backend retains the WinRT CoreWindow path and exposes a constrained Win32 HWND surface through opt-in public wgpu: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. Configure, acquire and present are owner-thread-only. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-window configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. Further lifecycle/error edges, device loss and historical driver behavior remain unverified. This is not general surface or WebGPU support. |
 
+The controlled core fixture now also injects a removed-device result from
+`GetDeviceRemovedReason` during `device_poll`. Its lost callback reenters
+`device_poll`, and later queue submissions are rejected. The RTX is opened at
+FL9_1, but the HRESULT is synthetic; actual device removal and recovery remain
+unverified.
+
 For FL9_1/9_2, default buffers have exactly one native vertex or index bind:
 copy-only, mapped and uniform-source buffers use an internal vertex bind, while
 index buffers use an index bind. This does not add a logical wgpu usage. Staging

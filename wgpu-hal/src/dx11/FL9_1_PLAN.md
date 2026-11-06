@@ -64,10 +64,12 @@ defers the callback until its submission locks are released. Synthetic errors
 from both fence `GetData` polling and the wait path also propagate through core;
 the callback can reenter device polling without holding the snatch lock. Physical
 device removal/recovery remains unverified; continue reviewing safe public error
-and lifetime paths. A separate strict HAL fence test injects one `GetData`
-error, verifies the pending query is retained, then waits for that query's real
-GPU completion. These tests cover error reporting and bookkeeping; they do not
-simulate physical device loss or recovery.
+and lifetime paths. Ordinary `device_poll` now also has a synthetic
+`GetDeviceRemovedReason` failure test; its lost callback reenters polling and
+later queue submissions are rejected. A separate strict HAL fence test injects
+one `GetData` error, verifies the pending query is retained, then waits for that
+query's real GPU completion. These tests cover error reporting and bookkeeping;
+they do not simulate physical device loss or recovery.
 
 ### Public texture-view checkpoint — non-suffix 2D mip view (`4d3ec6bb9`)
 

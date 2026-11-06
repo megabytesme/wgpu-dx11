@@ -52,8 +52,11 @@ HAL maps device-hung, removed, reset and driver-internal-error HRESULTs to
 failure, device invalidation, exactly one lost callback and a reentrant device
 poll from that callback. Fence `GetData` and wait errors also return their lost
 callback through core's closure batch, after internal locks are released; both
-reentrant-poll paths are tested. The selected device is physical, but the
-injected errors do not represent actual hardware removal or recovery behavior.
+reentrant-poll paths are tested. A third test injects the error from
+`GetDeviceRemovedReason` during ordinary device polling; that callback also
+reenters device polling and later queue submissions are rejected. All three
+paths use a physical adapter explicitly opened at FL9_1, but the injected
+errors do not represent actual hardware removal or recovery behavior.
 
 The opt-in FL9_1 public path supports single-sample RGBA8 cube textures with
 six independently uploaded faces. POT mip chains are enabled only when the
