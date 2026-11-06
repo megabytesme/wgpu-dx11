@@ -15240,6 +15240,229 @@ fn public_dx11_render_bundle_depth_attachment_at_fl91() {
 }
 
 #[test]
+fn public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 bundle dynamic pass-state test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 bundle blend-constant shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 bundle blend-constant pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: Some(BlendState {
+                    color: BlendComponent {
+                        src_factor: BlendFactor::Constant,
+                        dst_factor: BlendFactor::Zero,
+                        operation: BlendOperation::Add,
+                    },
+                    alpha: BlendComponent {
+                        src_factor: BlendFactor::Constant,
+                        dst_factor: BlendFactor::Zero,
+                        operation: BlendOperation::Add,
+                    },
+                }),
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertex_bytes: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 bundle blend-constant vertices"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertex_bytes);
+    let mut bundle = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+        label: Some("FL9_1 pass-state bundle"),
+        color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+        depth_stencil: None,
+        sample_count: 1,
+        multiview: None,
+    });
+    bundle.set_pipeline(&pipeline);
+    bundle.set_vertex_buffer(0, vertex.slice(..));
+    bundle.draw(0..3, 0..1);
+    let bundle = bundle.finish(&RenderBundleDescriptor {
+        label: Some("FL9_1 pass-state bundle"),
+    });
+    drop(vertex);
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 blend-constant bundle output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 blend-constant bundle readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 blend-constant bundle submission"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 blend-constant bundle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.set_blend_constant(Color {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        });
+        pass.execute_bundles([&bundle]);
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.set_blend_constant(Color {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+            a: 1.0,
+        });
+        pass.execute_bundles([&bundle]);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 dynamic bundle pass state");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("bundle pass-state readback callback")
+        .expect("map bundle pass-state readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    &[255, 0, 0, 255]
+                } else {
+                    &[0, 255, 0, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "bundle pass-state pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: one render bundle used pass-level scissor and changing blend constants on consecutive executions; all 64 left/right pixels matched red/green");
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
