@@ -3,15 +3,17 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`; its latest code checkpoint
-is `b934c891a` (`dx11: test bundle dynamic uniform offsets at FL9_1`). The
+is `c4ae7bfac` (`dx11: test render bundle pipeline layout transitions`). The
 strict private HAL suite passed 376/376 and the public D3D11 suite passed
-56/56 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+57/57 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
 software=false), requested and actual FL9_1. The public suite explicitly
 reported one unsupported Float16x2 input-format subcase; it is not counted as
 GPU execution. The new public render-bundle case switches sparse uniform and
 sampled-resource groups, drops their source handles, then validates all 64
-readback pixels. The suite also verifies two dynamic uniform offsets inside
-consecutive bundles after the source buffer and bind group are dropped. The
+readback pixels. Additional bundle tests select two dynamic uniform offsets
+from one source buffer and switch from a uniform-only layout to a
+texture/sampler layout; both verify output after their source resources are
+dropped. The
 private HAL suite, controlled core fixture, adapter enumeration and DX12
 results were rerun at checkpoint `f04b4f93e`; the current changes add public
 integration tests only. The CoreWindow admission check

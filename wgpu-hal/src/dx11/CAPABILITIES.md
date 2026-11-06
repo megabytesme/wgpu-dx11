@@ -1188,8 +1188,10 @@ uniform at group 0/binding 17 and a texture/sampler at group 1/bindings 7/42;
 after dropping the recorded source handles, readback checks 32 pixels of each
 distinct expected color. Two bundles also select distinct dynamic uniform
 offsets from one buffer and verify red/green output after dropping the source
-buffer and bind group. Other bundle state combinations and restart topologies
-remain unverified.
+buffer and bind group. Another pair switches between a uniform-only pipeline
+layout and a texture/sampler-only pipeline layout, verifying both outputs
+after their source resources are dropped. Other bundle state combinations and
+restart topologies remain unverified.
 
 ## Shader loop control
 

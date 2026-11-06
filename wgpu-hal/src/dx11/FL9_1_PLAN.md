@@ -183,7 +183,9 @@ colors after dropping the original handles. A further public test selects
 different dynamic uniform offsets inside two bundles and validates both
 readback regions after dropping the source resources. Broader bundle state
 combinations, restart topologies and historical-driver behavior remain to be
-audited. See `FL9_1_PROGRESS.md` for the commands and output.
+audited. A third strict case switches between uniform-only and
+texture/sampler-only pipeline layouts. See `FL9_1_PROGRESS.md` for commands and
+output.
 
 Some status descriptions within the audit sections below preserve earlier
 checkpoints. Later commits may supersede them; the opening summary and the
@@ -713,8 +715,9 @@ renders two separated shapes and checks all 256 pixels, including the clear
 gap. A separate pair of bundles changes a uniform group and sampled-resource
 group, then validates both outputs after releasing their source handles.
 Consecutive bundles also select distinct dynamic uniform offsets and verify
-both images after releasing source resources. Other bundle state combinations
-and restart topologies still need targeted coverage.
+both images after releasing source resources. A further case changes pipeline
+layout and resource type between bundles. Other bundle state combinations and
+restart topologies still need targeted coverage.
 
 ## Follow-up — mapped-view destruction safety
 

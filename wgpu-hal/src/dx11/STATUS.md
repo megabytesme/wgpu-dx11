@@ -97,7 +97,9 @@ two-bundle transition also changes sparse uniform and sampled-resource groups
 between recorded bundles and validates both outputs after the original handles
 are dropped. Another test selects two dynamic uniform ranges from one buffer
 inside consecutive bundles and verifies both outputs after source destruction.
-Other bundle state combinations remain part of the API audit.
+Another transition switches between different uniform-only and
+texture/sampler-only pipeline layouts and validates both outputs after source
+destruction. Other bundle state combinations remain part of the API audit.
 
 Some detailed status bullets below preserve earlier checkpoints. Later
 implementation checkpoints supersede their earlier surface and exposure

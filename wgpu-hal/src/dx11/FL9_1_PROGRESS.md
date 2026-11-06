@@ -2,8 +2,8 @@
 
 ## Current position — 2026-11-06
 
-Latest code checkpoint: `b934c891a` (`dx11: test bundle dynamic uniform
-offsets at FL9_1`). The strict public D3D11 suite passed 56/56; the private
+Latest code checkpoint: `c4ae7bfac` (`dx11: test render bundle pipeline
+layout transitions`). The strict public D3D11 suite passed 57/57; the private
 HAL suite passed 376/376, controlled core fixture 100/100, physical adapter
 test 1/1 and DX12 core regression 92/92 at the preceding HAL checkpoint
 `f04b4f93e`. The strict D3D11 tests selected the RTX 3090 Ti
@@ -111,6 +111,33 @@ The focused test passed 1/1 and the full strict public test binary passed
 56/56. One optional Float16x2 input-format subcase printed SKIP after a
 negative format query. Clippy passed with one existing HAL argument-count
 warning. Rustfmt reports three pre-existing differences elsewhere in
+`dx11_public.rs`; the new test is formatted. `git diff --check` passed.
+
+## Checkpoint — render-bundle pipeline/layout transition — `c4ae7bfac`
+
+Added a strict public FL9_1 test that records consecutive bundles with
+different inferred pipeline layouts: the first uses a sparse fragment uniform
+at group 0/binding 17, and the second switches to a sampled texture and
+sampler at group 0/bindings 7/42. Both draw separate halves of the same target.
+The bind groups, buffer, texture, view, sampler and vertex buffer are dropped
+after recording. The RTX 3090 Ti at requested/actual FL9_1 rendered 32 exact
+red pixels and 32 exact green pixels.
+
+Verification used Rust 1.93.1 and Visual Studio 2022 x64:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_pipeline_layout_transition_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The focused test passed 1/1 and the full strict public test binary passed
+57/57. One optional Float16x2 subcase visibly skipped after a negative input
+format query. Clippy passed with one existing HAL argument-count warning.
+Rustfmt reports three pre-existing differences elsewhere in
 `dx11_public.rs`; the new test is formatted. `git diff --check` passed.
 
 ## Verified hardware boundary — ordinary 2D texture arrays
