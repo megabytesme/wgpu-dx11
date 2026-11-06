@@ -8759,6 +8759,8 @@ git diff --check
 
 ## HWND Present device-loss callback — 2026-11-06
 
+Checkpoint commit: `cb2e06cecae0a2b6dab1622558deb3ef2195dbeb`.
+
 Added a fixture-only native Present HRESULT injection and an end-to-end public
 wgpu test. The test configured and acquired a real HWND swapchain on the RTX
 3090 Ti at requested/actual FL9_1, then injected `DXGI_ERROR_DEVICE_REMOVED`

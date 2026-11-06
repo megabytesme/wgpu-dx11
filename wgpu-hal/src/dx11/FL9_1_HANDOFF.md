@@ -1944,4 +1944,4 @@ Latest follow-up: the public HWND Present path now has fixture-only synthetic
 poll returned the expected presentation-guard timeout on the physical RTX
 opened at requested/actual FL9_1. See the latest entry in
 `FL9_1_PROGRESS.md`; physical device removal/recovery and the broader audit
-remain outstanding.
+remain outstanding. Implementation checkpoint: `cb2e06cecae0a2b6dab1622558deb3ef2195dbeb`.
