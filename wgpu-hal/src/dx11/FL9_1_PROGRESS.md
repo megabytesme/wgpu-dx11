@@ -7184,3 +7184,43 @@ path, now covered by the test above. Continue auditing core-legal D3D11
 operations, optional format/usage reports and presentation lifecycle. The
 backend remains opt-in and experimental, and historical FL9_1 hardware plus
 ARM32 UWP remain unverified.
+
+## Follow-up — public vertex system-value rejection — `f7579b68e`
+
+Added a strict public wgpu validation test for `vertex_index` and
+`instance_index`. On the selected physical FL9_1 adapter, core returns the
+specific unsupported-input validation error for each selected pipeline before
+the D3D11 HAL is reached, while a safe sibling entry compiles. This strengthens
+the public contract test for already-gated backend limitations; it does not
+implement either system value. The capability documentation now states this
+public evidence and clarifies that the only exposed surface path is the
+constrained HWND contract, correcting older checkpoint wording.
+
+On 2026-11-06 the focused strict test passed 1/1, and the full strict public
+suite passed 41/41 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), hardware=true, requested/actual FL9_1. The optional
+Float16x2 vertex input branch was the one visible skip. Public Clippy passed
+with `-j1`, rustfmt and `git diff --check` passed. A first `-j8` rebuild hit
+Windows paging-file error 1455 while archiving `wgpu-hal`; rerunning at `-j2`
+completed and the strict test/full suite passed. No system memory or page-file
+settings were changed.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_vertex_system_values_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+An independent read-only core/HAL audit found no confirmed advertised path that
+is accepted by public core but would invoke an unimplemented D3D11 operation.
+The HAL panic stubs inspected are paired with creation failures or public
+feature/downlevel gates. The audit confirms `vertex_index` remains a real
+ordinary-feature gap, but the current FL9_1 profile rejects its direct system
+value; supporting it needs a deliberate emulation design, not a validation
+change. Next, continue with the depth/stencil, view and selected-device
+format/usage matrix, and preserve the current conservative projection.

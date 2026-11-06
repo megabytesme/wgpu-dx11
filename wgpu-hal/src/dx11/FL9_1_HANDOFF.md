@@ -3,15 +3,19 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, HEAD is `fa9444968`. Recent shader-contract commits
-gate fragment flat/linear interpolation rejected by the FL9_1 FXC profile and
-add actual depth-test readback for structured `frag_depth`. The strict public
-suite now passes 40/40 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+The branch is `uwp-dx11`, HEAD is `f7579b68e`. Recent shader-contract commits
+gate fragment flat/linear interpolation rejected by the FL9_1 FXC profile,
+add actual depth-test readback for structured `frag_depth`, and confirm public
+core rejects unsupported `vertex_index` and `instance_index` before HAL. The
+strict public suite now passes 41/41 on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver
 `32.0.16.2101`), explicitly requested and actual FL9_1; its optional
 Float16x2 IA branch visibly skips because the selected device lacks that
 format. The full private HAL suite passes 363/363 after retrying with a larger
-test-thread stack; DX12 core regression passes 90/90. The current working tree
-contains only journal/handoff updates for these committed results. The opt-in
+test-thread stack; DX12 core regression passes 90/90. One initial rebuild hit
+Windows paging-file error 1455 at `-j8`; the focused public test succeeded at
+`-j2`. The current working tree contains only journal/handoff updates for
+these committed results. The opt-in
 public D3D11 backend supports a conservative offscreen path and a constrained
 HWND path; it is not WebGPU-compliant. Earlier checkpoints passed 36/36.
 The D24S8 transition test checked 576 pixels over nine snapshots. The transient
@@ -29,9 +33,11 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. Structured fragment depth
-now has an adversarial readback test. Keep optional formats query-gated. Do not
-push.
+format/usage and public core/HAL contract audits. An independent read-only
+review found no confirmed advertised core/HAL mismatch; it identified
+`vertex_index` as a real but already gated feature gap requiring an emulation
+design. Continue the depth/stencil, texture-view and selected-device
+format/usage audit. Keep optional formats query-gated. Do not push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
