@@ -443,14 +443,15 @@ which the FL9_1 shader path does not implement.
 The selected-device format and render-pass audits above are recorded in
 `CAPABILITIES.md`. Strict public tests cover query-gated R8_UNORM, R8G8_UNORM
 and B5G6R5 attachments/copies/readback, D24S8 aspect transitions, colorless
-and transient passes, and `LoadOp::DontCare`. Commit `fa305b35b` verifies that
-core reinitializes a discarded RGBA8 color attachment before a later copy, and
-`664a7626f` verifies the same before a later SRV sample; both produce
-transparent black at all 64 pixels rather than exposing the earlier red clear.
+and transient passes, and `LoadOp::DontCare`. Commits `fa305b35b` and
+`664a7626f` verify color discard reinitialization before copy and SRV reads.
+Commit `b2fee049d` verifies it before a later `LoadOp::Load`; a separate strict
+test confirms that a newly created, never-written attachment also reads as
+transparent black when its first use is `LoadOp::Load`.
 
-Next verify a discarded color attachment followed by a later render pass using
-`LoadOp::Load`, then copy/read the result. The later load must observe
-initialized contents, not the discarded native data. Continue the core/HAL
-render-pass and resource-usage audit by selecting concrete untested public
-operations. Keep optional formats query-gated and historical FL9_1 and ARM32
-behavior explicitly unverified.
+Next test command-buffer resource retention through public wgpu: record a
+render-target clear and texture-to-buffer copy, drop the texture and view
+handles before queue submission, and verify the submitted commands still write
+the expected output. Continue the resource-lifetime and core/HAL contract
+audit with concrete untested operations. Keep optional formats query-gated and
+historical FL9_1 and ARM32 behavior explicitly unverified.

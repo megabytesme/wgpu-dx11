@@ -6745,3 +6745,28 @@ git diff --check
 Next: check a later render-pass `LoadOp::Load` after color discard, which
 exercises attachment read/modify/write initialization separately from copy and
 sampled reads. Then continue the public core/HAL contract audit.
+
+## Follow-up — initial color attachment load
+
+Checkpoint `ab7b1ec37` adds a strict public test that creates an RGBA8
+render-attachment texture, uses it first with `LoadOp::Load`, stores it, and
+copies it to CPU readback. On the physical RTX 3090 Ti explicitly requested at
+FL9_1, all 64 pixels were transparent black, confirming core initializes
+previously unwritten attachment contents before a load.
+
+The focused test passed 1/1. The complete strict public suite passed 32/32;
+the optional Float16x2 vertex-input branch printed its capability skip, while
+required FL9_1 paths executed. Public-test Clippy, rustfmt and `git diff
+--check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_new_color_is_initialized_before_load_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: validate resource retention when a command buffer references a texture
+and view whose public handles are dropped before queue submission.
