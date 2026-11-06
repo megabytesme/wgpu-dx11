@@ -28,9 +28,11 @@ enumeration test last passed at checkpoint `f04b4f93e`. The CoreWindow admission
 passes CPU coverage and x64/ARM32-UWP compilation, but UWP runtime behavior
 remains unverified. Public CoreWindow surface capabilities remain withheld.
 
-The ARM32 UWP D3D11 HAL cross-check also compiles with nightly `build-std` for
-`thumbv7a-uwp-windows-msvc`; package deployment and runtime behavior on Lumia
-remain unverified. The backend remains an explicit opt-in,
+The public `wgpu` library cross-check compiles with nightly `build-std` for
+`thumbv7a-uwp-windows-msvc`, and the public offscreen example links as an ARM
+executable when Visual Studio's ARM store environment and SDK 10.0.22621.0
+are selected. The Lumia Device Portal timed out, so installation and runtime
+behavior remain unverified. The backend remains an explicit opt-in,
 non-WebGPU-compliant D3D11 path. It
 supports controlled public offscreen rendering and constrained desktop HWND
 presentation; the consumer example validated a 1,024-pixel textured indexed

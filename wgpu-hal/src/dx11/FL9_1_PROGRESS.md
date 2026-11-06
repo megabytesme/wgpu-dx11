@@ -8757,6 +8757,29 @@ cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --f
 git diff --check
 ~~~
 
+## ARM32 UWP public example codegen — 2026-11-06
+
+The public `wgpu` library and `dx11_fl91_offscreen` example both type-check
+for `thumbv7a-uwp-windows-msvc`. The first attempt to link the example used
+the x64 Windows SDK libraries and failed with ARM/x64 machine conflicts and
+unresolved CRT symbols. Selecting the installed ARM cross environment and
+Windows SDK 10.0.22621.0 corrected the toolchain; the example then linked to
+an ARM executable (`dumpbin /headers`: `1C4 machine (ARM)`):
+
+~~~powershell
+$buildDir = Join-Path ([System.IO.Path]::GetTempPath()) 'wgpu-fl91-thumbv7a-check'
+$env:CARGO_TARGET_DIR = $buildDir
+& cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64_arm store 10.0.22621.0 && cargo +nightly -Z build-std=core,std,panic_abort build --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std --target thumbv7a-uwp-windows-msvc'
+& 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\dumpbin.exe' /headers (Join-Path $buildDir 'thumbv7a-uwp-windows-msvc\debug\examples\dx11_fl91_offscreen.exe')
+~~~
+
+This confirms Rust code generation and UWP ARM32 linking for the offscreen
+consumer example, not package installation or GPU execution. The Lumia
+Device Portal `GET /api/os/devicefamily` probe again timed out, so target
+deployment and runtime validation could not be attempted. The public
+CoreWindow presentation path remains withheld pending actual UWP runtime
+verification.
+
 ## ARM32 UWP HAL cross-compilation — 2026-11-06
 
 The pinned Rust 1.93.1 toolchain does not ship the low-tier
