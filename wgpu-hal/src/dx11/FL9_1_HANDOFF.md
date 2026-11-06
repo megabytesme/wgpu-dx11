@@ -3,14 +3,15 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, HEAD is `fa305b35b`, and the working tree was clean
-when resumed. Its latest implementation commit adds public discarded-color
-reinitialization before copy/read (`StoreOp::Discard`); the preceding checkpoint
-adds color/depth `LoadOp::DontCare` execution with full overwrite. The opt-in
+The branch is `uwp-dx11`, HEAD is `664a7626f`, and the working tree was clean
+after the latest public discard-to-sampling checkpoint. Recent implementation
+commits verify discarded-color reinitialization before copy and before SRV
+sampling (`StoreOp::Discard`); the preceding checkpoint adds color/depth
+`LoadOp::DontCare` execution with full overwrite. The opt-in
 public D3D11 backend supports a
 conservative offscreen path and a constrained HWND path; it is not
 WebGPU-compliant. The strict public
-suite passed 29/29 on the RTX 3090 Ti (`0x10de:0x2203`, driver
+suite passed 30/30 on the RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`, software=false), explicitly requested and actual FL9_1. The
 D24S8 transition test checked 576 pixels over nine snapshots. The transient
 test checks all 64 pixels of a readable color target controlled by transient
@@ -27,8 +28,8 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. Next verify initialization
-after discard when a later pass samples the texture through an SRV; then
+format/usage and public core/HAL contract audits. Next verify that a later
+render-pass `LoadOp::Load` after color discard sees initialized contents, then
 continue with untested public render-pass/resource combinations. Keep optional
 formats query-gated. Do not push.
 

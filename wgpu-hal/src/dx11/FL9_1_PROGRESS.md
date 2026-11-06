@@ -6717,3 +6717,31 @@ git diff --check
 Next: bind the discarded texture as a sampled view in a later public render
 pass and verify that core's initialization is visible through the SRV path.
 Continue the contract audit after that focused test.
+
+## Follow-up — discarded color reinitialized before sampling
+
+Checkpoint `664a7626f` adds public wgpu coverage for a render-target-to-SRV
+transition after `StoreOp::Discard`. The first pass clears an RGBA8 texture red
+and discards it. A second pass samples it through sparse texture/sampler
+bindings into a separate RGBA8 target, which is copied to a mapped buffer.
+Core initializes the discarded resource before the sampled read; every one of
+the 64 output pixels is transparent black.
+
+The focused strict test passed 1/1 and the full strict public suite passed
+30/30 on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), requested and actual FL9_1. The optional Float16x2 input
+branch logged a capability skip; the new test and the other required hardware
+paths executed. Public Clippy, rustfmt and `git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_sampling_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Next: check a later render-pass `LoadOp::Load` after color discard, which
+exercises attachment read/modify/write initialization separately from copy and
+sampled reads. Then continue the public core/HAL contract audit.
