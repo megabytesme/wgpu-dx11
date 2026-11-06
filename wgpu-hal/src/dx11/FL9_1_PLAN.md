@@ -115,7 +115,9 @@ not a repository artifact.
    readback now covers R8_UNORM, R8G8_UNORM and B5G6R5 with all 64 pixels per
    format checked. B5G6R5 requires `TEXTURE_FORMAT_16BIT_PACKED`. R8_UNORM,
    R8G8_UNORM and B5G6R5 now also expose query-gated GPU copies and CPU
-   readback when `RENDER_TARGET` is reported; they remain non-blendable and
+   readback when `RENDER_TARGET` is reported. Their blend capability is
+   separately gated by `BLENDABLE`; strict public FL9_1 readback verifies
+   identical-equation alpha blending on the RTX for all three. These remain
    single-mip. Other narrow formats remain without copy-source/readback paths.
    The required
    FL9_1 IA formats now include `Uint8x4`, `Sint16x2` and `Sint16x4` alongside
@@ -136,8 +138,11 @@ not a repository artifact.
    forced-FL9_1 public readback covers all three channel layouts and alpha.
    B5G6R5 also has query-gated single-mip render-target support; a public
    shader draw, sample and readback checks every pixel. The RTX reports
-   `0x0026f3a0` including BLENDABLE, which remains unexposed. Continue the
-   format and usage audit from the actual query table.
+   `0x0026f3a0`, including BLENDABLE. R8_UNORM and R8G8_UNORM likewise report
+   the optional bit. The public projection now exposes it only when the
+   selected query and implemented pipeline path agree; a strict overlay test
+   validates all three. Continue the format and usage audit from the actual
+   query table.
 4. Resolve core/HAL contract mismatches before exposure: core now models
    `viewport_rectangles_outside_target` and rejects clipped rectangles for the
    conservative FL9_1 fixture before HAL, because the optional remapped vertex
@@ -492,5 +497,7 @@ unverified.
 The public command path also has a strict render-bundle execution test: core
 records a nonindexed triangle into a `RenderBundle`, executes it in a color
 pass, submits, waits and reads back all 64 expected pixels at forced FL9_1.
-This verifies only the tested pipeline/vertex-buffer/draw bundle shape; other
-bundle state and indexed bundle draws still need targeted coverage.
+An additional strict test records an indexed textured triangle with sparse
+texture/sampler bindings, drops the original source handles after bundle
+recording and validates all 64 pixels after submission. Other bundle state
+combinations and indexed restart behavior still need targeted coverage.

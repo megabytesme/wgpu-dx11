@@ -12,19 +12,22 @@ feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
 uploads. RGB565 additionally has queried render-target and copy/readback
 support; RGB5A1 and RGBA4 remain sampled-upload-only. R8_UNORM and R8G8_UNORM
 also expose copy-source use only when their selected format query reports
-render-target support. A strict public FL9_1 test renders into each of these
-three narrow formats, copies the rendered attachment to a padded readback
-buffer and validates all native texels. The backend does not
+render-target support. Their blendability is separately projected only when
+the selected query reports `BLENDABLE`; strict FL9_1 public readback verifies
+half-alpha red overlays for all three formats on the RTX 3090 Ti. A strict
+public test renders into each of these three narrow formats, copies the
+rendered attachment to a padded readback buffer and validates all native
+texels. The backend does not
 claim WebGPU compliance. The implementation remains experimental
 and restrictions not representable through current core limits still need
 auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
-A strict public render-bundle test records and executes a nonindexed triangle
-draw at forced FL9_1 and validates all 64 output pixels. This covers the basic
-bundle path only; broader bundle state combinations remain part of the API
-audit.
+Strict public render-bundle tests now cover a nonindexed draw and an indexed
+textured draw at forced FL9_1. The latter drops its source resource handles
+after bundle recording and validates all 64 output pixels after execution.
+Other bundle state combinations remain part of the API audit.
 
 Some detailed status bullets below preserve earlier checkpoints. Later
 implementation checkpoints supersede their earlier surface and exposure
@@ -367,15 +370,16 @@ all out-of-target rectangles. Other backends keep the default true capability.
   reports `FILTERABLE`; when the bit is absent but `TEXTURE2D` is present, the
   backend supports point-only sampling. The selected-device
   `RENDER_TARGET` query also enables a single-mip color-attachment path; it is
-  non-blendable and has no copy-source or direct-readback usage.
+  blendable only when the selected query also reports `BLENDABLE`; copy-source
+  and direct readback are controlled separately.
 - R8G8_UNORM is not a required FL9_1 sampled format. Its one-mip,
   single-layer sampled/upload path is exposed only when the selected device
   reports `TEXTURE2D`; `SHADER_SAMPLE` controls filterability. The forced-FL9_1 RTX returned
   `0x0002c320`; a strict public upload/sample test verified 64 pixels and the
   two-byte texel stride. A second pass verifies linear filtering with an
   eight-column gradient. The selected-device `RENDER_TARGET` query also
-  gates single-mip attachment use. It remains non-blendable and cannot be
-  copied from or read back directly.
+  gates single-mip attachment use. Blendability, copy-source and direct
+  readback are separately selected-query-gated.
 - R8G8_SNORM has the same queried one-mip sampled/upload subset. A strict
   forced-FL9_1 test verifies padded signed two-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
@@ -798,8 +802,9 @@ implemented as `Rgb5g6b5Unorm`, `Rgb5a1Unorm` and `Rgba4Unorm` with a shared
 native-only feature and individual selected-device format queries. All three
 support single-mip sampled uploads with channel/alpha readback coverage. The
 query-gated B5G6R5 path also supports single-mip color attachments when the
-selected device reports `RENDER_TARGET`; it remains non-blendable in the
-public projection and has no `COPY_SRC`, direct readback or mip-chain use.
+selected device reports `RENDER_TARGET`; blending is separately projected
+when `BLENDABLE` is reported and is covered by strict public readback. It has no
+direct readback or mip-chain use outside the existing query-gated copy path.
 The RTX 3090 Ti forced to FL9_1 reports `0x0026F3A0` for B5G6R5 and
 `0x000213A0` for both alpha-bearing formats. A strict public test draws to a
 B5G6R5 attachment, samples it and checks all 64 output pixels within one

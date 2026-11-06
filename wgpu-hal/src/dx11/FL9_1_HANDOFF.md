@@ -1701,8 +1701,10 @@ Code commit: `a6d958664` (`dx11: enable query-gated R8/RG8 color attachments`).
 
 This commit adds single-mip R8_UNORM and R8G8_UNORM color
 attachments when the selected device's `CheckFormatSupport` query positively
-reports `RENDER_TARGET`. Both remain non-blendable, single layer, single sample
-and unavailable as copy sources or direct readback. Strict public wgpu
+reports `RENDER_TARGET`. At this checkpoint, blending was not yet projected;
+the later format-blending follow-up gates it on the separate `BLENDABLE` bit.
+Both remain single-layer and single-sample; copy and readback are separately
+query-gated. Strict public wgpu
 readback on the RTX 3090 Ti forced to FL9_1 verified exactly 64 pixels of
 `[64, 0, 0, 255]` for R8 and 64 pixels of `[64, 191, 0, 255]` for RG8 after
 clear and sample. The full HAL suite passed 356/356, public D3D11 passed
@@ -1804,6 +1806,14 @@ optional Float16x2 input-format skip. This verifies the basic pipeline,
 vertex-buffer and draw bundle path only. Commit `d6b039960` contains the test
 and its capability/testing notes. The next task remains the broader core/HAL
 API audit; this checkpoint does not complete the mission.
+
+A second strict public bundle test adds Uint16 indexed drawing and sampled
+resources, then drops the source handles before command submission. At forced
+FL9_1 on the same RTX, it produced the expected `[51, 128, 204, 255]` across
+all 64 pixels, proving retained bundle resources for that shape. The strict
+public suite passed 43/43 with one visible optional IA-format skip, and
+public-test Clippy passed. Indexed restart and other bundle state combinations
+remain unverified.
 
 Commit `b5fb590ac` (`dx11: verify ignored targetless fragment outputs`)
 verifies that a result-bearing fragment shader whose location 0 has no color

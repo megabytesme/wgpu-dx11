@@ -73,6 +73,17 @@ The expected output is `[255, 64, 0, 255]` at every pixel. The test prints
 adapter identity, driver, requested and actual feature level, and whether the
 selected device is software-backed.
 
+The indexed textured bundle test also executes a `Uint16` indexed triangle
+sampling a sparse-bound texture/sampler pair. It drops the source texture,
+view, sampler, bind group and vertex/index buffers after bundle recording; all
+64 pixels must still match `[51, 128, 204, 255]` after submission. This checks
+bundle resource retention for the tested draw shape.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public HWND surface smoke test
 
 The public surface test creates a hidden top-level HWND, requests a compatible
@@ -177,15 +188,21 @@ resources. Their color-attachment usage is reported only when the selected devic
 both RTV and SRV bind flags; B5G6R5 additionally requires the native-only
 `TEXTURE_FORMAT_16BIT_PACKED` feature. The public test creates separate
 attachment-only and texture-binding-only views, draws into the former, samples
-the latter, and checks RGBA8 readback. None of these paths exposes blending or
-`COPY_SRC`, even when the selected device reports `BLENDABLE`.
+the latter, and checks RGBA8 readback. `COPY_SRC` and `BLENDABLE` are separately
+gated by the selected query and backend paths.
 
 On the RTX 3090 Ti at requested/actual FL9_1, the query masks were
 R8_UNORM=`0x0002d3e0`, R8G8_UNORM=`0x0002c320` and B5G6R5=`0x0026f3a0`,
 each including the render-target bit. The test draws a deterministic color
 into each format, samples the result and checks all 64 pixels per format with
 a one-code tolerance for UNORM conversion. The first observed pixels were
-`[66, 0, 0, 255]`, `[66, 129, 0, 255]` and `[66, 130, 132, 255]`.
+`[66, 0, 0, 255]`, `[66, 129, 0, 255]` and `[66, 130, 132, 255]`. The RTX
+reported `BLENDABLE` for all three formats. A second pass overlays half-alpha
+red with identical color and alpha equations, preserving FL9_1's separate-alpha
+restriction; readback verified all pixels as `[160, 0, 0, 255]` (R8),
+`[160, 65, 0, 255]` (RG8) and quantized `[165, 65, 66, 255]` (RGB565).
+On devices without the optional selected-query bit, this blend subcase is
+reported as skipped while the attachment/sample test still executes.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

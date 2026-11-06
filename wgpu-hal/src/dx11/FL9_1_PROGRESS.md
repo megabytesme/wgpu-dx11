@@ -6415,8 +6415,9 @@ The hardware guarantee, driver query, backend implementation and public
 projection remain separate: R8_UNORM is a required FL9_1 texture format but
 render-target support is not guaranteed; R8G8_UNORM is itself an optional
 format. Both are reported with `RENDER_ATTACHMENT` only after a positive
-per-format query and remain single-mip, single-layer, single-sample and
-non-blendable. Neither exposes `COPY_SRC` or direct readback. The existing
+per-format query and remain single-mip, single-layer and single-sample. A later
+increment gates blendability on the separate `BLENDABLE` query. Neither
+exposes `COPY_SRC` or direct readback. The existing
 sampled/upload path is preserved.
 
 The strict public test creates a dual-bound source texture for each format,
@@ -6425,7 +6426,8 @@ separate texture-binding view and reads an RGBA8 output. On the RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
 and actual FL9_1, `CheckFormatSupport` returned R8_UNORM=`0x0002d3e0` and
 R8G8_UNORM=`0x0002c320`. Both include `RENDER_TARGET` (`0x00004000`), while
-the separate `BLENDABLE` bit is not projected. The clear value
+the original attachment checkpoint did not project its separate `BLENDABLE`
+bit; the later follow-up does so only on a positive query. The clear value
 `(0.25, 0.75, 0.5, 1.0)` sampled as `[64, 0, 0, 255]` for R8_UNORM and
 `[64, 191, 0, 255]` for R8G8_UNORM; all 128 output pixels matched exactly.
 
@@ -7256,3 +7258,84 @@ not on that shell's PATH. Re-running from the installed Visual Studio x64
 developer environment passed. Code and test checkpoint: `d6b039960`
 (`dx11: verify FL9_1 render bundle execution`). Continue the core-valid API
 versus HAL audit; historical FL9_1 devices and ARM32 UWP remain unverified.
+
+## Follow-up — indexed textured render-bundle retention
+
+Added a second strict public bundle test with a Uint16 indexed triangle and a
+sparse-bound texture/sampler pair. After finishing the bundle, the test drops
+the original texture, view, sampler, bind group, vertex buffer and index
+buffer handles. The submitted bundle still renders all 64 pixels as
+`[51, 128, 204, 255]`, exercising actual core/HAL resource retention rather
+than only bundle creation.
+
+The first execution attempt failed at public validation because the test
+uploaded a 6-byte index array with `Queue::write_buffer`, violating the 4-byte
+copy alignment. Padding the backing array to 8 bytes while drawing only the
+first three indices fixed the test. The focused strict run then passed 1/1 on
+the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and
+actual FL9_1, software=false. The full strict public suite passed 43/43; the
+optional Float16x2 IA case remained the one visible hardware-capability skip.
+Public-test Clippy with `-j16`, rustfmt and `git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+## Follow-up — query-gated narrow-format blending and indexed bundles
+
+Extended selected-device capability projection and native pipeline format
+validation so R8_UNORM, R8G8_UNORM and B5G6R5 expose `BLENDABLE` only when the
+actual format query reports it and the backend attachment path is implemented.
+The public test now overlays half-alpha red with matching color and alpha
+equations, retaining the FL9_1 separate-alpha restriction. It also keeps the
+indexed textured bundle retention test from the preceding uncommitted change.
+
+On the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested and actual FL9_1, all three optional format queries were positive.
+The strict public test read back all 64 pixels per format: R8 was
+`[160, 0, 0, 255]`, RG8 `[160, 65, 0, 255]`, and RGB565 `[165, 65, 66, 255]`
+after format quantization. The expected RGB565 code was `[164, 65, 66, 255]`
+within the four-code packing tolerance. Synthetic capability cases verify
+blendability is absent on unavailable/negative queries and present only on a
+positive query. A device without this optional bit still executes the base
+attachment test and reports the blending subcase as skipped.
+
+Verification:
+
+- Strict private HAL: 363/363 passed, including the synthetic format-query
+  cases and physical GPU tests. The run used `RUST_MIN_STACK=16777216` to keep
+  previously stack-sensitive full-suite cases isolated; selected hardware was
+  the physical RTX 3090 Ti at requested/actual FL9_1.
+- Focused strict public narrow-format test: 1/1 passed and executed actual
+  blend draws/readback for all three formats.
+- Full strict public D3D11 suite: 43/43 passed. The optional Float16x2 vertex
+  input branch visibly skipped because this device does not report
+  `IA_VERTEX_BUFFER` for R16G16_FLOAT; it was not counted as GPU capability
+  coverage.
+- HAL and public D3D11 test Clippy passed. HAL Clippy reports nine existing
+  warnings in unrelated `hal_device.rs`, `swapchain.rs` and
+  `tests/dx11/fl9_texel_load.rs` lines. Rustfmt and `git diff --check` passed.
+
+Commands from an x64 Visual Studio developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:RUST_MIN_STACK = '16777216'
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+The selected-query capability is optional, not an FL9_1 guarantee, and the
+RTX result does not establish support on older FL9_1 hardware. Continue the
+public core/HAL operation audit; historical devices and ARM32 UWP remain
+unverified.

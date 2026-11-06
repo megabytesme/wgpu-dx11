@@ -50,6 +50,7 @@ Bottom level categories:
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
 - Add query-gated R8, RG8 and RGB565 texture copies and CPU readback to the opt-in D3D11 backend.
+- Add query-gated R8, RG8 and RGB565 attachment blending to the opt-in D3D11 backend.
 
 ### Changes
 

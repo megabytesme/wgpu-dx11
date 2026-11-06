@@ -926,6 +926,11 @@ impl Capabilities {
                 {
                     result |= Caps::COLOR_ATTACHMENT;
                 }
+                if color_attachment_implemented
+                    && matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
+                {
+                    result |= Caps::COLOR_ATTACHMENT_BLEND;
+                }
                 result
             } else {
                 Caps::empty()
@@ -2735,6 +2740,16 @@ mod tests {
         let point_only_target = queried.texture_format_capabilities(r8);
         assert!(point_only_target.contains(FormatCaps::SAMPLED | FormatCaps::COLOR_ATTACHMENT));
         assert!(!point_only_target.contains(FormatCaps::SAMPLED_LINEAR));
+        assert!(!point_only_target.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        queried.driver.r8_unorm = Query::Value(
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
+                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
+                | D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32,
+        );
+        assert!(queried
+            .texture_format_capabilities(r8)
+            .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
         queried = caps;
         queried.backend.r8_unorm_sampled_upload = false;
         assert_eq!(
@@ -2837,6 +2852,16 @@ mod tests {
         let point_only_target = missing_sampling.texture_format_capabilities(format);
         assert!(point_only_target.contains(FormatCaps::SAMPLED | FormatCaps::COLOR_ATTACHMENT));
         assert!(!point_only_target.contains(FormatCaps::SAMPLED_LINEAR));
+        assert!(!point_only_target.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        missing_sampling.driver.rg8_unorm = Query::Value(
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32
+                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
+                | D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32,
+        );
+        assert!(missing_sampling
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
         assert_eq!(
             caps.check_private_texture_2d(format, sampled_upload, [8, 8], 1, 2, 1),
             Err(UnsupportedShape)
@@ -2901,7 +2926,7 @@ mod tests {
                 | FormatCaps::COLOR_ATTACHMENT
                 | FormatCaps::SINGLE_MIP_ONLY
         ));
-        assert!(!projected.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        assert!(projected.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
         assert!(projected.contains(FormatCaps::COPY_SRC));
         assert_eq!(
             caps.check_private_texture_2d(
@@ -2966,6 +2991,7 @@ mod tests {
         let point_only = point_only_target.texture_format_capabilities(format);
         assert!(point_only.contains(FormatCaps::SAMPLED | FormatCaps::COLOR_ATTACHMENT));
         assert!(!point_only.contains(FormatCaps::SAMPLED_LINEAR));
+        assert!(!point_only.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
         assert!(point_only.contains(FormatCaps::COPY_SRC));
 
         let mut missing_backend = caps;

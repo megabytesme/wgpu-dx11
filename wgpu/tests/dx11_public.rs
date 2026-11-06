@@ -2686,9 +2686,14 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             return;
         }
         assert!(features.allowed_usages.contains(TextureUsages::COPY_SRC));
-        assert!(!features
+        if features
             .flags
-            .contains(TextureFormatFeatureFlags::BLENDABLE));
+            .contains(TextureFormatFeatureFlags::BLENDABLE)
+        {
+            println!("Public {format:?} reports query-gated blending support");
+        } else {
+            println!("SKIP: {format:?} lacks selected-query blend support");
+        }
         println!("Public {format:?} format projection: {features:?}");
     }
 
@@ -2720,6 +2725,7 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
              @group(0) @binding(7) var source: texture_2d<f32>;\n\
              @group(0) @binding(42) var source_sampler: sampler;\n\
              @fragment fn fs_write(input: VertexOut) -> @location(0) vec4f { return vec4f(0.2580645, 0.5079365, 0.516129, 1.0); }\n\
+             @fragment fn fs_blend(input: VertexOut) -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 0.5); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(source, source_sampler, input.uv); }"
                 .into(),
         ),
@@ -2969,6 +2975,93 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             pass.set_vertex_buffer(0, vertex.slice(..));
             pass.draw(0..3, 0..1);
         }
+        let blending_supported = adapter
+            .get_texture_format_features(format)
+            .flags
+            .contains(TextureFormatFeatureFlags::BLENDABLE);
+        let expected = if blending_supported {
+            let component = BlendComponent {
+                src_factor: BlendFactor::SrcAlpha,
+                dst_factor: BlendFactor::OneMinusSrcAlpha,
+                operation: BlendOperation::Add,
+            };
+            let blend_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("blend into query-gated RGB565 attachment"),
+                layout: Some(&write_pipeline_layout),
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some("vs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    buffers: &[Some(VertexBufferLayout {
+                        array_stride: 16,
+                        step_mode: VertexStepMode::Vertex,
+                        attributes: &[
+                            VertexAttribute {
+                                format: VertexFormat::Float32x2,
+                                offset: 0,
+                                shader_location: 0,
+                            },
+                            VertexAttribute {
+                                format: VertexFormat::Float32x2,
+                                offset: 8,
+                                shader_location: 1,
+                            },
+                        ],
+                    })],
+                },
+                primitive: PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_blend"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    targets: &[Some(ColorTargetState {
+                        format,
+                        blend: Some(BlendState {
+                            color: component,
+                            alpha: component,
+                        }),
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            });
+            {
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("blend red into query-gated narrow-format attachment"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &attachment_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&blend_pipeline);
+                pass.set_vertex_buffer(0, vertex.slice(..));
+                pass.draw(0..3, 0..1);
+            }
+            println!("PASS: query-gated {format:?} color attachment accepted alpha blending");
+            match format {
+                TextureFormat::R8Unorm => [160, 0, 0, 255],
+                TextureFormat::Rg8Unorm => [160, 65, 0, 255],
+                TextureFormat::Rgb5g6b5Unorm => [164, 65, 66, 255],
+                _ => unreachable!(),
+            }
+        } else {
+            expected
+        };
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("sample narrow-format attachment"),
@@ -3071,9 +3164,14 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
                     for (channel, (&observed, expected)) in
                         data[offset..offset + 4].iter().zip(expected).enumerate()
                     {
+                        let tolerance = if format == TextureFormat::Rgb5g6b5Unorm {
+                            4
+                        } else {
+                            1
+                        };
                         assert!(
-                            observed.abs_diff(expected) <= 1,
-                            "{format:?} render-target sample at ({x}, {y}) channel {channel}: expected {expected}±1, observed {observed}"
+                        observed.abs_diff(expected) <= tolerance,
+                        "{format:?} render-target sample at ({x}, {y}) channel {channel}: expected {expected}±{tolerance}, observed {observed}"
                         );
                     }
                 }
@@ -3130,7 +3228,7 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
         }
         source_readback.unmap();
         println!(
-            "PASS: FL9_1 {format:?} attachment draw sampled within one code of {expected:?}; first pixel {first_pixel:?}; 64/64 sampled pixels and 64/64 copied attachment texels matched"
+            "PASS: FL9_1 {format:?} attachment draw sampled within expected quantization of {expected:?}; first pixel {first_pixel:?}; 64/64 sampled pixels and 64/64 copied attachment texels matched"
         );
     }
 }
@@ -12544,4 +12642,278 @@ fn public_dx11_render_bundle_executes_at_fl91() {
     }
     readback.unmap();
     println!("PASS: public render bundle executed one indexed-free triangle and all 64 pixels read back as [255, 64, 0, 255]");
+}
+
+#[test]
+fn public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 indexed textured bundle test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 indexed textured bundle shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+            @group(0) @binding(7) var source_texture: texture_2d<f32>;
+            @group(0) @binding(42) var source_sampler: sampler;
+
+            @vertex fn vs(@location(0) position: vec3f) -> @builtin(position) vec4f {
+                return vec4f(position, 1.0);
+            }
+            @fragment fn fs() -> @location(0) vec4f {
+                return textureSample(source_texture, source_sampler, vec2f(0.5, 0.5));
+            }
+            "#
+            .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x3,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let buffers = [Some(VertexBufferLayout {
+        array_stride: 12,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 indexed textured bundle pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 bundle source texture"),
+        size: Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &[51, 128, 204, 255],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let source_view = source.create_view(&TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 bundle sampled resources"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&source_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+
+    let vertices = [-1.0f32, -1.0, 0.5, 3.0, -1.0, 0.5, -1.0, 3.0, 0.5];
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 indexed bundle vertices"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+    let indices = [0u16, 1, 2, 0];
+    let index_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 indexed bundle indices"),
+        size: std::mem::size_of_val(&indices) as u64,
+        usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 indexed bundle output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 indexed bundle readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut bundle_encoder = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+        label: Some("FL9_1 indexed textured bundle encoder"),
+        color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+        depth_stencil: None,
+        sample_count: 1,
+        multiview: None,
+    });
+    bundle_encoder.set_pipeline(&pipeline);
+    bundle_encoder.set_bind_group(0, &bind_group, &[]);
+    bundle_encoder.set_vertex_buffer(0, vertex_buffer.slice(..));
+    bundle_encoder.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+    bundle_encoder.draw_indexed(0..3, 0, 0..1);
+    let bundle = bundle_encoder.finish(&RenderBundleDescriptor {
+        label: Some("FL9_1 indexed textured bundle"),
+    });
+
+    drop(bind_group);
+    drop(source_view);
+    drop(source);
+    drop(sampler);
+    drop(index_buffer);
+    drop(vertex_buffer);
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 indexed bundle execution and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 indexed bundle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.execute_bundles([&bundle]);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 indexed textured bundle");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("indexed textured bundle readback callback")
+        .expect("map indexed textured bundle readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[51, 128, 204, 255],
+                    "indexed textured bundle pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: indexed render bundle sampled the retained texture after source handles were dropped; all 64 pixels matched [51, 128, 204, 255]");
 }
