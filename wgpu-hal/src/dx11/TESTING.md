@@ -95,6 +95,17 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 -- --nocapture --test-threads=1
 ```
 
+A second indexed bundle test records a `Uint16` TriangleStrip containing a
+primitive-restart marker. The two restart-separated runs render a rectangle
+and triangle in separate target regions. Readback checks all 256 pixels of a
+16×16 target, so accidental strip continuation across the marker changes the
+expected image.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public HWND surface smoke test
 
 The public surface test creates a hidden top-level HWND, requests a compatible

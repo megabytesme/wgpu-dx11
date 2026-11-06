@@ -547,13 +547,12 @@ shader and render-state combinations against the actual HAL. Keep optional
 formats query-gated and historical FL9_1 and ARM32 behavior explicitly
 unverified.
 
-The public command path also has a strict render-bundle execution test: core
-records a nonindexed triangle into a `RenderBundle`, executes it in a color
-pass, submits, waits and reads back all 64 expected pixels at forced FL9_1.
-An additional strict test records an indexed textured triangle with sparse
-texture/sampler bindings, drops the original source handles after bundle
-recording and validates all 64 pixels after submission. Other bundle state
-combinations and indexed restart behavior still need targeted coverage.
+The public command path also has strict render-bundle execution tests: core
+records a nonindexed triangle, an indexed textured triangle and a Uint16
+indexed TriangleStrip with a primitive-restart marker. The restart bundle
+renders two separated shapes and checks all 256 pixels, including the clear
+gap. Other bundle state combinations and restart formats/topologies still
+need targeted coverage.
 
 ## Follow-up — mapped-view destruction safety
 
