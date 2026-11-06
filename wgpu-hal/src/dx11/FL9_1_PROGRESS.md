@@ -2,6 +2,11 @@
 
 ## Current position — 2026-11-06
 
+Latest verified code checkpoint: `62d12ecd4` (`dx11: reject unsupported
+FL9_1 shader loops`). The detailed test evidence is in the final follow-up
+entry below. Continue the selected-entry WGSL/FXC and core/HAL contract audit;
+this does not complete the mission.
+
 ## Checkpoint — gate base-clamp sampling for 10Level9 — pending
 
 Added `DownlevelLimits::texture_sample_base_clamp_to_edge` and wired it into
@@ -7696,7 +7701,7 @@ Verification on Rust 1.93.1 and the RTX 3090 Ti (`0x10de:0x2203`, driver
 
 Next continue closing the selected-entry dynamic-loop/FXC compiler gap before
 broader shader and render-state audits.
-## Follow-up — selected-entry WGSL loop restriction
+## Follow-up — selected-entry WGSL loop restriction — `62d12ecd4`
 
 The core/HAL shader audit found that `wgpu-core` accepted WGSL loops that the
 current D3D11 FL9_1 shader path could not compile. The HLSL writer uses

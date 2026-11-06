@@ -11,7 +11,7 @@ background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
-### Current shader-contract checkpoint — WGSL loops
+### Current shader-contract checkpoint — WGSL loops (`62d12ecd4`)
 
 Selected-entry loop detection now follows calls from the chosen render entry
 point and records an explicit `DownlevelLimits::shader_loops` capability.
