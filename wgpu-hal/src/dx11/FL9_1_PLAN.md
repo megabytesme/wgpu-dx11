@@ -50,8 +50,11 @@ not a repository artifact.
    core conservatively counts complete statically used uniform layouts per
    selected entry point. Strict public readback used all 32 fragment vectors
    across two sparse bindings, while core rejected 33 before HAL. Per-stage
-   aggregate validation is implemented; broader WGSL packing and instruction
-   budget cases still need coverage.
+   aggregate validation is implemented. The public binding-size limit now
+   allows the 4,080-byte vertex c0-c254 range; strict readback changes geometry
+   from c254 and core rejects a 256-vector vertex shader. Fragment shaders
+   remain limited to 32 vectors. Broader WGSL packing and instruction-budget
+   cases still need coverage.
 2. Extend depth/stencil coverage from the implemented D16 depth-only and D24S8
    attachment paths. D16 uses a required-format guarantee intersected with a
    selected-device query and is single-mip; strict public tests verify depth

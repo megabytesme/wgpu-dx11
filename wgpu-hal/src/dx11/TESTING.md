@@ -1868,6 +1868,7 @@ cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --featu
 cargo +1.93 test --offline -j16 -p wgpu-types --features serde shader_uniform_vector_limits_are_numeric_downlevel_limits -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_enforces_fl91_aggregate_uniform_constants -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_255_vertex_uniform_vectors_at_fl91 -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_constant_profile_boundary_creates_on_hardware -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_c254_and_pixel_c31_change_rendered_output -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_uniform_ranges -- --nocapture --test-threads=1
@@ -1892,7 +1893,13 @@ compiles WGSL arrays through Naga and FXC, then draws with zero and nonzero
 values in the final vertex and pixel constants. On the forced-FL9_1 RTX 3090 Ti,
 readback distinguished 17 baseline green pixels from 4 shifted red pixels.
 This verifies vertex c254 geometry and pixel c31 color changes; runtime
-integer-indexed arrays remain rejected. The remaining hardware tests verify
+integer-indexed arrays remain rejected. The public projection allows a
+4,080-byte (255-vector) uniform binding so the vertex stage can use its full
+FL9_1 constant budget; its selected-entry limit continues to reject fragment
+shaders above 32 vectors. A strict public test reads c254 and c31, draws twice
+with different groups, verifies that c254 shifts the geometry (17 green, 4 red
+pixels), and confirms core rejects a 256-vector vertex pipeline before HAL.
+The remaining hardware tests verify
 sparse static ranges,
 GPU-upload ordering, vertex/fragment use, padded and nested matrix
 structures, array stride, pipeline and group transitions, and coexistence with

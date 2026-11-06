@@ -7461,3 +7461,39 @@ selected-device evidence. This modern RTX result does not establish behavior
 on historical FL9_1 drivers. Continue the broader public core/HAL contract
 audit; do not broaden the optional capability without matching runtime
 queries and operation coverage.
+
+## Follow-up — expose the FL9_1 vertex uniform range
+
+The public uniform binding-size projection previously stopped at 512 bytes,
+although the selected FL9_1 vertex profile and private HAL already supported
+255 float4 constants (4,080 bytes). The limit now allows 4,080 bytes; selected
+entry-point validation still limits fragment uniform footprints to 32 vectors
+and vertex footprints to 255.
+
+The strict public test binds a 255-vector vertex uniform at sparse binding 7
+and a 32-vector fragment uniform at binding 42. On the physical NVIDIA GeForce
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), at
+requested/actual FL9_1, c254 shifted geometry between two draws; readback
+contained 17 green baseline pixels and 4 red shifted pixels. The same test
+confirmed core rejects a 256-vector vertex pipeline before HAL. The existing
+fragment-boundary test still rendered all 64 pixels from 32 vectors and
+rejected 33 before HAL.
+
+Verification with Rust 1.93.1 (`+1.93` alias), Visual Studio x64 tools and
+bounded Cargo jobs:
+
+- Strict new vertex-uniform test: 1/1, real GPU readback.
+- Strict fragment aggregate test: 1/1, real GPU readback and 33-vector reject.
+- Full strict public D3D11 suite: 46/46, physical RTX at requested/actual
+  FL9_1. This includes all prior coverage and the 255-vector case.
+- Strict core fixture suite: 94/94.
+- HAL capability projection unit test: 1/1.
+- Public D3D11 Clippy passed without warnings. HAL Clippy passed with its nine
+  existing warnings in unrelated mapped-range tests, swapchain code and the
+  isolated texel-load experiment.
+
+The driver-specific result validates the current RTX path, not all historical
+FL9_1 implementations. The full HAL suite and core DX12 regression were
+already green at the prior multisample checkpoint; they are unaffected by
+this selected-device uniform-limit update. Continue the broader public
+core/HAL contract audit.

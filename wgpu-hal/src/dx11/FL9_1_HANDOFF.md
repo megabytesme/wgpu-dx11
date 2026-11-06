@@ -1791,6 +1791,21 @@ explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
 
+## Current increment — expose 255 vertex uniform vectors
+
+The public selected-device `max_uniform_buffer_binding_size` is now 4,080
+bytes, matching the FL9_1 vertex profile's 255 float4 constant budget. Core
+still gates each selected stage separately: 255 vertex vectors and 32
+fragment vectors. Strict public GPU readback on the RTX 3090 Ti at
+requested/actual FL9_1 verified c254 geometry changes across two draws (17
+green baseline pixels, 4 red shifted pixels), while core rejects 256 vertex
+vectors and 33 fragment vectors before HAL. The public suite passed 46/46 and
+the core fixture 94/94; the HAL projection unit test passed. Public Clippy is
+clean; HAL Clippy retains nine existing warnings. See the follow-up entry in
+`FL9_1_PROGRESS.md`. After final formatting/diff verification, commit this
+increment and continue the broader core/HAL capability audit. Historical
+FL9_1 devices and ARM32 remain unverified.
+
 ## Current increment — query-gated 4x RGBA8 resolve
 
 The current working tree adds a selected-device-query-gated FL9_1 4x RGBA8

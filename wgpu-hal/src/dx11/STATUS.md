@@ -92,6 +92,10 @@ rendered result, and core rejects a 33-vector pipeline before HAL. The selected
 device reports separate 255-vector vertex and 32-vector fragment limits; core
 counts the complete layout footprint of each statically used uniform in the
 selected entry point, which is conservative for partially read structures.
+The public uniform binding-size limit now allows 4,080 bytes, matching the
+255-vector vertex budget. A thirteenth strict test binds that full range, reads
+c254 and c31, verifies geometry changes across two draws, and has core reject a
+256-vector vertex pipeline. The per-stage fragment limit remains 32 vectors.
 The strict sRGB test also exercises both public formats; full suite totals are
 recorded in the current checkpoint below.
 

@@ -701,6 +701,377 @@ fn public_dx11_enforces_fl91_aggregate_uniform_constants() {
 }
 
 #[test]
+fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(limits.max_uniform_buffer_binding_size, 255 * 16);
+    assert_eq!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .max_vertex_shader_uniform_vectors,
+        255
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; vertex_uniform_vectors=255 max_uniform_binding_size={}",
+        info.name, info.vendor, info.device, info.driver_info, limits.max_uniform_buffer_binding_size
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 255 vertex uniform vectors"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request a device within the selected FL9_1 capability projection");
+
+    let vertex_size = 255usize * 16;
+    let fragment_size = 32usize * 16;
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 maximum vertex constant layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(vertex_size as u64),
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(fragment_size as u64),
+                },
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 maximum vertex constant pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex c254 and fragment c31 shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var<uniform> vertex_constants: array<vec4f, 255>;\n\
+             @group(0) @binding(42) var<uniform> fragment_constants: array<vec4f, 32>;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p + vertex_constants[254].xy, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return fragment_constants[31]; }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 255-vector vertex pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let oversized_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 rejected 256-vector vertex shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var<uniform> vertex_constants: array<vec4f, 256>;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p + vertex_constants[255].xy, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 rejected 256-vector vertex pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &oversized_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &oversized_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    }));
+    match poll_ready(scope.pop()).expect("256 vertex vectors must fail core validation") {
+        Error::Validation { description, .. } => {
+            assert!(description.contains("uniform vectors"), "{description}");
+            assert!(description.contains("256"), "{description}");
+            assert!(description.contains("255"), "{description}");
+        }
+        error => panic!("unexpected 256-vector error: {error:?}"),
+    }
+
+    let create_buffer = |label: &'static str, size: usize, data: &[u8], usage| {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            size: size as u64,
+            usage,
+            mapped_at_creation: true,
+        });
+        buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("mapped test buffer")
+            .copy_from_slice(data);
+        buffer.unmap();
+        buffer
+    };
+    let base_vertex_data = vec![0u8; vertex_size];
+    let mut shifted_vertex_data = vec![0u8; vertex_size];
+    shifted_vertex_data[254 * 16..254 * 16 + 4].copy_from_slice(&1.25f32.to_ne_bytes());
+    let make_fragment_data = |color: [f32; 4]| {
+        let mut data = vec![0u8; fragment_size];
+        for (component, value) in color.into_iter().enumerate() {
+            data[31 * 16 + component * 4..31 * 16 + (component + 1) * 4]
+                .copy_from_slice(&value.to_ne_bytes());
+        }
+        data
+    };
+    let green_data = make_fragment_data([0.0, 1.0, 0.0, 1.0]);
+    let red_data = make_fragment_data([1.0, 0.0, 0.0, 1.0]);
+    let base_vertex = create_buffer(
+        "FL9_1 base c254 buffer",
+        vertex_size,
+        &base_vertex_data,
+        BufferUsages::UNIFORM,
+    );
+    let shifted_vertex = create_buffer(
+        "FL9_1 shifted c254 buffer",
+        vertex_size,
+        &shifted_vertex_data,
+        BufferUsages::UNIFORM,
+    );
+    let green = create_buffer(
+        "FL9_1 green c31 buffer",
+        fragment_size,
+        &green_data,
+        BufferUsages::UNIFORM,
+    );
+    let red = create_buffer(
+        "FL9_1 red c31 buffer",
+        fragment_size,
+        &red_data,
+        BufferUsages::UNIFORM,
+    );
+    let base_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 base c254/c31 group"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: base_vertex.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: green.as_entire_binding(),
+            },
+        ],
+    });
+    let shifted_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 shifted c254/c31 group"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: shifted_vertex.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: red.as_entire_binding(),
+            },
+        ],
+    });
+    let positions = [-0.75f32, -0.75, 0.75, -0.75, 0.0, 0.75];
+    let vertex_bytes = positions
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let vertex_buffer = create_buffer(
+        "FL9_1 c254 triangle vertices",
+        vertex_bytes.len(),
+        &vertex_bytes,
+        BufferUsages::VERTEX,
+    );
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 maximum vertex constant target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 maximum vertex constant readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 maximum vertex constant rendering"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 maximum vertex constant pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_bind_group(0, &base_group, &[]);
+        pass.draw(0..3, 0..1);
+        pass.set_bind_group(0, &shifted_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for c254 and c31 rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("maximum vertex constant readback callback")
+        .expect("map maximum vertex constant readback");
+    let mut green_count = 0usize;
+    let mut green_x = 0usize;
+    let mut red_count = 0usize;
+    let mut red_x = 0usize;
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                match &data[offset..offset + 4] {
+                    [0, 255, 0, 255] => {
+                        green_count += 1;
+                        green_x += x;
+                    }
+                    [255, 0, 0, 255] => {
+                        red_count += 1;
+                        red_x += x;
+                    }
+                    [0, 0, 0, 255] => {}
+                    pixel => panic!("unexpected c254 pixel at ({x}, {y}): {pixel:?}"),
+                }
+            }
+        }
+    }
+    readback.unmap();
+    assert!(green_count > 0, "baseline c254 draw produced no pixels");
+    assert!(red_count > 0, "shifted c254 draw produced no pixels");
+    assert!(
+        red_x * green_count > green_x * red_count,
+        "c254 did not shift the rendered geometry right: green={green_count}/{green_x}, red={red_count}/{red_x}"
+    );
+    println!("PASS: public FL9_1 vertex uniform binding exposed 4080 bytes; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels), and core rejected 256 vertex vectors before HAL");
+}
+
+#[test]
 fn public_dx11_api_renders_offscreen_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();

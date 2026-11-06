@@ -842,11 +842,16 @@ reads only part of a declared uniform structure. FXC compiles 16+16 referenced
 pixel vectors across two constant buffers and rejects 17+16 at register 32.
 A strict public FL9_1 draw reads all 32 vectors from two sparse uniform
 bindings and verifies the expected output; core rejects a 33-vector pipeline.
-The current public projection additionally limits each binding to 512 bytes
-and each stage to six bindings, so vertex aggregate usage cannot reach FXC's
-255-vector ceiling through public layouts. Higher feature levels use a
-different constant-buffer model and are intentionally not projected by this
-FL9_1-only backend.
+The public projection allows a uniform binding up to 4,080 bytes (255 float4
+vectors), matching the FL9_1 vertex profile's tested c254 boundary. The
+selected-entry core validation separately keeps fragment use to 32 vectors;
+a 33-vector fragment pipeline is rejected before HAL. Each stage remains
+limited to six uniform bindings. A strict public draw now reads vertex c254
+and fragment c31, changes the bound values between draws, and verifies that
+the 4,080-byte vertex range shifts the rendered geometry. A 256-vector vertex
+pipeline is rejected by core before HAL. Higher feature levels use a different
+constant-buffer model and are intentionally not projected by this FL9_1-only
+backend.
 
 Ranges use four-byte-aligned offsets and nonzero sizes of at most 64 KiB;
 the logical size need not be a multiple of 16. At bind replay the exact range
