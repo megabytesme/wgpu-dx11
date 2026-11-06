@@ -2,14 +2,16 @@
 
 ## Current position — 2026-11-06
 
-Latest committed checkpoint: `226d6ebda` (`dx11: audit FL9_1 contracts and add
-3D sampling`), following `0f62848fa`. The strict public suite passed 54/54, the
-private HAL suite 375/375, the core fixture suite 97/97, the targeted core
-adapter test 1/1, and DX12 core regressions 92/92. Strict tests selected the
-RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) at
-requested and actual FL9_1. One optional Float16x2 input-format subcase
-explicitly skipped because its format query was negative. Continue the core/HAL
-capability audit; the mission is not complete.
+Latest committed checkpoint: `77f82fece` (`dx11: query-gate FL9_1 volume mip
+sampling`), following `37e648bcf`. The strict private HAL suite passed
+375/375, the public D3D11 suite 54/54, the core fixture suite 97/97, the core
+adapter enumeration test 1/1 and DX12 core regressions 92/92. Strict hardware
+tests selected the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) at requested and actual FL9_1. The selected RGBA8 format
+reported 3D mip support; suffix views sampled three uploaded levels and
+matched all 64 output pixels. One optional Float16x2 input-format subcase
+explicitly skipped because its format query was negative. Continue the public
+core/HAL contract audit; the mission is not complete.
 
 The read-only Lumia Device Portal probe for `/api/os/devicefamily` timed out
 from this machine. No device state was changed. Windows 10 Mobile ARM32
@@ -8395,7 +8397,7 @@ workspace reformat was applied. `git diff --check` passed. This x64 forced-level
 test does not establish behavior on historical FL9_1 drivers or Windows Mobile
 ARM32.
 
-## Query-gated FL9_1 3D mip sampling — 2026-11-06
+## Query-gated FL9_1 3D mip sampling — `77f82fece` — 2026-11-06
 
 Extended the narrow RGBA8 3D sampled/upload path to accept mip chains only when
 the selected device's format support query positively reports

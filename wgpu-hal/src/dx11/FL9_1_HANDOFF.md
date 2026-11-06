@@ -3,23 +3,20 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`, at HEAD
-`0f62848fa` (`dx11: record public FL9_1 mip view checkpoint`). The working
-tree carries verified, uncommitted audit changes; the workspace instructions
-prohibit creating commits. Latest full strict results recorded for this tree
-are private HAL 371/371, public D3D11 53/53, core fixture 97/97 and DX12 core
-92/92. The physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
-software=false) created and ran the explicitly requested FL9_1 device. Its
-strict cube test uploaded four mip levels across six faces, exercised a
-non-suffix cube view and matched all 960 pixels; the 2D non-suffix view test
-matched all 64 pixels. The latest focused rerun of the cube test also verified
-that ordinary 2D arrays remain unavailable and passed 1/1. Cube mip use is
-query-gated; unsupported formats fail closed. One optional Float16x2
-vertex-input subcase remains a visible capability skip. The public D3D11
-backend is explicit opt-in; the core/HAL contract audit is ongoing. Exact
-commands and distinctions between GPU execution and synthetic tests are in
-`FL9_1_PROGRESS.md`. A read-only Lumia Device Portal probe timed out, so
-Windows 10 Mobile ARM32 runtime verification remains unavailable in this
-session.
+`77f82fece` (`dx11: query-gate FL9_1 volume mip sampling`), with a clean
+working tree at the checkpoint. The strict private HAL suite passed 375/375,
+the public D3D11 suite 54/54, the core fixture 97/97, core adapter enumeration
+1/1 and the DX12 core regression suite 92/92. The physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) created and ran the
+explicitly requested FL9_1 device. Its selected RGBA8 query reported 3D mip
+support; the new strict public test uploaded three volume mip levels, sampled
+them through suffix views and matched 64/64 pixels. Existing cube mip tests
+remain query-gated and covered; one optional Float16x2 vertex-input subcase
+remains a visible capability skip. D3D11 is explicitly selected and remains
+non-WebGPU-compliant. The core/HAL contract audit is ongoing. Exact commands,
+results and distinctions between GPU execution and synthetic tests are in
+`FL9_1_PROGRESS.md`. A previous read-only Lumia Device Portal probe timed out,
+so Windows 10 Mobile ARM32 runtime verification remains unavailable.
 
 The latest checkpoint also verifies the WGSL constant texel-offset form of
 `textureSampleBias`: core and the private HAL reject direct and helper-reached
