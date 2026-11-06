@@ -95,7 +95,9 @@ textured draw at forced FL9_1. The latter drops its source resource handles
 after bundle recording and validates all 64 output pixels after execution. A
 two-bundle transition also changes sparse uniform and sampled-resource groups
 between recorded bundles and validates both outputs after the original handles
-are dropped. Other bundle state combinations remain part of the API audit.
+are dropped. Another test selects two dynamic uniform ranges from one buffer
+inside consecutive bundles and verifies both outputs after source destruction.
+Other bundle state combinations remain part of the API audit.
 
 Some detailed status bullets below preserve earlier checkpoints. Later
 implementation checkpoints supersede their earlier surface and exposure

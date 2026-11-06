@@ -179,9 +179,11 @@ first bundle and 37 red from the second. The 50-test public suite passed on
 the RTX 3090 Ti; one optional input-format subcase remains an explicit
 capability skip. A separate strict public test now transitions sparse uniform
 and sampled-resource groups between two bundles and checks both readback
-colors after dropping the original handles. Broader bundle state combinations,
-restart topologies and historical-driver behavior remain to be audited. See
-`FL9_1_PROGRESS.md` for the commands and output.
+colors after dropping the original handles. A further public test selects
+different dynamic uniform offsets inside two bundles and validates both
+readback regions after dropping the source resources. Broader bundle state
+combinations, restart topologies and historical-driver behavior remain to be
+audited. See `FL9_1_PROGRESS.md` for the commands and output.
 
 Some status descriptions within the audit sections below preserve earlier
 checkpoints. Later commits may supersede them; the opening summary and the
@@ -709,8 +711,10 @@ records a nonindexed triangle, an indexed textured triangle and Uint16/Uint32
 indexed TriangleStrips with primitive-restart markers. Each restart bundle
 renders two separated shapes and checks all 256 pixels, including the clear
 gap. A separate pair of bundles changes a uniform group and sampled-resource
-group, then validates both outputs after releasing their source handles. Other
-bundle state combinations and restart topologies still need targeted coverage.
+group, then validates both outputs after releasing their source handles.
+Consecutive bundles also select distinct dynamic uniform offsets and verify
+both images after releasing source resources. Other bundle state combinations
+and restart topologies still need targeted coverage.
 
 ## Follow-up — mapped-view destruction safety
 

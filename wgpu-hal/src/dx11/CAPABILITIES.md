@@ -1186,8 +1186,10 @@ pixels: 37 green pixels from the first bundle, 37 red pixels from the second
 and the unchanged clear gap. A separate two-bundle test switches both a sparse
 uniform at group 0/binding 17 and a texture/sampler at group 1/bindings 7/42;
 after dropping the recorded source handles, readback checks 32 pixels of each
-distinct expected color. Other bundle state combinations and restart
-topologies remain unverified.
+distinct expected color. Two bundles also select distinct dynamic uniform
+offsets from one buffer and verify red/green output after dropping the source
+buffer and bind group. Other bundle state combinations and restart topologies
+remain unverified.
 
 ## Shader loop control
 
