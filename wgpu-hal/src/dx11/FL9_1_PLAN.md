@@ -177,9 +177,11 @@ fragment pipelines, then executes both in one pass at forced FL9_1. Readback
 matched all 256 pixels, including the clear gap, with 37 green pixels from the
 first bundle and 37 red from the second. The 50-test public suite passed on
 the RTX 3090 Ti; one optional input-format subcase remains an explicit
-capability skip. Broader bundle state combinations, restart topologies and
-historical-driver behavior remain to be audited. See `FL9_1_PROGRESS.md` for
-the commands and output.
+capability skip. A separate strict public test now transitions sparse uniform
+and sampled-resource groups between two bundles and checks both readback
+colors after dropping the original handles. Broader bundle state combinations,
+restart topologies and historical-driver behavior remain to be audited. See
+`FL9_1_PROGRESS.md` for the commands and output.
 
 Some status descriptions within the audit sections below preserve earlier
 checkpoints. Later commits may supersede them; the opening summary and the
@@ -706,8 +708,9 @@ The public command path also has strict render-bundle execution tests: core
 records a nonindexed triangle, an indexed textured triangle and Uint16/Uint32
 indexed TriangleStrips with primitive-restart markers. Each restart bundle
 renders two separated shapes and checks all 256 pixels, including the clear
-gap. Other bundle state combinations and restart topologies still need
-targeted coverage.
+gap. A separate pair of bundles changes a uniform group and sampled-resource
+group, then validates both outputs after releasing their source handles. Other
+bundle state combinations and restart topologies still need targeted coverage.
 
 ## Follow-up — mapped-view destruction safety
 

@@ -133,6 +133,15 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91 -- --nocapture --test-threads=1
 ```
 
+The multi-group bundle transition test records two bundles that use different
+uniform and texture/sampler bind groups with one pipeline, drops the original
+resources, then verifies that each half of the target has the expected color.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public HWND surface smoke test
 
 The public surface test creates a hidden top-level HWND, requests a compatible

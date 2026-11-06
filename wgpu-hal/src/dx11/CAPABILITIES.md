@@ -1183,7 +1183,10 @@ Uint16 and Uint32 TriangleStrip bundles include primitive-restart markers
 between a left rectangle and right triangle, then execute in one pass while
 switching vertex and fragment pipelines. Strict FL9_1 readback checks all 256
 pixels: 37 green pixels from the first bundle, 37 red pixels from the second
-and the unchanged clear gap. Other bundle state combinations and restart
+and the unchanged clear gap. A separate two-bundle test switches both a sparse
+uniform at group 0/binding 17 and a texture/sampler at group 1/bindings 7/42;
+after dropping the recorded source handles, readback checks 32 pixels of each
+distinct expected color. Other bundle state combinations and restart
 topologies remain unverified.
 
 ## Shader loop control

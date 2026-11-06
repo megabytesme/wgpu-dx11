@@ -2,11 +2,11 @@
 
 ## Current position — 2026-11-06
 
-Latest committed checkpoint: `f04b4f93e` (`dx11: enforce CoreWindow
-dispatcher thread affinity`). The strict private HAL suite passed 376/376,
-the public D3D11 suite passed 54/54, the controlled core fixture passed
-100/100, the physical adapter test passed 1/1, and the DX12 core regression
-passed 92/92. The strict D3D11 tests selected the RTX 3090 Ti
+Latest committed checkpoint: `7bc652409` (`dx11: test multi-group render
+bundle transitions`). The strict public D3D11 suite passed 55/55; the private
+HAL suite passed 376/376, controlled core fixture 100/100, physical adapter
+test 1/1 and DX12 core regression 92/92 at the preceding HAL checkpoint
+`f04b4f93e`. The strict D3D11 tests selected the RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) at requested and
 actual FL9_1. The public suite reported one optional Float16x2 input-format
 subcase skipped because its format query was negative. Continue the public
@@ -52,6 +52,37 @@ this is compile coverage, not Lumia execution. The strict core fixture passed
 100/100, physical FL9_1 adapter enumeration passed 1/1, and DX12 core passed
 92/92. The adapter test enumerated one physical FL9_1 device.
 `git diff --check` passed.
+
+## Checkpoint — multi-group render-bundle transitions — `7bc652409`
+
+Added a strict public wgpu test that records two render bundles using the same
+pipeline and separate bind groups. Group 0 contains a sparse uniform at binding
+17; group 1 contains a sampled texture and sampler at bindings 7 and 42. Each
+bundle uses different uniform and texture data, and the source groups, buffers,
+textures, views, samplers and vertex buffer are dropped after bundle
+recording. The bundles execute in order in one render pass. Readback verifies
+32 left pixels as `[100, 60, 20, 255]` and 32 right pixels as
+`[30, 90, 40, 255]`, so stale data or failure to rebind either group is
+visible.
+
+Verification used the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), software=false, requested and actual FL9_1:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The focused hardware test passed 1/1 with all 64 pixels matching. The full
+strict public suite passed 55/55 with one optional Float16x2 input-format
+subcase skipped after the selected device reported no IA support. Wgpu Clippy
+passed with one pre-existing `wgpu-hal` argument-count warning. Rustfmt reports
+three pre-existing formatting differences elsewhere in `dx11_public.rs`; the
+new test itself is formatted. `git diff --check` passed.
 
 ## Verified hardware boundary — ordinary 2D texture arrays
 

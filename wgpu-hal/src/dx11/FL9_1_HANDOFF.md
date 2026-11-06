@@ -3,17 +3,18 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`; its latest code checkpoint
-is `f04b4f93e` (`dx11: enforce CoreWindow dispatcher thread affinity`). The
+is `7bc652409` (`dx11: test multi-group render bundle transitions`). The
 strict private HAL suite passed 376/376 and the public D3D11 suite passed
-54/54 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+55/55 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
 software=false), requested and actual FL9_1. The public suite explicitly
 reported one unsupported Float16x2 input-format subcase; it is not counted as
-GPU execution. The new CoreWindow admission check and owner-thread guard pass
-the CPU test and x64/ARM32-UWP compilation, but CoreWindow runtime behavior on
-UWP remains unverified. Public CoreWindow surface capabilities remain
-withheld. The controlled core fixture passed 100/100, the physical adapter
-enumeration test passed 1/1, and the DX12 core regression suite passed 92/92
-after this change.
+GPU execution. The new public render-bundle case switches sparse uniform and
+sampled-resource groups, drops their source handles, then validates all 64
+readback pixels. The private HAL suite, controlled core fixture, adapter
+enumeration and DX12 results were rerun at checkpoint `f04b4f93e`; the current
+change only adds a public integration test. The CoreWindow admission check
+passes CPU coverage and x64/ARM32-UWP compilation, but UWP runtime behavior
+remains unverified. Public CoreWindow surface capabilities remain withheld.
 
 The backend remains an explicit opt-in, non-WebGPU-compliant D3D11 path. It
 supports controlled public offscreen rendering and constrained desktop HWND
