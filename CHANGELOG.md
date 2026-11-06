@@ -64,6 +64,7 @@ Bottom level categories:
 - Gate bind-group layouts with empty shader visibility on downlevel support.
 - Gate unsupported sampled texture types and vertex-only visibility on downlevel support.
 - Gate multisampled texture layouts on downlevel support.
+- Add `DownlevelLimits::multisampled_texture_usage_mask` so backends can restrict the usage combinations accepted for multisampled textures.
 - Add a downlevel limit for fragment flat and linear interpolation support.
 - Reject comparison-sampler layouts when comparison samplers are unavailable.
 - Reject compute-visible bind-group layouts when compute shaders are unavailable.

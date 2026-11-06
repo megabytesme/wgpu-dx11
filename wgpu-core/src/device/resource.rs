@@ -2128,6 +2128,16 @@ impl Device {
                         .supported_sample_counts(),
                 ));
             };
+
+            let allowed_multisampled_usage = wgt::TextureUsages::from_bits_retain(
+                self.downlevel.limits.multisampled_texture_usage_mask,
+            );
+            let unsupported_multisampled_usage = desc.usage - allowed_multisampled_usage;
+            if !unsupported_multisampled_usage.is_empty() {
+                return Err(CreateTextureError::InvalidMultisampledTextureUsages(
+                    unsupported_multisampled_usage,
+                ));
+            }
         }
 
         let missing_allowed_usages = match desc.format.planes() {

@@ -1070,6 +1070,12 @@ pub struct DownlevelLimits {
     /// Whether 3D texture views may omit the resource's lowest mip level.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d_non_suffix_mip_views: bool,
+    /// Texture usages allowed for multisampled textures.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_multisampled_texture_usage_mask")
+    )]
+    pub multisampled_texture_usage_mask: u32,
     /// Whether copies directly between 3D textures are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d_texture_copies: bool,
@@ -1317,6 +1323,11 @@ fn default_texture_3d_usage_mask() -> u32 {
 }
 
 #[cfg(feature = "serde")]
+fn default_multisampled_texture_usage_mask() -> u32 {
+    crate::TextureUsages::all().bits()
+}
+
+#[cfg(feature = "serde")]
 fn default_max_sampled_texture_sampler_pairs() -> u32 {
     u32::MAX
 }
@@ -1331,6 +1342,7 @@ impl Default for DownlevelLimits {
             texture_3d_format_mask: u32::MAX,
             texture_3d_mipmaps: true,
             texture_3d_non_suffix_mip_views: true,
+            multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             max_texture_cube_dimension: u32::MAX,
@@ -1423,6 +1435,12 @@ impl DownlevelLimits {
         crate::TextureUsages::from_bits_retain(self.texture_3d_usage_mask).contains(usage)
     }
 
+    /// Returns whether `usage` is allowed for multisampled textures.
+    #[must_use]
+    pub const fn supports_multisampled_texture_usage(&self, usage: crate::TextureUsages) -> bool {
+        crate::TextureUsages::from_bits_retain(self.multisampled_texture_usage_mask).contains(usage)
+    }
+
     /// Returns whether the selected format can be used by a cube texture.
     #[must_use]
     pub const fn supports_texture_cube_format(&self, format: crate::TextureFormat) -> bool {
@@ -1468,6 +1486,8 @@ impl DownlevelLimits {
                         || self.texture_3d_non_suffix_mip_views)
                     && (!required.texture_3d_texture_copies || self.texture_3d_texture_copies)
                     && (!required.npot_texture_3d || self.npot_texture_3d)))
+            && self.multisampled_texture_usage_mask & required.multisampled_texture_usage_mask
+                == required.multisampled_texture_usage_mask
             && self.max_texture_cube_dimension >= required.max_texture_cube_dimension
             && self.texture_cube_format_mask & required.texture_cube_format_mask
                 == required.texture_cube_format_mask
@@ -1556,6 +1576,7 @@ impl DownlevelCapabilities {
             && self.limits.texture_3d_format_mask == u32::MAX
             && self.limits.texture_3d_mipmaps
             && self.limits.texture_3d_non_suffix_mip_views
+            && self.limits.multisampled_texture_usage_mask == crate::TextureUsages::all().bits()
             && self.limits.texture_3d_texture_copies
             && self.limits.npot_texture_3d
             && self.limits.max_texture_cube_dimension
@@ -2059,6 +2080,7 @@ mod tests {
             texture_3d_format_mask: u32::MAX,
             texture_3d_mipmaps: true,
             texture_3d_non_suffix_mip_views: true,
+            multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
@@ -2108,6 +2130,7 @@ mod tests {
             texture_3d_format_mask: u32::MAX,
             texture_3d_mipmaps: true,
             texture_3d_non_suffix_mip_views: true,
+            multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
@@ -2294,6 +2317,30 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             multisampled_texture_bindings: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn multisampled_texture_usage_mask_is_a_downlevel_limit() {
+        let allowed =
+            crate::TextureUsages::RENDER_ATTACHMENT | crate::TextureUsages::TRANSIENT_ATTACHMENT;
+        let available = DownlevelLimits {
+            multisampled_texture_usage_mask: allowed.bits(),
+            ..DownlevelLimits::default()
+        };
+        assert!(available.supports_multisampled_texture_usage(allowed));
+        assert!(!available.supports_multisampled_texture_usage(
+            crate::TextureUsages::RENDER_ATTACHMENT | crate::TextureUsages::COPY_SRC
+        ));
+        assert!(available.check_limits(&DownlevelLimits {
+            multisampled_texture_usage_mask: allowed.bits(),
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));

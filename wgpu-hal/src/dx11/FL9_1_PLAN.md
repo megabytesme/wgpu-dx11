@@ -49,6 +49,13 @@ The projection now requires the format's implemented color-attachment path, and
 a synthetic RGB565 case covers the missing-render-target query. Continue
 auditing cross-capability implications in optional format reporting.
 
+The 4x RGBA8 format report also exposed a core/HAL usage mismatch: core accepted
+multisampled sampled/copy descriptors from ordinary per-format usage flags,
+while the D3D11 path creates only render-target resources. A dedicated
+`DownlevelLimits::multisampled_texture_usage_mask` now lets core reject those
+combinations while retaining query-gated render/resolve. Continue auditing
+sample-count and usage intersections for other formats and backends.
+
 Core queue submission also has a synthetic removed-device replay test. It
 confirms HAL error classification, one-shot core device-lost notification,
 subsequent submission rejection and queue invalidation on a physical adapter

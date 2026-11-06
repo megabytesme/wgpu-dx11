@@ -1916,6 +1916,8 @@ pub enum CreateTextureError {
     InvalidCubeTextureShape,
     #[error("Texture usage STORAGE_BINDING is not allowed for multisampled textures")]
     InvalidMultisampledStorageBinding,
+    #[error("Texture usages {0:?} are not allowed for multisampled textures on this adapter")]
+    InvalidMultisampledTextureUsages(wgt::TextureUsages),
     #[error("Format {0:?} does not support multisampling")]
     InvalidMultisampledFormat(wgt::TextureFormat),
     #[error("Sample count {0} is not supported by format {1:?} on this device. The WebGPU spec guarantees {2:?} samples are supported by this format. With the TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES feature your device supports {3:?}.")]
@@ -1971,6 +1973,7 @@ impl WebGpuError for CreateTextureError {
             | Self::InvalidTexture3DSize { .. }
             | Self::InvalidCubeTextureShape
             | Self::InvalidMultisampledStorageBinding
+            | Self::InvalidMultisampledTextureUsages(_)
             | Self::InvalidMultisampledFormat(_)
             | Self::InvalidSampleCount(..)
             | Self::InvalidTransientTextureUsage(_)

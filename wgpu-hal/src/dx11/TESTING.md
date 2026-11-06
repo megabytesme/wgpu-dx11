@@ -2458,6 +2458,25 @@ multisampled request was rejected by core before HAL; the rest of the strict
 fixture also completed its real D3D11 operations and readbacks. This does not
 test native alpha-to-coverage rendering.
 
+### Multisampled texture usage boundary
+
+The strict public resolve test also checks the exact usage subset exposed by
+`DownlevelLimits::multisampled_texture_usage_mask`. On devices that positively
+report 4x RGBA8 render/resolve, a render attachment remains creatable, while
+adding sampled, copy-source or copy-destination usage is rejected by core
+before native allocation. The HAL currently creates only render-target-only
+4x RGBA8 resources, optionally marked transient.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti, requested and actual FL9_1, this test created and resolved
+the supported target, rejected `RENDER_ATTACHMENT | TEXTURE_BINDING`,
+`RENDER_ATTACHMENT | COPY_SRC` and `RENDER_ATTACHMENT | COPY_DST` before HAL,
+and verified all 64 resolve pixels.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1

@@ -14628,6 +14628,7 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let format_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    let downlevel = adapter.get_downlevel_capabilities();
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; RGBA8 features={:?}",
         info.name, info.vendor, info.device, info.driver_info, format_features
@@ -14642,6 +14643,20 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         println!("SKIP: selected FL9_1 device does not report RGBA8 4x render and resolve support");
         return;
     }
+    let multisampled_attachment_usage =
+        TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT;
+    assert!(downlevel
+        .limits
+        .supports_multisampled_texture_usage(multisampled_attachment_usage));
+    for usage in [
+        TextureUsages::TEXTURE_BINDING,
+        TextureUsages::COPY_SRC,
+        TextureUsages::COPY_DST,
+    ] {
+        assert!(!downlevel
+            .limits
+            .supports_multisampled_texture_usage(TextureUsages::RENDER_ATTACHMENT | usage));
+    }
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public D3D11 FL9_1 multisample resolve"),
@@ -14650,6 +14665,28 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         ..Default::default()
     }))
     .expect("request a device within its FL9_1 capability projection");
+    for unsupported in [
+        TextureUsages::TEXTURE_BINDING,
+        TextureUsages::COPY_SRC,
+        TextureUsages::COPY_DST,
+    ] {
+        expect_validation_error(&device, "unsupported multisampled texture usage", || {
+            drop(device.create_texture(&TextureDescriptor {
+                label: Some("unsupported FL9_1 multisampled usage"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 4,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::RENDER_ATTACHMENT | unsupported,
+                view_formats: &[],
+            }));
+        });
+    }
     let msaa = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 four-sample RGBA8 source"),
         size: Extent3d {

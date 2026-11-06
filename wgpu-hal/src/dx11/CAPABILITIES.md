@@ -1138,6 +1138,12 @@ six. Other unsupported shader, storage and query paths remain absent from
 projected flags or format usages. General multisampling remains unavailable
 except for the query-gated 4x RGBA8 render-and-resolve path.
 
+`DownlevelLimits::multisampled_texture_usage_mask` narrows that path to
+`RENDER_ATTACHMENT` and optional `TRANSIENT_ATTACHMENT` usages. Core rejects
+4x descriptors that also request `TEXTURE_BINDING`, `COPY_SRC` or `COPY_DST`
+before HAL creation. A positive sample-count and format query establishes
+render/resolve availability only; it does not imply those other usages.
+
 The projection reports `empty_binding_visibility = false`. WebGPU permits a
 bind-group layout entry whose visibility bitset is empty, but the current HAL
 layout representation requires every resource entry to target a supported

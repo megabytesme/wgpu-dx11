@@ -283,6 +283,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             empty_binding_visibility,
             texture_1d,
             texture_3d,
+            multisampled_texture_usage_mask,
             max_texture_cube_dimension,
             texture_cube_format_mask,
             npot_cube_textures,
@@ -321,12 +322,18 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             texture_sample_bias_offset,
             fragment_derivatives,
             vertex_format_mask,
+            ..
         },
         flags,
     } = downlevel;
     writeln!(output, "\t\tEmpty binding visibility: {empty_binding_visibility}")?;
     writeln!(output, "\t\tTexture 1D: {texture_1d}")?;
     writeln!(output, "\t\tTexture 3D: {texture_3d}")?;
+    writeln!(
+        output,
+        "\t\tMultisampled texture usages: {:?}",
+        wgpu::TextureUsages::from_bits_retain(*multisampled_texture_usage_mask)
+    )?;
     writeln!(output, "\t\tMaximum cube texture dimension: {max_texture_cube_dimension}")?;
     writeln!(output, "\t\tCube texture format mask: {texture_cube_format_mask:#010x}")?;
     writeln!(output, "\t\tNPOT cube textures: {npot_cube_textures}")?;

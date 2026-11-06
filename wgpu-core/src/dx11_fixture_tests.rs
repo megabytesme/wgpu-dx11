@@ -86,6 +86,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     texture_3d_format_mask: 0,
                     texture_3d_mipmaps: false,
                     texture_3d_non_suffix_mip_views: false,
+                    multisampled_texture_usage_mask: 0,
                     texture_3d_texture_copies: false,
                     npot_texture_3d: false,
                     max_texture_cube_dimension: 0,
@@ -417,6 +418,43 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         usage,
         view_formats: Vec::new(),
     };
+
+    let rgba8_features =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Rgba8Unorm);
+    if rgba8_features.flags.sample_count_supported(4) {
+        let mut multisampled = texture_desc(
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureUsages::RENDER_ATTACHMENT,
+        );
+        multisampled.sample_count = 4;
+        let (valid, error) = global.device_create_texture(device, &multisampled, None);
+        assert!(error.is_none(), "4x FL9_1 color target: {error:?}");
+        global.texture_drop(valid);
+
+        for unsupported in [
+            wgt::TextureUsages::TEXTURE_BINDING,
+            wgt::TextureUsages::COPY_SRC,
+            wgt::TextureUsages::COPY_DST,
+        ] {
+            let mut desc = multisampled.clone();
+            desc.usage |= unsupported;
+            let (_, error) = global.device_create_texture(device, &desc, None);
+            assert!(
+                matches!(
+                    error,
+                    Some(crate::resource::CreateTextureError::InvalidMultisampledTextureUsages(
+                        usages
+                    )) if usages == unsupported
+                ),
+                "core must reject unsupported multisampled usage {unsupported:?}: {error:?}"
+            );
+        }
+        std::println!(
+            "PASS: core accepted 4x RGBA8 render targets and rejected sampled/copy multisampled usages"
+        );
+    } else {
+        std::println!("SKIP: selected FL9_1 RGBA8 format lacks 4x multisampling");
+    }
 
     for dimension in [wgt::TextureDimension::D1] {
         let mut desc = texture_desc(

@@ -24,6 +24,11 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The optional RGBA8 four-sample path is restricted through
+`DownlevelLimits::multisampled_texture_usage_mask` to color attachment and
+transient attachment usages. Core rejects sampled and copy usages before the
+HAL even when the selected format reports 4x render/resolve support.
+
 The selected FL9_1 projection exposes sampled RGBA8 3D textures only when the
 device reports `TEXTURE3D | SHADER_SAMPLE`. The tested subset is POT,
 single-mip, single-sample volumes up to 256³ with texture-binding and upload

@@ -525,6 +525,9 @@ impl Capabilities {
                 texture_3d_format_mask,
                 texture_3d_mipmaps: texture_3d_sampling && self.texture_3d_mipmaps(),
                 texture_3d_non_suffix_mip_views: false,
+                multisampled_texture_usage_mask: (wgt::TextureUsages::RENDER_ATTACHMENT
+                    | wgt::TextureUsages::TRANSIENT_ATTACHMENT)
+                    .bits(),
                 texture_3d_texture_copies: false,
                 npot_texture_3d: false,
                 max_texture_cube_dimension: if cube_texture_sampling {
@@ -1571,6 +1574,11 @@ mod tests {
         ));
         assert!(exposed.downlevel.limits.texture_3d_mipmaps);
         assert!(!exposed.downlevel.limits.texture_3d_non_suffix_mip_views);
+        assert_eq!(
+            exposed.downlevel.limits.multisampled_texture_usage_mask,
+            (wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT)
+                .bits()
+        );
         assert!(!exposed.downlevel.limits.texture_3d_texture_copies);
         assert!(!exposed.downlevel.limits.npot_texture_3d);
         assert!(
