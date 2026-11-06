@@ -3,22 +3,22 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`, at HEAD
-`a56927a5c` (`core: defer device-lost callbacks after queue submission`),
+`b05a82dfe` (`core: defer device-lost callbacks from fence polling`),
 with a clean working tree at the checkpoint. Recent verified results include
 the strict private HAL suite 375/375, public D3D11 suite 54/54, core fixture
-97/97, physical-adapter fixture 1/1 and DX12 core regression 92/92. The latest
-core fix defers a lost-device callback until queue submission locks are
-released; its controlled callback polls the device synchronously and returns
-without deadlocking. The failure is synthetic, on a physical RTX 3090 Ti
+99/99, physical-adapter fixture 1/1 and DX12 core regression 92/92. Two
+controlled fence-error tests inject failures independently from event-query
+polling and waiting; core defers the lost-device callback until its snatch and
+submission locks are released, so a callback can synchronously poll without
+deadlocking. Both failures are synthetic, on a physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) explicitly opened at
-FL9_1. The latest strict public volume-mip test at the preceding implementation
-checkpoint uploaded and sampled three queried RGBA8 3D mip levels and matched
-64/64 pixels. One optional Float16x2 vertex-input subcase remains a visible
-capability skip. D3D11 is explicitly selected and remains non-WebGPU-compliant.
-The core/HAL contract audit is ongoing. Exact commands, results and
-distinctions between GPU execution and synthetic tests are in
-`FL9_1_PROGRESS.md`. A previous read-only Lumia Device Portal probe timed out,
-so Windows 10 Mobile ARM32 runtime verification remains unavailable.
+FL9_1; they do not simulate physical device removal or recovery. The strict
+public suite still reports one optional Float16x2 vertex-input capability
+skip. D3D11 is explicitly selected and remains non-WebGPU-compliant. The
+core/HAL contract audit is ongoing. Exact commands, results and distinctions
+between GPU execution and synthetic tests are in `FL9_1_PROGRESS.md`. A
+previous read-only Lumia Device Portal probe timed out, so Windows 10 Mobile
+ARM32 runtime verification remains unavailable.
 
 The latest checkpoint also verifies the WGSL constant texel-offset form of
 `textureSampleBias`: core and the private HAL reject direct and helper-reached
