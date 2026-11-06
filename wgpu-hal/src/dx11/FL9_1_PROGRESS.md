@@ -7288,6 +7288,8 @@ git diff --check
 
 ## Follow-up — query-gated narrow-format blending and indexed bundles
 
+Code checkpoint: `3774c7a2e` (`dx11: add query-gated FL9_1 narrow-format blending`).
+
 Extended selected-device capability projection and native pipeline format
 validation so R8_UNORM, R8G8_UNORM and B5G6R5 expose `BLENDABLE` only when the
 actual format query reports it and the backend attachment path is implemented.

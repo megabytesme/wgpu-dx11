@@ -3,19 +3,14 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, HEAD is `f7579b68e`. Recent shader-contract commits
-gate fragment flat/linear interpolation rejected by the FL9_1 FXC profile,
-add actual depth-test readback for structured `frag_depth`, and confirm public
-core rejects unsupported `vertex_index` and `instance_index` before HAL. The
-strict public suite now passes 41/41 on the physical RTX 3090 Ti
-(`0x10de:0x2203`, driver
-`32.0.16.2101`), explicitly requested and actual FL9_1; its optional
-Float16x2 IA branch visibly skips because the selected device lacks that
-format. The full private HAL suite passes 363/363 after retrying with a larger
-test-thread stack; DX12 core regression passes 90/90. One initial rebuild hit
-Windows paging-file error 1455 at `-j8`; the focused public test succeeded at
-`-j2`. The current working tree contains only journal/handoff updates for
-these committed results. The opt-in
+The branch is `uwp-dx11`, latest code checkpoint is `3774c7a2e`. The most
+recent private HAL suite passed 363/363 with strict physical-hardware mode;
+the full strict public D3D11 suite passed 43/43 on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and actual
+FL9_1. Its optional Float16x2 IA branch visibly skips because the selected
+device lacks that format. DX12 core regression last passed 90/90. The latest
+checkpoint query-gates blending for R8, RG8 and RGB565 using each selected
+format's `BLENDABLE` report and verifies actual output. The opt-in
 public D3D11 backend supports a conservative offscreen path and a constrained
 HWND path; it is not WebGPU-compliant. Earlier checkpoints passed 36/36.
 The D24S8 transition test checked 576 pixels over nine snapshots. The transient
@@ -1795,6 +1790,20 @@ strict public D3D11 suite passed 38/38; the optional Float16x2 IA branch was
 explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
+
+## Latest code checkpoint — query-gated narrow-format blending — `3774c7a2e`
+
+The selected-device format projection now reports `COLOR_ATTACHMENT_BLEND`
+for R8_UNORM, R8G8_UNORM and B5G6R5 only when both the implementation path and
+the actual format query support it. The RTX 3090 Ti forced to FL9_1 reported
+`BLENDABLE` for all three; strict readback checked 64 pixels per format after a
+half-alpha red overlay. R8 and RG8 matched their expected bytes, while RGB565
+matched within packed-format quantization tolerance. The private strict HAL
+suite passed 363/363 and the public strict D3D11 suite passed 43/43, including
+the indexed textured bundle retention test. The optional Float16x2 vertex
+input subcase was explicitly skipped because the selected device did not
+report its input-format support. Continue the core/HAL audit; old FL9_1
+hardware and ARM32 UWP are still unverified.
 
 ## Follow-up — public render-bundle execution
 
