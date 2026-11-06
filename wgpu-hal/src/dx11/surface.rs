@@ -40,9 +40,16 @@ impl Drop for SurfaceOperation<'_> {
     }
 }
 
+fn is_current_thread(owner: &ThreadId) -> bool {
+    std::thread::current().id() == *owner
+}
+
 #[derive(Debug)]
 enum Window {
-    Core(AgileReference<ICoreWindow>),
+    Core {
+        window: AgileReference<ICoreWindow>,
+        owner_thread: ThreadId,
+    },
     Hwnd(NonZeroIsize),
 }
 
@@ -114,10 +121,24 @@ impl Surface {
         let window: ICoreWindow = unknown
             .cast()
             .map_err(|e| crate::InstanceError::new(format!("not an ICoreWindow: {e}")))?;
+        let dispatcher = window.Dispatcher().map_err(|e| {
+            crate::InstanceError::new(format!("could not access CoreWindow dispatcher: {e}"))
+        })?;
+        if !dispatcher.HasThreadAccess().map_err(|e| {
+            crate::InstanceError::new(format!("could not verify CoreWindow thread access: {e}"))
+        })? {
+            return Err(crate::InstanceError::new(
+                "CoreWindow surfaces must be created on their dispatcher thread".into(),
+            ));
+        }
+        let owner_thread = std::thread::current().id();
         let window = AgileReference::new(&window)
             .map_err(|e| crate::InstanceError::new(format!("could not retain CoreWindow: {e}")))?;
         Ok(Self {
-            window: Window::Core(window),
+            window: Window::Core {
+                window,
+                owner_thread,
+            },
             configured: Mutex::new(SurfaceState::default()),
             operation_complete: Condvar::new(),
         })
@@ -132,7 +153,7 @@ impl Surface {
     pub(super) fn hwnd(&self) -> Option<windows::Win32::Foundation::HWND> {
         match self.window {
             Window::Hwnd(hwnd) => Some(windows::Win32::Foundation::HWND(hwnd.get() as *mut _)),
-            Window::Core(_) => None,
+            Window::Core { .. } => None,
         }
     }
     pub(super) fn supports_public_presentation(&self) -> bool {
@@ -146,12 +167,15 @@ impl Surface {
                 windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, None)
                     == windows::Win32::System::Threading::GetCurrentThreadId()
             },
-            None => true,
+            None => match &self.window {
+                Window::Core { owner_thread, .. } => is_current_thread(owner_thread),
+                Window::Hwnd(_) => false,
+            },
         }
     }
     pub(super) fn core_window(&self) -> windows::core::Result<ICoreWindow> {
         match &self.window {
-            Window::Core(window) => window.resolve(),
+            Window::Core { window, .. } => window.resolve(),
             Window::Hwnd(_) => Err(windows::core::Error::from_hresult(
                 windows::Win32::Foundation::E_INVALIDARG,
             )),
@@ -760,7 +784,7 @@ impl Surface {
     ) -> Result<(), crate::SurfaceError> {
         if !self.is_window_thread() {
             return Err(crate::SurfaceError::Other(
-                "D3D11 HWND presentation must run on the window thread",
+                "D3D11 presentation must run on the surface owner thread",
             ));
         }
         let _operation = self.begin_operation()?;
@@ -826,7 +850,7 @@ impl crate::Surface for Surface {
         }
         if !self.is_window_thread() {
             return Err(crate::SurfaceError::Other(
-                "D3D11 HWND configuration must run on the window thread",
+                "D3D11 configuration must run on the surface owner thread",
             ));
         }
         let _operation = self.begin_operation()?;
@@ -882,7 +906,7 @@ impl crate::Surface for Surface {
     ) -> Result<crate::AcquiredSurfaceTexture<Self::A>, crate::SurfaceError> {
         if !self.is_window_thread() {
             return Err(crate::SurfaceError::Other(
-                "D3D11 HWND acquisition must run on the window thread",
+                "D3D11 acquisition must run on the surface owner thread",
             ));
         }
         let _operation = self.begin_operation()?;
@@ -924,6 +948,16 @@ mod hwnd_surface_tests;
 mod tests {
     use super::*;
     use crate::Surface as _;
+
+    #[test]
+    fn core_window_owner_thread_check_rejects_other_threads() {
+        let owner = std::thread::current().id();
+        assert!(is_current_thread(&owner));
+        let other = std::thread::spawn(|| std::thread::current().id())
+            .join()
+            .expect("worker thread id");
+        assert!(!is_current_thread(&other));
+    }
 
     #[test]
     fn hwnd_present_thread_check_is_owner_thread_only() {
