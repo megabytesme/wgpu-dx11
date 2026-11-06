@@ -1787,3 +1787,16 @@ strict public D3D11 suite passed 38/38; the optional Float16x2 IA branch was
 explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
+
+## Follow-up — outputless fragments with D24S8 stencil
+
+Commit `967b1af89` (`dx11: verify outputless FL9_1 fragments with D24S8`)
+adds a strict public stencil interaction test and updates capability/testing
+notes. On the physical RTX 3090 Ti forced to FL9_1, outputless fragment
+discard left stencil and depth unchanged on the left half; later stencil and
+depth comparisons independently rendered red and green there while the
+surviving half remained blue. Both complete 8×8 results matched. The full
+strict public D3D11 suite passed 38/38; the optional Float16x2 IA branch was
+explicitly skipped for lack of selected-device support. Rustfmt, public-test
+Clippy and `git diff --check` passed. Continue the broader core/HAL
+render-pass contract audit.
