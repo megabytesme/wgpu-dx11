@@ -96,10 +96,10 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 ```
 
 A second indexed bundle test records `Uint16` and `Uint32` TriangleStrips
-containing primitive-restart markers. The two restart-separated runs render a
-rectangle and triangle in separate target regions. Readback checks all 256
-pixels of a 16×16 target for each index format, so accidental strip
-continuation across a marker changes the expected image.
+containing primitive-restart markers. Both bundles execute in the same render
+pass while switching index width, vertex transform and fragment color. The
+left bundle renders green and the right bundle red; readback checks all 256
+pixels of one 16×16 target, including the unchanged gap between them.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

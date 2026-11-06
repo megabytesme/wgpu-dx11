@@ -7825,3 +7825,21 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 The public-test Clippy command (`cargo +1.93 clippy --offline -j2 -p wgpu
 --no-default-features --features dx11,wgsl,std --test dx11_public`), changed
 file Rustfmt check and `git diff --check` also passed.
+
+## Follow-up — same-pass render-bundle pipeline transition
+
+Expanded the public restart test to execute a Uint16 green bundle followed by
+a Uint32 red bundle in the same render pass. Both use a restart-separated
+strip; their selected vertex shaders transform the shapes into disjoint target
+regions. This checks that replay switches the index width, vertex and fragment
+pipeline state and index resource without carrying stale state into the next
+bundle. Readback matched all 256 pixels: 37 green, 37 red, and the expected
+black background and gap. The test does not attempt to change viewport or
+scissor from a bundle because those dynamic commands are not part of the
+public `RenderBundleEncoder` API.
+
+The focused strict test and full strict public D3D11 suite both passed on the
+RTX 3090 Ti at requested/actual FL9_1; the suite result was 50/50 with one
+optional `Float16x2` input-format capability subcase explicitly skipped.
+Public-test Clippy, Rustfmt 1.93.1 and `git diff --check` passed. The exact
+commands are the focused and full-suite commands recorded above.
