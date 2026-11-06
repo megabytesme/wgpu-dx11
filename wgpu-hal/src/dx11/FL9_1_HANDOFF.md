@@ -2,8 +2,9 @@
 
 ## Current mission state — 2026-11-06
 
-This mission remains active on branch `uwp-dx11`; its latest code checkpoint
-is `47a0bce53` (`core: preserve pass stencil reference in render bundles`).
+This mission remains active on branch `uwp-dx11`; the latest code checkpoint
+is `cb2e06cecae0a2b6dab1622558deb3ef2195dbeb` (`dx11: test public Present
+device-loss propagation`), followed by documentation checkpoint `2deeffc49`.
 The strict public D3D11 suite passed 60/60 on the physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`,
 software=false), requested and actual FL9_1. The public suite explicitly
@@ -27,7 +28,10 @@ enumeration test last passed at checkpoint `f04b4f93e`. The CoreWindow admission
 passes CPU coverage and x64/ARM32-UWP compilation, but UWP runtime behavior
 remains unverified. Public CoreWindow surface capabilities remain withheld.
 
-The backend remains an explicit opt-in, non-WebGPU-compliant D3D11 path. It
+The ARM32 UWP D3D11 HAL cross-check also compiles with nightly `build-std` for
+`thumbv7a-uwp-windows-msvc`; package deployment and runtime behavior on Lumia
+remain unverified. The backend remains an explicit opt-in,
+non-WebGPU-compliant D3D11 path. It
 supports controlled public offscreen rendering and constrained desktop HWND
 presentation; the consumer example validated a 1,024-pixel textured indexed
 cube. The core/HAL contract audit is ongoing, Windows 10 Mobile ARM32 runtime

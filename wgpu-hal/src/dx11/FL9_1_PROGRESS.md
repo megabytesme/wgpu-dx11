@@ -8757,6 +8757,28 @@ cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --f
 git diff --check
 ~~~
 
+## ARM32 UWP HAL cross-compilation — 2026-11-06
+
+The pinned Rust 1.93.1 toolchain does not ship the low-tier
+`thumbv7a-uwp-windows-msvc` target component. Using the installed Rust source
+and Visual Studio 2022 x64 MSVC environment, nightly `build-std` checks
+compiled both `wgpu-hal` and the public `wgpu` crate with D3D11 support for
+that target:
+
+~~~powershell
+$buildDir = Join-Path ([System.IO.Path]::GetTempPath()) 'wgpu-fl91-thumbv7a-check'
+$env:CARGO_TARGET_DIR = $buildDir
+& cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cargo +nightly -Z build-std=core,std,panic_abort check --offline -j16 -p wgpu-hal --no-default-features --features dx11 --target thumbv7a-uwp-windows-msvc'
+& cmd.exe /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cargo +nightly -Z build-std=core,std,panic_abort check --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --target thumbv7a-uwp-windows-msvc'
+~~~
+
+Both checks completed successfully; the public check compiled `naga`,
+`wgpu-hal`, `wgpu-core` and `wgpu`. This proves compilation only; package
+deployment and execution on Lumia Windows 10 Mobile hardware remain
+unverified. The ARM32 build used nightly because the pinned stable toolchain
+has no prebuilt target component. Artifacts were isolated in the system temp
+directory. The active branch remained clean at `2deeffc49` during the checks.
+
 ## HWND Present device-loss callback — 2026-11-06
 
 Checkpoint commit: `cb2e06cecae0a2b6dab1622558deb3ef2195dbeb`.
