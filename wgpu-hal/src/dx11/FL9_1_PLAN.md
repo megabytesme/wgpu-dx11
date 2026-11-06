@@ -224,8 +224,10 @@ not a repository artifact.
    Core rejects direct/helper use in selected render and compute entries while
    compiling an implicit-sampling sibling. Continue auditing other core-valid
    operations against the selected FL9_1 compiler.
-   Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
-   equivalent nonzero FL9_1 native mask. Multisampling remains gated.
+   Single-sample output masks now reach D3D11; zero WebGPU masks map to an
+   equivalent nonzero FL9_1 native mask. RGBA8 4x render-and-resolve is
+   available only when selected-device format and sample-count queries
+   positively establish support; multisampled sampling and depth remain gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`
    for NPOT spatial dimensions when more than one mip is requested; the D3D11
    implementation remains POT-only even when the runtime reports full NPOT.

@@ -8,6 +8,7 @@ use windows::Win32::Graphics::{
         D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
         D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL,
         D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_FORMAT_SUPPORT_MIP,
+        D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET, D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE,
         D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
         D3D11_FORMAT_SUPPORT_TEXTURE2D,
     },
@@ -222,7 +223,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
-    pub sample_count: u32,
+    pub rgba8_multisample_resolve: bool,
     pub vertex_buffers: u32,
     pub zero_input_vertex_pipeline: bool,
     pub nonindexed_zero_input_points: bool,
@@ -309,7 +310,7 @@ impl BackendCapabilities {
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
         texture_array_layers: 1,
-        sample_count: 1,
+        rgba8_multisample_resolve: true,
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
         zero_input_vertex_pipeline: true,
         nonindexed_zero_input_points: true,
@@ -648,8 +649,38 @@ impl Capabilities {
             | wgt::TextureUses::COPY_DST
             | wgt::TextureUses::RESOURCE
             | wgt::TextureUses::COLOR_TARGET;
-        if usage.is_empty() || !allowed.contains(usage) {
+        let transient_msaa_target =
+            samples == 4 && usage == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT);
+        if usage.is_empty() || !(allowed.contains(usage) || transient_msaa_target) {
             return Err(UnsupportedUsage);
+        }
+        let samples_supported = match samples {
+            1 => true,
+            4 => {
+                format == wgt::TextureFormat::Rgba8Unorm
+                    && (usage == wgt::TextureUses::COLOR_TARGET
+                        || usage == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+                    && layers == 1
+                    && mips == 1
+                    && self.backend.rgba8_multisample_resolve
+                    && matches!(self.driver.rgba8_samples_4, Query::Value(levels) if levels > 0)
+                    && matches!(
+                        self.driver.rgba8,
+                        Query::Value(bits)
+                            if bits & (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+                                | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+                                | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32
+                                == (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                                    | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32
+                    )
+            }
+            _ => false,
+        };
+        if !samples_supported {
+            return Err(UnsupportedShape);
         }
         if format == wgt::TextureFormat::R8Unorm && !self.hardware.r8_unorm_sampled_texture
             || format == wgt::TextureFormat::Rg8Snorm && !self.hardware.rg8_snorm_sampled_texture
@@ -737,7 +768,6 @@ impl Capabilities {
             || extent[1] > self.hardware.texture_2d_dimension
             || layers != self.backend.texture_array_layers
             || mips == 0
-            || samples != self.backend.sample_count
         {
             return Err(UnsupportedShape);
         }
@@ -998,6 +1028,13 @@ impl Capabilities {
         {
             result |= Caps::COLOR_ATTACHMENT_BLEND;
         }
+        if format == wgt::TextureFormat::Rgba8Unorm
+            && self
+                .check_private_texture_2d(format, wgt::TextureUses::COLOR_TARGET, [8, 8], 1, 1, 4)
+                .is_ok()
+        {
+            result |= Caps::MULTISAMPLE_X4 | Caps::MULTISAMPLE_RESOLVE;
+        }
         result
     }
 }
@@ -1110,6 +1147,68 @@ mod tests {
             wgt::TextureFormat::Rgb5a1Unorm => caps.driver.rgb5551_unorm = query,
             wgt::TextureFormat::Rgba4Unorm => caps.driver.rgba4444_unorm = query,
             _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn rgba8_multisample_resolve_requires_all_optional_evidence() {
+        let usage = wgt::TextureUses::COLOR_TARGET;
+        let supported = model(FeatureLevel::L9_1);
+        assert!(supported
+            .check_private_texture_2d(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 1, 1, 4,)
+            .is_ok());
+        assert!(supported
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+
+        for query in [Query::Unavailable(-1), Query::Value(0)] {
+            let mut caps = supported;
+            caps.driver.rgba8_samples_4 = query;
+            assert!(caps
+                .check_private_texture_2d(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 1, 1, 4,)
+                .is_err());
+            assert!(!caps
+                .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+                .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+        }
+
+        for missing in [
+            D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0 as u32,
+            D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0 as u32,
+        ] {
+            let mut caps = supported;
+            caps.driver.rgba8 = Query::Value(!missing);
+            assert!(caps
+                .check_private_texture_2d(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 1, 1, 4,)
+                .is_err());
+        }
+
+        let mut backend_disabled = supported;
+        backend_disabled.backend.rgba8_multisample_resolve = false;
+        assert!(backend_disabled
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .intersection(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE)
+            .is_empty());
+        for invalid in [
+            (
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+                4,
+                1,
+            ),
+            (usage, 2, 1),
+            (usage, 4, 2),
+            (usage, 4, 4),
+        ] {
+            assert!(supported
+                .check_private_texture_2d(
+                    wgt::TextureFormat::Rgba8Unorm,
+                    invalid.0,
+                    [8, 8],
+                    1,
+                    invalid.2,
+                    invalid.1,
+                )
+                .is_err());
         }
     }
 
@@ -1529,6 +1628,17 @@ mod tests {
             identity.device_id,
             identity.software,
             native.feature_level()
+        );
+        std::println!(
+            "FL9_1 RGBA8 MSAA query: quality_levels={:?}; format_support={:?}; projected={:?}; multisample_texture_bindings={}",
+            caps.driver.rgba8_samples_4,
+            caps.driver.rgba8,
+            caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm),
+            projection
+                .capabilities
+                .downlevel
+                .limits
+                .multisampled_texture_bindings
         );
         std::println!(
             "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG8_UNORM={:?}; RG16_SNORM={:?}; BC1={:?}; D16_UNORM={:?} projected={:?}",

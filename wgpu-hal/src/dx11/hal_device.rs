@@ -253,7 +253,14 @@ impl crate::Device for Device {
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || !desc.size.width.is_power_of_two()
                     || !desc.size.height.is_power_of_two()))
-            || desc.sample_count != 1
+            || !matches!(desc.sample_count, 1 | 4)
+            || (desc.sample_count == 4
+                && (depth
+                    || desc.format != wgt::TextureFormat::Rgba8Unorm
+                    || (desc.usage != wgt::TextureUses::COLOR_TARGET
+                        && desc.usage
+                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+                    || desc.mip_level_count != 1))
             || desc.size.width == 0
             || desc.size.height == 0
             || desc.size.width
@@ -330,6 +337,18 @@ impl crate::Device for Device {
             wgt::TextureFormat::Rgba4Unorm => DXGI_FORMAT_B4G4R4A4_UNORM,
             _ => return Err(DeviceError::Unexpected),
         };
+        if desc.sample_count == 4 {
+            super::capabilities::Capabilities::query(&self.native)
+                .check_private_texture_2d(
+                    desc.format,
+                    desc.usage,
+                    [desc.size.width, desc.size.height],
+                    1,
+                    desc.mip_level_count,
+                    desc.sample_count,
+                )
+                .map_err(|_| DeviceError::Unexpected)?;
+        }
         let support =
             unsafe { self.native.raw_device().CheckFormatSupport(format) }.map_err(device_error)?;
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
@@ -356,7 +375,7 @@ impl crate::Device for Device {
         }
         let mut texture = self
             .native
-            .create_color_texture_inner(
+            .create_color_texture_inner_with_samples(
                 desc.size.width,
                 desc.size.height,
                 desc.mip_level_count,
@@ -364,8 +383,16 @@ impl crate::Device for Device {
                 desc.usage
                     .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
                 format,
+                desc.sample_count,
             )
             .map_err(device_error)?;
+        if desc.sample_count == 4 {
+            self.native
+                .clear_multisampled_color_texture(&texture)
+                .map_err(device_error)?;
+            texture.set_usage(desc.usage);
+            return Ok(texture);
+        }
         let block_bytes = desc
             .format
             .block_copy_size(None)
@@ -505,7 +532,15 @@ impl crate::Device for Device {
                         .is_full_resource(format, native.MipLevels, native.ArraySize)
             })
             || native.ArraySize != 1
-            || native.SampleDesc.Count != 1
+            || !matches!(native.SampleDesc.Count, 1 | 4)
+            || (native.SampleDesc.Count == 4
+                && (format != wgt::TextureFormat::Rgba8Unorm
+                    || (desc.usage != wgt::TextureUses::COLOR_TARGET
+                        && desc.usage
+                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+                    || resource
+                    || depth
+                    || native.MipLevels != 1))
             || (resource && native.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 == 0)
             || (target && native.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0)
             || (depth && native.BindFlags & D3D11_BIND_DEPTH_STENCIL.0 as u32 == 0)

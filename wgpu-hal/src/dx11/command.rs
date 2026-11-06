@@ -23,10 +23,11 @@ use windows::{
             Direct3D11::{
                 ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
                 ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11VertexShader, D3D11_BOX, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL,
-                D3D11_VIEWPORT,
+                ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
+                ID3D11ShaderResourceView, ID3D11VertexShader, D3D11_BOX, D3D11_CLEAR_DEPTH,
+                D3D11_CLEAR_STENCIL, D3D11_VIEWPORT,
             },
+            Dxgi::Common::DXGI_FORMAT,
         },
     },
 };
@@ -44,6 +45,13 @@ pub(super) struct DepthAttachment {
     pub format: wgt::TextureFormat,
     pub clear_depth: Option<f32>,
     pub clear_stencil: Option<u8>,
+}
+
+#[derive(Debug)]
+pub(super) struct ResolveOperation {
+    pub source: ID3D11Resource,
+    pub destination: ID3D11Resource,
+    pub format: DXGI_FORMAT,
 }
 
 #[derive(Debug)]
@@ -269,7 +277,9 @@ pub(super) enum NativeCommand {
         instances: u32,
         instance_bindings: InstanceBindings,
     },
-    EndRender,
+    EndRender {
+        resolve: Option<ResolveOperation>,
+    },
 }
 
 pub(super) fn draw_batches(
@@ -957,7 +967,18 @@ impl CommandBuffer {
                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
                         result?;
                     }
-                    NativeCommand::EndRender => context.ClearState(),
+                    NativeCommand::EndRender { resolve } => {
+                        context.ClearState();
+                        if let Some(resolve) = resolve {
+                            context.ResolveSubresource(
+                                &resolve.destination,
+                                0,
+                                &resolve.source,
+                                0,
+                                resolve.format,
+                            );
+                        }
+                    }
                 }
             }
         }

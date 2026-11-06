@@ -1149,16 +1149,16 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             view_formats: &[],
         }));
     });
-    expect_validation_error(&device, "four-sample color texture creation", || {
+    expect_validation_error(&device, "two-sample color texture creation", || {
         drop(device.create_texture(&TextureDescriptor {
-            label: Some("unsupported public FL9_1 multisampled texture"),
+            label: Some("unsupported public FL9_1 two-sample texture"),
             size: Extent3d {
                 width: 8,
                 height: 8,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 2,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba8Unorm,
             usage: TextureUsages::RENDER_ATTACHMENT,
@@ -13266,4 +13266,350 @@ fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     }
     readback.unmap();
     println!("PASS: twelve sparse dynamic uniforms (six vertex, six fragment) used distinct nonzero subranges and changed output across two draws; 64/64 pixels validated on the FL9_1 hardware adapter");
+}
+
+#[test]
+fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical D3D11 adapter for FL9_1 multisample resolve");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let format_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; RGBA8 features={:?}",
+        info.name, info.vendor, info.device, info.driver_info, format_features
+    );
+    if !format_features.flags.contains(
+        TextureFormatFeatureFlags::MULTISAMPLE_X4 | TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE,
+    ) {
+        assert!(
+            !required,
+            "strict mode requires the physical FL9_1 device to support RGBA8 4x render and resolve"
+        );
+        println!("SKIP: selected FL9_1 device does not report RGBA8 4x render and resolve support");
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 multisample resolve"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within its FL9_1 capability projection");
+    let msaa = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 four-sample RGBA8 source"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 4,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
+        view_formats: &[],
+    });
+    let resolved = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 single-sample RGBA8 resolve target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let msaa_view = msaa.create_view(&TextureViewDescriptor::default());
+    let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 resolved image readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 multisample triangle shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 four-sample triangle pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState {
+            count: 4,
+            ..Default::default()
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let positions = [-1.0f32, -1.0, 1.0, -1.0, -1.0, 1.0];
+    let vertex_bytes: Vec<u8> = positions.into_iter().flat_map(f32::to_ne_bytes).collect();
+    let vertices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 multisample triangle vertices"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertices, 0, &vertex_bytes);
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 multisample render and resolve"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 four-sample triangle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &msaa_view,
+                depth_slice: None,
+                resolve_target: Some(&resolved_view),
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Discard,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertices.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &resolved,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 multisample render and resolve");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("multisample resolve readback callback")
+        .expect("map multisample resolve readback");
+    let mut covered = 0;
+    let mut clear = 0;
+    let mut edge = 0;
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped resolved pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &data[offset..offset + 4];
+                assert_eq!(pixel[1], 0, "resolved green channel at ({x}, {y})");
+                assert_eq!(pixel[3], 255, "resolved alpha channel at ({x}, {y})");
+                assert!(
+                    (i16::from(pixel[0]) + i16::from(pixel[2]) - 255).abs() <= 1,
+                    "resolved red/blue coverage at ({x}, {y}): {pixel:?}"
+                );
+                if pixel[0] == 255 {
+                    covered += 1;
+                } else if pixel[0] == 0 {
+                    clear += 1;
+                } else {
+                    edge += 1;
+                }
+            }
+        }
+    }
+    readback.unmap();
+    assert!(
+        covered >= 8,
+        "expected triangle interior, got {covered} pixels"
+    );
+    assert!(
+        clear >= 8,
+        "expected cleared pixels outside triangle, got {clear}"
+    );
+    assert!(edge > 0, "expected resolved partial-coverage edge pixels");
+    let masked_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 four-sample zero-mask pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState {
+            count: 4,
+            mask: 0,
+            ..Default::default()
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mut masked_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 multisample zero-mask validation"),
+    });
+    {
+        let mut pass = masked_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 four-sample zero-mask pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &msaa_view,
+                depth_slice: None,
+                resolve_target: Some(&resolved_view),
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Discard,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&masked_pipeline);
+        pass.set_vertex_buffer(0, vertices.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    masked_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &resolved,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([masked_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 four-sample zero-mask render and resolve");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("zero-mask resolve readback callback")
+        .expect("map zero-mask resolve readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped zero-mask resolved pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(&data[offset..offset + 4], &[0, 0, 255, 255]);
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: FL9_1 RGBA8 4x rasterization and resolve checked 64 pixels ({covered} full triangle, {edge} partial coverage, {clear} clear), then the 4x zero sample-mask draw preserved all 64 blue clear pixels");
 }

@@ -14,9 +14,9 @@ use windows::{
                 D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
                 D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC,
                 D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RTV_DIMENSION_TEXTURE2D,
-                D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-                D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
-                D3D11_USAGE_STAGING,
+                D3D11_RTV_DIMENSION_TEXTURE2DMS, D3D11_SHADER_RESOURCE_VIEW_DESC,
+                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2DMS_RTV, D3D11_TEX2D_RTV,
+                D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -569,7 +569,13 @@ impl NativeDevice {
             || view.mip_base >= desc.MipLevels
             || view.mip_base >= u32::BITS
             || desc.ArraySize != 1
-            || desc.SampleDesc.Count != 1
+            || !matches!(desc.SampleDesc.Count, 1 | 4)
+            || (desc.SampleDesc.Count == 4
+                && (format != wgt::TextureFormat::Rgba8Unorm
+                    || (view.usage != wgt::TextureUses::COLOR_TARGET
+                        && view.usage
+                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+                    || desc.MipLevels != 1))
         {
             return Err(invalid());
         }
@@ -581,6 +587,25 @@ impl NativeDevice {
                 (desc.Height >> view.mip_base).max(1),
             ],
         ))
+    }
+
+    pub(super) fn render_target_sample_count(&self, view: &NativeTextureView) -> Result<u32> {
+        if view.owner.as_raw() != self.raw_device().as_raw()
+            || view.render_target.is_none()
+            || !view.usage.contains(wgt::TextureUses::COLOR_TARGET)
+        {
+            return Err(invalid());
+        }
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { view.texture.GetDesc(&mut desc) };
+        if !matches!(desc.SampleDesc.Count, 1 | 4)
+            || (desc.SampleDesc.Count == 4
+                && view.usage != wgt::TextureUses::COLOR_TARGET
+                && view.usage != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+        {
+            return Err(invalid());
+        }
+        Ok(desc.SampleDesc.Count)
     }
 
     /// Allocate an uninitialized 2D RGBA8 texture, with explicit mips and layers.
@@ -621,6 +646,28 @@ impl NativeDevice {
         layers: u32,
         render_target: bool,
         format: DXGI_FORMAT,
+    ) -> Result<NativeTexture> {
+        self.create_color_texture_inner_with_samples(
+            width,
+            height,
+            mip_levels,
+            layers,
+            render_target,
+            format,
+            1,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn create_color_texture_inner_with_samples(
+        &self,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+        layers: u32,
+        render_target: bool,
+        format: DXGI_FORMAT,
+        sample_count: u32,
     ) -> Result<NativeTexture> {
         let rgba_bgra = matches!(
             format,
@@ -664,6 +711,17 @@ impl NativeDevice {
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
             || !(rgba_bgra || uncompressed_sampled || bc1_sampled)
+            || (sample_count != 1
+                && !(sample_count == 4
+                    && mip_levels == 1
+                    && layers == 1
+                    && render_target
+                    && format == DXGI_FORMAT_R8G8B8A8_UNORM
+                    && unsafe {
+                        self.raw_device()
+                            .CheckMultisampleQualityLevels(format, sample_count)
+                            .is_ok_and(|levels| levels > 0)
+                    }))
         {
             return Err(invalid());
         }
@@ -674,16 +732,19 @@ impl NativeDevice {
             ArraySize: layers,
             Format: format,
             SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
+                Count: sample_count,
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: (D3D11_BIND_SHADER_RESOURCE.0
-                | if render_target {
-                    D3D11_BIND_RENDER_TARGET.0
-                } else {
-                    0
-                }) as u32,
+            BindFlags: ((if sample_count == 1 {
+                D3D11_BIND_SHADER_RESOURCE.0
+            } else {
+                0
+            }) | if render_target {
+                D3D11_BIND_RENDER_TARGET.0
+            } else {
+                0
+            }) as u32,
             ..Default::default()
         };
         let mut raw = None;
@@ -723,6 +784,29 @@ impl NativeDevice {
                     }
             },
         })
+    }
+
+    pub(super) fn clear_multisampled_color_texture(&self, texture: &NativeTexture) -> Result<()> {
+        self.check_texture_owner(texture)?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { texture.raw.GetDesc(&mut desc) };
+        if desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || desc.SampleDesc.Count != 4
+            || desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || desc.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0
+        {
+            return Err(invalid());
+        }
+        let mut view = None;
+        unsafe {
+            self.raw_device()
+                .CreateRenderTargetView(&texture.raw, None, Some(&mut view))?;
+        }
+        let view = view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let context = self.immediate_context();
+        unsafe { context.ClearRenderTargetView(&view, &[0.0; 4]) };
+        Ok(())
     }
 
     /// Create a single-layer, single-mip RGBA8 texture with a render-target view.
@@ -866,12 +950,25 @@ impl NativeDevice {
             if render_target {
                 let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
                 texture.raw.GetDesc(&mut texture_desc);
-                let target_desc = D3D11_RENDER_TARGET_VIEW_DESC {
-                    Format: texture_desc.Format,
-                    ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
-                    Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
-                        Texture2D: D3D11_TEX2D_RTV { MipSlice: mip_base },
-                    },
+                let target_desc = if texture_desc.SampleDesc.Count > 1 {
+                    if resource || depth_stencil || mip_base != 0 || mip_count != 1 {
+                        return Err(invalid());
+                    }
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: texture_desc.Format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2DMS,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2DMS: D3D11_TEX2DMS_RTV::default(),
+                        },
+                    }
+                } else {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: texture_desc.Format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_RTV { MipSlice: mip_base },
+                        },
+                    }
                 };
                 self.raw_device().CreateRenderTargetView(
                     &texture.raw,

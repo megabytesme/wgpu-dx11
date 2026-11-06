@@ -39,7 +39,7 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 ```
 
 The same strict public test submits unsupported descriptors under validation
-error scopes: 3D textures, 4x multisampled color textures, `R32Float` sampled
+error scopes: 3D textures, 2x multisampled color textures, `R32Float` sampled
 textures, two-mip D24S8 attachments, vertex-visible storage-buffer layouts and
 `D2Array` sampled-texture layouts. Each must return
 `wgpu::Error::Validation`, confirming the public capability projection rejects
@@ -2215,11 +2215,42 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 The first test checks production mask translation, including high-only `u64`
 masks. The strict core fixture requested and selected FL9_1 on the RTX 3090 Ti;
 its `mask = 0` pipeline preserved all 64 blue clear pixels. FL9_1 forbids a
-zero native `SampleMask`, so the backend passes `0xffff_fffe`; with one active
-sample this retains the zero-mask result. Multisampling and alpha-to-coverage
-remain unsupported. See [OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
+zero native `SampleMask`, so the backend passes `0xffff_fffe` for single-sample
+rendering. For 4x rendering it passes `0xffff_fff0`, leaving all four sample
+bits disabled; the strict public test verified all 64 pixels remained at the
+blue clear value after resolve. Only the optional query-gated 4x RGBA8
+render-and-resolve path is supported; multisampled sampling/depth, other sample
+counts/formats and alpha-to-coverage remain unsupported. See
+[OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
 and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpumultisamplestate).
 
+### Query-gated 4x RGBA8 render and resolve
+
+The FL9_1 feature level does not guarantee multisampling. The selected device
+must report a positive `CheckMultisampleQualityLevels(RGBA8_UNORM, 4)` result
+and `CheckFormatSupport` must include `TEXTURE2D`, `RENDER_TARGET`,
+`MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE`. Otherwise the format does
+not report `MULTISAMPLE_X4` or `MULTISAMPLE_RESOLVE`, and public core rejects
+4x allocation. The HAL supports a single-mip, single-layer RGBA8 4x color
+attachment and a same-sized single-sample RGBA8 resolve destination. It does
+not support multisampled sampling, depth, other sample counts/formats or
+alpha-to-coverage.
+
+On the RTX 3090 Ti forced to FL9_1, the quality-level query returned 1 and the
+RGBA8 format mask was `0x312ef3e2`. The strict public triangle resolved to a
+single-sample texture, and readback checked all 64 pixels: 28 full red triangle,
+8 partial-coverage red/blue resolve values and 28 clear blue pixels.
+This is optional selected-device evidence from a modern GPU, not a FL9_1
+hardware guarantee.
+
+The same strict run then cleared the multisampled target blue, rendered with a
+zero WebGPU sample mask and resolved again; all 64 pixels remained exactly
+`[0, 0, 255, 255]`.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1
+```
 ### Storage buffer validation boundary
 
 The controlled core fixture verifies that a buffer with `STORAGE | COPY_SRC |

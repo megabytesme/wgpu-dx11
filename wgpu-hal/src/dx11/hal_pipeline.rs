@@ -291,10 +291,13 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
     }
 }
 
-fn native_sample_mask(mask: u64, level: FeatureLevel) -> u32 {
+fn native_sample_mask(mask: u64, level: FeatureLevel, sample_count: u32) -> u32 {
     let native_mask = mask as u32;
     if level == FeatureLevel::L9_1 && native_mask == 0 {
-        !1
+        !match sample_count {
+            4 => 0b1111,
+            _ => 1,
+        }
     } else {
         native_mask
     }
@@ -576,6 +579,7 @@ pub struct RenderPipeline {
     pub(super) stencil_write: bool,
     pub(super) depth_never: bool,
     pub(super) sample_mask: u32,
+    pub(super) sample_count: u32,
     pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
@@ -730,18 +734,30 @@ mod tests {
         use super::native_sample_mask;
         use crate::dx11::FeatureLevel;
 
-        assert_eq!(native_sample_mask(0, FeatureLevel::L9_1), u32::MAX - 1);
-        assert_eq!(native_sample_mask(1, FeatureLevel::L9_1), 1);
+        assert_eq!(native_sample_mask(0, FeatureLevel::L9_1, 1), u32::MAX - 1);
+        assert_eq!(native_sample_mask(1, FeatureLevel::L9_1, 1), 1);
         assert_eq!(
-            native_sample_mask(0x8000_0000, FeatureLevel::L9_1),
+            native_sample_mask(0x8000_0000, FeatureLevel::L9_1, 1),
             0x8000_0000
         );
         assert_eq!(
-            native_sample_mask(1 << 32, FeatureLevel::L9_1),
+            native_sample_mask(1 << 32, FeatureLevel::L9_1, 1),
             u32::MAX - 1
         );
-        assert_eq!(native_sample_mask(u64::MAX, FeatureLevel::L9_1), u32::MAX);
-        assert_eq!(native_sample_mask(0, FeatureLevel::L9_2), 0);
+        assert_eq!(
+            native_sample_mask(0, FeatureLevel::L9_1, 4),
+            u32::MAX - 0x0f
+        );
+        assert_eq!(
+            native_sample_mask(1 << 32, FeatureLevel::L9_1, 4),
+            u32::MAX - 0x0f
+        );
+        assert_eq!(native_sample_mask(0x10, FeatureLevel::L9_1, 4), 0x10);
+        assert_eq!(
+            native_sample_mask(u64::MAX, FeatureLevel::L9_1, 4),
+            u32::MAX
+        );
+        assert_eq!(native_sample_mask(0, FeatureLevel::L9_2, 1), 0);
     }
 
     #[test]
@@ -2211,7 +2227,7 @@ mod tests {
         unsafe {
             device.destroy_shader_module(primitive_shader);
         }
-        desc.multisample.count = 4;
+        desc.multisample.count = 2;
         assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
         assert!(Arc::ptr_eq(&pipeline.owner, &native));
         assert_eq!(pipeline.target_format, Some(wgt::TextureFormat::Rgba8Unorm));
@@ -2659,7 +2675,7 @@ impl RenderPipeline {
                 strip_index_format: None,
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
-            || desc.multisample.count != 1
+            || !matches!(desc.multisample.count, 1 | 4)
             || desc.multisample.alpha_to_coverage_enabled
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
@@ -2682,6 +2698,22 @@ impl RenderPipeline {
                 )
             })
             || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
+        {
+            return Err(invalid());
+        }
+        if desc.multisample.count == 4
+            && (target.is_none_or(|target| target.format != wgt::TextureFormat::Rgba8Unorm)
+                || desc.depth_stencil.is_some()
+                || super::capabilities::Capabilities::query(owner)
+                    .check_private_texture_2d(
+                        wgt::TextureFormat::Rgba8Unorm,
+                        wgt::TextureUses::COLOR_TARGET,
+                        [8, 8],
+                        1,
+                        1,
+                        4,
+                    )
+                    .is_err())
         {
             return Err(invalid());
         }
@@ -2990,6 +3022,7 @@ impl RenderPipeline {
             DepthBias: depth_bias.0,
             SlopeScaledDepthBias: depth_bias.1,
             DepthClipEnable: true.into(),
+            MultisampleEnable: (desc.multisample.count > 1).into(),
             ScissorEnable: true.into(),
             ..Default::default()
         };
@@ -3079,7 +3112,12 @@ impl RenderPipeline {
                 .is_some_and(|state| state.depth_write_enabled.unwrap_or(false)),
             stencil_write,
             depth_never,
-            sample_mask: native_sample_mask(desc.multisample.mask, owner.feature_level()),
+            sample_mask: native_sample_mask(
+                desc.multisample.mask,
+                owner.feature_level(),
+                desc.multisample.count,
+            ),
+            sample_count: desc.multisample.count,
             target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),

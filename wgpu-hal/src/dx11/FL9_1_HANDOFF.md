@@ -1791,6 +1791,19 @@ explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
 
+## Current increment — query-gated 4x RGBA8 resolve
+
+The current working tree adds a selected-device-query-gated FL9_1 4x RGBA8
+render-and-resolve path, leaving multisampled sampling/depth and other sample
+counts unsupported. Strict readback on the RTX 3090 Ti at requested/actual
+FL9_1 checked 64 triangle-coverage pixels and 64 blue clear pixels after a
+zero-mask draw. HAL passed 364 tests, public D3D11 passed 45 and the core
+fixture passed 94; the core DX12 regression suite passed 90. See the matching
+follow-up entry in `FL9_1_PROGRESS.md` and the capability/test documentation.
+After targeted Clippy, formatting and diff checks, checkpoint this increment
+and continue the capability/core/HAL contract audit. Older FL9_1 devices and
+ARM32 UWP remain unverified.
+
 ## Latest code checkpoint — query-gated narrow-format blending — `3774c7a2e`
 
 The selected-device format projection now reports `COLOR_ATTACHMENT_BLEND`

@@ -2,7 +2,10 @@
 #![allow(unused_variables)]
 
 use super::{
-    command::{CommandBuffer, DepthAttachment, InstanceBindings, NativeCommand, RenderTarget},
+    command::{
+        CommandBuffer, DepthAttachment, InstanceBindings, NativeCommand, RenderTarget,
+        ResolveOperation,
+    },
     device::NativeDevice,
     Api as Dx11Api,
 };
@@ -17,6 +20,7 @@ use core::{
     ops::Range,
     time::Duration,
 };
+use windows::core::Interface;
 
 /// Recorder for the operations exposed by the opt-in FL9_1 adapter projection.
 #[derive(Debug)]
@@ -34,7 +38,9 @@ struct RenderState {
     depth_format: Option<wgt::TextureFormat>,
     depth_stencil_read_only: bool,
     extent: [u32; 2],
+    sample_count: u32,
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
+    resolve: Option<ResolveOperation>,
     target_mip: Option<u32>,
     pipeline: bool,
     // Draw elision requires inert stencil, read-only shader resources, and no queries.
@@ -725,15 +731,17 @@ impl crate::CommandEncoder for CommandEncoder {
         if self.recording.is_none()
             || self.render.is_some()
             || self.compute
-            || desc.sample_count != 1
+            || !matches!(desc.sample_count, 1 | 4)
             || desc.multiview_mask.is_some()
             || desc.timestamp_writes.is_some()
             || desc.occlusion_query_set.is_some()
             || color.is_some_and(|color| {
                 color.depth_slice.is_some()
-                    || color.resolve_target.is_some()
-                    || color.target.usage != wgt::TextureUses::COLOR_TARGET
+                    || (color.target.usage != wgt::TextureUses::COLOR_TARGET
+                        && color.target.usage
+                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
             })
+            || (desc.sample_count == 1 && color.is_some_and(|color| color.resolve_target.is_some()))
             || desc.extent.width == 0
             || desc.extent.height == 0
             || desc.extent.width > i32::MAX as u32
@@ -759,6 +767,17 @@ impl crate::CommandEncoder for CommandEncoder {
             (Some(target), Some(format))
         } else {
             (None, None)
+        };
+        let target_sample_count = if let Some(color) = color {
+            match self.device.render_target_sample_count(color.target.view) {
+                Ok(sample_count) if sample_count == desc.sample_count => sample_count,
+                _ => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            }
+        } else {
+            1
         };
         let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
             let (view, format, size) = match self
@@ -809,6 +828,10 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
+            if desc.sample_count != 1 {
+                self.reject();
+                return Err(DeviceError::Unexpected);
+            }
             Some(DepthAttachment {
                 view,
                 format,
@@ -822,6 +845,66 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return Err(DeviceError::Unexpected);
         }
+        let resolve = if let Some(attachment) =
+            color.and_then(|color| color.resolve_target.as_ref())
+        {
+            let Some(source_view) = target.as_ref() else {
+                self.reject();
+                return Err(DeviceError::Unexpected);
+            };
+            let (resolve_view, resolve_format, resolve_size) =
+                match self.device.render_target_view(attachment.view) {
+                    Ok(info) => info,
+                    Err(_) => {
+                        self.reject();
+                        return Err(DeviceError::Unexpected);
+                    }
+                };
+            let resolve_samples = match self.device.render_target_sample_count(attachment.view) {
+                Ok(sample_count) => sample_count,
+                Err(_) => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
+            if target_sample_count != 4
+                || resolve_samples != 1
+                || (attachment.usage != wgt::TextureUses::COLOR_TARGET
+                    && attachment.usage
+                        != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+                || format != Some(resolve_format)
+                || resolve_size != extent
+                || resolve_format != wgt::TextureFormat::Rgba8Unorm
+            {
+                self.reject();
+                return Err(DeviceError::Unexpected);
+            }
+            let source = match unsafe { source_view.GetResource() } {
+                Ok(resource) => resource,
+                Err(error) => {
+                    self.reject();
+                    return Err(super::hal_device::device_error(error));
+                }
+            };
+            let destination = match unsafe { resolve_view.GetResource() } {
+                Ok(resource) => resource,
+                Err(error) => {
+                    self.reject();
+                    return Err(super::hal_device::device_error(error));
+                }
+            };
+            if source.as_raw() == destination.as_raw() {
+                self.reject();
+                return Err(DeviceError::Unexpected);
+            }
+            Some(ResolveOperation {
+                source,
+                destination,
+                format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+            })
+        } else {
+            None
+        };
         let viewport_buffer = match self.viewport_buffer() {
             Ok(buffer) => buffer,
             Err(error) => {
@@ -836,7 +919,9 @@ impl crate::CommandEncoder for CommandEncoder {
                 |attachment| attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ,
             ),
             extent,
+            sample_count: desc.sample_count,
             target: target.clone(),
+            resolve,
             target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
             depth_never: false,
@@ -878,11 +963,13 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn end_render_pass(&mut self) {
-        if self.render.take().is_none() {
+        let Some(render) = self.render.take() else {
             self.reject();
             return;
-        }
-        self.record(NativeCommand::EndRender);
+        };
+        self.record(NativeCommand::EndRender {
+            resolve: render.resolve,
+        });
     }
 
     unsafe fn set_render_pipeline(&mut self, pipeline: &<Self::A as Api>::RenderPipeline) {
@@ -892,6 +979,7 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         if !Arc::ptr_eq(&pipeline.owner, &self.device)
             || pipeline.target_format != render.format
+            || pipeline.sample_count != render.sample_count
             || pipeline.depth_format != render.depth_format
             || (render.depth_stencil_read_only && (pipeline.depth_write || pipeline.stencil_write))
         {
@@ -2153,8 +2241,14 @@ mod tests {
                     1
                 )
                 .is_ok());
-            assert!(caps
-                .check_private_texture_2d(
+            let multisample_caps = caps
+                .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+                .contains(
+                    TextureFormatCapabilities::MULTISAMPLE_X4
+                        | TextureFormatCapabilities::MULTISAMPLE_RESOLVE,
+                );
+            assert_eq!(
+                caps.check_private_texture_2d(
                     wgt::TextureFormat::Rgba8Unorm,
                     wgt::TextureUses::COLOR_TARGET,
                     [8, 8],
@@ -2162,7 +2256,9 @@ mod tests {
                     1,
                     4
                 )
-                .is_err());
+                .is_ok(),
+                multisample_caps
+            );
             gpu_started.store(true, core::sync::atomic::Ordering::Relaxed);
             indexed_triangle(native)?;
             Ok(true)
@@ -2247,7 +2343,7 @@ mod tests {
         assert!(unsafe { crate::Device::create_texture(&device, &unsupported) }.is_err());
         let unsupported = TextureDescriptor {
             format: wgt::TextureFormat::Rgba8Unorm,
-            sample_count: 4,
+            sample_count: 2,
             ..unsupported
         };
         assert!(unsafe { crate::Device::create_texture(&device, &unsupported) }.is_err());

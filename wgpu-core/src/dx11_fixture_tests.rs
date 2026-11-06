@@ -696,12 +696,19 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         return;
     }
     assert_eq!(
-        rgba_caps & !hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND,
+        rgba_caps
+            & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X4
+                | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE),
         hal::TextureFormatCapabilities::COLOR_ATTACHMENT
             | hal::TextureFormatCapabilities::COPY_SRC
             | hal::TextureFormatCapabilities::COPY_DST
             | hal::TextureFormatCapabilities::SAMPLED
             | hal::TextureFormatCapabilities::SAMPLED_LINEAR
+    );
+    assert_eq!(
+        rgba_caps.contains(hal::TextureFormatCapabilities::MULTISAMPLE_X4),
+        rgba_caps.contains(hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE)
     );
     let rgba_mips = fixture
         .test_fixture_copy_only_rgba8_mip_supported()
@@ -717,8 +724,14 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         std::println!("SKIP: BGRA8 fixture capabilities unavailable");
     } else {
         assert_eq!(
-            bgra_caps & !hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND,
-            rgba_caps & !hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
+            bgra_caps
+                & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
+                    | hal::TextureFormatCapabilities::MULTISAMPLE_X4
+                    | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE),
+            rgba_caps
+                & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
+                    | hal::TextureFormatCapabilities::MULTISAMPLE_X4
+                    | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE)
         );
     }
     let bgra_mips = if bgra_caps.is_empty() {
@@ -1638,18 +1651,14 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         wgt::TextureFormat::Rgba8Unorm,
         wgt::TextureUsages::RENDER_ATTACHMENT,
     );
-    multisampled.sample_count = 4;
+    multisampled.sample_count = 2;
     let (texture, error) = global.device_create_texture(device, &multisampled, None);
     assert!(
         matches!(
             error.as_ref(),
-            Some(
-                crate::resource::CreateTextureError::InvalidMultisampledFormat(
-                    wgt::TextureFormat::Rgba8Unorm
-                )
-            )
+            Some(crate::resource::CreateTextureError::InvalidSampleCount(..))
         ),
-        "unsupported multisampling must fail core validation: {error:?}"
+        "unsupported two-sample allocation must fail core validation: {error:?}"
     );
     global.texture_drop(texture);
     let invalid_usage = wgt::TextureUsages::TRANSIENT_ATTACHMENT

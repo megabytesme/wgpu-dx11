@@ -7416,3 +7416,48 @@ correction, capability documentation and changelog entry. The tree was clean
 after that commit. Continue the broader core/HAL contract audit; the public
 backend remains experimental, and historical FL9_1 devices and ARM32 UWP
 remain unverified.
+
+## Follow-up — optional FL9_1 RGBA8 multisample resolve
+
+The public capability projection and private HAL now allow one narrowly
+scoped 4x RGBA8 render-target path when the selected device positively reports
+both a nonzero `CheckMultisampleQualityLevels(RGBA8_UNORM, 4)` result and the
+required texture, render-target, multisample-render-target and resolve format
+bits. The 4x resource is single-mip, single-layer, color-target-only (it may
+also be transient); it resolves to a same-sized, single-sample RGBA8 target.
+FL9_1 does not guarantee this support, so other devices continue to see the
+capability as unavailable. Multisampled sampling, depth, other counts/formats
+and alpha-to-coverage remain unsupported.
+
+On the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), explicitly requested and actual FL9_1, the
+quality-level count was 1 and RGBA8 `CheckFormatSupport` returned `0x312ef3e2`.
+The strict public test rasterized a triangle into a transient 8x8 4x target,
+resolved it, and checked all 64 pixels: 28 full red coverage, 8 partial
+red/blue coverage and 28 blue clear pixels. A second zero-sample-mask draw
+resolved all 64 exact blue clear pixels, verifying the FL9_1 nonzero native
+sample-mask workaround for 4x targets.
+
+Verification used Rust 1.93.1 through the installed `+1.93` toolchain alias,
+Visual Studio x64 tools and bounded Cargo parallelism:
+
+- D3D11 HAL `cargo check`: passed.
+- Strict private D3D11 HAL suite: 364/364 passed on the selected physical
+  device; unsupported shader subcases remain intentionally rejected.
+- Strict public D3D11 suite: 45/45 passed on hardware, including the new
+  4x render/resolve test. One optional Float16x2 vertex-input subcase was
+  skipped because the selected format was not reported for vertex buffers.
+- Strict core fixture suite: 94/94 passed, including public adapter creation,
+  selected-device format projection and rendering.
+- Core DX12 regression suite: 90/90 passed.
+- Strict 4x public test: 1/1 passed with the pixel breakdown above.
+- Targeted core fixture: passed after updating the expected unsupported
+  sample-count error from 4x to 2x.
+
+The initial test runs exposed stale tests that treated all multisampling as
+unsupported and a core capability comparison that did not mask the optional
+X4/resolve flags; the assertions now distinguish 2x rejection and optional
+selected-device evidence. This modern RTX result does not establish behavior
+on historical FL9_1 drivers. Continue the broader public core/HAL contract
+audit; do not broaden the optional capability without matching runtime
+queries and operation coverage.

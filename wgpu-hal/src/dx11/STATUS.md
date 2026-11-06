@@ -47,7 +47,7 @@ test then submitted independent clear/copy/readback workloads concurrently
 through two public devices from the same adapter; readback verified all 64
 pixels were red on one device and green on the other. This proves these paths
 through the public API, not every operation within the projection. Error-scope
-checks also confirmed that core rejects 3D textures, 4x MSAA, `R32Float`
+checks also confirmed that core rejects 3D textures, 2x MSAA, `R32Float`
 sampling, multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
 sampled-texture layouts before the HAL. A separate public draw overlays
 near/far surfaces in both draw orders; all 64 readback pixels select the nearer
@@ -514,7 +514,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   rejects a zero native `SampleMask`, a zero wgpu mask is translated to
   `0xffff_fffe`, which masks sample zero while satisfying the native nonzero
   requirement. A strict controlled core render preserved all 64 clear-color
-  pixels; multisampling and alpha-to-coverage remain unsupported.
+  pixels. Optional 4x RGBA8 render-and-resolve is exposed only after positive
+  selected-device quality-level and format-support queries; multisampled
+  sampling/depth, other sample counts and alpha-to-coverage remain unsupported.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled
@@ -749,7 +751,8 @@ representative application or a complete contract audit.
 review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
 request permitted by the limits.
-- Compute, storage access, queries, indirect draws, multisampling, arrays,
+- Compute, storage access, queries, indirect draws, general multisampling (except optional query-gated
+  4x RGBA8 render-and-resolve), arrays,
 comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
