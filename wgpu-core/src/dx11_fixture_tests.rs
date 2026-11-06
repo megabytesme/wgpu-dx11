@@ -82,6 +82,9 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     empty_binding_visibility: false,
                     texture_1d: false,
                     texture_3d: false,
+                    max_texture_cube_dimension: 0,
+                    texture_cube_format_mask: 0,
+                    npot_cube_textures: false,
                     sampled_depth_textures: false,
                     sampled_sint_textures: false,
                     sampled_uint_textures: false,
@@ -435,12 +438,34 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             },
             None,
         );
-        assert!(
-            matches!(
+        let rejected_as_unsupported = match dimension {
+            wgt::TextureViewDimension::Cube => matches!(
                 error,
-                Some(crate::resource::CreateTextureViewError::MissingDownlevelFlags(_))
+                Some(
+                    crate::resource::CreateTextureViewError::TooManyArrayLayers {
+                        base_array_layer: 0,
+                        array_layer_count: 6,
+                        total: 1,
+                    }
+                )
             ),
-            "the projected FL9_1 device must reject {dimension:?} views in core before HAL: {error:?}"
+            wgt::TextureViewDimension::D2Array => matches!(
+                error,
+                Some(crate::resource::CreateTextureViewError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                )) if flags == wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
+            ),
+            wgt::TextureViewDimension::CubeArray => matches!(
+                error,
+                Some(crate::resource::CreateTextureViewError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                )) if flags == wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES
+            ),
+            _ => unreachable!(),
+        };
+        assert!(
+            rejected_as_unsupported,
+            "the projected FL9_1 device must reject invalid {dimension:?} views in core before HAL: {error:?}"
         );
     }
     global.texture_drop(single_layer_texture);
@@ -1304,10 +1329,6 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             wgt::DownlevelFlags::TEXTURE_2D_ARRAYS,
         ),
         (
-            wgt::TextureViewDimension::Cube,
-            wgt::DownlevelFlags::CUBE_TEXTURES,
-        ),
-        (
             wgt::TextureViewDimension::CubeArray,
             wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
         ),
@@ -1343,7 +1364,29 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         );
         global.bind_group_layout_drop(layout);
     }
-    std::println!("PASS: unsupported texture-array and cube layouts rejected by core validation");
+    let (cube_layout, cube_layout_error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Owned(vec![wgt::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgt::TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+                count: None,
+            }]),
+        },
+        None,
+    );
+    assert!(
+        cube_layout_error.is_none(),
+        "the selected FL9_1 projection must permit the supported cube layout: {cube_layout_error:?}"
+    );
+    global.bind_group_layout_drop(cube_layout);
+    std::println!("PASS: ordinary texture arrays and cube arrays rejected; the supported cube layout was accepted");
     for view_dimension in [wgt::TextureViewDimension::D1, wgt::TextureViewDimension::D3] {
         let (layout, error) = global.device_create_bind_group_layout(
             device,

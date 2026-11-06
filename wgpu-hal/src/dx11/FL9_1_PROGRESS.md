@@ -7973,3 +7973,55 @@ software=false), requested/actual FL9_1:
 
 Continue with the remaining core/HAL contract audit, prioritizing any operation
 the public projection accepts but the D3D11 path cannot execute correctly.
+
+## Verified cube-texture increment — 2026-11-06
+
+The opt-in public D3D11 path now supports single-mip, single-sample RGBA8 cube
+resources with six uploaded faces and sampled cube views. The selected-device
+format mask requires positive `TEXTURE2D | TEXTURECUBE` support, separate from
+2D sampling. Core rejects non-square, NPOT, oversized, mipmapped,
+multisampled, render-target, unsupported-format and unsupported-view shapes
+before HAL. Ordinary 2D arrays and cube arrays remain disabled. Cube
+texture-to-texture copies and render-target views are not implemented.
+
+On the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and actual FL9_1, the selected cube
+format mask was `0x1f1f`; all six uploaded face colors were sampled correctly
+across 96/96 readback pixels. RG8_UNORM cube creation was rejected by core
+because the selected device's per-format cube query was negative.
+
+Verification used Rust 1.93.1, Visual Studio 18 x64 and bounded Cargo `-j8`:
+
+- Strict public cube test: 1/1 passed on physical FL9_1 hardware.
+- Full strict public D3D11 suite: 51/51 passed. The optional Float16x2 input
+  subcase logged a query-based skip.
+- Full private D3D11 HAL suite: 370/370 passed, including strict GPU tests.
+- Strict core fixture suite: 96/96 passed, including cube-layout and invalid
+  single-face-view validation.
+- DX12 core regression suite: 92/92 passed.
+- Cube capability unit tests: 2/2 passed; `wgpu-types` cube-limit test:
+  1/1 passed with and without serde.
+- `cargo check -p wgpu-hal --all-features` and `cargo check -p wgpu-info`
+  passed. Targeted Clippy passed; HAL retained pre-existing warnings in
+  unchanged code. Changed-file rustfmt and `git diff --check` passed.
+
+The first broad runs found stale array-layer and subresource-test expectations
+plus one stale capability-flag assertion; those were updated to model six cube
+faces independently of ordinary 2D arrays and to keep box bounds separate
+from subresource validation. Repeated full suites passed after the corrections.
+
+Exact strict commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib cube_ -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_cube_texture_sampling_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+~~~
+
+Continue auditing core-valid shader, render-state and resource combinations.
+This checkpoint does not complete the mission; historical FL9_1 drivers and
+ARM32 UWP remain unverified.

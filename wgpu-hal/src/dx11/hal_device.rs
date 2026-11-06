@@ -185,6 +185,14 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
+        let cube = desc.size.depth_or_array_layers == 6;
+        let max_dimension =
+            super::capabilities::HardwareGuarantees::for_level(self.native.feature_level());
+        let max_dimension = if cube {
+            max_dimension.texture_cube_dimension
+        } else {
+            max_dimension.texture_2d_dimension
+        };
         let depth = matches!(
             desc.format,
             wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
@@ -245,7 +253,14 @@ impl crate::Device for Device {
                         | wgt::TextureFormat::Rgba8UnormSrgb
                         | wgt::TextureFormat::Bgra8UnormSrgb
                 ))
-            || desc.size.depth_or_array_layers != 1
+            || (desc.size.depth_or_array_layers != 1 && !cube)
+            || (cube
+                && (desc.dimension != wgt::TextureDimension::D2
+                    || desc.size.width != desc.size.height
+                    || !desc.size.width.is_power_of_two()
+                    || desc.mip_level_count != 1
+                    || desc.sample_count != 1
+                    || !desc.usage.contains(wgt::TextureUses::RESOURCE)))
             || desc.mip_level_count == 0
             || (desc.mip_level_count > 1
                 && (depth
@@ -263,12 +278,8 @@ impl crate::Device for Device {
                     || desc.mip_level_count != 1))
             || desc.size.width == 0
             || desc.size.height == 0
-            || desc.size.width
-                > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
-                    .texture_2d_dimension
-            || desc.size.height
-                > super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
-                    .texture_2d_dimension
+            || desc.size.width > max_dimension
+            || desc.size.height > max_dimension
             || (desc.format == wgt::TextureFormat::Bc1RgbaUnorm
                 && (desc.size.width < 4
                     || desc.size.height < 4
@@ -337,6 +348,18 @@ impl crate::Device for Device {
             wgt::TextureFormat::Rgba4Unorm => DXGI_FORMAT_B4G4R4A4_UNORM,
             _ => return Err(DeviceError::Unexpected),
         };
+        if cube {
+            super::capabilities::Capabilities::query(&self.native)
+                .check_private_cube_texture(
+                    desc.format,
+                    desc.usage,
+                    [desc.size.width, desc.size.height],
+                    desc.size.depth_or_array_layers,
+                    desc.mip_level_count,
+                    desc.sample_count,
+                )
+                .map_err(|_| DeviceError::Unexpected)?;
+        }
         if desc.sample_count == 4 {
             super::capabilities::Capabilities::query(&self.native)
                 .check_private_texture_2d(
@@ -369,23 +392,33 @@ impl crate::Device for Device {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
                 0
+            }
+            | if cube {
+                windows::Win32::Graphics::Direct3D11::D3D11_FORMAT_SUPPORT_TEXTURECUBE.0 as u32
+            } else {
+                0
             };
         if support & required != required {
             return Err(DeviceError::Unexpected);
         }
-        let mut texture = self
-            .native
-            .create_color_texture_inner_with_samples(
-                desc.size.width,
-                desc.size.height,
-                desc.mip_level_count,
-                1,
-                desc.usage
-                    .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
-                format,
-                desc.sample_count,
-            )
-            .map_err(device_error)?;
+        let mut texture = if cube {
+            self.native
+                .create_cube_texture_inner(desc.size.width, desc.size.height, format)
+                .map_err(device_error)?
+        } else {
+            self.native
+                .create_color_texture_inner_with_samples(
+                    desc.size.width,
+                    desc.size.height,
+                    desc.mip_level_count,
+                    1,
+                    desc.usage
+                        .intersects(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC),
+                    format,
+                    desc.sample_count,
+                )
+                .map_err(device_error)?
+        };
         if desc.sample_count == 4 {
             self.native
                 .clear_multisampled_color_texture(&texture)
@@ -407,17 +440,19 @@ impl crate::Device for Device {
             .try_reserve_exact(byte_count)
             .map_err(|_| DeviceError::OutOfMemory)?;
         zeroes.resize(byte_count, 0);
-        for mip in 0..desc.mip_level_count {
-            let width = (desc.size.width >> mip).max(1) as usize;
-            let height = (desc.size.height >> mip).max(1) as usize;
-            let mip_bytes = width
-                .div_ceil(block_width as usize)
-                .checked_mul(height.div_ceil(block_height as usize))
-                .and_then(|v| v.checked_mul(block_bytes))
-                .ok_or(DeviceError::OutOfMemory)?;
-            self.native
-                .write_texture_bytes(&texture, mip, 0, &zeroes[..mip_bytes])
-                .map_err(device_error)?;
+        for layer in 0..desc.size.depth_or_array_layers {
+            for mip in 0..desc.mip_level_count {
+                let width = (desc.size.width >> mip).max(1) as usize;
+                let height = (desc.size.height >> mip).max(1) as usize;
+                let mip_bytes = width
+                    .div_ceil(block_width as usize)
+                    .checked_mul(height.div_ceil(block_height as usize))
+                    .and_then(|v| v.checked_mul(block_bytes))
+                    .ok_or(DeviceError::OutOfMemory)?;
+                self.native
+                    .write_texture_bytes(&texture, mip, layer, &zeroes[..mip_bytes])
+                    .map_err(device_error)?;
+            }
         }
         texture.set_usage(desc.usage);
         Ok(texture)
@@ -506,8 +541,21 @@ impl crate::Device for Device {
         let depth = desc.usage.intersects(
             wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
         );
+        let cube = desc.dimension == wgt::TextureViewDimension::Cube;
+        let cube_resource = native.ArraySize == 6
+            && native.MiscFlags
+                & windows::Win32::Graphics::Direct3D11::D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32
+                != 0;
+        let valid_cube_range = desc.range.base_array_layer == 0
+            && desc.range.array_layer_count == Some(6)
+            && native.Width == native.Height
+            && native.Width.is_power_of_two()
+            && native.Width
+                <= super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
+                    .texture_cube_dimension
+            && native.MipLevels == 1;
         if desc.format != format
-            || desc.dimension != wgt::TextureViewDimension::D2
+            || (desc.dimension != wgt::TextureViewDimension::D2 && !cube)
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, is_depth)
             || !texture.supports_usage(desc.usage)
@@ -531,7 +579,16 @@ impl crate::Device for Device {
                         .range
                         .is_full_resource(format, native.MipLevels, native.ArraySize)
             })
-            || native.ArraySize != 1
+            || (cube
+                && (!cube_resource
+                    || !valid_cube_range
+                    || !desc.usage.contains(wgt::TextureUses::RESOURCE)
+                    || desc.usage.intersects(
+                        wgt::TextureUses::COLOR_TARGET
+                            | wgt::TextureUses::DEPTH_STENCIL_READ
+                            | wgt::TextureUses::DEPTH_STENCIL_WRITE,
+                    )))
+            || (!cube && native.ArraySize != 1)
             || !matches!(native.SampleDesc.Count, 1 | 4)
             || (native.SampleDesc.Count == 4
                 && (format != wgt::TextureFormat::Rgba8Unorm
@@ -559,6 +616,7 @@ impl crate::Device for Device {
                 target,
                 depth,
                 desc.usage,
+                desc.dimension,
                 (mip_base, mip_count),
             )
             .map_err(device_error)
@@ -926,8 +984,12 @@ mod tests {
         invalid = desc.clone();
         invalid.usage = wgt::TextureUses::COPY_DST;
         let upload_only = unsafe { crate::Device::create_texture(&device, &invalid) }.unwrap();
+        assert!(native.texture_copy_destination(&upload_only, 0, 1).is_err());
         for mip in 0..4 {
-            assert_eq!(native.texture_copy_destination(&upload_only, mip)?.2, mip);
+            assert_eq!(
+                native.texture_copy_destination(&upload_only, mip, 0)?.2,
+                mip
+            );
             assert!(native
                 .texture_copy_texture_source(&upload_only, mip)
                 .is_err());
@@ -992,7 +1054,10 @@ mod tests {
             .is_err());
         assert!(native.read_rgba_texture(&upload_sample, 0, 0).is_err());
         for mip in 0..4 {
-            assert_eq!(native.texture_copy_destination(&upload_sample, mip)?.2, mip);
+            assert_eq!(
+                native.texture_copy_destination(&upload_sample, mip, 0)?.2,
+                mip
+            );
         }
         for mip in 0..4 {
             assert!(native
@@ -1000,7 +1065,7 @@ mod tests {
                 .iter()
                 .all(|&byte| byte == 0));
             assert_eq!(native.texture_copy_texture_source(&sampled, mip)?.2, mip);
-            assert_eq!(native.texture_copy_destination(&sampled, mip)?.2, mip);
+            assert_eq!(native.texture_copy_destination(&sampled, mip, 0)?.2, mip);
         }
         let full_sampled = TextureViewDescriptor {
             usage: wgt::TextureUses::RESOURCE,
@@ -1122,7 +1187,7 @@ mod tests {
         combined_desc.usage |= wgt::TextureUses::COLOR_TARGET;
         let combined = unsafe { crate::Device::create_texture(&device, &combined_desc) }.unwrap();
         assert!(native.texture_copy_texture_source(&combined, 1).is_ok());
-        assert!(native.texture_copy_destination(&combined, 1).is_ok());
+        assert!(native.texture_copy_destination(&combined, 1, 0).is_ok());
         let mut combined_view_desc = view_desc.clone();
         combined_view_desc.usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;
         combined_view_desc.range.base_mip_level = 3;

@@ -140,7 +140,7 @@ fn default_hlsl_path_does_not_enable_fl9_emulation() {
             binding: 0,
         },
         slot: 0,
-        kind: ShaderBindingKind::Texture2dFloat,
+        kind: ShaderBindingKind::TextureFloat,
     }];
     assert!(matches!(
         compile_naga_with_bindings(

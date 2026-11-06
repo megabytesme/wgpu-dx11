@@ -1889,6 +1889,21 @@ pub enum CreateTextureError {
     InvalidTransientTextureViewFormats,
     #[error("Texture usages {0:?} are not allowed on a texture of dimensions {1:?}")]
     InvalidDimensionUsages(wgt::TextureUsages, wgt::TextureDimension),
+    #[error(
+        "Cube texture backing must be square and no larger than {maximum} (NPOT supported: {npot_cube_textures}); got {width}x{height}"
+    )]
+    InvalidCubeTextureSize {
+        width: u32,
+        height: u32,
+        maximum: u32,
+        npot_cube_textures: bool,
+    },
+    #[error("Texture format {0:?} does not support cube sampling on this adapter")]
+    UnsupportedCubeTextureFormat(wgt::TextureFormat),
+    #[error(
+        "Cube textures require one mip level, one sample, texture-binding usage, and no usages outside TEXTURE_BINDING | COPY_DST"
+    )]
+    InvalidCubeTextureShape,
     #[error("Texture usage STORAGE_BINDING is not allowed for multisampled textures")]
     InvalidMultisampledStorageBinding,
     #[error("Format {0:?} does not support multisampling")]
@@ -1940,6 +1955,9 @@ impl WebGpuError for CreateTextureError {
             | Self::InvalidFormatUsages(_, _, _)
             | Self::InvalidViewFormat(_, _)
             | Self::InvalidDimensionUsages(_, _)
+            | Self::InvalidCubeTextureSize { .. }
+            | Self::UnsupportedCubeTextureFormat(_)
+            | Self::InvalidCubeTextureShape
             | Self::InvalidMultisampledStorageBinding
             | Self::InvalidMultisampledFormat(_)
             | Self::InvalidSampleCount(..)
@@ -2105,6 +2123,12 @@ pub enum CreateTextureViewError {
     InvalidCubemapArrayTextureDepth { depth: u32 },
     #[error("Source texture width and height must be equal for a texture view of dimension `Cube`/`CubeArray`")]
     InvalidCubeTextureViewSize,
+    #[error("Cube texture view dimension {dimension} exceeds the adapter limit {maximum}")]
+    CubeTextureDimensionLimit { dimension: u32, maximum: u32 },
+    #[error("Texture format {0:?} does not support cube sampling on this adapter")]
+    UnsupportedCubeTextureFormat(wgt::TextureFormat),
+    #[error("This adapter requires cube textures to have power-of-two dimensions")]
+    NonPowerOfTwoCubeTexture,
     #[error("Mip level count is 0")]
     ZeroMipLevelCount,
     #[error("Array layer count is 0")]
@@ -2182,6 +2206,9 @@ impl WebGpuError for CreateTextureViewError {
             | Self::InvalidCubemapTextureDepth { .. }
             | Self::InvalidCubemapArrayTextureDepth { .. }
             | Self::InvalidCubeTextureViewSize
+            | Self::CubeTextureDimensionLimit { .. }
+            | Self::UnsupportedCubeTextureFormat(_)
+            | Self::NonPowerOfTwoCubeTexture
             | Self::ZeroMipLevelCount
             | Self::ZeroArrayLayerCount
             | Self::TooManyMipLevels { .. }

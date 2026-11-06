@@ -138,7 +138,7 @@ pub(crate) struct UniformBinding {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ShaderBindingKind {
     Uniform,
-    Texture2dFloat,
+    TextureFloat,
     Sampler,
 }
 
@@ -159,14 +159,14 @@ pub(super) fn shader_binding_kind(
         naga::AddressSpace::Uniform => Some(ShaderBindingKind::Uniform),
         naga::AddressSpace::Handle => match module.types[global.ty].inner {
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2,
+                dim: naga::ImageDimension::D2 | naga::ImageDimension::Cube,
                 arrayed: false,
                 class:
                     naga::ImageClass::Sampled {
                         kind: naga::ScalarKind::Float,
                         multi: false,
                     },
-            } => Some(ShaderBindingKind::Texture2dFloat),
+            } => Some(ShaderBindingKind::TextureFloat),
             naga::TypeInner::Sampler { comparison: false } => Some(ShaderBindingKind::Sampler),
             _ => None,
         },
@@ -274,7 +274,7 @@ pub(super) fn compile_naga_with_viewport(
     if level_9
         && bindings
             .iter()
-            .filter(|mapping| mapping.kind == ShaderBindingKind::Texture2dFloat)
+            .filter(|mapping| mapping.kind == ShaderBindingKind::TextureFloat)
             .count()
             > 8
     {
@@ -284,8 +284,8 @@ pub(super) fn compile_naga_with_viewport(
         let max_slots = match mapping.kind {
             ShaderBindingKind::Uniform => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT,
             ShaderBindingKind::Sampler => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT,
-            ShaderBindingKind::Texture2dFloat if level_9 => 16,
-            ShaderBindingKind::Texture2dFloat => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT,
+            ShaderBindingKind::TextureFloat if level_9 => 16,
+            ShaderBindingKind::TextureFloat => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT,
         };
         if mapping.slot >= max_slots
             || bindings[..index].iter().any(|other| {
@@ -915,7 +915,7 @@ mod tests {
                         binding: 0,
                     },
                     slot: 0,
-                    kind: ShaderBindingKind::Texture2dFloat,
+                    kind: ShaderBindingKind::TextureFloat,
                 },
                 ShaderBinding {
                     binding: naga::ResourceBinding {
@@ -986,7 +986,7 @@ mod tests {
                     binding: 0,
                 },
                 slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {
@@ -1060,7 +1060,7 @@ mod tests {
                     binding: 0,
                 },
                 slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {
@@ -1252,7 +1252,7 @@ mod tests {
                 binding: 7,
             },
             slot: 0,
-            kind: ShaderBindingKind::Texture2dFloat,
+            kind: ShaderBindingKind::TextureFloat,
         }];
         for (label, query) in cases {
             let source = alloc::format!(
@@ -1319,7 +1319,7 @@ mod tests {
                     binding: 7,
                 },
                 slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {
@@ -1450,7 +1450,7 @@ mod tests {
                     binding: 1,
                 },
                 slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {
@@ -2049,7 +2049,7 @@ mod tests {
                 binding: 0,
             },
             slot: 0,
-            kind: ShaderBindingKind::Texture2dFloat,
+            kind: ShaderBindingKind::TextureFloat,
         };
         let sampler = ShaderBinding {
             binding: naga::ResourceBinding {
@@ -2154,7 +2154,7 @@ mod tests {
                     binding: index,
                 },
                 slot: index,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             });
         }
         for index in 0..16 {
@@ -2224,7 +2224,7 @@ mod tests {
                 binding: 7,
             },
             slot: 0,
-            kind: ShaderBindingKind::Texture2dFloat,
+            kind: ShaderBindingKind::TextureFloat,
         };
         let sampler = ShaderBinding {
             binding: naga::ResourceBinding {
@@ -2296,7 +2296,7 @@ mod tests {
                     binding: slot,
                 },
                 slot,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             })
             .collect();
         exhausted.push(ShaderBinding {
@@ -2371,7 +2371,7 @@ mod tests {
                     binding: 0,
                 },
                 slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {
@@ -2441,7 +2441,7 @@ mod tests {
                     binding: 7,
                 },
                 slot: 0,
-                kind: ShaderBindingKind::Texture2dFloat,
+                kind: ShaderBindingKind::TextureFloat,
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {

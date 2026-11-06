@@ -969,6 +969,13 @@ impl super::Adapter {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            max_texture_cube_dimension: unsafe {
+                gl.get_parameter_i32(glow::MAX_CUBE_MAP_TEXTURE_SIZE)
+            }
+            .max(0) as u32,
+            texture_cube_format_mask: u32::MAX,
+            npot_cube_textures: supported((3, 0), (2, 0))
+                || extensions.contains("GL_OES_texture_npot"),
             sampled_depth_textures: true,
             sampled_sint_textures: true,
             sampled_uint_textures: true,

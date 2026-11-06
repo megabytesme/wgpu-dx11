@@ -96,8 +96,7 @@ fn texture_box(
     size: &crate::CopyExtent,
     dimensions: [u32; 2],
 ) -> Result<D3D11_BOX> {
-    if base.array_layer != 0
-        || base.origin.z != 0
+    if base.origin.z != 0
         || base.aspect != crate::FormatAspects::COLOR
         || size.depth != 1
         || size.width == 0
@@ -190,8 +189,11 @@ impl NativeDevice {
         }
         let (source, src_size, source_subresource) =
             self.texture_copy_texture_source(source, region.src_base.mip_level)?;
-        let (destination, dst_size, destination_subresource) =
-            self.texture_copy_destination(destination, region.dst_base.mip_level)?;
+        let (destination, dst_size, destination_subresource) = self.texture_copy_destination(
+            destination,
+            region.dst_base.mip_level,
+            region.dst_base.array_layer,
+        )?;
         if source_subresource == destination_subresource
             && source.cast::<windows::core::IUnknown>()?.as_raw()
                 == destination.cast::<windows::core::IUnknown>()?.as_raw()
@@ -275,7 +277,7 @@ impl NativeDevice {
         let size = &region.size;
         let layout = &region.buffer_layout;
         let (destination, dimensions, destination_subresource) =
-            self.texture_copy_destination(texture, base.mip_level)?;
+            self.texture_copy_destination(texture, base.mip_level, base.array_layer)?;
         let destination_box = texture_box(base, size, dimensions)?;
         let format = self.texture_desc(texture)?.Format;
         let block = format_block_layout(format)?;
@@ -578,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn transfer_texture_boxes_validate_origins_and_subresources() {
+    fn transfer_texture_boxes_validate_origins_independently_of_subresources() {
         let mut base = crate::TextureCopyBase {
             mip_level: 0,
             array_layer: 0,
@@ -604,7 +606,7 @@ mod tests {
         assert!(texture_box(&base, &size, [3, 2]).is_err());
         base.mip_level = 0;
         base.array_layer = 1;
-        assert!(texture_box(&base, &size, [6, 4]).is_err());
+        assert!(texture_box(&base, &size, [6, 4]).is_ok());
     }
 
     #[test]

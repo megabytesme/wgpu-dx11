@@ -73,8 +73,8 @@ fn fl91_copy_dst_only_mips_upload_and_usage_boundaries() -> windows::core::Resul
         desc.usage |= wgt::TextureUses::COLOR_TARGET;
         let diagnostic =
             unsafe { device.create_texture(&desc) }.expect("renderable diagnostic mip chain");
-        let (native_upload, _, _) = native.texture_copy_destination(&upload_only, 0)?;
-        let (native_diagnostic, _, _) = native.texture_copy_destination(&diagnostic, 0)?;
+        let (native_upload, _, _) = native.texture_copy_destination(&upload_only, 0, 0)?;
+        let (native_diagnostic, _, _) = native.texture_copy_destination(&diagnostic, 0, 0)?;
         for usage in [wgt::TextureUses::RESOURCE, wgt::TextureUses::COLOR_TARGET] {
             let unsupported = crate::TextureViewDescriptor {
                 label: None,

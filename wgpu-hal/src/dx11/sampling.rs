@@ -85,7 +85,7 @@ pub(super) fn relationships(
             .try_get(pair.sampler)
             .map_err(|_| ())?;
         if stage != naga::ShaderStage::Fragment
-            || shader_binding_kind(module, texture) != Some(ShaderBindingKind::Texture2dFloat)
+            || shader_binding_kind(module, texture) != Some(ShaderBindingKind::TextureFloat)
             || shader_binding_kind(module, sampler) != Some(ShaderBindingKind::Sampler)
         {
             return Err(());
@@ -105,7 +105,7 @@ pub(super) fn relationships(
         pairs.push(SamplingPair {
             texture,
             sampler,
-            texture_slot: find(texture, ShaderBindingKind::Texture2dFloat)?,
+            texture_slot: find(texture, ShaderBindingKind::TextureFloat)?,
             sampler_slot: find(sampler, ShaderBindingKind::Sampler)?,
             requires_bias_compatible: false,
         });
@@ -182,8 +182,8 @@ mod tests {
             .validate(&module)
             .unwrap();
         let bindings = [
-            (7, 0, ShaderBindingKind::Texture2dFloat),
-            (42, 1, ShaderBindingKind::Texture2dFloat),
+            (7, 0, ShaderBindingKind::TextureFloat),
+            (42, 1, ShaderBindingKind::TextureFloat),
             (100, 0, ShaderBindingKind::Sampler),
             (200, 1, ShaderBindingKind::Sampler),
         ]
@@ -281,8 +281,8 @@ mod tests {
             .validate(&module)
             .unwrap();
         let bindings: Vec<_> = [
-            (0, 0, ShaderBindingKind::Texture2dFloat),
-            (1, 1, ShaderBindingKind::Texture2dFloat),
+            (0, 0, ShaderBindingKind::TextureFloat),
+            (1, 1, ShaderBindingKind::TextureFloat),
             (2, 0, ShaderBindingKind::Sampler),
             (3, 1, ShaderBindingKind::Sampler),
         ]

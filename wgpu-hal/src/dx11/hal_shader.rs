@@ -1047,7 +1047,7 @@ mod tests {
                         binding: 7,
                     },
                     slot: 0,
-                    kind: ShaderBindingKind::Texture2dFloat,
+                    kind: ShaderBindingKind::TextureFloat,
                 },
                 ShaderBinding {
                     binding: naga::ResourceBinding {
@@ -2718,7 +2718,7 @@ impl ShaderModule {
                         shader_binding_kind(&module, global),
                         Some(
                             ShaderBindingKind::Uniform
-                                | ShaderBindingKind::Texture2dFloat
+                                | ShaderBindingKind::TextureFloat
                                 | ShaderBindingKind::Sampler
                         )
                     )

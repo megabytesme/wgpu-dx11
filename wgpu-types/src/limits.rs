@@ -1058,6 +1058,23 @@ pub struct DownlevelLimits {
     /// if the backend cannot implement the texture shape.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d: bool,
+    /// Maximum width or height of a cube texture view.
+    ///
+    /// This can be lower than `Limits::max_texture_dimension_2d` when the
+    /// backend has a separate hardware limit for cube textures.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_max_texture_cube_dimension")
+    )]
+    pub max_texture_cube_dimension: u32,
+    /// Sampled formats for which cube textures are supported.
+    ///
+    /// The bit assignments are defined by [`texture_cube_format_bit`].
+    #[cfg_attr(feature = "serde", serde(default = "default_texture_cube_format_mask"))]
+    pub texture_cube_format_mask: u32,
+    /// Whether non-power-of-two cube textures may be created and sampled.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub npot_cube_textures: bool,
     /// Whether depth sample types are supported by sampled texture bindings.
     ///
     /// This can be unavailable even when the backend supports depth attachments.
@@ -1262,6 +1279,16 @@ fn default_max_uniform_vectors() -> u32 {
 }
 
 #[cfg(feature = "serde")]
+fn default_max_texture_cube_dimension() -> u32 {
+    u32::MAX
+}
+
+#[cfg(feature = "serde")]
+fn default_texture_cube_format_mask() -> u32 {
+    u32::MAX
+}
+
+#[cfg(feature = "serde")]
 fn default_max_sampled_texture_sampler_pairs() -> u32 {
     u32::MAX
 }
@@ -1272,6 +1299,9 @@ impl Default for DownlevelLimits {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            max_texture_cube_dimension: u32::MAX,
+            texture_cube_format_mask: u32::MAX,
+            npot_cube_textures: true,
             sampled_depth_textures: true,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
@@ -1312,6 +1342,38 @@ impl Default for DownlevelLimits {
 }
 
 impl DownlevelLimits {
+    /// Returns the bit assigned to a format in the cube-texture capability mask.
+    #[must_use]
+    pub const fn texture_cube_format_bit(format: crate::TextureFormat) -> u32 {
+        match format {
+            crate::TextureFormat::Rgba8Unorm => 1 << 0,
+            crate::TextureFormat::Bgra8Unorm => 1 << 1,
+            crate::TextureFormat::Rgba8UnormSrgb => 1 << 2,
+            crate::TextureFormat::Bgra8UnormSrgb => 1 << 3,
+            crate::TextureFormat::R8Unorm => 1 << 4,
+            crate::TextureFormat::Rg8Unorm => 1 << 5,
+            crate::TextureFormat::Rg8Snorm => 1 << 6,
+            crate::TextureFormat::Rg16Snorm => 1 << 7,
+            crate::TextureFormat::Rgba8Snorm => 1 << 8,
+            crate::TextureFormat::Bc1RgbaUnorm => 1 << 9,
+            crate::TextureFormat::Rgb5g6b5Unorm => 1 << 10,
+            crate::TextureFormat::Rgb5a1Unorm => 1 << 11,
+            crate::TextureFormat::Rgba4Unorm => 1 << 12,
+            _ => 0,
+        }
+    }
+
+    /// Returns whether the selected format can be used by a cube texture.
+    #[must_use]
+    pub const fn supports_texture_cube_format(&self, format: crate::TextureFormat) -> bool {
+        let bit = Self::texture_cube_format_bit(format);
+        if bit == 0 {
+            self.texture_cube_format_mask == u32::MAX
+        } else {
+            self.texture_cube_format_mask & bit != 0
+        }
+    }
+
     /// Returns the mask of vertex formats required by the WebGPU baseline.
     #[must_use]
     pub const fn webgpu_vertex_format_mask() -> u64 {
@@ -1336,6 +1398,10 @@ impl DownlevelLimits {
         (!required.texture_1d || self.texture_1d)
             && (!required.empty_binding_visibility || self.empty_binding_visibility)
             && (!required.texture_3d || self.texture_3d)
+            && self.max_texture_cube_dimension >= required.max_texture_cube_dimension
+            && self.texture_cube_format_mask & required.texture_cube_format_mask
+                == required.texture_cube_format_mask
+            && (!required.npot_cube_textures || self.npot_cube_textures)
             && (!required.sampled_depth_textures || self.sampled_depth_textures)
             && (!required.sampled_sint_textures || self.sampled_sint_textures)
             && (!required.sampled_uint_textures || self.sampled_uint_textures)
@@ -1416,6 +1482,12 @@ impl DownlevelCapabilities {
             && self.limits.empty_binding_visibility
             && self.limits.texture_1d
             && self.limits.texture_3d
+            && self.limits.max_texture_cube_dimension
+                >= DownlevelLimits::default().max_texture_cube_dimension
+            && self.limits.texture_cube_format_mask
+                & DownlevelLimits::default().texture_cube_format_mask
+                == DownlevelLimits::default().texture_cube_format_mask
+            && self.limits.npot_cube_textures
             && self.limits.sampled_depth_textures
             && self.limits.sampled_sint_textures
             && self.limits.sampled_uint_textures
@@ -1762,6 +1834,48 @@ mod tests {
     }
 
     #[test]
+    fn cube_texture_limits_are_checked_separately_from_2d_limits() {
+        let rgba8 = DownlevelLimits::texture_cube_format_bit(crate::TextureFormat::Rgba8Unorm);
+        let r8 = DownlevelLimits::texture_cube_format_bit(crate::TextureFormat::R8Unorm);
+        let available = DownlevelLimits {
+            max_texture_cube_dimension: 512,
+            texture_cube_format_mask: rgba8,
+            npot_cube_textures: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            max_texture_cube_dimension: 256,
+            texture_cube_format_mask: rgba8,
+            npot_cube_textures: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_texture_cube_dimension: 512,
+            texture_cube_format_mask: r8,
+            npot_cube_textures: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.supports_texture_cube_format(crate::TextureFormat::Rgba16Float));
+        assert!(DownlevelLimits::default()
+            .supports_texture_cube_format(crate::TextureFormat::Rgba16Float));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_texture_cube_dimension: 513,
+            npot_cube_textures: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_texture_cube_dimension: 256,
+            npot_cube_textures: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn downlevel_limits_check_minimum_capabilities() {
         let available = DownlevelLimits {
             empty_binding_visibility: true,
@@ -1779,6 +1893,9 @@ mod tests {
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 4,
             max_fragment_shader_uniform_vectors: 8,
+            max_texture_cube_dimension: 512,
+            texture_cube_format_mask: u32::MAX,
+            npot_cube_textures: false,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             max_sampler_anisotropy: 2,
@@ -1819,6 +1936,9 @@ mod tests {
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 3,
             max_fragment_shader_uniform_vectors: 8,
+            max_texture_cube_dimension: 256,
+            texture_cube_format_mask: u32::MAX,
+            npot_cube_textures: false,
             unrestricted_npot_texture_sampling: false,
             max_texture_repeat_per_primitive: 128,
             max_sampler_anisotropy: 2,

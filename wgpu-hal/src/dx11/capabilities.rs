@@ -10,7 +10,7 @@ use windows::Win32::Graphics::{
         D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_FORMAT_SUPPORT_MIP,
         D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET, D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE,
         D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
-        D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        D3D11_FORMAT_SUPPORT_TEXTURE2D, D3D11_FORMAT_SUPPORT_TEXTURECUBE,
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -25,6 +25,7 @@ use windows::Win32::Graphics::{
 pub(super) struct HardwareGuarantees {
     pub level: FeatureLevel,
     pub texture_2d_dimension: u32,
+    pub texture_cube_dimension: u32,
     pub render_targets: u32,
     pub max_vertex_index: u32,
     pub max_primitives_per_draw: u32,
@@ -67,16 +68,17 @@ impl HardwareGuarantees {
         use FeatureLevel::*;
         let (
             texture_2d_dimension,
+            texture_cube_dimension,
             render_targets,
             max_vertex_index,
             max_primitives_per_draw,
             max_texture_repeat_per_primitive,
         ) = match level {
-            L9_1 => (2048, 1, 65_534, 65_535, 128),
-            L9_2 => (2048, 1, 1_048_575, 1_048_575, 2048),
-            L9_3 => (4096, 4, 1_048_575, 1_048_575, 8192),
-            L10_0 | L10_1 => (8192, 8, u32::MAX, u32::MAX, 8192),
-            L11_0 | L11_1 => (16384, 8, u32::MAX, u32::MAX, 16384),
+            L9_1 => (2048, 512, 1, 65_534, 65_535, 128),
+            L9_2 => (2048, 512, 1, 1_048_575, 1_048_575, 2048),
+            L9_3 => (4096, 4096, 4, 1_048_575, 1_048_575, 8192),
+            L10_0 | L10_1 => (8192, 8192, 8, u32::MAX, u32::MAX, 8192),
+            L11_0 | L11_1 => (16384, 16384, 8, u32::MAX, u32::MAX, 16384),
         };
         let vertex_input_formats = fl91_vertex_formats()
             | if level.as_raw() >= L9_3.as_raw() {
@@ -103,6 +105,7 @@ impl HardwareGuarantees {
         Self {
             level,
             texture_2d_dimension,
+            texture_cube_dimension,
             render_targets,
             max_vertex_index,
             max_primitives_per_draw,
@@ -241,6 +244,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
+    pub cube_texture_sampling: bool,
     pub rgba8_multisample_resolve: bool,
     pub alpha_to_coverage: bool,
     pub vertex_buffers: u32,
@@ -331,6 +335,7 @@ impl BackendCapabilities {
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
         texture_array_layers: 1,
+        cube_texture_sampling: true,
         rgba8_multisample_resolve: true,
         alpha_to_coverage: false,
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
@@ -412,11 +417,24 @@ impl Capabilities {
             return None;
         }
 
+        let cube_texture_format_mask = self.cube_texture_format_mask();
+        let rgba8_cube =
+            wgt::DownlevelLimits::texture_cube_format_bit(wgt::TextureFormat::Rgba8Unorm);
+        let cube_texture_sampling = cube_texture_format_mask & rgba8_cube != 0;
+        let cube_texture_format_mask = if cube_texture_sampling {
+            cube_texture_format_mask
+        } else {
+            0
+        };
         let mut limits = wgt::Limits::downlevel_defaults();
         limits.max_texture_dimension_1d = 2048;
         limits.max_texture_dimension_2d = self.hardware.texture_2d_dimension;
         limits.max_texture_dimension_3d = 256;
-        limits.max_texture_array_layers = self.backend.texture_array_layers;
+        limits.max_texture_array_layers = if cube_texture_sampling {
+            6
+        } else {
+            self.backend.texture_array_layers
+        };
         limits.max_bind_groups = crate::MAX_BIND_GROUPS as u32;
         limits.max_bind_groups_plus_vertex_buffers =
             crate::MAX_BIND_GROUPS as u32 + self.backend.vertex_buffers;
@@ -443,6 +461,9 @@ impl Capabilities {
         if self.backend.max_sampler_anisotropy > 1 {
             flags |= wgt::DownlevelFlags::ANISOTROPIC_FILTERING;
         }
+        if cube_texture_sampling {
+            flags |= wgt::DownlevelFlags::CUBE_TEXTURES;
+        }
 
         let downlevel = wgt::DownlevelCapabilities {
             flags,
@@ -451,6 +472,13 @@ impl Capabilities {
                 empty_binding_visibility: false,
                 texture_1d: false,
                 texture_3d: false,
+                max_texture_cube_dimension: if cube_texture_sampling {
+                    self.hardware.texture_cube_dimension
+                } else {
+                    0
+                },
+                texture_cube_format_mask: cube_texture_format_mask,
+                npot_cube_textures: false,
                 sampled_depth_textures: false,
                 sampled_sint_textures: false,
                 sampled_uint_textures: false,
@@ -587,6 +615,46 @@ pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
 }
 
 impl Capabilities {
+    pub fn cube_texture_format_mask(&self) -> u32 {
+        if !self.backend.cube_texture_sampling || self.hardware.texture_cube_dimension == 0 {
+            return 0;
+        }
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0) as u32;
+        [
+            (wgt::TextureFormat::Rgba8Unorm, self.driver.rgba8),
+            (wgt::TextureFormat::Bgra8Unorm, self.driver.bgra8),
+            (wgt::TextureFormat::Rgba8UnormSrgb, self.driver.rgba8_srgb),
+            (wgt::TextureFormat::Bgra8UnormSrgb, self.driver.bgra8_srgb),
+            (wgt::TextureFormat::R8Unorm, self.driver.r8_unorm),
+            (wgt::TextureFormat::Rg8Unorm, self.driver.rg8_unorm),
+            (wgt::TextureFormat::Rg8Snorm, self.driver.rg8_snorm),
+            (wgt::TextureFormat::Rg16Snorm, self.driver.rg16_snorm),
+            (wgt::TextureFormat::Rgba8Snorm, self.driver.rgba8_snorm),
+            (wgt::TextureFormat::Bc1RgbaUnorm, self.driver.bc1_unorm),
+            (wgt::TextureFormat::Rgb5g6b5Unorm, self.driver.rgb565_unorm),
+            (wgt::TextureFormat::Rgb5a1Unorm, self.driver.rgb5551_unorm),
+            (wgt::TextureFormat::Rgba4Unorm, self.driver.rgba4444_unorm),
+        ]
+        .into_iter()
+        .fold(0, |mask, (format, query)| {
+            if matches!(query, Query::Value(bits) if bits & required == required)
+                && self
+                    .texture_format_capabilities(format)
+                    .contains(crate::TextureFormatCapabilities::SAMPLED)
+            {
+                mask | wgt::DownlevelLimits::texture_cube_format_bit(format)
+            } else {
+                mask
+            }
+        })
+    }
+
+    pub fn cube_texture_sampling(&self) -> bool {
+        let rgba8 = wgt::DownlevelLimits::texture_cube_format_bit(wgt::TextureFormat::Rgba8Unorm);
+        self.cube_texture_format_mask() & rgba8 != 0
+    }
+
     pub fn unrestricted_npot_texture_sampling(&self) -> bool {
         !self.hardware.conditional_npot || matches!(self.driver.full_npot, Query::Value(true))
     }
@@ -856,6 +924,67 @@ impl Capabilities {
             };
         if bits & required != required {
             return Err(DriverFormatUnsupported);
+        }
+        Ok(())
+    }
+
+    pub fn check_private_cube_texture(
+        &self,
+        format: wgt::TextureFormat,
+        usage: wgt::TextureUses,
+        extent: [u32; 2],
+        layers: u32,
+        mips: u32,
+        samples: u32,
+    ) -> Result<(), TextureRejection> {
+        use TextureRejection::*;
+        if !self.backend.cube_texture_sampling || self.hardware.texture_cube_dimension == 0 {
+            return Err(UnsupportedShape);
+        }
+        if layers != 6
+            || mips != 1
+            || samples != 1
+            || extent[0] == 0
+            || extent[0] != extent[1]
+            || extent[0] > self.hardware.texture_cube_dimension
+            || !extent[0].is_power_of_two()
+        {
+            return Err(UnsupportedShape);
+        }
+        if !usage.contains(wgt::TextureUses::RESOURCE)
+            || !(wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST).contains(usage)
+        {
+            return Err(UnsupportedUsage);
+        }
+        let query = match format {
+            wgt::TextureFormat::Rgba8Unorm => self.driver.rgba8,
+            wgt::TextureFormat::Bgra8Unorm => self.driver.bgra8,
+            wgt::TextureFormat::Rgba8UnormSrgb => self.driver.rgba8_srgb,
+            wgt::TextureFormat::Bgra8UnormSrgb => self.driver.bgra8_srgb,
+            wgt::TextureFormat::R8Unorm => self.driver.r8_unorm,
+            wgt::TextureFormat::Rg8Unorm => self.driver.rg8_unorm,
+            wgt::TextureFormat::Rg8Snorm => self.driver.rg8_snorm,
+            wgt::TextureFormat::Rg16Snorm => self.driver.rg16_snorm,
+            wgt::TextureFormat::Rgba8Snorm => self.driver.rgba8_snorm,
+            wgt::TextureFormat::Bc1RgbaUnorm => self.driver.bc1_unorm,
+            wgt::TextureFormat::Rgb5g6b5Unorm => self.driver.rgb565_unorm,
+            wgt::TextureFormat::Rgb5a1Unorm => self.driver.rgb5551_unorm,
+            wgt::TextureFormat::Rgba4Unorm => self.driver.rgba4444_unorm,
+            _ => return Err(UnsupportedFormat),
+        };
+        let Query::Value(bits) = query else {
+            return Err(DriverQueryUnavailable);
+        };
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0) as u32;
+        if bits & required != required {
+            return Err(DriverFormatUnsupported);
+        }
+        if !self
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::SAMPLED)
+        {
+            return Err(UnsupportedFormat);
         }
         Ok(())
     }
@@ -1252,7 +1381,7 @@ mod tests {
         assert_eq!(exposed.limits.max_texture_dimension_1d, 2048);
         assert_eq!(exposed.limits.max_texture_dimension_2d, 2048);
         assert_eq!(exposed.limits.max_texture_dimension_3d, 256);
-        assert_eq!(exposed.limits.max_texture_array_layers, 1);
+        assert_eq!(exposed.limits.max_texture_array_layers, 6);
         assert_eq!(exposed.limits.max_bindings_per_bind_group, 1000);
         assert_eq!(exposed.limits.max_sampled_textures_per_shader_stage, 8);
         assert_eq!(exposed.limits.max_samplers_per_shader_stage, 16);
@@ -1297,6 +1426,7 @@ mod tests {
             exposed.downlevel.flags,
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
                 | wgt::DownlevelFlags::ANISOTROPIC_FILTERING
+                | wgt::DownlevelFlags::CUBE_TEXTURES
         );
         assert!(!exposed.downlevel.limits.texture_1d);
         assert!(!exposed.downlevel.limits.texture_3d);
@@ -1333,13 +1463,23 @@ mod tests {
             128
         );
         assert_eq!(exposed.downlevel.limits.max_sampler_anisotropy, 2);
+        assert_eq!(exposed.downlevel.limits.max_texture_cube_dimension, 512);
+        assert!(!exposed.downlevel.limits.npot_cube_textures);
+        assert_eq!(exposed.limits.max_texture_array_layers, 6);
+        assert!(exposed
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::CUBE_TEXTURES));
+        assert!(!exposed
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::TEXTURE_2D_ARRAYS));
         assert!(!exposed.downlevel.flags.intersects(
             wgt::DownlevelFlags::COMPUTE_SHADERS
                 | wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE
                 | wgt::DownlevelFlags::INDIRECT_EXECUTION
                 | wgt::DownlevelFlags::COMPARISON_SAMPLERS
                 | wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
-                | wgt::DownlevelFlags::CUBE_TEXTURES
                 | wgt::DownlevelFlags::OCCLUSION_QUERY
         ));
         assert!(projection
@@ -1381,6 +1521,103 @@ mod tests {
         assert_eq!(
             BackendCapabilities::CURRENT.max_fragment_shader_uniform_vectors,
             32
+        );
+    }
+
+    #[test]
+    fn cube_limits_follow_feature_level_and_selected_format_queries() {
+        for (level, expected) in [
+            (FeatureLevel::L9_1, 512),
+            (FeatureLevel::L9_2, 512),
+            (FeatureLevel::L9_3, 4096),
+            (FeatureLevel::L10_0, 8192),
+            (FeatureLevel::L10_1, 8192),
+            (FeatureLevel::L11_0, 16384),
+            (FeatureLevel::L11_1, 16384),
+        ] {
+            assert_eq!(
+                HardwareGuarantees::for_level(level).texture_cube_dimension,
+                expected
+            );
+        }
+
+        let mut caps = model(FeatureLevel::L9_1);
+        assert!(caps.cube_texture_sampling());
+        let rgba8_cube =
+            wgt::DownlevelLimits::texture_cube_format_bit(wgt::TextureFormat::Rgba8Unorm);
+        let r8_cube = wgt::DownlevelLimits::texture_cube_format_bit(wgt::TextureFormat::R8Unorm);
+        assert!(caps.cube_texture_format_mask() & rgba8_cube != 0);
+        assert!(caps.cube_texture_format_mask() & r8_cube != 0);
+        caps.driver.r8_unorm = Query::Value(
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32,
+        );
+        assert!(caps.cube_texture_sampling());
+        assert_eq!(caps.cube_texture_format_mask() & r8_cube, 0);
+        let projection = caps.wgpu_projection().unwrap().capabilities;
+        assert!(projection
+            .downlevel
+            .limits
+            .supports_texture_cube_format(wgt::TextureFormat::Rgba8Unorm));
+        assert!(!projection
+            .downlevel
+            .limits
+            .supports_texture_cube_format(wgt::TextureFormat::R8Unorm));
+
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.rgba8 = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
+        assert!(!caps.cube_texture_sampling());
+        caps.driver.rgba8 = Query::Unavailable(-1);
+        assert!(!caps.cube_texture_sampling());
+        let projection = caps.wgpu_projection().unwrap().capabilities;
+        assert!(!projection
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::CUBE_TEXTURES));
+        assert_eq!(projection.limits.max_texture_array_layers, 1);
+        assert_eq!(projection.downlevel.limits.max_texture_cube_dimension, 0);
+
+        caps.driver.rgba8 = Query::Value(u32::MAX);
+        caps.backend.cube_texture_sampling = false;
+        assert!(!caps.cube_texture_sampling());
+    }
+
+    #[test]
+    fn private_cube_texture_validation_is_shape_and_query_aware() {
+        let mut caps = model(FeatureLevel::L9_1);
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        assert!(caps
+            .check_private_cube_texture(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 6, 1, 1)
+            .is_ok());
+        for (extent, layers, mips, samples) in [
+            ([7, 7], 6, 1, 1),
+            ([8, 4], 6, 1, 1),
+            ([1024, 1024], 6, 1, 1),
+            ([8, 8], 5, 1, 1),
+            ([8, 8], 6, 2, 1),
+            ([8, 8], 6, 1, 4),
+        ] {
+            assert!(caps
+                .check_private_cube_texture(
+                    wgt::TextureFormat::Rgba8Unorm,
+                    usage,
+                    extent,
+                    layers,
+                    mips,
+                    samples,
+                )
+                .is_err());
+        }
+        caps.driver.rgba8 = Query::Unavailable(-1);
+        assert_eq!(
+            caps.check_private_cube_texture(
+                wgt::TextureFormat::Rgba8Unorm,
+                usage,
+                [8, 8],
+                6,
+                1,
+                1,
+            ),
+            Err(TextureRejection::DriverQueryUnavailable)
         );
     }
 
@@ -1612,6 +1849,31 @@ mod tests {
         };
         assert_eq!(native.feature_level(), FeatureLevel::L9_1);
         let caps = Capabilities::query(&native);
+        let cube_queries = [
+            ("RGBA8", DXGI_FORMAT_R8G8B8A8_UNORM),
+            ("BGRA8", DXGI_FORMAT_B8G8R8A8_UNORM),
+            ("RGBA8_SRGB", DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
+            ("BGRA8_SRGB", DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
+            (
+                "R8",
+                windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM,
+            ),
+            ("RG8", DXGI_FORMAT_R8G8_UNORM),
+            ("RG8_SNORM", DXGI_FORMAT_R8G8_SNORM),
+            ("RG16_SNORM", DXGI_FORMAT_R16G16_SNORM),
+            ("RGBA8_SNORM", DXGI_FORMAT_R8G8B8A8_SNORM),
+            ("BC1", DXGI_FORMAT_BC1_UNORM),
+            ("RGB565", DXGI_FORMAT_B5G6R5_UNORM),
+            ("RGB5A1", DXGI_FORMAT_B5G5R5A1_UNORM),
+            ("RGBA4", DXGI_FORMAT_B4G4R4A4_UNORM),
+        ]
+        .map(|(name, format)| {
+            (
+                name,
+                Query::from_result(unsafe { native.raw_device().CheckFormatSupport(format) }),
+            )
+        });
+        std::println!("FL9_1 cube format queries: {cube_queries:?}");
         let optional_float_formats = [
             ("R32_FLOAT", DXGI_FORMAT_R32_FLOAT),
             ("R32G32B32A32_FLOAT", DXGI_FORMAT_R32G32B32A32_FLOAT),
@@ -1681,8 +1943,10 @@ mod tests {
                 .multisampled_texture_bindings
         );
         std::println!(
-            "FL9_1 limits: texture2d={} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG8_UNORM={:?}; RG16_SNORM={:?}; BC1={:?}; D16_UNORM={:?} projected={:?}",
+            "FL9_1 limits: texture2d={} cube_dimension={} cube_format_mask={:#x} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG8_UNORM={:?}; RG16_SNORM={:?}; BC1={:?}; D16_UNORM={:?} projected={:?}",
             projection.capabilities.limits.max_texture_dimension_2d,
+            projection.capabilities.downlevel.limits.max_texture_cube_dimension,
+            projection.capabilities.downlevel.limits.texture_cube_format_mask,
             projection.capabilities.limits.max_sampled_textures_per_shader_stage,
             projection.capabilities.limits.max_samplers_per_shader_stage,
             projection.capabilities.limits.max_uniform_buffers_per_shader_stage,

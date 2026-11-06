@@ -267,11 +267,13 @@ entry-point selection are covered by a strict public test.
    layouts now require the matching vertex, fragment or compute downlevel flag.
    The HAL accepts core-internal storage usage bits only alongside another
    supported buffer role; it still does not implement shader storage access.
-   Texture-view layout and creation validation now also requires explicit
-   downlevel support for 2D arrays, cube views and cube-array views. The D3D11
-   fixture leaves those flags absent and verifies rejection before HAL. D1/D3
-   binding layouts are rejected when their texture dimension limits are zero,
-   and storage-texture D2Array layouts now share the array downlevel gate.
+    Texture-view layout and creation validation now requires explicit
+    downlevel support for 2D arrays and cube-array views. The D3D11 projection
+    leaves those flags absent and verifies rejection before HAL. The supported
+    FL9_1 cube subset is query-gated by `CUBE_TEXTURES`, a separate cube limit
+    and per-format queries; strict public rendering samples all six RGBA8
+    faces. D1/D3 binding layouts are rejected when their texture dimension
+    limits are zero, and storage-texture D2Array layouts share the array gate.
    The selected-entry audit also models `textureLoad` as a downlevel limit and
    rejects only entries that reach a load through their call graph; safe sibling
    entries remain usable. Continue auditing other WGSL operations accepted by
@@ -622,3 +624,16 @@ readable after a rejected destruction and that destruction succeeds once both
 views are dropped. The selected-entry dynamic-loop/FXC mismatch is now gated
 and tested. Continue with a public sampler-group transition test, then resume
 the selected-entry and core/HAL contract audit.
+
+## Current increment — query-gated FL9_1 cube sampling
+
+The opt-in public adapter exposes the 10Level9 six-face cube-resource subset
+through a separate 512-pixel cube limit and selected-device per-format
+`TEXTURECUBE` queries. Ordinary 2D arrays and cube arrays remain disabled.
+Core rejects unsupported cube shapes, formats and views before HAL. A strict
+public test uploaded a different RGBA8 color to each face and sampled all six
+axis directions at explicitly requested/actual FL9_1; all 96 readback pixels
+matched. The RTX 3090 Ti reported cube format mask `0x1f1f`, and core rejected
+RG8 cube creation because the selected format query did not include cube
+support. Cube copies and render-target views remain unavailable. Continue the
+core/HAL audit; do not infer historical FL9_1 support from this modern driver.

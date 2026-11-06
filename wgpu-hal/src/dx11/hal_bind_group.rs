@@ -55,7 +55,7 @@ impl GroupKind {
             });
         }
         for (kind, slots) in [
-            (ShaderBindingKind::Texture2dFloat, self.textures.as_slice()),
+            (ShaderBindingKind::TextureFloat, self.textures.as_slice()),
             (ShaderBindingKind::Sampler, self.samplers.as_slice()),
         ] {
             for (slot, binding) in slots.iter().enumerate() {
@@ -90,7 +90,7 @@ impl GroupKind {
                             && uniform.visibility.contains(stage)
                     })
                 }
-                super::shader::ShaderBindingKind::Texture2dFloat => {
+                super::shader::ShaderBindingKind::TextureFloat => {
                     stage == wgt::ShaderStages::FRAGMENT
                         || (stage == wgt::ShaderStages::VERTEX
                             && self.texture_vertex_visibility_mask & (1u8 << binding.slot) != 0)
@@ -242,7 +242,7 @@ impl BindingPlan {
                     binding.binding.group = index as u32;
                     binding.slot += match binding.kind {
                         ShaderBindingKind::Uniform => slots.uniforms,
-                        ShaderBindingKind::Texture2dFloat => slots.textures,
+                        ShaderBindingKind::TextureFloat => slots.textures,
                         ShaderBindingKind::Sampler => slots.samplers,
                     };
                     binding
@@ -293,7 +293,7 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
         match entry.ty {
             wgt::BindingType::Texture {
                 sample_type: wgt::TextureSampleType::Float { filterable },
-                view_dimension: wgt::TextureViewDimension::D2,
+                view_dimension: wgt::TextureViewDimension::D2 | wgt::TextureViewDimension::Cube,
                 multisampled: false,
             } if sampled_visibility(entry.visibility) => textures.push((
                 entry.binding,
@@ -826,10 +826,10 @@ mod tests {
             tuples,
             [
                 (0, 42, 0, ShaderBindingKind::Uniform),
-                (0, 7, 0, ShaderBindingKind::Texture2dFloat),
+                (0, 7, 0, ShaderBindingKind::TextureFloat),
                 (0, 99, 0, ShaderBindingKind::Sampler),
                 (2, 3, 1, ShaderBindingKind::Uniform),
-                (2, 7, 1, ShaderBindingKind::Texture2dFloat),
+                (2, 7, 1, ShaderBindingKind::TextureFloat),
                 (2, 99, 1, ShaderBindingKind::Sampler),
             ]
         );

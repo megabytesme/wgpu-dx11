@@ -284,7 +284,7 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
         for binding in group.shader_bindings() {
             match binding.kind {
                 ShaderBindingKind::Uniform
-                | ShaderBindingKind::Texture2dFloat
+                | ShaderBindingKind::TextureFloat
                 | ShaderBindingKind::Sampler => {}
             }
         }

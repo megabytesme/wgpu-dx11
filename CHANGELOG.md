@@ -47,6 +47,7 @@ Bottom level categories:
 #### Hal
 
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
+- Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
@@ -77,6 +78,7 @@ Bottom level categories:
 - Require stage-specific downlevel support before creating storage-buffer layouts.
 - Add downlevel limits for runtime integer shader operations and matrix aggregate stores.
 - Gate unsupported texture binding dimensions and 2D-array storage layouts with device limits and downlevel capabilities.
+- Add downlevel cube-texture size, format-mask and NPOT limits for capability-aware cube validation.
 - Add a downlevel vertex-format mask so adapters can report input formats individually and core rejects unsupported attributes before HAL.
 - Allow adapters to report single-mip-only texture formats and reject unsupported mip chains before HAL texture creation.
 - Add `DownlevelLimits::viewport_rectangles_outside_target` and reject out-of-target viewports when an adapter cannot preserve clipped viewport behavior.

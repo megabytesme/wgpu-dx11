@@ -283,6 +283,9 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             empty_binding_visibility,
             texture_1d,
             texture_3d,
+            max_texture_cube_dimension,
+            texture_cube_format_mask,
+            npot_cube_textures,
             sampled_depth_textures,
             sampled_sint_textures,
             sampled_uint_textures,
@@ -324,6 +327,9 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tEmpty binding visibility: {empty_binding_visibility}")?;
     writeln!(output, "\t\tTexture 1D: {texture_1d}")?;
     writeln!(output, "\t\tTexture 3D: {texture_3d}")?;
+    writeln!(output, "\t\tMaximum cube texture dimension: {max_texture_cube_dimension}")?;
+    writeln!(output, "\t\tCube texture format mask: {texture_cube_format_mask:#010x}")?;
+    writeln!(output, "\t\tNPOT cube textures: {npot_cube_textures}")?;
     writeln!(output, "\t\tSampled depth textures: {sampled_depth_textures}")?;
     writeln!(output, "\t\tSampled signed-integer textures: {sampled_sint_textures}")?;
     writeln!(output, "\t\tSampled unsigned-integer textures: {sampled_uint_textures}")?;

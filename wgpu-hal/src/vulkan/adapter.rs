@@ -2472,6 +2472,12 @@ impl super::Instance {
             downlevel: wgt::DownlevelCapabilities {
                 flags: downlevel_flags,
                 limits: wgt::DownlevelLimits {
+                    max_texture_cube_dimension: phd_capabilities
+                        .properties
+                        .limits
+                        .max_image_dimension_cube,
+                    texture_cube_format_mask: u32::MAX,
+                    npot_cube_textures: true,
                     max_sampler_anisotropy: if phd_features.core.sampler_anisotropy != 0 {
                         phd_capabilities
                             .properties

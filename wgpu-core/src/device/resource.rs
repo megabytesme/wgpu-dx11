@@ -1808,6 +1808,54 @@ impl Device {
             &self.limits,
         )?;
 
+        if desc.dimension == wgt::TextureDimension::D2
+            && desc.size.depth_or_array_layers > 1
+            && !self
+                .downlevel
+                .flags
+                .contains(wgt::DownlevelFlags::TEXTURE_2D_ARRAYS)
+        {
+            let cube = desc.size.depth_or_array_layers == 6;
+            self.require_downlevel_flags(if cube {
+                wgt::DownlevelFlags::CUBE_TEXTURES
+            } else {
+                wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
+            })?;
+            if cube {
+                let maximum = self.downlevel.limits.max_texture_cube_dimension;
+                let npot_cube_textures = self.downlevel.limits.npot_cube_textures;
+                if desc.size.width != desc.size.height
+                    || desc.size.width > maximum
+                    || (!npot_cube_textures && !desc.size.width.is_power_of_two())
+                {
+                    return Err(CreateTextureError::InvalidCubeTextureSize {
+                        width: desc.size.width,
+                        height: desc.size.height,
+                        maximum,
+                        npot_cube_textures,
+                    });
+                }
+                if !self
+                    .downlevel
+                    .limits
+                    .supports_texture_cube_format(desc.format)
+                {
+                    return Err(CreateTextureError::UnsupportedCubeTextureFormat(
+                        desc.format,
+                    ));
+                }
+                let supported_usages =
+                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST;
+                if desc.mip_level_count != 1
+                    || desc.sample_count != 1
+                    || !desc.usage.contains(wgt::TextureUsages::TEXTURE_BINDING)
+                    || !supported_usages.contains(desc.usage)
+                {
+                    return Err(CreateTextureError::InvalidCubeTextureShape);
+                }
+            }
+        }
+
         if desc.dimension != wgt::TextureDimension::D2 {
             // Depth textures can only be 2D
             if desc.format.is_depth_stencil_format() {
@@ -2275,6 +2323,9 @@ impl Device {
             _ => wgt::DownlevelFlags::empty(),
         };
         self.require_downlevel_flags(required_downlevel_flags)?;
+        if resolved_dimension == TextureViewDimension::D2 && texture.desc.array_layer_count() > 1 {
+            self.require_downlevel_flags(wgt::DownlevelFlags::TEXTURE_2D_ARRAYS)?;
+        }
 
         let resolved_mip_level_count = desc.range.mip_level_count.unwrap_or_else(|| {
             texture
@@ -2428,8 +2479,32 @@ impl Device {
 
         match resolved_dimension {
             TextureViewDimension::Cube | TextureViewDimension::CubeArray => {
+                if !self
+                    .downlevel
+                    .limits
+                    .supports_texture_cube_format(resolved_format)
+                {
+                    return Err(
+                        resource::CreateTextureViewError::UnsupportedCubeTextureFormat(
+                            resolved_format,
+                        ),
+                    );
+                }
                 if texture.desc.size.width != texture.desc.size.height {
                     return Err(resource::CreateTextureViewError::InvalidCubeTextureViewSize);
+                }
+                let dimension = texture.desc.size.width;
+                let maximum = self.downlevel.limits.max_texture_cube_dimension;
+                if dimension > maximum {
+                    return Err(
+                        resource::CreateTextureViewError::CubeTextureDimensionLimit {
+                            dimension,
+                            maximum,
+                        },
+                    );
+                }
+                if !self.downlevel.limits.npot_cube_textures && !dimension.is_power_of_two() {
+                    return Err(resource::CreateTextureViewError::NonPowerOfTwoCubeTexture);
                 }
             }
             _ => {}

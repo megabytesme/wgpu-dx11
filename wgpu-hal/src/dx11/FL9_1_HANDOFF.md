@@ -1810,6 +1810,18 @@ explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
 
+## Verified increment — query-gated FL9_1 cube sampling
+
+The working tree now supports public six-face RGBA8 cube upload and sampling
+through selected-device cube-format queries, with explicit size, shape, NPOT
+and format validation in core. Forced-FL9_1 execution on the RTX 3090 Ti
+checked all six faces and matched 96/96 pixels; RG8 cube creation was rejected
+before HAL. The strict public suite passed 51/51 with one optional Float16x2
+IA subcase logged as a skip. The private HAL suite passed 370/370, the core
+fixture suite 96/96, and DX12 core 92/92. Cube copies and render-target cube
+views remain unsupported. Continue the broader core/HAL audit; historical
+FL9_1 hardware and ARM32 UWP remain unverified.
+
 ## Current increment — expose 255 vertex uniform vectors
 
 The public selected-device `max_uniform_buffer_binding_size` is now 4,080

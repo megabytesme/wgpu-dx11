@@ -6,17 +6,18 @@ use windows::{
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
-            Direct3D::D3D11_SRV_DIMENSION_TEXTURE2D,
+            Direct3D::{D3D11_SRV_DIMENSION_TEXTURE2D, D3D11_SRV_DIMENSION_TEXTURECUBE},
             Direct3D11::{
                 ID3D11DepthStencilView, ID3D11Device, ID3D11RenderTargetView,
                 ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_DEPTH_STENCIL,
                 D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CLEAR_DEPTH,
                 D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
                 D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC,
-                D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RTV_DIMENSION_TEXTURE2D,
-                D3D11_RTV_DIMENSION_TEXTURE2DMS, D3D11_SHADER_RESOURCE_VIEW_DESC,
-                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2DMS_RTV, D3D11_TEX2D_RTV,
-                D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RESOURCE_MISC_TEXTURECUBE,
+                D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_RTV_DIMENSION_TEXTURE2DMS,
+                D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
+                D3D11_TEX2DMS_RTV, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEXCUBE_SRV,
+                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -406,6 +407,7 @@ impl NativeDevice {
         &self,
         texture: &NativeTexture,
         mip: u32,
+        layer: u32,
     ) -> Result<(ID3D11Texture2D, [u32; 2], u32)> {
         self.check_texture_owner(texture)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
@@ -429,12 +431,14 @@ impl NativeDevice {
             )
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
-            || desc.ArraySize != 1
+            || (desc.ArraySize != 1
+                && !(desc.ArraySize == 6
+                    && desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 != 0))
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
         }
-        let (width, height, index, _) = subresource_layout(texture, mip, 0)?;
+        let (width, height, index, _) = subresource_layout(texture, mip, layer)?;
         Ok((texture.raw.clone(), [width, height], index))
     }
 
@@ -448,7 +452,21 @@ impl NativeDevice {
         }
         let resource = view.resource.as_ref().ok_or_else(invalid)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
+        let mut view_desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
         unsafe { view.texture.GetDesc(&mut desc) };
+        unsafe { resource.GetDesc(&mut view_desc) };
+        let cube_view = view_desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE;
+        let valid_shape = if cube_view {
+            desc.ArraySize == 6
+                && desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 != 0
+                && desc.Width == desc.Height
+                && desc.Width.is_power_of_two()
+                && desc.Width
+                    <= super::capabilities::HardwareGuarantees::for_level(self.feature_level())
+                        .texture_cube_dimension
+        } else {
+            desc.ArraySize == 1 && view_desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D
+        };
         if desc.Width == 0
             || desc.Height == 0
             || !matches!(
@@ -480,7 +498,7 @@ impl NativeDevice {
             || view.mip_base >= u32::BITS
             || (view.refresh.is_none()
                 && view.mip_base.checked_add(view.mip_count) != Some(desc.MipLevels))
-            || desc.ArraySize != 1
+            || !valid_shape
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
@@ -669,6 +687,41 @@ impl NativeDevice {
         format: DXGI_FORMAT,
         sample_count: u32,
     ) -> Result<NativeTexture> {
+        self.create_color_texture_inner_with_samples_and_cube(
+            width,
+            height,
+            mip_levels,
+            layers,
+            render_target,
+            format,
+            sample_count,
+            false,
+        )
+    }
+
+    pub(super) fn create_cube_texture_inner(
+        &self,
+        width: u32,
+        height: u32,
+        format: DXGI_FORMAT,
+    ) -> Result<NativeTexture> {
+        self.create_color_texture_inner_with_samples_and_cube(
+            width, height, 1, 6, false, format, 1, true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_color_texture_inner_with_samples_and_cube(
+        &self,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+        layers: u32,
+        render_target: bool,
+        format: DXGI_FORMAT,
+        sample_count: u32,
+        cube: bool,
+    ) -> Result<NativeTexture> {
         let rgba_bgra = matches!(
             format,
             DXGI_FORMAT_R8G8B8A8_UNORM
@@ -686,7 +739,7 @@ impl NativeDevice {
                 | DXGI_FORMAT_B5G5R5A1_UNORM
                 | DXGI_FORMAT_B4G4R4A4_UNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
-        ) && layers == 1
+        ) && (layers == 1 || cube)
             && mip_levels == 1
             && (!render_target
                 || matches!(
@@ -695,7 +748,7 @@ impl NativeDevice {
                 ));
         let bc1_sampled = format == DXGI_FORMAT_BC1_UNORM
             && !render_target
-            && layers == 1
+            && (layers == 1 || cube)
             && mip_levels == 1
             && width >= 4
             && height >= 4
@@ -711,6 +764,16 @@ impl NativeDevice {
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
             || !(rgba_bgra || uncompressed_sampled || bc1_sampled)
+            || (cube
+                && (layers != 6
+                    || width != height
+                    || !width.is_power_of_two()
+                    || width
+                        > super::capabilities::HardwareGuarantees::for_level(self.feature_level())
+                            .texture_cube_dimension
+                    || mip_levels != 1
+                    || sample_count != 1
+                    || render_target))
             || (sample_count != 1
                 && !(sample_count == 4
                     && mip_levels == 1
@@ -745,6 +808,11 @@ impl NativeDevice {
             } else {
                 0
             }) as u32,
+            MiscFlags: if cube {
+                D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32
+            } else {
+                0
+            },
             ..Default::default()
         };
         let mut raw = None;
@@ -873,6 +941,7 @@ impl NativeDevice {
         render_target: bool,
         depth_stencil: bool,
         usage: wgt::TextureUses,
+        dimension: wgt::TextureViewDimension,
         mip_range: (u32, u32),
     ) -> Result<NativeTextureView> {
         self.check_texture_owner(texture)?;
@@ -885,6 +954,28 @@ impl NativeDevice {
             if resource {
                 let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
                 texture.raw.GetDesc(&mut texture_desc);
+                let cube = dimension == wgt::TextureViewDimension::Cube;
+                if cube
+                    && (texture_desc.ArraySize != 6
+                        || texture_desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 == 0
+                        || texture_desc.Width != texture_desc.Height
+                        || !texture_desc.Width.is_power_of_two()
+                        || texture_desc.Width
+                            > super::capabilities::HardwareGuarantees::for_level(
+                                self.feature_level(),
+                            )
+                            .texture_cube_dimension
+                        || texture_desc.MipLevels != 1
+                        || render_target
+                        || depth_stencil)
+                {
+                    return Err(invalid());
+                }
+                if !cube
+                    && (dimension != wgt::TextureViewDimension::D2 || texture_desc.ArraySize != 1)
+                {
+                    return Err(invalid());
+                }
                 let non_suffix = mip_base.checked_add(mip_count) != Some(texture_desc.MipLevels);
                 let mut sampled_texture = texture.raw.clone();
                 if non_suffix {
@@ -931,15 +1022,28 @@ impl NativeDevice {
                         regions,
                     }));
                 }
-                let shader_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
-                    Format: texture_desc.Format,
-                    ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
-                    Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
-                        Texture2D: D3D11_TEX2D_SRV {
-                            MostDetailedMip: if non_suffix { 0 } else { mip_base },
-                            MipLevels: mip_count,
+                let shader_desc = if cube {
+                    D3D11_SHADER_RESOURCE_VIEW_DESC {
+                        Format: texture_desc.Format,
+                        ViewDimension: D3D11_SRV_DIMENSION_TEXTURECUBE,
+                        Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                            TextureCube: D3D11_TEXCUBE_SRV {
+                                MostDetailedMip: mip_base,
+                                MipLevels: mip_count,
+                            },
                         },
-                    },
+                    }
+                } else {
+                    D3D11_SHADER_RESOURCE_VIEW_DESC {
+                        Format: texture_desc.Format,
+                        ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_SRV {
+                                MostDetailedMip: if non_suffix { 0 } else { mip_base },
+                                MipLevels: mip_count,
+                            },
+                        },
+                    }
                 };
                 self.raw_device().CreateShaderResourceView(
                     &sampled_texture,

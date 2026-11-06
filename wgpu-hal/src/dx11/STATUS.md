@@ -24,6 +24,14 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The opt-in FL9_1 public path also supports single-mip, single-sample RGBA8
+cube textures with six independently uploaded faces and cube sampling. Core
+gates cube size, shape and format on separate downlevel limits and selected
+device per-format cube queries; ordinary 2D arrays and cube arrays remain
+disabled. On the RTX 3090 Ti forced to FL9_1, the six-face sample test matched
+all 96 output pixels. Cube texture-to-texture copies and render-target cube
+views remain unsupported.
+
 The selected-entry sampler contract also rejects the WGSL constant offset
 variant of texture sampling through the existing bias-offset limit. Direct and
 helper-reached uses are covered by core and private-HAL checks and by the
