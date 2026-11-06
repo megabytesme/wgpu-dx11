@@ -668,7 +668,10 @@ cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx1
 The public test uses a physical adapter explicitly requested at FL9_1. A
 fragment helper discards the left half of an 8×8 triangle in a DSV-only pass;
 a later farther draw turns those pixels red while the depth-written right half
-remains blue. All 64 pixels are checked after GPU readback. The compiler test
+remains blue. A second targetless pass uses an ordinary location-0 color result
+with no matching color target; the result is ignored, depth is written across
+the target, and a later farther draw remains blue at all 64 pixels. All 128
+pixels across both images are checked after GPU readback. The compiler test
 records the direct FXC X4530 diagnostic for an outputless `void` shader, then
 compiles the backend's synthetic-color wrapper while retaining a sparse
 uniform binding and helper call. No RTV is bound for the targetless pass, so

@@ -451,11 +451,14 @@ test uses conditional discard, then draws farther geometry in a color pass.
 A D24S8 test verifies that the discard also suppresses stencil replacement.
 Separate later stencil and depth comparisons validate 32 pixels on each half
 of both readback images. The compiler test covers a location input, a helper
-call and a sparse uniform mapping. The full strict public suite passed 38/38,
+call and a sparse uniform mapping. A color-returning fragment with an
+unmatched location-0 output is also accepted in a targetless D16 pass; a later
+depth comparison verifies the output is ignored while depth writes remain.
+The full strict public suite passed 38/38,
 including the D24S8 case, on the physical RTX 3090 Ti at requested/actual
 FL9_1. Historical FL9_1 profile behavior remains unverified.
 
-Next continue auditing core-legal render-pass and pipeline-state combinations
-against the HAL, prioritizing concrete contract mismatches and focused public
-tests. Keep optional formats query-gated and historical FL9_1 and ARM32
-behavior explicitly unverified.
+Next add selected-entry core validation for the HAL's FL9_1 integer-semantics
+and matrix-aggregate-store restrictions, preserving directly supported integer
+vertex-input conversions and safe matrix reads. Keep optional formats
+query-gated and historical FL9_1 and ARM32 behavior explicitly unverified.

@@ -10923,6 +10923,9 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
                 @vertex fn near_vs(@location(0) p: vec2f) -> PositionAndSide {
                     return PositionAndSide(vec4f(p, 0.2, 1.0), p.x);
                 }
+                @vertex fn near_position_vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                    return vec4f(p, 0.2, 1.0);
+                }
                 @vertex fn far_vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
                     return vec4f(p, 0.8, 1.0);
                 }
@@ -10997,6 +11000,7 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
         })
     };
     let depth_pipeline = make_pipeline("near_vs", "discard_left", &[], true);
+    let ignored_color_pipeline = make_pipeline("near_position_vs", "red", &[], true);
     let color_target = [Some(ColorTargetState {
         format: TextureFormat::Rgba8Unorm,
         blend: None,
@@ -11038,7 +11042,7 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
     let color_view = color.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 outputless fragment readback"),
-        size: 8 * 256,
+        size: 2 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -11114,6 +11118,75 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 ignored fragment color targetless pass"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&ignored_color_pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 verify ignored fragment color still writes depth"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&color_pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 8 * 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -11147,11 +11220,17 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
                     expected,
                     "outputless fragment discard pixel ({x}, {y})"
                 );
+                let ignored_offset = 8 * 256 + offset;
+                assert_eq!(
+                    &data[ignored_offset..ignored_offset + 4],
+                    [0, 0, 255, 255],
+                    "unmatched fragment output still writes depth at ({x}, {y})"
+                );
             }
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 outputless fragment discard in a DSV-only pass; it discarded the left half before depth writes, and the later farther draw produced 32 red / 32 depth-blocked blue pixels");
+    println!("PASS: public FL9_1 targetless fragment passes; outputless discard produced 32 red / 32 depth-blocked blue pixels, and an unmatched location-0 color result was ignored while depth still blocked the later draw at all 64 pixels");
 }
 
 #[test]

@@ -299,7 +299,10 @@ preserving fragment discard. Strict public D16 and D24S8 tests verify that a
 discard suppresses later depth and stencil updates. A fragment stage with no
 color target and no depth/stencil attachment remains unsupported. Fragment
 results containing color, depth or sample-mask outputs are not rewritten; their
-usual target and downlevel validation still applies.
+usual target and downlevel validation still applies. Core may ignore a color
+output when its location has no target. A strict targetless D16 test verifies
+that an unmatched `@location(0)` result does not prevent depth writes and does
+not reach the later color pass.
 
 POT RGBA8/BGRA8 mip chains accept every nonempty combination of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`. The selected format's MIP, shader-sample
