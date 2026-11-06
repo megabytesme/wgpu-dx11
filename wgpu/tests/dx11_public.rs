@@ -14116,6 +14116,330 @@ fn public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91() {
 }
 
 #[test]
+fn public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 multi-group render bundle test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 multi-group render bundle shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+            @group(0) @binding(17) var<uniform> tint: vec4f;
+            @group(1) @binding(7) var source_texture: texture_2d<f32>;
+            @group(1) @binding(42) var source_sampler: sampler;
+
+            @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
+                return vec4f(position, 0.5, 1.0);
+            }
+            @fragment fn fs() -> @location(0) vec4f {
+                return textureSample(source_texture, source_sampler, vec2f(0.5)) * tint;
+            }
+            "#
+            .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 multi-group render bundle pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let make_uniform_group = |label, tint: [f32; 4]| {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            size: 16,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&tint));
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some(label),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[BindGroupEntry {
+                binding: 17,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        (buffer, group)
+    };
+    let make_sampled_group = |label, texel: [u8; 4]| {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some(label),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &texel,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some(label),
+            layout: &pipeline.get_bind_group_layout(1),
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        (texture, view, sampler, group)
+    };
+
+    let (uniform_a, uniform_group_a) =
+        make_uniform_group("left tint uniform", [0.5, 1.0, 1.0, 1.0]);
+    let (uniform_b, uniform_group_b) =
+        make_uniform_group("right tint uniform", [1.0, 0.5, 0.5, 1.0]);
+    let (texture_a, view_a, sampler_a, sampled_group_a) =
+        make_sampled_group("left sampled texture", [200, 60, 20, 255]);
+    let (texture_b, view_b, sampler_b, sampled_group_b) =
+        make_sampled_group("right sampled texture", [30, 180, 80, 255]);
+
+    let vertices = [
+        -1.0f32, -1.0, 0.0, -1.0, -1.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, 1.0, 0.0, -1.0, 1.0, -1.0,
+        0.0, 1.0, 1.0, -1.0, 1.0, 1.0, 0.0, 1.0,
+    ];
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 multi-group bundle vertices"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+
+    let make_bundle = |label, uniform_group: &BindGroup, sampled_group: &BindGroup, range| {
+        let mut bundle_encoder =
+            device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+                label: Some(label),
+                color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+                depth_stencil: None,
+                sample_count: 1,
+                multiview: None,
+            });
+        bundle_encoder.set_pipeline(&pipeline);
+        bundle_encoder.set_bind_group(0, uniform_group, &[]);
+        bundle_encoder.set_bind_group(1, sampled_group, &[]);
+        bundle_encoder.set_vertex_buffer(0, vertex_buffer.slice(..));
+        bundle_encoder.draw(range, 0..1);
+        bundle_encoder.finish(&RenderBundleDescriptor { label: Some(label) })
+    };
+    let bundle_a = make_bundle(
+        "left multi-group bundle",
+        &uniform_group_a,
+        &sampled_group_a,
+        0..6,
+    );
+    let bundle_b = make_bundle(
+        "right multi-group bundle",
+        &uniform_group_b,
+        &sampled_group_b,
+        6..12,
+    );
+    drop(uniform_group_a);
+    drop(uniform_group_b);
+    drop(sampled_group_a);
+    drop(sampled_group_b);
+    drop(uniform_a);
+    drop(uniform_b);
+    drop(view_a);
+    drop(view_b);
+    drop(texture_a);
+    drop(texture_b);
+    drop(sampler_a);
+    drop(sampler_b);
+    drop(vertex_buffer);
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 multi-group bundle output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 multi-group bundle readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 multi-group bundle submission"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 multi-group bundle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.execute_bundles([&bundle_a, &bundle_b]);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 multi-group render bundles");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("multi-group bundle readback callback")
+        .expect("map multi-group bundle readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    &[100, 60, 20, 255]
+                } else {
+                    &[30, 90, 40, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "multi-group bundle pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: consecutive render bundles rebound both sparse uniform and sampled groups; all 64 pixels matched the left/right expected colors");
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
