@@ -14687,6 +14687,310 @@ fn public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91() {
 }
 
 #[test]
+fn public_dx11_render_bundle_pipeline_layout_transition_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 bundle pipeline-layout transition test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let uniform_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 uniform bundle pipeline shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(17) var<uniform> color: vec4f;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return color; }"
+                .into(),
+        ),
+    });
+    let texture_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 texture bundle pipeline shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var source_texture: texture_2d<f32>;\n\
+             @group(0) @binding(42) var source_sampler: sampler;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return textureSample(source_texture, source_sampler, vec2f(0.5)); }"
+                .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }],
+    })];
+    let make_pipeline = |label, shader: &ShaderModule| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let uniform_pipeline = make_pipeline("FL9_1 uniform bundle pipeline", &uniform_shader);
+    let texture_pipeline = make_pipeline("FL9_1 texture bundle pipeline", &texture_shader);
+
+    let uniform = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 uniform bundle resource"),
+        size: 16,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&uniform, 0, bytemuck::cast_slice(&[1.0f32, 0.0, 0.0, 1.0]));
+    let uniform_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 uniform bundle group"),
+        layout: &uniform_pipeline.get_bind_group_layout(0),
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: uniform.as_entire_binding(),
+        }],
+    });
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 texture bundle resource"),
+        size: Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &[0, 255, 0, 255],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let texture_view = texture.create_view(&TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let texture_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 texture bundle group"),
+        layout: &texture_pipeline.get_bind_group_layout(0),
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&texture_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let vertices = [
+        -1.0f32, -1.0, 0.0, -1.0, -1.0, 1.0, -1.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 1.0, -1.0,
+        0.0, 1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+    ];
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 bundle transition vertices"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, bytemuck::cast_slice(&vertices));
+
+    let make_bundle = |label, pipeline: &RenderPipeline, group: &BindGroup, vertex_range| {
+        let mut bundle = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+            label: Some(label),
+            color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+            depth_stencil: None,
+            sample_count: 1,
+            multiview: None,
+        });
+        bundle.set_pipeline(pipeline);
+        bundle.set_bind_group(0, group, &[]);
+        bundle.set_vertex_buffer(0, vertex.slice(..));
+        bundle.draw(vertex_range, 0..1);
+        bundle.finish(&RenderBundleDescriptor { label: Some(label) })
+    };
+    let left_bundle = make_bundle(
+        "left uniform-layout bundle",
+        &uniform_pipeline,
+        &uniform_group,
+        0..6,
+    );
+    let right_bundle = make_bundle(
+        "right sampled-layout bundle",
+        &texture_pipeline,
+        &texture_group,
+        6..12,
+    );
+    drop(uniform_group);
+    drop(uniform);
+    drop(texture_group);
+    drop(texture_view);
+    drop(texture);
+    drop(sampler);
+    drop(vertex);
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 bundle pipeline-layout transition output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 bundle pipeline-layout readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 bundle pipeline-layout transition submission"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 bundle pipeline-layout transition pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.execute_bundles([&left_bundle, &right_bundle]);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 bundle pipeline-layout transition");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("bundle pipeline-layout readback callback")
+        .expect("map bundle pipeline-layout readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    &[255, 0, 0, 255]
+                } else {
+                    &[0, 255, 0, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "bundle pipeline-layout transition pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: consecutive bundles switched from a uniform-only layout to a texture/sampler-only layout; 64/64 output pixels were red/green as expected after source resources were dropped");
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
