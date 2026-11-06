@@ -11,6 +11,22 @@ background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
+### Resource checkpoint — query-gated FL9_1 cube mip chains (`75222323e`)
+
+The public offscreen path now accepts caller-populated mip chains for the
+supported six-face, square POT RGBA8 cube subset when the selected device
+positively reports format mip support. Four mips across all faces and a
+non-suffix mip view were sampled on the forced-FL9_1 RTX 3090 Ti; readback
+matched all 960 pixels. Unsupported formats and unavailable queries fail
+closed. Cube copies, readback, render-target views, ordinary arrays and cube
+arrays remain unavailable. The latest strict suites passed HAL 370/370, public
+D3D11 51/51, core fixture 96/96 and DX12 core 92/92. See
+`FL9_1_PROGRESS.md` for exact commands and limitations.
+
+Next continue the selected-entry shader, texture-view and core/HAL contract
+audit. Prioritize a reproducible mismatch that can be closed at the public
+validation boundary, while keeping optional format/usage exposure query-gated.
+
 ### Compiler boundary — constant texture-sampling offset (9f1617eed)
 
 WGSL 30.0.1 has no standalone textureSampleOffset builtin; its constant texel

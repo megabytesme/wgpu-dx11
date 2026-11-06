@@ -8025,3 +8025,67 @@ cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --featur
 Continue auditing core-valid shader, render-state and resource combinations.
 This checkpoint does not complete the mission; historical FL9_1 drivers and
 ARM32 UWP remain unverified.
+
+## Verified resource checkpoint — query-gated FL9_1 cube mip chains — `75222323e` — 2026-11-06
+
+Extended the opt-in public cube texture path from one mip to caller-populated
+POT mip chains. FL9_1 shape validation now permits at most the full chain for
+square POT dimensions. The HAL additionally requires its cube-mip path, a
+supported sampled usage, positive selected-device `D3D11_FORMAT_SUPPORT_MIP`,
+and a format not marked single-mip-only. Ordinary arrays, cube arrays,
+render-target cube use, cube copies/readback and individual 2D face views stay
+unavailable. Core no longer rejects cube mips in its special shape gate; its
+existing max-mip and per-format gates remain active.
+
+The selected FL9_1 RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) reports RGBA8 mip support. The strict public test requested and
+asserted FL9_1, uploaded distinguishable data for four mips across six faces,
+rendered each mip using an integer minimum-LOD clamp, then sampled a
+non-suffix view of mip levels 1 and 2. This exercised the six-face GPU clone
+refresh path required by the 10Level9 lowest-LOD SRV restriction. Readback
+matched all 960 pixels. The cube query mask remained `0x1f1f`; unsupported
+RG8_UNORM cube creation was rejected by core. The RTX is modern hardware
+forced to FL9_1, not a proxy for every historical 9_1 driver.
+
+Verification on Rust 1.93.1 and Visual Studio 18 x64:
+
+- HAL capability validation test: 1/1 passed, including full-chain bounds,
+  non-POT shape rejection, backend-disabled mips, absent `MIP` and unavailable
+  query handling.
+- D3D11 HAL build check passed; complete strict private HAL suite passed
+  370/370. Expected unsupported-shader cases logged explicit skips; they were
+  not counted as successful render operations.
+- Focused strict public cube test passed 1/1; 960/960 expected readback pixels
+  matched on the physical FL9_1 device.
+- Complete strict public D3D11 test binary passed 51/51. One optional
+  Float16x2 input-format subcase logged a query-based skip because the RTX's
+  forced-FL9_1 device did not report `IA_VERTEX_BUFFER` for `R16G16_FLOAT`.
+- Controlled core fixture passed 96/96, including cube-layout and shape checks;
+  DX12 core regression passed 92/92.
+- HAL, core-fixture and public-test Clippy completed. No new Clippy warning
+  remains; the HAL reports the existing `too_many_arguments` warning on
+  `create_hal_view`.
+- `git diff --check` passed. Workspace `cargo fmt --all -- --check` still
+  reports five pre-existing formatting differences in the unchanged
+  `naga/src/back/hlsl/writer.rs`; no unrelated Naga formatting was applied.
+
+Exact focused and regression commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib private_cube_texture_validation_is_shape_and_query_aware
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_cube_texture_sampling_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 check --offline -j8 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --lib
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+git diff --check
+~~~
+
+Continue the selected-entry shader and texture-view contract audit. Historical
+FL9_1 and Windows Mobile ARM32 behavior remain unverified; the mission is not
+complete.

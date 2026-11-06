@@ -3,19 +3,18 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. The latest verified code checkpoint is
-`680b048ed` (`dx11: add query-gated FL9_1 cube sampling`) on branch
+`75222323e` (`dx11: support query-gated FL9_1 cube mip chains`) on branch
 `uwp-dx11`. The strict public D3D11 suite passed 51/51, private HAL 370/370,
 the core fixture 96/96 and DX12 core 92/92. The physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) created and ran the
-explicitly requested FL9_1 device. Its selected-device format mask reported
-cube support for the implemented formats; all six uploaded RGBA8 faces were
-sampled correctly across 96 checked pixels. An unsupported RG8 cube format
-was rejected by core from its negative selected-device query. Ordinary 2D
-arrays and cube arrays remain disabled; cube copy, readback and render-target
-views are unavailable. One optional Float16x2 vertex-input subcase remains a
-visible capability skip. The public D3D11 adapter remains explicitly opt-in;
-this does not complete the API contract audit. Details and exact commands are
-in `FL9_1_PROGRESS.md`.
+explicitly requested FL9_1 device. It reports RGBA8 cube and mip support; the
+strict public test uploaded four mip levels across six faces, exercised a
+non-suffix mip view, and matched all 960 readback pixels. Cube mip use remains
+query-gated; unsupported formats fail closed. Ordinary arrays, cube copies,
+readback and render-target cube views remain unavailable. One optional
+Float16x2 vertex-input subcase remains a visible capability skip. The public
+D3D11 adapter remains explicitly opt-in; the core/HAL contract audit is
+ongoing. Details and exact commands are in `FL9_1_PROGRESS.md`.
 
 The latest checkpoint also verifies the WGSL constant texel-offset form of
 `textureSampleBias`: core and the private HAL reject direct and helper-reached
