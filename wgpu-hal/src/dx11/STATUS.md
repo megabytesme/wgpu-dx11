@@ -215,6 +215,10 @@ An independent selected-entry limit now rejects zero-bias `frag_depth` output
 without `@location(0)`, matching FXC X4530. The structured color-plus-depth
 entry remains accepted and compiles. The limit checks specifically for target
 0; unrelated color locations do not satisfy the 10Level9 profile requirement.
+A strict public FL9_1 rendering test now proves the structured output affects
+depth testing: the first draw writes fragment depth 0.2 despite vertex depth
+0.8, then the second draw's fragment depth 0.8 fails despite vertex depth 0.2.
+All 64 pixels retain the first draw's red output.
 
 The controlled FL9_1 core fixture reports
 `DownlevelLimits::fragment_front_facing = false` and

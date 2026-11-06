@@ -495,7 +495,10 @@ zero depth bias, while a shader returning both `@location(0)` color and
 `frag_depth` compiles. Core follows the selected entry point and rejects only
 the missing-target-0 shape before HAL. A color output at another location does
 not satisfy this profile requirement. This restriction reflects the current
-10Level9 compiler path; it is not a general FL9_1 hardware claim.
+10Level9 compiler path; it is not a general FL9_1 hardware claim. A strict
+public forced-FL9_1 draw/readback verifies the supported structured
+color-plus-depth path: fragment-written depth changed which overlapping draw
+passed depth testing across all 64 output pixels.
 
 The FL9_1 projection also disables
 `DownlevelLimits::fragment_sample_mask_output`. Naga lowers a WGSL fragment

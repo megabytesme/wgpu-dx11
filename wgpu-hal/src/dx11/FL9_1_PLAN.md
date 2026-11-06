@@ -207,7 +207,10 @@ not a repository artifact.
    `ps_4_0_level_9_1`; core now gates only the selected fragment entry point.
    Vertex outputs with these modes and fragment centroid interpolation compile.
    A strict public render confirms centroid and perspective produce identical
-   single-sample readback. WGSL `textureGather` is now a
+   single-sample readback. The previously compilation-only structured
+   color-plus-`frag_depth` case now has strict public depth-test readback:
+   fragment depth overrides contradictory vertex depth in both draws as
+   expected. WGSL `textureGather` is now a
    stage-agnostic downlevel limit. Microsoft documents HLSL Gather for
    graphics at shader model 4.1 (FL10_1+) and compute gather4 at SM5 (FL11_0);
    the all-stage guarantee therefore begins at FL11_0. FXC rejects the FL9_1

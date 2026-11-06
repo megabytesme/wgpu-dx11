@@ -932,6 +932,13 @@ rejected at zero bias through
 strict public wgpu test verify that this error is returned before HAL, while
 the same module's structured color-plus-depth entry successfully compiles.
 
+The strict public `public_dx11_fragment_depth_controls_depth_test_at_fl91`
+test draws red geometry with vertex depth 0.8 and fragment depth 0.2, then
+green geometry with vertex depth 0.2 and fragment depth 0.8 under `LessEqual`.
+All 64 readback pixels remain red, proving the structured `SV_Depth` output,
+rather than the vertex depth, controls the depth test at requested/actual
+FL9_1.
+
 `@builtin(sample_mask)` output is another profile boundary. Naga emits HLSL
 `SV_Coverage`, which Microsoft documents as writable only from `ps_4_1`;
 `ps_4_0_level_9_1` rejects it. The HAL test captures the FXC failure and
