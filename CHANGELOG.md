@@ -121,6 +121,7 @@ Bottom level categories:
 
 #### WebGPU
 
+- Defer device-lost callbacks from queue submission until submission locks are released, allowing callbacks to poll safely.
 - Propagate mapped buffer flush failures, release mappings on failure, and invoke device-lost callbacks after releasing the callback lock.
 - Reject buffer destruction while mapped views remain alive, preserving the memory behind safe `BufferView` references.
 

@@ -49,9 +49,10 @@ queried format paths.
 HAL maps device-hung, removed, reset and driver-internal-error HRESULTs to
 `DeviceError::Lost`. A controlled core fixture now injects a synthetic
 `DXGI_ERROR_DEVICE_REMOVED` during FL9_1 command replay and verifies submission
-failure, device invalidation and exactly one lost callback. The selected device
-is physical, but the injected error does not represent actual hardware removal
-or recovery behavior.
+failure, device invalidation, exactly one lost callback and a reentrant device
+poll from that callback. Queue submission defers the callback until its
+submission locks are released. The selected device is physical, but the
+injected error does not represent actual hardware removal or recovery behavior.
 
 The opt-in FL9_1 public path supports single-sample RGBA8 cube textures with
 six independently uploaded faces. POT mip chains are enabled only when the

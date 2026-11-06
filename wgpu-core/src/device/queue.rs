@@ -14,7 +14,7 @@ use wgt::{
     AccelerationStructureFlags,
 };
 
-use super::{life::LifetimeTracker, Device};
+use super::{life::LifetimeTracker, Device, DeviceLostInvocation, UserClosures};
 #[cfg(feature = "trace")]
 use crate::device::trace::{Action, IntoTrace};
 use crate::{
@@ -47,6 +47,27 @@ use crate::{
     FastHashMap, SubmissionIndex,
 };
 use crate::{device::resource::CommandIndices, resource::RawResourceAccess};
+
+struct DeviceSubmissionError {
+    error: DeviceError,
+    device_lost_invocation: Option<DeviceLostInvocation>,
+}
+
+fn defer_submission_error(device: &Device, error: hal::DeviceError) -> DeviceSubmissionError {
+    let (error, device_lost_invocation) = device.defer_hal_error(error);
+    DeviceSubmissionError {
+        error,
+        device_lost_invocation,
+    }
+}
+
+fn fire_device_lost_invocation(invocation: Option<DeviceLostInvocation>) {
+    if let Some(invocation) = invocation {
+        let mut closures = UserClosures::default();
+        closures.device_lost_invocations.push(invocation);
+        closures.fire();
+    }
+}
 
 pub struct Queue {
     raw: Box<dyn hal::DynQueue>,
@@ -266,7 +287,10 @@ impl Queue {
         //   encoded above.
         pending_writes.insert_texture(texture);
 
-        submission.submit(pending_writes)?;
+        if let Err(error) = submission.submit(pending_writes) {
+            fire_device_lost_invocation(error.device_lost_invocation);
+            return Err(error.error);
+        }
 
         Ok(())
     }
@@ -340,7 +364,7 @@ impl Drop for Queue {
 
         assert!(maintain_result.queue_empty);
 
-        let closures = crate::device::UserClosures {
+        let closures = UserClosures {
             mappings: maintain_result.mappings,
             blas_compact_ready: maintain_result.blas_compact_ready,
             submissions: maintain_result.submissions,
@@ -360,7 +384,7 @@ pub(crate) struct QueueMaintainResult {
     pub(crate) submissions: SmallVec<[SubmittedWorkDoneClosure; 1]>,
     pub(crate) mappings: Vec<super::BufferMapPendingClosure>,
     pub(crate) blas_compact_ready: Vec<BlasCompactReadyPendingClosure>,
-    pub(crate) device_lost_invocations: SmallVec<[super::DeviceLostInvocation; 1]>,
+    pub(crate) device_lost_invocations: SmallVec<[DeviceLostInvocation; 1]>,
     pub(crate) queue_empty: bool,
 }
 
@@ -499,19 +523,19 @@ impl PendingWrites {
         command_allocator: &CommandAllocator,
         device: &Arc<Device>,
         queue: &Queue,
-    ) -> Result<Option<EncoderInFlight>, DeviceError> {
+    ) -> Result<Option<EncoderInFlight>, DeviceSubmissionError> {
         if self.is_recording {
             let pending_buffers = mem::take(&mut self.dst_buffers);
             let pending_textures = mem::take(&mut self.dst_textures);
             let pending_blas_s = mem::take(&mut self.copied_blas_s);
 
             let cmd_buf = unsafe { self.command_encoder.end_encoding() }
-                .map_err(|e| device.handle_hal_error(e))?;
+                .map_err(|e| defer_submission_error(device, e))?;
             self.is_recording = false;
 
             let new_encoder = command_allocator
                 .acquire_encoder(device.raw(), queue.raw())
-                .map_err(|e| device.handle_hal_error(e))?;
+                .map_err(|e| defer_submission_error(device, e))?;
 
             let encoder = EncoderInFlight {
                 inner: crate::command::InnerCommandEncoder {
@@ -681,7 +705,7 @@ impl<'a> PendingSubmission<'a> {
     fn submit(
         self,
         pending_writes: MutexGuard<'a, PendingWrites>,
-    ) -> Result<SubmissionResult<'a>, DeviceError> {
+    ) -> Result<SubmissionResult<'a>, DeviceSubmissionError> {
         self.queue.submit_pending_submission(pending_writes, self)
     }
 }
@@ -1385,7 +1409,10 @@ impl Queue {
             return Ok(());
         }
 
-        submission.submit(pending_writes)?;
+        if let Err(error) = submission.submit(pending_writes) {
+            fire_device_lost_invocation(error.device_lost_invocation);
+            return Err(error.error.into());
+        }
 
         Ok(())
     }
@@ -1399,7 +1426,10 @@ impl Queue {
         let submit_index = submission.index;
         let pending_writes = self.pending_writes.lock();
         if pending_writes.is_recording {
-            submission.submit(pending_writes)?;
+            if let Err(error) = submission.submit(pending_writes) {
+                fire_device_lost_invocation(error.device_lost_invocation);
+                return Err(error.error);
+            }
             Ok(Some(submit_index))
         } else {
             Ok(None)
@@ -1456,6 +1486,7 @@ impl Queue {
             .allocate_submission(submission_guard, snatch_guard)
             .map_err(|(index, e)| (index, e.into()))?;
         let submit_index = submission.index;
+        let mut device_lost_invocation = None;
 
         let res = 'error: {
             let mut used_surface_textures = track::TextureUsageScope::default();
@@ -1629,7 +1660,10 @@ impl Queue {
 
             let SubmissionResult { snatch_guard } = match submission.submit(pending_writes) {
                 Ok(result) => result,
-                Err(e) => break 'error Err(e.into()),
+                Err(error) => {
+                    device_lost_invocation = error.device_lost_invocation;
+                    break 'error Err(error.error.into());
+                }
             };
 
             profiling::scope!("cleanup");
@@ -1656,6 +1690,7 @@ impl Queue {
         };
 
         drop(_queue_guard);
+        fire_device_lost_invocation(device_lost_invocation);
 
         let callbacks = match res {
             Ok(ok) => ok,
@@ -1739,7 +1774,7 @@ impl Queue {
         &self,
         mut pending_writes: MutexGuard<'_, PendingWrites>,
         prepared: PendingSubmission<'a>,
-    ) -> Result<SubmissionResult<'a>, DeviceError> {
+    ) -> Result<SubmissionResult<'a>, DeviceSubmissionError> {
         let PendingSubmission {
             queue: _,
             _submission_guard,
@@ -1820,7 +1855,7 @@ impl Queue {
                     (self.device.fence.as_ref(), submit_index),
                 )
             }
-            .map_err(|e| self.device.handle_hal_error(e))?;
+            .map_err(|error| defer_submission_error(&self.device, error))?;
 
             // Submissions must have strictly increasing indices, so we must hold the
             // command index guard until we have submitted, to prevent another submission

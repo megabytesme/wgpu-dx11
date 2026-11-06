@@ -923,24 +923,40 @@ fn fl91_core_submission_device_loss_is_propagated_once() {
     assert!(error.is_none(), "command finish: {error:?}");
 
     let (lost_sender, lost_receiver) = std::sync::mpsc::channel();
+    let callback_global = global.clone();
     global.device_set_device_lost_closure(
         device,
         Box::new(move |reason, message| {
-            lost_sender.send((reason, message)).unwrap();
+            let poll_result = callback_global.device_poll(device, wgt::PollType::Poll);
+            lost_sender.send((reason, message, poll_result)).unwrap();
         }),
     );
-    assert!(matches!(
-        global.queue_submit(queue, &[command]),
-        Err((
-            _,
-            crate::device::queue::QueueSubmitError::Queue(crate::device::DeviceError::Lost)
-        ))
-    ));
-    let (reason, message) = lost_receiver
+    let (submit_sender, submit_receiver) = std::sync::mpsc::channel();
+    let submit_global = global.clone();
+    let submit_queue = queue;
+    let submit_command = command;
+    let submit_thread = std::thread::spawn(move || {
+        let result = submit_global.queue_submit(submit_queue, &[submit_command]);
+        submit_sender
+            .send(matches!(
+                result,
+                Err((
+                    _,
+                    crate::device::queue::QueueSubmitError::Queue(crate::device::DeviceError::Lost)
+                ))
+            ))
+            .unwrap();
+    });
+    assert!(submit_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("queue submission and reentrant lost callback poll must not deadlock"));
+    submit_thread.join().expect("queue submission thread");
+    let (reason, message, callback_poll_result) = lost_receiver
         .recv_timeout(Duration::from_secs(10))
         .expect("core device-lost callback after HAL submission error");
     assert_eq!(reason, wgt::DeviceLostReason::Unknown);
     assert!(!message.is_empty());
+    assert!(callback_poll_result.is_ok());
     assert!(matches!(
         global.queue_submit(queue, &[]),
         Err((

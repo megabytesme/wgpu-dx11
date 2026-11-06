@@ -8450,3 +8450,53 @@ HAL `create_hal_view` too-many-arguments warning remains. Workspace formatting
 check reports previously accumulated reflows in Naga and older DX11 sections;
 no unrelated formatting sweep was applied. `git diff --check` passed. Build
 artifacts remain under `E:\CodexTemp\wgpu-fl91-mission-target`.
+
+## Queue callback lock-safety checkpoint — 2026-11-06
+
+The selected-entry/core lifetime audit found that HAL submission errors were
+passed to `Device::handle_hal_error` while queue submission still held the
+command-index write guard. Device loss invokes the user callback synchronously;
+a callback that polls the device therefore attempted to take a read lock while
+the same thread retained the write lock. Queue submission now classifies and
+invalidates the device immediately but carries the one-shot callback invocation
+out of the submission operation, firing it only after queue submission locks
+have been released. The failure path covers queue submit, pending-write flushes,
+and the surface-present preparation submission without using the encoder's
+shared deferred-callback slot.
+
+The controlled regression callback calls `device_poll(Poll)` synchronously.
+The test performs the failing submit on a worker thread and has a timeout, so
+the prior reentrant deadlock becomes an explicit failure. It verifies a lost
+submission result, successful callback polling, one callback invocation and
+subsequent queue rejection. The RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, hardware adapter) is opened at requested/actual FL9_1; DXGI
+device removal is synthetic, not an actual hardware-removal test.
+
+Verification used Rust 1.93.1, Visual Studio 2022 Build Tools x64 and strict
+hardware mode for the D3D11 tests:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_submission_device_loss_is_propagated_once -- --test-threads=1 --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --test-threads=1 --nocapture
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1 --nocapture
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/device/queue.rs wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+~~~
+
+The focused reentrant callback regression passed 1/1; the complete core fixture
+passed 97/97; the public D3D11 suite passed 54/54 with one existing optional
+Float16x2 format subcase visibly skipped; the DX12 core suite passed 92/92; and
+the physical-adapter fixture passed 1/1, enumerating one adapter. After removing
+two needless `clone` calls found by Clippy, the focused regression passed again
+and core Clippy completed. Existing warnings are the HAL
+`create_hal_view` argument count and three older fixture lints (nonminimal bool,
+single-element loop, nested if). Targeted rustfmt reports pre-existing layout
+differences in older fixture sections; the changed callback block and queue
+code are formatted, and `git diff --check` passes. The first DX12 invocation
+failed because the shell lacked `link.exe`; rerunning inside Visual Studio 2022
+Build Tools x64 passed. Physical removal/recovery and historical FL9_1 driver
+behavior remain unverified.
