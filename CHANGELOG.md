@@ -57,6 +57,7 @@ Bottom level categories:
 
 #### Validation
 
+- Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
 - Gate bind-group layouts with empty shader visibility on downlevel support.
 - Gate unsupported sampled texture types and vertex-only visibility on downlevel support.
 - Gate multisampled texture layouts on downlevel support.

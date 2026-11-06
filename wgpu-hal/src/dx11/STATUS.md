@@ -29,6 +29,12 @@ allocation fallibly before mapping the D3D11 staging resource. Allocation
 failure is reported as device out-of-memory instead of panicking or leaving a
 native resource mapped during unwinding.
 
+The selected FL9_1 public projection also reports a separate limit of 16
+distinct sampled texture/sampler relationships per shader entry point. Core
+counts Naga's validated relationships for each selected stage and rejects an
+over-limit pipeline before HAL compilation; this does not reduce the independent
+eight-texture and sixteen-sampler binding limits.
+
 Strict public render-bundle tests now cover a nonindexed draw and an indexed
 textured draw at forced FL9_1. The latter drops its source resource handles
 after bundle recording and validates all 64 output pixels after execution.

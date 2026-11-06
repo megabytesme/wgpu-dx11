@@ -13640,6 +13640,146 @@ fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
 }
 
 #[test]
+fn public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert_eq!(
+        downlevel
+            .limits
+            .max_sampled_texture_sampler_pairs_per_shader_stage,
+        16
+    );
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 sampling relationship limit test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; sampled_pairs_per_stage=16",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let textures = [(7, "tex0"), (42, "tex1"), (100, "tex2")];
+    let samplers = [
+        (3, "samp0"),
+        (17, "samp1"),
+        (24, "samp2"),
+        (37, "samp3"),
+        (51, "samp4"),
+        (63, "samp5"),
+    ];
+    let mut declarations = String::new();
+    for (binding, name) in textures {
+        declarations.push_str(&format!(
+            "@group(0) @binding({binding}) var {name}: texture_2d<f32>;\n"
+        ));
+    }
+    for (binding, name) in samplers {
+        declarations.push_str(&format!(
+            "@group(0) @binding({binding}) var {name}: sampler;\n"
+        ));
+    }
+
+    let pairs: Vec<_> = [("tex0", 0..6), ("tex1", 0..6), ("tex2", 0..4)]
+        .into_iter()
+        .flat_map(|(texture, sampler_indices)| {
+            sampler_indices.map(move |index| (texture, samplers[index as usize].1))
+        })
+        .collect();
+    let entry_point = |name: &str, relations: &[(&str, &str)]| {
+        let mut body = String::new();
+        let mut values = Vec::new();
+        for (index, (texture, sampler)) in relations.iter().enumerate() {
+            body.push_str(&format!(
+                "let color{index} = textureSample({texture}, {sampler}, vec2f(0.5));\n"
+            ));
+            values.push(format!("color{index}"));
+        }
+        let color_sum = if values.is_empty() {
+            "vec4f(0.0)".to_string()
+        } else {
+            values.join(" + ")
+        };
+        format!("@fragment fn {name}() -> @location(0) vec4f {{\n{body}return {color_sum};\n}}\n")
+    };
+    let mut source = declarations;
+    source.push_str(
+        "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n",
+    );
+    source.push_str(&entry_point("fs16", &pairs));
+    source.push_str(&entry_point("fs_safe", &pairs[..1]));
+    let mut pairs17 = pairs.clone();
+    pairs17.push(("tex2", "samp4"));
+    source.push_str(&entry_point("fs17", &pairs17));
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 sampled relationship boundary shader"),
+        source: ShaderSource::Wgsl(source.into()),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(entry_point),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    drop(create_pipeline("fs16"));
+    drop(create_pipeline("fs_safe"));
+    expect_validation_error_containing(
+        &device,
+        "seventeen sampled texture/sampler relationships",
+        "TooManySampledTextureSamplerPairs",
+        || drop(create_pipeline("fs17")),
+    );
+    println!("PASS: 16 selected fragment sampling relationships compiled; a one-pair sibling entry point remained valid; 17 relationships were rejected by core before HAL");
+}
+
+#[test]
 fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();

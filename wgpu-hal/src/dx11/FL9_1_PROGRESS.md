@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## Current position — 2026-11-05
+## Current position — 2026-11-06
 
 ## Checkpoint — gate base-clamp sampling for 10Level9 — pending
 
@@ -7497,3 +7497,111 @@ FL9_1 implementations. The full HAL suite and core DX12 regression were
 already green at the prior multisample checkpoint; they are unaffected by
 this selected-device uniform-limit update. Continue the broader public
 core/HAL contract audit.
+
+## Follow-up — fallible public mapped-buffer readback
+
+The independent synchronization/lifetime audit found that `read_byte_buffer`
+used `vec![0; len]` after mapping a D3D11 staging buffer. A large public
+`MAP_READ` invalidation could therefore panic on allocation failure, and an
+unwind could leave the staging resource mapped. The readback vector now uses
+`try_reserve_exact` before staging creation or `Map`; failure becomes
+`E_OUTOFMEMORY`, which the public HAL path classifies as
+`DeviceError::OutOfMemory`. A CPU-only test supplies `usize::MAX` to exercise
+the allocator capacity-overflow path deterministically.
+
+Strict verification on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and actual FL9_1:
+
+- Full private D3D11 HAL suite: 365/365 passed. It exercised real GPU upload,
+  mapping, copy, rendering, synchronization and readback tests. Several
+  shader-negative tests explicitly report that their unsupported rendering
+  subcases were skipped after the intended validation rejection; they do not
+  count as GPU feature coverage.
+- Full strict public D3D11 test binary: 46/46 passed and executed on the
+  physical adapter. One optional Float16x2 vertex-input subcase reported a
+  capability skip because the selected device lacks `IA_VERTEX_BUFFER` for
+  that format.
+- HAL Clippy passed with nine existing warnings in unrelated mapped-range
+  tests, swapchain code and the isolated texel-load experiment; no new warning
+  was introduced. The changed file passed rustfmt and `git diff --check`.
+
+Commands (Rust 1.93.1 via the `+1.93` alias and Visual Studio x64 tools):
+
+```powershell
+cmd.exe /d /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set WGPU_DX11_REQUIRE_HARDWARE=1 && set RUST_MIN_STACK=16777216 && cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1'
+cmd.exe /d /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1'
+cmd.exe /d /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && cargo +1.93 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests'
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/buffer.rs
+git diff --check
+```
+
+The parallel core/shader review found no unguarded selected-entry shader or
+pipeline case in its audit. It confirmed a compiler boundary still missing a
+core validation rule: FL9_1 FXC compiles up to 16 distinct sampled
+texture/sampler relationships and rejects 17, while public limits count
+textures and samplers independently. The public adapter therefore permits a
+pipeline that fails later during backend compilation. The next increment will
+add a narrow per-stage downlevel limit and selected-entry core test without
+lowering either independent resource count.
+
+The synchronization reviewer also identified a conditional HWND reentrancy
+risk: `unconfigure` waits for an active surface operation, so a synchronous
+window callback reentering it on the same thread could self-deadlock. Normal
+resize/present and explicit operation-guard checks pass; callback delivery at
+this point is not reproduced. This remains an open presentation lifecycle
+item. Historical FL9_1 and ARM32 CoreWindow execution remain unverified.
+
+## Follow-up — selected-entry sampled relationship limit
+
+The core/HAL contract audit confirmed that the private FL9_1 compiler path
+supports sixteen distinct texture/sampler relationships in one shader stage,
+while FXC rejects seventeen. The existing independent public limits of eight
+textures and sixteen samplers did not express this cross-resource compiler
+boundary, so a core-valid pipeline could fail later during D3D11 pipeline
+creation. Added
+`DownlevelLimits::max_sampled_texture_sampler_pairs_per_shader_stage`, with a
+conservative default of `u32::MAX` for other backends, and projected the tested
+FL9_1 value of 16. Render and compute pipeline creation count distinct pairs
+from Naga's validated selected-entry `sampling_set`; over-limit stages return
+a validation error before HAL. The existing texture and sampler binding limits
+are unchanged. The public test compiles the 16-pair entry, accepts its one-pair
+sibling and rejects the 17-pair entry in the same WGSL module.
+
+The preceding mapped-readback allocation fix is committed as
+`d4182610f4e63db3e3de2e65acea0103c27fb93c`.
+
+Verification on Rust 1.93.1 with the Visual Studio x64 environment and Cargo
+`-j16`:
+
+- `cargo +1.93 test --offline -j16 -p wgpu-types`: 83 unit tests and 14
+  doctests passed; the focused numeric-limit test passed 1/1 and the
+  serde-compatibility test passed 1/1.
+- Strict private D3D11 HAL suite: 365/365 passed. The existing
+  `multi_resource_sixteen_sampler_relationships` test executed GPU rendering
+  and readback at forced FL9_1.
+- Strict public D3D11 suite: 47/47 passed on the physical RTX 3090 Ti at
+  requested/actual FL9_1. The new test compiled the 16-pair shader and
+  one-pair sibling, then confirmed core rejected 17 before HAL. One unrelated
+  optional Float16x2 input subcase visibly skipped because the adapter did not
+  report `IA_VERTEX_BUFFER` for that format.
+- Strict controlled D3D11 core fixture suite: 95/95 passed, including physical
+  adapter selection and core resource/command execution.
+- DX12 core regression suite: 91/91 passed.
+- `cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features
+  --features dx11,gles` passed, covering the shared downlevel type and GLES
+  adapter literal.
+- Core Clippy passed with one existing `collapsible_if` warning in the
+  fixture. HAL Clippy passed with nine existing unrelated warnings. Public
+  D3D11-test and serde-enabled `wgpu-types` Clippy passed without warnings.
+- Changed-file rustfmt and `git diff --check` passed. Git emitted only its
+  existing LF-to-CRLF working-copy notices.
+
+Hardware identity: NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver
+`32.0.16.2101`, hardware adapter (`software=false`), explicitly requested and
+selected FL9_1. The development driver reports unrestricted NPOT, so the
+conditional-NPOT negative path remains covered by synthetic tests rather than
+this hardware run.
+
+Next continue the selected-entry shader/compiler and render-pass contract
+audit. Public exposure remains experimental; historical FL9_1 drivers and
+ARM32 UWP are still unverified.

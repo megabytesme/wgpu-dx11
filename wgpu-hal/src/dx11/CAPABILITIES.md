@@ -928,6 +928,15 @@ textures with either a shared sampler or eight samplers, and sixteen distinct
 texture/sampler relationships. They do not prove all combinations or historical
 driver behavior. FXC compilation errors remain pipeline creation errors.
 
+The selected FL9_1 public projection reports a separate
+`DownlevelLimits::max_sampled_texture_sampler_pairs_per_shader_stage` of 16.
+This models the observed `ps_4_0_level_9_1` FXC boundary independently of the
+eight-texture and sixteen-sampler binding limits. Core counts Naga's validated
+sampling relationships for the selected entry point; sixteen pairs compile,
+while seventeen are rejected before HAL compilation. Sibling entry points in
+one module have independent counts. This is a compiler/backend constraint,
+not a general D3D11 binding-slot guarantee.
+
 Pipeline creation obtains sampling relationships from Naga's validated
 entry-point `sampling_set`, including helper-function calls. The relationships
 are resolved through the same logical-to-native binding map as the compiled

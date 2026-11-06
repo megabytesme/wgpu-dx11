@@ -83,6 +83,42 @@ pub(crate) struct CommandIndices {
     pub(crate) next_acceleration_structure_build_command_index: u64,
 }
 
+fn unique_sampling_pairs(
+    mut pairs: Vec<validation::SamplingPair>,
+) -> (Vec<validation::SamplingPair>, u32) {
+    pairs.sort_unstable();
+    pairs.dedup();
+    let count = u32::try_from(pairs.len()).unwrap_or(u32::MAX);
+    (pairs, count)
+}
+
+#[cfg(test)]
+mod sampling_pair_limit_tests {
+    use alloc::vec;
+
+    use super::{unique_sampling_pairs, validation::SamplingPair};
+
+    #[test]
+    fn count_uses_distinct_sorted_logical_pairs() {
+        let first = SamplingPair {
+            texture_group: 0,
+            texture_binding: 7,
+            sampler_group: 0,
+            sampler_binding: 42,
+        };
+        let second = SamplingPair {
+            texture_group: 2,
+            texture_binding: 3,
+            sampler_group: 1,
+            sampler_binding: 9,
+        };
+        let (pairs, count) = unique_sampling_pairs(vec![second, first, first]);
+
+        assert_eq!(pairs, [first, second]);
+        assert_eq!(count, 2);
+    }
+}
+
 /// Parameters provided to shaders via a uniform buffer of the type
 /// [`NagaExternalTextureParams`], describing an [`ExternalTexture`] resource
 /// binding.
@@ -4577,6 +4613,23 @@ impl Device {
                     io,
                     None,
                 )?;
+
+                let (_, given) = unique_sampling_pairs(
+                    interface
+                        .sampling_pairs_used(naga::ShaderStage::Compute, &final_entry_point_name)?,
+                );
+                let limit = self
+                    .downlevel
+                    .limits
+                    .max_sampled_texture_sampler_pairs_per_shader_stage;
+                if given > limit {
+                    return Err(
+                        pipeline::CreateComputePipelineError::TooManySampledTextureSamplerPairs {
+                            given,
+                            limit,
+                        },
+                    );
+                }
             }
 
             if match shader_module.interface.interface() {
@@ -5365,11 +5418,25 @@ impl Device {
                     }
 
                     if let Some(interface) = interface {
-                        sampling_pairs.extend(
+                        let (stage_sampling_pairs, given) = unique_sampling_pairs(
                             interface
                                 .sampling_pairs_used(stage.to_naga(), &_vertex_entry_point_name)
                                 .map_err(stage_err)?,
                         );
+                        let limit = self
+                            .downlevel
+                            .limits
+                            .max_sampled_texture_sampler_pairs_per_shader_stage;
+                        if given > limit {
+                            return Err(
+                                pipeline::CreateRenderPipelineError::TooManySampledTextureSamplerPairs {
+                                    stage: stage_bit,
+                                    given,
+                                    limit,
+                                },
+                            );
+                        }
+                        sampling_pairs.extend(stage_sampling_pairs);
                         let sampled_textures = interface
                             .sampled_textures_used(stage.to_naga(), &_vertex_entry_point_name)
                             .map_err(stage_err)?;
@@ -5460,11 +5527,25 @@ impl Device {
                         .map_err(stage_err)?;
 
                     if let Some(interface) = task_shader_module.interface.interface() {
-                        sampling_pairs.extend(
+                        let (stage_sampling_pairs, given) = unique_sampling_pairs(
                             interface
                                 .sampling_pairs_used(stage.to_naga(), &_task_entry_point_name)
                                 .map_err(stage_err)?,
                         );
+                        let limit = self
+                            .downlevel
+                            .limits
+                            .max_sampled_texture_sampler_pairs_per_shader_stage;
+                        if given > limit {
+                            return Err(
+                                pipeline::CreateRenderPipelineError::TooManySampledTextureSamplerPairs {
+                                    stage: stage_bit,
+                                    given,
+                                    limit,
+                                },
+                            );
+                        }
+                        sampling_pairs.extend(stage_sampling_pairs);
                         immediate_slots_required |= interface
                             .immediate_slots_required(stage.to_naga(), &_task_entry_point_name);
                         io = interface
@@ -5509,11 +5590,25 @@ impl Device {
                         .map_err(stage_err)?;
 
                     if let Some(interface) = mesh_shader_module.interface.interface() {
-                        sampling_pairs.extend(
+                        let (stage_sampling_pairs, given) = unique_sampling_pairs(
                             interface
                                 .sampling_pairs_used(stage.to_naga(), &_mesh_entry_point_name)
                                 .map_err(stage_err)?,
                         );
+                        let limit = self
+                            .downlevel
+                            .limits
+                            .max_sampled_texture_sampler_pairs_per_shader_stage;
+                        if given > limit {
+                            return Err(
+                                pipeline::CreateRenderPipelineError::TooManySampledTextureSamplerPairs {
+                                    stage: stage_bit,
+                                    given,
+                                    limit,
+                                },
+                            );
+                        }
+                        sampling_pairs.extend(stage_sampling_pairs);
                         immediate_slots_required |= interface
                             .immediate_slots_required(stage.to_naga(), &_mesh_entry_point_name);
                         io = interface
@@ -5845,11 +5940,25 @@ impl Device {
                 }
 
                 if let Some(interface) = shader_module.interface.interface() {
-                    sampling_pairs.extend(
+                    let (stage_sampling_pairs, given) = unique_sampling_pairs(
                         interface
                             .sampling_pairs_used(stage.to_naga(), &fragment_entry_point_name)
                             .map_err(stage_err)?,
                     );
+                    let limit = self
+                        .downlevel
+                        .limits
+                        .max_sampled_texture_sampler_pairs_per_shader_stage;
+                    if given > limit {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::TooManySampledTextureSamplerPairs {
+                                stage: stage_bit,
+                                given,
+                                limit,
+                            },
+                        );
+                    }
+                    sampling_pairs.extend(stage_sampling_pairs);
                     immediate_slots_required |= interface
                         .immediate_slots_required(stage.to_naga(), &fragment_entry_point_name);
                     io = interface

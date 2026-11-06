@@ -27,6 +27,13 @@ has confirmed the distinct face colors and clear background. The capture was
 made from the live client area on a 150%-scaled desktop; the temporary PNG is
 not a repository artifact.
 
+The core/HAL audit also found and closed a selected-entry sampling-count gap:
+FL9_1 now reports a separate limit of sixteen distinct texture/sampler pairs
+per shader stage, derived from Naga's validated entry-point relationships.
+Core rejects an over-limit pipeline before HAL while leaving the eight-texture
+and sixteen-sampler binding capacities intact. The 16/17 boundary and sibling
+entry-point selection are covered by a strict public test.
+
 1. Preserve the tested private backend; continue uniform layout and real
    constant-budget testing. FXC and the forced-FL9_1 RTX accept a dynamically
    indexed vertex constant array of 255 float4s and reject 256 at index 256;

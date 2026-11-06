@@ -45,6 +45,17 @@ textures, two-mip D24S8 attachments, vertex-visible storage-buffer layouts and
 `wgpu::Error::Validation`, confirming the public capability projection rejects
 these paths before the private HAL.
 
+The strict public sampled-relationship boundary test compiles an entry point
+with sixteen sparse texture/sampler relationships, accepts a one-pair sibling
+entry point from the same WGSL module, and verifies that an entry point with
+seventeen relationships is rejected by core validation before HAL. The private
+HAL suite separately exercises sixteen relationships through GPU rendering.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point -- --nocapture --test-threads=1
+```
+
 The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
 `32.0.16.2101`, requested and actual FL9_1, and `software=false`. The main
 image matched 32 tinted-red/32 green pixels; a queue write plus dynamic uniform

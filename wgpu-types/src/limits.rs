@@ -1085,6 +1085,16 @@ pub struct DownlevelLimits {
     /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
     /// applies to vertex shaders. WebGPU's baseline guarantee is 16.
     pub max_sampled_textures_per_vertex_stage: u32,
+    /// Maximum number of distinct sampled texture/sampler pairs statically used by one shader
+    /// entry point.
+    ///
+    /// This can be lower than either the sampled texture or sampler binding limit when a shader
+    /// profile has a separate limit on texture sampling relationships.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_max_sampled_texture_sampler_pairs")
+    )]
+    pub max_sampled_texture_sampler_pairs_per_shader_stage: u32,
     /// Maximum aggregate number of 16-byte uniform vectors available to a vertex entry point.
     ///
     /// Downlevel adapters may conservatively count the complete layout of each statically used
@@ -1242,6 +1252,11 @@ fn default_max_uniform_vectors() -> u32 {
     u32::MAX
 }
 
+#[cfg(feature = "serde")]
+fn default_max_sampled_texture_sampler_pairs() -> u32 {
+    u32::MAX
+}
+
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
@@ -1255,6 +1270,7 @@ impl Default for DownlevelLimits {
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
+            max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
             max_vertex_shader_uniform_vectors: u32::MAX,
             max_fragment_shader_uniform_vectors: u32::MAX,
             unrestricted_npot_texture_sampling: true,
@@ -1317,6 +1333,8 @@ impl DownlevelLimits {
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
+            && self.max_sampled_texture_sampler_pairs_per_shader_stage
+                >= required.max_sampled_texture_sampler_pairs_per_shader_stage
             && self.max_vertex_shader_uniform_vectors >= required.max_vertex_shader_uniform_vectors
             && self.max_fragment_shader_uniform_vectors
                 >= required.max_fragment_shader_uniform_vectors
@@ -1393,6 +1411,10 @@ impl DownlevelCapabilities {
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
                 >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
+            && self
+                .limits
+                .max_sampled_texture_sampler_pairs_per_shader_stage
+                >= DownlevelLimits::default().max_sampled_texture_sampler_pairs_per_shader_stage
             && self.limits.max_vertex_shader_uniform_vectors
                 >= DownlevelLimits::default().max_vertex_shader_uniform_vectors
             && self.limits.max_fragment_shader_uniform_vectors
@@ -1698,6 +1720,7 @@ mod tests {
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
+            max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 4,
             max_fragment_shader_uniform_vectors: 8,
             unrestricted_npot_texture_sampling: false,
@@ -1735,6 +1758,7 @@ mod tests {
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
+            max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 3,
             max_fragment_shader_uniform_vectors: 8,
             unrestricted_npot_texture_sampling: false,
@@ -1768,6 +1792,10 @@ mod tests {
         }));
         assert!(!available.check_limits(&DownlevelLimits {
             matrix_aggregate_stores: true,
+            ..required.clone()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_sampled_texture_sampler_pairs_per_shader_stage: 17,
             ..required.clone()
         }));
 
@@ -1821,6 +1849,27 @@ mod tests {
         }));
         assert!(!available.check_limits(&DownlevelLimits {
             max_fragment_shader_uniform_vectors: 33,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn sampled_texture_sampler_pairs_are_a_numeric_downlevel_limit() {
+        let available = DownlevelLimits {
+            max_sampled_texture_sampler_pairs_per_shader_stage: 16,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            max_sampled_texture_sampler_pairs_per_shader_stage: 16,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            max_sampled_texture_sampler_pairs_per_shader_stage: 17,
             ..DownlevelLimits::default()
         }));
         assert!(!DownlevelCapabilities {
@@ -1974,6 +2023,7 @@ mod tests {
             "sampled_sint_textures",
             "sampled_uint_textures",
             "multisampled_texture_bindings",
+            "max_sampled_texture_sampler_pairs_per_shader_stage",
             "max_vertex_shader_uniform_vectors",
             "max_fragment_shader_uniform_vectors",
             "max_sampler_anisotropy",
@@ -2001,6 +2051,10 @@ mod tests {
         assert!(limits.sampled_sint_textures);
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);
+        assert_eq!(
+            limits.max_sampled_texture_sampler_pairs_per_shader_stage,
+            u32::MAX
+        );
         assert_eq!(limits.max_vertex_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_fragment_shader_uniform_vectors, u32::MAX);
         assert_eq!(limits.max_sampler_anisotropy, 16);

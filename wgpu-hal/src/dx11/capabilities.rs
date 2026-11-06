@@ -242,6 +242,7 @@ pub(super) struct BackendCapabilities {
     pub sparse_texture_sampler_bindings: bool,
     pub sampled_textures_per_group: u32,
     pub samplers_per_group: u32,
+    pub sampled_texture_sampler_pairs_per_shader_stage: u32,
     pub sampled_textures_total: u32,
     pub samplers_total: u32,
     pub uniform_bindings_per_group: u32,
@@ -329,6 +330,7 @@ impl BackendCapabilities {
         sparse_texture_sampler_bindings: true,
         sampled_textures_per_group: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_per_group: super::hal_bind_group::MAX_SAMPLERS as u32,
+        sampled_texture_sampler_pairs_per_shader_stage: 16,
         sampled_textures_total: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_total: super::hal_bind_group::MAX_SAMPLERS as u32,
         uniform_bindings_per_group: super::hal_bind_group::MAX_UNIFORMS as u32,
@@ -438,6 +440,9 @@ impl Capabilities {
                 } else {
                     0
                 },
+                max_sampled_texture_sampler_pairs_per_shader_stage: self
+                    .backend
+                    .sampled_texture_sampler_pairs_per_shader_stage,
                 max_vertex_shader_uniform_vectors: self
                     .hardware
                     .legacy_vertex_shader_constant_vectors
@@ -1241,6 +1246,13 @@ mod tests {
         );
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
         assert_eq!(
+            exposed
+                .downlevel
+                .limits
+                .max_sampled_texture_sampler_pairs_per_shader_stage,
+            16
+        );
+        assert_eq!(
             exposed.downlevel.limits.max_vertex_shader_uniform_vectors,
             255
         );
@@ -1939,6 +1951,10 @@ mod tests {
             crate::MAX_BIND_GROUPS as u32
         );
         assert_eq!(fl9.backend.uniform_bindings_total, 13);
+        assert_eq!(
+            fl9.backend.sampled_texture_sampler_pairs_per_shader_stage,
+            16
+        );
         assert!(!fl9.backend.sampled_bindings_group_zero_only);
         assert_eq!(
             (

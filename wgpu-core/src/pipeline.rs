@@ -284,6 +284,8 @@ pub enum CreateComputePipelineError {
     MissingDownlevelFlags(#[from] MissingDownlevelFlags),
     #[error("Texture gather is not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureGather { stage: wgt::ShaderStages },
+    #[error("The number of distinct sampled texture/sampler pairs used by the compute stage {given} exceeds the downlevel limit {limit}")]
+    TooManySampledTextureSamplerPairs { given: u32, limit: u32 },
     #[error(transparent)]
     InvalidResource(#[from] InvalidResourceError),
 }
@@ -299,6 +301,7 @@ impl WebGpuError for CreateComputePipelineError {
             Self::Internal(_) => ErrorType::Internal,
             Self::PipelineConstants(_) => ErrorType::Validation,
             Self::UnsupportedTextureGather { .. } => ErrorType::Validation,
+            Self::TooManySampledTextureSamplerPairs { .. } => ErrorType::Validation,
         }
     }
 }
@@ -786,6 +789,12 @@ pub enum CreateRenderPipelineError {
     TooManyBuffersAndAccelerationStructuresInVertexStage { given: u32, limit: u32 },
     #[error("The number of sampled textures used by the vertex stage {given} exceeds the downlevel limit {limit}")]
     TooManySampledTexturesInVertexStage { given: u32, limit: u32 },
+    #[error("The number of distinct sampled texture/sampler pairs used by the {stage:?} stage {given} exceeds the downlevel limit {limit}")]
+    TooManySampledTextureSamplerPairs {
+        stage: wgt::ShaderStages,
+        given: u32,
+        limit: u32,
+    },
     #[error("The number of uniform vectors used by the {stage:?} stage {given} exceeds the downlevel limit {limit}")]
     TooManyUniformVectors {
         stage: wgt::ShaderStages,
@@ -916,6 +925,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManyBindGroupsPlusVertexBuffers { .. }
             | Self::TooManyBuffersAndAccelerationStructuresInVertexStage { .. }
             | Self::TooManySampledTexturesInVertexStage { .. }
+            | Self::TooManySampledTextureSamplerPairs { .. }
             | Self::TooManyUniformVectors { .. }
             | Self::UnsupportedVertexIndexInput
             | Self::UnsupportedInstanceIndexInput
