@@ -8592,3 +8592,27 @@ follows rustfmt, and `git diff --check` passes.
 This closes one more error-notification path, not the broader public core/HAL
 contract audit. The device-loss result remains synthetic, historical FL9_1
 drivers and ARM32 remain unverified, and the mission is still in progress.
+
+## Public consumer example run — 2026-11-06
+
+Built both `dx11_fl91_offscreen` and `dx11_fl91_windowed` through the public
+`wgpu` crate. Ran the offscreen example, which explicitly requests only the
+DX11 backend and verifies the returned adapter is physical and reports FL9_1.
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), its indexed
+textured-cube scene passed full readback validation: 112 red, 277 green and
+635 blue-background pixels across the 1,024-pixel image. This is a small
+consumer-style integration proof, not broad rendering compatibility.
+
+Commands and result:
+
+~~~powershell
+cargo +1.93 check --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+cargo +1.93 check --offline -j16 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std
+cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+~~~
+
+Both example checks passed. The run printed the selected physical adapter,
+confirmed requested and actual FL9_1, and reported `PASS` with the pixel
+counts above. A fresh read-only Lumia Device Portal `GET /api/os/devicefamily`
+also timed out, as did the earlier probe; Windows Mobile ARM32 remains an
+environmental verification gap.

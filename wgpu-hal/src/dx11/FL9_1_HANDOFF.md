@@ -2,9 +2,10 @@
 
 ## Current mission state — 2026-11-06
 
-This mission remains active on branch `uwp-dx11`, at HEAD
-`b16966039` (`dx11: test reentrant device removed reason handling`),
-with a clean working tree at the code checkpoint. Recent verified results
+This mission remains active on branch `uwp-dx11`; its latest code checkpoint
+is `b16966039` (`dx11: test reentrant device removed reason handling`),
+followed by a documentation checkpoint. The working tree was clean at the
+verified code checkpoint. Recent verified results
 include the strict private HAL suite 375/375, public D3D11 suite 54/54, core
 fixture 100/100, physical-adapter fixture 1/1, explicit public adapter test
 1/1 and DX12 core regression 92/92. Synthetic failures now cover command
@@ -16,9 +17,10 @@ FL9_1; they do not simulate physical device removal or recovery. The public
 suite still reports one optional Float16x2 vertex-input capability skip.
 D3D11 is explicitly selected and remains non-WebGPU-compliant. The core/HAL
 contract audit is ongoing. Exact commands, results and distinctions between
-GPU execution and synthetic tests are in `FL9_1_PROGRESS.md`. A previous
-read-only Lumia Device Portal probe timed out, so Windows 10 Mobile ARM32
-runtime verification remains unavailable.
+GPU execution and synthetic tests are in `FL9_1_PROGRESS.md`. A public
+consumer example also ran on this adapter and validated a 1,024-pixel textured
+indexed cube. The latest read-only Lumia Device Portal probe timed out again,
+so Windows 10 Mobile ARM32 runtime verification remains unavailable.
 
 The latest checkpoint also verifies the WGSL constant texel-offset form of
 `textureSampleBias`: core and the private HAL reject direct and helper-reached
