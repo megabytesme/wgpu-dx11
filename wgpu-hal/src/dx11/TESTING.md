@@ -170,6 +170,16 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_depth_attachment_at_fl91 -- --nocapture --test-threads=1
 ```
 
+The pass-state test executes one bundle twice while changing the pass-level
+scissor rectangle and blend constant between executions. Readback verifies 32
+red pixels on the left and 32 green pixels on the right; the bundle's vertex
+buffer is released before submission.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91 -- --nocapture --test-threads=1
+```
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91 -- --nocapture --test-threads=1

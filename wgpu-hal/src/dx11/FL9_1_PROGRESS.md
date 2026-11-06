@@ -2,8 +2,8 @@
 
 ## Current position — 2026-11-06
 
-Latest code checkpoint: `735195ef0` (`dx11: test depth attachments in FL9_1
-render bundles`). The strict public D3D11 suite passed 58/58; the private
+Latest code checkpoint: `4960d50f3` (`dx11: verify render bundle pass state
+at FL9_1`). The strict public D3D11 suite passed 59/59; the private
 HAL suite passed 376/376, controlled core fixture 100/100, physical adapter
 test 1/1 and DX12 core regression 92/92 at the preceding HAL checkpoint
 `f04b4f93e`. The strict D3D11 tests selected the RTX 3090 Ti
@@ -11,6 +11,37 @@ test 1/1 and DX12 core regression 92/92 at the preceding HAL checkpoint
 actual FL9_1. The public suite reported one optional Float16x2 input-format
 subcase skipped because its format query was negative. Continue the public
 core/HAL contract audit; the mission is not complete.
+
+## Checkpoint — render-bundle pass state — `4960d50f3`
+
+Added `public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91`.
+It records one bundle, executes it twice in the same pass, and changes the
+pass-level scissor and blend constant between executions. GPU readback
+verified all 64 pixels: the left half was red and the right half green. The
+bundle's vertex buffer was dropped before submission. This covers preservation
+of pass-level state while bundle execution resets bundle-controlled state.
+
+Verification used Rust 1.93.1, Visual Studio 2022 Build Tools x64, and strict
+hardware mode:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The focused test passed 1/1 on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested and
+actual FL9_1. The full strict public suite passed 59/59. Its Float16x2 vertex
+input subcase visibly skipped after the selected FL9_1 format query returned
+false. Wgpu Clippy passed with the pre-existing HAL too-many-arguments
+warning. Rustfmt still reports pre-existing formatting differences at other
+locations in `dx11_public.rs`; the new test formatted cleanly. `git diff
+--check` passed. This closes a bundle-state coverage gap, not the public
+core/HAL contract audit.
 
 The read-only Lumia Device Portal probe for `/api/os/devicefamily` timed out
 from this machine. No device state was changed. Windows 10 Mobile ARM32

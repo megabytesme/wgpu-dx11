@@ -100,8 +100,10 @@ inside consecutive bundles and verifies both outputs after source destruction.
 Another transition switches between different uniform-only and
 texture/sampler-only pipeline layouts and validates both outputs after source
 destruction. A writable D16 bundle attachment test verifies that a later far
-draw fails depth across all 64 pixels. Other bundle state combinations remain
-part of the API audit.
+draw fails depth across all 64 pixels. One bundle can also execute twice while
+the pass changes its scissor rectangle and blend constant; strict FL9_1
+readback verifies both regions and confirms pass-level state survives bundle
+execution. Other bundle state combinations remain part of the API audit.
 
 Some detailed status bullets below preserve earlier checkpoints. Later
 implementation checkpoints supersede their earlier surface and exposure

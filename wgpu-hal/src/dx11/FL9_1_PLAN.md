@@ -718,8 +718,10 @@ Consecutive bundles also select distinct dynamic uniform offsets and verify
 both images after releasing source resources. A further case changes pipeline
 layout and resource type between bundles. A writable D16 attachment case
 also verifies that the farther of two bundled draws fails depth after the
-near bundle writes it. Other bundle state combinations and restart topologies
-still need targeted coverage.
+near bundle writes it. One bundle executed twice in a pass now verifies that
+pass-level scissor and blend-constant values survive bundle execution; the
+two halves of the 64-pixel target read back exact red and green. Continue
+checking remaining render-bundle state and the broader core/HAL contract.
 
 ## Follow-up — mapped-view destruction safety
 
