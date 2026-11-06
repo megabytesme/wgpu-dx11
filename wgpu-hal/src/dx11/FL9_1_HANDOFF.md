@@ -3,9 +3,14 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `70341b011`
-(`dx11: verify FL9_1 instance-index rejection`), following `62d12ecd4`
-(`dx11: reject unsupported FL9_1 shader loops`). Core rejects a selected
+The branch is `uwp-dx11`, latest code checkpoint is `49b526a86`
+(`dx11: verify indexed strip restart in render bundles`), following
+`70341b011` (`dx11: verify FL9_1 instance-index rejection`) and `62d12ecd4`
+(`dx11: reject unsupported FL9_1 shader loops`). A new public test records a
+Uint16 indexed TriangleStrip with a restart marker in a render bundle, runs at
+forced FL9_1 and validates a complete 16×16 readback. The full strict public
+D3D11 suite passed 50/50; one optional input-format subcase remains an
+explicit capability skip. Core rejects a selected
 vertex or fragment entry point that reaches WGSL loop IR through helper calls,
 because Naga's current D3D11 HLSL lowering emits dynamically bounded loops
 that FXC rejects for the FL9_1 profiles. The backend's `shader_loops` downlevel
@@ -18,7 +23,7 @@ unused direct and structure-member declarations; the safe sibling and
 
 Strict physical tests ran on the NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`), hardware adapter, requested and
-actual FL9_1. Latest results: private HAL 367/367, public D3D11 49/49,
+actual FL9_1. Latest results: private HAL 367/367, public D3D11 50/50,
 controlled core fixture 96/96 and DX12 core 92/92. The optional Float16x2 IA
 subcase visibly skipped because the selected device did not report its input
 format support. `wgpu-types` passed 85 unit tests and the serde compatibility

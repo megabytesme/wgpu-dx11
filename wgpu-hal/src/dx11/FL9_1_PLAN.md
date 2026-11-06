@@ -11,7 +11,7 @@ background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
-### Current shader-contract checkpoint — WGSL loops (`62d12ecd4`)
+### Shader-contract checkpoint — WGSL loops (`62d12ecd4`)
 
 Selected-entry loop detection now follows calls from the chosen render entry
 point and records an explicit `DownlevelLimits::shader_loops` capability.
@@ -30,7 +30,7 @@ restriction selected-entry-aware and backed by a compiler or hardware test;
 do not enable normal D3D11 enumeration or infer historical-driver behavior
 from the modern RTX test system.
 
-### Current compiler-boundary check — `instance_index` (`70341b011`)
+### Compiler-boundary check — `instance_index` (`70341b011`)
 
 The previously documented unverified `instance_index` profile behavior is now
 tested through Naga HLSL generation and FXC. The `vs_4_0_level_9_1` profile
@@ -40,6 +40,16 @@ control compile. The existing selected-entry core gate remains the safe
 public contract. This is profile/compiler evidence and does not establish
 historical-driver behavior. Continue auditing other core-valid shader and
 render-state combinations.
+
+### Latest execution checkpoint — indexed strip restart in render bundles (`49b526a86`)
+
+A strict public D3D11 test records a Uint16 TriangleStrip with a primitive-
+restart marker inside a render bundle, executes it at explicitly forced FL9_1
+and validates all 256 pixels. The 50-test public D3D11 suite passed on the
+RTX 3090 Ti; one optional input-format subcase remains an explicit capability
+skip. This adds coverage for restart splitting through public bundle recording
+and replay, but does not close the broader topology, state-transition or
+historical-driver audit. See `FL9_1_PROGRESS.md` for the command and output.
 
 Some status descriptions within the audit sections below preserve earlier
 checkpoints. Later commits may supersede them; the opening summary and the
