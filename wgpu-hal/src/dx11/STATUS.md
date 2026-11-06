@@ -950,3 +950,9 @@ non-suffix 3D views through `DownlevelLimits::texture_3d_non_suffix_mip_views`.
 The strict RTX 3090 Ti test sampled three uploaded mip levels at requested and
 actual FL9_1; all 64 output pixels matched. GPU copies and readback for 3D
 textures remain unsupported.
+
+The fixture-only public HWND error test injects `DXGI_ERROR_DEVICE_REMOVED` at
+Present. On the physical RTX 3090 Ti opened at requested/actual FL9_1, core
+delivered the public lost callback exactly once; callback-reentrant polling
+returned the expected presentation-guard timeout. Injection bypasses the
+native Present call and does not simulate physical device removal.

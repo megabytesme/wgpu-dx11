@@ -5,9 +5,11 @@
 //! or dropped. It does not yet implement wgpu texture/fence semantics.
 use super::{device::NativeDevice, surface::Surface};
 use alloc::sync::Arc;
+#[cfg(feature = "dx11-test-fixture")]
+use core::sync::atomic::{AtomicI32, Ordering};
 use parking_lot::Mutex;
 use windows::{
-    core::{AgileReference, Error, Interface, Result},
+    core::{AgileReference, Error, Interface, Result, HRESULT},
     Win32::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
@@ -64,6 +66,8 @@ struct Inner {
     _window: Option<AgileReference<windows::UI::Core::ICoreWindow>>,
     swapchain: IDXGISwapChain1,
     state: Mutex<State>,
+    #[cfg(feature = "dx11-test-fixture")]
+    test_next_present: AtomicI32,
 }
 
 /// Private-backend building block for a window swap chain.
@@ -142,8 +146,21 @@ impl CoreWindowSwapchain {
                 _window: retained_window,
                 swapchain,
                 state: Mutex::new(State::default()),
+                #[cfg(feature = "dx11-test-fixture")]
+                test_next_present: AtomicI32::new(0),
             }),
         })
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    pub(super) fn test_fixture_fail_next_present(&self, error: HRESULT) -> bool {
+        if error.0 >= 0 {
+            return false;
+        }
+        self.inner
+            .test_next_present
+            .store(error.0, Ordering::Release);
+        true
     }
 
     /// Current swap-chain buffer dimensions in pixels.
@@ -231,6 +248,16 @@ impl CoreWindowFrame {
 
     pub(super) fn present_for_hal(mut self, sync_interval: u32) -> Result<bool> {
         self.texture.take();
+        #[cfg(feature = "dx11-test-fixture")]
+        let injected_status = self.inner.test_next_present.swap(0, Ordering::AcqRel);
+        #[cfg(feature = "dx11-test-fixture")]
+        let status = if injected_status != 0 {
+            HRESULT(injected_status)
+        } else {
+            let _context = self.inner.device.immediate_context();
+            unsafe { self.inner.swapchain.Present(sync_interval, DXGI_PRESENT(0)) }
+        };
+        #[cfg(not(feature = "dx11-test-fixture"))]
         let status = {
             let _context = self.inner.device.immediate_context();
             unsafe { self.inner.swapchain.Present(sync_interval, DXGI_PRESENT(0)) }
@@ -306,7 +333,7 @@ impl CoreWindowFrame {
     }
 }
 
-fn classify_present_status(status: windows::core::HRESULT) -> Result<bool> {
+fn classify_present_status(status: HRESULT) -> Result<bool> {
     // DXGI_STATUS_OCCLUDED is a successful HRESULT (winerror.h).
     const DXGI_STATUS_OCCLUDED: i32 = 0x087a0001;
     status.ok()?;
@@ -334,8 +361,8 @@ mod tests {
 
     #[test]
     fn present_distinguishes_occlusion_from_success_and_failure() {
-        assert!(classify_present_status(windows::core::HRESULT(0)).unwrap());
-        assert!(!classify_present_status(windows::core::HRESULT(0x087a0001)).unwrap());
+        assert!(classify_present_status(HRESULT(0)).unwrap());
+        assert!(!classify_present_status(HRESULT(0x087a0001)).unwrap());
         assert!(classify_present_status(E_FAIL).is_err());
     }
 }

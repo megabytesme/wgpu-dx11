@@ -215,6 +215,17 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
 ```
 
+The fixture-only public surface test injects `DXGI_ERROR_DEVICE_REMOVED` at
+the native Present boundary. It verifies that the public device-lost callback
+runs once and that polling re-entered from the callback returns the
+presentation-guard timeout. The HRESULT is synthetic; the test does not
+remove the physical device.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,std --test dx11_surface_error_fixture -- --nocapture --test-threads=1
+```
+
 Surface reservation tests verify that `configure` and `acquire_texture` fail
 fast during another operation, `unconfigure` waits when called by another
 thread, and same-thread reentrant `unconfigure` returns without waiting. The

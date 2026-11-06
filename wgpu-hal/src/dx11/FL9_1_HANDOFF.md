@@ -1938,3 +1938,10 @@ from `wait_for_idle` during core queue destruction. Core reports one lost
 callback, permits callback re-entry to `device_poll`, and finishes queue drop
 without panic on the physical RTX opened at FL9_1. This is error-path coverage
 only; physical removal and the broader lifetime audit remain open.
+
+Latest follow-up: the public HWND Present path now has fixture-only synthetic
+`DXGI_ERROR_DEVICE_REMOVED` coverage. The callback ran once and its reentrant
+poll returned the expected presentation-guard timeout on the physical RTX
+opened at requested/actual FL9_1. See the latest entry in
+`FL9_1_PROGRESS.md`; physical device removal/recovery and the broader audit
+remain outstanding.

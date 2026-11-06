@@ -8757,6 +8757,45 @@ cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --f
 git diff --check
 ~~~
 
+## HWND Present device-loss callback — 2026-11-06
+
+Added a fixture-only native Present HRESULT injection and an end-to-end public
+wgpu test. The test configured and acquired a real HWND swapchain on the RTX
+3090 Ti at requested/actual FL9_1, then injected `DXGI_ERROR_DEVICE_REMOVED`
+instead of calling native Present. Core delivered the public lost callback
+once. A poll re-entered from that callback returned the expected
+presentation-guard timeout instead of deadlocking. This is synthetic failure
+coverage; it does not simulate hardware removal or recovery.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 x64 environment:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,std --test dx11_surface_error_fixture -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_surface_error_fixture --no-default-features --features dx11-test-fixture,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu-hal/src/dx11/surface.rs wgpu-hal/src/dx11/swapchain.rs wgpu/tests/dx11_surface_error_fixture.rs
+git diff --check
+~~~
+
+Results: fixture public test 1/1; normal strict public D3D11 suite 60/60; and
+strict private HAL suite 376/376. The public suite explicitly skipped only
+the optional Float16x2 vertex-input subcase because the selected device query
+did not report support. The HAL suite's integer-local-indexing cases explicitly
+skipped their GPU subcases after the FL9_1 validator rejected those operations.
+The ordinary non-fixture HAL check and fixture-test Clippy passed. Clippy
+reports one pre-existing `too_many_arguments` warning in `texture.rs`; the
+newly introduced `std_instead_of_core` warning was corrected. Formatting and
+diff checks pass. No DX12 run was needed because this increment changes only
+the D3D11 test fixture and its public integration test.
+
+This closes public Present error propagation/reentrancy coverage only. Public
+adapter exposure remains experimental; the capability audit, unsupported
+shader/resource operations, historical FL9_1 devices, physical device loss,
+CoreWindow runtime and Windows ARM32 verification remain outstanding.
+
 Results: both focused fence error tests passed; the complete strict HAL suite
 passed 375/375, core fixture 99/99, public D3D11 suite 54/54 and DX12 core
 regression 92/92. The public suite reported the existing optional Float16x2

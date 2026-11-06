@@ -754,3 +754,10 @@ matched. The RTX 3090 Ti reported cube format mask `0x1f1f`, and core rejected
 RG8 cube creation because the selected format query did not include cube
 support. Cube copies and render-target views remain unavailable. Continue the
 core/HAL audit; do not infer historical FL9_1 support from this modern driver.
+
+The HWND Present device-loss path now has a fixture-only public regression:
+synthetic `DXGI_ERROR_DEVICE_REMOVED` is classified as device loss, reaches the
+public callback once and permits a callback-reentrant poll to return promptly
+under the active presentation guard. Physical device removal and recovery
+remain unverified; continue auditing other public surface lifecycle and
+core/HAL error paths.
