@@ -484,6 +484,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - A strict public `LoadOp::DontCare` test overwrites every color and D16 depth
   pixel before later reads. The near draw writes every depth value, the farther
   draw fails, and all 64 stored color pixels match.
+- A strict public RGBA8 pass clears red and uses `StoreOp::Discard`, then copies
+  the same texture to a CPU buffer. Core initializes the texture before that
+  read, and all 64 pixels are transparent black; discarded red contents are
+  not exposed.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.

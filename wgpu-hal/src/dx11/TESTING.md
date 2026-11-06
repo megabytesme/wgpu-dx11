@@ -1908,6 +1908,18 @@ the later `Less` depth test. On the RTX 3090 Ti at requested and actual FL9_1,
 all 64 pixels read back as `[255, 0, 0, 255]`. No undefined pre-pass contents
 are read.
 
+### Public discarded color initialization
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_color_is_initialized_before_read_at_fl91 -- --nocapture --test-threads=1
+```
+
+The public test clears an RGBA8 attachment red, discards it, then copies it to
+a CPU buffer. Core's discard tracking initializes the texture before the later
+read. The strict RTX 3090 Ti FL9_1 run observed transparent black in all 64
+pixels, not the retained red D3D11 contents.
+
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,
