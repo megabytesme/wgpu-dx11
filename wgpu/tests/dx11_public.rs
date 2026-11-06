@@ -6346,6 +6346,40 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             },
         ],
     });
+    let partial_view = texture.create_view(&TextureViewDescriptor {
+        label: Some("non-suffix FL9_1 2D mip view"),
+        format: Some(TextureFormat::Rgba8Unorm),
+        dimension: Some(TextureViewDimension::D2),
+        usage: Some(TextureUsages::TEXTURE_BINDING),
+        aspect: TextureAspect::All,
+        base_mip_level: 1,
+        mip_level_count: Some(2),
+        base_array_layer: 0,
+        array_layer_count: Some(1),
+    });
+    let partial_sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("second level of non-suffix FL9_1 view"),
+        min_filter: FilterMode::Nearest,
+        mag_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 1.0,
+        lod_max_clamp: f32::MAX,
+        ..Default::default()
+    });
+    let partial_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("non-suffix FL9_1 2D mip resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 17,
+                resource: BindingResource::TextureView(&partial_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&partial_sampler),
+            },
+        ],
+    });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 sampled mip pipeline layout"),
         bind_group_layouts: &[Some(&layout)],
@@ -6480,7 +6514,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
     vertex_buffer.unmap();
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 sampled mip readback"),
-        size: 4 * 8 * 256,
+        size: 5 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -6532,6 +6566,49 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             },
         );
     }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("non-suffix FL9_1 2D mip view pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipelines[0]);
+        pass.set_bind_group(0, &partial_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: (4 * 8 * 256) as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -6549,7 +6626,13 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         .expect("map sampled mip readback");
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
-        for (index, expected) in [mip_colors[1], mip_colors[1], mip_colors[0], mip_colors[3]]
+        for (index, expected) in [
+            mip_colors[1],
+            mip_colors[1],
+            mip_colors[0],
+            mip_colors[3],
+            mip_colors[2],
+        ]
             .into_iter()
             .enumerate()
         {
@@ -6566,7 +6649,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 selected the expected mip colors across 256 pixels; core rejected unsupported bias, derivative and explicit-gradient forms before HAL");
+    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 selected expected mip colors; a non-suffix 2D view refreshed and sampled its selected mip range; 320 pixels matched, and core rejected unsupported bias, derivative and explicit-gradient forms before HAL");
 }
 
 #[test]

@@ -1854,6 +1854,12 @@ support skips the applicable case in normal mode and fails strict mode.
 Historical drivers remain unverified and public surface capabilities remain
 unavailable.
 
+The public wgpu test `public_dx11_sampled_mip_chain_at_fl91` additionally binds
+a non-suffix 2D view selecting source mips 1–2, clamps sampling to the view's
+second mip, and verifies the original mip-2 color in all 64 output pixels.
+Together with the four full-chain/bias draws, the strict public test checks 320
+pixels and exercises the public core-to-HAL clone refresh path.
+
 ### Individual color-attachment mip views
 
 ```powershell
