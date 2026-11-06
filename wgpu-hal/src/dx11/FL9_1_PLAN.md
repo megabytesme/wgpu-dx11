@@ -11,6 +11,18 @@ background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
+### Public texture-view checkpoint — non-suffix 2D mip view (`4d3ec6bb9`)
+
+The strict public sampled-mip test now creates a 2D view over source mips 1–2
+of a four-level RGBA8 texture, binds it with a sampler clamped to the view's
+second level and checks that the original mip-2 data is returned across all 64
+pixels. This exercises the public core-to-HAL non-suffix clone-and-refresh
+path; the complete strict public suite passed 51/51 on forced FL9_1 hardware.
+The existing cube mip and private 2D view paths remain covered independently.
+
+Continue the selected-entry shader and core/HAL contract audit, prioritizing
+remaining observable failures reachable from valid public descriptors.
+
 ### Resource checkpoint — query-gated FL9_1 cube mip chains (`75222323e`)
 
 The public offscreen path now accepts caller-populated mip chains for the

@@ -3,13 +3,15 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. The latest verified code checkpoint is
-`75222323e` (`dx11: support query-gated FL9_1 cube mip chains`) on branch
+`4d3ec6bb9` (public non-suffix 2D mip-view coverage) on branch
 `uwp-dx11`. The strict public D3D11 suite passed 51/51, private HAL 370/370,
 the core fixture 96/96 and DX12 core 92/92. The physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) created and ran the
 explicitly requested FL9_1 device. It reports RGBA8 cube and mip support; the
-strict public test uploaded four mip levels across six faces, exercised a
-non-suffix mip view, and matched all 960 readback pixels. Cube mip use remains
+strict public cube test uploaded four mip levels across six faces, exercised a
+non-suffix mip view, and matched all 960 readback pixels. A second strict
+public test selected source mip 2 through a non-suffix 2D view and matched all
+64 pixels; its mip-chain test matched 320 pixels total. Cube mip use remains
 query-gated; unsupported formats fail closed. Ordinary arrays, cube copies,
 readback and render-target cube views remain unavailable. One optional
 Float16x2 vertex-input subcase remains a visible capability skip. The public

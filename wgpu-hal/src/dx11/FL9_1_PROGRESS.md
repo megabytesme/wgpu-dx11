@@ -8089,3 +8089,41 @@ git diff --check
 Continue the selected-entry shader and texture-view contract audit. Historical
 FL9_1 and Windows Mobile ARM32 behavior remain unverified; the mission is not
 complete.
+
+## Public view checkpoint — non-suffix FL9_1 2D mip range — `4d3ec6bb9` — 2026-11-06
+
+Extended the existing public sampled RGBA8 mip-chain test to bind a non-suffix
+2D view selecting source mip levels 1 and 2. A nearest sampler with minimum
+LOD 1 selects the second level relative to that view, which is source mip 2.
+The test renders through the normal public wgpu/core/HAL path, exercising the
+HAL's clone-and-refresh SRV path for a non-suffix 2D view, then reads back the
+target. All 64 pixels matched mip 2's distinctive blue value. Combined with
+the existing implicit and literal-bias checks, the sampled-mip test verified
+320 pixels.
+
+Verification used Rust 1.93.1, Visual Studio x64, strict hardware mode and the
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), with
+requested and actual FL9_1:
+
+- Focused `public_dx11_sampled_mip_chain_at_fl91`: 1/1 passed; 320/320 output
+  pixels matched, including all 64 from the non-suffix 2D view.
+- Complete strict public D3D11 suite: 51/51 passed. The optional Float16x2
+  vertex-input subcase visibly skipped because the selected FL9_1 device did
+  not report `IA_VERTEX_BUFFER` for `R16G16_FLOAT`.
+- Public-test Clippy passed with only the existing HAL `create_hal_view`
+  too-many-arguments warning. Current rustfmt would reflow unrelated legacy
+  sections throughout `dx11_public.rs`; that noise was not retained. The new
+  block follows the adjacent file style, and `git diff --check` passed.
+
+Exact commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+git diff --check
+~~~
+
+Continue the core/HAL contract audit; the mission remains partially complete.
+Historical FL9_1 and Windows Mobile ARM32 behavior remain unverified.
