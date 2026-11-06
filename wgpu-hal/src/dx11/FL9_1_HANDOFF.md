@@ -1801,8 +1801,9 @@ nonindexed triangle in a render bundle, executes it through a public render
 pass and validates all 64 output pixels. It passed on the RTX 3090 Ti at
 requested/actual FL9_1; the full public suite passed 42/42 with one explicit
 optional Float16x2 input-format skip. This verifies the basic pipeline,
-vertex-buffer and draw bundle path only. The next task remains the broader
-core/HAL API audit; this checkpoint does not complete the mission.
+vertex-buffer and draw bundle path only. Commit `d6b039960` contains the test
+and its capability/testing notes. The next task remains the broader core/HAL
+API audit; this checkpoint does not complete the mission.
 
 Commit `b5fb590ac` (`dx11: verify ignored targetless fragment outputs`)
 verifies that a result-bearing fragment shader whose location 0 has no color

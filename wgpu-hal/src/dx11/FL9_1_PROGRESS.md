@@ -7251,5 +7251,8 @@ rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ```
 
-Checkpoint commit: pending. Continue the core-valid API versus HAL audit;
-historical FL9_1 devices and ARM32 UWP remain unverified.
+The first direct PowerShell rerun failed before linking because `link.exe` was
+not on that shell's PATH. Re-running from the installed Visual Studio x64
+developer environment passed. Code and test checkpoint: `d6b039960`
+(`dx11: verify FL9_1 render bundle execution`). Continue the core-valid API
+versus HAL audit; historical FL9_1 devices and ARM32 UWP remain unverified.
