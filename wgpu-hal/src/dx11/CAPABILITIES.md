@@ -1052,3 +1052,11 @@ The private core fixture adds the aggregate feature locally when it specifically
 tests its BC1 path; this does not establish that the production projection can
 advertise BC support. Enabling a truthful public report requires implementing
 the required BC formats or adding a narrower core capability contract.
+
+## Public render bundles
+
+The strict public FL9_1 test records a pipeline, vertex buffer and nonindexed
+triangle draw in a `RenderBundleEncoder`, executes it in a color pass and
+validates all 64 readback pixels. This establishes the tested basic bundle
+path only; indexed bundle draws and other state combinations remain
+unverified.

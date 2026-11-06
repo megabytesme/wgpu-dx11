@@ -1794,6 +1794,16 @@ explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
 
+## Follow-up — public render-bundle execution
+
+The strict public test `public_dx11_render_bundle_executes_at_fl91` records a
+nonindexed triangle in a render bundle, executes it through a public render
+pass and validates all 64 output pixels. It passed on the RTX 3090 Ti at
+requested/actual FL9_1; the full public suite passed 42/42 with one explicit
+optional Float16x2 input-format skip. This verifies the basic pipeline,
+vertex-buffer and draw bundle path only. The next task remains the broader
+core/HAL API audit; this checkpoint does not complete the mission.
+
 Commit `b5fb590ac` (`dx11: verify ignored targetless fragment outputs`)
 verifies that a result-bearing fragment shader whose location 0 has no color
 target is correctly ignored in a D16-only pipeline. The HAL's direct compiler

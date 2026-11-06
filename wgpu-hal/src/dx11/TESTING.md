@@ -56,6 +56,23 @@ integration case, not a complete application or adapter-contract audit.
 All six unsupported resource requests were
 rejected by public core validation.
 
+### Public render bundle execution
+
+This strict test records a pipeline, vertex buffer and nonindexed triangle
+draw in a public `RenderBundleEncoder`, executes the bundle in an ordinary
+render pass, and validates all 64 pixels after GPU readback. It exercises the
+basic bundle execution path; indexed draws and other bundle state combinations
+are not covered by this case.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_executes_at_fl91 -- --nocapture --test-threads=1
+```
+
+The expected output is `[255, 64, 0, 255]` at every pixel. The test prints
+adapter identity, driver, requested and actual feature level, and whether the
+selected device is software-backed.
+
 ### Public HWND surface smoke test
 
 The public surface test creates a hidden top-level HWND, requests a compatible

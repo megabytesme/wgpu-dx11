@@ -488,3 +488,9 @@ integer gate, and the full suite passes. Next continue auditing core-valid
 shader and render-state combinations against the actual HAL. Keep optional
 formats query-gated and historical FL9_1 and ARM32 behavior explicitly
 unverified.
+
+The public command path also has a strict render-bundle execution test: core
+records a nonindexed triangle into a `RenderBundle`, executes it in a color
+pass, submits, waits and reads back all 64 expected pixels at forced FL9_1.
+This verifies only the tested pipeline/vertex-buffer/draw bundle shape; other
+bundle state and indexed bundle draws still need targeted coverage.

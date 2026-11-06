@@ -7224,3 +7224,32 @@ ordinary-feature gap, but the current FL9_1 profile rejects its direct system
 value; supporting it needs a deliberate emulation design, not a validation
 change. Next, continue with the depth/stencil, view and selected-device
 format/usage matrix, and preserve the current conservative projection.
+
+## Follow-up — public render-bundle execution
+
+Added a strict public wgpu test that records a pipeline, vertex buffer and
+nonindexed triangle draw in a `RenderBundleEncoder`, executes it in a normal
+color pass, submits and validates a complete 8×8 readback. The test is limited
+to this basic bundle shape and does not establish indexed bundle draws or all
+render-bundle state transitions.
+
+The focused test passed 1/1 and printed the physical NVIDIA GeForce RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+software=false. All 64 pixels were `[255, 64, 0, 255]`. The full strict public
+suite passed 42/42; the optional Float16x2 IA case visibly skipped because the
+selected FL9_1 device did not report the required format support. Public-test
+Clippy, rustfmt and `git diff --check` passed.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_render_bundle_executes_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Checkpoint commit: pending. Continue the core-valid API versus HAL audit;
+historical FL9_1 devices and ARM32 UWP remain unverified.

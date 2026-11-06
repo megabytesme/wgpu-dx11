@@ -21,6 +21,11 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+A strict public render-bundle test records and executes a nonindexed triangle
+draw at forced FL9_1 and validates all 64 output pixels. This covers the basic
+bundle path only; broader bundle state combinations remain part of the API
+audit.
+
 Some detailed status bullets below preserve earlier checkpoints. Later
 implementation checkpoints supersede their earlier surface and exposure
 statements; the current contract is summarized above and in
