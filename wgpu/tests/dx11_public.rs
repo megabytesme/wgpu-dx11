@@ -11153,3 +11153,406 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
     readback.unmap();
     println!("PASS: public FL9_1 outputless fragment discard in a DSV-only pass; it discarded the left half before depth writes, and the later farther draw produced 32 red / 32 depth-blocked blue pixels");
 }
+
+#[test]
+fn public_dx11_outputless_fragment_depth_stencil_pass_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=outputless discard fragment with D24S8 depth/stencil writes",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 outputless fragment D24S8 test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 outputless fragment D24S8 shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct PositionAndSide {
+                    @builtin(position) position: vec4f,
+                    @location(0) side: f32,
+                }
+                @vertex fn near_vs(@location(0) p: vec2f) -> PositionAndSide {
+                    return PositionAndSide(vec4f(p, 0.25, 1.0), p.x);
+                }
+                @vertex fn middle_vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                    return vec4f(p, 0.5, 1.0);
+                }
+                @vertex fn far_vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                    return vec4f(p, 0.75, 1.0);
+                }
+                fn discard_negative(side: f32) {
+                    if side < 0.0 { discard; }
+                }
+                @fragment fn discard_left(@location(0) side: f32) {
+                    discard_negative(side);
+                }
+                @fragment fn red() -> @location(0) vec4f {
+                    return vec4f(1.0, 0.0, 0.0, 1.0);
+                }
+                @fragment fn green() -> @location(0) vec4f {
+                    return vec4f(0.0, 1.0, 0.0, 1.0);
+                }
+            "#
+            .into(),
+        ),
+    });
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 outputless D24S8 fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map outputless D24S8 triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }],
+    })];
+    let color_target = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let make_pipeline = |label,
+                         vertex_entry,
+                         fragment_entry,
+                         targets,
+                         depth_compare,
+                         depth_write,
+                         stencil_compare,
+                         stencil_pass_op,
+                         stencil_write_mask| {
+        let face = StencilFaceState {
+            compare: stencil_compare,
+            pass_op: stencil_pass_op,
+            ..StencilFaceState::IGNORE
+        };
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_buffers,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth24PlusStencil8,
+                depth_write_enabled: Some(depth_write),
+                depth_compare: Some(depth_compare),
+                stencil: StencilState {
+                    front: face,
+                    back: face,
+                    read_mask: 0xff,
+                    write_mask: stencil_write_mask,
+                },
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let discard_pipeline = make_pipeline(
+        "FL9_1 outputless D24S8 discard pipeline",
+        "near_vs",
+        "discard_left",
+        &[],
+        CompareFunction::Less,
+        true,
+        CompareFunction::Always,
+        StencilOperation::Replace,
+        0xff,
+    );
+    let stencil_read_pipeline = make_pipeline(
+        "FL9_1 outputless D24S8 stencil read pipeline",
+        "far_vs",
+        "red",
+        &color_target,
+        CompareFunction::Always,
+        false,
+        CompareFunction::Equal,
+        StencilOperation::Keep,
+        0,
+    );
+    let depth_read_pipeline = make_pipeline(
+        "FL9_1 outputless D24S8 depth read pipeline",
+        "middle_vs",
+        "green",
+        &color_target,
+        CompareFunction::Less,
+        false,
+        CompareFunction::Always,
+        StencilOperation::Keep,
+        0,
+    );
+
+    let depth_stencil = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 outputless fragment D24S8 attachment"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24PlusStencil8,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_stencil_view = depth_stencil.create_view(&TextureViewDescriptor::default());
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 outputless D24S8 result"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 outputless D24S8 readback"),
+        size: 2 * 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 outputless D24S8 verification"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 outputless discard with D24S8 writes"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&discard_pipeline);
+        pass.set_stencil_reference(7);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 verify stencil writes after outputless discard"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&stencil_read_pipeline);
+        pass.set_stencil_reference(0);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 verify depth writes after outputless discard"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_stencil_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&depth_read_pipeline);
+        pass.set_stencil_reference(0);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 8 * 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for outputless D24S8 result");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("outputless D24S8 readback callback")
+        .expect("map outputless D24S8 readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped outputless D24S8 data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected_stencil = if x < 4 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected_stencil,
+                    "outputless D24S8 stencil discard pixel ({x}, {y})"
+                );
+                let depth_offset = 8 * 256 + offset;
+                let expected_depth = if x < 4 {
+                    [0, 255, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                };
+                assert_eq!(
+                    &data[depth_offset..depth_offset + 4],
+                    expected_depth,
+                    "outputless D24S8 depth discard pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 outputless fragment discard with D24S8; stencil equality and later depth comparison independently confirmed 32 red/green pixels where discard prevented stencil/depth writes and 32 blue pixels where the surviving fragment wrote both");
+}

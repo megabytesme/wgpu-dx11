@@ -438,7 +438,7 @@ nonzero `first_instance`; readback verifies the selected instance records and
 the skipped record. The public selected-entry gate rejects `instance_index`,
 which the FL9_1 shader path does not implement.
 
-## Current checkpoint — outputless fragment in a depth-only pass
+## Current checkpoint — outputless fragment with depth and stencil
 
 The public FL9_1 projection already allowed an outputless fragment stage with
 no color targets and a depth attachment, but the D3D11 HAL rejected that
@@ -446,15 +446,16 @@ pipeline shape. Direct Naga HLSL output failed with FXC X4530 because the
 `ps_4_0_level_9_1` profile requires `SV_Target0`. The HAL now retains the
 validated fragment body as a helper and adds a synthetic zero color result to
 the entry point. The pass binds no RTV, so the added color has no observable
-destination; discard and depth behavior remain active. A strict public test
-uses conditional discard in a D16-only pass, then draws farther geometry in a
-color pass. GPU readback verified 32 red pixels where discard prevented the
-first depth write and 32 blue pixels where the first depth write remained.
-The test also covers a location input, a helper call and a sparse uniform
-mapping in the compiler test. Historical FL9_1 profile behavior remains
-unverified.
+destination; discard and depth behavior remain active. A strict public D16
+test uses conditional discard, then draws farther geometry in a color pass.
+A D24S8 test verifies that the discard also suppresses stencil replacement.
+Separate later stencil and depth comparisons validate 32 pixels on each half
+of both readback images. The compiler test covers a location input, a helper
+call and a sparse uniform mapping. The full strict public suite passed 38/38,
+including the D24S8 case, on the physical RTX 3090 Ti at requested/actual
+FL9_1. Historical FL9_1 profile behavior remains unverified.
 
-The next task is to exercise a targetless outputless fragment with D24S8
-stencil interaction, then continue auditing core-legal render-pass and
-pipeline-state combinations against the HAL. Keep optional formats
-query-gated and historical FL9_1 and ARM32 behavior explicitly unverified.
+Next continue auditing core-legal render-pass and pipeline-state combinations
+against the HAL, prioritizing concrete contract mismatches and focused public
+tests. Keep optional formats query-gated and historical FL9_1 and ARM32
+behavior explicitly unverified.

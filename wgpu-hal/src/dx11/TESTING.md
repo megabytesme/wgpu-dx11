@@ -674,6 +674,18 @@ compiles the backend's synthetic-color wrapper while retaining a sparse
 uniform binding and helper call. No RTV is bound for the targetless pass, so
 the synthetic color cannot reach an application attachment.
 
+The D24S8 variant verifies both depth and stencil side effects. The first pass
+discards the left half and replaces stencil with reference 7 on the surviving
+half. A later stencil-equality pass renders red only on the discarded half;
+a separate depth comparison renders green there. The surviving half remains
+blue in both results. All 128 readback pixels are validated on the strict
+physical FL9_1 path.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_outputless_fragment_depth_stencil_pass_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public FL9_1 D24S8 depth/stencil pass transitions
 
 The public transition test initializes both D24S8 aspects, then verifies a

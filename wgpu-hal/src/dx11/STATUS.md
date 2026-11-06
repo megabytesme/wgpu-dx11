@@ -734,6 +734,10 @@ commands.
 
 See [TESTING.md](TESTING.md) for the staged validation plan and hardware matrix.
 
+Outputless fragment shaders now execute in targetless D16 and D24S8 passes.
+Strict FL9_1 readback verifies conditional discard prevents both depth and
+stencil writes; targetless rendering still requires a depth/stencil attachment.
+
 Fragment `@builtin(sample_mask)` output is now represented by
 `DownlevelLimits::fragment_sample_mask_output`. Microsoft documents HLSL
 `SV_Coverage` output as requiring `ps_4_1`; the selected FL9_1 profile is
