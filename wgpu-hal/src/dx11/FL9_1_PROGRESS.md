@@ -7114,3 +7114,73 @@ may emit a shader-model-4.1-only HLSL modifier, while the FL9_1 fixture omits
 `DownlevelFlags::MULTISAMPLED_SHADING`. Confirm the exact FXC profile boundary,
 then add a selected-entry core gate only if the profile evidence supports it.
 Historical FL9_1 devices and ARM32 UWP remain unverified.
+
+## Follow-up — fragment interpolation contract — `89a2dbbd8`
+
+FXC accepts vertex `flat`, `linear` and `centroid` outputs under the tested
+FL9_1 profile, but rejects fragment `flat` (`nointerpolation`) and `linear`
+(`noperspective`) inputs with X4568. Fragment `centroid` and perspective
+compile; a strict public draw/readback compares all 64 pixels. Core now has a
+downlevel limit for this selected-fragment-entry restriction. It does not
+reject vertex outputs or centroid sampling. Sample-qualified interpolation
+continues to be rejected through Naga's existing multisampled-shading gate.
+
+Verification on 2026-11-06 used pinned Rust 1.93.1 and the Visual Studio
+developer environment. The strict public suite passed 39/39 and the private
+HAL suite passed 363/363 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), hardware=true, requested/actual FL9_1. The optional
+Float16x2 vertex-input branch visibly skipped because the selected device
+does not report the required IA format support. FXC profile tests passed;
+core selected-entry analysis, wgpu-types limit/serde compatibility tests and
+the 90-test DX12 core regression passed. Clippy passed for core, HAL, public
+wgpu tests, wgpu-types and wgpu-info; HAL reported nine existing warnings in
+unrelated tests. Changed Rust files passed rustfmt and `git diff --check`.
+
+## Follow-up — execute structured fragment depth — `fa9444968`
+
+The previously compilation-only structured color-plus-`frag_depth` subset now
+has a strict public execution test. The test draws a red triangle with vertex
+depth 0.8 and fragment depth 0.2, followed by green with vertex depth 0.2 and
+fragment depth 0.8 using `LessEqual` and depth writes. The RTX forced to FL9_1
+produced red in all 64 pixels, proving `SV_Depth` controls depth testing and
+the second draw fails. The test reports the selected physical adapter and
+requested/actual level. Full strict public regression passed 40/40; the
+optional Float16x2 branch was the single visible capability skip. Targeted
+public Clippy, rustfmt and diff checks passed. Historical FL9_1 driver behavior
+remains unverified.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:RUST_MIN_STACK = '16777216'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib interpolation_modifiers_require_shader_model_4 -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl fragment_non_perspective_interpolation_follows_selected_entry
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_interpolation_profile_boundaries_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_depth_controls_depth_test_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-types --lib --features serde fragment_non_perspective_interpolation_is_a_downlevel_capability
+cargo +1.93 check --offline -j8 -p wgpu-info
+cargo +1.93 check --offline -j8 -p wgpu-hal --no-default-features --features gles
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11,std,wgsl --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+cargo +1.93 clippy --offline -j8 -p wgpu-types --features serde --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-info
+rustfmt +1.93 --edition 2021 --check <changed Rust files>
+git diff --check
+```
+
+The first full private HAL run showed intermittent DXGI unsupported errors and
+a stack overflow in tests that passed when isolated. Retrying the full serial
+suite with `RUST_MIN_STACK=16777216` passed 363/363. This was an environment or
+test-isolation issue, not attributed to the interpolation change.
+
+The latest contract audit found no confirmed unguarded shader-profile
+mismatch. The next concrete verification gap was the accepted fragment-depth
+path, now covered by the test above. Continue auditing core-legal D3D11
+operations, optional format/usage reports and presentation lifecycle. The
+backend remains opt-in and experimental, and historical FL9_1 hardware plus
+ARM32 UWP remain unverified.

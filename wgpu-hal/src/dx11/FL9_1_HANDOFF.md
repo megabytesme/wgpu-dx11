@@ -3,18 +3,18 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, HEAD is `9a87d9a0f`, and the working tree was clean
-after the public validation-gate checkpoint. Recent implementation commits
-verify attachment initialization across discard, load, copy and SRV sampling;
-command-buffer texture/view retention before submission; and core rejection of
-indirect buffers, compute pipelines and occlusion-query sets under the
-selected FL9_1 capability gates. The opt-in
-public D3D11 backend supports a
-conservative offscreen path and a constrained HWND path; it is not
-WebGPU-compliant. The strict public
-suite passed 36/36 on the RTX 3090 Ti (`0x10de:0x2203`, driver
-`32.0.16.2101`, software=false), explicitly requested and actual FL9_1. The
-D24S8 transition test checked 576 pixels over nine snapshots. The transient
+The branch is `uwp-dx11`, HEAD is `fa9444968`. Recent shader-contract commits
+gate fragment flat/linear interpolation rejected by the FL9_1 FXC profile and
+add actual depth-test readback for structured `frag_depth`. The strict public
+suite now passes 40/40 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), explicitly requested and actual FL9_1; its optional
+Float16x2 IA branch visibly skips because the selected device lacks that
+format. The full private HAL suite passes 363/363 after retrying with a larger
+test-thread stack; DX12 core regression passes 90/90. The current working tree
+contains only journal/handoff updates for these committed results. The opt-in
+public D3D11 backend supports a conservative offscreen path and a constrained
+HWND path; it is not WebGPU-compliant. Earlier checkpoints passed 36/36.
+The D24S8 transition test checked 576 pixels over nine snapshots. The transient
 test checks all 64 pixels of a readable color target controlled by transient
 D24S8 depth. The `DontCare` test confirms full color/depth overwrite and 64 red
 pixels. Core rejects sampled transient usage, invalid LOAD/STORE, read-only
@@ -29,9 +29,9 @@ and wrong-thread tests. Queue/resource operations during the Present guard are
 rejected when re-entered on the owner thread and serialized for other threads;
 the controlled core fixture exercises these checks. Historical FL9_1 drivers
 and ARM32 UWP execution remain unverified. Continue the selected-device
-format/usage and public core/HAL contract audits. Next test a core-legal
-fragment-stage pipeline with no color outputs in a depth-only pass. Keep
-optional formats query-gated. Do not push.
+format/usage and public core/HAL contract audits. Structured fragment depth
+now has an adversarial readback test. Keep optional formats query-gated. Do not
+push.
 
 **Outcome: PARTIALLY COMPLETE.** The mission is active. The explicit opt-in
 `dx11` backend enumerates physical adapters that successfully create an FL9_1
