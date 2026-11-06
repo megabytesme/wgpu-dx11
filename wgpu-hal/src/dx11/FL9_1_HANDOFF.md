@@ -3,18 +3,20 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`, at HEAD
-`77f82fece` (`dx11: query-gate FL9_1 volume mip sampling`), with a clean
-working tree at the checkpoint. The strict private HAL suite passed 375/375,
-the public D3D11 suite 54/54, the core fixture 97/97, core adapter enumeration
-1/1 and the DX12 core regression suite 92/92. The physical RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) created and ran the
-explicitly requested FL9_1 device. Its selected RGBA8 query reported 3D mip
-support; the new strict public test uploaded three volume mip levels, sampled
-them through suffix views and matched 64/64 pixels. Existing cube mip tests
-remain query-gated and covered; one optional Float16x2 vertex-input subcase
-remains a visible capability skip. D3D11 is explicitly selected and remains
-non-WebGPU-compliant. The core/HAL contract audit is ongoing. Exact commands,
-results and distinctions between GPU execution and synthetic tests are in
+`a56927a5c` (`core: defer device-lost callbacks after queue submission`),
+with a clean working tree at the checkpoint. Recent verified results include
+the strict private HAL suite 375/375, public D3D11 suite 54/54, core fixture
+97/97, physical-adapter fixture 1/1 and DX12 core regression 92/92. The latest
+core fix defers a lost-device callback until queue submission locks are
+released; its controlled callback polls the device synchronously and returns
+without deadlocking. The failure is synthetic, on a physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) explicitly opened at
+FL9_1. The latest strict public volume-mip test at the preceding implementation
+checkpoint uploaded and sampled three queried RGBA8 3D mip levels and matched
+64/64 pixels. One optional Float16x2 vertex-input subcase remains a visible
+capability skip. D3D11 is explicitly selected and remains non-WebGPU-compliant.
+The core/HAL contract audit is ongoing. Exact commands, results and
+distinctions between GPU execution and synthetic tests are in
 `FL9_1_PROGRESS.md`. A previous read-only Lumia Device Portal probe timed out,
 so Windows 10 Mobile ARM32 runtime verification remains unavailable.
 
