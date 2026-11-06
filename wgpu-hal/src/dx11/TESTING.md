@@ -263,12 +263,19 @@ inside an 8×8 target. Readback confirms 24 green pixels inside and 40 unchanged
 blue pixels outside. The same test submits an out-of-target viewport and
 confirms core rejects it before HAL under the selected FL9_1 projection.
 
-A sixth strict public test declares two fragment textures at sparse logical
-bindings 7 and 42, plus one shared sampler at binding 100. The bind-group
-layout, WGSL declarations and runtime entries use different orders. Both
-uploaded textures contribute to the output; readback verifies all 64 pixels
-are `[104, 128, 24, 255]`. An incomplete group missing binding 42 is rejected
-through public core validation before rendering.
+The strict public sparse multi-texture test declares two fragment textures and
+two independent samplers across groups 1, 4, 6 and 7. Logical bindings are
+sparse (7, 100, 42 and 17), and the WGSL declaration order differs from group
+and bind-group layout order. The shader samples both textures at the same
+coordinate using nearest and linear filtering respectively. The patterned
+inputs make a sampler/register swap observable; readback verifies all 64
+pixels are `[40, 43±1, 0, 255]`. An incomplete texture group is rejected by
+public core validation before rendering.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sparse_multi_texture_sampling_at_fl91 -- --nocapture --test-threads=1
+```
 
 A seventh strict public test uses all eight sampled-texture slots advertised
 for one FL9_1 shader stage. Eight independently uploaded textures at sparse

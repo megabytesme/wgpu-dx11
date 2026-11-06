@@ -5281,54 +5281,63 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
     }))
     .expect("request the selected FL9_1 device");
 
-    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("FL9_1 sparse multi-texture layout"),
-        entries: &[
-            BindGroupLayoutEntry {
-                binding: 100,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
-                count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 42,
+    let make_texture_layout = |label, binding| {
+        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some(label),
+            entries: &[BindGroupLayoutEntry {
+                binding,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: false },
+                    sample_type: TextureSampleType::Float { filterable: true },
                     view_dimension: TextureViewDimension::D2,
                     multisampled: false,
                 },
                 count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 7,
+            }],
+        })
+    };
+    let make_sampler_layout = |label, binding| {
+        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some(label),
+            entries: &[BindGroupLayoutEntry {
+                binding,
                 visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: false },
-                    view_dimension: TextureViewDimension::D2,
-                    multisampled: false,
-                },
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
-            },
-        ],
-    });
+            }],
+        })
+    };
+    let red_layout = make_texture_layout("FL9_1 red texture layout", 7);
+    let red_sampler_layout = make_sampler_layout("FL9_1 red sampler layout", 100);
+    let green_layout = make_texture_layout("FL9_1 green texture layout", 42);
+    let green_sampler_layout = make_sampler_layout("FL9_1 green sampler layout", 17);
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("FL9_1 sparse multi-texture pipeline layout"),
-        bind_group_layouts: &[Some(&layout)],
+        label: Some("FL9_1 sparse multi-group texture pipeline layout"),
+        bind_group_layouts: &[
+            None,
+            Some(&red_layout),
+            None,
+            None,
+            Some(&red_sampler_layout),
+            None,
+            Some(&green_layout),
+            Some(&green_sampler_layout),
+        ],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 sparse multi-texture shader"),
+        label: Some("FL9_1 sparse multi-group texture shader"),
         source: ShaderSource::Wgsl(
-            "@group(0) @binding(100) var shared_sampler: sampler;\n\
-             @group(0) @binding(42) var green_image: texture_2d<f32>;\n\
-             @group(0) @binding(7) var red_image: texture_2d<f32>;\n\
+            "@group(7) @binding(17) var green_sampler: sampler;\n\
+             @group(6) @binding(42) var green_image: texture_2d<f32>;\n\
+             @group(4) @binding(100) var red_sampler: sampler;\n\
+             @group(1) @binding(7) var red_image: texture_2d<f32>;\n\
              @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f { return textureSample(red_image, shared_sampler, vec2f(0.5)) + textureSample(green_image, shared_sampler, vec2f(0.5)); }"
+             @fragment fn fs() -> @location(0) vec4f { return textureSample(red_image, red_sampler, vec2f(0.2, 0.5)) + textureSample(green_image, green_sampler, vec2f(0.2, 0.5)); }"
                 .into(),
         ),
     });
-    let make_sampled_texture = |label, texel: [u8; 4]| {
+    let make_sampled_texture = |label, texels: [[u8; 4]; 8]| {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some(label),
             size: Extent3d {
@@ -5345,9 +5354,9 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         });
         let mut bytes = vec![0; 8 * 256];
         for y in 0..8 {
-            for x in 0..8 {
+            for (x, texel) in texels.iter().enumerate() {
                 let offset = y * 256 + x * 4;
-                bytes[offset..offset + 4].copy_from_slice(&texel);
+                bytes[offset..offset + 4].copy_from_slice(texel);
             }
         }
         queue.write_texture(
@@ -5371,47 +5380,64 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         );
         texture.create_view(&TextureViewDescriptor::default())
     };
-    let red_view = make_sampled_texture("sparse binding 7 texture", [96, 16, 0, 255]);
-    let green_view = make_sampled_texture("sparse binding 42 texture", [8, 112, 24, 255]);
-    let sampler = device.create_sampler(&SamplerDescriptor {
+    let red_view = make_sampled_texture(
+        "sparse binding 7 texture",
+        std::array::from_fn(|x| [8 + x as u8 * 32, 0, 0, 255]),
+    );
+    let green_view = make_sampled_texture(
+        "sparse binding 42 texture",
+        std::array::from_fn(|x| [0, 8 + x as u8 * 32, 0, 255]),
+    );
+    let red_sampler = device.create_sampler(&SamplerDescriptor {
         mag_filter: FilterMode::Nearest,
         min_filter: FilterMode::Nearest,
         mipmap_filter: MipmapFilterMode::Nearest,
         ..Default::default()
     });
-    expect_validation_error(&device, "missing sparse texture binding", || {
+    let green_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    expect_validation_error(&device, "missing sparse texture group binding", || {
         drop(device.create_bind_group(&BindGroupDescriptor {
-            label: Some("incomplete sparse multi-texture group"),
-            layout: &layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 7,
-                    resource: BindingResource::TextureView(&red_view),
-                },
-                BindGroupEntry {
-                    binding: 100,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
+            label: Some("incomplete sparse texture group"),
+            layout: &green_layout,
+            entries: &[],
         }));
     });
-    let group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("complete sparse multi-texture group"),
-        layout: &layout,
-        entries: &[
-            BindGroupEntry {
-                binding: 100,
-                resource: BindingResource::Sampler(&sampler),
-            },
-            BindGroupEntry {
-                binding: 42,
-                resource: BindingResource::TextureView(&green_view),
-            },
-            BindGroupEntry {
-                binding: 7,
-                resource: BindingResource::TextureView(&red_view),
-            },
-        ],
+    let red_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("sparse red texture group"),
+        layout: &red_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&red_view),
+        }],
+    });
+    let red_sampler_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("sparse red sampler group"),
+        layout: &red_sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 100,
+            resource: BindingResource::Sampler(&red_sampler),
+        }],
+    });
+    let green_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("sparse green texture group"),
+        layout: &green_layout,
+        entries: &[BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::TextureView(&green_view),
+        }],
+    });
+    let green_sampler_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("sparse green sampler group"),
+        layout: &green_sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: BindingResource::Sampler(&green_sampler),
+        }],
     });
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("FL9_1 sparse multi-texture pipeline"),
@@ -5506,7 +5532,10 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &group, &[]);
+        pass.set_bind_group(1, &red_group, &[]);
+        pass.set_bind_group(4, &red_sampler_group, &[]);
+        pass.set_bind_group(6, &green_group, &[]);
+        pass.set_bind_group(7, &green_sampler_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..3, 0..1);
     }
@@ -5551,16 +5580,19 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         for y in 0..8 {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
-                assert_eq!(
-                    &data[offset..offset + 4],
-                    [104, 128, 24, 255],
-                    "sparse multi-texture pixel ({x}, {y})"
+                let pixel = &data[offset..offset + 4];
+                assert_eq!(pixel[0], 40, "nearest red sample at ({x}, {y})");
+                assert!(
+                    pixel[1].abs_diff(43) <= 1,
+                    "linear green sample at ({x}, {y}): {pixel:?}"
                 );
+                assert_eq!(pixel[2], 0, "blue channel at ({x}, {y})");
+                assert_eq!(pixel[3], 255, "alpha channel at ({x}, {y})");
             }
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 sparse bindings 7/42/100 sampled both textures through one sampler; all 64 pixels matched [104, 128, 24, 255]");
+    println!("PASS: public FL9_1 sparse bindings 7/100 and 42/17 sampled independent nearest/linear pairs across groups 1/4 and 6/7; all 64 pixels matched [40, 43±1, 0, 255]");
 }
 
 #[test]

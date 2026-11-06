@@ -81,9 +81,11 @@ verifies premultiplied blending produces 64 `[128, 0, 128, 255]` pixels and
 that separate-alpha and source-alpha-saturated blend descriptors are rejected
 before HAL. A fifth strict test verifies a 4×6 scissor through public wgpu
 (24 green and 40 blue pixels) and core rejection of an out-of-target viewport.
-A sixth strict public test samples two textures at sparse bindings 7 and 42
-through a shared sampler at 100; all 64 pixels match the sum of both uploaded
-colors. An incomplete bind group is rejected by core validation.
+A strict public sparse multi-texture test places two independent
+texture/sampler pairs at sparse bindings 7/100 and 42/17 in groups 1/4 and
+6/7. Nearest and linear sampling of patterned textures both contribute to the
+result; all 64 readback pixels match `[40, 43±1, 0, 255]`. An incomplete
+texture group is rejected by core validation.
 A seventh strict test samples eight independent textures at sparse bindings,
 verifies every contribution in all 64 output pixels, and confirms a ninth
 fragment texture is rejected at core validation.
