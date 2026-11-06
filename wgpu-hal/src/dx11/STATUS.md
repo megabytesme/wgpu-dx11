@@ -496,6 +496,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   red clear.
 - A new public RGBA8 attachment used first with `LoadOp::Load`, then stored and
   read back, also returns transparent black at all 64 pixels.
+- A strict public command-buffer test drops an attachment texture and view
+  after recording but before submission; the queued clear/copy still returns
+  blue for all 64 pixels.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.

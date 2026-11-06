@@ -1942,6 +1942,20 @@ uses `LoadOp::Load` on a newly created color attachment before any write, then
 stores and reads it back. All 64 pixels are transparent black. The focused
 test passed 1/1; after adding it, the full strict public suite passed 32/32.
 
+### Public command-buffer resource retention
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_references_survive_until_submission_at_fl91 -- --nocapture --test-threads=1
+```
+
+The test records an RGBA8 attachment clear and texture-to-buffer copy, finishes
+the command buffer, then drops the public texture and view handles before
+submitting. The strict RTX 3090 Ti FL9_1 run read back blue in all 64 pixels,
+confirming the recorded commands retain the referenced resources through
+execution. The focused test passed 1/1; the full strict public suite passed
+33/33, with the optional Float16x2 input branch visibly capability-skipped.
+
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
 core buffer upload/copy and a WGSL offscreen triangle, submission, fence wait,
