@@ -1988,6 +1988,12 @@ selected adapter omits `DownlevelFlags::COMPUTE_SHADERS` and verifies that core
 rejects compute-pipeline creation with that named validation gate before HAL.
 It also passed 1/1 on the forced-FL9_1 physical device.
 
+The `public_dx11_rejects_occlusion_queries_at_fl91` test asserts the selected
+adapter omits `DownlevelFlags::OCCLUSION_QUERY` and verifies that core rejects
+query-set creation with that gate before the private HAL's unsupported query
+method. It passed 1/1. The full strict public suite now passes 36/36; only the
+optional Float16x2 vertex-input branch is skipped for missing device support.
+
 ### FL9_1 line topologies
 
 ```powershell

@@ -504,6 +504,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
   methods are unreachable through this public capability contract.
 - Public core rejects compute-pipeline creation through its missing
   `COMPUTE_SHADERS` downlevel gate before invoking the unsupported HAL path.
+- Public core rejects occlusion-query-set creation through the missing
+  `OCCLUSION_QUERY` gate before invoking the unsupported HAL query method.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
