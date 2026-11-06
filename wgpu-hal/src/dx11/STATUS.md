@@ -502,6 +502,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - Public core rejects an `INDIRECT` buffer at creation because the selected
   FL9_1 projection omits `INDIRECT_EXECUTION`; unsupported native indirect draw
   methods are unreachable through this public capability contract.
+- Public core rejects compute-pipeline creation through its missing
+  `COMPUTE_SHADERS` downlevel gate before invoking the unsupported HAL path.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.

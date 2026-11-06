@@ -1975,12 +1975,18 @@ same blend with alpha writes masked creates through the existing HAL path.
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_indirect_buffers_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_compute_pipelines_at_fl91 -- --nocapture --test-threads=1
 ```
 
 The physical FL9_1 adapter reports no `DownlevelFlags::INDIRECT_EXECUTION`.
 Core rejects creation of a `BufferUsages::INDIRECT` argument buffer with a
 validation error naming that gate, before any indirect draw method can reach
 the HAL. The focused strict test passed 1/1.
+
+The companion `public_dx11_rejects_compute_pipelines_at_fl91` test asserts the
+selected adapter omits `DownlevelFlags::COMPUTE_SHADERS` and verifies that core
+rejects compute-pipeline creation with that named validation gate before HAL.
+It also passed 1/1 on the forced-FL9_1 physical device.
 
 ### FL9_1 line topologies
 
