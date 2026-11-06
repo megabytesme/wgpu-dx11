@@ -7,6 +7,7 @@ use super::{
 use alloc::{format, sync::Arc};
 use core::{borrow::Borrow, ffi::c_void, num::NonZeroIsize, time::Duration};
 use parking_lot::{Condvar, Mutex};
+use std::thread::ThreadId;
 use windows::{
     core::{AgileReference, IUnknown, Interface},
     UI::Core::ICoreWindow,
@@ -21,7 +22,7 @@ struct Configured {
 #[derive(Debug, Default)]
 struct SurfaceState {
     current: Option<Configured>,
-    busy: bool,
+    operation_thread: Option<ThreadId>,
 }
 
 impl SurfaceState {
@@ -34,7 +35,7 @@ struct SurfaceOperation<'a>(&'a Surface);
 
 impl Drop for SurfaceOperation<'_> {
     fn drop(&mut self) {
-        self.0.configured.lock().busy = false;
+        self.0.configured.lock().operation_thread = None;
         self.0.operation_complete.notify_one();
     }
 }
@@ -159,22 +160,26 @@ impl Surface {
 
     fn begin_operation(&self) -> Result<SurfaceOperation<'_>, crate::SurfaceError> {
         let mut state = self.configured.lock();
-        if state.busy {
+        if state.operation_thread.is_some() {
             return Err(crate::SurfaceError::Other(
                 "D3D11 surface operation already in progress",
             ));
         }
-        state.busy = true;
+        state.operation_thread = Some(std::thread::current().id());
         Ok(SurfaceOperation(self))
     }
 
-    fn wait_for_operation(&self) -> SurfaceOperation<'_> {
+    fn wait_for_operation(&self) -> Option<SurfaceOperation<'_>> {
         let mut state = self.configured.lock();
-        while state.busy {
+        let current_thread = std::thread::current().id();
+        if state.operation_thread == Some(current_thread) {
+            return None;
+        }
+        while state.operation_thread.is_some() {
             self.operation_complete.wait(&mut state);
         }
-        state.busy = true;
-        SurfaceOperation(self)
+        state.operation_thread = Some(current_thread);
+        Some(SurfaceOperation(self))
     }
 
     /// Exercise the private HAL surface and queue in the UWP diagnostic.
@@ -850,7 +855,10 @@ impl crate::Surface for Surface {
         Ok(())
     }
     unsafe fn unconfigure(&self, device: &super::Device) {
-        let _operation = self.wait_for_operation();
+        let Some(_operation) = self.wait_for_operation() else {
+            log::error!("D3D11 surface unconfigure reentered an active surface operation");
+            return;
+        };
         let configured = self.configured.lock().current.clone();
         if let Some(config) = configured {
             if config.swapchain.belongs_to(device.native())
@@ -1003,7 +1011,7 @@ mod tests {
             let surface = &surface;
             scope.spawn(move || {
                 started_tx.send(()).unwrap();
-                let _operation = surface.wait_for_operation();
+                let _operation = surface.wait_for_operation().unwrap();
                 finished_tx.send(()).unwrap();
             });
             started_rx.recv().unwrap();
@@ -1012,6 +1020,15 @@ mod tests {
             finished_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         });
         assert!(surface.begin_operation().is_ok());
+    }
+
+    #[test]
+    fn unconfigure_reentry_from_operation_owner_fails_without_waiting() {
+        let surface = Surface::from_hwnd(NonZeroIsize::new(1).unwrap());
+        let operation = surface.begin_operation().unwrap();
+        assert!(surface.wait_for_operation().is_none());
+        drop(operation);
+        assert!(surface.wait_for_operation().is_some());
     }
 
     #[test]
