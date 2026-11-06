@@ -402,6 +402,24 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
+### FL9_1 shader-loop validation
+
+The core CPU test verifies direct and helper-reached loops are associated with
+the selected entry point and that a safe sibling entry remains unaffected.
+The strict HAL profile test forces FL9_1 on physical hardware, compiles
+dynamic-loop WGSL through the production Naga/FXC path, records the compiler
+diagnostics, and confirms a safe sibling still compiles. The strict core
+fixture verifies loop pipelines are rejected for both vertex and fragment
+stages before HAL.
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl validation::tests::shader_loop_detection_follows_only_selected_entry_calls -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-hal --features dx11 --lib dx11::hal_shader::tests::hal_module_compiles_and_creates_level_9_shaders -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
 ### Fallible mapped-buffer readback allocation
 
 `read_byte_buffer` allocates its output with `try_reserve_exact` before it

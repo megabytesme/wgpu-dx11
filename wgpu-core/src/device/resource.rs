@@ -5274,6 +5274,25 @@ impl Device {
                         )
                         .map_err(stage_err)?;
 
+                    if !self.downlevel.limits.shader_loops
+                        && match vertex_shader_module.interface.interface() {
+                            Some(interface) => interface
+                                .entry_point_uses_unsupported_shader_loops(
+                                    stage.to_naga(),
+                                    &_vertex_entry_point_name,
+                                    &self.downlevel.limits,
+                                )
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedShaderLoops {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
+
                     let interface = vertex_shader_module.interface.interface();
                     let uniform_vectors = match interface {
                         Some(interface) => interface
@@ -5666,6 +5685,25 @@ impl Device {
                             .map(|ep| ep.as_ref()),
                     )
                     .map_err(stage_err)?;
+
+                if !self.downlevel.limits.shader_loops
+                    && match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_shader_loops(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                                &self.downlevel.limits,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    }
+                {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedShaderLoops {
+                            stage: stage_bit,
+                        },
+                    );
+                }
 
                 if match shader_module.interface.interface() {
                     Some(interface) => interface

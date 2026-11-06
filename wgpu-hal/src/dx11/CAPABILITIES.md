@@ -1086,3 +1086,28 @@ validate all 64 readback pixels for each. The indexed test drops the source
 texture, sampler, bind group and vertex/index buffers after bundle recording,
 then confirms the bundle retains what execution needs. Other bundle state
 combinations and indexed restart behavior remain unverified.
+
+## Shader loop control
+
+Microsoft's 10Level9 shader-profile table gives `vs_4_0_level_9_1` static flow
+control to depth 1, but lists no flow-control capability for
+`ps_4_0_level_9_1`. The 9.3 profiles add static control to depth 4 and the
+pixel profile adds dynamic control to depth 24. These profile guarantees do
+not imply that this backend's WGSL loop lowering is supported.
+
+The Naga HLSL writer is configured with `force_loop_bounding`. For every Naga
+loop it emits a `while (true)` loop with a two-word decrementing iteration
+guard. FXC's level-9_1 compilation of WGSL loops is therefore not a static
+loop; a strict compiler test records the actual diagnostics. The current HAL
+does not have a tested lowering that preserves WGSL loop semantics while
+staying inside both stage profiles. Its backend capability is false, and the
+public FL9_1 projection sets `DownlevelLimits::shader_loops` to false.
+
+Core examines only the selected vertex and fragment entry points and their
+reachable helper functions. A loop in either selected stage fails pipeline
+validation before HAL; a sibling entry point that does not reach the loop is
+not rejected. This is an implementation/compiler-path restriction, not a
+claim that FL9_1 hardware can never execute static loops. Supporting the
+vertex static-flow subset would require a separate semantics-preserving Naga
+lowering and stage-aware validation; it is not represented as general WGSL
+loop support. Historical 9_1 hardware was not used for this determination.

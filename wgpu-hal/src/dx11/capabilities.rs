@@ -41,6 +41,10 @@ pub(super) struct HardwareGuarantees {
     pub depth_stencil_mip_levels: bool,
     pub geometry_shader: bool,
     pub compute_shader: bool,
+    pub vertex_static_flow_control: bool,
+    pub vertex_dynamic_flow_control: bool,
+    pub fragment_static_flow_control: bool,
+    pub fragment_dynamic_flow_control: bool,
     pub fragment_derivatives: bool,
     pub texture_query: bool,
     pub texture_sample_level: bool,
@@ -86,6 +90,16 @@ impl HardwareGuarantees {
                 L9_1 | L9_2 | L9_3 => (Some(255), Some(32)),
                 L10_0 | L10_1 | L11_0 | L11_1 => (None, None),
             };
+        let (
+            vertex_static_flow_control,
+            vertex_dynamic_flow_control,
+            fragment_static_flow_control,
+            fragment_dynamic_flow_control,
+        ) = match level {
+            L9_1 | L9_2 => (true, false, false, false),
+            L9_3 => (true, false, true, true),
+            L10_0 | L10_1 | L11_0 | L11_1 => (true, true, true, true),
+        };
         Self {
             level,
             texture_2d_dimension,
@@ -105,6 +119,10 @@ impl HardwareGuarantees {
             depth_stencil_mip_levels: level.as_raw() >= L10_0.as_raw(),
             geometry_shader: level.as_raw() >= L10_0.as_raw(),
             compute_shader: level.as_raw() >= L11_0.as_raw(),
+            vertex_static_flow_control,
+            vertex_dynamic_flow_control,
+            fragment_static_flow_control,
+            fragment_dynamic_flow_control,
             fragment_derivatives: level.as_raw() >= L9_3.as_raw(),
             texture_query: level.as_raw() >= L10_0.as_raw(),
             texture_sample_level: level.as_raw() >= L10_0.as_raw(),
@@ -265,6 +283,7 @@ pub(super) struct BackendCapabilities {
     pub texture_gather: bool,
     pub runtime_integer_shader_operations: bool,
     pub matrix_aggregate_stores: bool,
+    pub shader_loops: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub d16_depth_attachment: bool,
@@ -354,6 +373,7 @@ impl BackendCapabilities {
         texture_gather: false,
         runtime_integer_shader_operations: false,
         matrix_aggregate_stores: false,
+        shader_loops: false,
         depth_stencil: false,
         d24s8_depth_attachment: true,
         d16_depth_attachment: true,
@@ -436,6 +456,9 @@ impl Capabilities {
                 sampled_uint_textures: false,
                 multisampled_texture_bindings: false,
                 alpha_to_coverage: self.backend.alpha_to_coverage,
+                shader_loops: self.backend.shader_loops
+                    && self.hardware.vertex_dynamic_flow_control
+                    && self.hardware.fragment_dynamic_flow_control,
                 vertex_index_input: self.backend.vertex_index_input,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
@@ -1248,6 +1271,7 @@ mod tests {
             u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
         );
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
+        assert!(!exposed.downlevel.limits.shader_loops);
         assert_eq!(
             exposed
                 .downlevel
@@ -1824,6 +1848,19 @@ mod tests {
             assert_eq!(caps.hardware.max_texture_repeat_per_primitive, max_repeat);
             assert_eq!(caps.hardware.geometry_shader, geometry);
             assert_eq!(caps.hardware.compute_shader, compute);
+            assert!(caps.hardware.vertex_static_flow_control);
+            assert_eq!(
+                caps.hardware.vertex_dynamic_flow_control,
+                level.as_raw() >= FeatureLevel::L10_0.as_raw()
+            );
+            assert_eq!(
+                caps.hardware.fragment_static_flow_control,
+                level.as_raw() >= FeatureLevel::L9_3.as_raw()
+            );
+            assert_eq!(
+                caps.hardware.fragment_dynamic_flow_control,
+                level.as_raw() >= FeatureLevel::L9_3.as_raw()
+            );
             assert_eq!(
                 caps.hardware.depth_stencil_mip_levels,
                 depth_stencil_mip_levels
@@ -1831,6 +1868,7 @@ mod tests {
             assert_eq!(caps.hardware.two_sided_stencil, two_sided_stencil);
             assert_eq!(caps.hardware.fragment_derivatives, fragment_derivatives);
             assert!(!caps.backend.fragment_derivatives);
+            assert!(!caps.backend.shader_loops);
             assert_eq!(
                 caps.hardware.texture_query,
                 level.as_raw() >= FeatureLevel::L10_0.as_raw()

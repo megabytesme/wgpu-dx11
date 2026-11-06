@@ -288,6 +288,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             sampled_uint_textures,
             multisampled_texture_bindings,
             alpha_to_coverage,
+            shader_loops,
             max_sampled_texture_sampler_pairs_per_shader_stage,
             max_sampled_textures_per_vertex_stage,
             max_vertex_shader_uniform_vectors,
@@ -328,6 +329,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tSampled unsigned-integer textures: {sampled_uint_textures}")?;
     writeln!(output, "\t\tMultisampled texture bindings: {multisampled_texture_bindings}")?;
     writeln!(output, "\t\tAlpha-to-coverage: {alpha_to_coverage}")?;
+    writeln!(output, "\t\tShader loops: {shader_loops}")?;
     writeln!(
         output,
         "\t\tMax sampled texture/sampler pairs per shader stage: {max_sampled_texture_sampler_pairs_per_shader_stage}"

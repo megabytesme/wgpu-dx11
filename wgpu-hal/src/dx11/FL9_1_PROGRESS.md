@@ -7696,3 +7696,61 @@ Verification on Rust 1.93.1 and the RTX 3090 Ti (`0x10de:0x2203`, driver
 
 Next continue closing the selected-entry dynamic-loop/FXC compiler gap before
 broader shader and render-state audits.
+## Follow-up — selected-entry WGSL loop restriction
+
+The core/HAL shader audit found that `wgpu-core` accepted WGSL loops that the
+current D3D11 FL9_1 shader path could not compile. The HLSL writer uses
+`force_loop_bounding`, emitting dynamic `while (true)` control with a
+decrementing loop guard. Microsoft's shader-profile table lists static flow
+control (depth 1) for `vs_4_0_level_9_1`, but does not list loop control for
+`ps_4_0_level_9_1`; the current backend has no verified semantics-preserving
+static-loop lowering. FXC confirmed rejection of the generated vertex and
+fragment shaders, with X3552/X3511 for vertex and X3511 for fragment. This is
+a current compiler-path limit, not a claim that all FL9_1 hardware lacks
+static vertex loops.
+
+Added `DownlevelLimits::shader_loops`, defaulting to true for existing
+backends and old serialized capability reports. The D3D11 implementation
+reports false. `HardwareGuarantees` now records static/dynamic flow-control
+guarantees for vertex and fragment profiles across all seven recognized
+feature levels, separately from backend implementation. Core walks Naga IR
+from the selected vertex and fragment entries through nested blocks and
+reachable helper calls, then rejects only a selected stage that reaches a
+loop before HAL. Safe sibling entries remain valid. A controlled core fixture,
+public D3D11 validation test, HAL/FXC diagnostic test, synthetic relationship
+analysis test and serde-compatibility test cover the path.
+
+Verification used Rust 1.93.1, Visual Studio x64 and
+`CARGO_TARGET_DIR=E:\CodexTemp\wgpu-fl91-mission-target`:
+
+- Strict private D3D11 HAL suite: 366/366 passed. The hardware/compiler test
+  forced the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+  `32.0.16.2101`) to requested/actual FL9_1 (`software=false`); FXC emitted the
+  expected loop rejection diagnostics and compiled the safe sibling.
+- Strict D3D11 core fixture suite: 96/96 passed. The selected vertex and
+  fragment loops were rejected before HAL; the remaining fixture executed its
+  GPU operations and readbacks on the same forced-FL9_1 hardware.
+- Strict public D3D11 suite: 49/49 passed on the same adapter and level. The
+  selected-entry public rejection test passed. One optional Float16x2 input
+  format branch was explicitly skipped because the device query did not
+  advertise `IA_VERTEX_BUFFER` support.
+- `wgpu-types --lib`: 85/85 passed; serde compatibility: 1/1 passed. The
+  no-serde test build emitted 14 existing unused serde-import warnings.
+- DX12 core regression: 92/92 passed.
+- `cargo check -p wgpu-hal --no-default-features --features dx11,gles`,
+  `cargo check -p wgpu-info` and `cargo check -p wgpu-test --tests` passed.
+  The test-package check exposed a stale explicit `DownlevelLimits` literal
+  missing the earlier sampled-pair limit; that lowest-capability fixture now
+  sets the missing limit to zero and compiles.
+- Core, HAL, public-test and serde-enabled `wgpu-types` Clippy passed. Core
+  reports one existing `collapsible_if` warning in the fixture; HAL reports
+  nine previously recorded warnings unrelated to this change. The other two
+  Clippy runs were warning-free.
+- Rustfmt 1.93.1 `--edition 2021 --check` for changed Rust files and
+  `git diff --check` passed. Git reports its existing LF-to-CRLF working-copy
+  notices.
+
+Exact strict commands are in `TESTING.md`. The hardware evidence applies to a
+modern RTX 3090 Ti running at FL9_1, not to historical 9_1 drivers. Public
+D3D11 enumeration remains opt-in. Continue the core/HAL shader audit; this
+checkpoint does not complete the mission.

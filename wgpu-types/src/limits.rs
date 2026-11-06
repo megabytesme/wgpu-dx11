@@ -1075,6 +1075,12 @@ pub struct DownlevelLimits {
     /// Whether render pipelines may enable alpha-to-coverage when multisampled.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub alpha_to_coverage: bool,
+    /// Whether vertex and fragment shader entry points may contain loops.
+    ///
+    /// This can be unavailable when the selected shader profiles cannot preserve the shader's
+    /// loop behavior or when the backend's loop-bounding lowering is unsupported.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub shader_loops: bool,
     /// Whether vertex entry points may declare `@builtin(vertex_index)`.
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
@@ -1271,6 +1277,7 @@ impl Default for DownlevelLimits {
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
+            shader_loops: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
@@ -1334,6 +1341,7 @@ impl DownlevelLimits {
             && (!required.sampled_uint_textures || self.sampled_uint_textures)
             && (!required.multisampled_texture_bindings || self.multisampled_texture_bindings)
             && (!required.alpha_to_coverage || self.alpha_to_coverage)
+            && (!required.shader_loops || self.shader_loops)
             && (!required.vertex_index_input || self.vertex_index_input)
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
@@ -1413,6 +1421,7 @@ impl DownlevelCapabilities {
             && self.limits.sampled_uint_textures
             && self.limits.multisampled_texture_bindings
             && self.limits.alpha_to_coverage
+            && self.limits.shader_loops
             && self.limits.vertex_index_input
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
@@ -1735,6 +1744,24 @@ mod tests {
     }
 
     #[test]
+    fn shader_loops_are_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            shader_loops: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            shader_loops: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn downlevel_limits_check_minimum_capabilities() {
         let available = DownlevelLimits {
             empty_binding_visibility: true,
@@ -1745,6 +1772,7 @@ mod tests {
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
+            shader_loops: false,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
@@ -1784,6 +1812,7 @@ mod tests {
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
+            shader_loops: false,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
@@ -2053,6 +2082,7 @@ mod tests {
             "sampled_uint_textures",
             "multisampled_texture_bindings",
             "alpha_to_coverage",
+            "shader_loops",
             "max_sampled_texture_sampler_pairs_per_shader_stage",
             "max_vertex_shader_uniform_vectors",
             "max_fragment_shader_uniform_vectors",
@@ -2082,6 +2112,7 @@ mod tests {
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);
         assert!(limits.alpha_to_coverage);
+        assert!(limits.shader_loops);
         assert_eq!(
             limits.max_sampled_texture_sampler_pairs_per_shader_stage,
             u32::MAX

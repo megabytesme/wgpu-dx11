@@ -836,3 +836,15 @@ The RTX 3090 Ti forced to FL9_1 reports `0x0026F3A0` for B5G6R5 and
 `0x000213A0` for both alpha-bearing formats. A strict public test draws to a
 B5G6R5 attachment, samples it and checks all 64 output pixels within one
 UNORM code value.
+
+## WGSL loop control
+
+The D3D11 FL9_1 capability projection rejects WGSL loops in selected vertex
+or fragment entry points. Naga's configured `force_loop_bounding` lowering
+emits dynamic loop control, which is not a tested cross-stage FL9_1 path;
+Microsoft documents static flow control for the FL9_1 vertex profile but
+does not list loop control for its pixel profile. Core follows calls into
+helper functions and leaves unrelated entry points usable. The hardware/
+compiler and core validation tests are recorded in `FL9_1_PROGRESS.md`. This
+remains a backend implementation gap rather than a claim that all FL9_1
+hardware lacks static vertex loops.

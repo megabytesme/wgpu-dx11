@@ -10803,6 +10803,116 @@ fn public_dx11_rejects_compute_pipelines_at_fl91() {
 }
 
 #[test]
+fn public_dx11_rejects_selected_shader_loops_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(!downlevel.limits.shader_loops);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false shader_loops=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 shader-loop validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 selected-entry shader-loop test"),
+        source: ShaderSource::Wgsl(
+            r#"
+            @group(0) @binding(0) var<uniform> loop_limit: f32;
+            fn loop_helper() -> f32 {
+                var i = 0.0;
+                loop {
+                    if i >= loop_limit { break; }
+                    i += 1.0;
+                }
+                return i;
+            }
+            @vertex fn loop_vertex() -> @builtin(position) vec4f {
+                return vec4f(loop_helper(), 0.0, 0.0, 1.0);
+            }
+            @vertex fn safe_vertex() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @fragment fn loop_fragment() -> @location(0) vec4f {
+                return vec4f(loop_helper());
+            }
+            @fragment fn safe_fragment() -> @location(0) vec4f {
+                return vec4f(1.0);
+            }
+            "#
+            .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_pipeline = |vertex_entry, fragment_entry| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 selected-entry loop validation pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    expect_validation_error_containing(
+        &device,
+        "selected vertex shader loop",
+        "UnsupportedShaderLoops",
+        || {
+            drop(create_pipeline("loop_vertex", "safe_fragment"));
+        },
+    );
+    expect_validation_error_containing(
+        &device,
+        "selected fragment shader loop",
+        "UnsupportedShaderLoops",
+        || {
+            drop(create_pipeline("safe_vertex", "loop_fragment"));
+        },
+    );
+    drop(create_pipeline("safe_vertex", "safe_fragment"));
+    println!("PASS: public core rejects selected loop stages and accepts safe siblings");
+}
+
+#[test]
 fn public_dx11_rejects_occlusion_queries_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

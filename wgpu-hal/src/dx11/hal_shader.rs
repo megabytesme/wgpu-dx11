@@ -1258,6 +1258,67 @@ mod tests {
             checked_integer.compile(naga::ShaderStage::Fragment, "fs"),
             Err(crate::PipelineError::Linkage(_, _))
         ));
+        let loop_module = naga::front::wgsl::parse_str(
+            r#"
+            struct VertexOut {
+                @builtin(position) position: vec4f,
+                @location(0) limit: f32,
+            }
+            fn loop_count(limit: f32) -> f32 {
+                var i = 0.0;
+                loop {
+                    if i >= limit { break; }
+                    i += 1.0;
+                }
+                return i;
+            }
+            @vertex fn vs_dynamic(@location(0) p: vec3f) -> @builtin(position) vec4f {
+                return vec4f(loop_count(abs(p.x)), p.y, 0.0, 1.0);
+            }
+            @fragment fn fs_dynamic(@location(0) limit: f32) -> @location(0) vec4f {
+                return vec4f(loop_count(limit));
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let loop_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&loop_module)
+        .unwrap();
+        let loop_shader = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(loop_module),
+                info: loop_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::unchecked(),
+        );
+        for (stage, entry) in [
+            (naga::ShaderStage::Vertex, "vs_dynamic"),
+            (naga::ShaderStage::Fragment, "fs_dynamic"),
+        ] {
+            match loop_shader.compile(stage, entry) {
+                Err(crate::PipelineError::Linkage(error_stage, message)) => {
+                    assert_eq!(
+                        error_stage,
+                        if stage == naga::ShaderStage::Vertex {
+                            wgt::ShaderStages::VERTEX
+                        } else {
+                            wgt::ShaderStages::FRAGMENT
+                        }
+                    );
+                    std::println!("FL9_1 FXC rejected {entry}: {message}");
+                }
+                result => panic!("expected FL9_1 FXC to reject {entry}: {result:?}"),
+            }
+        }
+        assert!(loop_shader
+            .compile(naga::ShaderStage::Fragment, "safe")
+            .is_ok());
         assert!(unsafe {
             DynDevice::create_shader_module(&device, &desc, ShaderInput::Hlsl { shader: "" })
         }

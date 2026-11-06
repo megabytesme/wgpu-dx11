@@ -286,6 +286,7 @@ struct EntryPoint {
     inputs: Vec<Varying>,
     outputs: Vec<Varying>,
     fragment_position_used: bool,
+    shader_loops_used: bool,
     texture_load_used: bool,
     unsupported_runtime_integer_semantics: bool,
     unsupported_matrix_aggregate_store: bool,
@@ -405,6 +406,48 @@ fn collect_called_functions(
             }
         }
     }
+}
+
+fn block_uses_loop(block: &naga::Block) -> bool {
+    let mut blocks = alloc::vec![block];
+    while let Some(block) = blocks.pop() {
+        for statement in block.iter() {
+            match statement {
+                naga::Statement::Loop { .. } => return true,
+                naga::Statement::Block(block) => blocks.push(block),
+                naga::Statement::If { accept, reject, .. } => {
+                    blocks.push(accept);
+                    blocks.push(reject);
+                }
+                naga::Statement::Switch { cases, .. } => {
+                    blocks.extend(cases.iter().map(|case| &case.body));
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+fn entry_point_uses_loop(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
+    if block_uses_loop(&entry_point.function.body) {
+        return true;
+    }
+
+    let mut pending = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut pending);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = pending.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if block_uses_loop(&function.body) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut pending);
+    }
+    false
 }
 
 fn type_may_contain_integer(
@@ -2365,6 +2408,7 @@ impl Interface {
                     info,
                     module_info,
                 ),
+                shader_loops_used: entry_point_uses_loop(module, entry_point),
                 texture_load_used: entry_point_uses_texture_load(module, entry_point),
                 unsupported_runtime_integer_semantics:
                     entry_point_uses_unsupported_integer_semantics(
@@ -2704,6 +2748,19 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.texture_load_used)
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_shader_loops(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.shader_loops_used && !limits.shader_loops)
     }
 
     pub(crate) fn entry_point_uses_unsupported_runtime_integer_semantics(
@@ -3639,6 +3696,84 @@ mod tests {
             .is_empty());
         assert!(interface
             .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
+            .is_err());
+    }
+
+    #[test]
+    fn shader_loop_detection_follows_only_selected_entry_calls() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            fn helper_loop() -> u32 {
+                var i = 0u;
+                loop {
+                    if i >= 2u { break; }
+                    i += 1u;
+                }
+                return i;
+            }
+
+            @vertex fn direct_loop() -> @builtin(position) vec4f {
+                var sum = 0u;
+                for (var i = 0u; i < 2u; i += 1u) {
+                    sum += i;
+                }
+                return vec4f(f32(sum), 0.0, 0.0, 1.0);
+            }
+
+            @vertex fn helper_entry() -> @builtin(position) vec4f {
+                return vec4f(f32(helper_loop()), 0.0, 0.0, 1.0);
+            }
+
+            @fragment fn helper_fragment() -> @location(0) vec4f {
+                return vec4f(f32(helper_loop()));
+            }
+
+            @fragment fn safe_sibling() -> @location(0) vec4f {
+                return vec4f(1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            shader_loops: false,
+            ..Default::default()
+        };
+
+        for (stage, entry) in [
+            (naga::ShaderStage::Vertex, "direct_loop"),
+            (naga::ShaderStage::Vertex, "helper_entry"),
+            (naga::ShaderStage::Fragment, "helper_fragment"),
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_shader_loops(stage, entry, &fl91)
+                    .unwrap(),
+                "{entry} should reach a loop"
+            );
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_shader_loops(
+                naga::ShaderStage::Fragment,
+                "safe_sibling",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_shader_loops(
+                naga::ShaderStage::Vertex,
+                "direct_loop",
+                &wgt::DownlevelLimits::default(),
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_shader_loops(naga::ShaderStage::Vertex, "missing", &fl91)
             .is_err());
     }
 

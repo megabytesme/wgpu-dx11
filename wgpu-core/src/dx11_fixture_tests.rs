@@ -87,6 +87,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     sampled_uint_textures: false,
                     multisampled_texture_bindings: false,
                     alpha_to_coverage: false,
+                    shader_loops: false,
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
@@ -4235,6 +4236,81 @@ fn render_triangle(
         pipeline_descriptor.multisample.mask = 0;
     }
     if case == VertexCase::Baseline {
+        let loop_source = r#"
+            struct VertexOut {
+                @builtin(position) position: vec4f,
+                @location(0) uv: vec2f,
+            }
+            fn loop_count(limit: f32) -> f32 {
+                var i = 0.0;
+                loop {
+                    if i >= limit { break; }
+                    i += 1.0;
+                }
+                return i;
+            }
+            @vertex fn loop_vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> VertexOut {
+                let x = loop_count(abs(p.x));
+                return VertexOut(vec4f(x, p.y, p.z, 1.0), uv);
+            }
+            @fragment fn loop_fs(input: VertexOut) -> @location(0) vec4f {
+                return vec4f(loop_count(input.uv.x));
+            }
+        "#;
+        let (loop_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(loop_source)),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "loop shader creation: {shader_error:?}"
+        );
+
+        let mut loop_vertex_pipeline = pipeline_descriptor.clone();
+        loop_vertex_pipeline.vertex.stage.module = loop_shader;
+        loop_vertex_pipeline.vertex.stage.entry_point = Some(Cow::Borrowed("loop_vs"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &loop_vertex_pipeline, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(
+                    pipeline::CreateRenderPipelineError::UnsupportedShaderLoops {
+                        stage: wgt::ShaderStages::VERTEX,
+                    }
+                )
+            ),
+            "vertex loop must fail core validation before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        std::println!("PASS: selected vertex loop rejected before HAL");
+
+        let mut loop_fragment_pipeline = pipeline_descriptor.clone();
+        let fragment = loop_fragment_pipeline.fragment.as_mut().unwrap();
+        fragment.stage.module = loop_shader;
+        fragment.stage.entry_point = Some(Cow::Borrowed("loop_fs"));
+        let (invalid_pipeline, error) =
+            global.device_create_render_pipeline(device, &loop_fragment_pipeline, None);
+        assert!(
+            matches!(
+                error.as_ref(),
+                Some(
+                    pipeline::CreateRenderPipelineError::UnsupportedShaderLoops {
+                        stage: wgt::ShaderStages::FRAGMENT,
+                    }
+                )
+            ),
+            "fragment loop must fail core validation before HAL: {error:?}"
+        );
+        global.render_pipeline_drop(invalid_pipeline);
+        std::println!("PASS: selected fragment loop rejected before HAL");
+        global.shader_module_drop(loop_shader);
+
         let mut invalid_alpha_to_coverage = pipeline_descriptor.clone();
         invalid_alpha_to_coverage
             .multisample

@@ -57,6 +57,7 @@ Bottom level categories:
 
 #### Validation
 
+- Add a downlevel shader-loop limit so the opt-in D3D11 FL9_1 backend rejects loop constructs that its bounded HLSL lowering cannot compile safely.
 - Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
 - Gate bind-group layouts with empty shader visibility on downlevel support.
 - Gate unsupported sampled texture types and vertex-only visibility on downlevel support.
