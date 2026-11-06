@@ -1413,7 +1413,10 @@ adapter name, actual device feature level, test count and readback result, and
 verify that the hardware test paths ran; a successful test command alone is
 not evidence of a GPU execution. Cross-compile the HAL and strict UWP host for
 each target separately, and run the CoreWindow surface/readback probe on real
-UWP devices. A compile or package is not a runtime result.
+UWP devices. CoreWindow creation now checks `Dispatcher.HasThreadAccess` and
+surface operations enforce the thread captured at construction; current CPU
+and ARM32-UWP compile checks do not verify UWP runtime behavior. A compile or
+package is not a runtime result.
 Before upstreaming, move the hidden diagnostic-only surface helpers out of the
 public HAL surface API or replace them with a test-only seam; keep the normal
 backend free of application-specific fixtures and window-host assumptions.

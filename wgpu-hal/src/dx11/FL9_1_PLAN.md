@@ -504,6 +504,9 @@ entry-point selection are covered by a strict public test.
    without waiting, while other threads continue to wait for the active
    operation; CPU tests cover both reservation behaviors. Synchronous native
    callback delivery remains unverified. Preserve the CoreWindow path;
+   `from_core_window` now requires dispatcher-thread access and records the
+   owner thread for later operations. CoreWindow public surface capabilities
+   remain withheld until the UWP lifecycle and render/readback path is tested.
    Windows 10 Mobile ARM32 remains unverified. Strict hidden-HWND HAL tests
    also verify that same-surface `configure` and `acquire_texture` fail
    promptly while another surface operation owns its operation guard; normal

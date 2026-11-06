@@ -2,21 +2,56 @@
 
 ## Current position — 2026-11-06
 
-Latest committed checkpoint: `77f82fece` (`dx11: query-gate FL9_1 volume mip
-sampling`), following `37e648bcf`. The strict private HAL suite passed
-375/375, the public D3D11 suite 54/54, the core fixture suite 97/97, the core
-adapter enumeration test 1/1 and DX12 core regressions 92/92. Strict hardware
-tests selected the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
-software=false) at requested and actual FL9_1. The selected RGBA8 format
-reported 3D mip support; suffix views sampled three uploaded levels and
-matched all 64 output pixels. One optional Float16x2 input-format subcase
-explicitly skipped because its format query was negative. Continue the public
+Latest committed checkpoint: `f04b4f93e` (`dx11: enforce CoreWindow
+dispatcher thread affinity`). The strict private HAL suite passed 376/376,
+the public D3D11 suite passed 54/54, the controlled core fixture passed
+100/100, the physical adapter test passed 1/1, and the DX12 core regression
+passed 92/92. The strict D3D11 tests selected the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) at requested and
+actual FL9_1. The public suite reported one optional Float16x2 input-format
+subcase skipped because its format query was negative. Continue the public
 core/HAL contract audit; the mission is not complete.
 
 The read-only Lumia Device Portal probe for `/api/os/devicefamily` timed out
 from this machine. No device state was changed. Windows 10 Mobile ARM32
 runtime verification remains unavailable from this session; the x64 forced-
 FL9_1 RTX results do not substitute for it.
+
+## Checkpoint — enforce CoreWindow dispatcher-thread ownership — `f04b4f93e`
+
+`Surface::from_core_window` now requires `CoreWindow.Dispatcher().HasThreadAccess`
+and captures the creating thread. Later configure, acquire and present
+operations must run on that owner thread, matching the existing HWND
+thread-affinity boundary. The CoreWindow surface is still unavailable through
+public surface capabilities; this change does not claim UWP runtime support.
+
+Verification used Rust 1.93.1 and Visual Studio 2022 Build Tools:
+
+~~~powershell
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 core_window_owner_thread_check_rejects_other_threads -- --test-threads=1 --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+$env:RUSTC_BOOTSTRAP = '1'
+cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=arm -host_arch=x64 -winsdk=10.0.22621.0 && cargo +1.93 -Z build-std=std,panic_unwind,panic_abort check --offline -j16 -p wgpu-hal --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11'
+~~~
+
+The focused thread-identity test passed 1/1. The strict HAL suite passed
+376/376 and the strict public D3D11 suite passed 54/54; the hardware paths
+reported the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested
+and actual FL9_1, software=false. One optional Float16x2 input-format
+subcase explicitly skipped due to a negative format query. HAL Clippy passed
+with ten existing warnings in unrelated test/helper code. The HAL also
+cross-compiled for `thumbv7a-uwp-windows-msvc` using Rust 1.93.1,
+`RUSTC_BOOTSTRAP=1`, the ARM MSVC environment and Windows SDK 10.0.22621.0;
+this is compile coverage, not Lumia execution. The strict core fixture passed
+100/100, physical FL9_1 adapter enumeration passed 1/1, and DX12 core passed
+92/92. The adapter test enumerated one physical FL9_1 device.
+`git diff --check` passed.
 
 ## Verified hardware boundary — ordinary 2D texture arrays
 

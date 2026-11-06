@@ -3,24 +3,26 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`; its latest code checkpoint
-is `b16966039` (`dx11: test reentrant device removed reason handling`),
-followed by a documentation checkpoint. The working tree was clean at the
-verified code checkpoint. Recent verified results
-include the strict private HAL suite 375/375, public D3D11 suite 54/54, core
-fixture 100/100, physical-adapter fixture 1/1, explicit public adapter test
-1/1 and DX12 core regression 92/92. Synthetic failures now cover command
-replay, fence polling, fence waiting and `GetDeviceRemovedReason`; callbacks
-reenter device polling without deadlocking, and later submissions are
-rejected. These failures use a physical RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) explicitly opened at
-FL9_1; they do not simulate physical device removal or recovery. The public
-suite still reports one optional Float16x2 vertex-input capability skip.
-D3D11 is explicitly selected and remains non-WebGPU-compliant. The core/HAL
-contract audit is ongoing. Exact commands, results and distinctions between
-GPU execution and synthetic tests are in `FL9_1_PROGRESS.md`. A public
-consumer example also ran on this adapter and validated a 1,024-pixel textured
-indexed cube. The latest read-only Lumia Device Portal probe timed out again,
-so Windows 10 Mobile ARM32 runtime verification remains unavailable.
+is `f04b4f93e` (`dx11: enforce CoreWindow dispatcher thread affinity`). The
+strict private HAL suite passed 376/376 and the public D3D11 suite passed
+54/54 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), requested and actual FL9_1. The public suite explicitly
+reported one unsupported Float16x2 input-format subcase; it is not counted as
+GPU execution. The new CoreWindow admission check and owner-thread guard pass
+the CPU test and x64/ARM32-UWP compilation, but CoreWindow runtime behavior on
+UWP remains unverified. Public CoreWindow surface capabilities remain
+withheld. The controlled core fixture passed 100/100, the physical adapter
+enumeration test passed 1/1, and the DX12 core regression suite passed 92/92
+after this change.
+
+The backend remains an explicit opt-in, non-WebGPU-compliant D3D11 path. It
+supports controlled public offscreen rendering and constrained desktop HWND
+presentation; the consumer example validated a 1,024-pixel textured indexed
+cube. The core/HAL contract audit is ongoing, Windows 10 Mobile ARM32 runtime
+verification is unavailable, and the mission remains **PARTIALLY COMPLETE**.
+Exact commands and distinctions between GPU execution, synthetic checks and
+skips are in `FL9_1_PROGRESS.md`. All checkpoint summaries below are
+historical snapshots unless explicitly updated.
 
 The latest checkpoint also verifies the WGSL constant texel-offset form of
 `textureSampleBias`: core and the private HAL reject direct and helper-reached

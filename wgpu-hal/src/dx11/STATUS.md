@@ -401,13 +401,18 @@ all out-of-target rectangles. Other backends keep the default true capability.
 
 - DXGI adapter discovery, D3D11 device/context ownership, and restricted
   BGRA8 FIFO surfaces for WinRT CoreWindow and borrowed Win32 HWND handles.
+  CoreWindow construction verifies `Dispatcher.HasThreadAccess` and later
+  surface operations are restricted to the captured owner thread; this is a
+  safety check, not CoreWindow runtime verification. Public CoreWindow surface
+  capabilities remain withheld.
   A strict hidden HWND clone-sampling test on the RTX at FL9_1 read BGRA
   `[0, 0, 255, 255]`, returned `Ok` from present and resized with the completed
   command buffer retained. Public hidden-HWND presentation, resize and
   cross-thread waiting are tested. Surface operation reservations track their
   owner thread; same-thread reentrant `unconfigure` logs and returns without
   waiting, while cross-thread calls still wait. Native callback delivery and
-  CoreWindow/ARM32 execution remain unverified.
+  CoreWindow/ARM32 execution remain unverified; the HAL cross-compiles for
+  ARM32 UWP, but the Lumia runtime was unavailable.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
   Core-internal storage usage bits can accompany a supported transfer buffer,
