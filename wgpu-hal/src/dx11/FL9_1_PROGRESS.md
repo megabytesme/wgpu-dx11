@@ -6803,6 +6803,54 @@ rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ```
 
-Next: investigate and test a fragment-stage pipeline with no color targets in a
-depth-only pass. The audit found core permits it while the HAL currently rejects
-it before FXC.
+## Verified checkpoint — outputless fragment in a depth-only pass
+
+The D3D11 HAL now accepts a fragment stage with no color outputs when the
+pipeline has a depth/stencil attachment and no color targets. Its direct Naga
+HLSL form fails on the installed FL9_1 FXC with X4530 (`pixel shader must
+minimally write all four components of SV_Target0`). The backend keeps the
+original outputless fragment as a helper and adds an entry wrapper returning a
+synthetic zero `SV_Target0`. The targetless render pass binds no RTV, so this
+value cannot reach an application texture. Resource usage, inputs, helper
+calls, `discard`, early-depth metadata and shader bindings are retained.
+
+Strict hardware validation on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested/actual FL9_1:
+
+- The focused public test passed 1/1. A conditional fragment discard in a
+  D16-only pass prevented depth writes on the left half; a later farther draw
+  rendered 32 red pixels there and failed depth on the other 32, which remained
+  blue. All 64 readback pixels matched.
+- The full public D3D11 suite passed 37/37; the optional Float16x2 IA branch
+  printed its explicit capability skip because the selected device lacks the
+  format query bit. Required hardware paths executed.
+- The full private D3D11 HAL suite passed 360/360 under strict hardware mode.
+- The core FL9_1 adapter selection test passed 1/1; it enumerated one physical
+  FL9_1 adapter in the explicitly enabled DX11 configuration.
+- The DX12 core regression suite passed 86/86.
+- HAL Clippy passed with nine existing warnings; public D3D11 test Clippy,
+  changed-file rustfmt and `git diff --check` passed.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93 clippy --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/hal_shader.rs wgpu-hal/src/dx11/shader.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Code commit `016f048447b45896757000f49d4e9fdc44484501`
+(`dx11: support outputless FL9_1 depth-only fragments`) contains the
+implementation, strict GPU test and capability documentation. Independent
+HAL review found no concrete semantic or validation defect. The only remaining
+coverage opportunity in this narrow path is a targetless shader that returns
+only unmatched nonzero color locations; it is not known to fail. Next: verify
+outputless targetless-fragment behavior with D24S8 stencil state, then continue
+the broader core/HAL render-pass audit. Historical FL9_1 and ARM32 execution
+remain unverified.

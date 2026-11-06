@@ -1733,3 +1733,30 @@ public D3D11 25/25, the controlled core fixture 1/1 and DX12 core 86/86.
 HAL/core/public Clippy passed; existing warnings are recorded in
 `FL9_1_PROGRESS.md`. Continue the broader core/HAL capability audit.
 Historical FL9_1 and ARM32 behavior remain unverified.
+
+## Latest verified checkpoint — outputless fragment in a depth-only pass
+
+Commit `016f048447b45896757000f49d4e9fdc44484501` allows a fragment stage
+without color outputs in a depth-only D16 pass. Naga's direct outputless HLSL
+fails FL9_1 FXC with X4530, so the HAL clones the selected, override-processed
+Naga module, moves its result-less entry-point body into a helper, adds a
+wrapper returning zero `SV_Target0`, and regenerates validation metadata. No
+RTV is bound, preserving discard and depth semantics while making the synthetic
+color unobservable. The compiler test uses a location input, helper call and
+sparse uniform mapping. The strict public RTX 3090 Ti test verified 32 red
+pixels where discard prevented depth writes and 32 blue pixels where a farther
+draw failed depth; all 64 pixels were read back.
+
+Verification at requested/actual FL9_1 on NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false): private HAL 360/360,
+public D3D11 37/37 (one optional Float16x2 IA branch explicitly skipped), core
+FL9_1 adapter selection 1/1, DX12 core 86/86. HAL Clippy passed with nine
+pre-existing warnings; public D3D11 Clippy, rustfmt and `git diff --check`
+passed. Exact commands are in `FL9_1_PROGRESS.md` and `TESTING.md`.
+
+Independent review found no concrete semantic or validation defect. An
+optional untested case is a targetless fragment that returns only unmatched
+nonzero color locations; there is no confirmed compiler issue. Next audit:
+test the outputless fragment path with D24S8 stencil state, then resume the
+broader core/HAL render-pass audit. Historical FL9_1 drivers and ARM32 UWP
+remain unverified.
