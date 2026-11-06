@@ -1846,8 +1846,7 @@ impl Device {
                 }
                 let supported_usages =
                     wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST;
-                if desc.mip_level_count != 1
-                    || desc.sample_count != 1
+                if desc.sample_count != 1
                     || !desc.usage.contains(wgt::TextureUsages::TEXTURE_BINDING)
                     || !supported_usages.contains(desc.usage)
                 {

@@ -108,8 +108,14 @@ pub struct NativeTextureView {
 pub(super) struct SampledRefresh {
     source: ID3D11Texture2D,
     destination: ID3D11Texture2D,
-    source_base: u32,
-    regions: Vec<D3D11_BOX>,
+    copies: Vec<SampledRefreshCopy>,
+}
+
+#[derive(Debug)]
+pub(super) struct SampledRefreshCopy {
+    source_subresource: u32,
+    destination_subresource: u32,
+    region: D3D11_BOX,
 }
 
 impl SampledRefresh {
@@ -117,17 +123,17 @@ impl SampledRefresh {
         &self,
         context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
     ) {
-        for (mip, region) in self.regions.iter().enumerate() {
+        for copy in &self.copies {
             unsafe {
                 context.CopySubresourceRegion(
                     &self.destination,
-                    mip as u32,
+                    copy.destination_subresource,
                     0,
                     0,
                     0,
                     &self.source,
-                    self.source_base + mip as u32,
-                    Some(region),
+                    copy.source_subresource,
+                    Some(&copy.region),
                 );
             }
         }
@@ -703,10 +709,11 @@ impl NativeDevice {
         &self,
         width: u32,
         height: u32,
+        mip_levels: u32,
         format: DXGI_FORMAT,
     ) -> Result<NativeTexture> {
         self.create_color_texture_inner_with_samples_and_cube(
-            width, height, 1, 6, false, format, 1, true,
+            width, height, mip_levels, 6, false, format, 1, true,
         )
     }
 
@@ -771,7 +778,6 @@ impl NativeDevice {
                     || width
                         > super::capabilities::HardwareGuarantees::for_level(self.feature_level())
                             .texture_cube_dimension
-                    || mip_levels != 1
                     || sample_count != 1
                     || render_target))
             || (sample_count != 1
@@ -965,7 +971,6 @@ impl NativeDevice {
                                 self.feature_level(),
                             )
                             .texture_cube_dimension
-                        || texture_desc.MipLevels != 1
                         || render_target
                         || depth_stencil)
                 {
@@ -992,34 +997,60 @@ impl NativeDevice {
                     }
                     let width = (texture_desc.Width >> mip_base).max(1);
                     let height = (texture_desc.Height >> mip_base).max(1);
-                    let clone = self.create_color_texture_inner(
-                        width,
-                        height,
-                        mip_count,
-                        1,
-                        false,
-                        texture_desc.Format,
-                    )?;
-                    let mut regions = Vec::new();
-                    regions.try_reserve_exact(mip_count as usize).map_err(|_| {
+                    let layers = if cube { 6 } else { 1 };
+                    let clone = if cube {
+                        self.create_cube_texture_inner(
+                            width,
+                            height,
+                            mip_count,
+                            texture_desc.Format,
+                        )?
+                    } else {
+                        self.create_color_texture_inner(
+                            width,
+                            height,
+                            mip_count,
+                            1,
+                            false,
+                            texture_desc.Format,
+                        )?
+                    };
+                    let copy_count = mip_count.checked_mul(layers).ok_or_else(invalid)?;
+                    let mut copies = Vec::new();
+                    copies.try_reserve_exact(copy_count as usize).map_err(|_| {
                         Error::from_hresult(windows::Win32::Foundation::E_OUTOFMEMORY)
                     })?;
-                    for mip in 0..mip_count {
-                        regions.push(D3D11_BOX {
-                            left: 0,
-                            top: 0,
-                            front: 0,
-                            right: (width >> mip).max(1),
-                            bottom: (height >> mip).max(1),
-                            back: 1,
-                        });
+                    for layer in 0..layers {
+                        for mip in 0..mip_count {
+                            copies.push(SampledRefreshCopy {
+                                source_subresource: layer
+                                    .checked_mul(texture_desc.MipLevels)
+                                    .and_then(|base| {
+                                        mip_base
+                                            .checked_add(mip)
+                                            .and_then(|selected| base.checked_add(selected))
+                                    })
+                                    .ok_or_else(invalid)?,
+                                destination_subresource: layer
+                                    .checked_mul(mip_count)
+                                    .and_then(|base| base.checked_add(mip))
+                                    .ok_or_else(invalid)?,
+                                region: D3D11_BOX {
+                                    left: 0,
+                                    top: 0,
+                                    front: 0,
+                                    right: (width >> mip).max(1),
+                                    bottom: (height >> mip).max(1),
+                                    back: 1,
+                                },
+                            });
+                        }
                     }
                     sampled_texture = clone.raw.clone();
                     refresh = Some(Arc::new(SampledRefresh {
                         source: texture.raw.clone(),
                         destination: clone.raw,
-                        source_base: mip_base,
-                        regions,
+                        copies,
                     }));
                 }
                 let shader_desc = if cube {
@@ -1028,7 +1059,7 @@ impl NativeDevice {
                         ViewDimension: D3D11_SRV_DIMENSION_TEXTURECUBE,
                         Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                             TextureCube: D3D11_TEXCUBE_SRV {
-                                MostDetailedMip: mip_base,
+                                MostDetailedMip: if non_suffix { 0 } else { mip_base },
                                 MipLevels: mip_count,
                             },
                         },

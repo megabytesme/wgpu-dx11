@@ -2395,27 +2395,23 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 `public_dx11_cube_texture_sampling_at_fl91` asserts the selected physical
 adapter reports `CUBE_TEXTURES` and a 512 cube limit while leaving ordinary
 2D arrays unavailable. It conditionally rejects RG8_UNORM cube creation when
-the selected format mask lacks cube support, then uploads six distinct RGBA8
-faces, creates an explicit cube SRV, and samples each axis direction through
-WGSL/Naga/FXC. Readback verifies all 96 pixels. Strict mode also checks
-nonsquare, NPOT, oversized, mipmapped, multisampled and render-target cube
-descriptors, an ordinary two-layer array and a single-face D2 view through
-public core validation.
+the selected format mask lacks cube support. When `Rgba8Unorm` is not marked
+`SINGLE_MIP_ONLY`, the test uploads four independently colored mip levels for
+all six faces and renders each mip through an integer minimum-LOD sampler. It
+also samples a non-suffix view of mip levels 1 and 2, exercising the backend's
+six-face GPU clone refresh. Strict mode requires the positive mip query;
+non-strict mode visibly skips mip-specific coverage if the device lacks it.
+Nonsquare, NPOT, oversized, unsupported-mip, multisampled and render-target
+cube descriptors, an ordinary two-layer array and a single-face D2 view are
+checked through public core validation.
 
 The RTX 3090 Ti at requested/actual FL9_1 reported format mask `0x1f1f`,
 vendor/device `0x10de:0x2203`, driver `32.0.16.2101`, and software=false.
-RGBA8 cube sampling passed with all 96 pixels matching the six face colors;
-the RG8_UNORM cube request was rejected by core from the selected format mask.
-The mask is per-format `CheckFormatSupport` evidence and does not imply
-historical FL9_1 drivers support the same optional formats.
-
-The complete strict public D3D11 binary passed 51/51; its optional Float16x2
-vertex-input subcase explicitly skipped because the selected FL9_1 device
-reported no `IA_VERTEX_BUFFER` support for `R16G16_FLOAT`. The full private
-HAL suite passed 370/370, the strict core fixture suite passed 96/96 and the
-DX12 core regression suite passed 92/92. Rustfmt, targeted Clippy and
-`git diff --check` also passed. The HAL and core suites include synthetic
-validation alongside physical-GPU operations.
+Its RGBA8 format query reported mip support. Cube sampling passed with all 960
+pixels matching expected face and mip colors, including the non-suffix view.
+The RG8_UNORM cube request was rejected by core from the selected format mask.
+These per-format `CheckFormatSupport` results do not imply historical FL9_1
+drivers support the same optional formats.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

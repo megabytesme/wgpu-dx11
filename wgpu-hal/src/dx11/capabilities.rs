@@ -245,6 +245,7 @@ pub(super) struct BackendCapabilities {
     pub texture_zero_initialized: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
+    pub cube_texture_mipmaps: bool,
     pub rgba8_multisample_resolve: bool,
     pub alpha_to_coverage: bool,
     pub vertex_buffers: u32,
@@ -336,6 +337,7 @@ impl BackendCapabilities {
         texture_zero_initialized: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
+        cube_texture_mipmaps: true,
         rgba8_multisample_resolve: true,
         alpha_to_coverage: false,
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
@@ -942,12 +944,13 @@ impl Capabilities {
             return Err(UnsupportedShape);
         }
         if layers != 6
-            || mips != 1
+            || mips == 0
             || samples != 1
             || extent[0] == 0
             || extent[0] != extent[1]
             || extent[0] > self.hardware.texture_cube_dimension
             || !extent[0].is_power_of_two()
+            || mips > extent[0].ilog2() + 1
         {
             return Err(UnsupportedShape);
         }
@@ -980,11 +983,21 @@ impl Capabilities {
         if bits & required != required {
             return Err(DriverFormatUnsupported);
         }
-        if !self
-            .texture_format_capabilities(format)
-            .contains(crate::TextureFormatCapabilities::SAMPLED)
+        if mips > 1
+            && (!self.backend.cube_texture_mipmaps
+                || !supported_mip_texture_usage(usage)
+                || bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 == 0)
         {
+            return Err(DriverFormatUnsupported);
+        }
+        let format_capabilities = self.texture_format_capabilities(format);
+        if !format_capabilities.contains(crate::TextureFormatCapabilities::SAMPLED) {
             return Err(UnsupportedFormat);
+        }
+        if mips > 1
+            && format_capabilities.contains(crate::TextureFormatCapabilities::SINGLE_MIP_ONLY)
+        {
+            return Err(UnsupportedShape);
         }
         Ok(())
     }
@@ -1590,10 +1603,12 @@ mod tests {
             .is_ok());
         for (extent, layers, mips, samples) in [
             ([7, 7], 6, 1, 1),
+            ([6, 6], 6, 2, 1),
             ([8, 4], 6, 1, 1),
             ([1024, 1024], 6, 1, 1),
             ([8, 8], 5, 1, 1),
-            ([8, 8], 6, 2, 1),
+            ([8, 8], 6, 0, 1),
+            ([8, 8], 6, 5, 1),
             ([8, 8], 6, 1, 4),
         ] {
             assert!(caps
@@ -1607,6 +1622,36 @@ mod tests {
                 )
                 .is_err());
         }
+        assert!(caps
+            .check_private_cube_texture(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 6, 4, 1)
+            .is_ok());
+        let mut no_cube_mips = caps;
+        no_cube_mips.backend.cube_texture_mipmaps = false;
+        assert!(no_cube_mips
+            .check_private_cube_texture(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 6, 2, 1)
+            .is_err());
+        let mut no_format_mips = caps;
+        no_format_mips.driver.rgba8 = Query::Value(
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
+                | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0 as u32
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32,
+        );
+        assert!(no_format_mips
+            .check_private_cube_texture(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 6, 2, 1)
+            .is_err());
+        let mut unavailable_mip_query = caps;
+        unavailable_mip_query.driver.rgba8 = Query::Unavailable(-1);
+        assert_eq!(
+            unavailable_mip_query.check_private_cube_texture(
+                wgt::TextureFormat::Rgba8Unorm,
+                usage,
+                [8, 8],
+                6,
+                2,
+                1,
+            ),
+            Err(TextureRejection::DriverQueryUnavailable)
+        );
         caps.driver.rgba8 = Query::Unavailable(-1);
         assert_eq!(
             caps.check_private_cube_texture(

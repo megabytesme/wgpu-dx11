@@ -14811,6 +14811,16 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     assert!(downlevel
         .limits
         .supports_texture_cube_format(TextureFormat::Rgba8Unorm));
+    let cube_mips_supported = !adapter
+        .get_texture_format_features(TextureFormat::Rgba8Unorm)
+        .flags
+        .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+    if required {
+        assert!(
+            cube_mips_supported,
+            "strict mode requires RGBA8 cube mip support"
+        );
+    }
     let limits = adapter.limits();
     assert_eq!(limits.max_texture_array_layers, 6);
     println!(
@@ -14832,14 +14842,14 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     }))
     .expect("request device within the FL9_1 cube projection");
 
-    let cube_descriptor = |width, height| TextureDescriptor {
+    let cube_descriptor = |width, height, mip_level_count| TextureDescriptor {
         label: Some("FL9_1 cube descriptor"),
         size: Extent3d {
             width,
             height,
             depth_or_array_layers: 6,
         },
-        mip_level_count: 1,
+        mip_level_count,
         sample_count: 1,
         dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8Unorm,
@@ -14853,36 +14863,36 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
         expect_validation_error(&device, "unsupported RG8 FL9_1 cube format", || {
             let _ = device.create_texture(&TextureDescriptor {
                 format: TextureFormat::Rg8Unorm,
-                ..cube_descriptor(4, 4)
+                ..cube_descriptor(4, 4, 1)
             });
         });
         println!("PASS: selected-device format mask rejected RG8 cube creation before HAL");
     }
     expect_validation_error(&device, "nonsquare cube texture", || {
-        let _ = device.create_texture(&cube_descriptor(8, 4));
+        let _ = device.create_texture(&cube_descriptor(8, 4, 1));
     });
     expect_validation_error(&device, "NPOT cube texture", || {
-        let _ = device.create_texture(&cube_descriptor(6, 6));
+        let _ = device.create_texture(&cube_descriptor(6, 6, 1));
     });
     expect_validation_error(&device, "oversized FL9_1 cube texture", || {
-        let _ = device.create_texture(&cube_descriptor(1024, 1024));
+        let _ = device.create_texture(&cube_descriptor(1024, 1024, 1));
     });
-    expect_validation_error(&device, "mipmapped FL9_1 cube texture", || {
-        let _ = device.create_texture(&TextureDescriptor {
-            mip_level_count: 2,
-            ..cube_descriptor(8, 8)
+    if !cube_mips_supported {
+        expect_validation_error(&device, "unsupported mipmapped FL9_1 cube texture", || {
+            let _ = device.create_texture(&cube_descriptor(8, 8, 2));
         });
-    });
+        println!("SKIP: selected FL9_1 device did not report sampled RGBA8 cube mip support");
+    }
     expect_validation_error(&device, "multisampled FL9_1 cube texture", || {
         let _ = device.create_texture(&TextureDescriptor {
             sample_count: 4,
-            ..cube_descriptor(8, 8)
+            ..cube_descriptor(8, 8, 1)
         });
     });
     expect_validation_error(&device, "renderable FL9_1 cube texture", || {
         let _ = device.create_texture(&TextureDescriptor {
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
-            ..cube_descriptor(8, 8)
+            ..cube_descriptor(8, 8, 1)
         });
     });
     let array_descriptor = TextureDescriptor {
@@ -14891,16 +14901,18 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
             height: 4,
             depth_or_array_layers: 2,
         },
-        ..cube_descriptor(4, 4)
+        ..cube_descriptor(4, 4, 1)
     };
     expect_validation_error(&device, "unsupported FL9_1 2D texture array", || {
         let _ = device.create_texture(&array_descriptor);
     });
 
-    const SIDE: u32 = 4;
-    const WIDTH: u32 = 24;
-    const HEIGHT: u32 = 4;
-    let cube = device.create_texture(&cube_descriptor(SIDE, SIDE));
+    const SIDE: u32 = 8;
+    const WIDTH: u32 = SIDE * 6;
+    let mip_levels = if cube_mips_supported { 4 } else { 1 };
+    let has_partial_view = mip_levels > 2;
+    let height = (mip_levels + u32::from(has_partial_view)) * 4;
+    let cube = device.create_texture(&cube_descriptor(SIDE, SIDE, mip_levels));
     expect_validation_error(&device, "2D face view of FL9_1 cube backing", || {
         let _ = cube.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2),
@@ -14909,41 +14921,70 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
         });
     });
     let colors = [
-        [255, 0, 0, 255],
-        [0, 255, 0, 255],
-        [0, 0, 255, 255],
-        [255, 255, 0, 255],
-        [255, 0, 255, 255],
-        [0, 255, 255, 255],
+        [
+            [255, 0, 0, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+            [255, 255, 0, 255],
+            [255, 0, 255, 255],
+            [0, 255, 255, 255],
+        ],
+        [
+            [32, 64, 96, 255],
+            [64, 96, 128, 255],
+            [96, 128, 160, 255],
+            [128, 160, 192, 255],
+            [160, 192, 224, 255],
+            [192, 224, 32, 255],
+        ],
+        [
+            [12, 40, 68, 255],
+            [40, 68, 96, 255],
+            [68, 96, 124, 255],
+            [96, 124, 152, 255],
+            [124, 152, 180, 255],
+            [152, 180, 208, 255],
+        ],
+        [
+            [21, 37, 53, 255],
+            [53, 69, 85, 255],
+            [85, 101, 117, 255],
+            [117, 133, 149, 255],
+            [149, 165, 181, 255],
+            [181, 197, 213, 255],
+        ],
     ];
-    for (face, color) in colors.iter().enumerate() {
-        let mut pixels = Vec::with_capacity((SIDE * SIDE * 4) as usize);
-        for _ in 0..SIDE * SIDE {
-            pixels.extend_from_slice(color);
-        }
-        queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &cube,
-                mip_level: 0,
-                origin: Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: face as u32,
+    for mip in 0..mip_levels {
+        let mip_side = (SIDE >> mip).max(1);
+        for (face, color) in colors[mip as usize].iter().enumerate() {
+            let mut pixels = Vec::with_capacity((mip_side * mip_side * 4) as usize);
+            for _ in 0..mip_side * mip_side {
+                pixels.extend_from_slice(color);
+            }
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &cube,
+                    mip_level: mip,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: face as u32,
+                    },
+                    aspect: TextureAspect::All,
                 },
-                aspect: TextureAspect::All,
-            },
-            &pixels,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(SIDE * 4),
-                rows_per_image: Some(SIDE),
-            },
-            Extent3d {
-                width: SIDE,
-                height: SIDE,
-                depth_or_array_layers: 1,
-            },
-        );
+                &pixels,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(mip_side * 4),
+                    rows_per_image: Some(mip_side),
+                },
+                Extent3d {
+                    width: mip_side,
+                    height: mip_side,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
     let cube_view = cube.create_view(&TextureViewDescriptor {
         label: Some("six-face FL9_1 cube SRV"),
@@ -14952,15 +14993,9 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
         usage: Some(TextureUsages::TEXTURE_BINDING),
         aspect: TextureAspect::All,
         base_mip_level: 0,
-        mip_level_count: Some(1),
+        mip_level_count: Some(mip_levels),
         base_array_layer: 0,
         array_layer_count: Some(6),
-    });
-    let sampler = device.create_sampler(&SamplerDescriptor {
-        mag_filter: FilterMode::Nearest,
-        min_filter: FilterMode::Nearest,
-        mipmap_filter: MipmapFilterMode::Nearest,
-        ..Default::default()
     });
     let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("sparse FL9_1 cube layout"),
@@ -14983,19 +15018,75 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
             },
         ],
     });
-    let bind_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("sparse FL9_1 cube binding"),
-        layout: &bind_group_layout,
-        entries: &[
-            BindGroupEntry {
-                binding: 17,
-                resource: BindingResource::TextureView(&cube_view),
-            },
-            BindGroupEntry {
-                binding: 42,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
+    let samplers: Vec<_> = (0..mip_levels)
+        .map(|mip| {
+            device.create_sampler(&SamplerDescriptor {
+                label: Some("FL9_1 cube mip selector"),
+                min_filter: FilterMode::Nearest,
+                mag_filter: FilterMode::Nearest,
+                mipmap_filter: MipmapFilterMode::Nearest,
+                lod_min_clamp: mip as f32,
+                lod_max_clamp: f32::MAX,
+                ..Default::default()
+            })
+        })
+        .collect();
+    let bind_groups: Vec<_> = samplers
+        .iter()
+        .map(|sampler| {
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some("sparse FL9_1 cube binding"),
+                layout: &bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 17,
+                        resource: BindingResource::TextureView(&cube_view),
+                    },
+                    BindGroupEntry {
+                        binding: 42,
+                        resource: BindingResource::Sampler(sampler),
+                    },
+                ],
+            })
+        })
+        .collect();
+    let partial_cube_view = has_partial_view.then(|| {
+        cube.create_view(&TextureViewDescriptor {
+            label: Some("non-suffix FL9_1 cube mip view"),
+            format: Some(TextureFormat::Rgba8Unorm),
+            dimension: Some(TextureViewDimension::Cube),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: TextureAspect::All,
+            base_mip_level: 1,
+            mip_level_count: Some(2),
+            base_array_layer: 0,
+            array_layer_count: Some(6),
+        })
+    });
+    let partial_sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("FL9_1 partial cube mip selector"),
+        min_filter: FilterMode::Nearest,
+        mag_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: f32::MAX,
+        ..Default::default()
+    });
+    let partial_bind_group = partial_cube_view.as_ref().map(|view| {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some("non-suffix FL9_1 cube binding"),
+            layout: &bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 17,
+                    resource: BindingResource::TextureView(view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&partial_sampler),
+                },
+            ],
+        })
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("sparse FL9_1 cube pipeline layout"),
@@ -15103,7 +15194,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
         label: Some("FL9_1 cube readback target"),
         size: Extent3d {
             width: WIDTH,
-            height: HEIGHT,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -15115,7 +15206,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     });
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 cube readback"),
-        size: (256 * HEIGHT) as u64,
+        size: (256 * height) as u64,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -15141,9 +15232,17 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, vertices.slice(..));
-        pass.draw(0..36, 0..1);
+        for (mip, bind_group) in bind_groups.iter().enumerate() {
+            pass.set_viewport(0.0, (mip * 4) as f32, WIDTH as f32, 4.0, 0.0, 1.0);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..36, 0..1);
+        }
+        if let Some(bind_group) = &partial_bind_group {
+            pass.set_viewport(0.0, (mip_levels * 4) as f32, WIDTH as f32, 4.0, 0.0, 1.0);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..36, 0..1);
+        }
     }
     encoder.copy_texture_to_buffer(
         TexelCopyTextureInfo {
@@ -15157,12 +15256,12 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
             layout: TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(256),
-                rows_per_image: Some(HEIGHT),
+                rows_per_image: Some(height),
             },
         },
         Extent3d {
             width: WIDTH,
-            height: HEIGHT,
+            height,
             depth_or_array_layers: 1,
         },
     );
@@ -15186,18 +15285,21 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
             .slice(..)
             .get_mapped_range()
             .expect("mapped cube output");
-        for y in 0..HEIGHT as usize {
+        for y in 0..height as usize {
             for x in 0..WIDTH as usize {
                 let face = x / SIDE as usize;
                 let offset = y * 256 + x * 4;
+                let band = y / 4;
+                let mip = if band < mip_levels as usize { band } else { 1 };
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    colors[face],
-                    "cube face {face} pixel ({x}, {y})"
+                    colors[mip][face],
+                    "cube mip {mip} face {face} pixel ({x}, {y})"
                 );
             }
         }
     }
     readback.unmap();
-    println!("PASS: FL9_1 cube shader sampled all six independently uploaded faces; 96/96 readback pixels matched the expected face colors");
+    let checked = WIDTH * height;
+    println!("PASS: FL9_1 cube shader sampled all six uploaded faces across {mip_levels} mip levels{}; {checked}/{checked} readback pixels matched expected colors", if has_partial_view { " and a non-suffix cube view" } else { "" });
 }

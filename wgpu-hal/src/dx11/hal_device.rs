@@ -258,7 +258,6 @@ impl crate::Device for Device {
                 && (desc.dimension != wgt::TextureDimension::D2
                     || desc.size.width != desc.size.height
                     || !desc.size.width.is_power_of_two()
-                    || desc.mip_level_count != 1
                     || desc.sample_count != 1
                     || !desc.usage.contains(wgt::TextureUses::RESOURCE)))
             || desc.mip_level_count == 0
@@ -403,7 +402,12 @@ impl crate::Device for Device {
         }
         let mut texture = if cube {
             self.native
-                .create_cube_texture_inner(desc.size.width, desc.size.height, format)
+                .create_cube_texture_inner(
+                    desc.size.width,
+                    desc.size.height,
+                    desc.mip_level_count,
+                    format,
+                )
                 .map_err(device_error)?
         } else {
             self.native
@@ -552,8 +556,7 @@ impl crate::Device for Device {
             && native.Width.is_power_of_two()
             && native.Width
                 <= super::capabilities::HardwareGuarantees::for_level(self.native.feature_level())
-                    .texture_cube_dimension
-            && native.MipLevels == 1;
+                    .texture_cube_dimension;
         if desc.format != format
             || (desc.dimension != wgt::TextureViewDimension::D2 && !cube)
             || !supported.contains(desc.usage)
