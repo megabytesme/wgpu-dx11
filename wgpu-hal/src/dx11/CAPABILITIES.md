@@ -13,6 +13,11 @@ implemented backend paths. `check_private_texture_2d` is a conservative
 predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_UNORM, R8G8_SNORM,
 R16G16_SNORM, R8G8B8A8_SNORM, B5G6R5 and BC1_UNORM subsets; it is not a complete
 texture validation rule.
+
+This file also retains historical audit notes. Any older statement below that
+adapter enumeration is offscreen-only or that surface reporting is disabled
+describes an earlier checkpoint; the current public surface is limited to the
+HWND contract summarized above.
 A failed query is recorded with its HRESULT and never treated as support.
 Adapter metadata includes the DXGI driver-package version when
 `IDXGIAdapter::CheckInterfaceSupport(IDXGIDevice)` succeeds; older or
@@ -682,8 +687,9 @@ cases verified the same depth-preserving output for both formats.
 [D3D9 sampler documentation](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-ps-registers-sampler)
 warns against binding a texture as both render target and texture at draw time;
 that API statement does not establish historical FL9 D3D11 driver behavior.
-Historical hardware remains unverified; ordinary opt-in enumeration currently
-exposes only the conservative FL9_1 offscreen projection.
+Historical hardware remains unverified. The opt-in adapter uses the
+conservative FL9_1 device projection; its only public surface path is the
+constrained HWND contract summarized above.
 
 HAL transfer commands use explicit regions. No staging-to-default native copy with
 a null source box is used, avoiding the documented 9_x corruption case for
@@ -796,7 +802,8 @@ rejected before drawing. Two strict FL9_1 RTX images checked fragment sampling
 and a transition between these layouts; a controlled core case checked 64
 pixels. CPU mapping and compiler guards cover stage identity and selected
 vertex entries. The original strict baseline rejected the combined layout.
-Historical FL9 drivers remain unverified; no public surface is reported.
+Historical FL9 drivers remain unverified; the HWND contract above does not
+expand the sampled-resource contract.
 
 ## Private uniform-buffer contract
 
@@ -940,8 +947,8 @@ after a source update. Synthetic tests exercise restrictive
 capabilities; the RTX driver reports full NPOT support even when forced to FL9_1.
 The HAL returns its existing generic `DeviceError::Unexpected` on draw rejection.
 Binding arrays, comparison samplers, storage and vertex sampling remain
-unavailable; the public projection remains FL9_1-only and reports no surface
-capabilities.
+unavailable; the public projection remains FL9_1-only and exposes only the
+constrained HWND surface contract summarized above.
 
 The disabled texel-load proof reserves `t0`, `s15` and `b13`; it cannot simply
 be switched on with this allocator. Enabling it requires coordinated register
@@ -992,7 +999,9 @@ prove an inherent hardware restriction. `instance_index` is currently a
 backend implementation restriction; its profile-specific FXC behavior has not
 been verified. Microsoft describes SV system-value semantics as Direct3D 10
 additions, while 10Level9 exposes D3D9-era shader behavior; this mapping does
-not claim that these semantics are impossible on every implementation.
+not claim that these semantics are impossible on every implementation. A
+strict public test on the forced-FL9_1 adapter verifies core rejection of both
+selected-entry uses before HAL and acceptance of a safe sibling pipeline.
 
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise

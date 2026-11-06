@@ -392,9 +392,11 @@ entries. The backend-generated `SV_VertexID` interface fails to compile with
 FXC X4555 under the tested FL9_1 vertex profile. This records the
 compiler/backend boundary, not a hardware guarantee. `instance_index` remains
 a backend restriction whose FXC acceptance is unverified. The opt-in
-offscreen-only adapter reports the selected FL9_1 projection; continue the
-core/HAL audit before widening its contract. Public surface presentation is
-still disabled.
+adapter reports the selected FL9_1 projection; a strict public test confirms
+both built-ins are rejected before HAL while a safe sibling pipeline compiles.
+The current public surface remains limited to the HWND contract summarized at
+the top of this plan. Continue the core/HAL audit before widening the public
+capability contract.
 
 The public offscreen integration now exercises sparse group-0 uniforms and
 group-7 sampled bindings, indexed textured depth-tested output, dynamic

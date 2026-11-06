@@ -12249,3 +12249,105 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
     readback.unmap();
     println!("PASS: 64/64 pixels show red; shader depth 0.2 beat vertex depth 0.8 and rejected the later fragment depth 0.8 despite its vertex depth 0.2");
 }
+
+#[test]
+fn public_dx11_rejects_vertex_system_values_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 vertex system-value validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex system-value shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+            @vertex fn vertex_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(f32(index), 0.0, 0.0, 1.0);
+            }
+            @vertex fn instance_index(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(f32(index), 0.0, 0.0, 1.0);
+            }
+            @vertex fn safe(@location(0) position: vec3f) -> @builtin(position) vec4f {
+                return vec4f(position, 1.0);
+            }
+            @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }
+            "#
+                .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_pipeline = |entry_point, buffers| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(entry_point),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let no_buffers = [];
+    expect_validation_error_containing(
+        &device,
+        "vertex_index input",
+        "UnsupportedVertexIndexInput",
+        || drop(create_pipeline("vertex_index", &no_buffers)),
+    );
+    expect_validation_error_containing(
+        &device,
+        "instance_index input",
+        "UnsupportedInstanceIndexInput",
+        || drop(create_pipeline("instance_index", &no_buffers)),
+    );
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x3,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let safe_buffers = [Some(VertexBufferLayout {
+        array_stride: 12,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    drop(create_pipeline("safe", &safe_buffers));
+    println!("PASS: public core rejected vertex_index and instance_index before HAL and accepted a safe sibling entry");
+}

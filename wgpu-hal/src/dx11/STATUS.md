@@ -241,7 +241,9 @@ usable. Compiling the backend-generated `SV_VertexID` interface for the tested
 unused. The private HAL separately rejects both inputs; `instance_index`
 profile acceptance has not been tested. These limits describe the current
 compiler/backend contract, not a universal claim that all feature-level 9_1
-hardware makes the semantics impossible.
+hardware makes the semantics impossible. A strict public wgpu test on the
+forced-FL9_1 adapter confirms that core rejects each selected entry before HAL
+and accepts a safe sibling pipeline.
 
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
