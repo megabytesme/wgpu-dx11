@@ -5219,18 +5219,16 @@ impl Device {
                             limit: uniform_limit,
                         });
                     }
-                    if !self.downlevel.limits.runtime_integer_shader_operations
-                        && match interface {
-                            Some(interface) => interface
-                                .entry_point_uses_unsupported_texture_sample_bias(
-                                    stage.to_naga(),
-                                    &_vertex_entry_point_name,
-                                    &self.downlevel.limits,
-                                )
-                                .map_err(stage_err)?,
-                            None => true,
-                        }
-                    {
+                    if match interface {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_texture_sample_bias(
+                                stage.to_naga(),
+                                &_vertex_entry_point_name,
+                                &self.downlevel.limits,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    } {
                         return Err(
                             pipeline::CreateRenderPipelineError::UnsupportedTextureSampleBias {
                                 stage: stage_bit,
@@ -5308,24 +5306,6 @@ impl Device {
                             },
                         );
                     }
-                    if !self.downlevel.limits.runtime_integer_shader_operations
-                        && match interface {
-                            Some(interface) => interface
-                                .entry_point_uses_unsupported_runtime_integer_semantics(
-                                    stage.to_naga(),
-                                    &_vertex_entry_point_name,
-                                    &self.downlevel.limits,
-                                )
-                                .map_err(stage_err)?,
-                            None => true,
-                        }
-                    {
-                        return Err(
-                            pipeline::CreateRenderPipelineError::UnsupportedRuntimeIntegerShaderOperations {
-                                stage: stage_bit,
-                            },
-                        );
-                    }
                     if !self.downlevel.limits.vertex_index_input
                         && match interface {
                             Some(interface) => interface
@@ -5348,6 +5328,24 @@ impl Device {
                     {
                         return Err(
                             pipeline::CreateRenderPipelineError::UnsupportedInstanceIndexInput,
+                        );
+                    }
+                    if !self.downlevel.limits.runtime_integer_shader_operations
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_unsupported_runtime_integer_semantics(
+                                    stage.to_naga(),
+                                    &_vertex_entry_point_name,
+                                    &self.downlevel.limits,
+                                )
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedRuntimeIntegerShaderOperations {
+                                stage: stage_bit,
+                            },
                         );
                     }
 
@@ -5556,18 +5554,16 @@ impl Device {
                     });
                 }
 
-                if !self.downlevel.limits.runtime_integer_shader_operations
-                    && match shader_module.interface.interface() {
-                        Some(interface) => interface
-                            .entry_point_uses_unsupported_texture_sample_bias(
-                                stage.to_naga(),
-                                &fragment_entry_point_name,
-                                &self.downlevel.limits,
-                            )
-                            .map_err(stage_err)?,
-                        None => true,
-                    }
-                {
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_texture_sample_bias(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                } {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureSampleBias {
                             stage: stage_bit,
@@ -5575,18 +5571,16 @@ impl Device {
                     );
                 }
 
-                if !self.downlevel.limits.matrix_aggregate_stores
-                    && match shader_module.interface.interface() {
-                        Some(interface) => interface
-                            .entry_point_uses_unsupported_texture_sample_level(
-                                stage.to_naga(),
-                                &fragment_entry_point_name,
-                                &self.downlevel.limits,
-                            )
-                            .map_err(stage_err)?,
-                        None => true,
-                    }
-                {
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_texture_sample_level(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                } {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureSampleLevel {
                             stage: stage_bit,
@@ -5594,18 +5588,16 @@ impl Device {
                     );
                 }
 
-                if !self.downlevel.limits.runtime_integer_shader_operations
-                    && match shader_module.interface.interface() {
-                        Some(interface) => interface
-                            .entry_point_uses_unsupported_fragment_derivatives(
-                                stage.to_naga(),
-                                &fragment_entry_point_name,
-                                &self.downlevel.limits,
-                            )
-                            .map_err(stage_err)?,
-                        None => true,
-                    }
-                {
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_fragment_derivatives(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                } {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedFragmentDerivatives,
                     );

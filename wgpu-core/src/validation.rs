@@ -652,7 +652,9 @@ fn function_uses_unsupported_integer_semantics(
                     !global_initializer_is_simple(module, constant.init, budget)
                 })
             }
-            naga::Expression::Override(_) => true,
+            naga::Expression::Override(_) => {
+                expression_may_contain_integer(module, function_info, handle, budget)
+            }
             naga::Expression::ImageSample {
                 offset: Some(offset),
                 ..
@@ -4362,6 +4364,7 @@ mod tests {
             r#"
             struct Values { value: u32 }
             @group(0) @binding(0) var<uniform> values: Values;
+            override tint: f32 = 0.25;
             fn increment(value: u32) -> u32 { return value + 1u; }
             @vertex fn bad_helper() -> @builtin(position) vec4f {
                 return vec4f(f32(increment(values.value)), 0.0, 0.0, 1.0);
@@ -4371,6 +4374,9 @@ mod tests {
             }
             @vertex fn safe_vertex_conversion(@location(0) value: vec2<u32>) -> @builtin(position) vec4f {
                 return vec4f(vec2f(value), 0.0, 1.0);
+            }
+            @fragment fn float_override() -> @location(0) vec4f {
+                return vec4f(tint, 0.0, 0.0, 1.0);
             }
             "#,
         )
@@ -4403,6 +4409,13 @@ mod tests {
                 )
                 .unwrap());
         }
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "float_override",
+                &fl91,
+            )
+            .unwrap());
         assert!(!interface
             .entry_point_uses_unsupported_runtime_integer_semantics(
                 naga::ShaderStage::Vertex,

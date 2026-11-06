@@ -103,6 +103,7 @@ Bottom level categories:
 - Reject non-finite viewport coordinates and dimensions.
 - Validate pipelines without panicking when inter-stage variable limits are zero or below built-in deductions.
 - Reject occlusion query sets on adapters that do not report query support, without losing the device.
+- Keep shader-operation downlevel checks independent and preserve specific vertex-builtin errors when rejecting unsupported integer semantics.
 
 #### WebGPU
 
