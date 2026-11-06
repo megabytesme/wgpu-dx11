@@ -488,6 +488,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   the same texture to a CPU buffer. Core initializes the texture before that
   read, and all 64 pixels are transparent black; discarded red contents are
   not exposed.
+- A second strict public pass samples a red-cleared, discarded RGBA8 attachment
+  through an SRV after switching it from render-target use. Core initialization
+  is visible through sampling: all 64 output pixels are transparent black.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
