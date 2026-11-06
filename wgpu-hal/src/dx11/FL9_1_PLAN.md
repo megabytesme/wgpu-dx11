@@ -60,11 +60,13 @@ Core queue submission also has a synthetic removed-device replay test. It
 confirms HAL error classification, one-shot core device-lost notification,
 subsequent submission rejection, queue invalidation and reentrant device polling
 from the loss callback on a physical adapter opened at FL9_1. Queue submit now
-defers the callback until its submission locks are released. Physical device
-removal/recovery remains unverified; continue reviewing safe public error and
-lifetime paths. A separate strict HAL fence test injects one `GetData` error,
-verifies the pending query is retained, then waits for that query's real GPU
-completion. These tests cover error reporting and bookkeeping; they do not
+defers the callback until its submission locks are released. Synthetic errors
+from both fence `GetData` polling and the wait path also propagate through core;
+the callback can reenter device polling without holding the snatch lock. Physical
+device removal/recovery remains unverified; continue reviewing safe public error
+and lifetime paths. A separate strict HAL fence test injects one `GetData`
+error, verifies the pending query is retained, then waits for that query's real
+GPU completion. These tests cover error reporting and bookkeeping; they do not
 simulate physical device loss or recovery.
 
 ### Public texture-view checkpoint — non-suffix 2D mip view (`4d3ec6bb9`)

@@ -8500,3 +8500,53 @@ code are formatted, and `git diff --check` passes. The first DX12 invocation
 failed because the shell lacked `link.exe`; rerunning inside Visual Studio 2022
 Build Tools x64 passed. Physical removal/recovery and historical FL9_1 driver
 behavior remain unverified.
+
+## Fence-poll callback lock-safety checkpoint — 2026-11-06
+
+The reentrant-poll regression for direct HAL submit failures passed, but a new
+synthetic fence failure exposed a second callback path: `Device::maintain`
+called `handle_hal_error` while it still held the device snatch read lock.
+`Device::lose` invoked the user callback immediately, and a callback polling the
+same device triggered a ranked-lock recursion panic. Core now converts HAL
+errors from both fence `wait` and `get_fence_value` into the existing
+`UserClosures` batch. Queue submit retains that batch on a maintenance error and
+fires it only after releasing its outer submission gate. `Device::poll` and
+surface-configuration callers already fire returned batches after their local
+guards are dropped.
+
+Two controlled tests inject `DXGI_ERROR_DEVICE_REMOVED` independently from
+event-query `GetData` and fence wait. The GetData case enters core maintenance
+after a real empty queue submission; the wait case submits first, then polls
+with a wait request. Each callback synchronously polls the device; each test
+verifies device-loss propagation and exactly one callback. The RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, hardware adapter) is opened with
+requested/actual FL9_1. Both native failures are injected; no actual device
+removal or recovery is claimed.
+
+Verification used Rust 1.93.1, Visual Studio 2022 Build Tools x64 and strict
+hardware mode:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fence_ -- --test-threads=1 --nocapture
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+git diff --check
+~~~
+
+Results: both focused fence error tests passed; the complete strict HAL suite
+passed 375/375, core fixture 99/99, public D3D11 suite 54/54 and DX12 core
+regression 92/92. The public suite reported the existing optional Float16x2
+input-format skip; it was not counted as GPU execution. HAL Clippy passed with
+ten existing warnings (range-array tests, test-module ordering, argument count
+and a needless borrow). Core Clippy passed with three existing fixture warnings
+(nonminimal bool, single-element loop and nested if). Changed queue and fence
+files pass targeted rustfmt; the core resource and fixture files still report
+pre-existing reflows outside these edits. `git diff --check` passes. The first
+full-suite run took about 89 seconds for HAL; output was buffered while that
+suite ran, not hung. Physical device-loss recovery and historical FL9_1 drivers
+remain unverified.

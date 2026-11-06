@@ -1487,6 +1487,7 @@ impl Queue {
             .map_err(|(index, e)| (index, e.into()))?;
         let submit_index = submission.index;
         let mut device_lost_invocation = None;
+        let mut maintain_error_callbacks = None;
 
         let res = 'error: {
             let mut used_surface_textures = track::TextureUsageScope::default();
@@ -1679,7 +1680,10 @@ impl Queue {
                         wgt::PollStatus::QueueEmpty | wgt::PollStatus::Poll
                     ));
                 }
-                Err(WaitIdleError::Device(err)) => break 'error Err(QueueSubmitError::Queue(err)),
+                Err(WaitIdleError::Device(error)) => {
+                    maintain_error_callbacks = Some(closures);
+                    break 'error Err(QueueSubmitError::Queue(error));
+                }
                 Err(WaitIdleError::WrongSubmissionIndex(..)) => {
                     unreachable!("Cannot get WrongSubmissionIndex from Poll")
                 }
@@ -1691,6 +1695,9 @@ impl Queue {
 
         drop(_queue_guard);
         fire_device_lost_invocation(device_lost_invocation);
+        if let Some(callbacks) = maintain_error_callbacks {
+            callbacks.fire();
+        }
 
         let callbacks = match res {
             Ok(ok) => ok,

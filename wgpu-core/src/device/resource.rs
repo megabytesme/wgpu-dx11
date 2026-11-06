@@ -1265,7 +1265,11 @@ impl Device {
             // This error match is only about `DeviceErrors`. At this stage we do not care if
             // the wait succeeded or not, and the `Ok(bool)`` variant is ignored.
             if let Err(e) = wait_result {
-                let hal_error: WaitIdleError = self.handle_hal_error(e).into();
+                let (device_error, invocation) = self.defer_hal_error(e);
+                if let Some(invocation) = invocation {
+                    user_closures.device_lost_invocations.push(invocation);
+                }
+                let hal_error: WaitIdleError = device_error.into();
                 return (user_closures, Err(hal_error));
             }
         }
@@ -1276,7 +1280,11 @@ impl Device {
         let current_finished_submission = match fence_value_result {
             Ok(fence_value) => fence_value,
             Err(e) => {
-                let hal_error: WaitIdleError = self.handle_hal_error(e).into();
+                let (device_error, invocation) = self.defer_hal_error(e);
+                if let Some(invocation) = invocation {
+                    user_closures.device_lost_invocations.push(invocation);
+                }
+                let hal_error: WaitIdleError = device_error.into();
                 return (user_closures, Err(hal_error));
             }
         };

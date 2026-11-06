@@ -29,6 +29,8 @@ struct FenceState {
     pending: VecDeque<PendingEvent>,
     #[cfg(any(test, feature = "dx11-test-fixture"))]
     injected_poll_status: Option<HRESULT>,
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    injected_wait_status: Option<HRESULT>,
 }
 
 /// A D3D11 event-query timeline. This is not yet a complete HAL queue fence.
@@ -48,6 +50,19 @@ impl NativeFence {
     #[doc(hidden)]
     pub fn test_fixture_fail_next_poll(&self, status: HRESULT) {
         self.state.lock().injected_poll_status = Some(status);
+    }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_remove_device_on_next_poll(&self) {
+        self.test_fixture_fail_next_poll(windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED);
+    }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_remove_device_on_next_wait(&self) {
+        self.state.lock().injected_wait_status =
+            Some(windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED);
     }
 }
 
@@ -231,6 +246,10 @@ impl NativeDevice {
         self.validate_fence(fence)?;
         if value > fence.state.lock().last_signaled {
             return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        #[cfg(any(test, feature = "dx11-test-fixture"))]
+        if let Some(status) = fence.state.lock().injected_wait_status.take() {
+            status.ok()?;
         }
         let start = std::time::Instant::now();
         loop {
