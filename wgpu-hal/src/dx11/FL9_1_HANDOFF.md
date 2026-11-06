@@ -1788,6 +1788,18 @@ explicitly skipped for lack of selected-device support. Rustfmt, public-test
 Clippy and `git diff --check` passed. Continue the broader core/HAL
 render-pass contract audit.
 
+Commit `b5fb590ac` (`dx11: verify ignored targetless fragment outputs`)
+verifies that a result-bearing fragment shader whose location 0 has no color
+target is correctly ignored in a D16-only pipeline. The HAL's direct compiler
+path already supports the shape. A later farther draw remained blue at all
+64 pixels, proving the targetless pass updated depth while its color result
+was unobservable. The combined targetless-fragment test and the full strict
+public suite passed 1/1 and 38/38 respectively on the physical RTX 3090 Ti at
+requested/actual FL9_1. The optional Float16x2 IA branch was explicitly
+skipped. Public-test Clippy, rustfmt and `git diff --check` passed. Next add
+selected-entry core gates for HAL-rejected FL9_1 integer semantics and matrix
+aggregate stores.
+
 ## Follow-up — outputless fragments with D24S8 stencil
 
 Commit `967b1af89` (`dx11: verify outputless FL9_1 fragments with D24S8`)

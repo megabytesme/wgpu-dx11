@@ -6386,6 +6386,25 @@ Rustfmt, public-test Clippy and `git diff --check` passed. Next resume the
 broader core/HAL render-pass contract audit. Historical FL9_1 drivers and
 ARM32 UWP remain unverified.
 
+## Follow-up — unmatched targetless fragment color output
+
+Commit `b5fb590ac` (`dx11: verify ignored targetless fragment outputs`) adds
+coverage for a core-legal fragment stage that returns `@location(0)` while a
+depth-only pipeline has no matching color target. The HAL already compiles
+result-bearing fragment entries directly, and the D3D11 pass binds no RTV; the
+output is ignored without changing the implementation. The test fills D16 in
+that pass, then attempts a farther color draw. All 64 output pixels stayed
+blue, proving the unmatched color did not reach an attachment and the depth
+write did occur. The same test retains outputless-fragment discard coverage.
+
+The focused test passed 1/1 and the complete strict public D3D11 suite passed
+38/38 on the physical RTX 3090 Ti at requested/actual FL9_1. The optional
+Float16x2 IA branch logged its capability skip. Public-test Clippy, rustfmt and
+`git diff --check` passed. Independent render-pass review's suspected HAL
+mismatch was disproved by the existing direct-compile path and this execution
+test. The next concrete audit item is selected-entry core gating for the
+runtime integer semantics and matrix-aggregate stores rejected by HAL.
+
 ## Follow-up — query-backed R8/RG8 color attachments
 
 Code checkpoint: `a6d958664` (`dx11: enable query-gated R8/RG8 color attachments`).
