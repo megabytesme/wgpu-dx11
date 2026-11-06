@@ -11,6 +11,7 @@ use windows::{
         Graphics::{
             Direct3D11::{
                 ID3D11Buffer, ID3D11DeviceContext, ID3D11Texture2D, D3D11_BOX, D3D11_BUFFER_DESC,
+                ID3D11Texture3D,
                 D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
@@ -159,6 +160,17 @@ pub(super) struct BufferToTexture {
     row_pitch: u32,
 }
 
+#[derive(Debug)]
+pub(super) struct BufferToTexture3D {
+    source: ID3D11Buffer,
+    staging: ID3D11Buffer,
+    texture: ID3D11Texture3D,
+    source_box: D3D11_BOX,
+    destination_box: D3D11_BOX,
+    row_pitch: u32,
+    depth_pitch: u32,
+}
+
 /// A checked operation retaining a texture, buffer and staging texture.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -175,6 +187,85 @@ pub(super) struct TextureToBuffer {
 }
 
 impl NativeDevice {
+    pub(super) fn prepare_buffer_to_texture_3d(
+        &self,
+        source: &NativeBuffer,
+        texture: &NativeTexture,
+        region: &crate::BufferTextureCopy,
+    ) -> Result<BufferToTexture3D> {
+        let base = &region.texture_base;
+        let size = &region.size;
+        let layout = &region.buffer_layout;
+        if texture.dimension != wgt::TextureDimension::D3
+            || base.mip_level != 0
+            || base.array_layer != 0
+            || base.aspect != crate::FormatAspects::COLOR
+            || texture.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || !texture.usage.contains(wgt::TextureUses::COPY_DST)
+            || size.width == 0
+            || size.height == 0
+            || size.depth == 0
+        {
+            return Err(invalid());
+        }
+        let (width, height, _, _) = super::texture::subresource_layout(texture, 0, 0)?;
+        let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
+        let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
+        let back = base.origin.z.checked_add(size.depth).ok_or_else(invalid)?;
+        if right > width || bottom > height || back > texture.depth {
+            return Err(invalid());
+        }
+        let block = format_block_layout(texture.format)?;
+        if !block_aligned_box(base, size, block) {
+            return Err(invalid());
+        }
+        let (offset, pitch, row_bytes, _) = copy_layout(layout, size.width, size.height, block)?;
+        let rows = block.height_blocks(size.height);
+        let rows_per_image = layout.rows_per_image.unwrap_or(rows);
+        let depth_pitch = pitch.checked_mul(rows_per_image).ok_or_else(invalid)?;
+        let total = (size.depth - 1)
+            .checked_mul(depth_pitch)
+            .and_then(|value| value.checked_add((rows - 1).checked_mul(pitch)?))
+            .and_then(|value| value.checked_add(row_bytes))
+            .ok_or_else(invalid)?;
+        let end = offset.checked_add(total).ok_or_else(invalid)?;
+        let native_source = self.texture_copy_source(source, u64::from(offset), total as usize)?;
+        let staging_desc = D3D11_BUFFER_DESC {
+            ByteWidth: total,
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut staging = None;
+        unsafe {
+            self.raw_device()
+                .CreateBuffer(&staging_desc, None, Some(&mut staging))?;
+        }
+        Ok(BufferToTexture3D {
+            source: native_source,
+            staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            texture: texture.raw.as_3d()?.clone(),
+            source_box: D3D11_BOX {
+                left: offset,
+                right: end,
+                top: 0,
+                bottom: 1,
+                front: 0,
+                back: 1,
+            },
+            destination_box: D3D11_BOX {
+                left: base.origin.x,
+                right,
+                top: base.origin.y,
+                bottom,
+                front: base.origin.z,
+                back,
+            },
+            row_pitch: pitch,
+            depth_pitch,
+        })
+    }
+
     pub(super) fn prepare_texture_to_texture(
         &self,
         source: &NativeTexture,
@@ -392,6 +483,39 @@ impl BufferToTexture {
                 mapped.pData,
                 self.row_pitch,
                 0,
+            );
+            context.Unmap(&self.staging, 0);
+            Ok(())
+        }
+    }
+}
+
+impl BufferToTexture3D {
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        unsafe {
+            context.CopySubresourceRegion(
+                &self.staging,
+                0,
+                0,
+                0,
+                0,
+                &self.source,
+                0,
+                Some(&self.source_box),
+            );
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&self.staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            context.UpdateSubresource(
+                &self.texture,
+                0,
+                Some(&self.destination_box),
+                mapped.pData,
+                self.row_pitch,
+                self.depth_pitch,
             );
             context.Unmap(&self.staging, 0);
             Ok(())

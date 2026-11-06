@@ -159,7 +159,9 @@ pub(super) fn shader_binding_kind(
         naga::AddressSpace::Uniform => Some(ShaderBindingKind::Uniform),
         naga::AddressSpace::Handle => match module.types[global.ty].inner {
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2 | naga::ImageDimension::Cube,
+                dim: naga::ImageDimension::D2
+                    | naga::ImageDimension::D3
+                    | naga::ImageDimension::Cube,
                 arrayed: false,
                 class:
                     naga::ImageClass::Sampled {
@@ -2522,5 +2524,61 @@ mod tests {
         assert!(!err.message.is_empty());
         let err = compile_hlsl("", "bad\0entry", ShaderProfile::Vertex5_0).unwrap_err();
         assert_eq!(err.code, E_INVALIDARG.0);
+    }
+
+    #[test]
+    fn fl91_pixel_profile_accepts_sampled_texture3d() {
+        let source = r#"
+            Texture3D<float4> volume : register(t0);
+            SamplerState sampling : register(s0);
+            float4 main(float3 coordinate : TEXCOORD0) : SV_TARGET {
+                return volume.Sample(sampling, coordinate);
+            }
+        "#;
+        compile_hlsl(source, "main", ShaderProfile::PixelLevel9_1).unwrap();
+    }
+
+    #[test]
+    fn naga_fl91_pixel_profile_accepts_bound_texture3d_sampling() {
+        use naga::{valid::{Capabilities, ValidationFlags, Validator}, ShaderStage};
+
+        let source = r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @group(0) @binding(42) var filtering: sampler;
+            @fragment fn main(@location(0) coordinate: vec3f) -> @location(0) vec4f {
+                return textureSample(volume, filtering, coordinate);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        compile_naga_with_bindings(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .unwrap();
     }
 }

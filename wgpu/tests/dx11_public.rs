@@ -1568,22 +1568,6 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     drop(create_texture_query_pipeline("safe"));
     println!("PASS: public core rejected selected texture queries and textureSampleBaseClampToEdge before HAL, including helper use, and compiled a safe sibling entry");
 
-    expect_validation_error(&device, "3D texture creation", || {
-        drop(device.create_texture(&TextureDescriptor {
-            label: Some("unsupported public FL9_1 3D texture"),
-            size: Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D3,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        }));
-    });
     expect_validation_error(&device, "two-sample color texture creation", || {
         drop(device.create_texture(&TextureDescriptor {
             label: Some("unsupported public FL9_1 two-sample texture"),
@@ -9610,6 +9594,105 @@ fn public_dx11_srgb_texture_sampling_and_rendering() {
 }
 
 #[test]
+fn public_dx11_rejects_mutable_format_views_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(!downlevel.flags.contains(DownlevelFlags::VIEW_FORMATS));
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; VIEW_FORMATS=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, _queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 mutable-view validation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    for (base_format, view_format) in [
+        (TextureFormat::Rgba8Unorm, TextureFormat::Rgba8UnormSrgb),
+        (TextureFormat::Bgra8Unorm, TextureFormat::Bgra8UnormSrgb),
+    ] {
+        expect_validation_error(&device, "mutable format view without VIEW_FORMATS", || {
+            drop(device.create_texture(&TextureDescriptor {
+                label: Some("unsupported FL9_1 mutable-view texture"),
+                size: Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: base_format,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[view_format],
+            }));
+        });
+    }
+    println!("PASS: core rejected both compatible mutable sRGB view pairs before HAL at FL9_1");
+}
+
+#[test]
+fn public_dx11_rejects_unavailable_primitive_index_feature() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 D3D11 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let features = adapter.features();
+    assert!(!features.contains(Features::PRIMITIVE_INDEX));
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; PRIMITIVE_INDEX=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let result = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 unavailable primitive-index feature"),
+        required_features: Features::PRIMITIVE_INDEX,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }));
+    assert!(result.is_err(), "core must reject the unavailable feature");
+    println!("PASS: core rejected PRIMITIVE_INDEX before device creation");
+}
+
+#[test]
 fn public_dx11_srgb_mip_chain_sampling_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -15385,4 +15468,579 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     readback.unmap();
     let checked = WIDTH * height;
     println!("PASS: FL9_1 cube shader sampled all six uploaded faces across {mip_levels} mip levels{}; {checked}/{checked} readback pixels matched expected colors", if has_partial_view { " and a non-suffix cube view" } else { "" });
+}
+
+#[test]
+fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(!required, "strict mode requires a physical FL9_1 D3D11 adapter");
+        println!("SKIP: no physical FL9_1 D3D11 adapter for 3D texture sampling");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    if !downlevel.limits.texture_3d {
+        assert!(!required, "strict mode requires queried FL9_1 3D texture support");
+        println!("SKIP: selected FL9_1 device did not report 3D texture support");
+        return;
+    }
+    assert_eq!(adapter.limits().max_texture_dimension_3d, 256);
+    assert!(!downlevel.limits.texture_3d_mipmaps);
+    assert!(!downlevel.limits.texture_3d_texture_copies);
+    assert_eq!(
+        downlevel.limits.texture_3d_usage_mask,
+        (TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST).bits()
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; 3D RGBA8 sampled/upload-only, max dimension=256",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 3D texture test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request forced FL9_1 device");
+
+    expect_validation_error(&device, "NPOT 3D texture", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported NPOT FL9_1 volume"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 3,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        }));
+    });
+    expect_validation_error(&device, "3D render-attachment usage", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported FL9_1 volume attachment"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        }));
+    });
+    expect_validation_error(&device, "3D mip chain", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported FL9_1 volume mip chain"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        }));
+    });
+    expect_validation_error(&device, "unsupported 3D format", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported FL9_1 volume format"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Bgra8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        }));
+    });
+
+    let volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 RGBA8 4 by 4 by 4 volume"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut volume_data = vec![0xCD; 4 * 4 * 256];
+    for z in 0..4usize {
+        for y in 0..4usize {
+            for x in 0..4usize {
+                let offset = z * 4 * 256 + y * 256 + x * 4;
+                volume_data[offset..offset + 4].copy_from_slice(&[
+                    (x * 50) as u8,
+                    (y * 50) as u8,
+                    (z * 50 + 30) as u8,
+                    255,
+                ]);
+            }
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &volume_data,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+    );
+    let changed_voxel = [240u8, 10, 220, 255];
+    let mut partial_upload = vec![0xA5; 16];
+    partial_upload.extend_from_slice(&changed_voxel);
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        &partial_upload,
+        TexelCopyBufferLayout {
+            offset: 16,
+            bytes_per_row: None,
+            rows_per_image: None,
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let view = volume.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        address_mode_w: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 3D sample layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D3,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 3D volume sample bindings"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 3D volume pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 3D volume shader"),
+        source: ShaderSource::Wgsl(
+            "struct VertexOut { @builtin(position) position: vec4f, @location(0) uvw: vec3f };\n\
+             @group(0) @binding(7) var volume: texture_3d<f32>;\n\
+             @group(0) @binding(42) var volume_sampler: sampler;\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(1) uvw: vec3f) -> VertexOut { return VertexOut(vec4f(position, 0.5, 1.0), uvw); }\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(volume, volume_sampler, input.uvw); }"
+                .into(),
+        ),
+    });
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 20,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttribute {
+                format: VertexFormat::Float32x3,
+                offset: 8,
+                shader_location: 1,
+            },
+        ],
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 3D sample pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mut vertices = Vec::with_capacity(24 * 5);
+    for quad in 0..4 {
+        let qx = quad % 2;
+        let qy = quad / 2;
+        let left = -1.0 + qx as f32;
+        let right = left + 1.0;
+        let top = 1.0 - qy as f32;
+        let bottom = top - 1.0;
+        let z = (quad as f32 + 0.5) / 4.0;
+        let corners = [
+            [left, top, 0.0, 0.0],
+            [left, bottom, 0.0, 1.0],
+            [right, top, 1.0, 0.0],
+            [right, top, 1.0, 0.0],
+            [left, bottom, 0.0, 1.0],
+            [right, bottom, 1.0, 1.0],
+        ];
+        for [x, y, u, v] in corners {
+            vertices.extend_from_slice(&[x, y, u, v, z]);
+        }
+    }
+    let vertex_data: Vec<u8> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 3D volume quads"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map volume test vertices")
+        .copy_from_slice(&vertex_data);
+    vertex_buffer.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 3D sample output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 3D sample readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 3D upload sample and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 3D volume sampling"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..24, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 3D texture execution");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("3D texture readback callback")
+        .expect("map FL9_1 3D texture readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped 3D sample output");
+        let mut checked = 0;
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let quad = (y / 4) * 2 + x / 4;
+                let mut expected = [
+                    ((x % 4) * 50) as u8,
+                    ((y % 4) * 50) as u8,
+                    (quad * 50 + 30) as u8,
+                    255,
+                ];
+                if quad == 1 && x % 4 == 1 && y % 4 == 1 {
+                    expected = changed_voxel;
+                }
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected,
+                    "volume sample pixel ({x}, {y})"
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 64);
+    }
+    readback.unmap();
+
+    let zeroed_volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 zero-initialized 3D volume"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &zeroed_volume,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        &partial_upload,
+        TexelCopyBufferLayout {
+            offset: 16,
+            bytes_per_row: None,
+            rows_per_image: None,
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let zeroed_view = zeroed_volume.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let zeroed_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 partially initialized volume binding"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&zeroed_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let mut partial_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 partial 3D initialization and sample"),
+    });
+    {
+        let mut pass = partial_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 partial 3D initialization sample"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &zeroed_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..24, 0..1);
+    }
+    partial_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let partial_submission = queue.submit([partial_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(partial_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for partial FL9_1 3D initialization render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("partial 3D readback callback")
+        .expect("map partially initialized volume output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped partial 3D output");
+        let mut checked = 0;
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let expected = if (x, y) == (5, 1) {
+                    changed_voxel
+                } else {
+                    [0, 0, 0, 0]
+                };
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected,
+                    "partially initialized volume pixel ({x}, {y})"
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 64);
+    }
+    readback.unmap();
+    println!("PASS: FL9_1 3D RGBA8 upload, nonzero-offset partial update, zero initialization, sparse sampled bindings and 128 readback pixels verified");
 }

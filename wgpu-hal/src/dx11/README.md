@@ -17,8 +17,9 @@ creation are serialized against Present; same-thread reentrant work that would
 touch queue/context state is rejected. Drop views of the previous backbuffer
 before reconfiguring a resized surface. The strict lifecycle test uses a
 hidden HWND. A separate visible-window example pumps messages, renders and
-resizes; its shown HWND and frame presents were verified, though its pixels
-were not captured for independent visual inspection.
+resizes; its shown HWND and frame presents were verified, and a client-area
+capture was visually inspected to confirm the distinct cube faces and clear
+background.
 
 A public offscreen example renders an indexed, textured, depth-tested cube and
 checks full-image readback:

@@ -293,7 +293,9 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
         match entry.ty {
             wgt::BindingType::Texture {
                 sample_type: wgt::TextureSampleType::Float { filterable },
-                view_dimension: wgt::TextureViewDimension::D2 | wgt::TextureViewDimension::Cube,
+                view_dimension: wgt::TextureViewDimension::D2
+                    | wgt::TextureViewDimension::D3
+                    | wgt::TextureViewDimension::Cube,
                 multisampled: false,
             } if sampled_visibility(entry.visibility) => textures.push((
                 entry.binding,

@@ -2,14 +2,237 @@
 
 ## Current position — 2026-11-06
 
-Latest verified code checkpoint: `680b048ed` (`dx11: add query-gated FL9_1
-cube sampling`). The strict public D3D11 suite passed 51/51 at forced FL9_1,
-the private HAL suite passed 370/370, the core fixture suite passed 96/96,
-and the DX12 core regression suite passed 92/92. The RTX 3090 Ti positively
-reported cube support for the implemented formats; six uploaded RGBA8 faces
-were sampled across 96 checked pixels. One optional Float16x2 input-format
-subcase explicitly skipped. Continue the core/HAL capability audit and public
-operation coverage; this does not complete the mission.
+Latest committed checkpoint: `0f62848fa` (`dx11: record public FL9_1 mip
+view checkpoint`), followed by verified core/HAL audit work and the query-gated
+3D sampled/upload increment below. The strict public suite passed 54/54, the
+private HAL suite 375/375, the core fixture suite 97/97, the targeted core
+adapter test 1/1, and DX12 core regressions 92/92. Strict tests selected the
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) at
+requested and actual FL9_1. One optional Float16x2 input-format subcase
+explicitly skipped because its format query was negative. Continue the core/HAL
+capability audit; the mission is not complete.
+
+The read-only Lumia Device Portal probe for `/api/os/devicefamily` timed out
+from this machine. No device state was changed. Windows 10 Mobile ARM32
+runtime verification remains unavailable from this session; the x64 forced-
+FL9_1 RTX results do not substitute for it.
+
+## Verified hardware boundary — ordinary 2D texture arrays
+
+Microsoft's Direct3D feature-level capability table marks texture resource
+arrays unavailable at FL9_1, FL9_2 and FL9_3. This is a hardware/API-level
+restriction, not a missing FL9_1 backend path; the supported six-face cube
+resource is a distinct shape. The opt-in public projection keeps
+`TEXTURE_2D_ARRAYS` clear, and the strict cube test requests the physical FL9_1
+device, checks the flag and verifies that a two-layer 2D texture is rejected
+by core before HAL. The strict public suite separately rejects a `D2Array`
+sampled binding layout before HAL. The cube test also rendered and read back
+the four-mip cube pattern: 960/960 pixels matched on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested/actual
+FL9_1.
+
+Verification used Rust 1.93.1 and the Visual Studio 18 x64 developer prompt:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_cube_texture_sampling_at_fl91 -- --nocapture --test-threads=1
+~~~
+
+The focused strict test passed 1/1. Microsoft reference: [feature-level
+capability table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro).
+
+## Public backend documentation correction
+
+The `Backend::Dx11` and `Backends::DX11` docs, backend-name parser docs, HAL
+feature docs and native-probe output still claimed D3D11 had no usable adapter
+or rendering. Updated them to describe the existing experimental, restricted
+FL9_1 implementation and its required `dx11` Cargo feature. Core's diagnostic
+now reflects that the public path includes a constrained owner-thread HWND
+surface as well as offscreen rendering. The changelog's summary now reflects
+the surface support, and the HAL README records the inspected frame capture.
+These documentation and diagnostic changes do not alter backend behavior.
+
+The affected wgpu-types, HAL and core crates compiled as dependencies of the
+strict core adapter test. The test passed 1/1 and enumerated one physical
+FL9_1 adapter. This example check passed:
+
+~~~powershell
+cargo +1.93 check --offline -j8 -p wgpu-hal --no-default-features --features dx11 --example dx11_probe
+~~~
+
+Changed Rust files passed the installed rustfmt check; the available pinned
+Cargo executable reports Rust 1.93.1, while the direct `rustfmt +1.93`
+invocation resolves to the installed stable rustfmt.
+
+## Verified boundary — mutable format views unavailable at FL9_1 — uncommitted
+
+Audited whether the public `VIEW_FORMATS` downlevel flag could be truthfully
+enabled for compatible RGBA8/BGRA8 UNORM and sRGB view pairs. Microsoft's
+10Level9 FL9_1 format table lists both typeless resource formats as
+unavailable, although the corresponding typed formats are individually
+supported. A native typeless `CreateTexture2D` probe on the physical RTX 3090
+Ti forced to FL9_1 returned `E_INVALIDARG` (`0x80070057`) for both format
+families. No HAL typeless-view implementation was retained. A strict public
+test instead confirms `VIEW_FORMATS` stays absent and core rejects both
+otherwise-compatible sRGB view lists before HAL. This validation test did not
+submit rendering commands; existing standalone typed sRGB texture coverage is
+unchanged. The result matches the documented FL9_1 format contract and avoids
+claiming a capability that this feature level does not provide.
+
+Exact strict command:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_mutable_format_views_at_fl91 -- --nocapture --test-threads=1
+~~~
+
+The focused test passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false) with requested/actual FL9_1. The complete
+strict public D3D11 test binary then passed 52/52; its existing Float16x2
+vertex-input subcase visibly skipped because the selected device did not
+report `IA_VERTEX_BUFFER`. The mutable-view case itself performs public device
+creation and core validation, but no render submission. Public-test Clippy and
+`git diff --check` passed. `cargo +1.93 fmt --all -- --check` remains blocked by
+pre-existing formatting differences in Naga's HLSL writer and an older section
+of `wgpu/tests/dx11_public.rs`; the new test has no rustfmt diff. This boundary
+is verified, documented and retained as an uncommitted working-tree change.
+
+## Capability audit — blendability requires attachment support — uncommitted
+
+The optional-format projection independently considered an implemented
+attachment path and the selected `BLENDABLE` query. That could report
+`COLOR_ATTACHMENT_BLEND` when the query omitted `RENDER_TARGET`, even though
+the same projection correctly withheld `COLOR_ATTACHMENT`. Blendability now
+requires the already projected `COLOR_ATTACHMENT` capability, so the selected
+device query and backend implementation must agree. The synthetic RGB565 test
+removes only `RENDER_TARGET` from a query that retains `BLENDABLE`, checks both
+projected flags are absent, and retains the positive case where both bits are
+present. R8 and RG8 tests also cover their queried attachment and blendable
+paths.
+
+Verification used Rust 1.93.1, Visual Studio x64 and
+`CARGO_TARGET_DIR=E:\CodexTemp\wgpu-fl91-mission-target`:
+
+- Capability tests filtered by `color_attachment`: 2/2 passed, covering the
+  query-gated RG8 and RGB565 paths. RGB565 explicitly retains `BLENDABLE` while
+  removing `RENDER_TARGET`; both projected flags remain absent. A separate
+  synthetic case reports both query bits while disabling the backend
+  attachment implementation, and also projects neither flag.
+- Complete strict private D3D11 HAL suite: 370/370 passed. GPU cases forced
+  the RTX 3090 Ti to FL9_1; expected unsupported-operation diagnostics and
+  explicit nested skip branches were not counted as GPU execution.
+- Complete strict public D3D11 test binary: 52/52 passed at requested/actual
+  FL9_1. The existing Float16x2 vertex-input subcase visibly skipped because
+  `IA_VERTEX_BUFFER` was unavailable for `R16G16_FLOAT`.
+- Core `requesting_dx11_exposes_only_fl91_hardware_adapters`: 1/1 passed;
+  two physical FL9_1 adapters were enumerated. No software/WARP adapter was
+  exposed.
+- HAL Clippy passed with the existing `create_hal_view` too-many-arguments
+  warning. `rustfmt --check` passed for `capabilities.rs`; `git diff --check`
+  passed. Workspace-wide fmt remains affected by the previously recorded
+  Naga HLSL writer and legacy test formatting differences.
+
+Exact commands (run from the Visual Studio x64 developer environment, with
+the E: temporary Cargo target):
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib color_attachment -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib
+rustfmt --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs
+git diff --check
+~~~
+
+Continue cross-checking optional format projection and audit public-valid
+core/HAL operation boundaries. The modern RTX does not establish behavior on
+historical FL9_1 drivers or Windows Mobile ARM32.
+
+## Queue and event-query failure handling — synthetic HRESULTs — uncommitted
+
+Added a test-only native command that returns `DXGI_ERROR_DEVICE_REMOVED`
+during command replay, then exercised it through the real core command-buffer
+and queue-submit path on a selected physical adapter opened at requested and
+actual FL9_1. Core returned `DeviceError::Lost`, invoked the device-lost
+callback once with `Unknown`, rejected a subsequent submission, and reported
+the queue empty. This validates classification and core invalidation after a
+HAL submission error; it does not simulate physical GPU removal, driver
+recovery, or continued device operation.
+
+Verification (Rust 1.93.1, Visual Studio x64, `CARGO_TARGET_DIR` on E:):
+
+- The focused strict test passed 1/1 on the RTX 3090 Ti
+  (`0x10de:0x2203`, driver `32.0.16.2101`, software=false). The injected
+  removal is synthetic; no physical device loss occurred.
+- The full strict `wgpu-core` fixture suite passed 97/97. GPU fixture cases
+  requested and confirmed FL9_1; the loss test itself validates core error
+  propagation and does not count as GPU rendering work.
+- The focused strict HAL fence test passed 1/1. It injected one `E_FAIL` from
+  `GetData`, confirmed the pending event was retained with its signal value,
+  then observed the same event complete through the real D3D11 context and
+  fence wait.
+- The complete strict private D3D11 HAL suite passed 371/371. GPU tests
+  selected the physical RTX 3090 Ti at requested/actual FL9_1; expected
+  unsupported-shader cases that print explicit skips were not GPU executions.
+- Core Clippy and changed-file Rustfmt passed. Core Clippy has one pre-existing
+  warning in an untouched fixture section. HAL `clippy --tests` passed with
+  ten existing warnings in old test/fixture code (single-range collection,
+  items after a test module, needless borrow) and the existing
+  `create_hal_view` argument-count warning; no warning points at the new fence
+  code.
+- `git diff --check` passed. Workspace `cargo fmt --all -- --check` remains
+  blocked by previously recorded formatting differences in Naga's HLSL writer
+  and an older public-test block.
+
+Exact strict commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_submission_device_loss_is_propagated_once -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib event_poll_error_retains_pending_query -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,std,wgsl --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests
+rustfmt --edition 2021 --check wgpu-hal/src/dx11/command.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-core/src/dx11_fixture_tests.rs
+rustfmt --edition 2021 --check wgpu-hal/src/dx11/fence.rs
+git diff --check
+~~~
+
+Continue the audit of public-valid resource, render-pass, mapping and device
+error paths. The injected queue replay loss and event `GetData` failure do not
+simulate physical device removal or driver recovery.
+
+## Public primitive-index feature boundary — uncommitted
+
+The FL9_1 HAL rejects fragment `primitive_index` shader input, but WGSL only
+allows it when the optional public `PRIMITIVE_INDEX` feature is requested. The
+selected D3D11 capability projection exposes no optional features. A strict
+public regression now checks the physical adapter's feature set omits
+`PRIMITIVE_INDEX` and that `request_device` rejects a request for it before
+creating a device. This confirms the apparent shader mismatch is unreachable
+through the current public contract; it adds no rendering or primitive-index
+support.
+
+The focused test passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), explicitly requested/actual FL9_1. It is a
+public feature-validation test and performs no GPU rendering. The full strict
+public D3D11 suite passed 53/53; its Float16x2 IA subcase remained an explicit
+query-based skip. Public-test Clippy passed with the existing HAL
+`create_hal_view` warning. Rustfmt check reports only the pre-existing legacy
+indentation block at `dx11_public.rs:6633`; the new test block is formatted.
+`git diff --check` passed. The exact command was:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unavailable_primitive_index_feature -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+~~~
+
+Continue the public capability and core/HAL audit; feature-gate verification
+does not make primitive-index shader execution available.
 
 ## Checkpoint — gate base-clamp sampling for 10Level9 — pending
 
@@ -8127,3 +8350,48 @@ git diff --check
 
 Continue the core/HAL contract audit; the mission remains partially complete.
 Historical FL9_1 and Windows Mobile ARM32 behavior remain unverified.
+
+## Verified public resource increment — query-gated FL9_1 3D sampling
+
+The public projection now exposes only the selected device's positively queried
+RGBA8 3D sampled/upload subset: single mip, single sample, POT dimensions up to
+256, with `TEXTURE_BINDING | COPY_DST`. Buffer uploads, including partial
+regions and source offsets, use a staging-buffer read followed by
+`UpdateSubresource`; this is ordered and correct but may block. The backend
+zero-initializes volume storage before exposing it. Texture-to-texture copies,
+readback, render attachments, storage and mip chains remain rejected.
+
+The strict public test requested and asserted FL9_1 on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false). It uploaded a
+distinctive 4×4×4 volume with padded rows, updated a texel from a nonzero source
+offset, rendered all four z slices through sparse logical bindings, and checked
+64/64 pixels. A second volume was partially initialized; readback through a
+sampled render checked that the written texel changed and all 63 untouched
+texels remained zero. In total 128/128 pixels matched.
+
+The strict core fixture accepted supported 3D shape/view descriptors and
+rejected NPOT, unsupported format, render attachment, mip-chain and 2D-to-3D
+copy cases before HAL. A CPU-only capability test verifies that exposure
+requires the texture-3D and shader-sampling format bits plus both backend paths;
+unavailable and incomplete queries fail closed. Naga/FXC compilation for
+FL9_1 3D sampling and the `wgpu-types` shape-contract test also passed.
+
+Verification used Rust 1.93.1, Visual Studio 18 x64, strict hardware mode and
+bounded Cargo `-j8`:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+~~~
+
+All listed suites passed. HAL, core and public-test Clippy checks passed with
+the existing `create_hal_view` too-many-arguments warning. Workspace rustfmt
+check still reports formatting reflows in Naga's HLSL writer and accumulated
+DX11 code, including older sections outside the new 3D test; no unrelated
+workspace reformat was applied. `git diff --check` passed. This x64 forced-level
+test does not establish behavior on historical FL9_1 drivers or Windows Mobile
+ARM32.

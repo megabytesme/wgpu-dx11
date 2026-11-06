@@ -1801,6 +1801,46 @@ impl Device {
             return Err(TextureDimensionError::UnsupportedDimension(desc.dimension).into());
         }
 
+        if desc.dimension == wgt::TextureDimension::D3 {
+            let supported_usage = wgt::TextureUsages::from_bits_retain(
+                self.downlevel.limits.texture_3d_usage_mask,
+            );
+            let unsupported_usage = desc.usage - supported_usage;
+            if !unsupported_usage.is_empty() {
+                return Err(CreateTextureError::InvalidDimensionUsages(
+                    unsupported_usage,
+                    desc.dimension,
+                ));
+            }
+            if !self
+                .downlevel
+                .limits
+                .supports_texture_3d_format(desc.format)
+            {
+                return Err(CreateTextureError::UnsupportedTexture3DFormat(desc.format));
+            }
+            if desc.mip_level_count > 1 && !self.downlevel.limits.texture_3d_mipmaps {
+                return Err(CreateTextureError::InvalidMipLevelCount {
+                    requested: desc.mip_level_count,
+                    maximum: 1,
+                });
+            }
+            let npot = self.downlevel.limits.npot_texture_3d;
+            if !npot
+                && (!desc.size.width.is_power_of_two()
+                    || !desc.size.height.is_power_of_two()
+                    || !desc.size.depth_or_array_layers.is_power_of_two())
+            {
+                return Err(CreateTextureError::InvalidTexture3DSize {
+                    width: desc.size.width,
+                    height: desc.size.height,
+                    depth: desc.size.depth_or_array_layers,
+                    maximum: self.limits.max_texture_dimension_3d,
+                    npot,
+                });
+            }
+        }
+
         conv::check_texture_dimension_size(
             desc.dimension,
             desc.size,

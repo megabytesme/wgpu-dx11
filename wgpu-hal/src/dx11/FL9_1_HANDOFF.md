@@ -2,21 +2,24 @@
 
 ## Current mission state — 2026-11-06
 
-This mission remains active. The latest verified code checkpoint is
-`4d3ec6bb9` (public non-suffix 2D mip-view coverage) on branch
-`uwp-dx11`. The strict public D3D11 suite passed 51/51, private HAL 370/370,
-the core fixture 96/96 and DX12 core 92/92. The physical RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) created and ran the
-explicitly requested FL9_1 device. It reports RGBA8 cube and mip support; the
-strict public cube test uploaded four mip levels across six faces, exercised a
-non-suffix mip view, and matched all 960 readback pixels. A second strict
-public test selected source mip 2 through a non-suffix 2D view and matched all
-64 pixels; its mip-chain test matched 320 pixels total. Cube mip use remains
-query-gated; unsupported formats fail closed. Ordinary arrays, cube copies,
-readback and render-target cube views remain unavailable. One optional
-Float16x2 vertex-input subcase remains a visible capability skip. The public
-D3D11 adapter remains explicitly opt-in; the core/HAL contract audit is
-ongoing. Details and exact commands are in `FL9_1_PROGRESS.md`.
+This mission remains active on branch `uwp-dx11`, at HEAD
+`0f62848fa` (`dx11: record public FL9_1 mip view checkpoint`). The working
+tree carries verified, uncommitted audit changes; the workspace instructions
+prohibit creating commits. Latest full strict results recorded for this tree
+are private HAL 371/371, public D3D11 53/53, core fixture 97/97 and DX12 core
+92/92. The physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) created and ran the explicitly requested FL9_1 device. Its
+strict cube test uploaded four mip levels across six faces, exercised a
+non-suffix cube view and matched all 960 pixels; the 2D non-suffix view test
+matched all 64 pixels. The latest focused rerun of the cube test also verified
+that ordinary 2D arrays remain unavailable and passed 1/1. Cube mip use is
+query-gated; unsupported formats fail closed. One optional Float16x2
+vertex-input subcase remains a visible capability skip. The public D3D11
+backend is explicit opt-in; the core/HAL contract audit is ongoing. Exact
+commands and distinctions between GPU execution and synthetic tests are in
+`FL9_1_PROGRESS.md`. A read-only Lumia Device Portal probe timed out, so
+Windows 10 Mobile ARM32 runtime verification remains unavailable in this
+session.
 
 The latest checkpoint also verifies the WGSL constant texel-offset form of
 `textureSampleBias`: core and the private HAL reject direct and helper-reached

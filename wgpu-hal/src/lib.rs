@@ -247,7 +247,8 @@ extern crate wgpu_types as wgt;
 #[macro_use]
 extern crate std;
 
-/// Experimental DX11 adapter diagnostics; rendering is not implemented.
+/// Experimental Direct3D 11 backend with a restricted FL9_1 rendering path.
+/// Enabled on Windows with the `dx11` Cargo feature.
 #[cfg(all(windows, feature = "dx11"))]
 pub mod dx11;
 

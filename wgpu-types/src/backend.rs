@@ -49,7 +49,7 @@ pub enum Backend {
     Gl = 4,
     /// WebGPU in the browser
     BrowserWebGpu = 5,
-    /// Experimental Direct3D 11 identity. The backend is not implemented yet.
+    /// Experimental Direct3D 11 identity with a restricted FL9_1 backend.
     Dx11 = 6,
 }
 
@@ -113,8 +113,9 @@ bitflags::bitflags! {
         /// Supported on Windows 10 and later
         const DX12 = 1 << Backend::Dx12 as u32;
 
-        /// Experimental Direct3D 11 backend identity. This fork does not yet
-        /// expose a usable wgpu adapter or rendering implementation.
+        /// Experimental Direct3D 11 backend identity with a restricted FL9_1
+        /// wgpu adapter and rendering implementation. Requires the `dx11`
+        /// Cargo feature and is not WebGPU-compliant.
         const DX11 = 1 << Backend::Dx11 as u32;
 
         /// [`Backend::BrowserWebGpu`].
@@ -184,7 +185,8 @@ impl Backends {
     /// Names:
     /// - vulkan = "vulkan" or "vk"
     /// - dx12   = "dx12" or "d3d12"
-    /// - dx11   = "dx11" or "d3d11" (experimental; no usable adapter yet)
+    /// - dx11   = "dx11" or "d3d11" (experimental restricted FL9_1 backend;
+    ///   requires the `dx11` Cargo feature)
     /// - metal  = "metal" or "mtl"
     /// - gles   = "opengl" or "gles" or "gl"
     /// - webgpu = "webgpu"

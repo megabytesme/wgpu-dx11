@@ -185,14 +185,66 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
-        let cube = desc.size.depth_or_array_layers == 6;
+        let cube = desc.dimension == wgt::TextureDimension::D2
+            && desc.size.depth_or_array_layers == 6;
         let max_dimension =
             super::capabilities::HardwareGuarantees::for_level(self.native.feature_level());
-        let max_dimension = if cube {
-            max_dimension.texture_cube_dimension
-        } else {
-            max_dimension.texture_2d_dimension
+        let max_dimension = match desc.dimension {
+            wgt::TextureDimension::D2 if cube => max_dimension.texture_cube_dimension,
+            wgt::TextureDimension::D2 => max_dimension.texture_2d_dimension,
+            wgt::TextureDimension::D3 => max_dimension.texture_3d_dimension,
+            wgt::TextureDimension::D1 => 0,
         };
+        if desc.dimension == wgt::TextureDimension::D3 {
+            let capabilities = super::capabilities::Capabilities::query(&self.native);
+            let format_bit = wgt::DownlevelLimits::texture_3d_format_bit(desc.format);
+            let format_supported = format_bit != 0
+                && capabilities.texture_3d_format_mask() & format_bit != 0;
+            if !format_supported
+                || desc.format != wgt::TextureFormat::Rgba8Unorm
+                || desc.usage.is_empty()
+                || !wgt::TextureUses::COPY_DST
+                    .union(wgt::TextureUses::RESOURCE)
+                    .contains(desc.usage)
+                || desc.mip_level_count != 1
+                || desc.sample_count != 1
+                || desc.size.width == 0
+                || desc.size.height == 0
+                || desc.size.depth_or_array_layers == 0
+                || desc.size.width > max_dimension
+                || desc.size.height > max_dimension
+                || desc.size.depth_or_array_layers > max_dimension
+                || !desc.size.width.is_power_of_two()
+                || !desc.size.height.is_power_of_two()
+                || !desc.size.depth_or_array_layers.is_power_of_two()
+                || !desc.view_formats.is_empty()
+            {
+                return Err(DeviceError::Unexpected);
+            }
+            let mut texture = self
+                .native
+                .create_rgba_texture_3d_inner(
+                    desc.size.width,
+                    desc.size.height,
+                    desc.size.depth_or_array_layers,
+                )
+                .map_err(device_error)?;
+            let byte_count = (desc.size.width as usize)
+                .checked_mul(desc.size.height as usize)
+                .and_then(|value| value.checked_mul(desc.size.depth_or_array_layers as usize))
+                .and_then(|value| value.checked_mul(4))
+                .ok_or(DeviceError::OutOfMemory)?;
+            let mut zeroes = Vec::new();
+            zeroes
+                .try_reserve_exact(byte_count)
+                .map_err(|_| DeviceError::OutOfMemory)?;
+            zeroes.resize(byte_count, 0);
+            self.native
+                .write_texture_volume_bytes(&texture, 0, &zeroes)
+                .map_err(device_error)?;
+            texture.set_usage(desc.usage);
+            return Ok(texture);
+        }
         let depth = matches!(
             desc.format,
             wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
@@ -486,6 +538,37 @@ impl crate::Device for Device {
                 DXGI_FORMAT_R8_UNORM,
             },
         };
+        if texture.dimension == wgt::TextureDimension::D3 {
+            let native = self
+                .native
+                .texture_3d_desc(texture)
+                .map_err(device_error)?;
+            if desc.format != wgt::TextureFormat::Rgba8Unorm
+                || desc.dimension != wgt::TextureViewDimension::D3
+                || desc.usage != wgt::TextureUses::RESOURCE
+                || desc.range.base_mip_level != 0
+                || desc.range.mip_level_count != Some(1)
+                || desc.range.base_array_layer != 0
+                || desc.range.array_layer_count != Some(1)
+                || native.MipLevels != 1
+                || native.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+                || !texture.supports_usage(desc.usage)
+            {
+                return Err(DeviceError::Unexpected);
+            }
+            return self
+                .native
+                .create_hal_view(
+                    texture,
+                    true,
+                    false,
+                    false,
+                    desc.usage,
+                    desc.dimension,
+                    (0, 1),
+                )
+                .map_err(device_error);
+        }
         let native = self.native.texture_desc(texture).map_err(device_error)?;
         let format = match native.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
@@ -1079,12 +1162,12 @@ mod tests {
             unsafe { crate::Device::create_texture_view(&device, &sampled, &full_sampled) }
                 .unwrap();
         let (_, size, mips, _) = native.sampled_view(&sampled_view)?;
-        assert_eq!((size, mips), ([8, 4], 4));
+        assert_eq!((size, mips), ([8, 4, 1], 4));
         let mut suffix_views = Vec::new();
         for (base, count, size, mip_count) in [
-            (1, Some(3), [4, 2], 3),
-            (2, None, [2, 1], 2),
-            (3, Some(1), [1, 1], 1),
+            (1, Some(3), [4, 2, 1], 3),
+            (2, None, [2, 1, 1], 2),
+            (3, Some(1), [1, 1, 1], 1),
         ] {
             let mut suffix = full_sampled.clone();
             suffix.range.base_mip_level = base;
@@ -1110,7 +1193,7 @@ mod tests {
             unsafe { crate::Device::create_texture_view(&device, &sampled, &partial_sampled) }
                 .unwrap();
         let (partial_srv, partial_size, partial_levels, _) = native.sampled_view(&partial)?;
-        assert_eq!((partial_size, partial_levels), ([4, 2], 2));
+        assert_eq!((partial_size, partial_levels), ([4, 2, 1], 2));
         let mut partial_desc =
             windows::Win32::Graphics::Direct3D11::D3D11_SHADER_RESOURCE_VIEW_DESC::default();
         unsafe { partial_srv.GetDesc(&mut partial_desc) };
@@ -1198,7 +1281,7 @@ mod tests {
         let combined_view =
             unsafe { crate::Device::create_texture_view(&device, &combined, &combined_view_desc) }
                 .unwrap();
-        assert_eq!(native.sampled_view(&combined_view)?.1, [1, 1]);
+        assert_eq!(native.sampled_view(&combined_view)?.1, [1, 1, 1]);
         assert_eq!(native.sampled_view(&combined_view)?.2, 1);
         assert_eq!(native.render_target_view(&combined_view)?.2, [1, 1]);
         combined_view_desc.range.base_mip_level = 1;
@@ -1207,7 +1290,7 @@ mod tests {
                 .unwrap();
         let (nonfinal_sampled, size, count) = native.sampled_binding(&combined_nonfinal)?;
         let (target_view, _, target_size) = native.render_target_view(&combined_nonfinal)?;
-        assert_eq!((size, count, target_size), ([4, 2], 1, [4, 2]));
+        assert_eq!((size, count, target_size), ([4, 2, 1], 1, [4, 2]));
         let original = nonfinal_sampled
             .original
             .cast::<windows::core::IUnknown>()?;
@@ -1233,7 +1316,7 @@ mod tests {
         let suffix =
             unsafe { crate::Device::create_texture_view(&device, &combined, &combined_view_desc) }
                 .unwrap();
-        assert_eq!(native.sampled_view(&suffix)?.1, [2, 1]);
+        assert_eq!(native.sampled_view(&suffix)?.1, [2, 1, 1]);
         assert_eq!(native.sampled_view(&suffix)?.2, 2);
         combined_view_desc.usage = wgt::TextureUses::COLOR_TARGET;
         combined_view_desc.range.base_mip_level = 1;

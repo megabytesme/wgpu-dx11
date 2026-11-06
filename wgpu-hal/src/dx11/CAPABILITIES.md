@@ -18,6 +18,22 @@ This file also retains historical audit notes. Any older statement below that
 adapter enumeration is offscreen-only or that surface reporting is disabled
 describes an earlier checkpoint; the current public surface is limited to the
 HWND contract summarized above.
+
+## FL9_1 mutable format views
+
+The backend does not expose `DownlevelFlags::VIEW_FORMATS` at FL9_1. Although
+RGBA8 and BGRA8 UNORM and sRGB are individually usable typed formats, a mutable
+UNORM/sRGB view pair requires typeless native resource backing. Microsoft's
+10Level9 FL9_1 format table marks both corresponding typeless formats as
+unavailable. The forced-FL9_1 RTX 3090 Ti also rejects typeless RGBA8 and BGRA8
+`CreateTexture2D` probes with `E_INVALIDARG` (`0x80070057`). Core therefore
+rejects otherwise compatible sRGB `view_formats` before the HAL. Standalone
+typed sRGB resources and views remain supported where their individual format
+queries permit them; ordinary views selecting the resource's existing format
+remain unaffected. This is not a driver query that can safely be generalized
+to higher feature levels.
+
+Microsoft reference: [10Level9 FL9_1 format support](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-feature-level-9-1-hardware).
 A failed query is recorded with its HRESULT and never treated as support.
 Adapter metadata includes the DXGI driver-package version when
 `IDXGIAdapter::CheckInterfaceSupport(IDXGIDevice)` succeeds; older or
@@ -40,6 +56,13 @@ views remain unavailable. Core gates cube
 creation and views on `CUBE_TEXTURES`, a separate 512 cube limit, the NPOT
 policy, and a format mask before the request reaches HAL.
 
+Ordinary texture arrays are a feature-level restriction rather than a missing
+backend implementation: Microsoft's downlevel feature table lists texture
+resource arrays as unavailable at FL9_1, FL9_2 and FL9_3. The supported six
+cube faces are the separate `TextureCube` resource shape, not a general array
+view. Public tests confirm the array capability stays unset, reject a
+two-layer 2D texture, and reject a `D2Array` sampled binding layout before HAL.
+
 The mask's bits follow `DownlevelLimits::texture_cube_format_bit` for RGBA8,
 BGRA8, their sRGB variants, R8, RG8, RG8_SNORM, RG16_SNORM, RGBA8_SNORM, BC1,
 RGB565, RGB5A1, and RGBA4 in that order. D3D11 sets a bit only when the
@@ -58,7 +81,8 @@ are not supported as texture-copy sources, CPU readback resources or render
 targets, and a single face cannot be viewed as a D2 texture.
 
 Microsoft references: [10Level9 device constraints](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device),
-[feature-level resource limits](https://learn.microsoft.com/en-us/windows/desktop/direct3d11/overviews-direct3d-11-resources-limits), and
+[feature-level resource limits](https://learn.microsoft.com/en-us/windows/desktop/direct3d11/overviews-direct3d-11-resources-limits),
+[feature-level capability table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro), and
 [format support queries](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-checkformatsupport).
 
 ## Feature-level and driver facts
@@ -418,7 +442,7 @@ vertices, preserving whole triangles and instance order. This accounts for a
 documented D3D9 unique-vertex caveat; whether 10level9 independently guarantees
 or emulates that restriction is unresolved. Indexed batches use their separate
 index limits. Large native start offsets still need historical-driver testing.
-| Queries / synchronization / readback | Native event queries back the private fence; this is not a public query-set implementation. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover device-loss HRESULT classification. Core rejects occlusion query sets when `OCCLUSION_QUERY` is absent; a strict public test verifies this validation gate on FL9_1 before HAL. Timestamp queries require a feature. The private HAL rejects both, and some destroy paths for resources that cannot be created still panic. Actual device removal/recovery, synchronization after a failed event query, all lifetime/error paths and debug-layer diagnostics remain unverified. |
+| Queries / synchronization / readback | Native event queries back the private fence; this is not a public query-set implementation. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core rejects occlusion query sets when `OCCLUSION_QUERY` is absent; a strict public test verifies this validation gate on FL9_1 before HAL. Timestamp queries require a feature. The private HAL rejects both, and some destroy paths for resources that cannot be created still panic. Actual device removal/recovery, core handling of a failure during fence polling, all lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and shader storage bindings. Core may retain storage bits for transfer-capable buffers but does not bind them as storage. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences. The controlled core fixture checks stage-specific storage-buffer layout rejection before HAL. Public strict tests verify core rejects compute-pipeline creation and `INDIRECT` buffer creation before reaching the corresponding unsupported HAL paths. No compute/storage feature is exposed; feature/limit gating alone remains insufficient for public device exposure. |
 | Presentation | FL9 hardware can support display through platform/format-specific paths. The private backend retains the WinRT CoreWindow path and exposes a constrained Win32 HWND surface through opt-in public wgpu: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. Configure, acquire and present are owner-thread-only. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-window configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. Further lifecycle/error edges, device loss and historical driver behavior remain unverified. This is not general surface or WebGPU support. |
 
@@ -600,7 +624,9 @@ their format capability projection. Microsoft's required-format table
 lists R8_UNORM as a FL9_1 texture format without guaranteeing render-target
 support; the implementation therefore requires an individual query. The
 `D3D11_FORMAT_SUPPORT_RENDER_TARGET` bit (`0x4000`) and `BLENDABLE` bit
-(`0x8000`) are distinct. See [required DXGI formats](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/required-dxgi-formats)
+(`0x8000`) are distinct. The public blendable flag is projected only when
+both the selected-device query and the backend's render-attachment path support
+the format; `BLENDABLE` alone never implies render-target support. See [required DXGI formats](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/required-dxgi-formats)
 and [D3D11 format support flags](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ne-d3d11-d3d11_format_support).
 R8G8_SNORM, R16G16_SNORM and
 R8G8B8A8_SNORM remain non-renderable. A positive `SHADER_SAMPLE` bit
@@ -1070,7 +1096,9 @@ before HAL and acceptance of a safe sibling pipeline.
 
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise
-that feature while the HAL rejects it. [Microsoft HLSL semantics](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics)
+that feature while the HAL rejects it. A strict public test confirms the bit
+is absent and that `request_device` rejects it before native device creation.
+[Microsoft HLSL semantics](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics)
 and [10Level9 device rules](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
 are references for the hardware model, not substitutes for the tested FXC
 profile.
@@ -1088,17 +1116,23 @@ indices through 999. The binding-index limit is distinct from implementation
 capacities: the private pipeline allocator still caps aggregate resources at
 eight textures, sixteen samplers and thirteen uniform slots. The projection
 limits each shader stage to six uniforms so disjoint vertex and fragment
-bindings together cannot exceed that shared allocator. Core receives
-explicit downlevel gates for 1D and 3D textures because inherited nonzero
-hardware size limits do not mean these resource shapes are implemented by this
-backend. The numeric projection remains 2048/256 while the dimension booleans
-are false; core rejects creation before reaching this 2D-only HAL.
+bindings together cannot exceed that shared allocator. One-dimensional
+textures remain disabled. Three-dimensional resources are exposed only when
+the selected device's RGBA8 query includes `TEXTURE3D | SHADER_SAMPLE` and the
+sampled-upload backend path is present. This narrow path supports POT RGBA8,
+single-mip, single-sample volumes up to the FL9_1 dimension limit of 256, with
+`TEXTURE_BINDING | COPY_DST` usages. Core receives dimension-specific format,
+usage, mip, NPOT and texture-copy limits; it rejects unsupported descriptors
+before HAL. Buffer-to-volume uploads use a source buffer copy to a CPU-readable
+staging buffer followed by `Map` and `UpdateSubresource`, preserving execution
+ordering at the cost of a blocking transfer. 3D `COPY_SRC`, texture-to-texture
+copies, render attachments, storage, mip chains and CPU readback remain
+unavailable.
 The dynamic-uniform pipeline limit is twelve, matching the largest valid
 six-vertex/six-fragment visibility split; one shader stage remains limited to
-six.
-Other unsupported shader, storage and query paths remain absent from projected
-flags or format usages. General multisampling remains unavailable except for
-the query-gated 4x RGBA8 render-and-resolve path.
+six. Other unsupported shader, storage and query paths remain absent from
+projected flags or format usages. General multisampling remains unavailable
+except for the query-gated 4x RGBA8 render-and-resolve path.
 
 The projection reports `empty_binding_visibility = false`. WebGPU permits a
 bind-group layout entry whose visibility bitset is empty, but the current HAL

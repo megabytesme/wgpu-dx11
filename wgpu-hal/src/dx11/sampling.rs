@@ -17,7 +17,7 @@ pub(super) struct SamplingPair {
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TextureInfo {
-    pub size: [u32; 2],
+    pub size: [u32; 3],
     pub mip_levels: u32,
 }
 
@@ -136,17 +136,17 @@ pub(super) fn compatible(
         ) else {
             return false;
         };
-        texture.size[0] != 0
+        texture.size.iter().all(|dimension| *dimension != 0)
             && (!pair.requires_bias_compatible || bias_compatible)
-            && texture.size[1] != 0
-            && texture.mip_levels <= texture.size[0].max(texture.size[1]).ilog2() + 1
+            && texture.mip_levels
+                <= texture.size[0].max(texture.size[1]).max(texture.size[2]).ilog2() + 1
             && lod.compatible(texture.mip_levels)
             && (texture.mip_levels == 1
-                || (texture.size[0].is_power_of_two() && texture.size[1].is_power_of_two()))
+                || texture.size.iter().all(|dimension| dimension.is_power_of_two()))
             && (level.as_raw() >= FeatureLevel::L10_0.as_raw()
                 || matches!(full_npot, Query::Value(true))
                 || !wraps
-                || (texture.size[0].is_power_of_two() && texture.size[1].is_power_of_two()))
+                || texture.size.iter().all(|dimension| dimension.is_power_of_two()))
     })
 }
 
@@ -197,15 +197,78 @@ mod tests {
         (module, info, bindings)
     }
 
+    #[test]
+    fn three_dimensional_texture_relationship_keeps_all_axes_in_compatibility_check() {
+        let source = r#"
+            @group(0) @binding(4) var volume: texture_3d<f32>;
+            @group(0) @binding(9) var wrapping: sampler;
+            @fragment fn sample_volume() -> @location(0) vec4f {
+                return textureSample(volume, wrapping, vec3f(0.5));
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 4,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 9,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let pairs = relationships(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "sample_volume",
+            &bindings,
+        )
+        .unwrap();
+        let mut resources = SamplingResources {
+            textures: alloc::vec![TextureInfo {
+                size: [4, 4, 3],
+                mip_levels: 1,
+            }],
+            samplers_wrap: alloc::vec![true],
+            samplers_lod: alloc::vec![SamplerLod::Unchanged],
+            samplers_bias_compatible: alloc::vec![true],
+        };
+        assert!(!compatible(
+            &pairs,
+            &resources,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        resources.textures[0].size[2] = 4;
+        assert!(compatible(
+            &pairs,
+            &resources,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+    }
+
     fn resources() -> SamplingResources {
         SamplingResources {
             textures: alloc::vec![
                 TextureInfo {
-                    size: [4, 8],
+                    size: [4, 8, 1],
                     mip_levels: 1
                 },
                 TextureInfo {
-                    size: [3, 5],
+                    size: [3, 5, 1],
                     mip_levels: 1
                 }
             ],
@@ -320,7 +383,7 @@ mod tests {
         for group in [
             SamplingResources {
                 textures: alloc::vec![TextureInfo {
-                    size: [4, 8],
+                    size: [4, 8, 1],
                     mip_levels: 1
                 }],
                 samplers_wrap: alloc::vec![],
@@ -329,7 +392,7 @@ mod tests {
             },
             SamplingResources {
                 textures: alloc::vec![TextureInfo {
-                    size: [3, 5],
+                    size: [3, 5, 1],
                     mip_levels: 1
                 }],
                 samplers_wrap: alloc::vec![],
@@ -464,7 +527,7 @@ mod tests {
             Query::Value(false)
         ));
         let mut changed = resources();
-        changed.textures[0].size = [4, 3];
+        changed.textures[0].size = [4, 3, 1];
         assert!(!compatible(
             &multiple,
             &changed,
@@ -639,14 +702,14 @@ mod tests {
             Query::Value(true)
         ));
         actual.textures[0].mip_levels = 2;
-        actual.textures[0].size = [3, 8];
+        actual.textures[0].size = [3, 8, 1];
         assert!(!compatible(
             &get("valid"),
             &actual,
             FeatureLevel::L9_1,
             Query::Value(true)
         ));
-        actual.textures[0].size = [4, 8];
+        actual.textures[0].size = [4, 8, 1];
         actual.samplers_lod.clear();
         assert!(!compatible(
             &get("valid"),

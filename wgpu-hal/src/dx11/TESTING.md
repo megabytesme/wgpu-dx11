@@ -42,11 +42,30 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The same strict public test submits unsupported descriptors under validation
-error scopes: 3D textures, 2x multisampled color textures, `R32Float` sampled
-textures, two-mip D24S8 attachments, vertex-visible storage-buffer layouts and
+error scopes: 2x multisampled color textures, `R32Float` sampled textures,
+two-mip D24S8 attachments, vertex-visible storage-buffer layouts and
 `D2Array` sampled-texture layouts. Each must return
 `wgpu::Error::Validation`, confirming the public capability projection rejects
 these paths before the private HAL.
+
+### Query-gated 3D sampled texture test
+
+`public_dx11_texture_3d_upload_and_sampling_at_fl91` requires a physical
+adapter and requested/actual FL9_1 when `WGPU_DX11_REQUIRE_HARDWARE=1`. It
+uploads a patterned 4×4×4 RGBA8 volume with 256-byte row pitch, applies a
+single-voxel update from a nonzero source offset, samples all four depth slices
+through sparse bindings 7 and 42, and verifies 64 pixels. A second volume is
+partially written and rendered to verify zero initialization for all untouched
+texels; another 64 pixels are checked. NPOT dimensions, a non-RGBA8 format,
+render-attachment usage and a mip chain are rejected through public validation
+scopes. The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) passed at
+requested and actual FL9_1. The test proves this driver's selected-level path,
+not behavior on historical 9_1 hardware.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_3d_upload_and_sampling_at_fl91 -- --nocapture --test-threads=1
+```
 
 The strict public sampled-relationship boundary test compiles an entry point
 with sixteen sparse texture/sampler relationships, accepts a one-pair sibling
@@ -500,6 +519,16 @@ feature level, driver format/optional-feature queries, and conservative limits
 and flags. The RTX's forced FL9_1 result is not evidence for historical FL9_1
 drivers.
 
+For optional R8, RG8 and RGB565 attachment formats, synthetic capability tests
+also separate `RENDER_TARGET` from `BLENDABLE`. A query with `BLENDABLE` but no
+render-target bit must not project either attachment or blend support; a query
+with both bits projects blendability only when the corresponding backend
+attachment path is enabled.
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib rgb565_color_attachment_requires_the_selected_device_query
+```
+
 Microsoft documents this as a static 10Level9 restriction, not a per-format
 blendability query: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device).
 
@@ -883,6 +912,39 @@ cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --featu
 
 The fixture also performs its existing GPU rendering and readbacks; the
 unsupported-format case itself is CPU-side validation, not a GPU execution.
+
+### FL9_1 core submission device-loss propagation
+
+The controlled fixture can append a test-only native command that returns
+`DXGI_ERROR_DEVICE_REMOVED` during command replay. Submission runs through the
+HAL fence path and core queue handling on a physical adapter explicitly opened
+at FL9_1. The test checks `DeviceError::Lost`, one `DeviceLostReason::Unknown`
+callback, rejection of later submissions and queue cleanup. The error is
+synthetic: it exercises classification and core propagation without removing
+the GPU or establishing recovery behavior.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_submission_device_loss_is_propagated_once -- --nocapture --test-threads=1
+```
+
+The event-query retention test injects one `E_FAIL` from `GetData`, verifies
+that the signal remains pending, and then waits for the real GPU event to
+complete. It does not simulate device removal:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib event_poll_error_retains_pending_query -- --nocapture --test-threads=1
+```
+
+`primitive_index` requires `Features::PRIMITIVE_INDEX`. The FL9_1 projection
+does not expose optional features; this public test verifies the feature set
+and that a device request requiring it is rejected before creation:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unavailable_primitive_index_feature -- --nocapture --test-threads=1
+```
 
 With strict hardware mode enabled, run the zero-stride tests with:
 
@@ -2394,6 +2456,22 @@ test native alpha-to-coverage rendering.
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1
+```
+
+### FL9_1 mutable-format view rejection
+
+`public_dx11_rejects_mutable_format_views_at_fl91` runs through ordinary
+public adapter enumeration in strict hardware mode. It asserts that the
+selected physical adapter requested and returned FL9_1 without `VIEW_FORMATS`,
+then checks that core rejects compatible RGBA8/BGRA8 UNORM-to-sRGB view lists
+before HAL. This is a capability and validation test; it does not submit
+rendering work. Native typeless-resource creation also returned `E_INVALIDARG`,
+and Microsoft's 10Level9 format table marks these typeless formats unavailable
+at FL9_1.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_mutable_format_views_at_fl91 -- --nocapture --test-threads=1
 ```
 
 ### FL9_1 cube texture sampling

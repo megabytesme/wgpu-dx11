@@ -1058,6 +1058,21 @@ pub struct DownlevelLimits {
     /// if the backend cannot implement the texture shape.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d: bool,
+    /// Texture usages allowed for 3D textures on this adapter.
+    #[cfg_attr(feature = "serde", serde(default = "default_texture_3d_usage_mask"))]
+    pub texture_3d_usage_mask: u32,
+    /// Formats supported for 3D textures, represented by [`texture_3d_format_bit`].
+    #[cfg_attr(feature = "serde", serde(default = "default_texture_3d_format_mask"))]
+    pub texture_3d_format_mask: u32,
+    /// Whether 3D texture mip chains are supported.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_3d_mipmaps: bool,
+    /// Whether copies directly between 3D textures are supported.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_3d_texture_copies: bool,
+    /// Whether non-power-of-two 3D textures are supported.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub npot_texture_3d: bool,
     /// Maximum width or height of a cube texture view.
     ///
     /// This can be lower than `Limits::max_texture_dimension_2d` when the
@@ -1289,6 +1304,16 @@ fn default_texture_cube_format_mask() -> u32 {
 }
 
 #[cfg(feature = "serde")]
+fn default_texture_3d_format_mask() -> u32 {
+    u32::MAX
+}
+
+#[cfg(feature = "serde")]
+fn default_texture_3d_usage_mask() -> u32 {
+    crate::TextureUsages::all().bits()
+}
+
+#[cfg(feature = "serde")]
 fn default_max_sampled_texture_sampler_pairs() -> u32 {
     u32::MAX
 }
@@ -1299,6 +1324,11 @@ impl Default for DownlevelLimits {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            texture_3d_usage_mask: crate::TextureUsages::all().bits(),
+            texture_3d_format_mask: u32::MAX,
+            texture_3d_mipmaps: true,
+            texture_3d_texture_copies: true,
+            npot_texture_3d: true,
             max_texture_cube_dimension: u32::MAX,
             texture_cube_format_mask: u32::MAX,
             npot_cube_textures: true,
@@ -1363,6 +1393,32 @@ impl DownlevelLimits {
         }
     }
 
+    /// Returns the bit assigned to a format in the 3D-texture capability mask.
+    #[must_use]
+    pub const fn texture_3d_format_bit(format: crate::TextureFormat) -> u32 {
+        match format {
+            crate::TextureFormat::Rgba8Unorm => 1 << 0,
+            _ => 0,
+        }
+    }
+
+    /// Returns whether the selected format is supported for 3D textures.
+    #[must_use]
+    pub const fn supports_texture_3d_format(&self, format: crate::TextureFormat) -> bool {
+        let bit = Self::texture_3d_format_bit(format);
+        if bit == 0 {
+            self.texture_3d_format_mask == u32::MAX
+        } else {
+            self.texture_3d_format_mask & bit != 0
+        }
+    }
+
+    /// Returns whether the 3D-texture usage mask includes all requested usages.
+    #[must_use]
+    pub const fn supports_texture_3d_usage(&self, usage: crate::TextureUsages) -> bool {
+        crate::TextureUsages::from_bits_retain(self.texture_3d_usage_mask).contains(usage)
+    }
+
     /// Returns whether the selected format can be used by a cube texture.
     #[must_use]
     pub const fn supports_texture_cube_format(&self, format: crate::TextureFormat) -> bool {
@@ -1397,7 +1453,15 @@ impl DownlevelLimits {
     pub fn check_limits(&self, required: &Self) -> bool {
         (!required.texture_1d || self.texture_1d)
             && (!required.empty_binding_visibility || self.empty_binding_visibility)
-            && (!required.texture_3d || self.texture_3d)
+            && (!required.texture_3d
+                || (self.texture_3d
+                    && self.texture_3d_usage_mask & required.texture_3d_usage_mask
+                        == required.texture_3d_usage_mask
+                    && self.texture_3d_format_mask & required.texture_3d_format_mask
+                        == required.texture_3d_format_mask
+                    && (!required.texture_3d_mipmaps || self.texture_3d_mipmaps)
+                    && (!required.texture_3d_texture_copies || self.texture_3d_texture_copies)
+                    && (!required.npot_texture_3d || self.npot_texture_3d)))
             && self.max_texture_cube_dimension >= required.max_texture_cube_dimension
             && self.texture_cube_format_mask & required.texture_cube_format_mask
                 == required.texture_cube_format_mask
@@ -1482,6 +1546,11 @@ impl DownlevelCapabilities {
             && self.limits.empty_binding_visibility
             && self.limits.texture_1d
             && self.limits.texture_3d
+            && self.limits.texture_3d_usage_mask == crate::TextureUsages::all().bits()
+            && self.limits.texture_3d_format_mask == u32::MAX
+            && self.limits.texture_3d_mipmaps
+            && self.limits.texture_3d_texture_copies
+            && self.limits.npot_texture_3d
             && self.limits.max_texture_cube_dimension
                 >= DownlevelLimits::default().max_texture_cube_dimension
             && self.limits.texture_cube_format_mask
@@ -1876,11 +1945,84 @@ mod tests {
     }
 
     #[test]
+    fn three_dimensional_texture_limits_are_checked_as_a_shape_contract() {
+        let rgba8 = DownlevelLimits::texture_3d_format_bit(crate::TextureFormat::Rgba8Unorm);
+        let supported_usage = (crate::TextureUsages::TEXTURE_BINDING
+            | crate::TextureUsages::COPY_DST)
+            .bits();
+        let available = DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        };
+        let required = DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&required));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: crate::TextureUsages::STORAGE_BINDING.bits(),
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: 1 << 1,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.supports_texture_3d_format(crate::TextureFormat::R8Unorm));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: true,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rgba8,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: true,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
     fn downlevel_limits_check_minimum_capabilities() {
         let available = DownlevelLimits {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            texture_3d_usage_mask: crate::TextureUsages::all().bits(),
+            texture_3d_format_mask: u32::MAX,
+            texture_3d_mipmaps: true,
+            texture_3d_texture_copies: true,
+            npot_texture_3d: true,
             sampled_depth_textures: true,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
@@ -1924,6 +2066,11 @@ mod tests {
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
+            texture_3d_usage_mask: crate::TextureUsages::all().bits(),
+            texture_3d_format_mask: u32::MAX,
+            texture_3d_mipmaps: true,
+            texture_3d_texture_copies: true,
+            npot_texture_3d: true,
             sampled_depth_textures: true,
             sampled_sint_textures: true,
             sampled_uint_textures: true,

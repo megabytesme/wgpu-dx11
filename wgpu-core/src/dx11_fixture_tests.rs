@@ -82,6 +82,11 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     empty_binding_visibility: false,
                     texture_1d: false,
                     texture_3d: false,
+                    texture_3d_usage_mask: 0,
+                    texture_3d_format_mask: 0,
+                    texture_3d_mipmaps: false,
+                    texture_3d_texture_copies: false,
+                    npot_texture_3d: false,
                     max_texture_cube_dimension: 0,
                     texture_cube_format_mask: 0,
                     npot_cube_textures: false,
@@ -267,6 +272,20 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             .unrestricted_npot_texture_sampling,
         fixture.test_fixture_unrestricted_npot_sampling()
     );
+    if capabilities.downlevel.limits.texture_3d {
+        assert_eq!(capabilities.limits.max_texture_dimension_3d, 256);
+        assert!(capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm));
+    } else {
+        assert_eq!(capabilities.limits.max_texture_dimension_3d, 0);
+        assert!(
+            !std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1"),
+            "strict mode requires queried FL9_1 3D texture support"
+        );
+        std::println!("SKIP: selected FL9_1 device did not query 3D texture support");
+    }
 
     let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
     info.name = identity.name.clone();
@@ -398,7 +417,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         view_formats: Vec::new(),
     };
 
-    for dimension in [wgt::TextureDimension::D1, wgt::TextureDimension::D3] {
+    for dimension in [wgt::TextureDimension::D1] {
         let mut desc = texture_desc(
             wgt::TextureFormat::Rgba8Unorm,
             wgt::TextureUsages::TEXTURE_BINDING,
@@ -414,6 +433,117 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             ),
             "the projected FL9_1 device must reject {dimension:?} textures in core: {error:?}"
         );
+    }
+
+    if capabilities.downlevel.limits.texture_3d {
+        let mut volume_desc = texture_desc(
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+        );
+        volume_desc.dimension = wgt::TextureDimension::D3;
+        volume_desc.size = wgt::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        };
+        let (volume, error) = global.device_create_texture(device, &volume_desc, None);
+        assert!(error.is_none(), "queried FL9_1 3D texture creation: {error:?}");
+        let (view, error) = global.texture_create_view(
+            volume,
+            &crate::resource::TextureViewDescriptor {
+                dimension: Some(wgt::TextureViewDimension::D3),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(error.is_none(), "queried FL9_1 3D texture view: {error:?}");
+        global.texture_view_drop(view);
+
+        let mut invalid = volume_desc.clone();
+        invalid.size.depth_or_array_layers = 3;
+        let (_, error) = global.device_create_texture(device, &invalid, None);
+        assert!(
+            matches!(error, Some(crate::resource::CreateTextureError::InvalidTexture3DSize { .. })),
+            "NPOT volume dimensions must be rejected in core: {error:?}"
+        );
+        invalid = volume_desc.clone();
+        invalid.format = wgt::TextureFormat::Bgra8Unorm;
+        let (_, error) = global.device_create_texture(device, &invalid, None);
+        assert!(
+            matches!(error, Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(_))),
+            "unqueried volume formats must be rejected in core: {error:?}"
+        );
+        invalid = volume_desc.clone();
+        invalid.usage |= wgt::TextureUsages::RENDER_ATTACHMENT;
+        let (_, error) = global.device_create_texture(device, &invalid, None);
+        assert!(
+            matches!(error, Some(crate::resource::CreateTextureError::InvalidDimensionUsages(..))),
+            "unsupported volume attachment usage must be rejected in core: {error:?}"
+        );
+        invalid = volume_desc.clone();
+        invalid.mip_level_count = 2;
+        let (_, error) = global.device_create_texture(device, &invalid, None);
+        assert!(
+            matches!(error, Some(crate::resource::CreateTextureError::InvalidMipLevelCount { maximum: 1, .. })),
+            "unsupported volume mip chains must be rejected in core: {error:?}"
+        );
+
+        let (source_2d, error) = global.device_create_texture(
+            device,
+            &texture_desc(
+                wgt::TextureFormat::Rgba8Unorm,
+                wgt::TextureUsages::COPY_SRC,
+            ),
+            None,
+        );
+        assert!(error.is_none(), "2D copy source texture: {error:?}");
+        let (encoder, error) = global.device_create_command_encoder(
+            device,
+            &wgt::CommandEncoderDescriptor::default(),
+            None,
+        );
+        assert!(error.is_none(), "3D copy validation encoder: {error:?}");
+        global
+            .command_encoder_copy_texture_to_texture(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture: source_2d,
+                    mip_level: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyTextureInfo {
+                    texture: volume,
+                    mip_level: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .unwrap();
+        let (command, error) = global.command_encoder_finish(
+            encoder,
+            &wgt::CommandBufferDescriptor::default(),
+            None,
+        );
+        assert!(
+            matches!(
+                error,
+                Some((_, crate::command::CommandEncoderError::Transfer(
+                    crate::command::TransferError::UnsupportedTexture3DCopy
+                )))
+            ),
+            "2D-to-3D texture copies must fail before HAL replay: {error:?}"
+        );
+        global.command_buffer_drop(command);
+        global.command_encoder_drop(encoder);
+        global.texture_drop(source_2d);
+        global.texture_drop(volume);
+        std::println!("PASS: queried FL9_1 RGBA8 3D texture/view accepted; unsupported shapes and texture copies rejected by core");
     }
 
     let (single_layer_texture, error) = global.device_create_texture(
@@ -630,6 +760,122 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
 }
 
 #[test]
+fn fl91_core_submission_device_loss_is_propagated_once() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let driver_version = adapter.driver_version();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!("Hardware: {identity:?}; driver={driver_version:?}; requested and actual FL9_1; loss injection is synthetic");
+
+    let global = Arc::new(unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 synthetic queue device-loss fixture",
+            hal::dx11::Instance,
+        )
+    });
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled FL9_1 core device");
+
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "command encoder creation: {error:?}");
+    unsafe {
+        global.command_encoder_as_hal_mut::<hal::dx11::Api, _, _>(encoder, |encoder| {
+            encoder
+                .expect("raw D3D11 command encoder")
+                .test_fixture_inject_device_removed();
+        });
+    }
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(error.is_none(), "command finish: {error:?}");
+
+    let (lost_sender, lost_receiver) = std::sync::mpsc::channel();
+    global.device_set_device_lost_closure(
+        device,
+        Box::new(move |reason, message| {
+            lost_sender.send((reason, message)).unwrap();
+        }),
+    );
+    assert!(matches!(
+        global.queue_submit(queue, &[command]),
+        Err((
+            _,
+            crate::device::queue::QueueSubmitError::Queue(crate::device::DeviceError::Lost)
+        ))
+    ));
+    let (reason, message) = lost_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("core device-lost callback after HAL submission error");
+    assert_eq!(reason, wgt::DeviceLostReason::Unknown);
+    assert!(!message.is_empty());
+    assert!(matches!(
+        global.queue_submit(queue, &[]),
+        Err((
+            _,
+            crate::device::queue::QueueSubmitError::Queue(crate::device::DeviceError::Lost)
+        ))
+    ));
+    assert!(matches!(
+        global.device_poll(device, wgt::PollType::Poll),
+        Ok(wgt::PollStatus::QueueEmpty)
+    ));
+    assert!(matches!(
+        lost_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!("PASS: synthetic DXGI device removal was classified as Lost, invalidated core submission and fired the callback once");
+}
+
+#[test]
 fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
@@ -685,7 +931,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         2
     );
     assert!(!projected_capabilities.downlevel.limits.texture_1d);
-    assert!(!projected_capabilities.downlevel.limits.texture_3d);
+    assert!(projected_capabilities.downlevel.limits.texture_3d);
+    // This fixture exercises unrelated 2D validation and intentionally disables 3D.
+    projected_capabilities.downlevel.limits.texture_3d = false;
+    projected_capabilities.limits.max_texture_dimension_3d = 0;
     // Keep the restrictive NPOT branch deterministic even when the selected driver's query is positive.
     projected_capabilities
         .downlevel

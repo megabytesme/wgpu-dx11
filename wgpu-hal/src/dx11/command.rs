@@ -3,7 +3,7 @@ use super::{
     buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
     hal_index::IndexBinding,
-    hal_transfer::{BufferToTexture, TextureToBuffer, TextureToTexture},
+    hal_transfer::{BufferToTexture, BufferToTexture3D, TextureToBuffer, TextureToTexture},
     hal_uniform::UniformBinding,
 };
 use alloc::{
@@ -125,10 +125,13 @@ pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
     BufferToTexture(BufferToTexture),
+    BufferToTexture3D(BufferToTexture3D),
     TextureToBuffer(TextureToBuffer),
     TextureToTexture(TextureToTexture),
     #[cfg(test)]
     InjectedFailure,
+    #[cfg(feature = "dx11-test-fixture")]
+    InjectedDeviceRemoval,
     BeginRender {
         target: Option<RenderTarget>,
         clear: Option<[f32; 4]>,
@@ -513,11 +516,18 @@ impl CommandBuffer {
                     }
 
                     NativeCommand::BufferToTexture(copy) => copy.execute(context)?,
+                    NativeCommand::BufferToTexture3D(copy) => copy.execute(context)?,
                     NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
                     NativeCommand::TextureToTexture(copy) => copy.execute(context),
                     #[cfg(test)]
                     NativeCommand::InjectedFailure => {
                         return Err(Error::from_hresult(windows::Win32::Foundation::E_FAIL));
+                    }
+                    #[cfg(feature = "dx11-test-fixture")]
+                    NativeCommand::InjectedDeviceRemoval => {
+                        return Err(Error::from_hresult(
+                            windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED,
+                        ));
                     }
                     NativeCommand::BeginRender {
                         target,

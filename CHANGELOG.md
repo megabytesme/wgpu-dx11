@@ -51,6 +51,7 @@ Bottom level categories:
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
+- Add selected-device-query-gated FL9_1 RGBA8 3D texture sampling and staged uploads to the opt-in D3D11 backend.
 - Add query-gated R8, RG8 and RGB565 texture copies and CPU readback to the opt-in D3D11 backend.
 - Add query-gated R8, RG8 and RGB565 attachment blending to the opt-in D3D11 backend.
 
@@ -96,10 +97,13 @@ Bottom level categories:
 - Add stage-specific downlevel uniform-vector budgets and validate aggregate selected-entry-point uniform layouts before pipeline creation.
 - Add `DownlevelLimits::max_sampler_anisotropy` so core can clamp sampler anisotropy to the selected adapter's supported maximum.
 - Add downlevel texture-dimension capabilities so adapters can reject unsupported 1D and 3D texture shapes even when their hardware limits are non-zero.
+- Add downlevel 3D texture format, usage, mip, NPOT and texture-copy limits so core rejects unsupported volume operations before HAL.
 
 #### Hal
 
-- The experimental opt-in `dx11` feature enumerates physical FL9_1 adapters for offscreen rendering; it does not report surface capabilities.
+- The experimental opt-in `dx11` feature exposes physical FL9_1 adapters
+  through public wgpu for restricted offscreen rendering and a constrained
+  owner-thread HWND surface.
 - `Device::invalidate_mapped_ranges` now returns a `Result` so invalidation failures can be handled without exposing stale mapped data.
 - `Device::flush_mapped_ranges` now returns a `Result` so flush failures can be handled before using mapped writes on the GPU.
 - HAL adapters with occlusion query support must report the new `DownlevelFlags::OCCLUSION_QUERY` flag. Custom adapters and stored flag sets may need updating.

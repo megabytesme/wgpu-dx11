@@ -309,6 +309,12 @@ impl CommandEncoder {
         }
     }
 
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_inject_device_removed(&mut self) {
+        self.record(NativeCommand::InjectedDeviceRemoval);
+    }
+
     fn viewport_buffer(
         &mut self,
     ) -> Result<windows::Win32::Graphics::Direct3D11::ID3D11Buffer, DeviceError> {
@@ -487,6 +493,23 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         for region in regions {
+            if dst.dimension == wgt::TextureDimension::D3 {
+                let transfer = match self
+                    .device
+                    .prepare_buffer_to_texture_3d(src, dst, &region)
+                {
+                    Ok(transfer) => transfer,
+                    Err(error) => {
+                        self.failure = Some(super::hal_device::device_error(error));
+                        return;
+                    }
+                };
+                self.record(NativeCommand::BufferToTexture3D(transfer));
+                if self.failure.is_some() {
+                    return;
+                }
+                continue;
+            }
             let transfer = match self.device.prepare_buffer_to_texture(src, dst, &region) {
                 Ok(transfer) => transfer,
                 Err(error) => {

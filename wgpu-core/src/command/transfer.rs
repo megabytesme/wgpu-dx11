@@ -108,6 +108,8 @@ pub enum TransferError {
     InvalidTextureMipLevel { level: u32, total: u32 },
     #[error("Texture dimension must be 2D when copying from an external texture")]
     InvalidDimensionExternal,
+    #[error("Copies involving 3D textures are unavailable on this device")]
+    UnsupportedTexture3DCopy,
     #[error("Buffer offset {0} is not aligned to block size or `COPY_BUFFER_ALIGNMENT`")]
     UnalignedBufferOffset(BufferAddress),
     #[error("Copy size {0} does not respect `COPY_BUFFER_ALIGNMENT`")]
@@ -199,6 +201,7 @@ impl WebGpuError for TransferError {
             | Self::InvalidTextureAspect { .. }
             | Self::InvalidTextureMipLevel { .. }
             | Self::InvalidDimensionExternal
+            | Self::UnsupportedTexture3DCopy
             | Self::UnalignedBufferOffset(..)
             | Self::UnalignedCopySize(..)
             | Self::UnalignedCopyWidth
@@ -1504,6 +1507,13 @@ pub(super) fn copy_texture_to_texture(
     if copy_size.width == 0 || copy_size.height == 0 || copy_size.depth_or_array_layers == 0 {
         log::trace!("Ignoring copy_texture_to_texture of size 0");
         return Ok(());
+    }
+
+    if !state.device.downlevel.limits.texture_3d_texture_copies
+        && (src_texture.desc.dimension == wgt::TextureDimension::D3
+            || dst_texture.desc.dimension == wgt::TextureDimension::D3)
+    {
+        return Err(TransferError::UnsupportedTexture3DCopy.into());
     }
 
     // Handle texture init *before* dealing with barrier transitions so we

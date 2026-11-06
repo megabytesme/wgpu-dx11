@@ -13,6 +13,9 @@ use windows::{
     },
 };
 
+#[cfg(any(test, feature = "dx11-test-fixture"))]
+use windows::core::HRESULT;
+
 #[derive(Debug)]
 struct PendingEvent {
     value: u64,
@@ -24,6 +27,8 @@ struct FenceState {
     completed: u64,
     last_signaled: u64,
     pending: VecDeque<PendingEvent>,
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    injected_poll_status: Option<HRESULT>,
 }
 
 /// A D3D11 event-query timeline. This is not yet a complete HAL queue fence.
@@ -37,6 +42,14 @@ pub struct NativeFence {
 
 crate::impl_dyn_resource!(NativeFence);
 impl crate::DynFence for NativeFence {}
+
+impl NativeFence {
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_fail_next_poll(&self, status: HRESULT) {
+        self.state.lock().injected_poll_status = Some(status);
+    }
+}
 
 impl NativeDevice {
     /// Create an internal completion timeline starting at zero.
@@ -162,14 +175,29 @@ impl NativeDevice {
         self.validate_fence(fence)?;
         let mut state = fence.state.lock();
         let context = self.immediate_context();
-        while let Some(event) = state.pending.front() {
+        while let Some((value, query)) = state
+            .pending
+            .front()
+            .map(|event| (event.value, event.query.clone()))
+        {
             // The generated `GetData` wrapper turns both S_OK and S_FALSE into
             // Ok(()), so retain the raw HRESULT to distinguish GPU completion.
             let raw_context: &ID3D11DeviceContext = &context;
+            #[cfg(any(test, feature = "dx11-test-fixture"))]
+            let status = state.injected_poll_status.take().unwrap_or_else(|| unsafe {
+                (Interface::vtable(raw_context).GetData)(
+                    raw_context.as_raw(),
+                    query.as_raw(),
+                    core::ptr::null_mut(),
+                    0,
+                    D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
+                )
+            });
+            #[cfg(not(any(test, feature = "dx11-test-fixture")))]
             let status = unsafe {
                 (Interface::vtable(raw_context).GetData)(
                     raw_context.as_raw(),
-                    event.query.as_raw(),
+                    query.as_raw(),
                     core::ptr::null_mut(),
                     0,
                     D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
@@ -185,7 +213,7 @@ impl NativeDevice {
                 status.ok()?;
                 return Err(Error::from_hresult(E_FAIL));
             }
-            state.completed = state.completed.max(event.value);
+            state.completed = state.completed.max(value);
             state.pending.pop_front();
         }
         Ok(state.completed)
@@ -342,6 +370,44 @@ mod tests {
         assert!(other
             .submit_copy_commands_signaled(&commands, &fence, 4)
             .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn event_poll_error_retains_pending_query() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1; GetData failure is synthetic",
+            adapter.identity()
+        );
+
+        let fence = device.create_native_fence();
+        device.submit_copy_batches_signaled(&[], &fence, 1)?;
+        fence.test_fixture_fail_next_poll(E_FAIL);
+        let error = device.poll_native_fence(&fence).unwrap_err();
+        assert_eq!(error.code(), E_FAIL);
+        {
+            let state = fence.state.lock();
+            assert_eq!(state.completed, 0);
+            assert_eq!(state.last_signaled, 1);
+            assert_eq!(state.pending.len(), 1);
+        }
+        assert!(device.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        let state = fence.state.lock();
+        assert_eq!(state.completed, 1);
+        assert!(state.pending.is_empty());
+        std::println!(
+            "PASS: a synthetic GetData error left the event queued until real GPU completion"
+        );
         Ok(())
     }
 }

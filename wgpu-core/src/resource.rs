@@ -1900,6 +1900,16 @@ pub enum CreateTextureError {
     },
     #[error("Texture format {0:?} does not support cube sampling on this adapter")]
     UnsupportedCubeTextureFormat(wgt::TextureFormat),
+    #[error("Texture format {0:?} does not support 3D textures on this adapter")]
+    UnsupportedTexture3DFormat(wgt::TextureFormat),
+    #[error("Invalid 3D texture size {width}x{height}x{depth}; maximum dimension is {maximum}, non-power-of-two dimensions supported: {npot}")]
+    InvalidTexture3DSize {
+        width: u32,
+        height: u32,
+        depth: u32,
+        maximum: u32,
+        npot: bool,
+    },
     #[error(
         "Cube textures require one mip level, one sample, texture-binding usage, and no usages outside TEXTURE_BINDING | COPY_DST"
     )]
@@ -1957,6 +1967,8 @@ impl WebGpuError for CreateTextureError {
             | Self::InvalidDimensionUsages(_, _)
             | Self::InvalidCubeTextureSize { .. }
             | Self::UnsupportedCubeTextureFormat(_)
+            | Self::UnsupportedTexture3DFormat(_)
+            | Self::InvalidTexture3DSize { .. }
             | Self::InvalidCubeTextureShape
             | Self::InvalidMultisampledStorageBinding
             | Self::InvalidMultisampledFormat(_)

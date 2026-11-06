@@ -24,6 +24,30 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The selected FL9_1 projection exposes sampled RGBA8 3D textures only when the
+device reports `TEXTURE3D | SHADER_SAMPLE`. The tested subset is POT,
+single-mip, single-sample volumes up to 256³ with texture-binding and upload
+usages. Forced-FL9_1 public readback on the RTX 3090 Ti verified four distinct
+slices, a nonzero-offset partial voxel update and zero initialization for
+untouched voxels across 128 pixels. Buffer-to-volume upload currently stages
+through a mapped buffer and `UpdateSubresource`; 3D texture copies, render
+attachments, storage and readback remain unavailable.
+
+At FL9_1, mutable format view lists remain disabled. Compatible RGBA8/BGRA8
+UNORM-to-sRGB reinterpretation requires typeless resources, which the 10Level9
+format table does not provide; the RTX 3090 Ti's forced-FL9_1 native creation
+probe also returns `E_INVALIDARG`. A strict public test verifies that the
+adapter omits `VIEW_FORMATS` and core rejects both compatible view pairs before
+the HAL. Standalone typed sRGB textures remain available through their own
+queried format paths.
+
+HAL maps device-hung, removed, reset and driver-internal-error HRESULTs to
+`DeviceError::Lost`. A controlled core fixture now injects a synthetic
+`DXGI_ERROR_DEVICE_REMOVED` during FL9_1 command replay and verifies submission
+failure, device invalidation and exactly one lost callback. The selected device
+is physical, but the injected error does not represent actual hardware removal
+or recovery behavior.
+
 The opt-in FL9_1 public path supports single-sample RGBA8 cube textures with
 six independently uploaded faces. POT mip chains are enabled only when the
 selected format query reports `D3D11_FORMAT_SUPPORT_MIP`; all mip contents must
@@ -82,8 +106,8 @@ test then submitted independent clear/copy/readback workloads concurrently
 through two public devices from the same adapter; readback verified all 64
 pixels were red on one device and green on the other. This proves these paths
 through the public API, not every operation within the projection. Error-scope
-checks also confirmed that core rejects 3D textures, 2x MSAA, `R32Float`
-sampling, multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
+checks also confirmed that core rejects 2x MSAA, `R32Float` sampling,
+multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
 sampled-texture layouts before the HAL. A separate public draw overlays
 near/far surfaces in both draw orders; all 64 readback pixels select the nearer
 surface, exercising depth comparison and writes through public wgpu. A second
@@ -803,9 +827,18 @@ request permitted by the limits.
 comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
-- Device removal/recovery, event-query failure retention, some destroy paths,
+- Device removal/recovery, core handling of a failure during fence polling,
+  some destroy paths,
 historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and visual
 inspection of desktop output remain unverified.
+
+Event-query failure retention now has a strict HAL regression: an injected
+one-shot `E_FAIL` from `GetData` leaves the pending event and timeline value
+intact, after which the real GPU event completes normally. A separate core
+fixture injects `DXGI_ERROR_DEVICE_REMOVED` during queue replay and verifies
+lost-device classification, one callback, rejected later submission and core
+queue invalidation. Both are synthetic error injections; neither simulates
+physical device removal or recovery.
 
 The public texture-copy path now accepts RGBA8↔RGBA8-sRGB and BGRA8↔BGRA8-sRGB
 copies that core already considers format-compatible. The D3D11 path retains
@@ -854,7 +887,8 @@ native-only feature and individual selected-device format queries. All three
 support single-mip sampled uploads with channel/alpha readback coverage. The
 query-gated B5G6R5 path also supports single-mip color attachments when the
 selected device reports `RENDER_TARGET`; blending is separately projected
-when `BLENDABLE` is reported and is covered by strict public readback. It has no
+only when both attachment support and `BLENDABLE` are reported, and is covered
+by strict public readback. It has no
 direct readback or mip-chain use outside the existing query-gated copy path.
 The RTX 3090 Ti forced to FL9_1 reports `0x0026F3A0` for B5G6R5 and
 `0x000213A0` for both alpha-bearing formats. A strict public test draws to a

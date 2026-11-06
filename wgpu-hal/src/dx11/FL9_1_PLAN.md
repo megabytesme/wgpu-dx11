@@ -11,6 +11,51 @@ background. This plan does not claim WebGPU conformance.
 
 ## Ordered work and gates
 
+### Verified hardware boundary — ordinary 2D texture arrays
+
+Ordinary texture arrays are unavailable at FL9_1: Microsoft's feature-level
+capability table lists texture resource arrays as unsupported for all 9.x
+levels. The supported six-face cube resource is a distinct shape and does not
+imply general array-view support. The public adapter reports
+`TEXTURE_2D_ARRAYS` as absent, and strict public coverage verifies that a
+two-layer 2D texture is rejected before HAL. No array implementation is
+planned for the FL9_1 path.
+
+[Microsoft feature-level capability table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro).
+
+### Verified boundary — mutable format views unavailable at FL9_1
+
+Compatible RGBA8/BGRA8 UNORM-to-sRGB view lists remain rejected by core and
+`VIEW_FORMATS` stays absent. The 10Level9 FL9_1 format table lists the needed
+typeless resource formats as unavailable, and a forced-FL9_1 native creation
+probe returned `E_INVALIDARG` on the RTX 3090 Ti. A strict public validation
+test covers both pairs. See `FL9_1_PROGRESS.md`; this does not block standalone
+typed sRGB textures or ordinary same-format views.
+
+Continue the core/HAL audit using independently reproduced public-valid
+operations. Prioritize validation boundaries and lifetime/device-loss paths,
+and keep optional format reports query-gated.
+
+The current resource audit includes a narrow query-gated RGBA8 3D
+sampled/upload path. It does not enable 3D texture copies, readback, render
+attachments, storage or mip chains. Preserve those negative limits while
+validating the public copy and shader paths.
+
+The optional-format audit also found that a synthetic `BLENDABLE`-without-
+`RENDER_TARGET` query could project blendability without attachment support.
+The projection now requires the format's implemented color-attachment path, and
+a synthetic RGB565 case covers the missing-render-target query. Continue
+auditing cross-capability implications in optional format reporting.
+
+Core queue submission also has a synthetic removed-device replay test. It
+confirms HAL error classification, one-shot core device-lost notification,
+subsequent submission rejection and queue invalidation on a physical adapter
+opened at FL9_1. Physical device removal/recovery remains unverified; continue
+reviewing safe public error and lifetime paths. A separate strict HAL fence
+test injects one `GetData` error, verifies the pending query is retained, then
+waits for that query's real GPU completion. These tests cover error reporting
+and bookkeeping; they do not simulate physical device loss or recovery.
+
 ### Public texture-view checkpoint — non-suffix 2D mip view (`4d3ec6bb9`)
 
 The strict public sampled-mip test now creates a 2D view over source mips 1–2

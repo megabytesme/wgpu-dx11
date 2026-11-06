@@ -1,9 +1,10 @@
-//! Diagnostic only: native DXGI adapters do not imply a usable wgpu backend.
+//! Native D3D11 adapter probe; public rendering is demonstrated by the wgpu
+//! examples.
 #[cfg(all(windows, feature = "dx11"))]
 fn main() {
     match wgpu_hal::dx11::enumerate_adapters() {
         Ok(adapters) => {
-            println!("DX11 diagnostics only; wgpu rendering is not implemented");
+            println!("DX11 native adapter diagnostics; this probe does not render");
             for adapter in adapters {
                 println!("{adapter:?}");
             }

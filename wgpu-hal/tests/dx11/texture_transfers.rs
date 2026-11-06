@@ -291,7 +291,7 @@ fn fl91_texture_transfer_chain_readback_and_lifetime() -> windows::core::Result<
         device.destroy_buffer(intermediate);
         device.destroy_texture(a);
     }
-    assert_eq!(native.sampled_view(&view)?.1, [4, 3]);
+    assert_eq!(native.sampled_view(&view)?.1, [4, 3, 1]);
     let fence = native.create_native_fence();
     unsafe {
         queue.submit(&[&first], &[], (&fence, 1)).unwrap();
@@ -393,7 +393,7 @@ fn fl91_bgra_upload_copy_and_readback() -> windows::core::Result<()> {
         range: wgt::ImageSubresourceRange::default(),
     };
     let view = unsafe { device.create_texture_view(&source, &view_desc) }.unwrap();
-    assert_eq!(native.sampled_view(&view)?.1, [3, 2]);
+    assert_eq!(native.sampled_view(&view)?.1, [3, 2, 1]);
     let wrong_view = TextureViewDescriptor {
         format: wgt::TextureFormat::Rgba8Unorm,
         ..view_desc

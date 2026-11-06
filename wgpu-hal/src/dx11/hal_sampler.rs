@@ -473,7 +473,7 @@ mod tests {
             sampler_slot: 0,
             requires_bias_compatible: false,
         };
-        for size in [[3, 4], [4, 3]] {
+        for size in [[3, 4, 1], [4, 3, 1]] {
             for mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
                 for axis in 0..3 {
                     let mut modes = [wgt::AddressMode::ClampToEdge; 3];
