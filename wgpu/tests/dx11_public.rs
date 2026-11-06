@@ -5432,11 +5432,25 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         }],
     });
     let green_sampler_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("sparse green sampler group"),
+        label: Some("sparse green linear sampler group"),
         layout: &green_sampler_layout,
         entries: &[BindGroupEntry {
             binding: 17,
             resource: BindingResource::Sampler(&green_sampler),
+        }],
+    });
+    let green_nearest_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let green_nearest_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("sparse green nearest sampler group"),
+        layout: &green_sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: BindingResource::Sampler(&green_nearest_sampler),
         }],
     });
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -5478,7 +5492,7 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 sparse multi-texture output"),
         size: Extent3d {
-            width: 8,
+            width: 16,
             height: 8,
             depth_or_array_layers: 1,
         },
@@ -5537,6 +5551,10 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         pass.set_bind_group(6, &green_group, &[]);
         pass.set_bind_group(7, &green_sampler_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_viewport(0.0, 0.0, 8.0, 8.0, 0.0, 1.0);
+        pass.draw(0..3, 0..1);
+        pass.set_bind_group(7, &green_nearest_group, &[]);
+        pass.set_viewport(8.0, 0.0, 8.0, 8.0, 0.0, 1.0);
         pass.draw(0..3, 0..1);
     }
     encoder.copy_texture_to_buffer(
@@ -5555,7 +5573,7 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
             },
         },
         Extent3d {
-            width: 8,
+            width: 16,
             height: 8,
             depth_or_array_layers: 1,
         },
@@ -5578,13 +5596,14 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
         for y in 0..8 {
-            for x in 0..8 {
+            for x in 0..16 {
                 let offset = y * 256 + x * 4;
                 let pixel = &data[offset..offset + 4];
                 assert_eq!(pixel[0], 40, "nearest red sample at ({x}, {y})");
+                let expected_green = if x < 8 { 43 } else { 40 };
                 assert!(
-                    pixel[1].abs_diff(43) <= 1,
-                    "linear green sample at ({x}, {y}): {pixel:?}"
+                    pixel[1].abs_diff(expected_green) <= 1,
+                    "green sample at ({x}, {y}): {pixel:?}"
                 );
                 assert_eq!(pixel[2], 0, "blue channel at ({x}, {y})");
                 assert_eq!(pixel[3], 255, "alpha channel at ({x}, {y})");
@@ -5592,7 +5611,7 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 sparse bindings 7/100 and 42/17 sampled independent nearest/linear pairs across groups 1/4 and 6/7; all 64 pixels matched [40, 43±1, 0, 255]");
+    println!("PASS: public FL9_1 sparse pairs across groups 1/4 and 6/7; replacing only group 7 from linear to nearest changed the right half; all 128 pixels matched");
 }
 
 #[test]
