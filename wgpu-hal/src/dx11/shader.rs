@@ -964,6 +964,76 @@ mod tests {
     }
 
     #[test]
+    fn level_9_profiles_reject_texture_sample_bias_offsets() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_2d<f32>;\n\
+             @group(0) @binding(1) var smp: sampler;\n\
+             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {\n\
+                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));\n\
+             }\n",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 0,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Texture2dFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 1,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+
+        for profile in [ShaderProfile::PixelLevel9_1, ShaderProfile::PixelLevel9_3] {
+            let error = compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "main",
+                profile,
+                &bindings,
+            )
+            .expect_err("level-9 shader profiles cannot compile biased texel-offset sampling");
+            let NagaCompileError::Compilation(error) = error else {
+                panic!("expected FXC compilation failure for {profile:?}, got {error:?}");
+            };
+            std::println!(
+                "{profile:?} textureSampleBias offset FXC diagnostic: {}",
+                error.message
+            );
+            assert!(
+                error.message.contains("X4532"),
+                "unexpected {profile:?} diagnostic: {}",
+                error.message
+            );
+        }
+
+        compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel5_0,
+            &bindings,
+        )
+        .expect("the SM5 control profile accepts the same static biased offset");
+    }
+
+    #[test]
     fn texture_gather_is_rejected_by_level_9_1_fxc_profile() {
         let module = naga::front::wgsl::parse_str(
             "@group(0) @binding(0) var image: texture_2d<f32>;\n\

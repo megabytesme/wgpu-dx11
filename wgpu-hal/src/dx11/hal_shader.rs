@@ -35,6 +35,9 @@ mod tests {
             fn biased(t: texture_2d<f32>, s: sampler, b: f32) -> vec4f {
                 return textureSampleBias(t, s, vec2f(0.5), b);
             }
+            fn biased_with_offset(t: texture_2d<f32>, s: sampler) -> vec4f {
+                return textureSampleBias(t, s, vec2f(0.5), 1.0, vec2i(0, 1));
+            }
             @fragment fn positive() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 4.0); }
             @fragment fn negative() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -16.0); }
             @fragment fn dynamic() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), value.x); }
@@ -46,6 +49,7 @@ mod tests {
             @fragment fn too_small() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -3.01); }
             @fragment fn too_large() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 3.01); }
             @fragment fn biased_offset() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 1.0, vec2i(1, 0)); }
+            @fragment fn biased_offset_helper() -> @location(0) vec4f { return biased_with_offset(image, smp); }
             @fragment fn normal() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5)); }
             @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
         "#).unwrap();
@@ -272,6 +276,7 @@ mod tests {
                     | "too_small"
                     | "too_large"
                     | "biased_offset"
+                    | "biased_offset_helper"
             );
             for level in FeatureLevel::ALL_DESCENDING {
                 let profile = selected_shader_profile(entry.stage).unwrap();
@@ -1022,6 +1027,7 @@ mod tests {
                 "too_small",
                 "too_large",
                 "biased_offset",
+                "biased_offset_helper",
             ] {
                 assert!(
                     matches!(

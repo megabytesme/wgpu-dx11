@@ -3856,6 +3856,9 @@ mod tests {
             fn constant_helper(uv: vec2f) -> vec4f {
                 return textureSampleBias(image, smp, uv, 1.0);
             }
+            fn offset_helper(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1));
+            }
             @fragment fn min_boundary(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, -3.0);
             }
@@ -3873,6 +3876,9 @@ mod tests {
             }
             @fragment fn offset(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(0, 0));
+            }
+            @fragment fn helper_offset(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return offset_helper(uv);
             }
             @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return dynamic_helper(uv, uv.x);
@@ -3923,6 +3929,7 @@ mod tests {
             "too_large",
             "dynamic",
             "offset",
+            "helper_offset",
             "helper_dynamic",
             "helper_forwarded_constant",
         ] {
