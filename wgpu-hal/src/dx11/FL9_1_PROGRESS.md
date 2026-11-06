@@ -7843,3 +7843,26 @@ RTX 3090 Ti at requested/actual FL9_1; the suite result was 50/50 with one
 optional `Float16x2` input-format capability subcase explicitly skipped.
 Public-test Clippy, Rustfmt 1.93.1 and `git diff --check` passed. The exact
 commands are the focused and full-suite commands recorded above.
+
+## Follow-up — sampled resources across three public bind groups
+
+Expanded the public FL9_1 textured integration to put the vertex transform and
+fragment tint in group 0, the filtering sampler in group 4, and the sampled
+texture at group 7. The shader uses the texture/sampler pair across two groups,
+and logical binding numbers are reused across group identities. A later draw
+replaces only the group-7 texture while leaving groups 0 and 4 bound. On the
+RTX 3090 Ti requested/actual FL9_1, readback changed to 32 blue and 32
+tinted-yellow pixels, confirming that the replacement texture and retained
+sampler/uniform groups were used together.
+
+The focused public test passed, and the complete strict public D3D11 test
+binary passed 50/50; one optional Float16x2 input-format branch remains an
+explicit capability skip. The public-test Clippy command, Rustfmt 1.93.1 and
+`git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+```

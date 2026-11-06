@@ -20,22 +20,25 @@ summarized above and in `CAPABILITIES.md`.
 
 The public integration test selects DX11 explicitly, asserts the physical
 FL9_1 adapter identity and driver version, and requests a device within the
-adapter's reported limits. It uploads a two-color texture, binds it in group 7
-at logical bindings 3 and 17, and binds a dynamic vertex transform at group 0
-binding 3 and dynamic fragment tint at group 0 binding 17. This exercises all
-eight bind-group positions while reusing binding numbers across groups. An indexed
-textured scene uses those stage-visible uniforms with a D24S8 depth attachment.
+adapter's reported limits. It uploads a two-color texture at group 7 binding 3,
+binds its sampler separately at group 4 binding 17, and binds a dynamic vertex
+transform at group 0 binding 3 and dynamic fragment tint at group 0 binding 17.
+This exercises sparse groups 0, 4 and 7 while reusing logical binding numbers
+across group identities. An indexed textured scene uses those stage-visible
+uniforms with a D24S8 depth attachment.
 Readback checks all 64 pixels: 32 tinted-red pixels and 32 green pixels from
 the depth-tested indexed draw. The test writes a translated transform into a
 256-byte-aligned range and selects it with a dynamic offset between submissions;
-the second frame contains 16 blue, 32 tinted-red and 16 green pixels. It then
-submits independent clear/copy/readback workloads concurrently through the
+the second frame contains 16 blue, 32 tinted-red and 16 green pixels. A later
+draw keeps groups 0 and 4 bound while replacing only group 7's texture; it reads
+back 32 blue and 32 tinted-yellow pixels. It then submits independent
+clear/copy/readback workloads concurrently through the
 first and a second public device from the same adapter. Strict mode turns
 missing physical hardware into a test failure:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
 ```
 
 The same strict public test submits unsupported descriptors under validation
@@ -61,8 +64,8 @@ The development RTX 3090 Ti reported vendor `0x10de`, device `0x2203`, driver
 image matched 32 tinted-red/32 green pixels; a queue write plus dynamic uniform
 offset shifted the second image to 16 blue/32 tinted-red/16 green pixels. The
 subsequent concurrent public-device workloads read back 64/64 red and 64/64
-green pixels. The shader and bind-group layouts use group 7 with binding
-numbers also used in group 0. This is a representative public offscreen
+green pixels. The shader and bind-group layouts use groups 0, 4 and 7 with
+binding numbers reused across groups. This is a representative public offscreen
 integration case, not a complete application or adapter-contract audit.
 All six unsupported resource requests were
 rejected by public core validation.

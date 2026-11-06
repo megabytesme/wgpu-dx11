@@ -1753,40 +1753,43 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             },
         ],
     });
+    let sampler_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("public DX11 FL9_1 sparse sampler layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 17,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        }],
+    });
     let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("public DX11 FL9_1 sparse sampled layout"),
-        entries: &[
-            BindGroupLayoutEntry {
-                binding: 3,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: true },
-                    view_dimension: TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
+        label: Some("public DX11 FL9_1 sparse texture layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 3,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
             },
-            BindGroupLayoutEntry {
-                binding: 17,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
+            count: None,
+        }],
+    });
+    let sampler_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public DX11 FL9_1 sparse sampler"),
+        layout: &sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: BindingResource::Sampler(&sampler),
+        }],
     });
     let texture_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("public DX11 FL9_1 sampled resources"),
+        label: Some("public DX11 FL9_1 sparse texture"),
         layout: &texture_layout,
-        entries: &[
-            BindGroupEntry {
-                binding: 3,
-                resource: BindingResource::TextureView(&sampled_view),
-            },
-            BindGroupEntry {
-                binding: 17,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
+        entries: &[BindGroupEntry {
+            binding: 3,
+            resource: BindingResource::TextureView(&sampled_view),
+        }],
     });
     let transform_data: Vec<u8> = [
         1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.25, 1.0,
@@ -1837,7 +1840,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             None,
             None,
             None,
-            None,
+            Some(&sampler_layout),
             None,
             None,
             Some(&texture_layout),
@@ -1850,7 +1853,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             "@group(0) @binding(3) var<uniform> transform: mat4x4f;\n\
              @group(0) @binding(17) var<uniform> tint: vec4f;\n\
              @group(7) @binding(3) var image: texture_2d<f32>;\n\
-             @group(7) @binding(17) var image_sampler: sampler;\n\
+             @group(4) @binding(17) var image_sampler: sampler;\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
              @vertex fn vs(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(transform * vec4f(position, 1.0), uv); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv) * tint; }"
@@ -1980,6 +1983,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &uniforms_group, &[0, 0]);
+        pass.set_bind_group(4, &sampler_group, &[]);
         pass.set_bind_group(7, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
@@ -2081,6 +2085,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &uniforms_group, &[256, 0]);
+        pass.set_bind_group(4, &sampler_group, &[]);
         pass.set_bind_group(7, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
@@ -2149,6 +2154,149 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     }
     readback.unmap();
 
+    let replacement_texture = device.create_texture(&TextureDescriptor {
+        label: Some("public DX11 FL9_1 replacement texture in group 7"),
+        size: Extent3d {
+            width: 2,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &replacement_texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &[0, 0, 255, 255, 255, 255, 0, 255],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(8),
+            rows_per_image: Some(1),
+        },
+        Extent3d {
+            width: 2,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let replacement_view = replacement_texture.create_view(&TextureViewDescriptor::default());
+    let replacement_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public DX11 FL9_1 replacement group 7 texture"),
+        layout: &texture_layout,
+        entries: &[BindGroupEntry {
+            binding: 3,
+            resource: BindingResource::TextureView(&replacement_view),
+        }],
+    });
+    let mut replacement_encoder =
+        device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = replacement_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public DX11 FL9_1 replace only the group 7 texture"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &uniforms_group, &[0, 0]);
+        pass.set_bind_group(4, &sampler_group, &[]);
+        pass.set_bind_group(7, &replacement_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 0..1);
+        pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
+        pass.draw_indexed(0..3, 0, 0..1);
+    }
+    replacement_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let replacement_submission = queue.submit([replacement_encoder.finish()]);
+    let (replacement_sender, replacement_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        replacement_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(replacement_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for replacement texture submission");
+    replacement_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("replacement texture readback callback")
+        .expect("map replacement texture readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    [0, 0, 255, 255]
+                } else {
+                    [128, 255, 0, 255]
+                };
+                let actual = &data[offset..offset + 4];
+                for (channel, (&observed_channel, expected)) in
+                    actual.iter().zip(expected).enumerate()
+                {
+                    assert!(
+                        observed_channel.abs_diff(expected) <= 1,
+                        "group 7 replacement pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed_channel}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: group 0 uniforms, group 4 sampler and replacement group 7 texture produced 32 blue / 32 tinted-yellow pixels"
+    );
+
     let depth_positions = [
         [-2.0f32, -2.0],
         [2.0, -2.0],
@@ -2206,6 +2354,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &uniforms_group, &[0, 0]);
+            pass.set_bind_group(4, &sampler_group, &[]);
             pass.set_bind_group(7, &texture_group, &[]);
             pass.set_vertex_buffer(0, depth_vertex.slice(..));
             if near_first {

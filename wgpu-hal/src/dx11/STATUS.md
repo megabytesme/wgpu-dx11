@@ -51,9 +51,12 @@ statements; the current contract is summarized above and in
 [CAPABILITIES.md](CAPABILITIES.md).
 
 The strict public integration test uses ordinary adapter enumeration and
-validated wgpu APIs for group 0 uniforms and sampled resources at group 7, the
-highest position in an eight-group pipeline layout. It intentionally reuses
-binding numbers 3 and 17 across those groups. The draw includes
+validated wgpu APIs for uniforms at group 0, a sampler at group 4 and a
+sampled texture at group 7, the highest position in an eight-group pipeline
+layout. It intentionally reuses binding numbers 3 and 17 across groups. A
+subsequent draw replaces only the group-7 texture while retaining the uniform
+and sampler groups; readback changes from the original red/green pattern to
+32 blue and 32 tinted-yellow pixels. The draw includes
 vertex- and fragment-visible dynamic uniforms, indexed geometry, D24S8 depth
 testing, submission and full 8×8 readback. On the RTX 3090 Ti forced to FL9_1, it
 verified 32 tinted-red and 32 green pixels. A queue write updated an aligned

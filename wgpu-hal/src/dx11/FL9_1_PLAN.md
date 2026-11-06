@@ -120,9 +120,12 @@ entry-point selection are covered by a strict public test.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. A controlled core test
-   now exercises one two-group pipeline (uniform in group 0, sampled resources
-   in group 1); broader aggregate group layouts and transitions remain to be
-   audited. All wgpu vertex formats with direct DXGI input equivalents are
+   still exercises a two-group fixture pipeline (uniform in group 0, sampled
+   resources in group 1). The strict public integration now also binds
+   uniforms in group 0, a sampler in group 4 and a texture in group 7, then
+   replaces group 7 alone and verifies the new sample output. Broader
+   aggregate group layouts remain to be audited. All wgpu vertex formats with
+   direct DXGI input equivalents are
    now mapped except Float64 variants. Outside the ten FL9_1-required IA
    formats, core exposes a format only when the selected device positively
    reports `IA_VERTEX_BUFFER`; the forced-FL9_1 RTX reports no optional input
@@ -339,9 +342,11 @@ entry-point selection are covered by a strict public test.
    reports and explicit unsupported 1D/3D shape gates. A strict public wgpu
    integration test selects the physical RTX 3090 Ti, requests devices within
    the projection, uploads and samples a texture at sparse bindings, binds
-   separate vertex transform and fragment tint uniforms in group 0, sampled
-   resources in group 7 of an eight-position layout, and reuses binding indices
-   across those groups. It performs indexed depth-tested draws, updates the
+   separate vertex transform and fragment tint uniforms in group 0, a sampler
+   in group 4 and a sampled texture in group 7 of an eight-position layout,
+   and reuses binding indices across those groups. Replacing only the texture
+   group changes readback while the sampler and uniform groups remain bound.
+   It performs indexed depth-tested draws, updates the
    transform between submissions using a dynamic uniform offset, and verifies
    both images by readback. Continue auditing the full core/HAL contract before
    widening the projection.
@@ -468,9 +473,10 @@ The current public surface remains limited to the HWND contract summarized at
 the top of this plan. Continue the core/HAL audit before widening the public
 capability contract.
 
-The public offscreen integration now exercises sparse group-0 uniforms and
-group-7 sampled bindings, indexed textured depth-tested output, dynamic
-uniform updates and two concurrently submitting public devices. Its error
+The public offscreen integration now exercises sparse group-0 uniforms, a
+group-4 sampler and group-7 sampled texture, group replacement, indexed
+textured depth-tested output, dynamic uniform updates and two concurrently
+submitting public devices. Its error
 scopes additionally verify that core rejects vertex-visible storage-buffer
 layouts and D2Array sampled-texture layouts, alongside unsupported 3D,
 multisampled, format and mip requests. These checks expand the tested public
