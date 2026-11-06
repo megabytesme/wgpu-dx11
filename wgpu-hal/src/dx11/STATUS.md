@@ -84,8 +84,10 @@ before HAL. A fifth strict test verifies a 4×6 scissor through public wgpu
 A strict public sparse multi-texture test places two independent
 texture/sampler pairs at sparse bindings 7/100 and 42/17 in groups 1/4 and
 6/7. Nearest and linear sampling of patterned textures both contribute to the
-result; all 64 readback pixels match `[40, 43±1, 0, 255]`. An incomplete
-texture group is rejected by core validation.
+result. The test replaces only sampler group 7 between draws, retaining its
+pipeline, textures and other sampler; all 128 readback pixels match the two
+expected filtering results. An incomplete texture group is rejected by core
+validation.
 A seventh strict test samples eight independent textures at sparse bindings,
 verifies every contribution in all 64 output pixels, and confirms a ninth
 fragment texture is rejected at core validation.

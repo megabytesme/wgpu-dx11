@@ -2,11 +2,12 @@
 
 ## Current position — 2026-11-06
 
-Latest verified code checkpoint: `b89865ca5` (`dx11: verify sparse
-cross-group sampling pairs`). The strict public suite passed 50/50 at forced
+Latest verified code checkpoint: `d921da527` (`dx11: test sparse sampler
+group transitions`). The strict public suite passed 50/50 at forced
 FL9_1 with one optional Float16x2 input-format subcase explicitly skipped.
 The latest test places two independently sampled textures and samplers across
-four sparse bind groups and validates nearest/linear results by readback.
+four sparse bind groups, replaces one sampler group between draws, and
+validates both nearest/linear results by readback.
 Continue the core/HAL capability audit and public operation coverage; this
 does not complete the mission.
 
@@ -7893,7 +7894,25 @@ software=false), requested/actual FL9_1:
 - The complete strict public D3D11 test binary passed 50/50; the optional Float16x2 input-format subcase explicitly skipped because the selected FL9_1 device did not report `IA_VERTEX_BUFFER` support for `R16G16_FLOAT`.
 - Public-test Clippy and Rustfmt passed. `git diff --check` passed.
 
-The next focused test should replace only one sampler group between draws while
-retaining both textures, the other sampler, and the pipeline, then validate the
-two outputs independently. Continue the full selected-entry/core/HAL audit;
-this checkpoint does not complete the mission.
+The group-7 sampler transition was implemented and verified in the follow-up
+checkpoint below. Continue the full selected-entry/core/HAL audit; this
+checkpoint does not complete the mission.
+
+## Checkpoint — sparse sampler-group transition (`d921da527`)
+
+Extended `public_dx11_sparse_multi_texture_sampling_at_fl91` to render two
+adjacent viewport regions in one pass. The first uses the linear green sampler;
+the test then replaces only group 7 with a nearest sampler and draws the second
+region. Both texture groups, the red sampler and the pipeline remain unchanged.
+Forced-FL9_1 readback checked all 128 pixels: the linear side matched
+`[40, 43±1, 0, 255]`, and the nearest side matched `[40, 40, 0, 255]`.
+
+Verification on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), requested/actual FL9_1:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sparse_multi_texture_sampling_at_fl91 -- --nocapture --test-threads=1`: 1/1 passed.
+- The complete strict public D3D11 test binary passed 50/50; the optional Float16x2 input-format subcase explicitly skipped because the selected device did not report `IA_VERTEX_BUFFER` support for `R16G16_FLOAT`.
+- Public-test Clippy, Rustfmt 1.93.1 and `git diff --check` passed without new warnings.
+
+Continue with the remaining core/HAL contract audit, prioritizing any operation
+the public projection accepts but the D3D11 path cannot execute correctly.

@@ -3,8 +3,8 @@
 ## Current mission state — 2026-11-06
 
 This mission remains active. Later checkpoints supersede older status notes.
-The branch is `uwp-dx11`, latest code checkpoint is `b89865ca5`
-(`dx11: verify sparse cross-group sampling pairs`), following
+The branch is `uwp-dx11`, latest code checkpoint is `d921da527`
+(`dx11: test sparse sampler group transitions`), following
 `f98b72200` (`dx11: test bundle restart pipeline transitions`), `70341b011`
 (`dx11: verify FL9_1 instance-index rejection`) and `62d12ecd4`
 (`dx11: reject unsupported FL9_1 shader loops`). The strict public textured
@@ -12,7 +12,8 @@ integration binds uniforms in group 0, a sampler in group 4 and a texture in
 group 7, then replaces only the texture group; forced-FL9_1 readback changes
 to 32 blue and 32 tinted-yellow pixels. Another public test uses two
 independent texture/sampler pairs across groups 1/4 and 6/7 with nearest and
-linear filtering; all 64 pixels match. The full strict public D3D11 suite
+linear filtering, then replaces only the group-7 sampler between draws; all
+128 pixels match both results. The full strict public D3D11 suite
 passed 50/50; one optional input-format subcase remains an explicit
 capability skip. Core rejects a selected
 vertex or fragment entry point that reaches WGSL loop IR through helper calls,

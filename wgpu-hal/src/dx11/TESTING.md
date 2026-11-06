@@ -268,9 +268,12 @@ two independent samplers across groups 1, 4, 6 and 7. Logical bindings are
 sparse (7, 100, 42 and 17), and the WGSL declaration order differs from group
 and bind-group layout order. The shader samples both textures at the same
 coordinate using nearest and linear filtering respectively. The patterned
-inputs make a sampler/register swap observable; readback verifies all 64
-pixels are `[40, 43±1, 0, 255]`. An incomplete texture group is rejected by
-public core validation before rendering.
+inputs make a sampler/register swap observable. In one render pass, the test
+then replaces only group 7 with a nearest sampler and draws into the other half
+of a 16×8 target, retaining the pipeline, both textures and the other sampler.
+Readback verifies all 128 pixels: the linear half is `[40, 43±1, 0, 255]` and
+the nearest half is `[40, 40, 0, 255]`. An incomplete texture group is
+rejected by public core validation before rendering.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

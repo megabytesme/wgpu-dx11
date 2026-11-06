@@ -59,8 +59,10 @@ nearest versus linear filtering make sampler-slot swaps observable; all 64
 pixels match the checked output on forced FL9_1. A public Repeat sampler probe
 was rejected by core because it cannot prove arbitrary interpolated
 coordinates stay within the FL9_1 repeat bound. Keep that validation intact;
-the next focused task is testing a sampler-group state transition while the
-other groups and pipeline remain bound.
+the follow-on `d921da527` checkpoint replaces only the group-7 sampler between
+draws, retains the other resources and pipeline, and verifies both filtering
+results across 128 pixels. Resume the broader selected-entry and core/HAL
+contract audit.
 
 ### Render-bundle checkpoint — strip restart and pipeline transition (`f98b72200`)
 
