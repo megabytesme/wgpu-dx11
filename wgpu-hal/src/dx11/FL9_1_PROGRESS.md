@@ -7790,15 +7790,15 @@ to-core mismatch.
 
 ## Follow-up — indexed strip restart inside a public render bundle
 
-Added a strict public wgpu test that records one Uint16 TriangleStrip draw in
-a `RenderBundleEncoder`, with a `0xffff` restart marker between a left
-rectangle and a separate right triangle. The bundle is executed through a
-color render pass on the physical RTX 3090 Ti explicitly requested and
-confirmed at FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false).
-The 16×16 target readback matched the CPU reference at 256/256 pixels; 107
-pixels were covered and the clear gap remained unchanged. This exercises
-public core bundle recording, command replay, restart splitting, submission
-and readback in one path.
+Added a strict public wgpu test that records Uint16 and Uint32 TriangleStrip
+draws in separate `RenderBundleEncoder`s, each with a primitive-restart marker
+between a left rectangle and a separate right triangle. The bundles execute
+through color render passes on the physical RTX 3090 Ti explicitly requested
+and confirmed at FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false).
+Each 16×16 target readback matched the CPU reference at 256/256 pixels; 107
+pixels were covered for each index format and the clear gap remained
+unchanged. This exercises public core bundle recording, command replay,
+restart splitting, submission and readback in both index-width paths.
 
 Verification command:
 
@@ -7810,5 +7810,7 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 An initial CPU reference placed one pixel center exactly on the triangle edge;
 the hardware's top-left rasterization rule covered that pixel, so the test
 geometry was shifted slightly to keep sample centers off boundaries. The
-final strict run passed with all 256 expected pixels. Continue with other
+focused strict run passed with 512/512 expected pixels across both index
+formats, and the full strict public suite passed 50/50 with the same explicit
+optional Float16x2 input-format capability skip. Continue with other
 render-bundle state transitions and the broader core/HAL audit.

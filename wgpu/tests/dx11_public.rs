@@ -13247,37 +13247,40 @@ fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 indexed strip restart bundle pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_layouts,
-        },
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleStrip,
-            strip_index_format: Some(IndexFormat::Uint16),
-            cull_mode: None,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
+    let create_pipeline = |index_format| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 indexed strip restart bundle pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layouts,
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                strip_index_format: Some(index_format),
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
 
     let vertices = [
         -1.0f32, -1.0, -0.5, -1.0, -1.0, 1.0, -0.5, 1.0, 0.2, -0.75, 1.25, -0.75, 0.75, 0.75,
     ];
-    let indices = [0u16, 1, 2, 3, u16::MAX, 4, 5, 6];
+    let indices_u16 = [0u16, 1, 2, 3, u16::MAX, 4, 5, 6];
+    let indices_u32 = [0u32, 1, 2, 3, u32::MAX, 4, 5, 6];
     let vertex_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 indexed strip restart bundle vertices"),
         size: std::mem::size_of_val(&vertices) as u64,
@@ -13285,14 +13288,6 @@ fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
         mapped_at_creation: false,
     });
     queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
-    let index_buffer = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 indexed strip restart bundle indices"),
-        size: std::mem::size_of_val(&indices) as u64,
-        usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
-
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 indexed strip restart bundle output"),
         size: Extent3d {
@@ -13310,68 +13305,93 @@ fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 indexed strip restart bundle readback"),
-        size: 4096,
+        size: 8192,
         usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    let mut bundle_encoder = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
-        label: Some("FL9_1 indexed strip restart bundle encoder"),
-        color_formats: &[Some(TextureFormat::Rgba8Unorm)],
-        depth_stencil: None,
-        sample_count: 1,
-        multiview: None,
-    });
-    bundle_encoder.set_pipeline(&pipeline);
-    bundle_encoder.set_vertex_buffer(0, vertex_buffer.slice(..));
-    bundle_encoder.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
-    bundle_encoder.draw_indexed(0..indices.len() as u32, 0, 0..1);
-    let bundle = bundle_encoder.finish(&RenderBundleDescriptor {
-        label: Some("FL9_1 indexed strip restart render bundle"),
-    });
-
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 indexed strip restart bundle submission"),
     });
+    for (case, (index_format, index_data, index_count)) in [
+        (
+            IndexFormat::Uint16,
+            bytemuck::cast_slice::<u16, u8>(&indices_u16),
+            indices_u16.len(),
+        ),
+        (
+            IndexFormat::Uint32,
+            bytemuck::cast_slice::<u32, u8>(&indices_u32),
+            indices_u32.len(),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
     {
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 indexed strip restart bundle pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(Color::BLACK),
-                    store: StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
+        let pipeline = create_pipeline(index_format);
+        let index_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("FL9_1 indexed strip restart bundle indices"),
+            size: index_data.len() as u64,
+            usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-        pass.execute_bundles([&bundle]);
-    }
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &target,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(16),
+        queue.write_buffer(&index_buffer, 0, index_data);
+        let mut bundle_encoder =
+            device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+                label: Some("FL9_1 indexed strip restart bundle encoder"),
+                color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+                depth_stencil: None,
+                sample_count: 1,
+                multiview: None,
+            });
+        bundle_encoder.set_pipeline(&pipeline);
+        bundle_encoder.set_vertex_buffer(0, vertex_buffer.slice(..));
+        bundle_encoder.set_index_buffer(index_buffer.slice(..), index_format);
+        bundle_encoder.draw_indexed(0..index_count as u32, 0, 0..1);
+        let bundle = bundle_encoder.finish(&RenderBundleDescriptor {
+            label: Some("FL9_1 indexed strip restart render bundle"),
+        });
+
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 indexed strip restart bundle pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.execute_bundles([&bundle]);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
             },
-        },
-        Extent3d {
-            width: 16,
-            height: 16,
-            depth_or_array_layers: 1,
-        },
-    );
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: case as u64 * 4096,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(16),
+                },
+            },
+            Extent3d {
+                width: 16,
+                height: 16,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -13388,44 +13408,52 @@ fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
         .expect("indexed strip restart readback callback")
         .expect("map indexed strip restart readback");
     let mut checked = 0;
-    let mut colored = 0;
+    let mut colored = [0; 2];
     {
         let data = readback
             .slice(..)
             .get_mapped_range()
             .expect("mapped indexed strip restart pixels");
-        for y in 0..16 {
-            for x in 0..16 {
-                let ndc_x = -1.0 + (x as f32 + 0.5) * 0.125;
-                let ndc_y = 1.0 - (y as f32 + 0.5) * 0.125;
-                let in_left_rect = ndc_x > -1.0 && ndc_x < -0.5;
-                let triangle = [(0.2, -0.75), (1.25, -0.75), (0.75, 0.75)];
-                let inside_triangle = (0..3).all(|edge| {
-                    let (ax, ay) = triangle[edge];
-                    let (bx, by) = triangle[(edge + 1) % 3];
-                    (bx - ax) * (ndc_y - ay) - (by - ay) * (ndc_x - ax) > 0.0
-                });
-                let expected = if in_left_rect || inside_triangle {
-                    colored += 1;
-                    [0, 255, 0, 255]
-                } else {
-                    [0, 0, 0, 255]
-                };
-                let offset = y * 256 + x * 4;
-                assert_eq!(
-                    &data[offset..offset + 4],
-                    expected,
-                    "indexed strip restart bundle pixel ({x}, {y})"
-                );
-                checked += 1;
+        for (case, index_format) in [IndexFormat::Uint16, IndexFormat::Uint32]
+            .into_iter()
+            .enumerate()
+        {
+            for y in 0..16 {
+                for x in 0..16 {
+                    let ndc_x = -1.0 + (x as f32 + 0.5) * 0.125;
+                    let ndc_y = 1.0 - (y as f32 + 0.5) * 0.125;
+                    let in_left_rect = ndc_x > -1.0 && ndc_x < -0.5;
+                    let triangle = [(0.2, -0.75), (1.25, -0.75), (0.75, 0.75)];
+                    let inside_triangle = (0..3).all(|edge| {
+                        let (ax, ay) = triangle[edge];
+                        let (bx, by) = triangle[(edge + 1) % 3];
+                        (bx - ax) * (ndc_y - ay) - (by - ay) * (ndc_x - ax) > 0.0
+                    });
+                    let expected = if in_left_rect || inside_triangle {
+                        colored[case] += 1;
+                        [0, 255, 0, 255]
+                    } else {
+                        [0, 0, 0, 255]
+                    };
+                    let offset = case * 4096 + y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "{index_format:?} indexed strip restart bundle pixel ({x}, {y})"
+                    );
+                    checked += 1;
+                }
             }
         }
     }
     readback.unmap();
-    assert_eq!(checked, 256);
-    assert!(colored > 64, "both restart-separated regions should render");
+    assert_eq!(checked, 512);
+    assert!(
+        colored.iter().all(|&count| count > 64),
+        "both restart-separated regions should render for each index format: {colored:?}"
+    );
     println!(
-        "PASS: indexed Uint16 triangle-strip bundle honored the primitive-restart marker; {checked}/{checked} pixels matched, {colored} covered"
+        "PASS: indexed Uint16 and Uint32 triangle-strip bundles honored the primitive-restart marker; {checked}/{checked} pixels matched, colored pixels={colored:?}"
     );
 }
 

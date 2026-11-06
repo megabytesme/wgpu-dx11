@@ -95,11 +95,11 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 -- --nocapture --test-threads=1
 ```
 
-A second indexed bundle test records a `Uint16` TriangleStrip containing a
-primitive-restart marker. The two restart-separated runs render a rectangle
-and triangle in separate target regions. Readback checks all 256 pixels of a
-16×16 target, so accidental strip continuation across the marker changes the
-expected image.
+A second indexed bundle test records `Uint16` and `Uint32` TriangleStrips
+containing primitive-restart markers. The two restart-separated runs render a
+rectangle and triangle in separate target regions. Readback checks all 256
+pixels of a 16×16 target for each index format, so accidental strip
+continuation across a marker changes the expected image.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

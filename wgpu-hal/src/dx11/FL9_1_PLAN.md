@@ -558,11 +558,11 @@ formats query-gated and historical FL9_1 and ARM32 behavior explicitly
 unverified.
 
 The public command path also has strict render-bundle execution tests: core
-records a nonindexed triangle, an indexed textured triangle and a Uint16
-indexed TriangleStrip with a primitive-restart marker. The restart bundle
+records a nonindexed triangle, an indexed textured triangle and Uint16/Uint32
+indexed TriangleStrips with primitive-restart markers. Each restart bundle
 renders two separated shapes and checks all 256 pixels, including the clear
-gap. Other bundle state combinations and restart formats/topologies still
-need targeted coverage.
+gap. Other bundle state combinations and restart topologies still need
+targeted coverage.
 
 ## Follow-up — mapped-view destruction safety
 

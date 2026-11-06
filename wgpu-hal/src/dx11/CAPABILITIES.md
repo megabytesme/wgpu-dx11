@@ -1086,11 +1086,12 @@ Strict public FL9_1 tests record both a nonindexed triangle and an indexed
 textured triangle in `RenderBundleEncoder`s, execute them in color passes and
 validate all 64 readback pixels for each. The indexed test drops the source
 texture, sampler, bind group and vertex/index buffers after bundle recording,
-then confirms the bundle retains what execution needs. A separate indexed
-Uint16 TriangleStrip bundle includes a primitive-restart marker between a
-left rectangle and right triangle; the strict FL9_1 test checks all 256 pixels
-and confirms the regions do not join across the marker. Other bundle state
-combinations and restart formats/topologies remain unverified.
+then confirms the bundle retains what execution needs. Separate indexed
+Uint16 and Uint32 TriangleStrip bundles include primitive-restart markers
+between a left rectangle and right triangle; strict FL9_1 readback checks all
+256 pixels for each format and confirms the regions do not join across the
+marker. Other bundle state combinations and restart topologies remain
+unverified.
 
 ## Shader loop control
 
