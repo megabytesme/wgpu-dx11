@@ -434,11 +434,13 @@ The selected-entry audit now also covers vertex system-value inputs. The
 controlled FL9_1 profile reports `vertex_index_input` and `instance_index_input`
 as unavailable; core rejects declarations before HAL and permits safe sibling
 entries. The backend-generated `SV_VertexID` interface fails to compile with
-FXC X4555 under the tested FL9_1 vertex profile. This records the
-compiler/backend boundary, not a hardware guarantee. `instance_index` remains
-a backend restriction whose FXC acceptance is unverified. The opt-in
-adapter reports the selected FL9_1 projection; a strict public test confirms
-both built-ins are rejected before HAL while a safe sibling pipeline compiles.
+FXC X4555 under the tested FL9_1 vertex profile; `SV_InstanceID` fails with
+X4016 for direct and structure-member inputs, used or unused. The safe
+instance-index sibling compiles at FL9_1 and a used input compiles with the
+`vs_5_0` control. These are compiler/backend boundaries, not universal
+hardware guarantees. The opt-in adapter reports the selected FL9_1
+projection; a strict public test confirms both built-ins are rejected before
+HAL while a safe sibling pipeline compiles.
 The current public surface remains limited to the HWND contract summarized at
 the top of this plan. Continue the core/HAL audit before widening the public
 capability contract.

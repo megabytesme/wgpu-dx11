@@ -534,8 +534,11 @@ entry point in the same module remains usable. CPU interface tests cover direct
 and structure-member declarations, unused declarations, safe sibling entries
 and missing entry names. A separate D3DCompile test verifies that compiling the
 backend-generated `SV_VertexID` interface for `vs_4_0_level_9_1` fails with
-FXC X4555, whether the WGSL value is used or unused. FXC acceptance of
-`instance_index` has not been established; the backend currently rejects it.
+FXC X4555, whether the WGSL value is used or unused. FXC also rejects generated
+`SV_InstanceID` under the 10Level9 profile with X4016, for direct and
+structure-member declarations whether used or unused. The safe sibling compiles
+at FL9_1, and the used input compiles with the `vs_5_0` control; the backend
+continues to reject it at FL9_1.
 A strict public test also creates a device from the selected FL9_1 adapter,
 verifies that pipelines selecting either unsupported input fail through core's
 specific validation error before HAL, and compiles a safe sibling pipeline.
@@ -544,6 +547,7 @@ specific validation error before HAL, and compiles a safe sibling pipeline.
 cargo test --offline -p wgpu-types --lib vertex_builtins_are_downlevel_capabilities -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std vertex_builtin_detection_uses_selected_entry_point_declarations -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_index_entry_inputs_are_rejected_by_fxc -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 fl91_instance_index_entry_inputs_are_rejected_by_fxc -- --nocapture --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_vertex_system_values_at_fl91 -- --nocapture --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

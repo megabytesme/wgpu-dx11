@@ -1017,12 +1017,14 @@ entry-point declaration before HAL. The `vs_4_0_level_9_1` FXC test rejects
 the backend-generated `SV_VertexID` interface with FXC X4555 whether its
 WGSL value is used or unused. This is observed compiler output; it does not
 prove an inherent hardware restriction. `instance_index` is currently a
-backend implementation restriction; its profile-specific FXC behavior has not
-been verified. Microsoft describes SV system-value semantics as Direct3D 10
-additions, while 10Level9 exposes D3D9-era shader behavior; this mapping does
-not claim that these semantics are impossible on every implementation. A
-strict public test on the forced-FL9_1 adapter verifies core rejection of both
-selected-entry uses before HAL and acceptance of a safe sibling pipeline.
+backend implementation restriction; FXC rejects the generated
+`SV_InstanceID` input with X4016 ("semantic cannot be used with 10Level9
+targets") under `vs_4_0_level_9_1`, for direct and structure-member inputs,
+whether used or unused. A safe sibling compiles at FL9_1 and the used case
+compiles with the `vs_5_0` control profile. This is an observed compiler
+profile restriction, not a universal hardware claim. A strict public test on
+the forced-FL9_1 adapter verifies core rejection of both selected-entry uses
+before HAL and acceptance of a safe sibling pipeline.
 
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise

@@ -7759,3 +7759,30 @@ Exact strict commands are in `TESTING.md`. The hardware evidence applies to a
 modern RTX 3090 Ti running at FL9_1, not to historical 9_1 drivers. Public
 D3D11 enumeration remains opt-in. Continue the core/HAL shader audit; this
 checkpoint does not complete the mission.
+
+## Follow-up — verify `instance_index` at the FL9_1 compiler boundary
+
+The existing core gate and private HAL rejection for `instance_index` were
+already correct, but the FXC profile behavior was undocumented. Added a
+production compiler-path test covering direct and structure-member inputs,
+used and unused declarations, a safe sibling, and a `vs_5_0` control. At
+`vs_4_0_level_9_1`, FXC rejects all four generated `SV_InstanceID` inputs with
+X4016: `SV_InstanceID semantic cannot be used with 10Level9 targets`. The
+safe sibling and SM5 control compile. This justifies the FL9_1 selected-entry
+core gate for the tested profile; it is not a universal hardware claim.
+
+Verification used Rust 1.93.1 and the Visual Studio x64 environment:
+
+- `cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features
+  --features dx11 --lib
+  fl91_instance_index_entry_inputs_are_rejected_by_fxc -- --nocapture
+  --test-threads=1`: 1/1 passed. This is an FXC compiler test, not GPU draw
+  execution.
+- The first `-j8` invocation hit a Rust compiler process allocation failure
+  before completing. Retrying with `-j2` succeeded; no source change was
+  needed for the retry.
+
+No runtime behavior or advertised capability changed. This CPU-only compiler
+test does not require the strict hardware environment. Historical hardware
+behavior remains unverified. Continue with the next selected-entry WGSL/FXC-
+to-core mismatch.

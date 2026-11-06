@@ -266,12 +266,13 @@ The controlled FL9_1 profile also reports
 entries declaring either input before HAL, while a safe sibling entry remains
 usable. Compiling the backend-generated `SV_VertexID` interface for the tested
 `vs_4_0_level_9_1` profile fails with FXC X4555 even when the declared value is
-unused. The private HAL separately rejects both inputs; `instance_index`
-profile acceptance has not been tested. These limits describe the current
-compiler/backend contract, not a universal claim that all feature-level 9_1
-hardware makes the semantics impossible. A strict public wgpu test on the
-forced-FL9_1 adapter confirms that core rejects each selected entry before HAL
-and accepts a safe sibling pipeline.
+unused. The same profile rejects `SV_InstanceID` with X4016 for direct and
+structure-member inputs whether used or unused; a `vs_5_0` used-input control
+compiles. The private HAL separately rejects both inputs. These limits
+describe the current compiler/backend contract, not a universal claim that all
+feature-level 9_1 hardware makes the semantics impossible. A strict public
+wgpu test on the forced-FL9_1 adapter confirms that core rejects each selected
+entry before HAL and accepts a safe sibling pipeline.
 
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
