@@ -14991,6 +14991,255 @@ fn public_dx11_render_bundle_pipeline_layout_transition_at_fl91() {
 }
 
 #[test]
+fn public_dx11_render_bundle_depth_attachment_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 depth render-bundle test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 depth bundle shader"),
+        source: ShaderSource::Wgsl(
+            "struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec4f, }\n\
+             @vertex fn vs(@location(0) position: vec3f, @location(1) color: vec4f) -> VertexOut {\n\
+                 return VertexOut(vec4f(position, 1.0), color);\n\
+             }\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return input.color; }"
+                .into(),
+        ),
+    });
+    let vertex_attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 12,
+            shader_location: 1,
+        },
+    ];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 28,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &vertex_attributes,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 depth bundle pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilState {
+            format: TextureFormat::Depth16Unorm,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(CompareFunction::Less),
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertices: Vec<u8> = [
+        [-1.0f32, -1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [3.0, -1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [-1.0, 3.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [-1.0, -1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [3.0, -1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [-1.0, 3.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+    ]
+    .into_iter()
+    .flatten()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 depth bundle vertices"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertices);
+    let make_bundle = |label, range| {
+        let mut bundle = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+            label: Some(label),
+            color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+            depth_stencil: Some(RenderBundleDepthStencil {
+                format: TextureFormat::Depth16Unorm,
+                depth_read_only: false,
+                stencil_read_only: true,
+            }),
+            sample_count: 1,
+            multiview: None,
+        });
+        bundle.set_pipeline(&pipeline);
+        bundle.set_vertex_buffer(0, vertex.slice(..));
+        bundle.draw(range, 0..1);
+        bundle.finish(&RenderBundleDescriptor { label: Some(label) })
+    };
+    let near_bundle = make_bundle("near red depth bundle", 0..3);
+    let far_bundle = make_bundle("far green depth bundle", 3..6);
+    drop(vertex);
+
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 depth bundle color output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let depth = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 depth bundle D16 attachment"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth16Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 depth bundle readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 depth bundle submission"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 depth bundle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.execute_bundles([&near_bundle, &far_bundle]);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 depth bundles");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("depth bundle readback callback")
+        .expect("map depth bundle readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[255, 0, 0, 255],
+                    "depth bundle pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: two depth-enabled render bundles retained writable D16 state; the later far green draw failed depth everywhere, and all 64 pixels remained red after dropping the vertex buffer");
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
