@@ -7826,7 +7826,7 @@ The public-test Clippy command (`cargo +1.93 clippy --offline -j2 -p wgpu
 --no-default-features --features dx11,wgsl,std --test dx11_public`), changed
 file Rustfmt check and `git diff --check` also passed.
 
-## Follow-up — same-pass render-bundle pipeline transition
+## Follow-up — same-pass render-bundle pipeline transition (`f98b7220089e3836ecaea883f25927ab5aa57835`)
 
 Expanded the public restart test to execute a Uint16 green bundle followed by
 a Uint32 red bundle in the same render pass. Both use a restart-separated
