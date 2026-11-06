@@ -6996,3 +6996,55 @@ and render-pass combinations still accepted by core but rejected or unhandled
 by this HAL. Preserve specific existing validation-error precedence when
 adding broader capability gates. Optional formats, historical FL9_1 devices,
 and ARM32 UWP remain separately unverified.
+
+## Checkpoint — selected-entry `textureGather` validation — `25e9f55db`
+
+Added public `DownlevelLimits::texture_gather` with backward-compatible serde
+defaulting. The D3D11 hardware model treats shader model 4.1 gather as a static
+feature-level guarantee from FL10_1; the current backend implementation flag
+is false and the FL9_1 public projection therefore rejects gather. GLES reports
+the capability only for ES 3.1+, desktop GL 4.0+, or
+`GL_ARB_texture_gather`; noop retains its permissive default.
+
+Core detects Naga `ImageSample::gather` in the selected vertex or fragment
+entry point, including reachable helper functions, and reports a validation
+error before HAL. Other entry points in the same module are unaffected. The
+Naga-to-FXC test confirms the level-9_1 profile fails with X4532 while the
+shader-model-5 control compiles. The strict public test rejects direct and
+helper-reached WGSL gather and compiles an implicit-sampling sibling on the
+physical adapter.
+
+Strict hardware evidence on 2026-11-06: NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`), driver `32.0.16.2101`, hardware adapter, requested and actual
+FL9_1. The focused public test passed 1/1 and reported the selected adapter;
+the full strict public D3D11 suite passed 38/38; the full strict private D3D11
+HAL suite passed 361/361. `textureGather` itself was intentionally not sent to
+the GPU: public core rejects it based on the selected FL9_1 contract.
+
+Other checks: the selected-entry CPU test and `wgpu-types` limit test passed
+1/1 each; the serde compatibility test passed 1/1; DX12 core regression passed
+89/89; `wgpu-info` and GLES checks passed. Clippy passed for core, wgpu public
+tests, types with serde, GLES and wgpu-info. HAL Clippy passed with nine
+pre-existing warnings in unrelated test code. Changed Rust files passed
+rustfmt and `git diff --check` passed.
+
+Useful commands (the test process was launched from the VS 2022 developer
+environment with pinned Rust 1.93 and bounded `-j32`):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-types --lib texture_gather_is_a_downlevel_capability
+cargo +1.93 test --offline -j32 -p wgpu-types --lib --features serde previous_downlevel_limits_serde_shape_defaults_new_caps
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl texture_gather_limits_follow_selected_entry_and_helpers
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib texture_gather_is_rejected_by_level_9_1_fxc_profile -- --nocapture
+cargo +1.93 check --offline -j32 -p wgpu-info
+cargo +1.93 check --offline -j32 -p wgpu-hal --no-default-features --features gles
+```
+
+Next: continue checking selected-entry shader operations and render-pipeline
+states that core accepts against the D3D11 FL9_1 path. Do not enable a path
+until it is implemented or rejected through core validation. Historical FL9_1
+devices and ARM32 UWP remain unverified.
