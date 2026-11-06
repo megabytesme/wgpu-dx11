@@ -202,11 +202,13 @@ not a repository artifact.
    WGSL/Naga validation because the FL9_1 projection omits
    `MULTISAMPLED_SHADING`; a strict public regression now confirms this path
    and acceptance of a single-sample shader. WGSL `textureGather` is now a
-   selected-entry downlevel limit: Microsoft's HLSL contract requires shader
-   model 4.1 (FL10_1+), FXC rejects its Naga lowering under the level-9_1
-   profile with X4532, and core rejects direct/helper use while compiling an
-   implicit-sampling sibling. Continue auditing other core-valid operations
-   against the selected FL9_1 compiler.
+   stage-agnostic downlevel limit. Microsoft documents HLSL Gather for
+   graphics at shader model 4.1 (FL10_1+) and compute gather4 at SM5 (FL11_0);
+   the all-stage guarantee therefore begins at FL11_0. FXC rejects the FL9_1
+   lowering with X4532, while `ps_4_1`, `ps_5_0`, and `cs_5_0` controls compile.
+   Core rejects direct/helper use in selected render and compute entries while
+   compiling an implicit-sampling sibling. Continue auditing other core-valid
+   operations against the selected FL9_1 compiler.
    Single-sample output masks now reach D3D11; a zero WebGPU mask maps to an
    equivalent nonzero FL9_1 native mask. Multisampling remains gated.
    Core texture creation now requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`

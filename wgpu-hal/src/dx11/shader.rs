@@ -18,6 +18,7 @@ pub(crate) enum ShaderProfile {
     VertexLevel9_1,
     PixelLevel9_1,
     PixelLevel9_3,
+    Pixel4_1,
     Vertex5_0,
     Pixel5_0,
     Compute5_0,
@@ -29,6 +30,7 @@ impl ShaderProfile {
             Self::VertexLevel9_1 => PCSTR(c"vs_4_0_level_9_1".as_ptr().cast()),
             Self::PixelLevel9_1 => PCSTR(c"ps_4_0_level_9_1".as_ptr().cast()),
             Self::PixelLevel9_3 => PCSTR(c"ps_4_0_level_9_3".as_ptr().cast()),
+            Self::Pixel4_1 => PCSTR(c"ps_4_1".as_ptr().cast()),
             Self::Vertex5_0 => PCSTR(c"vs_5_0".as_ptr().cast()),
             Self::Pixel5_0 => PCSTR(c"ps_5_0".as_ptr().cast()),
             Self::Compute5_0 => PCSTR(c"cs_5_0".as_ptr().cast()),
@@ -235,9 +237,10 @@ pub(super) fn compile_naga_with_viewport(
     use naga::back::hlsl;
     let expected = match profile {
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
-        ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3 | ShaderProfile::Pixel5_0 => {
-            naga::ShaderStage::Fragment
-        }
+        ShaderProfile::PixelLevel9_1
+        | ShaderProfile::PixelLevel9_3
+        | ShaderProfile::Pixel4_1
+        | ShaderProfile::Pixel5_0 => naga::ShaderStage::Fragment,
         ShaderProfile::Compute5_0 => naga::ShaderStage::Compute,
     };
     if expected != stage {
@@ -901,6 +904,10 @@ mod tests {
              @group(0) @binding(1) var smp: sampler;\n\
              @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {\n\
                  return textureGather(0, image, smp, uv);\n\
+             }\n\
+             @compute @workgroup_size(1) fn compute_main() {\n\
+                 let value = textureGather(0, image, smp, vec2f(0.5));\n\
+                 if value.x < 0.0 { return; }\n\
              }",
         )
         .expect("parse textureGather shader");
@@ -952,6 +959,28 @@ mod tests {
             &bindings,
         )
         .expect("shader-model-5 compiler accepts textureGather");
+        assert!(bytecode.starts_with(b"DXBC"));
+
+        let bytecode = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel4_1,
+            &bindings,
+        )
+        .expect("shader-model-4.1 compiler accepts textureGather");
+        assert!(bytecode.starts_with(b"DXBC"));
+
+        let bytecode = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Compute,
+            "compute_main",
+            ShaderProfile::Compute5_0,
+            &bindings,
+        )
+        .expect("shader-model-5 compute compiler accepts textureGather");
         assert!(bytecode.starts_with(b"DXBC"));
     }
 

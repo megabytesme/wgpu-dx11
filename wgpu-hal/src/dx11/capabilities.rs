@@ -107,7 +107,7 @@ impl HardwareGuarantees {
             fragment_derivatives: level.as_raw() >= L9_3.as_raw(),
             texture_query: level.as_raw() >= L10_0.as_raw(),
             texture_sample_level: level.as_raw() >= L10_0.as_raw(),
-            texture_gather: level.as_raw() >= L10_1.as_raw(),
+            texture_gather: level.as_raw() >= L11_0.as_raw(),
             vertex_texture_sampling: level.as_raw() >= L10_0.as_raw(),
             two_sided_stencil: level != L9_1,
             r8_unorm_sampled_texture: true,
@@ -1687,7 +1687,7 @@ mod tests {
             assert!(!caps.backend.texture_sample_level);
             assert_eq!(
                 caps.hardware.texture_gather,
-                level.as_raw() >= FeatureLevel::L10_1.as_raw()
+                level.as_raw() >= FeatureLevel::L11_0.as_raw()
             );
             assert!(!caps.backend.texture_gather);
             assert!(

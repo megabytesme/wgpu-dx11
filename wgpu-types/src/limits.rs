@@ -1170,8 +1170,8 @@ pub struct DownlevelLimits {
     pub texture_sample_level: bool,
     /// Whether shader entry points may use `textureGather` operations.
     ///
-    /// This can be unavailable when the selected shader profile does not support texture gather
-    /// instructions.
+    /// This applies to every shader stage and can be unavailable when a selected shader profile
+    /// does not support texture gather instructions.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_gather: bool,
     /// Whether shader entry points may use `textureLoad` operations.

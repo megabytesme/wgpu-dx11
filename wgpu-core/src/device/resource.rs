@@ -4578,6 +4578,21 @@ impl Device {
                     None,
                 )?;
             }
+
+            if match shader_module.interface.interface() {
+                Some(interface) => interface.entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Compute,
+                    &final_entry_point_name,
+                    &self.downlevel.limits,
+                )?,
+                None => true,
+            } {
+                return Err(
+                    pipeline::CreateComputePipelineError::UnsupportedTextureGather {
+                        stage: wgt::ShaderStages::COMPUTE,
+                    },
+                );
+            }
         }
 
         let pipeline_layout = match binding_layout_source {

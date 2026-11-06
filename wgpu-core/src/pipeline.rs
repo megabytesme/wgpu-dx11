@@ -282,6 +282,8 @@ pub enum CreateComputePipelineError {
     PipelineConstants(String),
     #[error(transparent)]
     MissingDownlevelFlags(#[from] MissingDownlevelFlags),
+    #[error("Texture gather is not supported in the {stage:?} shader by this downlevel adapter")]
+    UnsupportedTextureGather { stage: wgt::ShaderStages },
     #[error(transparent)]
     InvalidResource(#[from] InvalidResourceError),
 }
@@ -296,6 +298,7 @@ impl WebGpuError for CreateComputePipelineError {
             Self::Stage(e) => e.webgpu_error_type(),
             Self::Internal(_) => ErrorType::Internal,
             Self::PipelineConstants(_) => ErrorType::Validation,
+            Self::UnsupportedTextureGather { .. } => ErrorType::Validation,
         }
     }
 }

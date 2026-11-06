@@ -3981,6 +3981,14 @@ mod tests {
                 return textureSample(image, smp, uv);
             }
             @fragment fn sibling_safe() -> @location(0) vec4f { return vec4f(1.0); }
+            @compute @workgroup_size(1) fn compute_direct() {
+                let value = textureGather(0, image, smp, vec2f(0.5));
+                if value.x < 0.0 { return; }
+            }
+            @compute @workgroup_size(1) fn compute_helper() {
+                let value = gather_texture(vec2f(0.5));
+                if value.x < 0.0 { return; }
+            }
             @vertex fn vertex_safe() -> @builtin(position) vec4f {
                 return vec4f(0.0, 0.0, 0.0, 1.0);
             }
@@ -4023,6 +4031,22 @@ mod tests {
         ] {
             assert!(!interface
                 .entry_point_uses_unsupported_texture_gather(stage, entry, &fl91)
+                .unwrap());
+        }
+        for entry in ["compute_direct", "compute_helper"] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Compute,
+                    entry,
+                    &fl91,
+                )
+                .unwrap());
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Compute,
+                    entry,
+                    &wgt::DownlevelLimits::default(),
+                )
                 .unwrap());
         }
         assert!(interface

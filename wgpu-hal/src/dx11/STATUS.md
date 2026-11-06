@@ -114,11 +114,14 @@ available starting at 10_0, while this backend's current implementation flag is
 false.
 
 WGSL `textureGather` has its own selected-entry downlevel limit. HLSL Gather
-requires shader model 4.1, available from FL10_1; the FL9_1 public projection
-reports it unavailable. Core follows helper calls and rejects direct or
-indirect gather use before HAL. FXC rejects Naga's Gather lowering under the
-level-9_1 profile while the shader-model-5 compiler control accepts it. The
-backend has no gather execution path yet.
+is available to graphics stages at SM4.1 (FL10_1), while compute gather4
+requires SM5 (FL11_0). Because the shared downlevel limit applies to every
+selected entry point, the static all-stage guarantee begins at FL11_0. The
+FL9_1 public projection reports it unavailable. Core follows helper calls and
+rejects direct or indirect gather use before HAL in render and compute
+pipelines. FXC rejects Naga's Gather lowering under the level-9_1 profile
+while the shader-model-5 compiler control accepts it. The backend has no
+gather execution path yet.
 
 Texture image queries are also modeled separately. FXC rejects Naga's
 `GetDimensions` output for `textureDimensions` and `textureNumLevels` with
