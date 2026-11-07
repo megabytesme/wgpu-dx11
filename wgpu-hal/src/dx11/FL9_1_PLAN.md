@@ -843,10 +843,9 @@ FL9_1 drivers and physical device-removal recovery remain unverified.
 
 ## Public draw-limit boundary — 2026-11-07
 
-The public strict GPU path now verifies a nonindexed point draw one primitive
-over FL9_1's 65,535 per-draw limit. The only visible point is in the second
-batch; readback proves HAL rebases the vertex input and preserves the final
-primitive through public core submission. After completing full-suite,
-Clippy, formatting and diff checks, checkpoint this test and continue the
-public-valid core/HAL audit, especially selected-entry shader validation and
-render-state combinations.
+The public strict GPU path verifies a nonindexed point draw one primitive over
+FL9_1's 65,535 per-draw limit and a triangle list split after 65,535 input
+vertices. The only visible point and triangle are in their respective second
+batches; readback proves HAL rebases point input and preserves whole triangles
+through public core submission. Continue the public-valid core/HAL audit,
+especially selected-entry shader validation and render-state combinations.

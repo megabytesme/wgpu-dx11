@@ -9544,7 +9544,7 @@ open.
 git diff --check
 ~~~
 
-## Public FL9_1 point-draw boundary — 2026-11-07
+## Public FL9_1 point and triangle draw boundaries — 2026-11-07
 
 The HAL already split nonindexed point-list draws at the documented FL9_1
 65,535 primitive limit, but the public GPU path lacked a boundary test. Added a
@@ -9552,19 +9552,30 @@ strict public wgpu test that submits 65,536 points with only the final vertex
 inside the view. The draw is split into two native batches; forced-FL9_1
 readback on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) found the
 one expected red pixel from the second batch and blue in all other pixels.
-This verifies public core recording, HAL splitting, offset rebasing, command
-submission and readback for this boundary, not historical-driver behavior.
+The same public draw also sends 65,538 triangle-list vertices: the first
+65,535 form clipped triangles, and the final visible triangle is rendered in
+the second native batch. Readback found 32 red and 32 blue pixels. This
+verifies public core recording, HAL splitting, offset rebasing, command
+submission and readback for both boundaries, not historical-driver behavior.
 
 ~~~powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_splits_point_draw_at_fl91_primitive_limit -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_splits_point_and_triangle_draws_at_fl91_limits -- --nocapture --test-threads=1
 ~~~
 
 The focused test passed 1/1, and the full strict public D3D11 suite then passed
-63/63 in 36.10 seconds. Public-test Clippy passed with the existing
+63/63 in 43.26 seconds. Public-test Clippy passed with the existing
 `create_hal_view` too-many-arguments warning. `git diff --check` passed.
 Rustfmt still reports four pre-existing formatting differences elsewhere in
 the large public test file; the new test itself matches rustfmt. The optional
 Float16x2 test branch reported a genuine selected-device capability skip.
 Continue the broader public core/HAL contract audit after this boundary
 checkpoint.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~

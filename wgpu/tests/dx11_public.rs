@@ -8482,7 +8482,7 @@ fn public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91() {
 }
 
 #[test]
-fn public_dx11_splits_point_draw_at_fl91_primitive_limit() {
+fn public_dx11_splits_point_and_triangle_draws_at_fl91_limits() {
     const MAX_PRIMITIVES: u32 = 65_535;
 
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -8519,42 +8519,48 @@ fn public_dx11_splits_point_draw_at_fl91_primitive_limit() {
                 .into(),
         ),
     });
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 point draw split pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &[Some(VertexBufferLayout {
-                array_stride: 8,
-                step_mode: VertexStepMode::Vertex,
-                attributes: &[VertexAttribute {
-                    format: VertexFormat::Float32x2,
-                    offset: 0,
-                    shader_location: 0,
-                }],
-            })],
-        },
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::PointList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &[Some(ColorTargetState {
-                format: TextureFormat::Rgba8Unorm,
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
+    let create_pipeline = |label, topology| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState {
+                topology,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipeline = create_pipeline(
+        "FL9_1 point draw split pipeline",
+        PrimitiveTopology::PointList,
+    );
 
     let mut vertices = Vec::with_capacity((MAX_PRIMITIVES as usize + 1) * 8);
     for _ in 0..MAX_PRIMITIVES {
@@ -8683,6 +8689,120 @@ fn public_dx11_splits_point_draw_at_fl91_primitive_limit() {
     );
     println!(
         "PASS: public FL9_1 point-list draw split 65,536 primitives at the 65,535 limit; the final vertex rendered {red_pixels} red pixel(s) and all other target pixels stayed blue"
+    );
+
+    let triangle_pipeline = create_pipeline(
+        "FL9_1 triangle draw split pipeline",
+        PrimitiveTopology::TriangleList,
+    );
+    let mut triangle_vertices = Vec::with_capacity((MAX_PRIMITIVES as usize + 3) * 8);
+    for _ in 0..MAX_PRIMITIVES {
+        triangle_vertices.extend(2.0f32.to_ne_bytes());
+        triangle_vertices.extend(2.0f32.to_ne_bytes());
+    }
+    for coordinate in [[-1.0f32, -1.0], [1.0, -1.0], [0.0, 1.0]] {
+        triangle_vertices.extend(coordinate.into_iter().flat_map(f32::to_ne_bytes));
+    }
+    let triangle_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 triangle draw boundary vertices"),
+        size: triangle_vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    triangle_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map triangle boundary vertices")
+        .copy_from_slice(&triangle_vertices);
+    triangle_buffer.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 triangle draw boundary encoding"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("draw one triangle beyond the FL9_1 vertex window"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&triangle_pipeline);
+        pass.set_vertex_buffer(0, triangle_buffer.slice(..));
+        pass.draw(0..MAX_PRIMITIVES + 3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 split triangle draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("triangle draw readback callback")
+        .expect("map triangle draw readback");
+    let (red_pixels, blue_pixels) = {
+        let mapped = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped triangle draw readback");
+        let mut red_pixels = 0;
+        let mut blue_pixels = 0;
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &mapped[offset..offset + 4];
+                if pixel == [255, 0, 0, 255] {
+                    red_pixels += 1;
+                } else if pixel == [0, 0, 255, 255] {
+                    blue_pixels += 1;
+                } else {
+                    panic!("unexpected triangle-boundary pixel ({x}, {y}): {pixel:?}");
+                }
+            }
+        }
+        (red_pixels, blue_pixels)
+    };
+    readback.unmap();
+    assert!(red_pixels > 0, "the triangle in the second batch was lost");
+    assert!(blue_pixels > 0, "the first triangle batch was not clipped");
+    println!(
+        "PASS: public FL9_1 triangle-list draw split after 65,535 vertices; the final triangle rendered {red_pixels} red pixel(s), and {blue_pixels} pixels stayed blue"
     );
 }
 
