@@ -2917,3 +2917,19 @@ The test draws adjacent triangles with opposite winding through public wgpu
 pipelines using `FrontFace::Ccw` and `FrontFace::Cw`, both with back-face
 culling. The forced-FL9_1 RTX 3090 Ti readback contained 10 red CCW pixels,
 10 green CW pixels and 44 blue clear pixels, with no cross-winding output.
+
+### Query-gated FL9_1 wireframe rasterization
+
+`POLYGON_MODE_LINE` is added to the selected adapter feature set only if a
+probe call to `ID3D11Device::CreateRasterizerState` accepts `D3D11_FILL_WIREFRAME`.
+The backend maps triangle `PolygonMode::Line` to that native fill mode; point
+polygon mode remains rejected. The public strict test compares the complete
+wireframe triangle image against the same triangle's five explicit line
+segments. This is selected-device evidence, not a historical-driver guarantee.
+
+Reference: [D3D11_RASTERIZER_DESC](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_rasterizer_desc).
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_wireframe_at_fl91 -- --nocapture --test-threads=1
+```

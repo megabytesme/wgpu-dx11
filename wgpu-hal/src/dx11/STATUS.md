@@ -1035,3 +1035,9 @@ blue and yellow faces plus the clear background were all observed. With depth
 omitted, reversing the order changed 223 pixels, confirming that the scene
 contains meaningful overlap resolved by the D16 test. This is a representative
 small scene, not evidence that the remaining public API surface is implemented.
+
+The pipeline subset now includes query-gated `POLYGON_MODE_LINE` where
+`CreateRasterizerState(D3D11_FILL_WIREFRAME)` succeeds. The feature maps only
+to triangle wireframe; polygon point remains unavailable. The strict public
+RTX test matched the full wireframe image to explicit line primitives, with 17
+green pixels on the 16×16 target.

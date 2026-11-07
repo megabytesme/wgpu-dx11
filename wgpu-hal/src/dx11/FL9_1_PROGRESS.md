@@ -10462,3 +10462,48 @@ git diff --check
 The mission remains partially complete. Historical FL9_1 drivers, Lumia
 runtime, physical device removal and broader API-contract coverage remain
 unverified or in progress.
+
+### Follow-up — query-gated FL9_1 wireframe rasterization — 2026-11-07
+
+The capability model now probes the selected D3D11 device by creating a
+`D3D11_FILL_WIREFRAME` rasterizer state. `POLYGON_MODE_LINE` is advertised
+only after that positive result. HAL pipeline creation maps triangle
+`PolygonMode::Line` to wireframe and rejects polygon point mode; unavailable or
+failed probes remain conservative. The RTX 3090 Ti forced to FL9_1 accepted
+the probe. The strict public test rendered two triangles in wireframe and
+compared all 256 pixels with the same five edges drawn as explicit line
+primitives: images matched, with 17 green pixels.
+
+Verification at requested/actual FL9_1 on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false):
+
+- Synthetic wireframe query/projection test: 1 passed.
+- Strict public wireframe render/readback: 1 passed, 17/256 green pixels,
+  exactly equal to explicit line output.
+- Complete strict private HAL suite: 398 passed, 0 failed.
+- Complete strict public D3D11 suite: 73 passed, 0 failed, with one optional
+  Float16x2 IA subcase skipped because the selected driver did not report it.
+- HAL and public Clippy passed; only prior HAL warnings remain.
+- Rustfmt passed for changed pipeline, feature documentation and public test.
+  The full capability file check still reports earlier unrelated 3D-format
+  formatting drift, left untouched.
+- `git diff --check` passed.
+
+Commands (Visual Studio x64 developer environment, pinned Rust 1.93):
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib dx11::capabilities::tests::polygon_mode_line_requires_a_positive_rasterizer_probe -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_wireframe_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustup run 1.93 rustfmt --check --edition 2021 wgpu-hal/src/dx11/hal_pipeline.rs wgpu-types/src/features.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The contract audit remains partial. Feature-gated shader operations, compute
+and storage, unsupported resource shapes and query types, surface portability,
+historical FL9_1 hardware, Lumia/CoreWindow runtime, and physical device-loss
+recovery remain open or unavailable.

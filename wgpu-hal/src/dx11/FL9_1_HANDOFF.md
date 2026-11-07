@@ -2334,3 +2334,14 @@ fixture passed, and DX12 core passed 94/94. HAL/public Clippy passed with only
 existing HAL warnings. Rustfmt check still identifies unrelated pre-existing
 format differences in the fixture and capability files. The capability/core
 audit continues; this is not completion of the FL9_1 mission.
+
+## Latest feature increment — query-gated wireframe — 2026-11-07
+
+The D3D11 capability projection now includes `POLYGON_MODE_LINE` only if
+`CreateRasterizerState(D3D11_FILL_WIREFRAME)` succeeds on the selected device.
+Triangle wireframe is mapped to the native fill mode; point polygon mode stays
+rejected. On the RTX 3090 Ti forced to FL9_1, a public GPU test compared the
+wireframe triangle's complete 16×16 output against five explicit line segments
+and matched all pixels. The private HAL suite passed 398/398 and public suite
+73/73, with one unrelated optional IA-format subcase skipped. See the latest
+progress entry; the wide capability and platform audit remains in progress.

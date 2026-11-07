@@ -4,14 +4,14 @@ use super::device::{FeatureLevel, NativeDevice};
 use core::num::NonZeroU64;
 use windows::Win32::Graphics::{
     Direct3D11::{
-        D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
+        D3D11_CULL_NONE, D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
         D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
-        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL,
+        D3D11_FILL_WIREFRAME, D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL,
         D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_FORMAT_SUPPORT_MIP,
         D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET, D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE,
         D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
         D3D11_FORMAT_SUPPORT_TEXTURE2D, D3D11_FORMAT_SUPPORT_TEXTURE3D,
-        D3D11_FORMAT_SUPPORT_TEXTURECUBE,
+        D3D11_FORMAT_SUPPORT_TEXTURECUBE, D3D11_RASTERIZER_DESC,
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -212,6 +212,7 @@ pub(super) struct DriverCapabilities {
     pub depth24_stencil8_samples: SampleCountQueries,
     pub depth16_unorm_samples: SampleCountQueries,
     pub rgba8_samples: SampleCountQueries,
+    pub wireframe_rasterizer: Query<bool>,
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
     pub r8_unorm: Query<u32>,
@@ -340,6 +341,7 @@ pub(super) struct BackendCapabilities {
     pub d16_depth_attachment: bool,
     pub d24s8_stencil_operations: bool,
     pub depth_stencil_multisampling: bool,
+    pub wireframe_rasterizer: bool,
     pub d24s8_triangle_constant_depth_bias: bool,
     pub d24s8_triangle_slope_depth_bias: bool,
     pub d24s8_depth_bias_clamp: bool,
@@ -439,6 +441,7 @@ impl BackendCapabilities {
         d16_depth_attachment: true,
         d24s8_stencil_operations: true,
         depth_stencil_multisampling: true,
+        wireframe_rasterizer: true,
         d24s8_triangle_constant_depth_bias: true,
         d24s8_triangle_slope_depth_bias: true,
         d24s8_depth_bias_clamp: false,
@@ -468,6 +471,10 @@ pub(super) struct WgpuCapabilityProjection {
 }
 
 impl Capabilities {
+    pub fn wireframe_rasterizer_supported(&self) -> bool {
+        self.backend.wireframe_rasterizer && self.driver.wireframe_rasterizer == Query::Value(true)
+    }
+
     pub fn private_fl91_depth_comparison_sampling(&self) -> bool {
         self.hardware.level == FeatureLevel::L9_1
             && self.backend.fl91_depth_comparison_sampling
@@ -680,6 +687,9 @@ impl Capabilities {
             cooperative_matrix_properties: alloc::vec::Vec::new(),
         };
         let mut features = wgt::Features::empty();
+        if self.wireframe_rasterizer_supported() {
+            features |= wgt::Features::POLYGON_MODE_LINE;
+        }
         if self
             .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
             .contains(crate::TextureFormatCapabilities::SAMPLED)
@@ -816,6 +826,22 @@ impl Capabilities {
                 Query::from_result(unsafe { raw.CheckMultisampleQualityLevels(format, count) })
             }))
         };
+        let mut wireframe_state = None;
+        let wireframe_rasterizer = Query::from_result(
+            unsafe {
+                raw.CreateRasterizerState(
+                    &D3D11_RASTERIZER_DESC {
+                        FillMode: D3D11_FILL_WIREFRAME,
+                        CullMode: D3D11_CULL_NONE,
+                        DepthClipEnable: true.into(),
+                        ..Default::default()
+                    },
+                    Some(&mut wireframe_state),
+                )
+            }
+            .map(|()| true),
+        );
+        drop(wireframe_state);
         let vertex_input_formats = super::hal_pipeline::VERTEX_FORMATS.iter().fold(
             0,
             |mask, (vertex_format, dxgi_format, _)| {
@@ -854,6 +880,7 @@ impl Capabilities {
                 depth24_stencil8_samples: sample_counts(DXGI_FORMAT_D24_UNORM_S8_UINT),
                 depth16_unorm_samples: sample_counts(DXGI_FORMAT_D16_UNORM),
                 rgba8_samples: sample_counts(DXGI_FORMAT_R8G8B8A8_UNORM),
+                wireframe_rasterizer,
                 full_npot: query_full_npot(device),
                 comparison_shadow: Query::from_result(comparison_shadow),
                 r8_unorm: format(windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM),
@@ -1506,6 +1533,7 @@ mod tests {
                     Query::Value(1),
                     Query::Value(0),
                 ]),
+                wireframe_rasterizer: Query::Unavailable(-1),
                 full_npot: Query::Value(true),
                 comparison_shadow: Query::Value(true),
                 r8_unorm: Query::Value(u32::MAX),
@@ -1521,6 +1549,38 @@ mod tests {
             },
             backend: BackendCapabilities::CURRENT,
         }
+    }
+
+    #[test]
+    fn polygon_mode_line_requires_a_positive_rasterizer_probe() {
+        let mut caps = model(FeatureLevel::L9_1);
+        assert!(!caps.wireframe_rasterizer_supported());
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(wgt::Features::POLYGON_MODE_LINE));
+
+        caps.driver.wireframe_rasterizer = Query::Value(false);
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(wgt::Features::POLYGON_MODE_LINE));
+
+        caps.driver.wireframe_rasterizer = Query::Value(true);
+        assert!(caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(wgt::Features::POLYGON_MODE_LINE));
+
+        caps.backend.wireframe_rasterizer = false;
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(wgt::Features::POLYGON_MODE_LINE));
     }
 
     #[test]

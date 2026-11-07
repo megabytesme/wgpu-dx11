@@ -920,6 +920,7 @@ bitflags_array! {
         /// This allows drawing polygons/triangles as lines (wireframe) instead of filled
         ///
         /// Supported platforms:
+        /// - D3D11 when the selected device accepts a wireframe rasterizer state
         /// - DX12
         /// - Vulkan
         /// - Metal

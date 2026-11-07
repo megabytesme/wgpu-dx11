@@ -949,3 +949,11 @@ resolve readbacks matched all pixels. The device reports no x16 support, which
 remains unavailable. DX12 core passed 94/94. The mission remains partially
 complete; broad API auditing, historical hardware and Lumia runtime remain
 open. Exact evidence is appended in `FL9_1_PROGRESS.md`.
+
+Latest checkpoint: `POLYGON_MODE_LINE` is now exposed only when the selected
+D3D11 device accepts a wireframe rasterizer-state creation probe. The strict
+RTX 3090 Ti FL9_1 test compared the full 16×16 triangle wireframe with explicit
+edge-line rendering; the images matched at all pixels (17 green coverage
+pixels). Private HAL passed 398/398 and public D3D11 passed 73/73 with one
+optional Float16x2 subcase skipped. The mission remains partially complete;
+see `FL9_1_PROGRESS.md` for verification and open API/platform gaps.

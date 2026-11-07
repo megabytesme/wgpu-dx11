@@ -22,12 +22,12 @@ use windows::{
             D3D11_COMPARISON_FUNC, D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT,
             D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
             D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
-            D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
-            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR,
-            D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT,
-            D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE,
-            D3D11_STENCIL_OP_ZERO,
+            D3D11_FILL_WIREFRAME, D3D11_FORMAT_SUPPORT_BLENDABLE,
+            D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_INPUT_ELEMENT_DESC,
+            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
+            D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT,
+            D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT,
+            D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -2682,6 +2682,7 @@ impl RenderPipeline {
                 cull_mode: None,
                 topology: wgt::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
+                polygon_mode: wgt::PolygonMode::Fill,
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
             || !matches!(desc.multisample.count, 1 | 2 | 4 | 8 | 16)
@@ -2707,6 +2708,11 @@ impl RenderPipeline {
                 )
             })
             || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
+        {
+            return Err(invalid());
+        }
+        if desc.primitive.polygon_mode == wgt::PolygonMode::Line
+            && !super::capabilities::Capabilities::query(owner).wireframe_rasterizer_supported()
         {
             return Err(invalid());
         }
@@ -3027,7 +3033,11 @@ impl RenderPipeline {
                 Some((layout.array_stride as u32, vertex_extent, layout.step_mode));
         }
         let raster_desc = D3D11_RASTERIZER_DESC {
-            FillMode: D3D11_FILL_SOLID,
+            FillMode: match desc.primitive.polygon_mode {
+                wgt::PolygonMode::Fill => D3D11_FILL_SOLID,
+                wgt::PolygonMode::Line => D3D11_FILL_WIREFRAME,
+                wgt::PolygonMode::Point => return Err(invalid()),
+            },
             CullMode: match desc.primitive.cull_mode {
                 None => D3D11_CULL_NONE,
                 Some(wgt::Face::Front) => D3D11_CULL_FRONT,
