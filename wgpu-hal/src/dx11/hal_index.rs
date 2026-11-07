@@ -1183,9 +1183,11 @@ impl IndexBinding {
         base_vertex: i32,
         vertex_binding: (&ID3D11Buffer, u32, u64, u32, u32),
         draw_limits: (u32, u32),
+        instance_bindings: &super::command::InstanceBindings,
     ) -> Result<()> {
         let (vertex, vertex_offset, vertex_bytes, stride, extent) = vertex_binding;
         let (max_vertices, instances) = draw_limits;
+        instance_bindings.validate(instances)?;
         let vertex_layout = (vertex_bytes, stride, extent);
         if !self.contains_range(first, count) || max_vertices == 0 {
             return Err(Error::from_hresult(E_INVALIDARG));
@@ -1248,15 +1250,18 @@ impl IndexBinding {
             match plan {
                 IndexPlan::NativeU16 => {
                     context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
-                    super::command::draw_batches(
-                        first,
-                        count,
-                        instances,
-                        max_vertices,
-                        |first, count| {
-                            context.DrawIndexed(count, first, base_vertex);
-                        },
-                    )?;
+                    for instance in 0..instances {
+                        instance_bindings.bind(context, instance)?;
+                        super::command::draw_batches(
+                            first,
+                            count,
+                            1,
+                            max_vertices,
+                            |first, count| {
+                                context.DrawIndexed(count, first, base_vertex);
+                            },
+                        )?;
+                    }
                 }
                 IndexPlan::Rewritten(plan) => {
                     let mut windows = Vec::new();
@@ -1337,43 +1342,48 @@ impl IndexBinding {
                             }
                         }
                     }
-                    for_each_window(instances, windows.len(), |index| match &windows[index] {
-                        PreparedU32Segment::Window {
-                            buffer,
-                            vertex_offset,
-                            count,
-                        } => {
-                            context.IASetVertexBuffers(
-                                0,
-                                1,
-                                Some(&Some(vertex.clone())),
-                                Some(&stride),
-                                Some(vertex_offset),
-                            );
-                            context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
-                            context.DrawIndexed(*count, 0, 0);
+                    for instance in 0..instances {
+                        instance_bindings.bind(context, instance)?;
+                        for segment in &windows {
+                            match segment {
+                                PreparedU32Segment::Window {
+                                    buffer,
+                                    vertex_offset,
+                                    count,
+                                } => {
+                                    context.IASetVertexBuffers(
+                                        0,
+                                        1,
+                                        Some(&Some(vertex.clone())),
+                                        Some(&stride),
+                                        Some(vertex_offset),
+                                    );
+                                    context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
+                                    context.DrawIndexed(*count, 0, 0);
+                                }
+                                PreparedU32Segment::Gather { buffer, .. } => {
+                                    context.IASetVertexBuffers(
+                                        0,
+                                        1,
+                                        Some(&Some(buffer.clone())),
+                                        Some(&stride),
+                                        Some(&0),
+                                    );
+                                    context.Draw(3, 0);
+                                }
+                                PreparedU32Segment::Constant => {
+                                    context.IASetVertexBuffers(
+                                        0,
+                                        1,
+                                        Some(&Some(vertex.clone())),
+                                        Some(&stride),
+                                        Some(&vertex_offset),
+                                    );
+                                    context.Draw(3, 0);
+                                }
+                            }
                         }
-                        PreparedU32Segment::Gather { buffer, .. } => {
-                            context.IASetVertexBuffers(
-                                0,
-                                1,
-                                Some(&Some(buffer.clone())),
-                                Some(&stride),
-                                Some(&0),
-                            );
-                            context.Draw(3, 0);
-                        }
-                        PreparedU32Segment::Constant => {
-                            context.IASetVertexBuffers(
-                                0,
-                                1,
-                                Some(&Some(vertex.clone())),
-                                Some(&stride),
-                                Some(&vertex_offset),
-                            );
-                            context.Draw(3, 0);
-                        }
-                    });
+                    }
                 }
             }
         }
@@ -2046,6 +2056,7 @@ fn plan_indexed_line_strips(
     Ok(Some(segments))
 }
 
+#[cfg(test)]
 fn for_each_window(instances: u32, windows: usize, mut draw: impl FnMut(usize)) {
     for _ in 0..instances {
         for window in 0..windows {

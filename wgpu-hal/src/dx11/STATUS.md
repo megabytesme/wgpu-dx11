@@ -387,27 +387,24 @@ position is unavailable in the 9_x shader model; front-facing remains a tested
 compiler/backend limitation, not a separate claim about hardware
 impossibility.
 
-The controlled FL9_1 profile also reports
-`DownlevelLimits::vertex_index_input = false` and
-`DownlevelLimits::instance_index_input = false`. Core rejects selected vertex
-entries declaring either input before HAL, while a safe sibling entry remains
-usable. Compiling the backend-generated `SV_VertexID` interface for the tested
-`vs_4_0_level_9_1` profile fails with FXC X4555 even when the declared value is
-unused. The same profile rejects `SV_InstanceID` with X4016 for direct and
-structure-member inputs whether used or unused; a `vs_5_0` used-input control
-compiles. An attempted IA float-stream emulation also requires dynamic `u32`
-reconstruction; FXC rejects that operation with X3548 for `vs_4_0_level_9_1`,
-while the `vs_5_0` control compiles. The private HAL separately rejects both
-inputs. These limits describe the current compiler/backend contract, not a
-universal claim that all feature-level 9_1 hardware makes the semantics
-impossible. A strict public wgpu test on the forced-FL9_1 adapter confirms that
-core rejects each selected entry before HAL and accepts a safe sibling pipeline.
+The FL9_1 projection continues to report
+DownlevelLimits::vertex_index_input = false: FXC rejects the generated
+SV_VertexID input with X4555. instance_index_input is now supported through an
+opt-in Naga lowering that reads the host-provided value from reserved vertex
+constant register b13. The viewport transform and instance index share one
+32-byte constant buffer; replay writes first_instance plus emulated_instance
+before each draw, including direct indexed draws. Core permits the selected
+builtin and its supported u32-to-f32 use, while integer arithmetic and other
+newly introduced integer operations remain gated. This is an emulation of the
+observable draw value, not use of the unsupported SV_InstanceID system
+semantic.
 
-Follow-up compiler evidence narrows the emulation question: Naga has an opt-in
-writer mapping from direct and struct-member `instance_index` inputs to a custom
-unsigned IA semantic, and both generated HLSL forms compile with FL9_1 FXC. The
-D3D11 pipeline and command replay still lack the host-supplied value stream, so
-both system-value capabilities remain rejected.
+Strict RTX 3090 Ti tests at requested/actual FL9_1 passed for per-instance
+vertex streams plus instance-index-dependent color, and for non-indexed and
+indexed draws using first_instance=2 and first_instance=4. The latter
+verified 128/128 pixels. The generated direct, struct-only and mixed
+location/builtin HLSL forms compiled with vs_4_0_level_9_1 FXC. Historical
+FL9_1 driver behavior remains unverified; vertex_index is still rejected.
 
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and

@@ -9739,47 +9739,11 @@ fn public_dx11_instance_rate_vertex_streams_at_fl91() {
     }))
     .expect("request the selected FL9_1 device");
 
-    let unsupported_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 rejected instance_index shader"),
-        source: ShaderSource::Wgsl(
-            "@vertex fn bad_vs(@builtin(instance_index) instance_id: u32) -> @builtin(position) vec4f { return vec4f(f32(instance_id), 0.0, 0.5, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
-                .into(),
-        ),
-    });
-    expect_validation_error(&device, "instance_index vertex input", || {
-        drop(device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("FL9_1 rejected instance_index pipeline"),
-            layout: None,
-            vertex: VertexState {
-                module: &unsupported_shader,
-                entry_point: Some("bad_vs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[],
-            },
-            primitive: PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            fragment: Some(FragmentState {
-                module: &unsupported_shader,
-                entry_point: Some("fs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                targets: &[Some(ColorTargetState {
-                    format: TextureFormat::Rgba8Unorm,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        }));
-    });
-
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 per-instance attribute shader"),
         source: ShaderSource::Wgsl(
             "struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec4f };\n\
-             @vertex fn vs(@location(0) position: vec2f, @location(1) offset: vec2f, @location(2) tint: vec4f) -> VertexOut { return VertexOut(vec4f(position * 0.3 + offset, 0.5, 1.0), tint); }\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(1) offset: vec2f, @location(2) tint: vec4f, @builtin(instance_index) instance_id: u32) -> VertexOut { return VertexOut(vec4f(position * 0.3 + offset, 0.5, 1.0), vec4f(tint.rg, f32(instance_id) * 0.25, 1.0)); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return input.color; }"
                 .into(),
         ),
@@ -9962,8 +9926,8 @@ fn public_dx11_instance_rate_vertex_streams_at_fl91() {
             for x in 0..32 {
                 let offset = y * 256 + x * 4;
                 match &data[offset..offset + 4] {
-                    [0, 255, 0, 255] => green += 1,
-                    [255, 255, 0, 255] => yellow += 1,
+                    [0, 255, blue, 255] if (63..=65).contains(blue) => green += 1,
+                    [255, 255, blue, 255] if (127..=129).contains(blue) => yellow += 1,
                     [0, 0, 255, 255] => blue += 1,
                     pixel => panic!("unexpected per-instance pixel ({x}, {y}): {pixel:?}"),
                 }
@@ -9974,7 +9938,224 @@ fn public_dx11_instance_rate_vertex_streams_at_fl91() {
     assert!(green > 0, "the second instance must render green");
     assert!(yellow > 0, "the third instance must render yellow");
     assert!(blue > 0, "the untouched background must remain blue");
-    println!("PASS: public FL9_1 emulated instance-rate streams and first_instance=1; green={green}, yellow={yellow}, blue={blue}; core rejected instance_index");
+    println!("PASS: public FL9_1 emulated instance-rate streams and host-supplied instance_index for first_instance=1; green={green}, yellow={yellow}, blue={blue}");
+}
+
+#[test]
+fn public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 instance-index draw test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 host-supplied instance index shader"),
+        source: ShaderSource::Wgsl(
+            "struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec4f };\n\
+             @vertex fn vs(@location(0) position: vec2f, @builtin(instance_index) instance_id: u32) -> VertexOut { let offset = f32(instance_id) * 0.5 - 1.0; let red = f32(instance_id) * 0.2; return VertexOut(vec4f(position + vec2f(offset, 0.0), 0.5, 1.0), vec4f(red, 1.0 - red, 0.0, 1.0)); }\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return input.color; }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 host-supplied instance index pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 instance-index output"),
+        size: Extent3d {
+            width: 16,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = target.create_view(&TextureViewDescriptor::default());
+    let positions: Vec<u8> = [
+        -1.0f32, -1.0, 0.0, -1.0, -1.0, 1.0, -1.0, 1.0, 0.0, -1.0, 0.0, 1.0,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 instance-index vertices"),
+        size: positions.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map vertex buffer")
+        .copy_from_slice(&positions);
+    vertex.unmap();
+    let indices: Vec<u8> = [0u16, 1, 2, 3, 4, 5]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect();
+    let index = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 instance-index indices"),
+        size: indices.len() as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    index
+        .get_mapped_range_mut(..)
+        .expect("map index buffer")
+        .copy_from_slice(&indices);
+    index.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 instance-index readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 instance-index draw commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 instance-index pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 2..3);
+        pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
+        pass.draw_indexed(0..6, 0, 4..5);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 16,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for instance-index readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("instance-index readback callback")
+        .expect("map instance-index readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped readback");
+        for y in 0..8 {
+            for x in 0..16 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 8 {
+                    [102, 153, 0, 255]
+                } else {
+                    [204, 51, 0, 255]
+                };
+                for (channel, (actual, expected)) in
+                    data[offset..offset + 4].iter().zip(expected).enumerate()
+                {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "pixel ({x}, {y}) channel {channel}: expected {expected}, got {actual}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: nonindexed first_instance=2 and indexed first_instance=4 produced distinct full-target colors; 128/128 pixels matched at forced FL9_1");
 }
 
 #[test]
@@ -16021,7 +16202,7 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
 }
 
 #[test]
-fn public_dx11_rejects_vertex_system_values_at_fl91() {
+fn public_dx11_emulates_instance_but_rejects_vertex_index_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -16102,11 +16283,11 @@ fn public_dx11_rejects_vertex_system_values_at_fl91() {
         "UnsupportedVertexIndexInput",
         || drop(create_pipeline("vertex_index", &no_buffers)),
     );
-    expect_validation_error_containing(
-        &device,
-        "instance_index input",
-        "UnsupportedInstanceIndexInput",
-        || drop(create_pipeline("instance_index", &no_buffers)),
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline("instance_index", &no_buffers));
+    assert!(
+        poll_ready(scope.pop()).is_none(),
+        "the supported instance_index input must pass core and HAL validation"
     );
     let attributes = [VertexAttribute {
         format: VertexFormat::Float32x3,
@@ -16119,7 +16300,7 @@ fn public_dx11_rejects_vertex_system_values_at_fl91() {
         attributes: &attributes,
     })];
     drop(create_pipeline("safe", &safe_buffers));
-    println!("PASS: public core rejected vertex_index and instance_index before HAL and accepted a safe sibling entry");
+    println!("PASS: public core rejected vertex_index, accepted the emulated instance_index input, and accepted a safe sibling entry");
 }
 
 #[test]

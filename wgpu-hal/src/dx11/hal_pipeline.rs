@@ -590,6 +590,7 @@ pub struct RenderPipeline {
     pub(super) vertex_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
     pub(super) topology: wgt::PrimitiveTopology,
     pub(super) strip_index_format: Option<wgt::IndexFormat>,
+    pub(super) uses_instance_index: bool,
 }
 
 #[cfg(test)]
@@ -2632,9 +2633,9 @@ impl RenderPipeline {
         vertex_stage
             .module
             .validate_vertex_index(vertex_stage.entry_point)?;
-        vertex_stage
+        let uses_instance_index = vertex_stage
             .module
-            .validate_instance_index(vertex_stage.entry_point)?;
+            .uses_instance_index_input(vertex_stage.entry_point)?;
         let fragment = desc.fragment_stage.as_ref();
         if let Some(fragment) = fragment {
             fragment
@@ -2923,19 +2924,23 @@ impl RenderPipeline {
         } else {
             super::capabilities::query_full_npot(owner)
         };
-        let vertex_code = vertex_stage.module.compile_with_bindings_and_constants(
+        let vertex_code = vertex_stage.module.compile_with_fl9_options_and_constants(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
             &vertex_bindings,
+            false,
+            false,
+            uses_instance_index,
             vertex_stage.constants,
         )?;
         // Keep the original shader available when the remap exceeds FL9 limits.
-        let vertex_viewport_code = match vertex_stage.module.compile_with_viewport_and_constants(
+        let vertex_viewport_code = match vertex_stage.module.compile_with_fl9_options_and_constants(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
             &vertex_bindings,
             true,
             false,
+            uses_instance_index,
             vertex_stage.constants,
         ) {
             Ok(code) => Some(code),
@@ -3152,6 +3157,7 @@ impl RenderPipeline {
             vertex_slots: vertex_slots.logical_slots,
             topology: desc.primitive.topology,
             strip_index_format: desc.primitive.strip_index_format,
+            uses_instance_index,
         })
     }
 }

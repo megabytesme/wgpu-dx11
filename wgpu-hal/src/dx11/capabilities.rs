@@ -457,7 +457,7 @@ impl BackendCapabilities {
         compute: false,
         storage: false,
         vertex_index_input: false,
-        instance_index_input: false,
+        instance_index_input: true,
         vertex_texture_sampling: false,
         fragment_derivatives: false,
         texture_query: false,
@@ -2194,7 +2194,7 @@ mod tests {
                 .fragment_non_perspective_interpolation
         );
         assert!(!exposed.downlevel.limits.vertex_index_input);
-        assert!(!exposed.downlevel.limits.instance_index_input);
+        assert!(exposed.downlevel.limits.instance_index_input);
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);
         assert!(!exposed.downlevel.limits.texture_sample_level);
@@ -3021,7 +3021,7 @@ mod tests {
             );
             assert!(!caps.backend.compute && !caps.backend.depth_stencil);
             assert!(!caps.backend.vertex_index_input);
-            assert!(!caps.backend.instance_index_input);
+            assert!(caps.backend.instance_index_input);
             assert!(!caps.backend.src_alpha_saturated_blend);
             assert!(!caps.backend.vertex_texture_sampling);
             assert!(!caps.backend.depth_stencil_mip_levels);

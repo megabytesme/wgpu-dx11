@@ -12,7 +12,7 @@ use windows::{
 
 pub(super) fn create_buffer(device: &super::device::NativeDevice) -> Result<ID3D11Buffer> {
     let desc = D3D11_BUFFER_DESC {
-        ByteWidth: 16,
+        ByteWidth: 32,
         Usage: D3D11_USAGE_DEFAULT,
         BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
         ..Default::default()

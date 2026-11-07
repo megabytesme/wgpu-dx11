@@ -10982,3 +10982,67 @@ WGSL forms through FXC to DXBC (1/1). `cargo clippy -p naga --tests` and the
 DX11 HAL test Clippy run passed; HAL reported ten existing warnings outside
 the new code. Rustfmt and `git diff --check` passed. No GPU operation or
 capability promotion is claimed for this compiler-only step.
+
+## Host-emulated `instance_index` — 2026-11-07
+
+The private D3D11 pipeline now supports WGSL `@builtin(instance_index)` under
+the FL9_1 shader profile. Since FXC rejects `SV_InstanceID` for 10Level9,
+Naga's opt-in lowering reads the selected entry point's value from reserved
+vertex constant register b13. The existing viewport transform occupies the
+first 16-byte register in the same 32-byte constant buffer. Command replay
+updates the second register to `first_instance + emulated_instance` before
+each draw; direct indexed, rewritten-index and non-indexed paths carry the
+required bindings. Core validation allows the builtin and supported
+u32-to-f32 conversion while continuing to reject unrelated integer
+operations. `vertex_index` remains unavailable.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the strict public test
+`public_dx11_instance_rate_vertex_streams_at_fl91` passed on the NVIDIA GeForce
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and
+selected at FL9_1 (software=false). Per-instance vertex-stream draws produced
+their expected IDs in the blue channel. The new strict test
+`public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91` also passed:
+a non-indexed draw with `first_instance=2` and a direct indexed draw with
+`first_instance=4` produced distinct left/right colors, and 128/128 pixels
+matched within one code value. Naga writer tests and FXC compilation covered
+direct, struct-only and mixed location/builtin signatures. Naga unit test,
+HAL FXC test, core validation test and both focused hardware tests passed.
+
+Verification with pinned Rust 1.93.1 and the Visual Studio x64 environment:
+the private HAL suite passed 406/406, the strict public D3D11 suite passed
+81/81, the core adapter-isolation test passed 1/1, the new core integer-gate
+test passed 1/1, and the complete Naga library suite passed 136/136. The
+DX12 core regression passed 94/94. The full private suite included the FXC
+tests for direct, struct-only and mixed location/builtin signatures. The
+focused hardware tests separately verified actual instance-index-dependent
+readback on the RTX. Clippy and formatting checks are recorded after the final
+diff review below.
+
+The forced modern NVIDIA driver does not prove historical FL9_1 compatibility.
+
+Reproduction commands from a Visual Studio x64 developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl91_integer_semantics_gate_follows_selected_entry_and_helper_calls -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture
+cargo +1.93 test --offline -j8 -p naga --lib
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx12 --lib
+cargo +1.93 build --offline -j8 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j8 -p naga --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustup run 1.93 rustfmt --edition 2021 --check naga/src/back/hlsl/mod.rs naga/src/back/hlsl/writer.rs wgpu-core/src/validation.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/command.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/src/dx11/hal_index.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/hal_shader.rs wgpu-hal/src/dx11/shader.rs wgpu-hal/src/dx11/viewport.rs wgpu-hal/src/dx12/device.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+All commands passed. Clippy reported three new `too_many_arguments` warnings
+on functions extended to carry instance-index state, plus the existing HAL
+warnings (`create_hal_view`, test-only range construction, item ordering and
+needless borrow). No Naga or core lint warning was reported. The public suite
+also passed its regression that confirms default wgpu enumeration still does
+not expose D3D11.

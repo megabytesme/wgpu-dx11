@@ -262,6 +262,28 @@ pub(super) fn compile_naga_with_viewport(
     bindings: &[ShaderBinding],
     viewport_transform: bool,
 ) -> Result<Vec<u8>, NagaCompileError> {
+    compile_naga_with_viewport_and_instance_index(
+        module,
+        info,
+        stage,
+        entry,
+        profile,
+        bindings,
+        viewport_transform,
+        false,
+    )
+}
+
+pub(super) fn compile_naga_with_viewport_and_instance_index(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+    bindings: &[ShaderBinding],
+    viewport_transform: bool,
+    instance_index_input: bool,
+) -> Result<Vec<u8>, NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
@@ -293,6 +315,7 @@ pub(super) fn compile_naga_with_viewport(
         } else {
             None
         },
+        fl9_instance_index_input: instance_index_input && stage == naga::ShaderStage::Vertex,
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
         // FXC rejects Naga's dynamic loop guard at FL9_1. Without the guard,
@@ -833,10 +856,11 @@ mod tests {
     }
 
     #[test]
-    fn fl91_naga_instance_index_host_input_compiles_with_fxc() {
+    fn fl91_naga_instance_index_constant_lowering_compiles_with_fxc() {
         for source in [
             "@vertex fn main(@builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(f32(id), 0.0, 0.5, 1.0); }",
             "struct Inputs { @builtin(instance_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(f32(input.id), 0.0, 0.5, 1.0); }",
+            "struct Inputs { @location(0) position: vec2f, @builtin(instance_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(input.position + vec2f(f32(input.id) * 0.001), 0.5, 1.0); }",
         ] {
             let module = naga::front::wgsl::parse_str(source).unwrap();
             let info = naga::valid::Validator::new(
@@ -864,7 +888,9 @@ mod tests {
                 .next()
                 .unwrap()
                 .unwrap();
-            assert!(hlsl.contains("NAGA_INSTANCE_INDEX"), "{hlsl}");
+            assert!(hlsl.contains("register(b13)"), "{hlsl}");
+            assert!(hlsl.contains("naga_fl9_instance_index"), "{hlsl}");
+            assert!(!hlsl.contains("NAGA_INSTANCE_INDEX"), "{hlsl}");
             compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1)
                 .unwrap_or_else(|error| panic!("generated HLSL did not compile: {error:?}\n{hlsl}"));
         }

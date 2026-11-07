@@ -52,6 +52,9 @@ struct RenderState {
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
     full_npot: super::capabilities::Query<bool>,
     required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
+    viewport_buffer: windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
+    viewport_transform: [f32; 4],
+    uses_instance_index: bool,
     vertices: [Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>;
         MAX_VERTEX_BUFFERS],
     vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; MAX_VERTEX_BUFFERS],
@@ -116,6 +119,9 @@ fn constant_point_vertex_ranges(layouts: impl Iterator<Item = (u64, u32, u32)>) 
 
 impl RenderState {
     fn instance_bindings(&self, first: u32, count: u32) -> Option<InstanceBindings> {
+        if self.uses_instance_index && count != 0 && first.checked_add(count - 1).is_none() {
+            return None;
+        }
         for (slot, layout) in self.vertex_layouts.iter().enumerate() {
             let Some((stride, extent, wgt::VertexStepMode::Instance)) = *layout else {
                 continue;
@@ -135,7 +141,13 @@ impl RenderState {
             let (buffer, offset, _) = self.vertices[logical].as_ref()?;
             streams.push((physical as u32, buffer.clone(), *offset, stride));
         }
-        Some(InstanceBindings { first, streams })
+        Some(InstanceBindings {
+            first,
+            streams,
+            instance_index: self
+                .uses_instance_index
+                .then(|| (self.viewport_buffer.clone(), self.viewport_transform)),
+        })
     }
 
     fn resources_compatible(&self, level: super::device::FeatureLevel) -> bool {
@@ -953,6 +965,9 @@ impl crate::CommandEncoder for CommandEncoder {
             sampling_pairs: Arc::new(Vec::new()),
             full_npot: super::capabilities::Query::Unavailable(0),
             required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
+            viewport_buffer: viewport_buffer.clone(),
+            viewport_transform: [1., 1., 0., 0.],
+            uses_instance_index: false,
             vertices: core::array::from_fn(|_| None),
             vertex_layouts: [None; MAX_VERTEX_BUFFERS],
             vertex_slots: [None; MAX_VERTEX_BUFFERS],
@@ -1017,6 +1032,7 @@ impl crate::CommandEncoder for CommandEncoder {
         render.topology = Some(pipeline.topology);
         render.strip_index_format = pipeline.strip_index_format;
         render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
+        render.uses_instance_index = pipeline.uses_instance_index;
         let vertex = if render.viewport_remap {
             pipeline
                 .vertex_viewport
@@ -1121,10 +1137,12 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        let transform = viewport.transform;
+        self.render.as_mut().unwrap().viewport_transform = transform;
         self.record(NativeCommand::SetViewport {
             viewport: viewport.native,
             buffer,
-            transform: viewport.transform,
+            transform,
         });
     }
 
@@ -1925,6 +1943,11 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
+        else {
+            self.reject();
+            return;
+        };
         if render.depth_never {
             if !render.depth_never_elision_safe {
                 self.reject();
@@ -1955,6 +1978,7 @@ impl crate::CommandEncoder for CommandEncoder {
             extent,
             max_vertices,
             instances: instance_count,
+            instance_bindings,
         });
     }
 
@@ -2388,10 +2412,13 @@ mod tests {
         assert!(entry_shader.validate_vertex_index("direct").is_err());
         assert!(entry_shader.validate_vertex_index("structured").is_err());
         assert!(entry_shader.validate_vertex_index("safe").is_ok());
-        for entry in ["instance_direct", "instance_structured", "instance_unused"] {
-            assert!(entry_shader.validate_instance_index(entry).is_err());
+        for entry in ["instance_direct", "instance_structured"] {
+            assert!(entry_shader.uses_instance_index_input(entry).unwrap());
         }
-        assert!(entry_shader.validate_instance_index("safe").is_ok());
+        assert!(entry_shader
+            .uses_instance_index_input("instance_unused")
+            .unwrap());
+        assert!(!entry_shader.uses_instance_index_input("safe").unwrap());
         let unsupported = TextureDescriptor {
             label: None,
             size: wgt::Extent3d {
@@ -2545,12 +2572,11 @@ mod tests {
                     },
                 )
             };
-            if entry == "safe" {
-                unsafe {
-                    crate::Device::destroy_render_pipeline(&device, result.unwrap());
-                }
-            } else {
-                assert!(result.is_err(), "instance index entry {entry}");
+            unsafe {
+                crate::Device::destroy_render_pipeline(
+                    &device,
+                    result.expect("host-emulated instance-index entry"),
+                );
             }
         }
         let instance_buffers = [Some(VertexBufferLayout {

@@ -64,11 +64,15 @@ pub(super) enum RenderTarget {
 pub(super) struct InstanceBindings {
     pub first: u32,
     pub streams: Vec<(u32, ID3D11Buffer, u32, u32)>,
+    pub instance_index: Option<(ID3D11Buffer, [f32; 4])>,
 }
 
 impl InstanceBindings {
     pub(super) fn validate(&self, instances: u32) -> Result<()> {
         if let Some(last) = instances.checked_sub(1) {
+            if self.instance_index.is_some() && self.first.checked_add(last).is_none() {
+                return Err(Error::from_hresult(E_INVALIDARG));
+            }
             for (_, _, offset, stride) in &self.streams {
                 instance_vertex_offset(*offset, *stride, self.first, last)
                     .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
@@ -89,6 +93,21 @@ impl InstanceBindings {
                     Some(&0),
                     Some(&absolute),
                 );
+            }
+        }
+        if let Some((buffer, transform)) = &self.instance_index {
+            let index = self
+                .first
+                .checked_add(instance)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+            let mut constants = [0u32; 8];
+            for (destination, value) in constants[..4].iter_mut().zip(transform) {
+                *destination = value.to_bits();
+            }
+            constants[4] = index;
+            unsafe {
+                context.UpdateSubresource(buffer, 0, None, constants.as_ptr().cast(), 0, 0);
+                context.VSSetConstantBuffers(13, Some(&[Some(buffer.clone())]));
             }
         }
         Ok(())
@@ -229,6 +248,7 @@ pub(super) enum NativeCommand {
         extent: u32,
         max_vertices: u32,
         instances: u32,
+        instance_bindings: InstanceBindings,
     },
     DrawIndexedMulti {
         binding: Arc<IndexBinding>,
@@ -558,11 +578,15 @@ impl CommandBuffer {
                         context.OMSetBlendState(None, None, u32::MAX);
                         context.OMSetDepthStencilState(None, stencil_reference);
                         let identity: [f32; 4] = [1., 1., 0., 0.];
+                        let mut constants = [0u32; 8];
+                        for (destination, value) in constants[..4].iter_mut().zip(identity) {
+                            *destination = value.to_bits();
+                        }
                         context.UpdateSubresource(
                             viewport_buffer,
                             0,
                             None,
-                            identity.as_ptr().cast(),
+                            constants.as_ptr().cast(),
                             0,
                             0,
                         );
@@ -701,7 +725,11 @@ impl CommandBuffer {
                         buffer,
                         transform,
                     } => {
-                        context.UpdateSubresource(buffer, 0, None, transform.as_ptr().cast(), 0, 0);
+                        let mut constants = [0u32; 8];
+                        for (destination, value) in constants[..4].iter_mut().zip(transform) {
+                            *destination = value.to_bits();
+                        }
+                        context.UpdateSubresource(buffer, 0, None, constants.as_ptr().cast(), 0, 0);
                         context.RSSetViewports(Some(core::slice::from_ref(viewport)));
                     }
                     NativeCommand::SetScissor(rect) => {
@@ -868,6 +896,7 @@ impl CommandBuffer {
                         extent,
                         max_vertices,
                         instances,
+                        instance_bindings,
                     } => {
                         binding.draw(
                             context,
@@ -876,6 +905,7 @@ impl CommandBuffer {
                             *base_vertex,
                             (vertex, *vertex_offset, *vertex_bytes, *stride, *extent),
                             (*max_vertices, *instances),
+                            instance_bindings,
                         )?;
                     }
                     NativeCommand::DrawIndexedMulti {

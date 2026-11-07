@@ -1,11 +1,11 @@
 # FL9_1 completion plan
-Latest shader follow-up: FXC accepts a direct unsigned vertex input on a custom
-IA semantic at FL9_1. This makes host-provided `instance_index` emulation a
-candidate despite the rejected `SV_InstanceID` semantic. An opt-in Naga writer
-mapping now compiles for direct and struct-member inputs; D3D11 IA slot
-allocation, per-draw value updates and GPU execution are still missing. Both
-system-value capabilities stay disabled. See `FL9_1_PROGRESS.md`.
-
+Latest shader increment: the backend now emulates instance_index at FL9_1 by
+lowering the selected WGSL input to a host-updated value in reserved vertex
+constant register b13. The viewport transform shares that constant buffer.
+Command replay writes first_instance plus emulated_instance for indexed and
+non-indexed draws. Strict forced-FL9_1 readback verified both paths on the RTX
+3090 Ti. vertex_index remains unavailable; historical FL9_1 behavior is
+unverified. See FL9_1_PROGRESS.md.
 Latest format increment: the internal FL9_1 sampled/upload mip path now also
 covers R8G8B8A8_SNORM. Microsoft lists its `TEXTURE2D`, `SHADER_SAMPLE` and
 `MIP` guarantees at FL9_1; the selected device's `TEXTURE2D | MIP` query and

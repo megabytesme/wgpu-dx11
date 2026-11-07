@@ -3062,3 +3062,21 @@ optional-capability skip and performs no RG8 mip draw on this machine. The
 controlled core fixture confirms the single-mip projection and conditional
 creation rule. Execution on an FL9_1 device whose RG8_UNORM query includes MIP
 remains unverified.
+
+### Host-emulated `instance_index`
+
+The selected FL9_1 vertex entry point may consume `@builtin(instance_index)`
+through a host-updated constant at b13. This avoids the `SV_InstanceID` semantic
+rejected by the 10Level9 FXC profile. Run both strict public tests from a
+Visual Studio x64 developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_instance_rate_vertex_streams_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91 -- --nocapture --test-threads=1
+```
+
+The second test checks all 128 pixels after a non-indexed draw with
+`first_instance=2` and an indexed draw with `first_instance=4`. `vertex_index`
+remains unavailable. The RTX 3090 Ti at forced FL9_1 verifies this compiler
+and driver path only; it does not represent every historical FL9_1 driver.

@@ -69,6 +69,41 @@ pub(super) struct EpStructMember {
     pub(super) index: u32,
 }
 
+fn function_has_input_builtin(
+    module: &Module,
+    function: &crate::Function,
+    builtin: crate::BuiltIn,
+) -> bool {
+    function.arguments.iter().any(|argument| {
+        let has_builtin = |binding: &Option<crate::Binding>| {
+            matches!(binding, Some(crate::Binding::BuiltIn(candidate)) if *candidate == builtin)
+        };
+        match module.types[argument.ty].inner {
+            TypeInner::Struct { ref members, .. } => {
+                members.iter().any(|member| has_builtin(&member.binding))
+            }
+            _ => has_builtin(&argument.binding),
+        }
+    })
+}
+
+fn function_has_other_input(module: &Module, function: &crate::Function) -> bool {
+    function.arguments.iter().any(|argument| {
+        let has_other = |binding: &Option<crate::Binding>| {
+            !matches!(
+                binding,
+                Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+            )
+        };
+        match module.types[argument.ty].inner {
+            TypeInner::Struct { ref members, .. } => {
+                members.iter().any(|member| has_other(&member.binding))
+            }
+            _ => has_other(&argument.binding),
+        }
+    })
+}
+
 /// Structure contains information required for generating
 /// wrapped structure of all entry points arguments
 pub(super) struct EntryPointBinding {
@@ -331,6 +366,41 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
     ) -> Result<super::ReflectionInfo, Error> {
         self.reset(module);
 
+        if self.options.fl9_instance_index_input {
+            let entry = match self.pipeline_options.entry_point.as_ref() {
+                Some(&(ShaderStage::Vertex, ref name)) => module
+                    .entry_points
+                    .iter()
+                    .find(|entry| entry.stage == ShaderStage::Vertex && entry.name == *name),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                Error::Custom(
+                    "FL9 instance-index emulation requires a selected vertex entry point".into(),
+                )
+            })?;
+            if !function_has_input_builtin(module, &entry.function, crate::BuiltIn::InstanceIndex)
+                || self.options.special_constants_binding.is_some()
+                || self.options.fl9_texel_load_proof.is_some()
+                || self
+                    .options
+                    .fl9_viewport_transform
+                    .is_some_and(|register| register != 13)
+                || module.global_variables.iter().any(|(_, global)| {
+                    global.space == crate::AddressSpace::Uniform
+                        && global
+                            .binding
+                            .as_ref()
+                            .and_then(|binding| self.options.binding_map.get(binding))
+                            .is_some_and(|target| target.space == 0 && target.register == 13)
+                })
+            {
+                return Err(Error::Custom(
+                    "FL9 instance-index emulation requires a free vertex b13 register".into(),
+                ));
+            }
+        }
+
         if let Some(register) = self.options.fl9_viewport_transform {
             let entry = match self.pipeline_options.entry_point.as_ref() {
                 Some(&(ShaderStage::Vertex, ref name)) => module
@@ -410,8 +480,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     "FL9 viewport transform requires one float4 position and a reserved constant-buffer register".into(),
                 ));
             }
-            writeln!(self.out, "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; }};")?;
+            if self.options.fl9_instance_index_input {
+                writeln!(self.out, "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; uint naga_fl9_instance_index; }};")?;
+            } else {
+                writeln!(self.out, "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; }};")?;
+            }
             writeln!(self.out, "precise float4 {FL9_VIEWPORT_ADJUST}(precise float4 p) {{ return float4(p.xy * {FL9_VIEWPORT_PARAMS}.xy + p.ww * {FL9_VIEWPORT_PARAMS}.zw, p.zw); }}")?;
+        }
+
+        if self.options.fl9_instance_index_input && self.options.fl9_viewport_transform.is_none() {
+            writeln!(self.out, "cbuffer naga_fl9_instance_constants : register(b13) {{ float4 naga_fl9_instance_padding; uint naga_fl9_instance_index; }};")?;
         }
 
         if module.uses_mesh_shaders() && self.options.shader_model < ShaderModel::V6_5 {
@@ -526,15 +604,22 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             if !self.options.direct_sampler_bindings
                 || self.options.special_constants_binding.is_some()
                 || self.options.immediates_target.is_some()
-                || !self.options.dynamic_storage_buffer_offsets_targets.is_empty()
+                || !self
+                    .options
+                    .dynamic_storage_buffer_offsets_targets
+                    .is_empty()
                 || !self.options.sampler_buffer_binding_map.is_empty()
                 || !self.options.external_texture_binding_map.is_empty()
-                || !self.options.binding_map.get(&binding).is_some_and(|target| {
-                    target.space == 0
-                        && target.register == 0
-                        && target.binding_array_size.is_none()
-                        && target.dynamic_storage_buffer_offsets_index.is_none()
-                })
+                || !self
+                    .options
+                    .binding_map
+                    .get(&binding)
+                    .is_some_and(|target| {
+                        target.space == 0
+                            && target.register == 0
+                            && target.binding_array_size.is_none()
+                            && target.dynamic_storage_buffer_offsets_index.is_none()
+                    })
             {
                 return Err(Error::Custom(
                     "FL9 texel-load proof requires reserved t0, s15 and b13 bindings".into(),
@@ -583,11 +668,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
                 unreachable!()
             };
-            let Some(entry_index) = module
-                .entry_points
-                .iter()
-                .position(|entry| entry.stage == ShaderStage::Fragment && entry.name == *entry_name)
-            else {
+            let Some(entry_index) = module.entry_points.iter().position(|entry| {
+                entry.stage == ShaderStage::Fragment && entry.name == *entry_name
+            }) else {
                 return Err(Error::Custom(
                     "FL9 texel-load proof entry point not found".into(),
                 ));
@@ -600,11 +683,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             for (query_handle, expression) in entry.function.expressions.iter() {
                 if matches!(expression, crate::Expression::ImageQuery { .. })
                     && (entry_info[query_handle].ref_count != 1
-                        || !entry.function.expressions.iter().any(|(cast_handle, expr)| {
-                            entry_info[cast_handle].ref_count > 0 && matches!(expr, crate::Expression::As {
+                        || !entry
+                            .function
+                            .expressions
+                            .iter()
+                            .any(|(cast_handle, expr)| {
+                                entry_info[cast_handle].ref_count > 0
+                                    && matches!(expr, crate::Expression::As {
                                 expr, kind: ScalarKind::Float, convert: Some(4)
                             } if *expr == query_handle)
-                        }))
+                            }))
                 {
                     return Err(Error::Custom(
                         "FL9 texture dimensions require a single direct f32 conversion".into(),
@@ -855,12 +943,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         ShaderModel::V6_1,
                     ));
                 }
-                if builtin == crate::BuiltIn::InstanceIndex
-                    && stage == Some((ShaderStage::Vertex, Io::Input))
-                    && self.options.fl9_instance_index_input
-                {
-                    write!(self.out, " : NAGA_INSTANCE_INDEX")?;
-                } else if let Some(builtin_str) = builtin.to_hlsl_str()? {
+                if let Some(builtin_str) = builtin.to_hlsl_str()? {
                     write!(self.out, " : {builtin_str}")?;
                 }
                 false
@@ -928,6 +1011,15 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             }
 
             if is_subgroup_builtin_binding(&m.binding) {
+                continue;
+            }
+            if shader_stage == (ShaderStage::Vertex, Io::Input)
+                && self.options.fl9_instance_index_input
+                && matches!(
+                    m.binding,
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                )
+            {
                 continue;
             }
             write!(self.out, "{}", back::INDENT)?;
@@ -1105,25 +1197,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         let stage = ep.stage;
         let has_instance_index_input = self.options.fl9_instance_index_input
             && stage == ShaderStage::Vertex
-            && func
-                .arguments
-                .iter()
-                .any(|arg| match module.types[arg.ty].inner {
-                    TypeInner::Struct { ref members, .. } => members.iter().any(|member| {
-                        matches!(
-                            member.binding,
-                            Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
-                        )
-                    }),
-                    _ => matches!(
-                        arg.binding,
-                        Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
-                    ),
-                });
+            && function_has_input_builtin(module, func, crate::BuiltIn::InstanceIndex);
         Ok(EntryPointInterface {
             input: if !func.arguments.is_empty()
                 && (stage == ShaderStage::Fragment
-                    || has_instance_index_input
+                    || (has_instance_index_input && function_has_other_input(module, func))
                     || func
                         .arguments
                         .iter()
@@ -1164,6 +1242,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         fake_member: &EpStructMember,
     ) -> BackendResult {
         match fake_member.binding {
+            Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                if self.options.fl9_instance_index_input =>
+            {
+                write!(self.out, "naga_fl9_instance_index")?
+            }
             Some(crate::Binding::BuiltIn(crate::BuiltIn::SubgroupSize)) => {
                 write!(self.out, "WaveGetLaneCount()")?
             }
@@ -1224,7 +1307,55 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             .take()
         {
             Some(ep_input) => ep_input,
-            None => return Ok(()),
+            None => {
+                if self.options.fl9_instance_index_input
+                    && ep.stage == ShaderStage::Vertex
+                    && function_has_input_builtin(module, func, crate::BuiltIn::InstanceIndex)
+                {
+                    for (arg_index, arg) in func.arguments.iter().enumerate() {
+                        write!(self.out, "{}", back::INDENT)?;
+                        self.write_type(module, arg.ty)?;
+                        let arg_name =
+                            &self.names[&NameKey::EntryPointArgument(ep_index, arg_index as u32)];
+                        write!(self.out, " {arg_name} = ")?;
+                        match module.types[arg.ty].inner {
+                            TypeInner::Struct { ref members, .. } => {
+                                write!(self.out, "{{ ")?;
+                                for (member_index, member) in members.iter().enumerate() {
+                                    if member_index != 0 {
+                                        write!(self.out, ", ")?;
+                                    }
+                                    if !matches!(
+                                        member.binding,
+                                        Some(crate::Binding::BuiltIn(
+                                            crate::BuiltIn::InstanceIndex
+                                        ))
+                                    ) {
+                                        return Err(Error::Custom(
+                                            "FL9 instance-index emulation requires an input wrapper for other entry-point inputs".into(),
+                                        ));
+                                    }
+                                    write!(self.out, "naga_fl9_instance_index")?;
+                                }
+                                writeln!(self.out, " }};")?;
+                            }
+                            _ if matches!(
+                                arg.binding,
+                                Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                            ) =>
+                            {
+                                writeln!(self.out, "naga_fl9_instance_index;")?
+                            }
+                            _ => {
+                                return Err(Error::Custom(
+                                    "FL9 instance-index emulation requires an input wrapper for other entry-point inputs".into(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                return Ok(());
+            }
         };
         let mut fake_iter = ep_input.members.iter();
         for (arg_index, arg) in func.arguments.iter().enumerate() {
@@ -1484,7 +1615,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         let binding = *global.binding.as_ref().unwrap();
 
         if self.options.direct_sampler_bindings {
-            let target = self.options.resolve_resource_binding(&binding)
+            let target = self
+                .options
+                .resolve_resource_binding(&binding)
                 .map_err(|error| Error::Custom(error.to_string()))?;
             if target.space != 0 {
                 return Err(Error::Unimplemented(
@@ -1765,7 +1898,14 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 }
             }
 
-            self.write_semantic(&member.binding, shader_stage)?;
+            if !(self.options.fl9_instance_index_input
+                && matches!(
+                    member.binding,
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                ))
+            {
+                self.write_semantic(&member.binding, shader_stage)?;
+            }
             writeln!(self.out, ";")?;
         }
 
@@ -2041,6 +2181,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 } else {
                     let stage = ep.stage;
                     for (index, arg) in func.arguments.iter().enumerate() {
+                        if self.options.fl9_instance_index_input
+                            && stage == ShaderStage::Vertex
+                            && !function_has_other_input(module, func)
+                        {
+                            continue;
+                        }
                         write!(self.out, "{}", separator())?;
                         self.write_type(module, arg.ty)?;
 
@@ -2599,10 +2745,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                     write!(self.out, ", ")?;
                                 }
                                 let member_name = &self.names[&NameKey::StructMember(ty, m.index)];
-                                let position = adjust_position && matches!(
-                                    &m.binding,
-                                    &Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
-                                );
+                                let position = adjust_position
+                                    && matches!(
+                                        &m.binding,
+                                        &Some(crate::Binding::BuiltIn(
+                                            crate::BuiltIn::Position { .. }
+                                        ))
+                                    );
                                 if position {
                                     write!(self.out, "{FL9_VIEWPORT_ADJUST}(")?;
                                 }
@@ -4029,8 +4178,20 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         use crate::Expression;
 
         // Handle the special semantics of vertex_index/instance_index
-        let ff_input = if self.options.special_constants_binding.is_some() {
+        let ff_input = if self.options.special_constants_binding.is_some()
+            || self.options.fl9_instance_index_input
+        {
             func_ctx.is_fixed_function_input(expr, module)
+        } else {
+            None
+        };
+        if self.options.fl9_instance_index_input && ff_input == Some(crate::BuiltIn::InstanceIndex)
+        {
+            write!(self.out, "naga_fl9_instance_index")?;
+            return Ok(());
+        }
+        let ff_input = if self.options.special_constants_binding.is_some() {
+            ff_input
         } else {
             None
         };
@@ -5518,22 +5679,36 @@ mod fl9_viewport_tests {
     }
 
     #[test]
-    fn instance_index_input_can_use_a_host_supplied_semantic() {
+    fn instance_index_input_can_use_a_host_updated_constant() {
         let source = "@vertex fn main(@builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(f32(id), 0.0, 0.5, 1.0); }";
         let options = Options {
             fl9_instance_index_input: true,
             ..Options::default()
         };
         let output = translate(source, &options, ShaderStage::Vertex).unwrap();
-        assert!(output.contains("NAGA_INSTANCE_INDEX"), "{output}");
-        assert!(output.contains("uint id = vertexinput_main.id"));
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("uint naga_fl9_instance_index"), "{output}");
+        assert!(output.contains("naga_fl9_instance_index"), "{output}");
         assert!(!output.contains("SV_InstanceID"), "{output}");
         let default_output = translate(source, &Options::default(), ShaderStage::Vertex).unwrap();
         assert!(default_output.contains("SV_InstanceID"));
 
         let structured = "struct Inputs { @builtin(instance_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(f32(input.id), 0.0, 0.5, 1.0); }";
         let output = translate(structured, &options, ShaderStage::Vertex).unwrap();
-        assert!(output.contains("uint id : NAGA_INSTANCE_INDEX"), "{output}");
-        assert!(output.contains("SV_InstanceID"), "{output}");
+        assert!(
+            output.contains("Inputs input = { naga_fl9_instance_index }"),
+            "{output}"
+        );
+        assert!(output.contains("naga_fl9_instance_index"), "{output}");
+        assert!(!output.contains("SV_InstanceID"), "{output}");
+
+        let mixed = "struct Inputs { @location(0) position: vec2f, @builtin(instance_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(input.position + vec2f(f32(input.id) * 0.001), 0.5, 1.0); }";
+        let output = translate(mixed, &options, ShaderStage::Vertex).unwrap();
+        assert!(output.contains("float2 position : LOC0"), "{output}");
+        assert!(
+            output.contains("vertexinput_main.position, naga_fl9_instance_index"),
+            "{output}"
+        );
+        assert!(!output.contains("SV_InstanceID"), "{output}");
     }
 }

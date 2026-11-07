@@ -1,5 +1,17 @@
 # FL9_1 handoff
 
+## Latest shader increment — host-emulated instance index — 2026-11-07
+
+The backend supports the selected vertex entry point's instance_index input
+without using SV_InstanceID, which FXC rejects for 10Level9. Naga lowers the
+builtin to a host-updated value in reserved VS constant register b13, sharing
+the viewport-transform constant buffer. Replay updates it before each
+emulated instance and preserves first_instance for indexed and non-indexed
+draws. Core allows the supported builtin-to-f32 usage and keeps unrelated
+integer operations gated. On the RTX 3090 Ti at requested/actual FL9_1, the
+per-instance stream test and the indexed/non-indexed test passed; all 128
+pixels in the latter matched. FXC accepted direct, struct-only and mixed input
+forms. vertex_index and historical-device verification remain open.
 ## Latest format increment — query-gated R8G8_SNORM mip chain — 2026-11-07
 
 Sampled/upload R8G8_SNORM textures may now use mip chains when the selected

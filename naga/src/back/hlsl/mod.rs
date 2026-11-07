@@ -542,9 +542,9 @@ pub struct Options {
     /// It cannot be combined with the FL9 texel-load proof.
     pub fl9_viewport_transform: Option<u32>,
 
-    /// Lower vertex `instance_index` inputs to a host-provided unsigned input
-    /// with the `NAGA_INSTANCE_INDEX` semantic. The host must supply the exact
-    /// WebGPU instance index for each emulated draw.
+    /// Lower vertex `instance_index` inputs to a host-updated constant at b13.
+    /// The backend must provide a 32-byte constant buffer with the current
+    /// WebGPU instance index in its second register for every emulated draw.
     pub fl9_instance_index_input: bool,
 
     /// Mapping of each bind group's sampler index buffer to a bind target.

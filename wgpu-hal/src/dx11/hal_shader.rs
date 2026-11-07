@@ -4,8 +4,8 @@ use super::shader::compile_naga_with_bindings;
 use super::{
     device::NativeDevice,
     shader::{
-        compile_naga_with_viewport, shader_binding_kind, NagaCompileError, ShaderBinding,
-        ShaderBindingKind, ShaderProfile,
+        compile_naga_with_viewport_and_instance_index, shader_binding_kind, NagaCompileError,
+        ShaderBinding, ShaderBindingKind, ShaderProfile,
     },
 };
 use alloc::{format, string::ToString, sync::Arc, vec::Vec};
@@ -1768,6 +1768,7 @@ fn charge_compose_components(function: &naga::Function, budget: &core::cell::Cel
     true
 }
 
+#[cfg(test)]
 fn has_unsafe_integer_semantics(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
@@ -1778,6 +1779,7 @@ fn has_unsafe_integer_semantics(
     has_unsafe_integer_semantics_with_budget(module, info, function, function_info, profile, 65536)
 }
 
+#[cfg(test)]
 fn has_unsafe_integer_semantics_with_budget(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
@@ -1785,6 +1787,45 @@ fn has_unsafe_integer_semantics_with_budget(
     function_info: &naga::valid::FunctionInfo,
     profile: ShaderProfile,
     limit: usize,
+) -> bool {
+    has_unsafe_integer_semantics_with_options(
+        module,
+        info,
+        function,
+        function_info,
+        profile,
+        limit,
+        false,
+    )
+}
+
+fn has_unsafe_integer_semantics_with_instance_index(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    profile: ShaderProfile,
+    instance_index_input: bool,
+) -> bool {
+    has_unsafe_integer_semantics_with_options(
+        module,
+        info,
+        function,
+        function_info,
+        profile,
+        65536,
+        instance_index_input,
+    )
+}
+
+fn has_unsafe_integer_semantics_with_options(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    profile: ShaderProfile,
+    limit: usize,
+    instance_index_input: bool,
 ) -> bool {
     if !matches!(
         profile,
@@ -1804,7 +1845,9 @@ fn has_unsafe_integer_semantics_with_budget(
     for (index, argument) in function.arguments.iter().enumerate() {
         if type_may_contain_integer(module, &module.types[argument.ty].inner, &budget)
             && !(matches!(profile, ShaderProfile::VertexLevel9_1)
-                && is_supported_integer_vertex_argument(module, function, index))
+                && (is_supported_integer_vertex_argument(module, function, index)
+                    || (instance_index_input
+                        && is_supported_instance_index_argument(module, function, index))))
         {
             return true;
         }
@@ -1843,7 +1886,9 @@ fn has_unsafe_integer_semantics_with_budget(
             for (index, argument) in function.arguments.iter().enumerate() {
                 if type_may_contain_integer(module, &module.types[argument.ty].inner, &budget)
                     && !(matches!(profile, ShaderProfile::VertexLevel9_1)
-                        && is_supported_integer_vertex_argument(module, function, index))
+                        && (is_supported_integer_vertex_argument(module, function, index)
+                            || (instance_index_input
+                                && is_supported_instance_index_argument(module, function, index))))
                 {
                     return true;
                 }
@@ -1869,6 +1914,12 @@ fn has_unsafe_integer_semantics_with_budget(
                         &budget,
                     )
                 };
+                let supported_vertex_integer_expression =
+                    matches!(profile, ShaderProfile::VertexLevel9_1)
+                        && (is_supported_integer_vertex_argument_expression(
+                            module, function, handle,
+                        ) || (instance_index_input
+                            && is_instance_index_expression(module, function, handle)));
                 let integer_operation = match *expression {
                     naga::Expression::Binary { left, right, .. } => integer(left) || integer(right),
                     naga::Expression::Unary { expr, .. } => integer(expr) || integer(handle),
@@ -1881,9 +1932,10 @@ fn has_unsafe_integer_semantics_with_budget(
                             matches!(profile, ShaderProfile::VertexLevel9_1)
                                 && kind == naga::ScalarKind::Float
                                 && convert == Some(4)
-                                && is_supported_integer_vertex_argument_expression(
+                                && (is_supported_integer_vertex_argument_expression(
                                     module, function, expr,
-                                );
+                                ) || (instance_index_input
+                                    && is_instance_index_expression(module, function, expr)));
                         !supported_vertex_conversion && (integer(expr) || integer(handle))
                     }
                     naga::Expression::Math {
@@ -1915,10 +1967,7 @@ fn has_unsafe_integer_semantics_with_budget(
                 integer_operation
                     || (!kinds.is_const(handle)
                         && integer(handle)
-                        && !(matches!(profile, ShaderProfile::VertexLevel9_1)
-                            && is_supported_integer_vertex_argument_expression(
-                                module, function, handle,
-                            )))
+                        && !supported_vertex_integer_expression)
             })
         },
     )
@@ -1958,6 +2007,109 @@ fn is_supported_integer_vertex_argument_expression(
     match function.expressions[expression] {
         naga::Expression::FunctionArgument(index) => {
             is_supported_integer_vertex_argument(module, function, index as usize)
+        }
+        _ => false,
+    }
+}
+
+fn contains_integer_type(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    match module.types[ty].inner {
+        naga::TypeInner::Scalar(scalar) => {
+            matches!(scalar.kind, naga::ScalarKind::Sint | naga::ScalarKind::Uint)
+        }
+        naga::TypeInner::Vector { scalar, .. } => {
+            matches!(scalar.kind, naga::ScalarKind::Sint | naga::ScalarKind::Uint)
+        }
+        naga::TypeInner::Array { base, .. } => contains_integer_type(module, base),
+        naga::TypeInner::Struct { ref members, .. } => members
+            .iter()
+            .any(|member| contains_integer_type(module, member.ty)),
+        _ => false,
+    }
+}
+
+fn is_instance_index_type(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    matches!(
+        module.types[ty].inner,
+        naga::TypeInner::Scalar(naga::Scalar {
+            kind: naga::ScalarKind::Uint,
+            width: 4,
+        })
+    )
+}
+
+fn is_supported_instance_index_argument(
+    module: &naga::Module,
+    function: &naga::Function,
+    index: usize,
+) -> bool {
+    let Some(argument) = function.arguments.get(index) else {
+        return false;
+    };
+    if matches!(
+        argument.binding.as_ref(),
+        Some(naga::Binding::BuiltIn(naga::BuiltIn::InstanceIndex))
+    ) {
+        return is_instance_index_type(module, argument.ty);
+    }
+    let naga::TypeInner::Struct { ref members, .. } = module.types[argument.ty].inner else {
+        return false;
+    };
+    let mut found = false;
+    for member in members {
+        if matches!(
+            member.binding.as_ref(),
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::InstanceIndex))
+        ) {
+            if !is_instance_index_type(module, member.ty) {
+                return false;
+            }
+            found = true;
+        } else if contains_integer_type(module, member.ty) {
+            return false;
+        }
+    }
+    found
+}
+
+fn is_instance_index_expression(
+    module: &naga::Module,
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    match function.expressions[expression] {
+        naga::Expression::FunctionArgument(index) => {
+            is_supported_instance_index_argument(module, function, index as usize)
+        }
+        naga::Expression::Load { pointer } => {
+            is_instance_index_expression(module, function, pointer)
+        }
+        naga::Expression::AccessIndex { base, index } => {
+            let argument = match function.expressions[base] {
+                naga::Expression::FunctionArgument(argument) => argument,
+                naga::Expression::Load { pointer } => {
+                    let naga::Expression::FunctionArgument(argument) =
+                        function.expressions[pointer]
+                    else {
+                        return false;
+                    };
+                    argument
+                }
+                _ => return false,
+            };
+            let Some(argument) = function.arguments.get(argument as usize) else {
+                return false;
+            };
+            let naga::TypeInner::Struct { ref members, .. } = module.types[argument.ty].inner
+            else {
+                return false;
+            };
+            members.get(index as usize).is_some_and(|member| {
+                matches!(
+                    member.binding.as_ref(),
+                    Some(naga::Binding::BuiltIn(naga::BuiltIn::InstanceIndex))
+                ) && is_instance_index_type(module, member.ty)
+            })
         }
         _ => false,
     }
@@ -2591,13 +2743,12 @@ impl ShaderModule {
             )),
         }
     }
-    pub(super) fn validate_instance_index(&self, entry: &str) -> Result<(), crate::PipelineError> {
+    pub(super) fn uses_instance_index_input(
+        &self,
+        entry: &str,
+    ) -> Result<bool, crate::PipelineError> {
         match entry_has_vertex_builtin(&self.shader.module, entry, naga::BuiltIn::InstanceIndex) {
-            Some(false) => Ok(()),
-            Some(true) => Err(crate::PipelineError::Linkage(
-                wgt::ShaderStages::VERTEX,
-                "D3D11 instance_index is not implemented".into(),
-            )),
+            Some(uses) => Ok(uses),
             None => Err(crate::PipelineError::EntryPoint(naga::ShaderStage::Vertex)),
         }
     }
@@ -2774,6 +2925,27 @@ impl ShaderModule {
         targetless_fragment: bool,
         constants: &naga::back::PipelineConstants,
     ) -> Result<Vec<u8>, crate::PipelineError> {
+        self.compile_with_fl9_options_and_constants(
+            stage,
+            entry,
+            bindings,
+            viewport_transform,
+            targetless_fragment,
+            false,
+            constants,
+        )
+    }
+
+    pub(super) fn compile_with_fl9_options_and_constants(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+        bindings: &[ShaderBinding],
+        viewport_transform: bool,
+        targetless_fragment: bool,
+        instance_index_input: bool,
+        constants: &naga::back::PipelineConstants,
+    ) -> Result<Vec<u8>, crate::PipelineError> {
         let stages = match stage {
             naga::ShaderStage::Vertex => wgt::ShaderStages::VERTEX,
             naga::ShaderStage::Fragment => wgt::ShaderStages::FRAGMENT,
@@ -2807,12 +2979,13 @@ impl ShaderModule {
                 "D3D11 FL9 texture sample bias is not implemented safely".into(),
             ));
         }
-        if has_unsafe_integer_semantics(
+        if has_unsafe_integer_semantics_with_instance_index(
             &module,
             &info,
             &module.entry_points[entry_index].function,
             entry_info,
             profile,
+            instance_index_input,
         ) {
             return Err(crate::PipelineError::Linkage(
                 stages,
@@ -2890,7 +3063,7 @@ impl ShaderModule {
                 &module, &info, entry, profile, &present,
             )
         } else {
-            compile_naga_with_viewport(
+            compile_naga_with_viewport_and_instance_index(
                 &module,
                 &info,
                 stage,
@@ -2898,6 +3071,7 @@ impl ShaderModule {
                 profile,
                 &present,
                 viewport_transform,
+                instance_index_input,
             )
         };
         compiled.map_err(|error| {
