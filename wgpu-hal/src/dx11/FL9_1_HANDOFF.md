@@ -22,9 +22,9 @@ the broad core/HAL contract audit.
 The controlled core fixture initially exposed one stale assertion after depth
 `MULTISAMPLE_X4` became query-visible. It now checks that core and HAL agree on
 the optional X4 flag while resolve remains absent; strict fixture rerun passed
-8/8. This fixture regression update is the current uncommitted follow-up and
-should be checkpointed after review. Continue from the selected-entry shader
-and core/HAL contract gaps in `FL9_1_PLAN.md`.
+8/8. Checkpoint `eae4a05c7` records the fixture correction and verification.
+Continue from the selected-entry shader and core/HAL contract gaps in
+`FL9_1_PLAN.md`.
 
 ## Current mission state — cloned public frame lifetime
 
