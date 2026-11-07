@@ -2965,3 +2965,8 @@ between two four-level R8_UNORM textures, with a nonzero destination origin. It
 reads back the full 4x4 destination mip using padded rows and verifies all 16
 texels, including the unchanged cleared border. Copies between different R8
 mip indices remain unverified.
+
+The test also copies the top-left 2x2 region from source mip 1 into the full
+2x2 destination mip 2, then reads back and checks all four texels. Thus both a
+partial same-level copy and a full cross-level copy are covered; other R8 mip
+source/destination combinations are not exhaustively tested.

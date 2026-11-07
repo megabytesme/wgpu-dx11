@@ -7608,6 +7608,12 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
+    let readback_next_level = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 R8 next-mip copy readback"),
+        size: 2 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
     let mut source_mip = vec![0; 4 * 256];
     for y in 0..4 {
         for x in 0..4 {
@@ -7674,6 +7680,25 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 2,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
     encoder.copy_texture_to_buffer(
         TexelCopyTextureInfo {
             texture: &destination,
@@ -7695,11 +7720,38 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 2,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback_next_level,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
         .slice(..)
         .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    let (next_level_sender, next_level_receiver) = std::sync::mpsc::channel();
+    readback_next_level
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            next_level_sender.send(result).unwrap()
+        });
     device
         .poll(PollType::Wait {
             submission_index: Some(submission),
@@ -7710,6 +7762,10 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
         .recv_timeout(Duration::from_secs(10))
         .expect("public R8 mip-copy callback")
         .expect("map public R8 mip-copy readback");
+    next_level_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public cross-level R8 mip-copy callback")
+        .expect("map public cross-level R8 mip-copy readback");
     {
         let data = readback
             .slice(..)
@@ -7730,8 +7786,24 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
             }
         }
     }
+    {
+        let data = readback_next_level
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped next R8 mip data");
+        for y in 0..2 {
+            for x in 0..2 {
+                assert_eq!(
+                    data[y * 256 + x],
+                    16 + y as u8 * 40 + x as u8 * 9,
+                    "copied across R8 mip levels at ({x}, {y})"
+                );
+            }
+        }
+    }
     readback.unmap();
-    println!("PASS: public FL9_1 partial R8 mip-1 copy between mipmapped textures preserved the destination border and matched all 16 texels");
+    readback_next_level.unmap();
+    println!("PASS: public FL9_1 partial R8 mip-1 copy preserved its destination border (16/16 texels); a mip-1 to mip-2 copy matched all 4 destination texels");
 }
 
 #[test]

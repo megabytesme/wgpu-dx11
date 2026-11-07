@@ -10665,3 +10665,11 @@ used a nonzero source origin and destination origin, a padded R8 readback, and
 verified all 16 mip texels including the cleared destination border. Clippy and
 targeted rustfmt passed; only the pre-existing HAL create_hal_view argument
 count warning remains in the wgpu test Clippy output.
+
+### Follow-up — cross-level R8 mip copy
+
+The same strict GPU test additionally copies a 2x2 region from source mip 1 to
+the full destination mip 2, then reads back all four texels. The RTX 3090 Ti
+forced to FL9_1 passed the cross-level copy. This verifies mip-1-to-mip-2 on
+the tested device; it does not establish every mip pair or historical-driver
+behavior.

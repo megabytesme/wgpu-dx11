@@ -1060,4 +1060,4 @@ require the selected RENDER_TARGET query and matching implemented path;
 SHADER_SAMPLE separately controls filterability. On the RTX 3090 Ti forced to
 FL9_1, a strict public test uploaded four mips, sampled mip 2, cleared mip 0
 as an attachment and read mip 0 back; all 64 RGBA pixels and all 64 R8 texels
-matched. A strict public test also copied a partial rectangle at mip 1 between two mipmapped R8 textures and verified all 16 destination texels plus the preserved border; copies between different R8 mip indices remain unverified.
+matched. A strict public test also copied a partial rectangle at mip 1 between two mipmapped R8 textures and verified all 16 destination texels plus the preserved border; the same strict test also copied mip 1 to mip 2 and verified all four destination texels; other cross-level combinations remain unverified.
