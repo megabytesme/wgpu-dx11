@@ -31,7 +31,9 @@ frame. The strict HWND test covers both clone-drop orders and reacquisition.
 Dropping an unpresented frame after its `Surface` is destroyed is also safe;
 the core output detail no longer calls through a removed surface ID. Calling
 `Queue::present` on a retained frame after surface destruction reports an
-invalid-surface validation error rather than panicking on the stale ID.
+invalid-surface validation error rather than panicking on the stale ID. The
+strict test verifies this does not consume or disturb a frame acquired from a
+second active HWND surface.
 
 The optional RGBA8 four-sample path is restricted through
 `DownlevelLimits::multisampled_texture_usage_mask` to color attachment and

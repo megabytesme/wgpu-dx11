@@ -44,7 +44,8 @@ the default public path configures and presents successfully. A second
 lifecycle case drops the surface before an acquired frame; the surviving frame
 can then be dropped safely without looking up a removed surface ID. Presenting
 such a retained frame reports `Surface is invalid` instead of looking up a
-removed ID; a strict regression reproduces both cleanup paths.
+removed ID; a strict regression verifies the stale present does not affect a
+second active HWND surface and separately covers both cleanup paths.
 
 The HWND lifecycle audit found and fixed a consumed-frame leak when public
 `Queue::present` is called from a non-owner thread. Core now discards that

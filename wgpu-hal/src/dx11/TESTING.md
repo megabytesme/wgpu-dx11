@@ -231,8 +231,9 @@ The test also drops a `Surface` while its unpresented frame remains alive, then
 drops the frame and verifies that cleanup does not access the removed core
 surface ID. It also attempts to present a retained frame after surface
 destruction and checks for the invalid-surface validation error rather than a
-stale-ID panic; a second surface instance verifies final unpresented-frame
-discard remains safe.
+stale-ID panic while a second HWND surface has a frame acquired, then presents
+that second frame normally. It also verifies final unpresented-frame discard
+remains safe after destroying the second surface.
 The D3D11 surface operations must run on the HWND's creating thread. A shared
 queue gate serializes submissions, writes, mapping flushes, polling and
 context-backed resource creation against `Present`; reentrant mutations return

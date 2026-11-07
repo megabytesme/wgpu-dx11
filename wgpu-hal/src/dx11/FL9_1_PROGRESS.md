@@ -9435,12 +9435,17 @@ SurfaceId(0,1)`). `CoreQueue::present` now locks the same per-surface lifecycle
 guard used by frame discard/release; it calls core only while the surface is
 live and otherwise reports `SurfaceError::Invalid` through the queue error
 sink. The test verifies the validation report, then recreates the HWND surface
-and separately verifies that dropping its final unpresented frame after
-surface destruction remains safe.
+on a second hidden HWND while retaining an acquired frame from it. The stale
+present reports validation without consuming the second surface's frame, which
+then presents normally. A further frame verifies that dropping its final
+unpresented output after surface destruction remains safe. Recreating on the
+same HWND while retaining the original output was not a valid fixture because
+the old native swapchain remained referenced, so the regression uses a second
+HWND in the same wgpu instance.
 
 On NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and
-actual FL9_1, the focused HWND test passed 1/1 and the complete strict public
-D3D11 suite passed 62/62. The suite visibly skipped only its optional
+actual FL9_1, the focused HWND test passed 1/1 and the final complete strict
+public D3D11 suite passed 62/62 (42.69 seconds). The suite visibly skipped only its optional
 Float16x2 vertex-input branch after the selected device reported no IA support.
 Rust 1.93.1 targeted Clippy passed with the existing D3D11
 `create_hal_view` argument-count warning. DX12 and wasm WebGPU public-crate
@@ -9461,3 +9466,8 @@ cargo +1.93 check --offline -p wgpu --target wasm32-unknown-unknown --no-default
 rustup run 1.93 rustfmt --edition 2021 --check wgpu/src/backend/wgpu_core.rs wgpu/tests/dx11_public.rs
 git diff --check
 ~~~
+
+The Lumia Device Portal was retried with
+`Invoke-LumiaPortal -Path '/api/os/devicefamily'`; the helper timed out in
+`GetResponse()` again. This remains an external runtime-verification blocker;
+no credentials or pairing state were changed.

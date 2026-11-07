@@ -19,10 +19,12 @@ The HWND teardown audit also caught a second stale-ID path: calling public
 `Queue::present` on a frame after dropping its `Surface` previously panicked in
 core storage lookup. Queue presentation now serializes with surface destruction
 and reports the normal `Surface is invalid` validation error for a dead surface.
-The strict test reproduces the old panic, checks this error path, then recreates
-the surface and verifies that dropping a separate unpresented frame remains
-safe. The focused test passed 1/1 and the full strict public suite passed 62/62;
-the optional Float16x2 input-format branch remains a visible capability skip.
+The strict test reproduces the old panic, checks this error path while a new
+surface on a second hidden HWND has an acquired frame, and then proves that the
+new frame still presents normally. It separately drops another unpresented
+frame after destroying that surface. The focused test passed 1/1 and the full
+strict public suite passed 62/62; the optional Float16x2 input-format branch
+remains a visible capability skip.
 
 The HWND smoke test now also starts from `Surface::get_default_config` rather
 than a hand-built descriptor. At forced FL9_1, core resolves `Auto` values and

@@ -472,6 +472,41 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     }));
     drop(returned_surface);
     drop(frame);
+    let recreated_hwnd = unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            w!("wgpu D3D11 FL9_1 stale-frame test"),
+            WS_OVERLAPPED,
+            0,
+            0,
+            80,
+            48,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+    .expect("create second HWND for stale-frame validation");
+    let _recreated_window = WindowGuard(recreated_hwnd);
+    let recreated_surface = unsafe {
+        instance.create_surface_unsafe(SurfaceTargetUnsafe::RawHandle {
+            raw_display_handle: Some(rwh::WindowsDisplayHandle::new().into()),
+            raw_window_handle: rwh::Win32WindowHandle::new(
+                NonZeroIsize::new(recreated_hwnd.0 as isize).expect("non-null HWND"),
+            )
+            .into(),
+        })
+    }
+    .expect("recreate public D3D11 HWND surface for frame-drop check");
+    recreated_surface.configure(&device, &configuration);
+    let frame = match recreated_surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition before frame-drop check failed: {result:?}")
+        }
+    };
     queue.present(present_after_surface_drop);
     let present_after_drop_error = teardown_error.lock().unwrap().take();
     assert!(
@@ -480,19 +515,13 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
             .is_some_and(|error| format!("{error:?}").contains("Surface is invalid")),
         "presenting a frame after its surface is dropped must report a validation error: {present_after_drop_error:?}"
     );
-    println!("PASS: presenting a frame after its surface was dropped reported validation instead of accessing a stale SurfaceId");
+    println!("PASS: presenting a stale frame did not affect a recreated surface");
+    queue.present(frame);
+    assert!(
+        teardown_error.lock().unwrap().is_none(),
+        "presenting the recreated surface frame must still succeed"
+    );
 
-    let recreated_surface = unsafe {
-        instance.create_surface_unsafe(SurfaceTargetUnsafe::RawHandle {
-            raw_display_handle: Some(rwh::WindowsDisplayHandle::new().into()),
-            raw_window_handle: rwh::Win32WindowHandle::new(
-                NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
-            )
-            .into(),
-        })
-    }
-    .expect("recreate public D3D11 HWND surface for frame-drop check");
-    recreated_surface.configure(&device, &configuration);
     let frame = match recreated_surface.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
         result => {
