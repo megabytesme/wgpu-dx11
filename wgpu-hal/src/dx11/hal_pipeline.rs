@@ -2703,7 +2703,6 @@ impl RenderPipeline {
         }
         if desc.multisample.count == 4
             && (target.is_none_or(|target| target.format != wgt::TextureFormat::Rgba8Unorm)
-                || desc.depth_stencil.is_some()
                 || super::capabilities::Capabilities::query(owner)
                     .check_private_texture_2d(
                         wgt::TextureFormat::Rgba8Unorm,
@@ -2713,7 +2712,12 @@ impl RenderPipeline {
                         1,
                         4,
                     )
-                    .is_err())
+                    .is_err()
+                || desc.depth_stencil.as_ref().is_some_and(|depth| {
+                    super::capabilities::Capabilities::query(owner)
+                        .check_private_depth_stencil_samples(depth.format, 4)
+                        .is_err()
+                }))
         {
             return Err(invalid());
         }

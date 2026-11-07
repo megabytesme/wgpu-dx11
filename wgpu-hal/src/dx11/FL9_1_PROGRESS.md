@@ -9610,3 +9610,59 @@ file; `git diff --check` passed. Visual Studio's developer prompt emitted its
 existing `Error: Unknown error` banner, but MSVC initialization and the Cargo
 tests completed successfully. This records a feature-level API limit, not an
 additional implementation capability.
+
+## Query-gated 4x FL9_1 depth attachments — 2026-11-07
+
+The existing 4x RGBA8 render/resolve path now accepts matching D16 or D24S8
+depth attachments only when the selected device's `CheckFormatSupport` and
+`CheckMultisampleQualityLevels(format, 4)` queries positively establish the
+required support. The HAL creates explicit 2DMS DSVs and checks the depth
+attachment sample count against the render-pass count. Format projection adds
+`MULTISAMPLE_X4` for depth only when both the driver query and the backend path
+are available; it never reports depth resolve or multisampled depth sampling.
+Synthetic capability tests cover positive, zero-quality, unavailable-query,
+backend-disabled and unsupported-count cases.
+
+The strict public test now draws a near red triangle followed by a farther
+green triangle into 4x RGBA8 plus query-selected 4x depth, resolves color and
+checks all 64 pixels. On the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), explicitly requested and actual FL9_1, D16 and D24S8
+both reported one 4x quality level. The D24S8 test produced 28 full red
+pixels, 8 red/blue coverage-edge pixels and 28 blue clear pixels, with green
+zero everywhere; the zero-sample-mask control retained blue at all 64 pixels.
+This is a selected modern driver's result and not evidence about every
+historical FL9_1 driver.
+
+The full strict private HAL suite passed 377/377. The full strict public D3D11
+suite passed 63/63; its Float16x2 input-assembler subcase visibly skipped after
+the selected device query returned false. Core's strict DX11 adapter-isolation
+test passed 1/1 and enumerated the physical FL9_1 adapter. The targeted DX12
+core suite passed 92/92. HAL and public-test Clippy passed with the existing
+`create_hal_view` argument-count warning. Rustfmt check still reports only
+pre-existing formatting differences outside the new code, and `git diff
+--check` passed.
+
+The first public attempt exposed a too-narrow HAL usage check: core's internal
+depth-clear view uses write-only depth usage while the attachment view uses
+read/write usage. The accepted HAL usage set now covers those two attachment
+shapes and their transient variants; unsupported copy/resource combinations
+remain rejected. This closes the usage mismatch without expanding depth
+resource functionality beyond render-pass attachments.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib dx11:: -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,wgsl,std
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/texture.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The Visual Studio x64 developer-shell banner still prints `Error: Unknown
+error`, but the compiler environment initialized and every listed Cargo command
+completed. The change remains private to the opt-in D3D11 projection; public
+default backend selection and normal adapter exposure are unchanged. Continue
+the API-contract audit; this does not make the backend broadly feature-complete.

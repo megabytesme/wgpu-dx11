@@ -17284,6 +17284,29 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         println!("SKIP: selected FL9_1 device does not report RGBA8 4x render and resolve support");
         return;
     }
+    let depth_format = [
+        TextureFormat::Depth24PlusStencil8,
+        TextureFormat::Depth16Unorm,
+    ]
+    .into_iter()
+    .find(|format| {
+        adapter
+            .get_texture_format_features(*format)
+            .flags
+            .contains(TextureFormatFeatureFlags::MULTISAMPLE_X4)
+    });
+    let Some(depth_format) = depth_format else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 depth format with 4x multisample support"
+        );
+        println!("SKIP: selected FL9_1 device does not report 4x depth attachment support");
+        return;
+    };
+    println!(
+        "Depth format {depth_format:?} features={:?}",
+        adapter.get_texture_format_features(depth_format)
+    );
     let multisampled_attachment_usage =
         TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT;
     assert!(downlevel
@@ -17328,6 +17351,31 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
             }));
         });
     }
+    let vertex_data = [
+        [-1.0f32, -1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [1.0, -1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [-1.0, 1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [-1.0, -1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [1.0, -1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [-1.0, 1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+    ];
+    let vertex_bytes: Vec<u8> = vertex_data
+        .into_iter()
+        .flatten()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 multisample triangle vertices"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertices
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped FL9_1 multisample vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertices.unmap();
     let msaa = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 four-sample RGBA8 source"),
         size: Extent3d {
@@ -17340,6 +17388,20 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8Unorm,
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 four-sample depth attachment"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 4,
+        dimension: TextureDimension::D2,
+        format: depth_format,
+        usage: TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
     let resolved = device.create_texture(&TextureDescriptor {
@@ -17357,6 +17419,11 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         view_formats: &[],
     });
     let msaa_view = msaa.create_view(&TextureViewDescriptor::default());
+    let depth_view_scope = device.push_error_scope(ErrorFilter::Validation);
+    let depth_view = depth.create_view(&TextureViewDescriptor::default());
+    if let Some(error) = poll_ready(depth_view_scope.pop()) {
+        panic!("FL9_1 4x depth view creation failed validation: {error:?}");
+    }
     let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 resolved image readback"),
@@ -17364,21 +17431,30 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
+    let pipeline_scope = device.push_error_scope(ErrorFilter::Validation);
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 multisample triangle shader"),
         source: ShaderSource::Wgsl(
-            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+            "struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec4f, }\n\
+             @vertex fn vs(@location(0) position: vec3f, @location(1) color: vec4f) -> VertexOut { var out: VertexOut; out.position = vec4f(position, 1.0); out.color = color; return out; }\n\
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return input.color; }"
                 .into(),
         ),
     });
-    let attributes = [VertexAttribute {
-        format: VertexFormat::Float32x2,
-        offset: 0,
-        shader_location: 0,
-    }];
+    let attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 12,
+            shader_location: 1,
+        },
+    ];
     let vertex_layout = [Some(VertexBufferLayout {
-        array_stride: 8,
+        array_stride: 28,
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
@@ -17397,7 +17473,13 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
             buffers: &vertex_layout,
         },
         primitive: PrimitiveState::default(),
-        depth_stencil: None,
+        depth_stencil: Some(DepthStencilState {
+            format: depth_format,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(CompareFunction::Less),
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
         multisample: MultisampleState {
             count: 4,
             ..Default::default()
@@ -17411,18 +17493,14 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         multiview_mask: None,
         cache: None,
     });
-    let positions = [-1.0f32, -1.0, 1.0, -1.0, -1.0, 1.0];
-    let vertex_bytes: Vec<u8> = positions.into_iter().flat_map(f32::to_ne_bytes).collect();
-    let vertices = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 multisample triangle vertices"),
-        size: vertex_bytes.len() as u64,
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&vertices, 0, &vertex_bytes);
+    if let Some(error) = poll_ready(pipeline_scope.pop()) {
+        panic!("FL9_1 4x color/depth pipeline failed validation: {error:?}");
+    }
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 multisample render and resolve"),
     });
+    let render_internal_scope = device.push_error_scope(ErrorFilter::Internal);
+    let render_scope = device.push_error_scope(ErrorFilter::Validation);
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("FL9_1 four-sample triangle pass"),
@@ -17440,7 +17518,19 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
                     store: StoreOp::Discard,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: (depth_format == TextureFormat::Depth24PlusStencil8).then_some(
+                    Operations {
+                        load: LoadOp::Clear(0),
+                        store: StoreOp::Store,
+                    },
+                ),
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
@@ -17448,6 +17538,7 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         pass.set_pipeline(&pipeline);
         pass.set_vertex_buffer(0, vertices.slice(..));
         pass.draw(0..3, 0..1);
+        pass.draw(3..6, 0..1);
     }
     encoder.copy_texture_to_buffer(
         TexelCopyTextureInfo {
@@ -17470,7 +17561,18 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
-    let submission = queue.submit([encoder.finish()]);
+    let command_buffer = encoder.finish();
+    if let Some(error) = poll_ready(render_scope.pop()) {
+        panic!("FL9_1 4x color/depth command recording failed validation: {error:?}");
+    }
+    if let Some(error) = poll_ready(render_internal_scope.pop()) {
+        panic!("FL9_1 4x color/depth command recording failed internally: {error:?}");
+    }
+    let submit_scope = device.push_error_scope(ErrorFilter::Validation);
+    let submission = queue.submit([command_buffer]);
+    if let Some(error) = poll_ready(submit_scope.pop()) {
+        panic!("FL9_1 4x color/depth submission failed validation: {error:?}");
+    }
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
         .slice(..)

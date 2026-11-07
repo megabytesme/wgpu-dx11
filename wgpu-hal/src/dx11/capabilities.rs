@@ -209,6 +209,8 @@ pub(super) struct DriverCapabilities {
     pub bgra8_srgb: Query<u32>,
     pub depth24_stencil8: Query<u32>,
     pub depth16_unorm: Query<u32>,
+    pub depth24_stencil8_samples_4: Query<u32>,
+    pub depth16_unorm_samples_4: Query<u32>,
     pub rgba8_samples_4: Query<u32>,
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
@@ -306,6 +308,7 @@ pub(super) struct BackendCapabilities {
     pub d24s8_depth_attachment: bool,
     pub d16_depth_attachment: bool,
     pub d24s8_stencil_operations: bool,
+    pub depth_stencil_multisampling: bool,
     pub d24s8_triangle_constant_depth_bias: bool,
     pub d24s8_triangle_slope_depth_bias: bool,
     pub d24s8_depth_bias_clamp: bool,
@@ -403,6 +406,7 @@ impl BackendCapabilities {
         d24s8_depth_attachment: true,
         d16_depth_attachment: true,
         d24s8_stencil_operations: true,
+        depth_stencil_multisampling: true,
         d24s8_triangle_constant_depth_bias: true,
         d24s8_triangle_slope_depth_bias: true,
         d24s8_depth_bias_clamp: false,
@@ -785,6 +789,12 @@ impl Capabilities {
                 bgra8_srgb: format(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
                 depth24_stencil8: format(DXGI_FORMAT_D24_UNORM_S8_UINT),
                 depth16_unorm: format(DXGI_FORMAT_D16_UNORM),
+                depth24_stencil8_samples_4: Query::from_result(unsafe {
+                    raw.CheckMultisampleQualityLevels(DXGI_FORMAT_D24_UNORM_S8_UINT, 4)
+                }),
+                depth16_unorm_samples_4: Query::from_result(unsafe {
+                    raw.CheckMultisampleQualityLevels(DXGI_FORMAT_D16_UNORM, 4)
+                }),
                 rgba8_samples_4: Query::from_result(unsafe {
                     raw.CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4)
                 }),
@@ -1022,6 +1032,41 @@ impl Capabilities {
         Ok(())
     }
 
+    pub fn check_private_depth_stencil_samples(
+        &self,
+        format: wgt::TextureFormat,
+        samples: u32,
+    ) -> Result<(), TextureRejection> {
+        use TextureRejection::*;
+        let (support, sample_support, guaranteed) = match format {
+            wgt::TextureFormat::Depth16Unorm => (
+                self.driver.depth16_unorm,
+                self.driver.depth16_unorm_samples_4,
+                self.hardware.d16_unorm_depth_attachment,
+            ),
+            wgt::TextureFormat::Depth24PlusStencil8 => (
+                self.driver.depth24_stencil8,
+                self.driver.depth24_stencil8_samples_4,
+                true,
+            ),
+            _ => return Err(UnsupportedFormat),
+        };
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0) as u32;
+        if !guaranteed || !matches!(support, Query::Value(bits) if bits & required == required) {
+            return Err(UnsupportedFormat);
+        }
+        match samples {
+            1 => Ok(()),
+            4 if self.backend.depth_stencil_multisampling
+                && matches!(sample_support, Query::Value(levels) if levels > 0) =>
+            {
+                Ok(())
+            }
+            _ => Err(UnsupportedShape),
+        }
+    }
+
     pub fn check_private_cube_texture(
         &self,
         format: wgt::TextureFormat,
@@ -1135,7 +1180,11 @@ impl Capabilities {
                 && implemented
                 && matches!(query, Query::Value(bits) if bits & required == required)
             {
-                Caps::DEPTH_STENCIL_ATTACHMENT | Caps::SINGLE_MIP_ONLY
+                let mut caps = Caps::DEPTH_STENCIL_ATTACHMENT | Caps::SINGLE_MIP_ONLY;
+                if self.check_private_depth_stencil_samples(format, 4).is_ok() {
+                    caps |= Caps::MULTISAMPLE_X4;
+                }
+                caps
             } else {
                 Caps::empty()
             };
@@ -1371,6 +1420,8 @@ mod tests {
                 bgra8_srgb: Query::Value(u32::MAX),
                 depth24_stencil8: Query::Value(u32::MAX),
                 depth16_unorm: Query::Value(u32::MAX),
+                depth24_stencil8_samples_4: Query::Value(0),
+                depth16_unorm_samples_4: Query::Value(0),
                 rgba8_samples_4: Query::Value(1),
                 full_npot: Query::Value(true),
                 comparison_shadow: Query::Value(true),
@@ -2798,6 +2849,59 @@ mod tests {
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
             .is_empty());
+    }
+
+    #[test]
+    fn depth_multisampling_requires_a_positive_format_query_and_backend_path() {
+        let mut caps = model(FeatureLevel::L9_1);
+        for format in [
+            wgt::TextureFormat::Depth16Unorm,
+            wgt::TextureFormat::Depth24PlusStencil8,
+        ] {
+            set_depth_sample_query(&mut caps, format, Query::Value(1));
+            let projected = caps.texture_format_capabilities(format);
+            assert!(projected.contains(FormatCaps::DEPTH_STENCIL_ATTACHMENT));
+            assert!(projected.contains(FormatCaps::MULTISAMPLE_X4));
+            assert!(!projected.contains(FormatCaps::MULTISAMPLE_RESOLVE));
+
+            set_depth_sample_query(&mut caps, format, Query::Value(0));
+            assert!(!caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::MULTISAMPLE_X4));
+            assert!(caps.check_private_depth_stencil_samples(format, 4).is_err());
+
+            set_depth_sample_query(&mut caps, format, Query::Unavailable(-1));
+            assert!(!caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::MULTISAMPLE_X4));
+            assert!(caps.check_private_depth_stencil_samples(format, 4).is_err());
+        }
+
+        caps.driver.depth16_unorm_samples_4 = Query::Value(1);
+        caps.backend.depth_stencil_multisampling = false;
+        assert!(!caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+            .contains(FormatCaps::MULTISAMPLE_X4));
+        assert!(caps
+            .check_private_depth_stencil_samples(wgt::TextureFormat::Depth16Unorm, 4)
+            .is_err());
+        assert!(caps
+            .check_private_depth_stencil_samples(wgt::TextureFormat::Depth16Unorm, 2)
+            .is_err());
+    }
+
+    fn set_depth_sample_query(
+        caps: &mut Capabilities,
+        format: wgt::TextureFormat,
+        query: Query<u32>,
+    ) {
+        match format {
+            wgt::TextureFormat::Depth16Unorm => caps.driver.depth16_unorm_samples_4 = query,
+            wgt::TextureFormat::Depth24PlusStencil8 => {
+                caps.driver.depth24_stencil8_samples_4 = query
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]

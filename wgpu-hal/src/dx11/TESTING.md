@@ -2605,9 +2605,10 @@ its `mask = 0` pipeline preserved all 64 blue clear pixels. FL9_1 forbids a
 zero native `SampleMask`, so the backend passes `0xffff_fffe` for single-sample
 rendering. For 4x rendering it passes `0xffff_fff0`, leaving all four sample
 bits disabled; the strict public test verified all 64 pixels remained at the
-blue clear value after resolve. Only the optional query-gated 4x RGBA8
-render-and-resolve path is supported; multisampled sampling/depth, other sample
-counts/formats and alpha-to-coverage remain unsupported. See
+blue clear value after resolve. The optional query-gated 4x RGBA8
+render-and-resolve path and 4x D16/D24S8 depth attachments are supported;
+multisampled sampling, other sample counts/formats and alpha-to-coverage remain
+unsupported. See
 [OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
 and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpumultisamplestate).
 
@@ -2619,9 +2620,12 @@ and `CheckFormatSupport` must include `TEXTURE2D`, `RENDER_TARGET`,
 `MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE`. Otherwise the format does
 not report `MULTISAMPLE_X4` or `MULTISAMPLE_RESOLVE`, and public core rejects
 4x allocation. The HAL supports a single-mip, single-layer RGBA8 4x color
-attachment and a same-sized single-sample RGBA8 resolve destination. It does
-not support multisampled sampling, depth, other sample counts/formats or
-alpha-to-coverage.
+attachment and a same-sized single-sample RGBA8 resolve destination. D16_UNORM
+and D24_UNORM_S8_UINT depth attachments are enabled independently only when
+the format query and `CheckMultisampleQualityLevels(format, 4)` are positive;
+depth must match the color target and pipeline sample count. Depth resolve,
+multisampled sampling, other sample counts/formats and alpha-to-coverage remain
+unsupported.
 
 On the RTX 3090 Ti forced to FL9_1, the quality-level query returned 1 and the
 RGBA8 format mask was `0x312ef3e2`. The strict public triangle resolved to a
@@ -2629,6 +2633,13 @@ single-sample texture, and readback checked all 64 pixels: 28 full red triangle,
 8 partial-coverage red/blue resolve values and 28 clear blue pixels.
 This is optional selected-device evidence from a modern GPU, not a FL9_1
 hardware guarantee.
+
+The same strict test selected D24PlusStencil8 after a positive 4x query,
+created the matching multisampled depth view and drew near red geometry before
+far green geometry over the same triangle. The resolved 8×8 target contained
+28 full-red interior pixels, 8 red/blue edge pixels and 28 blue clear pixels;
+all 64 green channels were zero, confirming the farther draw failed depth.
+This verifies the selected RTX execution path, not every FL9_1 driver.
 
 The same strict run then cleared the multisampled target blue, rendered with a
 zero WebGPU sample mask and resolved again; all 64 pixels remained exactly
@@ -2658,8 +2669,9 @@ The strict public resolve test also checks the exact usage subset exposed by
 `DownlevelLimits::multisampled_texture_usage_mask`. On devices that positively
 report 4x RGBA8 render/resolve, a render attachment remains creatable, while
 adding sampled, copy-source or copy-destination usage is rejected by core
-before native allocation. The HAL currently creates only render-target-only
-4x RGBA8 resources, optionally marked transient.
+before native allocation. The HAL creates render-target-only 4x RGBA8 color
+resources and query-supported D16/D24S8 depth attachments, optionally marked
+transient.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -2667,7 +2679,8 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 ```
 
 On the RTX 3090 Ti, requested and actual FL9_1, this test created and resolved
-the supported target, rejected `RENDER_ATTACHMENT | TEXTURE_BINDING`,
+the supported RGBA8 target with a query-supported D24S8 depth attachment,
+rejected `RENDER_ATTACHMENT | TEXTURE_BINDING`,
 `RENDER_ATTACHMENT | COPY_SRC` and `RENDER_ATTACHMENT | COPY_DST` before HAL,
 and verified all 64 resolve pixels.
 

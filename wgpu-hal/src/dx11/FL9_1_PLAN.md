@@ -492,9 +492,10 @@ entry-point selection are covered by a strict public test.
    compiling an implicit-sampling sibling. Continue auditing other core-valid
    operations against the selected FL9_1 compiler.
    Single-sample output masks now reach D3D11; zero WebGPU masks map to an
-   equivalent nonzero FL9_1 native mask. RGBA8 4x render-and-resolve is
-   available only when selected-device format and sample-count queries
-   positively establish support; multisampled sampling and depth remain gated.
+   equivalent nonzero FL9_1 native mask. RGBA8 4x render-and-resolve and
+   D16/D24S8 depth attachments now require their own positive selected-device
+   format and sample-count queries, and must use matching pass and pipeline
+   sample counts. Multisampled sampling and depth resolve remain gated.
    Four-sample resolve does not imply alpha-to-coverage: a dedicated
    `DownlevelLimits::alpha_to_coverage` capability is false for FL9_1, and the
    controlled core fixture verifies rejection before HAL. Next close the

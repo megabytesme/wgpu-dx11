@@ -803,7 +803,7 @@ impl crate::CommandEncoder for CommandEncoder {
             1
         };
         let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
-            let (view, format, size) = match self
+            let (view, format, size, sample_count) = match self
                 .device
                 .depth_stencil_view(attachment.target.view, attachment.target.usage)
             {
@@ -851,7 +851,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
-            if desc.sample_count != 1 {
+            if sample_count != desc.sample_count {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }

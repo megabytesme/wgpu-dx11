@@ -11,18 +11,20 @@ use windows::{
                 D3D11_SRV_DIMENSION_TEXTURECUBE,
             },
             Direct3D11::{
-                ID3D11DepthStencilView, ID3D11Device, ID3D11RenderTargetView,
-                ID3D11Resource, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11Texture3D,
-                D3D11_BIND_DEPTH_STENCIL,
-                D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX, D3D11_CLEAR_DEPTH,
-                D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
-                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC,
-                D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RESOURCE_MISC_TEXTURECUBE,
-                D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_RTV_DIMENSION_TEXTURE2DMS,
-                D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-                D3D11_TEX2DMS_RTV, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEXCUBE_SRV,
-                D3D11_TEX3D_SRV, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC,
-                D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                ID3D11DepthStencilView, ID3D11Device, ID3D11RenderTargetView, ID3D11Resource,
+                ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11Texture3D,
+                D3D11_BIND_DEPTH_STENCIL, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
+                D3D11_BOX, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ,
+                D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_DEPTH_STENCIL_VIEW_DESC_0,
+                D3D11_DSV_DIMENSION_TEXTURE2D, D3D11_DSV_DIMENSION_TEXTURE2DMS,
+                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC_0,
+                D3D11_RESOURCE_MISC_TEXTURECUBE, D3D11_RTV_DIMENSION_TEXTURE2D,
+                D3D11_RTV_DIMENSION_TEXTURE2DMS, D3D11_SHADER_RESOURCE_VIEW_DESC,
+                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2DMS_DSV, D3D11_TEX2DMS_RTV,
+                D3D11_TEX2D_DSV, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEX3D_SRV,
+                D3D11_TEXCUBE_SRV, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC, D3D11_USAGE_DEFAULT,
+                D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -403,11 +405,19 @@ impl NativeDevice {
         width: u32,
         height: u32,
         format: DXGI_FORMAT,
+        sample_count: u32,
     ) -> Result<NativeTexture> {
         if !matches!(
             format,
             DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_D24_UNORM_S8_UINT
-        ) {
+        ) || !matches!(sample_count, 1 | 4)
+            || (sample_count == 4
+                && !unsafe {
+                    self.raw_device()
+                        .CheckMultisampleQualityLevels(format, sample_count)
+                        .is_ok_and(|levels| levels > 0)
+                })
+        {
             return Err(invalid());
         }
         let desc = D3D11_TEXTURE2D_DESC {
@@ -417,7 +427,7 @@ impl NativeDevice {
             ArraySize: 1,
             Format: format,
             SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
+                Count: sample_count,
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
@@ -430,10 +440,28 @@ impl NativeDevice {
                 .CreateTexture2D(&desc, None, Some(&mut raw))?;
         }
         let raw = raw.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let view_desc = D3D11_DEPTH_STENCIL_VIEW_DESC {
+            Format: format,
+            ViewDimension: if sample_count == 1 {
+                D3D11_DSV_DIMENSION_TEXTURE2D
+            } else {
+                D3D11_DSV_DIMENSION_TEXTURE2DMS
+            },
+            Flags: 0,
+            Anonymous: if sample_count == 1 {
+                D3D11_DEPTH_STENCIL_VIEW_DESC_0 {
+                    Texture2D: D3D11_TEX2D_DSV { MipSlice: 0 },
+                }
+            } else {
+                D3D11_DEPTH_STENCIL_VIEW_DESC_0 {
+                    Texture2DMS: D3D11_TEX2DMS_DSV::default(),
+                }
+            },
+        };
         let mut view = None;
         unsafe {
             self.raw_device()
-                .CreateDepthStencilView(&raw, None, Some(&mut view))?;
+                .CreateDepthStencilView(&raw, Some(&view_desc), Some(&mut view))?;
         }
         let view = view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let context = self.immediate_context();
@@ -460,7 +488,7 @@ impl NativeDevice {
             layers: 1,
             dimension: wgt::TextureDimension::D2,
             format,
-            sample_count: 1,
+            sample_count,
             usage: wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
         })
     }
@@ -469,7 +497,7 @@ impl NativeDevice {
         &self,
         view: &NativeTextureView,
         usage: wgt::TextureUses,
-    ) -> Result<(ID3D11DepthStencilView, wgt::TextureFormat, [u32; 2])> {
+    ) -> Result<(ID3D11DepthStencilView, wgt::TextureFormat, [u32; 2], u32)> {
         if view.owner.as_raw() != self.raw_device().as_raw() || !view.usage.contains(usage) {
             return Err(invalid());
         }
@@ -481,10 +509,24 @@ impl NativeDevice {
             DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
             _ => return Err(invalid()),
         };
-        if desc.MipLevels != 1 || desc.ArraySize != 1 || desc.SampleDesc.Count != 1 {
+        if desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || !matches!(desc.SampleDesc.Count, 1 | 4)
+            || (desc.SampleDesc.Count == 4
+                && !unsafe {
+                    self.raw_device()
+                        .CheckMultisampleQualityLevels(desc.Format, desc.SampleDesc.Count)
+                        .is_ok_and(|levels| levels > 0)
+                })
+        {
             return Err(invalid());
         }
-        Ok((depth.clone(), format, [desc.Width, desc.Height]))
+        Ok((
+            depth.clone(),
+            format,
+            [desc.Width, desc.Height],
+            desc.SampleDesc.Count,
+        ))
     }
 
     pub(super) fn texture_copy_texture_source(
@@ -1322,8 +1364,31 @@ impl NativeDevice {
                 )?;
             }
             if depth_stencil {
-                self.raw_device()
-                    .CreateDepthStencilView(texture.raw.as_2d()?, None, Some(&mut depth))?;
+                let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
+                texture.raw.as_2d()?.GetDesc(&mut texture_desc);
+                let depth_desc = D3D11_DEPTH_STENCIL_VIEW_DESC {
+                    Format: texture_desc.Format,
+                    ViewDimension: if texture_desc.SampleDesc.Count == 1 {
+                        D3D11_DSV_DIMENSION_TEXTURE2D
+                    } else {
+                        D3D11_DSV_DIMENSION_TEXTURE2DMS
+                    },
+                    Flags: 0,
+                    Anonymous: if texture_desc.SampleDesc.Count == 1 {
+                        D3D11_DEPTH_STENCIL_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_DSV { MipSlice: mip_base },
+                        }
+                    } else {
+                        D3D11_DEPTH_STENCIL_VIEW_DESC_0 {
+                            Texture2DMS: D3D11_TEX2DMS_DSV::default(),
+                        }
+                    },
+                };
+                self.raw_device().CreateDepthStencilView(
+                    texture.raw.as_2d()?,
+                    Some(&depth_desc),
+                    Some(&mut depth),
+                )?;
             }
         }
         if (resource && shader.is_none())

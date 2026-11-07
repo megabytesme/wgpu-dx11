@@ -634,9 +634,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
   rejects a zero native `SampleMask`, a zero wgpu mask is translated to
   `0xffff_fffe`, which masks sample zero while satisfying the native nonzero
   requirement. A strict controlled core render preserved all 64 clear-color
-  pixels. Optional 4x RGBA8 render-and-resolve is exposed only after positive
-  selected-device quality-level and format-support queries; multisampled
-  sampling/depth, other sample counts remain unsupported. Alpha-to-coverage is separately gated by `DownlevelLimits::alpha_to_coverage` and rejected by core before HAL.
+  pixels. Optional 4x RGBA8 render/resolve and D16/D24S8 depth attachments are
+  exposed only after their selected-device format and quality-level queries
+  pass. Depth must match the color and pipeline sample counts; depth resolve
+  and multisampled sampling remain unsupported. Other sample counts remain
+  unsupported. Alpha-to-coverage is separately gated by
+  `DownlevelLimits::alpha_to_coverage` and rejected by core before HAL.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
   color-attachment usage, and transient depth requires depth-write usage; sampled
@@ -879,7 +882,7 @@ review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
 request permitted by the limits.
 - Compute, storage access, queries, indirect draws, general multisampling (except optional query-gated
-  4x RGBA8 render-and-resolve), arrays,
+  4x RGBA8 render/resolve and D16/D24S8 depth attachments), arrays,
 comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
