@@ -24,6 +24,11 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+Public `SurfaceTexture` clones now share one presentation lifecycle. Dropping
+an alias no longer discards a frame still held by another clone, and presenting
+any clone prevents later aliases from trying to discard the already-presented
+frame. The strict HWND test covers both clone-drop orders and reacquisition.
+
 The optional RGBA8 four-sample path is restricted through
 `DownlevelLimits::multisampled_texture_usage_mask` to color attachment and
 transient attachment usages. Core rejects sampled and copy usages before the

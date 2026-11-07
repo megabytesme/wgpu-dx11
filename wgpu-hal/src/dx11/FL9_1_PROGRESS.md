@@ -9324,3 +9324,45 @@ cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --fe
 cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
 git diff --check
 ~~~
+## Public `SurfaceTexture` clone lifecycle — 2026-11-07
+
+The strict public HWND test exposed a safe-API lifetime bug: dropping one
+`SurfaceTexture` clone immediately discarded the frame from core, so
+presenting another clone returned `NothingToPresent`. The public wrapper now
+stores its presentation detail and presented state in a shared lifecycle
+object. Dropping a clone only discards when the final unpresented handle is
+released; presenting any clone marks the shared frame as presented.
+
+The extended HWND test covers three transitions on the physical NVIDIA RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual
+FL9_1: drop one clone then present the other; present one clone then drop an
+alias; and drop the final unpresented clone then reacquire. Each transition
+completed without a validation error, and the existing wrong-thread present
+recovery still reacquired and presented a frame.
+
+The first strict test run before the implementation reproduced the failure:
+public present reported `No surface image is currently acquired`. After the
+fix, the focused HWND test passed 1/1 and the complete strict public D3D11
+binary passed 62/62. The optional Float16x2 input-format branch remained an
+explicit capability skip and was not counted as hardware execution.
+
+Rust 1.93.1 checks:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93 check --offline -p wgpu --no-default-features --features dx12,wgsl,std
+cargo +1.93 check --offline -p wgpu --target wasm32-unknown-unknown --no-default-features --features webgpu,wgsl
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/src/api/surface_texture.rs wgpu/src/api/surface.rs wgpu/src/api/queue.rs
+git diff --check
+~~~
+
+Both strict D3D11 test invocations used the Visual Studio 2022 x64 developer
+environment. Public-test Clippy passed with the pre-existing HAL
+`create_hal_view` argument-count warning. DX12 compilation and the wasm
+WebGPU public-crate check passed. The source-file rustfmt check passed; the
+large public D3D11 test file still reports three unrelated formatting deltas
+that predate this change. The opt-in backend and wider FL9_1 contract audit
+remain experimental and incomplete.

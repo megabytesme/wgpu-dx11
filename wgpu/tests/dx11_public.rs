@@ -364,6 +364,63 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     let frame = match surface.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
         result => {
+            panic!("public D3D11 HWND acquisition before cloned-frame present failed: {result:?}")
+        }
+    };
+    let clone_error = Arc::new(std::sync::Mutex::new(None));
+    let captured_clone_error = Arc::clone(&clone_error);
+    device.on_uncaptured_error(Arc::new(move |error| {
+        *captured_clone_error.lock().unwrap() = Some(error);
+    }));
+    let cloned_frame = frame.clone();
+    drop(frame);
+    queue.present(cloned_frame);
+    let captured = clone_error.lock().unwrap().take();
+    assert!(
+        captured.is_none(),
+        "dropping a SurfaceTexture clone must not discard the shared frame: {captured:?}"
+    );
+    println!("PASS: dropping one public SurfaceTexture clone preserved the shared frame for presentation");
+
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition before cloned-frame drop failed: {result:?}")
+        }
+    };
+    let outstanding_clone = frame.clone();
+    queue.present(frame);
+    drop(outstanding_clone);
+    let captured = clone_error.lock().unwrap().take();
+    assert!(
+        captured.is_none(),
+        "dropping a clone after another clone was presented must not discard the frame: {captured:?}"
+    );
+
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition before last-clone discard failed: {result:?}")
+        }
+    };
+    let final_clone = frame.clone();
+    drop(frame);
+    drop(final_clone);
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition after last-clone discard failed: {result:?}")
+        }
+    };
+    queue.present(frame);
+    assert!(
+        clone_error.lock().unwrap().is_none(),
+        "dropping the last unpresented clone must discard exactly once"
+    );
+
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
             panic!("public D3D11 HWND acquisition before wrong-thread present failed: {result:?}")
         }
     };

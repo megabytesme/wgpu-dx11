@@ -180,14 +180,13 @@ impl Surface<'_> {
 
         match texture {
             Some(texture) => {
-                let surface_texture = SurfaceTexture {
-                    texture: Texture {
+                let surface_texture = SurfaceTexture::new(
+                    Texture {
                         inner: texture,
                         descriptor,
                     },
-                    presented: false,
                     detail,
-                };
+                );
                 if suboptimal {
                     CurrentSurfaceTexture::Suboptimal(surface_texture)
                 } else {

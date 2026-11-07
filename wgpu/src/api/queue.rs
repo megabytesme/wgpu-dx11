@@ -374,9 +374,9 @@ impl Queue {
     /// On Wayland, `present` will attach a `wl_buffer` to the underlying `wl_surface` and commit the new surface
     /// state. If it is desired to do things such as request a frame callback, scale the surface using the viewporter
     /// or synchronize other double buffered state, then these operations should be done before the call to `present`.
-    pub fn present(&self, mut surface_texture: SurfaceTexture) {
-        surface_texture.presented = true;
-        self.inner.present(&surface_texture.detail);
+    pub fn present(&self, surface_texture: SurfaceTexture) {
+        surface_texture.mark_presented();
+        self.inner.present(surface_texture.detail());
     }
 
     /// Compact a BLAS, it must have had [`Blas::prepare_compaction_async`] called on it and had the

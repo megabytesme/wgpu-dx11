@@ -1,3 +1,6 @@
+use alloc::sync::Arc;
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::*;
 
 /// Surface texture that can be rendered to.
@@ -10,8 +13,7 @@ use crate::*;
 pub struct SurfaceTexture {
     /// Accessible view of the frame.
     pub texture: Texture,
-    pub(crate) presented: bool,
-    pub(crate) detail: dispatch::DispatchSurfaceOutputDetail,
+    pub(crate) lifecycle: Arc<SurfaceTextureLifecycle>,
 }
 #[cfg(send_sync)]
 static_assertions::assert_impl_all!(SurfaceTexture: Send, Sync);
@@ -19,16 +21,40 @@ static_assertions::assert_impl_all!(SurfaceTexture: Send, Sync);
 crate::cmp::impl_eq_ord_hash_proxy!(SurfaceTexture => .texture.inner);
 
 impl SurfaceTexture {
+    pub(crate) fn new(texture: Texture, detail: dispatch::DispatchSurfaceOutputDetail) -> Self {
+        Self {
+            texture,
+            lifecycle: Arc::new(SurfaceTextureLifecycle {
+                detail,
+                presented: AtomicBool::new(false),
+            }),
+        }
+    }
+
+    pub(crate) fn mark_presented(&self) {
+        self.lifecycle.presented.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn detail(&self) -> &dispatch::DispatchSurfaceOutputDetail {
+        &self.lifecycle.detail
+    }
+
     #[cfg(custom)]
     /// Returns custom implementation of SurfaceTexture (if custom backend and is internally T)
     pub fn as_custom<T: crate::custom::SurfaceOutputDetailInterface>(&self) -> Option<&T> {
-        self.detail.as_custom()
+        self.detail().as_custom()
     }
 }
 
-impl Drop for SurfaceTexture {
+#[derive(Debug)]
+pub(crate) struct SurfaceTextureLifecycle {
+    detail: dispatch::DispatchSurfaceOutputDetail,
+    presented: AtomicBool,
+}
+
+impl Drop for SurfaceTextureLifecycle {
     fn drop(&mut self) {
-        if !self.presented {
+        if !self.presented.load(Ordering::Acquire) {
             if thread_panicking() {
                 // Best effort: release reference to `SwapchainAcquireSemaphore`
                 // This fixes <https://github.com/gfx-rs/wgpu/issues/8243>

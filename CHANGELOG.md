@@ -126,6 +126,8 @@ Bottom level categories:
 - Defer device-lost callbacks from queue submission and device polling until internal locks are released, allowing callbacks to poll safely.
 - Propagate mapped buffer flush failures, release mappings on failure, and invoke device-lost callbacks after releasing the callback lock.
 - Reject buffer destruction while mapped views remain alive, preserving the memory behind safe `BufferView` references.
+- Share `SurfaceTexture` presentation and discard state across clones so dropping one clone does not discard a frame still held by
+  another.
 
 #### Hal
 

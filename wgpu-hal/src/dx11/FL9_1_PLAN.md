@@ -30,6 +30,12 @@ rejected during device request because their HAL resource types are
 unavailable. This verifies two specific gates; it does not close the broader
 core/HAL audit.
 
+The public `SurfaceTexture` lifecycle now shares presentation/discard state
+across clones. A strict HWND test first reproduced premature discard when one
+clone was dropped, then verified that dropping either alias before or after
+presentation preserves the remaining frame and that final unpresented drop
+allows reacquisition. The broader surface and device-loss audit remains open.
+
 The HWND lifecycle audit found and fixed a consumed-frame leak when public
 `Queue::present` is called from a non-owner thread. Core now discards that
 acquired frame before returning the validation error; the strict public test
