@@ -8064,6 +8064,262 @@ fn public_dx11_instance_rate_vertex_streams_at_fl91() {
 }
 
 #[test]
+fn public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 zero-stride indexed test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("zero-stride indexed point shader"),
+        source: ShaderSource::Wgsl(
+            "struct Out { @builtin(position) position: vec4f, @location(0) color: vec4f };\n\
+             @vertex fn vs(@location(0) point: vec2f, @location(1) offset: vec2f) -> Out {\n\
+                 return Out(vec4f(point + offset, 0.5, 1.0), vec4f(1.0, 0.0, 0.0, 1.0));\n\
+             }\n\
+             @fragment fn fs(input: Out) -> @location(0) vec4f { return input.color; }"
+                .into(),
+        ),
+    });
+    let point = [0.125f32, 0.375]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("constant zero-stride vertex element"),
+        size: point.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map zero-stride vertex element")
+        .copy_from_slice(&point);
+    vertex.unmap();
+    let offset_data = [-0.5f32, 0.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let instance = device.create_buffer(&BufferDescriptor {
+        label: Some("one point instance offset"),
+        size: offset_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    instance
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map point instance offset")
+        .copy_from_slice(&offset_data);
+    instance.unmap();
+
+    let attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 1,
+        },
+    ];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("zero-stride indexed point pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[
+                Some(VertexBufferLayout {
+                    array_stride: 0,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &attributes[..1],
+                }),
+                Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Instance,
+                    attributes: &attributes[1..],
+                }),
+            ],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::PointList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("zero-stride indexed point target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("zero-stride indexed point readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    for format in [IndexFormat::Uint16, IndexFormat::Uint32] {
+        let index_data: Vec<u8> = match format {
+            IndexFormat::Uint16 => [0u16, 0].into_iter().flat_map(u16::to_ne_bytes).collect(),
+            IndexFormat::Uint32 => [0u32, 0].into_iter().flat_map(u32::to_ne_bytes).collect(),
+        };
+        let indices = device.create_buffer(&BufferDescriptor {
+            label: Some("negative-base point indices"),
+            size: index_data.len() as u64,
+            usage: BufferUsages::INDEX,
+            mapped_at_creation: true,
+        });
+        indices
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("map negative-base point indices")
+            .copy_from_slice(&index_data);
+        indices.unmap();
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("zero-stride indexed point encoding"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("clear and draw negative-base points"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLUE),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.set_vertex_buffer(1, instance.slice(..));
+            pass.set_index_buffer(indices.slice(..), format);
+            pass.draw_indexed(0..2, -1, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for negative-base zero-stride points");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("negative-base point readback callback")
+            .expect("map negative-base point readback");
+        {
+            let mapped = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped negative-base point output");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    let expected = if (x, y) == (2, 2) {
+                        [255, 0, 0, 255]
+                    } else {
+                        [0, 0, 255, 255]
+                    };
+                    assert_eq!(
+                        &mapped[offset..offset + 4],
+                        expected,
+                        "{format:?} pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+    }
+    println!(
+        "PASS: public FL9_1 negative base vertex with zero stride; 2 index formats, 128 pixels validated"
+    );
+}
+
+#[test]
 fn public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

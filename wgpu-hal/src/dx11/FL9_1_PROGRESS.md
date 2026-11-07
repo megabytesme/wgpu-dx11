@@ -1,5 +1,44 @@
 # FL9_1 progress
 
+## Public zero-stride indexed-fetch verification — 2026-11-07
+
+Added `public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91`, a
+public wgpu → wgpu-core → wgpu-hal → D3D11 test. It creates a point-list
+pipeline with a zero-stride vertex-rate position and an instance-rate offset,
+then draws with base vertex `-1` using Uint16 and Uint32 indices. Each output
+image is read back and all 64 pixels are checked; the expected point appears
+over the blue clear in both cases.
+
+The strict run used Rust 1.93.1 and Visual Studio 2022 x64:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91 -- --nocapture --test-threads=1
+~~~
+
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false)
+was explicitly selected at requested/actual FL9_1. The focused test passed
+1/1 and validated 128 pixels across the two index formats. The complete strict
+public D3D11 test binary then passed 61/61; its optional Float16x2 input-format
+subcase visibly skipped after a negative selected-device query. No test
+silently substituted software rendering. Public-test Clippy passed with one
+previously recorded HAL `too_many_arguments` warning. The targeted rustfmt
+check still reports three older formatting differences elsewhere in the large
+test file; it reported none in this addition. `git diff --check` passed. No
+production behavior changed. This validates the zero-stride point case
+through the public API, but not other shader features or historical FL9_1
+drivers.
+
+Additional validation commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
 ## Indexed zero-stride semantics audit — 2026-11-07
 
 Resolved the previously documented open question for the backend's exposed

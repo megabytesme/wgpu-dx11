@@ -1,5 +1,15 @@
 # FL9_1 handoff
 
+## Current mission state — public zero-stride indexed-fetch verification
+
+The negative base-adjusted zero-stride point case is now verified through the
+public wgpu → core → HAL path as well as the private HAL. The strict public
+test passed for Uint16 and Uint32 index buffers at requested/actual FL9_1 on
+the RTX 3090 Ti and checked both complete 8×8 images. It does not enable
+`vertex_index` or establish historical-device behavior. See the latest
+`FL9_1_PROGRESS.md` entry. The mission remains partially complete; continue
+the broader public capability audit.
+
 ## Current mission state — indexed zero-stride semantics audit
 
 The previously open negative base-adjusted index question is closed for the

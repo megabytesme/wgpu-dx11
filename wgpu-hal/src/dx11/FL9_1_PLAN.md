@@ -55,9 +55,11 @@ the resolved vertex index times `arrayStride`; with a zero stride, a negative
 base-adjusted index still addresses the same in-range attribute element. The
 strict `fl91_indexed_points_order_instances_and_lifetime` test visibly renders
 Uint16 and Uint32 indexed points with negative resolved indices and only
-zero-stride vertex-rate streams. `vertex_index` remains unavailable, and this
-test does not claim behavior for historical FL9_1 drivers. See the current
-progress entry for the rerun result.
+zero-stride vertex-rate streams. A strict public wgpu test repeats the case
+through core validation and command recording and checks both full readbacks.
+`vertex_index` remains unavailable, and these tests do not claim behavior for
+historical FL9_1 drivers. See the current progress entry for the commands and
+hardware result.
 
 Continue the core/HAL audit using independently reproduced public-valid
 operations. Prioritize validation boundaries and lifetime/device-loss paths,

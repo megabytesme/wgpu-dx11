@@ -1067,6 +1067,20 @@ stride leaves the attribute offset unchanged. The controlled core fixture used
 a synthetic per-stage buffer limit of two and checked 64 green pixels.
 Historical FL9_1 drivers remain unverified.
 
+The public wgpu → core → HAL path has a focused readback test for the same
+case:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91 -- --nocapture --test-threads=1
+```
+
+It requests FL9_1 and draws two indexed points with base vertex `-1`, once
+with Uint16 indices and once with Uint32 indices. A zero-stride vertex stream
+provides the constant point position while an instance-rate stream offsets it;
+the test validates all 64 pixels for each format. The physical RTX 3090 Ti
+run passed both images at requested/actual FL9_1.
+
 With strict hardware mode enabled, run the instance-stream checks with:
 
 ```powershell
