@@ -1,5 +1,17 @@
 # FL9_1 handoff
 
+## Current mission state — wrong-thread present cleanup
+
+The public HWND lifecycle test now acquires a frame on the owner thread,
+attempts to present it from a worker, verifies the expected validation error,
+then reacquires and presents another frame on the owner thread. Core discards
+the consumed frame on wrong-thread rejection, preventing the surface from
+remaining stuck with `AlreadyAcquired`. The strict test passed on the physical
+RTX 3090 Ti at requested/actual FL9_1; the full public suite passed 62/62, the
+controlled core fixture 101/101, and the DX12 core regression 92/92. See the
+latest `FL9_1_PROGRESS.md` entry for exact commands. Broader device-loss and
+historical-driver coverage remain open.
+
 ## Current mission state — unimplemented feature rejection boundary
 
 The strict public suite now verifies `PIPELINE_CACHE` and

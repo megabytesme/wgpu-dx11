@@ -215,6 +215,11 @@ The public surface test creates a hidden top-level HWND, requests a compatible
 physical FL9_1 adapter, configures a 64×64 BGRA8 sRGB FIFO surface, clears and
 presents a frame, drops its view, resizes to 80×48, and presents a second
 frame. It then verifies that acquisition from a different thread is rejected.
+It also acquires a frame on the owner thread, attempts presentation from a
+worker, checks the reported validation error, then confirms the owner thread
+can acquire and present another frame. A rejected `Queue::present` consumes
+its public `SurfaceTexture`; core must release the acquired native image so the
+surface does not remain stuck.
 The D3D11 surface operations must run on the HWND's creating thread. A shared
 queue gate serializes submissions, writes, mapping flushes, polling and
 context-backed resource creation against `Present`; reentrant mutations return

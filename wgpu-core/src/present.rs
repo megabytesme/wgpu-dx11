@@ -307,6 +307,10 @@ impl Queue {
             .raw(self.device.backend())
             .ok_or(SurfaceError::Invalid)?;
         if !raw_surface.is_present_on_current_thread() {
+            // Queue::present consumes the public frame even when this check fails.
+            if matches!(surface.discard(), Err(SurfaceError::Device(_))) {
+                let _ = surface.release();
+            }
             return Err(SurfaceError::Invalid);
         }
         let _present_guard = self.begin_present().ok_or(SurfaceError::Invalid)?;

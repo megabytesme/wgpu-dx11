@@ -361,6 +361,38 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         .expect("wait for resized public D3D11 HWND submission");
 
     drop(view);
+    let frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition before wrong-thread present failed: {result:?}")
+        }
+    };
+    let present_error = Arc::new(std::sync::Mutex::new(None));
+    let captured_present_error = Arc::clone(&present_error);
+    device.on_uncaptured_error(Arc::new(move |error| {
+        *captured_present_error.lock().unwrap() = Some(error);
+    }));
+    let (returned_surface, queue) = thread::spawn(move || {
+        queue.present(frame);
+        (surface, queue)
+    })
+    .join()
+    .expect("wrong-thread present test");
+    let present_error = present_error.lock().unwrap().take();
+    assert!(
+        present_error
+            .as_ref()
+            .is_some_and(|error| format!("{error:?}").contains("Surface is invalid")),
+        "wrong-thread present must be rejected with a surface validation error: {present_error:?}"
+    );
+    let frame = match returned_surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("surface remained unavailable after rejected present: {result:?}"),
+    };
+    queue.present(frame);
+    println!("PASS: wrong-thread present was rejected and released its acquired frame");
+
+    let surface = returned_surface;
     let (returned_surface, wrong_thread_rejected) = thread::spawn(move || {
         let result = surface.get_current_texture();
         let rejected = matches!(result, CurrentSurfaceTexture::Lost);

@@ -30,6 +30,12 @@ rejected during device request because their HAL resource types are
 unavailable. This verifies two specific gates; it does not close the broader
 core/HAL audit.
 
+The HWND lifecycle audit found and fixed a consumed-frame leak when public
+`Queue::present` is called from a non-owner thread. Core now discards that
+acquired frame before returning the validation error; the strict public test
+confirms the surface can acquire and present another frame afterward. The
+broader surface and device-loss audit remains open.
+
 ## Ordered work and gates
 
 ### Verified hardware boundary — ordinary 2D texture arrays
