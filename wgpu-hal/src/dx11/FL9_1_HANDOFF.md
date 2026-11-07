@@ -19,6 +19,13 @@ remain, the selected RTX does not stand in for historical FL9_1 GPUs, and
 Lumia runtime plus physical device-removal recovery are unverified. Continue
 the broad core/HAL contract audit.
 
+The controlled core fixture initially exposed one stale assertion after depth
+`MULTISAMPLE_X4` became query-visible. It now checks that core and HAL agree on
+the optional X4 flag while resolve remains absent; strict fixture rerun passed
+8/8. This fixture regression update is the current uncommitted follow-up and
+should be checkpointed after review. Continue from the selected-entry shader
+and core/HAL contract gaps in `FL9_1_PLAN.md`.
+
 ## Current mission state — cloned public frame lifetime
 
 The public `SurfaceTexture` lifecycle is now shared across clones. Before the

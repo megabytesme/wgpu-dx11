@@ -9678,3 +9678,31 @@ $buildDir = Join-Path ([System.IO.Path]::GetTempPath()) 'wgpu-fl91-ms8-arm32'
 $env:CARGO_TARGET_DIR = $buildDir
 & cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64_arm store 10.0.22621.0 && cargo +1.93 -Z build-std=std,panic_unwind,panic_abort check --offline -j16 -p wgpu-hal --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11'
 ~~~
+
+## Core fixture depth-format projection regression — 2026-11-07
+
+Running the complete controlled core fixture after adding depth
+`MULTISAMPLE_X4` found a stale exact-flags assertion: core now correctly
+projected the flag returned by the selected-device HAL query. Updated the
+fixture to compare core's X4 flag against the HAL result and separately assert
+that depth resolve remains absent. The strict fixture passed 8/8 afterward;
+its main hardware case exercised the unmodified selected-device projection on
+the physical RTX at requested/actual FL9_1, while six device-loss injections
+remain synthetic. The fixture also rendered its existing color/depth, shader,
+texture and resource cases successfully. Clippy passed with the existing HAL
+`create_hal_view` argument-count warning. Rustfmt reports only pre-existing
+formatting differences in earlier fixture code; the edited assertions are
+formatted, and `git diff --check` passed.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests:: -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+~~~
+
+The first run had 7/8 pass and failed only at the stale assertion; after
+updating it, the repeated strict run passed all 8. This confirms the optional
+depth multisample capability is carried through HAL into core without
+advertising depth resolve.

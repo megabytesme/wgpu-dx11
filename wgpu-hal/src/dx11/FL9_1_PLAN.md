@@ -24,6 +24,10 @@ depth test, all 377 private HAL tests and all 63 public D3D11 tests passed on
 the forced-FL9_1 RTX 3090 Ti; DX12 core passed 92 tests. The HAL also
 cross-compiled for ARM32 UWP. This is one more verified slice, not closure of
 the broad API contract audit or proof of historical/Lumia runtime behavior.
+The controlled DX11 core fixture was rerun after that capability change; its
+stale depth-format flags assertion now compares against HAL's selected-device
+query and confirms depth resolve remains absent. The strict fixture passed
+8/8.
 
 An opt-in D3D11 debug-layer run now covers the focused private indexed-render
 and readback path on the RTX at forced FL9_1: it reported zero error or

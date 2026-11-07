@@ -1669,10 +1669,18 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         depth_core.allowed_usages,
         wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT
     );
+    assert!(depth_core
+        .flags
+        .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
     assert_eq!(
-        depth_core.flags,
-        wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+        depth_core
+            .flags
+            .contains(wgt::TextureFormatFeatureFlags::MULTISAMPLE_X4),
+        depth_caps.contains(hal::TextureFormatCapabilities::MULTISAMPLE_X4)
     );
+    assert!(!depth_core
+        .flags
+        .contains(wgt::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE));
     let bc1_core =
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc1RgbaUnorm);
     assert_eq!(
