@@ -10,9 +10,8 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
-                ID3D11Buffer, ID3D11DeviceContext, ID3D11Texture2D, D3D11_BOX, D3D11_BUFFER_DESC,
-                ID3D11Texture3D,
-                D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                ID3D11Buffer, ID3D11DeviceContext, ID3D11Texture2D, ID3D11Texture3D, D3D11_BOX,
+                D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
@@ -618,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn bc1_transfer_layout_uses_padded_block_rows_and_checked_offsets() {
+    fn bc1_bc2_bc3_transfer_layouts_use_padded_block_rows_and_checked_offsets() {
         let bc1 = TextureBlockLayout {
             width: 4,
             height: 4,
@@ -652,6 +651,27 @@ mod tests {
         invalid.bytes_per_row = Some(u32::MAX - 3);
         assert!(copy_layout(&invalid, 8, 8, bc1).is_err());
         assert!(copy_layout(&padded, u32::MAX, 8, bc1).is_err());
+
+        let bc2_bc3 = TextureBlockLayout {
+            width: 4,
+            height: 4,
+            bytes: 16,
+        };
+        let padded = wgt::TexelCopyBufferLayout {
+            offset: 16,
+            bytes_per_row: Some(48),
+            rows_per_image: Some(2),
+        };
+        assert_eq!(
+            copy_layout(&padded, 8, 8, bc2_bc3).unwrap(),
+            (16, 48, 32, 80)
+        );
+        let mut invalid = padded;
+        invalid.offset = 8;
+        assert!(copy_layout(&invalid, 8, 8, bc2_bc3).is_err());
+        invalid = padded;
+        invalid.bytes_per_row = Some(40);
+        assert!(copy_layout(&invalid, 8, 8, bc2_bc3).is_err());
     }
 
     #[test]

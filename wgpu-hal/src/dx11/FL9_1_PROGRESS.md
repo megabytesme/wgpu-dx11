@@ -1,5 +1,53 @@
 # FL9_1 progress
 
+## BC2/BC3 texture upload and copy support — 2026-11-07
+
+Added the private one-mip BC2_UNORM and BC3_UNORM sampled-upload paths beside
+the existing BC1 path. The implementation now uses queried per-format support,
+16-byte blocks, 4×4 aligned extents and regions, and same-format GPU
+texture-to-texture copies. BC1 retains its 8-byte block layout. Strict tests
+uploaded padded source rows from aligned nonzero offsets, partially replaced a
+block, copied the texture to a second resource and verified all 256 sampled
+pixels for BC1, BC2 and BC3. The RTX 3090 Ti reported `0x000213a0` and
+filterable support for all three formats at explicitly requested and selected
+FL9_1.
+
+The aggregate public `TEXTURE_COMPRESSION_BC` feature remains disabled because
+the wgpu feature also covers BC4–BC7, which are not implemented by this FL9_1
+backend. The per-format downlevel texture-to-buffer mask still excludes the BC
+formats; readback from these shader-resource-only resources is not safe at
+FL9_x. Historical FL9_1 adapter behavior remains unverified.
+
+Verification with Rust 1.93.1 and the Visual Studio x64 environment:
+
+- Strict private D3D11 HAL suite: 401/401 passed on the RTX 3090 Ti; the final
+  BC helper refactor was followed by another 3/3 strict BC test run.
+- Strict public D3D11 suite: 73/73 passed, with the optional Float16x2 input
+  subcase skipped because the selected driver does not report its IA format.
+- Strict core FL9_1 adapter selection: 1/1 passed.
+- DX12 wgpu-core regression suite: 94/94 passed.
+- D3D11 HAL Clippy passed with only existing warnings; formatting and
+  `git diff --check` passed.
+
+Commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib r8_texture_tests::fl91_bc -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+rustup run 1.93 rustfmt --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/tests/dx11/r8_texture.rs
+git diff --check
+~~~
+
+The overall mission is still partially complete. Next continue the selected
+core/HAL contract audit, focusing on remaining publicly accepted operations
+and historical/runtime validation gaps rather than widening BC feature
+advertisement.
+
 ## Public front-face and culling readback — 2026-11-07
 
 Added a strict public wgpu test for rasterizer winding and back-face culling,

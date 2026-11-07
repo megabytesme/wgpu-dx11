@@ -303,6 +303,8 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rg16Snorm
                 | wgt::TextureFormat::Rgba8Snorm
                 | wgt::TextureFormat::Bc1RgbaUnorm
+                | wgt::TextureFormat::Bc2RgbaUnorm
+                | wgt::TextureFormat::Bc3RgbaUnorm
                 | wgt::TextureFormat::Rgb5g6b5Unorm
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm
@@ -318,6 +320,8 @@ impl crate::Device for Device {
             wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Bc1RgbaUnorm
+                | wgt::TextureFormat::Bc2RgbaUnorm
+                | wgt::TextureFormat::Bc3RgbaUnorm
                 | wgt::TextureFormat::Rgb5g6b5Unorm
         );
         let supported = wgt::TextureUses::TRANSIENT
@@ -388,11 +392,15 @@ impl crate::Device for Device {
             || desc.size.height == 0
             || desc.size.width > max_dimension
             || desc.size.height > max_dimension
-            || (desc.format == wgt::TextureFormat::Bc1RgbaUnorm
-                && (desc.size.width < 4
-                    || desc.size.height < 4
-                    || !desc.size.width.is_multiple_of(4)
-                    || !desc.size.height.is_multiple_of(4)))
+            || (matches!(
+                desc.format,
+                wgt::TextureFormat::Bc1RgbaUnorm
+                    | wgt::TextureFormat::Bc2RgbaUnorm
+                    | wgt::TextureFormat::Bc3RgbaUnorm
+            ) && (desc.size.width < 4
+                || desc.size.height < 4
+                || !desc.size.width.is_multiple_of(4)
+                || !desc.size.height.is_multiple_of(4)))
             || desc.usage.is_empty()
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, depth)
@@ -455,7 +463,8 @@ impl crate::Device for Device {
             Dxgi::Common::{
                 DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B5G6R5_UNORM,
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
-                DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_R16G16_SNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM,
             },
@@ -471,6 +480,8 @@ impl crate::Device for Device {
             wgt::TextureFormat::Rg16Snorm => DXGI_FORMAT_R16G16_SNORM,
             wgt::TextureFormat::Rgba8Snorm => DXGI_FORMAT_R8G8B8A8_SNORM,
             wgt::TextureFormat::Bc1RgbaUnorm => DXGI_FORMAT_BC1_UNORM,
+            wgt::TextureFormat::Bc2RgbaUnorm => DXGI_FORMAT_BC2_UNORM,
+            wgt::TextureFormat::Bc3RgbaUnorm => DXGI_FORMAT_BC3_UNORM,
             wgt::TextureFormat::Rgb5g6b5Unorm => DXGI_FORMAT_B5G6R5_UNORM,
             wgt::TextureFormat::Rgb5a1Unorm => DXGI_FORMAT_B5G5R5A1_UNORM,
             wgt::TextureFormat::Rgba4Unorm => DXGI_FORMAT_B4G4R4A4_UNORM,
@@ -515,7 +526,12 @@ impl crate::Device for Device {
             }
             | if desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
                 || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
-                    && desc.format != wgt::TextureFormat::Bc1RgbaUnorm
+                    && !matches!(
+                        desc.format,
+                        wgt::TextureFormat::Bc1RgbaUnorm
+                            | wgt::TextureFormat::Bc2RgbaUnorm
+                            | wgt::TextureFormat::Bc3RgbaUnorm
+                    )
                     && !cube)
             {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
@@ -548,7 +564,12 @@ impl crate::Device for Device {
                     1,
                     desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
                         || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
-                            && desc.format != wgt::TextureFormat::Bc1RgbaUnorm),
+                            && !matches!(
+                                desc.format,
+                                wgt::TextureFormat::Bc1RgbaUnorm
+                                    | wgt::TextureFormat::Bc2RgbaUnorm
+                                    | wgt::TextureFormat::Bc3RgbaUnorm
+                            )),
                     format,
                     desc.sample_count,
                 )
@@ -611,10 +632,11 @@ impl crate::Device for Device {
             Dxgi::Common::{
                 DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B5G6R5_UNORM,
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
-                DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
-                DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_D16_UNORM,
+                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS,
+                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM,
             },
         };
         if texture.dimension == wgt::TextureDimension::D3 {
@@ -666,6 +688,8 @@ impl crate::Device for Device {
             DXGI_FORMAT_R16G16_SNORM => wgt::TextureFormat::Rg16Snorm,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
             DXGI_FORMAT_BC1_UNORM => wgt::TextureFormat::Bc1RgbaUnorm,
+            DXGI_FORMAT_BC2_UNORM => wgt::TextureFormat::Bc2RgbaUnorm,
+            DXGI_FORMAT_BC3_UNORM => wgt::TextureFormat::Bc3RgbaUnorm,
             DXGI_FORMAT_B5G6R5_UNORM => wgt::TextureFormat::Rgb5g6b5Unorm,
             DXGI_FORMAT_B5G5R5A1_UNORM => wgt::TextureFormat::Rgb5a1Unorm,
             DXGI_FORMAT_B4G4R4A4_UNORM => wgt::TextureFormat::Rgba4Unorm,
@@ -690,6 +714,8 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rg16Snorm
                 | wgt::TextureFormat::Rgba8Snorm
                 | wgt::TextureFormat::Bc1RgbaUnorm
+                | wgt::TextureFormat::Bc2RgbaUnorm
+                | wgt::TextureFormat::Bc3RgbaUnorm
                 | wgt::TextureFormat::Rgb5g6b5Unorm
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm

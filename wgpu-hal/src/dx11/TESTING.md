@@ -1851,14 +1851,15 @@ driver behavior or general public adapter support.
 ### FL9_1-required sampled/upload formats
 
 Microsoft lists R8_UNORM (legacy L8), R8G8_SNORM (legacy V8U8),
-R8G8B8A8_SNORM (legacy Q8W8V8U8) and BC1_UNORM (legacy DXT1) as FL9_1 2D
+R8G8B8A8_SNORM (legacy Q8W8V8U8) and BC1/BC2/BC3_UNORM (legacy DXT1/DXT3/DXT5) as FL9_1 2D
 shader-sample formats. `R16G16_SNORM` has a FL9_1 2D-texture guarantee, but
 its required `SHADER_SAMPLE` support begins at FL9_2. D3D11 permits
 point-filtered sampling when a selected device reports `TEXTURE2D` without
 `SHADER_SAMPLE`; the backend reports that format as non-filterable. A failed
 query or missing `TEXTURE2D` bit is rejected. These formats support only
-single-mip sampled/upload textures. BC1 dimensions and updates must be
-aligned to complete 4×4 blocks.
+single-mip sampled/upload textures. BC1/BC2/BC3 dimensions and updates must be
+aligned to complete 4×4 blocks, and source offsets/row pitches align to the
+format block byte size.
 Run the synthetic capability checks and strict hardware tests with:
 
 ```powershell
@@ -1867,7 +1868,7 @@ cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rg8_snorm -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 rgba8_snorm -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_texture_tests::fl91_rg16_snorm_is_query_gated_and_samples_when_supported -- --nocapture --test-threads=1
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 bc1 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -p wgpu-hal --lib --no-default-features --features dx11 r8_texture_tests::fl91_bc -- --nocapture --test-threads=1
 ```
 
 The CPU tests cover legal and illegal usages, shape limits and missing or
@@ -1889,13 +1890,14 @@ pixels. The test therefore validates both the optional native behavior and
 the rejection boundary. This forced modern driver does not establish behavior
 on historical FL9_1 hardware.
 The BC1 test uploads an 8×8 block-compressed image from offset 8 with a 24-byte
-block-row pitch, replaces the block at [4,0] with a second padded upload, and
-checks all 256 pixels after sampling. A second strict core case copies the
-BC1 source into another texture before sampling and validates all 64 target
-pixels. Its format mask was `0x000213a0` and filtered sampling was reported.
-BC1 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
+block-row pitch. BC2/BC3 use offset 16 and a 48-byte row pitch because their
+blocks are 16 bytes. Each test replaces the block at [4,0] using an aligned
+32-byte pitch, copies the result to a second sampled texture, and checks all
+256 output pixels. The forced-FL9_1 RTX reports `0x000213a0` and filtered
+sampling for all three formats.
+BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
 texture-to-buffer attempt fails core validation because FL9_x cannot safely
-copy an SRV-only BC1 texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM,
+copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM,
 R8G8B8A8_SNORM, RGB5A1 and RGBA4 still do not support render-target,
 copy-source or readback operations in this private subset. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
@@ -2542,7 +2544,7 @@ mapped readback and explicit teardown. It checks all 64 copied bytes and all
 unsupported transient formats and usages and creates transient textures and
 views. Its restricted numeric limits and format capabilities do not constitute
 a safe general adapter contract. The fixture verifies that core's format-feature
-query preserves the HAL's RGBA8, D24S8, BC1-only and unsupported-BC results. It
+query preserves the HAL's RGBA8, D24S8, BC1-only synthetic and unsupported-BC results. It
 also verifies that core rejects asymmetric stencil state with the missing
 `TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL. Full-channel
 straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`, while the

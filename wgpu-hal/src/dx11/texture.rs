@@ -29,13 +29,13 @@ use windows::{
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
                 DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
-                DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM,
-                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS,
-                DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS,
-                DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
-                DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC2_UNORM,
+                DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
+                DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM,
+                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -329,6 +329,11 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             height: 4,
             bytes: 8,
         }),
+        DXGI_FORMAT_BC2_UNORM | DXGI_FORMAT_BC3_UNORM => Ok(TextureBlockLayout {
+            width: 4,
+            height: 4,
+            bytes: 16,
+        }),
         _ => Err(invalid()),
     }
 }
@@ -583,6 +588,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_BC1_UNORM
+                    | DXGI_FORMAT_BC2_UNORM
+                    | DXGI_FORMAT_BC3_UNORM
                     | DXGI_FORMAT_B5G6R5_UNORM
             )
             || (desc.MipLevels > 1
@@ -617,6 +624,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_B4G4R4A4_UNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
+                    | DXGI_FORMAT_BC2_UNORM
+                    | DXGI_FORMAT_BC3_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
@@ -713,6 +722,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_B4G4R4A4_UNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
+                    | DXGI_FORMAT_BC2_UNORM
+                    | DXGI_FORMAT_BC3_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
@@ -764,6 +775,8 @@ impl NativeDevice {
                 | DXGI_FORMAT_B4G4R4A4_UNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
                 | DXGI_FORMAT_BC1_UNORM
+                | DXGI_FORMAT_BC2_UNORM
+                | DXGI_FORMAT_BC3_UNORM
         ) {
             unsafe { self.raw_device().CheckFormatSupport(desc.Format) }
                 .is_ok_and(|support| support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0)
@@ -999,8 +1012,10 @@ impl NativeDevice {
                     format,
                     DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_UNORM | DXGI_FORMAT_B5G6R5_UNORM
                 ));
-        let bc1_sampled = format == DXGI_FORMAT_BC1_UNORM
-            && !render_target
+        let bc_sampled = matches!(
+            format,
+            DXGI_FORMAT_BC1_UNORM | DXGI_FORMAT_BC2_UNORM | DXGI_FORMAT_BC3_UNORM
+        ) && !render_target
             && (layers == 1 || cube)
             && mip_levels == 1
             && width >= 4
@@ -1016,7 +1031,7 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !(rgba_bgra || uncompressed_sampled || bc1_sampled)
+            || !(rgba_bgra || uncompressed_sampled || bc_sampled)
             || (cube
                 && (layers != 6
                     || width != height
@@ -1096,6 +1111,8 @@ impl NativeDevice {
                         | DXGI_FORMAT_B4G4R4A4_UNORM
                         | DXGI_FORMAT_R8G8B8A8_SNORM
                         | DXGI_FORMAT_BC1_UNORM
+                        | DXGI_FORMAT_BC2_UNORM
+                        | DXGI_FORMAT_BC3_UNORM
                 ) {
                 wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {

@@ -115,12 +115,17 @@ fn sample_upload(
                 view_formats: vec![],
             })
         };
-        let usage_supported =
-            if usage == wgt::TextureUses::COPY_SRC && format == wgt::TextureFormat::Bc1RgbaUnorm {
-                format_support & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0
-            } else {
-                render_target_supported
-            };
+        let usage_supported = if usage == wgt::TextureUses::COPY_SRC
+            && matches!(
+                format,
+                wgt::TextureFormat::Bc1RgbaUnorm
+                    | wgt::TextureFormat::Bc2RgbaUnorm
+                    | wgt::TextureFormat::Bc3RgbaUnorm
+            ) {
+            format_support & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0
+        } else {
+            render_target_supported
+        };
         assert_eq!(
             result.is_ok(),
             usage_supported,
@@ -233,6 +238,12 @@ fn sample_upload(
             .unwrap()
     };
 
+    let compressed = matches!(
+        format,
+        wgt::TextureFormat::Bc1RgbaUnorm
+            | wgt::TextureFormat::Bc2RgbaUnorm
+            | wgt::TextureFormat::Bc3RgbaUnorm
+    );
     let texture = unsafe {
         device
             .create_texture(&crate::TextureDescriptor {
@@ -246,16 +257,46 @@ fn sample_upload(
                 sample_count: 1,
                 dimension: wgt::TextureDimension::D2,
                 format,
-                usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+                usage: wgt::TextureUses::COPY_DST
+                    | if compressed {
+                        wgt::TextureUses::COPY_SRC
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
+                    | wgt::TextureUses::RESOURCE,
                 memory_flags: crate::MemoryFlags::empty(),
                 view_formats: vec![],
             })
             .unwrap()
     };
+    let copy_destination = if compressed {
+        Some(unsafe {
+            device
+                .create_texture(&crate::TextureDescriptor {
+                    label: None,
+                    size: wgt::Extent3d {
+                        width: extent[0],
+                        height: extent[1],
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format,
+                    usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+                    memory_flags: crate::MemoryFlags::empty(),
+                    view_formats: vec![],
+                })
+                .unwrap()
+        })
+    } else {
+        None
+    };
+    let sampled_texture = copy_destination.as_ref().unwrap_or(&texture);
     let view = unsafe {
         device
             .create_texture_view(
-                &texture,
+                sampled_texture,
                 &crate::TextureViewDescriptor {
                     label: None,
                     format,
@@ -520,6 +561,34 @@ fn sample_upload(
         if let Some((buffer, region)) = &patch_upload {
             encoder.copy_buffer_to_texture(buffer, &texture, [region.clone()].into_iter());
         }
+        if let Some(destination) = &copy_destination {
+            encoder.copy_texture_to_texture(
+                &texture,
+                wgt::TextureUses::COPY_SRC,
+                destination,
+                [crate::TextureCopy {
+                    src_base: crate::TextureCopyBase {
+                        mip_level: 0,
+                        array_layer: 0,
+                        origin: wgt::Origin3d::ZERO,
+                        aspect: crate::FormatAspects::COLOR,
+                    },
+                    dst_base: crate::TextureCopyBase {
+                        mip_level: 0,
+                        array_layer: 0,
+                        origin: wgt::Origin3d::ZERO,
+                        aspect: crate::FormatAspects::COLOR,
+                    },
+                    size: crate::CopyExtent {
+                        width: extent[0],
+                        height: extent[1],
+                        depth: 1,
+                    },
+                }]
+                .into_iter(),
+            );
+        }
+        assert!(encoder.failure.is_none(), "deferred texture upload failed");
         encoder.begin_render_pass(&pass).unwrap();
         encoder.set_render_pipeline(&pipeline);
         encoder.set_bind_group(&layout, 0, &group, &[]);
@@ -568,6 +637,9 @@ fn sample_upload(
         device.destroy_texture_view(target_view);
         device.destroy_texture(target);
         device.destroy_texture_view(view);
+        if let Some(destination) = copy_destination {
+            device.destroy_texture(destination);
+        }
         device.destroy_texture(texture);
         device.destroy_sampler(sampler);
         device.destroy_pipeline_layout(layout);
@@ -846,6 +918,117 @@ fn fl91_bc1_unorm_padded_block_upload_samples_into_rgba() -> windows::core::Resu
             fragment_body: "return textureSample(image, image_sampler, input.uv);",
         },
         &texels,
+        |x, y| {
+            if x >= 4 && y < 4 {
+                [0, 255, 255, 255]
+            } else {
+                colors[(y as usize / 4) * 2 + x as usize / 4]
+            }
+        },
+    )
+}
+
+#[test]
+fn fl91_bc2_unorm_padded_block_upload_samples_into_rgba() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_BC2_UNORM;
+
+    fn solid_block(color: u16) -> [u8; 16] {
+        let [low, high] = color.to_le_bytes();
+        [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, low, high, low, high, 0, 0, 0, 0,
+        ]
+    }
+
+    sample_compressed_upload(
+        CompressedUpload {
+            format: wgt::TextureFormat::Bc2RgbaUnorm,
+            native_format: DXGI_FORMAT_BC2_UNORM,
+            format_name: "BC2_UNORM",
+            bytes_per_block: 16,
+            row_pitch: 48,
+            source_offset: 16,
+            patch_row_pitch: 32,
+        },
+        [
+            [255, 0, 0, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+            [255, 255, 255, 255],
+        ],
+        solid_block,
+    )
+}
+
+#[test]
+fn fl91_bc3_unorm_padded_block_upload_samples_into_rgba() -> windows::core::Result<()> {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_BC3_UNORM;
+
+    fn solid_block(color: u16) -> [u8; 16] {
+        let [low, high] = color.to_le_bytes();
+        [255, 255, 0, 0, 0, 0, 0, 0, low, high, low, high, 0, 0, 0, 0]
+    }
+
+    sample_compressed_upload(
+        CompressedUpload {
+            format: wgt::TextureFormat::Bc3RgbaUnorm,
+            native_format: DXGI_FORMAT_BC3_UNORM,
+            format_name: "BC3_UNORM",
+            bytes_per_block: 16,
+            row_pitch: 48,
+            source_offset: 16,
+            patch_row_pitch: 32,
+        },
+        [
+            [255, 0, 0, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+            [255, 255, 255, 255],
+        ],
+        solid_block,
+    )
+}
+
+struct CompressedUpload {
+    format: wgt::TextureFormat,
+    native_format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    format_name: &'static str,
+    bytes_per_block: usize,
+    row_pitch: usize,
+    source_offset: usize,
+    patch_row_pitch: usize,
+}
+
+fn sample_compressed_upload(
+    upload: CompressedUpload,
+    colors: [[u8; 4]; 4],
+    solid_block: impl Fn(u16) -> [u8; 16],
+) -> windows::core::Result<()> {
+    let color_565 = [0xf800, 0x07e0, 0x001f, 0xffff];
+    let blocks: vec::Vec<_> = color_565
+        .into_iter()
+        .flat_map(|color| solid_block(color).into_iter())
+        .collect();
+    let replacement = solid_block(0x07ff);
+    sample_upload(
+        SampledTexture {
+            format: upload.format,
+            native_format: upload.native_format,
+            format_name: upload.format_name,
+            extent: [8, 8],
+            block_dimensions: [4, 4],
+            bytes_per_block: upload.bytes_per_block,
+            row_pitch: upload.row_pitch,
+            source_offset: upload.source_offset,
+            patch: Some(TexturePatch {
+                origin: [4, 0],
+                extent: [4, 4],
+                bytes: &replacement,
+                row_pitch: upload.patch_row_pitch,
+                source_offset: upload.source_offset,
+            }),
+            fragment_body: "return textureSample(image, image_sampler, input.uv);",
+        },
+        &blocks,
         |x, y| {
             if x >= 4 && y < 4 {
                 [0, 255, 255, 255]

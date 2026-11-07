@@ -300,8 +300,9 @@ public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8_UNORM, R8G8_UNORM, R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM, BC1_UNORM, D16_UNORM and D24S8 are always
-single-mip in the private implementation. RGBA8 and BGRA8, including their
+R8_UNORM, R8G8_UNORM, R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM,
+BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8 are always single-mip
+in the private implementation. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
 backend mip path is unavailable. The controlled fixture asserts this
@@ -549,13 +550,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   forced-FL9_1 test verifies padded signed four-channel data through GPU
   sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
   Render-target, copy-source, readback and mip-chain uses remain unsupported.
-- BC1_UNORM has a queried one-mip, one-layer sampled/upload subset and a
-  block-aligned GPU texture-copy source path. Texture dimensions, upload
-  regions and copy boxes must align to 4×4 blocks; rows are measured in
-  eight-byte blocks. Strict forced-FL9_1 tests copy BC1 into a second sampled
-  texture and match all 64 rendered output pixels. Core's per-format
-  texture-to-buffer limit rejects BC1 CPU readback before HAL. Render-target,
-  mip-chain and sRGB view uses remain unsupported.
+- BC1/BC2/BC3_UNORM have queried one-mip, one-layer sampled/upload subsets and
+  block-aligned GPU texture-copy source paths. Dimensions, row pitches, offsets,
+  updates and copy boxes align to 4×4 blocks and the format block size (8 bytes
+  for BC1; 16 for BC2/BC3). Strict forced-FL9_1 tests upload, partially replace,
+  copy to a second texture and sample all 256 output pixels per format. Core's
+  per-format texture-to-buffer limit rejects CPU readback before HAL.
+  Render-target, mip-chain and sRGB view uses remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.
@@ -895,8 +896,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
 The selected-device projection now supplies conservative limits, alignments,
 downlevel gates, features and per-format reports to both ordinary adapter
 enumeration and the controlled core fixture. It withholds the aggregate BC
-compression feature because only BC1 is implemented; the private BC1 core case
-opts into that feature locally for coverage.
+compression feature because BC4 through BC7 remain unimplemented; isolated
+private core BC tests opt into the aggregate feature only for coverage.
 
 ## Remaining public contract and completion gates
 

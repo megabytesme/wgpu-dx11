@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+Latest texture-format increment: private BC1/BC2/BC3_UNORM now support queried
+single-mip sampled uploads, aligned partial block updates and same-format GPU
+texture copies. Strict FL9_1 readback matched 256/256 output pixels for each
+format on the RTX 3090 Ti. The aggregate BC feature remains withheld because
+BC4–BC7 are not implemented. The strict HAL suite passed 401/401, the public
+D3D11 suite 73/73 (with one optional Float16x2 subcase skipped), the core
+adapter-selection regression 1/1 and DX12 core 94/94. See the latest progress
+entry for commands and exact driver details. Continue the public core/HAL
+contract audit; historical FL9_1 and Lumia/CoreWindow runtime remain open.
+
 The latest contract correction separates statically bounded from
 runtime-dependent shader loops. Static vertex and fragment loops still render
 on the forced-FL9_1 RTX path; core rejects dynamic loop bounds in the selected
@@ -640,8 +650,9 @@ entry-point selection are covered by a strict public test.
    the shared thirteen-slot HAL allocator; strict core GPU coverage exercises
    two independent fragment uniforms, a vertex uniform alongside a fragment
    uniform through the same selected-device projection, and rejects seven in
-   one stage. The aggregate BC feature stays
-   withheld because only BC1 is implemented. Continue the descriptor and
+   one stage. The aggregate BC feature stays withheld because BC4 through BC7
+   remain unsupported; BC1, BC2 and BC3 are now implemented only in the
+   selected-format private texture path. Continue the descriptor and
    feature/format audit before treating the exposed subset as complete.
 6. Keep the narrow HWND surface contract safe and tested alongside CoreWindow.
    Public operations serialize queue submission, writes, mapping flushes,

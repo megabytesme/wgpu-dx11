@@ -1,5 +1,20 @@
 # FL9_1 handoff
 
+## Latest format checkpoint — BC1/BC2/BC3
+
+The private FL9_1 subset now supports queried sampled upload, block-aligned
+partial updates and same-format GPU texture copies for BC1_UNORM, BC2_UNORM and
+BC3_UNORM. On the RTX 3090 Ti, all three returned support mask `0x000213a0` at
+requested/actual FL9_1; strict rendered readback matched all 256 pixels for
+each after an upload, partial replacement and texture copy. BC1 uses 8-byte
+4×4 blocks; BC2/BC3 use 16-byte blocks. BC texture-to-buffer readback,
+render targets, mip chains, sRGB views and BC4–BC7 remain unavailable. The
+aggregate public BC feature stays withheld. The 401-test private HAL suite,
+73-test public D3D11 suite, core adapter-selection test and 94-test DX12 core
+suite passed; one optional Float16x2 IA subcase skipped. See the top of
+`FL9_1_PROGRESS.md` for exact commands. Resume with the selected public
+core/HAL contract audit; do not treat this format slice as mission completion.
+
 ## Latest public rasterizer check — 2026-11-07
 
 The strict public D3D11 target now checks opposite triangle windings through
