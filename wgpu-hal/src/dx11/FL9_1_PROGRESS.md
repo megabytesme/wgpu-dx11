@@ -9491,3 +9491,29 @@ cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,st
 cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
 git diff --check
 ~~~
+
+## Public query-set validation boundary — 2026-11-07
+
+The query-set regression now covers all three public query types. On the
+physical RTX 3090 Ti at requested/actual FL9_1 (`0x10de:0x2203`, driver
+`32.0.16.2101`), core rejected occlusion through the missing
+`OCCLUSION_QUERY` downlevel flag and rejected timestamp and pipeline-statistics
+sets through their absent features, before the unsupported HAL query creation
+method. The focused test passed 1/1; it issued no query commands. The complete
+strict public D3D11 suite passed 62/62 in 40.59 seconds. Its optional
+Float16x2 vertex-input subcase visibly skipped because the selected device
+reported no `R16G16_FLOAT` input-assembler support. Public-test Clippy passed
+with the existing `create_hal_view` too-many-arguments warning. `git diff
+--check` passed. Rustfmt reported three existing differences elsewhere in the
+large public test file; the new test's changed lines require no formatting
+change. The Lumia Device Portal request timed out again; CoreWindow runtime
+verification remains outstanding.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unavailable_query_types_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~

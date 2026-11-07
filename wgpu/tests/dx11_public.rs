@@ -11898,7 +11898,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
 }
 
 #[test]
-fn public_dx11_rejects_occlusion_queries_at_fl91() {
+fn public_dx11_rejects_unavailable_query_types_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -11953,7 +11953,19 @@ fn public_dx11_rejects_occlusion_queries_at_fl91() {
             }));
         },
     );
-    println!("PASS: public core rejected occlusion and timestamp query sets before unsupported D3D11 query creation");
+    expect_validation_error_containing(
+        &device,
+        "FL9_1 pipeline-statistics query set",
+        "PIPELINE_STATISTICS_QUERY",
+        || {
+            drop(device.create_query_set(&QuerySetDescriptor {
+                label: Some("unsupported FL9_1 pipeline-statistics queries"),
+                ty: QueryType::PipelineStatistics(PipelineStatisticsTypes::all()),
+                count: 1,
+            }));
+        },
+    );
+    println!("PASS: public core rejected occlusion, timestamp and pipeline-statistics query sets before unsupported D3D11 query creation");
 }
 
 #[test]
