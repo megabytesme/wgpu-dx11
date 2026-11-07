@@ -1335,6 +1335,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let limits = adapter.limits();
     let features = adapter.features();
+    assert!(!adapter.get_downlevel_capabilities().limits.texture_1d);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} type={:?} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.device_type, info.driver, info.driver_info
@@ -1348,6 +1349,24 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         ..Default::default()
     }))
     .expect("request a device within the reported FL9_1 capability projection");
+
+    expect_validation_error(&device, "FL9_1 1D texture creation", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported FL9_1 1D texture"),
+            size: Extent3d {
+                width: 16,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D1,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        }));
+    });
+    println!("PASS: core rejected D1 texture creation using the FL9_1 dimension gate");
 
     let texel_load_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 texture-load validation layout"),

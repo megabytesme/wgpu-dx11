@@ -451,6 +451,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - Texture resources and views remain 2D-only. The internal projection retains
   inherited numeric 1D/3D limits of 2048/256 but marks both dimension
   capabilities unavailable; core rejects those texture dimensions before HAL.
+  The 1D gate is an FL9_1 API limitation, not an unfinished view path:
+  Microsoft's [10Level9 `CreateTexture1D` reference](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device) says the method is not
+  supported at any 9.x feature level. The generic 2048-wide limit is not
+  evidence that a 1D resource can be created.
   It also requires explicit downlevel flags for 2D-array, cube and cube-array
   binding layouts and views;
   storage-texture array layouts use the same array gate. A one-layer 2D-array

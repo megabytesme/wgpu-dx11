@@ -9579,3 +9579,34 @@ cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-featur
 rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ~~~
+
+## Verified resource boundary — 1D textures — 2026-11-07
+
+The generic wgpu limits retain a nonzero `max_texture_dimension_1d` for FL9_1,
+but Microsoft's 10Level9 device table explicitly states that
+`ID3D11Device::CreateTexture1D` is not supported on any 9.x feature level.
+This confirms the existing `DownlevelLimits::texture_1d = false` projection is
+intentional; a D1 texture cannot be added as a backend implementation slice at
+FL9_1. The strict public offscreen test now asserts the capability gate and
+that a D1 RGBA8 sampled/upload descriptor is rejected by core before reaching
+HAL. The remainder of the test rendered and read back 1,024 pixels on NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly
+requested/actual FL9_1 and `software=false`; the D1 rejection itself issued no
+GPU command.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+~~~
+
+The focused test passed 1/1. The complete strict public D3D11 suite then passed
+63/63 in 44.69 seconds; the optional Float16x2 subcase visibly skipped because
+the selected device lacks the queried IA format support. Core's strict
+`requesting_dx11_exposes_only_fl91_hardware_adapters` test passed 1/1 and
+enumerated one physical FL9_1 adapter. Public-test Clippy passed with the
+existing `create_hal_view` too-many-arguments warning. Rustfmt check reports
+four pre-existing formatting differences elsewhere in the large public test
+file; `git diff --check` passed. Visual Studio's developer prompt emitted its
+existing `Error: Unknown error` banner, but MSVC initialization and the Cargo
+tests completed successfully. This records a feature-level API limit, not an
+additional implementation capability.

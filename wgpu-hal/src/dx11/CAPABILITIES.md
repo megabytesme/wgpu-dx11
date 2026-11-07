@@ -1136,7 +1136,13 @@ capacities: the private pipeline allocator still caps aggregate resources at
 eight textures, sixteen samplers and thirteen uniform slots. The projection
 limits each shader stage to six uniforms so disjoint vertex and fragment
 bindings together cannot exceed that shared allocator. One-dimensional
-textures remain disabled. Three-dimensional resources are exposed only when
+textures remain disabled: although the generic resource-limit table lists a
+2048-texel FL9_1 1D dimension, Microsoft's [10Level9 `CreateTexture1D`
+table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+explicitly marks the method unsupported on every 9.x feature level. The
+numeric `Limits::max_texture_dimension_1d` value therefore does not imply that
+the D3D11 FL9_1 API can create such a resource. Three-dimensional resources
+are exposed only when
 the selected device's RGBA8 query includes `TEXTURE3D | SHADER_SAMPLE` and the
 sampled-upload backend path is present. This narrow path supports POT RGBA8,
 single-sample volumes up to the FL9_1 dimension limit of 256, with

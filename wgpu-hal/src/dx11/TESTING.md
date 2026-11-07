@@ -2753,3 +2753,15 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91 -- --nocapture --test-threads=1
 ```
+
+### FL9_1 1D texture boundary
+
+The strict public offscreen test asserts `DownlevelLimits::texture_1d` is
+false and that core rejects a D1 texture before HAL. This is required by the
+10Level9 device contract: `CreateTexture1D` is unavailable on 9.x, even though
+the generic `max_texture_dimension_1d` value is nonzero.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+```

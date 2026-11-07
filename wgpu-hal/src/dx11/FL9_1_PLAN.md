@@ -68,6 +68,16 @@ planned for the FL9_1 path.
 
 [Microsoft feature-level capability table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro).
 
+### Verified resource boundary — 1D textures
+
+Although generic wgpu limits retain a 2048-texel FL9_1 `max_texture_dimension_1d`,
+Microsoft's 10Level9 device reference explicitly marks
+`ID3D11Device::CreateTexture1D` unsupported for all 9.x levels. The D3D11
+projection therefore keeps `DownlevelLimits::texture_1d` false. Do not treat
+the generic dimension limit as a resource-creation guarantee. The strict
+public offscreen regression asserts the reported gate and that core rejects a
+D1 texture before HAL.
+
 ### Verified boundary — mutable format views unavailable at FL9_1
 
 Compatible RGBA8/BGRA8 UNORM-to-sRGB view lists remain rejected by core and
