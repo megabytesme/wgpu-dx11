@@ -2176,6 +2176,8 @@ D16 depth. The RTX 3090 Ti at requested/actual FL9_1 produced identical full
 the complete public suite remains 63/63 from the immediately preceding
 checkpoint, with one visible optional Float16x2 subcase skip. This supplies a
 representative scene check but does not change the broader incomplete status.
+Implementation and test checkpoint: `d4458f457c8b117c76eebd7e20abfebf386b7778`
+(`dx11: verify public FL9_1 textured 3D scene`).
 
 Checkpoint `08702e95f9c930e8e14a59d53c18711db39bb2bb` records execution for
 both D16 and D24S8 in the 4x resolve test. The latest strict private suite was

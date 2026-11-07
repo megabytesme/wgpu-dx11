@@ -9709,6 +9709,9 @@ advertising depth resolve.
 
 ## Latest increment — representative public 3D scene and Lumia probe — 2026-11-07
 
+Implementation and verification checkpoint: `d4458f457c8b117c76eebd7e20abfebf386b7778`
+(`dx11: verify public FL9_1 textured 3D scene`).
+
 Checkpoint `08702e95f9c930e8e14a59d53c18711db39bb2bb` expanded the public 4x
 depth test to execute both selected-device-supported formats. The follow-up
 adds `public_dx11_textured_depth_tested_3d_scene_at_fl91`, an indexed cube
