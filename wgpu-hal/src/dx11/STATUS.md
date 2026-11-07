@@ -219,8 +219,9 @@ from the selected `SHADER_SAMPLE` query. Rg8Snorm and Rgba8Snorm mip chains are
 separately exposed only after the corresponding selected `TEXTURE2D | MIP`
 query and backend path are available.
 An eleventh strict test verifies emulated per-instance vertex streams and a
-nonzero first-instance range (20 green, 20 yellow and 472 blue pixels); core
-rejects the unsupported `instance_index` builtin.
+nonzero first-instance range (20 green, 20 yellow and 472 blue pixels). A later
+strict test verifies WGSL `instance_index` through the host-updated FL9_1
+constant path; `vertex_index` remains unavailable.
 
 A twelfth strict public test verifies the FL9_1 aggregate fragment uniform
 budget across two sparse bindings: all 32 float4 vectors contribute to the

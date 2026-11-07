@@ -432,8 +432,8 @@ not implied.
 Public rendering also verifies the implemented per-instance vertex-stream
 emulation with a nonzero first-instance range. The skipped first record does
 not render, the next two records produce distinct colors, and all other pixels
-retain the clear color. Core rejects `instance_index` entry points because the
-selected FL9_1 contract does not expose that system value.
+retain the clear color. A later strict test verifies `instance_index` through
+the host-updated FL9_1 constant path; `vertex_index` remains unavailable.
 
 A targetless pipeline may include a fragment entry point with no result when
 it has a depth/stencil attachment. FXC's `ps_4_0_level_9_1` compiler rejects

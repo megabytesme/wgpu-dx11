@@ -559,8 +559,9 @@ nearest sampling. They remain single-mip-only.
 An eleventh strict public test draws per-instance offsets and colors from a
 second vertex stream using `draw(0..3, 1..3)`. It verifies that the nonzero
 first-instance range selects the second and third records, while the skipped
-first record remains absent. It also confirms a vertex entry declaring
-`instance_index` is rejected by public core validation.
+first record remains absent. A later strict test verifies `instance_index`
+through the host-updated FL9_1 constant path; this earlier result predates that
+implementation.
 
 The controlled FL9_1 core fixture also checks that a two-mip D24S8 render
 attachment is rejected by the missing `DEPTH_TEXTURE_MULTI_MIP` downlevel flag
@@ -1182,11 +1183,12 @@ the green gather does not cover it. The expected green pixel therefore
 distinguishes instance-outer ordering from segment-outer ordering, which would
 leave it red.
 The controlled core fixture's instance-rate case produced 32 red and 32 green
-pixels. Pipelines using `instance_index` remain unsupported. Indexed lists and
-strips with only instance-rate/no vertex-rate inputs are covered below. The
-strip path reads the current index buffer during replay and emits a direct strip
-per restart run so it does not merge primitive runs. These results do not
-establish general instancing or historical FL9_1-driver behavior.
+pixels. This earlier result predates the host-emulated `instance_index`
+implementation, which is verified by the current strict public test. Indexed
+lists and strips with only instance-rate/no vertex-rate inputs are covered
+below. The strip path reads the current index buffer during replay and emits a
+direct strip per restart run so it does not merge primitive runs. These results
+do not establish general instancing or historical FL9_1-driver behavior.
 
 The no-vertex-rate indexed-list and strip cases are covered through both the
 private HAL and public wgpu API:

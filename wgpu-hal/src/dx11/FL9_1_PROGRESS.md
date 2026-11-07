@@ -11046,3 +11046,10 @@ warnings (`create_hal_view`, test-only range construction, item ordering and
 needless borrow). No Naga or core lint warning was reported. The public suite
 also passed its regression that confirms default wgpu enumeration still does
 not expose D3D11.
+
+Checkpoint `225007ef5` contains the verified host-emulated `instance_index`
+implementation. The earlier implementation status and testing notes that
+reported this builtin as rejected have been marked as superseded; the current
+strict evidence above is the source of truth. The next selected shader gap is
+`vertex_index`, whose implementation must preserve source IDs through the
+backend's rebased and gathered index paths.
