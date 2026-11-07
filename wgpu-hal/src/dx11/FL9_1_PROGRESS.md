@@ -10921,3 +10921,34 @@ This increment remains a query-gated capability model and implementation
 extension, not evidence that the development RTX executes RG8_UNORM mip chains.
 Continue the core/HAL contract audit and prioritize functionality that can be
 verified on the available FL9_1 device.
+
+## Public harness coverage audit — 2026-11-07
+
+The opt-in test harness and public capability projection were checked again from
+commit `53928a52a`. Strict GPU configuration generation recorded the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at FL9_1.
+The all-features `wgpu-gpu` target compiled with the installed VS2017 x64 ATL
+library added to `LIB` for that command because VS2022 Build Tools lacks
+`atls.lib`; no toolchain or repository configuration was changed. The full
+strict target reported 351 test cases without failures, but only
+`naga_capabilities::validate_capabilities` executed. The other 330 were marked
+unsupported by the adapter's required limits/downlevel properties and 20 were
+backend-skipped. Filtered generic transfer, texture-view and render-target
+suites likewise performed no GPU operations. These counts are harness outcomes,
+not 351 hardware passes; backend-specific `dx11_public` readback tests remain
+the broad rendering evidence.
+
+A read-only Lumia Device Portal request for `/api/os/devicefamily` timed out
+from Ben-Desktop; TCP port 443 was unreachable. No device settings were
+changed. Lumia ARM32 runtime verification remains unavailable in this session.
+
+The transfer audit reconfirmed that the 10Level9 FL9_1 context contract
+forbids 3D texture GPU copies and GPU-to-CPU 3D copies, and forbids copying
+mipmapped volume textures. The projection's `texture_3d_texture_copies = false`
+is a hardware-bound restriction, not an unimplemented native copy path. See
+Microsoft's [CopySubresourceRegion FL9_x rules](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copysubresourceregion).
+
+The backend remains a limited prototype with substantial explicit restrictions;
+continue the core/HAL contract audit and selected-device verification. The
+historical FL9_1 driver matrix, Lumia runtime, physical device-removal recovery
+and exhaustive public API audit remain open.
