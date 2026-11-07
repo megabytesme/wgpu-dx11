@@ -1427,6 +1427,18 @@ nonindexed point pipelines, including a single interior point and transitions
 between point and triangle pipelines. CPU tests verify point batching at the
 65,535-primitive boundary. Indexed point emulation is covered separately above.
 It also checks masked alpha, inversion and vignette blends against readback.
+
+The public strict path exercises batching beyond that limit on actual hardware:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_splits_point_draw_at_fl91_primitive_limit -- --nocapture --test-threads=1
+```
+
+The test draws 65,536 points at forced FL9_1. The first 65,535 vertices are
+outside the viewport and the only visible point is the final vertex, so the
+readback proves the second native batch used the correctly rebased vertex
+range.
 `fl91_premultiplied_blend_full_channels_and_transition` checked six complete
 images at forced FL9_1: premultiplied blending and two opaque transitions for
 each of linear RGBA8 and BGRA8. The exact supported premultiplied state uses

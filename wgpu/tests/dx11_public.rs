@@ -8482,6 +8482,211 @@ fn public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91() {
 }
 
 #[test]
+fn public_dx11_splits_point_draw_at_fl91_primitive_limit() {
+    const MAX_PRIMITIVES: u32 = 65_535;
+
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(required, "strict mode requires a physical FL9_1 D3D11 adapter");
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; point_limit={MAX_PRIMITIVES}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 point draw primitive-limit test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 point draw split shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 point draw split pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::PointList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let mut vertices = Vec::with_capacity((MAX_PRIMITIVES as usize + 1) * 8);
+    for _ in 0..MAX_PRIMITIVES {
+        vertices.extend(2.0f32.to_ne_bytes());
+        vertices.extend(2.0f32.to_ne_bytes());
+    }
+    vertices.extend(0.0f32.to_ne_bytes());
+    vertices.extend(0.0f32.to_ne_bytes());
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 point draw boundary vertices"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map point boundary vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 point draw boundary target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 point draw boundary readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 point draw boundary encoding"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("draw one point beyond the FL9_1 batch limit"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..MAX_PRIMITIVES + 1, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 split point draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("point draw readback callback")
+        .expect("map point draw readback");
+    let red_pixels = {
+        let mapped = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped point draw readback");
+        let mut red_pixels = 0;
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &mapped[offset..offset + 4];
+                if pixel == [255, 0, 0, 255] {
+                    red_pixels += 1;
+                } else {
+                    assert_eq!(pixel, [0, 0, 255, 255], "unexpected pixel ({x}, {y})");
+                }
+            }
+        }
+        red_pixels
+    };
+    readback.unmap();
+    assert!(
+        red_pixels > 0,
+        "the final point in the second batch was lost"
+    );
+    println!(
+        "PASS: public FL9_1 point-list draw split 65,536 primitives at the 65,535 limit; the final vertex rendered {red_pixels} red pixel(s) and all other target pixels stayed blue"
+    );
+}
+
+#[test]
 fn public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

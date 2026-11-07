@@ -840,3 +840,13 @@ validation is incomplete. Then broaden public workload coverage. Keep the
 desktop HWND and private CoreWindow paths separate in the claims: HWND output
 has been qualitatively captured, while Lumia/CoreWindow runtime, historical
 FL9_1 drivers and physical device-removal recovery remain unverified.
+
+## Public draw-limit boundary — 2026-11-07
+
+The public strict GPU path now verifies a nonindexed point draw one primitive
+over FL9_1's 65,535 per-draw limit. The only visible point is in the second
+batch; readback proves HAL rebases the vertex input and preserves the final
+primitive through public core submission. After completing full-suite,
+Clippy, formatting and diff checks, checkpoint this test and continue the
+public-valid core/HAL audit, especially selected-entry shader validation and
+render-state combinations.

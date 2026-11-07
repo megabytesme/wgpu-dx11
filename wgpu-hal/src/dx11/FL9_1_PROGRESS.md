@@ -9543,3 +9543,28 @@ open.
 & $env:ComSpec /d /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std'
 git diff --check
 ~~~
+
+## Public FL9_1 point-draw boundary — 2026-11-07
+
+The HAL already split nonindexed point-list draws at the documented FL9_1
+65,535 primitive limit, but the public GPU path lacked a boundary test. Added a
+strict public wgpu test that submits 65,536 points with only the final vertex
+inside the view. The draw is split into two native batches; forced-FL9_1
+readback on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) found the
+one expected red pixel from the second batch and blue in all other pixels.
+This verifies public core recording, HAL splitting, offset rebasing, command
+submission and readback for this boundary, not historical-driver behavior.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_splits_point_draw_at_fl91_primitive_limit -- --nocapture --test-threads=1
+~~~
+
+The focused test passed 1/1, and the full strict public D3D11 suite then passed
+63/63 in 36.10 seconds. Public-test Clippy passed with the existing
+`create_hal_view` too-many-arguments warning. `git diff --check` passed.
+Rustfmt still reports four pre-existing formatting differences elsewhere in
+the large public test file; the new test itself matches rustfmt. The optional
+Float16x2 test branch reported a genuine selected-device capability skip.
+Continue the broader public core/HAL contract audit after this boundary
+checkpoint.

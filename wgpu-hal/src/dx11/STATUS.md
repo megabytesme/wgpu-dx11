@@ -772,8 +772,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   streams, including sparse slots, nonzero offsets and `first_instance`. FL9_1
   point batches rebase vertex bindings and contain at most 65,535 points.
   Strict RTX tests checked three full images, including 65,537 points across a
-  batch boundary; a controlled core fixture checked 64 pixels. Indexed Uint16
-  and Uint32 points use ordered nonindexed runs; GPU index staging and CPU
+  batch boundary. A public strict draw of 65,536 points puts its only visible
+  point in the second batch and verifies it through readback. A controlled core
+  fixture checked 64 pixels. Indexed Uint16 and Uint32 points use ordered
+  nonindexed runs; GPU index staging and CPU
   mapping can stall, and scattered indices can require many draws. When all
   vertex-rate streams have zero stride, or only instance-rate streams are used,
   index values do not affect the output and staging is avoided after range
