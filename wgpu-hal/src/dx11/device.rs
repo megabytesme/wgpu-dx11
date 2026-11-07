@@ -1,4 +1,4 @@
-//! Native DXGI adapter and D3D11 device ownership. No wgpu HAL is exposed yet.
+//! Native DXGI adapter and D3D11 device ownership for the experimental FL9_1 HAL.
 use alloc::{string::String, vec::Vec};
 use parking_lot::{Mutex, MutexGuard};
 use windows::{

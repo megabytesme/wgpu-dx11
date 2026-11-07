@@ -1,7 +1,7 @@
 //! Checked native byte-buffer transfers for the experimental D3D11 backend.
 //!
-//! The private HAL supports restricted buffer usage and CPU-shadow mappings.
-//! Resource initialization and WebGPU usage/limit validation remain future work.
+//! The backend supports restricted buffer usage and CPU-shadow mappings.
+//! Core handles WebGPU validation and initialization before HAL operations.
 use super::device::{FeatureLevel, NativeDevice};
 use alloc::{boxed::Box, vec::Vec};
 use core::num::NonZeroU64;
