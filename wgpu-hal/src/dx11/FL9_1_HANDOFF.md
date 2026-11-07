@@ -30,7 +30,7 @@ The public query rejection test covers all three query-set types: occlusion
 sets fail through the missing downlevel flag, while timestamp and
 pipeline-statistics sets fail through their absent features before reaching
 the HAL. The focused strict test passed on the physical RTX at
-requested/actual FL9_1.
+requested/actual FL9_1. Checkpoint: `6a171483b`.
 
 The HWND smoke test now also starts from `Surface::get_default_config` rather
 than a hand-built descriptor. At forced FL9_1, core resolves `Auto` values and

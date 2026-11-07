@@ -9509,6 +9509,8 @@ large public test file; the new test's changed lines require no formatting
 change. The Lumia Device Portal request timed out again; CoreWindow runtime
 verification remains outstanding.
 
+Checkpoint: `6a171483b` (`dx11: validate all unavailable FL9_1 query types`).
+
 ~~~powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unavailable_query_types_at_fl91 -- --nocapture --test-threads=1
