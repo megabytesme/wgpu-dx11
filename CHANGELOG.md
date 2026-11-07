@@ -129,6 +129,8 @@ Bottom level categories:
 - Share `SurfaceTexture` presentation and discard state across clones so dropping one clone does not discard a frame still held by
   another.
 - Make dropping an unpresented `SurfaceTexture` safe after its `Surface` has been dropped.
+- Report an invalid surface when presenting a retained frame after its owning
+  `Surface` has been dropped.
 
 #### Hal
 

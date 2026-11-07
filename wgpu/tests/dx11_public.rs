@@ -464,12 +464,42 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
         result => panic!("public D3D11 HWND acquisition before surface drop failed: {result:?}"),
     };
+    let present_after_surface_drop = frame.clone();
     let teardown_error = Arc::new(std::sync::Mutex::new(None));
     let captured_teardown_error = Arc::clone(&teardown_error);
     device.on_uncaptured_error(Arc::new(move |error| {
         *captured_teardown_error.lock().unwrap() = Some(error);
     }));
     drop(returned_surface);
+    drop(frame);
+    queue.present(present_after_surface_drop);
+    let present_after_drop_error = teardown_error.lock().unwrap().take();
+    assert!(
+        present_after_drop_error
+            .as_ref()
+            .is_some_and(|error| format!("{error:?}").contains("Surface is invalid")),
+        "presenting a frame after its surface is dropped must report a validation error: {present_after_drop_error:?}"
+    );
+    println!("PASS: presenting a frame after its surface was dropped reported validation instead of accessing a stale SurfaceId");
+
+    let recreated_surface = unsafe {
+        instance.create_surface_unsafe(SurfaceTargetUnsafe::RawHandle {
+            raw_display_handle: Some(rwh::WindowsDisplayHandle::new().into()),
+            raw_window_handle: rwh::Win32WindowHandle::new(
+                NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
+            )
+            .into(),
+        })
+    }
+    .expect("recreate public D3D11 HWND surface for frame-drop check");
+    recreated_surface.configure(&device, &configuration);
+    let frame = match recreated_surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition before frame-drop check failed: {result:?}")
+        }
+    };
+    drop(recreated_surface);
     drop(frame);
     let teardown_error = teardown_error.lock().unwrap().take();
     assert!(

@@ -2156,7 +2156,15 @@ impl dispatch::QueueInterface for CoreQueue {
 
     fn present(&self, detail: &dispatch::DispatchSurfaceOutputDetail) {
         let detail = detail.as_core();
-        match self.context.0.surface_present(detail.surface_id) {
+        let result = {
+            let surface_alive = detail.output_lifecycle.lock();
+            if *surface_alive {
+                self.context.0.surface_present(detail.surface_id)
+            } else {
+                Err(wgc::present::SurfaceError::Invalid)
+            }
+        };
+        match result {
             Ok(_status) => (),
             Err(err) => {
                 self.context

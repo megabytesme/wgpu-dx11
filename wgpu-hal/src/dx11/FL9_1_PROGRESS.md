@@ -9425,3 +9425,39 @@ reported the pre-existing D3D11 `create_hal_view` argument-count warning.
 `wgpu_core.rs` passes rustfmt; the public test file reports three older
 formatting differences in unrelated regions. This does not validate
 CoreWindow or historical-driver behavior.
+
+## Queue present after surface destruction — 2026-11-07
+
+The lifecycle regression now also presents a retained public frame after its
+owning `Surface` has been dropped. Before the fix, strict FL9_1 execution
+reproduced a panic in core storage lookup (`Cannot get non-existent resource
+SurfaceId(0,1)`). `CoreQueue::present` now locks the same per-surface lifecycle
+guard used by frame discard/release; it calls core only while the surface is
+live and otherwise reports `SurfaceError::Invalid` through the queue error
+sink. The test verifies the validation report, then recreates the HWND surface
+and separately verifies that dropping its final unpresented frame after
+surface destruction remains safe.
+
+On NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and
+actual FL9_1, the focused HWND test passed 1/1 and the complete strict public
+D3D11 suite passed 62/62. The suite visibly skipped only its optional
+Float16x2 vertex-input branch after the selected device reported no IA support.
+Rust 1.93.1 targeted Clippy passed with the existing D3D11
+`create_hal_view` argument-count warning. DX12 and wasm WebGPU public-crate
+checks passed. Rustfmt passed for `wgpu_core.rs`; the public test file still
+has two pre-existing formatting differences in unrelated sections.
+`git diff --check` passed. This closes the stale surface-ID panic for public
+present, without closing the broader surface/device-loss audit.
+
+The checks ran after loading the Visual Studio 2022 x64 developer environment:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93 check --offline -p wgpu --no-default-features --features dx12,wgsl,std
+cargo +1.93 check --offline -p wgpu --target wasm32-unknown-unknown --no-default-features --features webgpu,wgsl
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/src/backend/wgpu_core.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~

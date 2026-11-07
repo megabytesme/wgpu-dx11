@@ -15,6 +15,15 @@ lifecycle representation. The full
 core/HAL audit, historical FL9_1 behavior, CoreWindow and Lumia runtime remain
 open.
 
+The HWND teardown audit also caught a second stale-ID path: calling public
+`Queue::present` on a frame after dropping its `Surface` previously panicked in
+core storage lookup. Queue presentation now serializes with surface destruction
+and reports the normal `Surface is invalid` validation error for a dead surface.
+The strict test reproduces the old panic, checks this error path, then recreates
+the surface and verifies that dropping a separate unpresented frame remains
+safe. The focused test passed 1/1 and the full strict public suite passed 62/62;
+the optional Float16x2 input-format branch remains a visible capability skip.
+
 The HWND smoke test now also starts from `Surface::get_default_config` rather
 than a hand-built descriptor. At forced FL9_1, core resolves `Auto` values and
 clamps the generic two-frame hint to the surface's supported one-frame range;
@@ -24,9 +33,11 @@ The same strict test exposed and fixes a related destruction hazard: dropping
 the surface before its acquired frame previously caused the frame's later
 discard to panic on a removed `SurfaceId`. Core surface-output details now
 serialize cleanup with surface destruction and skip the stale lookup after
-the owning surface is removed. The expanded full strict public suite passed
-62/62 on forced FL9_1; one optional Float16x2 input-format branch was visibly
-skipped by the device query.
+the owning surface is removed. The queue presentation path also checks that
+same lifecycle state and reports a validation error rather than looking up a
+removed surface. The expanded full strict public suite passed 62/62 on forced
+FL9_1; one optional Float16x2 input-format branch was visibly skipped by the
+device query.
 
 ## Current mission state — wrong-thread present cleanup
 

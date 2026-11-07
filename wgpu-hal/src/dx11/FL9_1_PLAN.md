@@ -42,7 +42,9 @@ The strict HWND smoke test now configures the surface through the public
 clamps its generic latency hint to the D3D11 one-frame capability before HAL;
 the default public path configures and presents successfully. A second
 lifecycle case drops the surface before an acquired frame; the surviving frame
-can then be dropped safely without looking up a removed surface ID.
+can then be dropped safely without looking up a removed surface ID. Presenting
+such a retained frame reports `Surface is invalid` instead of looking up a
+removed ID; a strict regression reproduces both cleanup paths.
 
 The HWND lifecycle audit found and fixed a consumed-frame leak when public
 `Queue::present` is called from a non-owner thread. Core now discards that
