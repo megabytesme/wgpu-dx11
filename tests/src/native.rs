@@ -118,9 +118,31 @@ pub fn main(tests: Vec<GpuTestInitializer>) -> MainResult {
 
         // Filter out the adapters that are not part of WGPU_BACKEND.
         let wgpu_backends = wgpu::Backends::from_env().unwrap_or_default();
+        let require_dx11_hardware =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        if require_dx11_hardware {
+            anyhow::ensure!(
+                wgpu_backends == wgpu::Backends::DX11,
+                "WGPU_DX11_REQUIRE_HARDWARE=1 requires WGPU_BACKEND=dx11"
+            );
+            anyhow::ensure!(
+                report.devices.iter().any(|adapter| {
+                    adapter.info.backend == wgpu::Backend::Dx11
+                        && adapter.info.driver_info.contains("FL9_1")
+                        && adapter.info.driver_info.contains("physical")
+                }),
+                "strict D3D11 testing requires a physical FL9_1 adapter in .gpuconfig"
+            );
+        }
         report
             .devices
             .retain(|report| wgpu_backends.contains(wgpu::Backends::from(report.info.backend)));
+        if require_dx11_hardware {
+            anyhow::ensure!(
+                !report.devices.is_empty(),
+                "strict D3D11 testing selected no adapter from .gpuconfig"
+            );
+        }
 
         report
     };

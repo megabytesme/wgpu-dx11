@@ -2978,3 +2978,25 @@ mip render test now uses a 6x10 four-level texture. The RTX 3090 Ti reported
 the capability at requested/actual FL9_1; mip 2 sampling matched all 64 RGBA
 pixels, while mip-0 attachment readback matched all 60 R8 texels. Devices
 without the optional query use the POT R8 chain and do not claim NPOT support.
+
+### Upstream `wgpu-test` capability check
+
+The shared GPU-test package and `wgpu-info` expose an opt-in `dx11` Cargo
+feature. When generating `.gpuconfig` for a strict D3D11 run, select the backend
+explicitly so the default-backend policy does not omit it:
+
+```powershell
+$env:WGPU_BACKEND = "dx11"
+$env:WGPU_INFO_SAVE_GPUCONFIG_REPORT = "1"
+cargo +1.93 test --offline -j4 -p wgpu-info --all-features generate_gpuconfig_report -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j4 -p wgpu-test --all-features --test wgpu-gpu validate_capabilities -- --nocapture
+```
+
+Run these commands from a Visual Studio x64 developer environment. Strict mode
+fails before test discovery unless `WGPU_BACKEND=dx11` and `.gpuconfig` contains
+a physical adapter whose report identifies FL9_1. The capability test's
+`[Executed]` status confirms it was not skipped for unsupported adapter
+requirements. The `dx11` test-package feature is included by `--all-features`;
+ordinary test runs without `WGPU_BACKEND=dx11` continue to use the default
+backend set, which excludes D3D11.

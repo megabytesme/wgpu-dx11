@@ -10725,3 +10725,38 @@ zero tests; the corrected filter above ran the intended unit test.
 
 This restores runtime opt-in for the experimental backend and does not change
 the exposed capability matrix or complete the broader core/HAL contract audit.
+
+## Strict upstream GPU-test harness — 2026-11-07
+
+Added `dx11` opt-in features to the shared `wgpu-test` and `wgpu-info`
+packages. The native GPU harness now rejects strict D3D11 runs unless
+`WGPU_BACKEND=dx11`, a physical FL9_1 adapter exists in `.gpuconfig`, and the
+backend filter leaves at least one selected adapter. The Naga capability test
+now accepts the backend's stricter border-sampler rule because it does not
+exercise border sampling.
+
+Using Rust 1.93.1 in the Visual Studio x64 environment, the all-features
+`wgpu-gpu` test binary built successfully. With strict mode enabled, the RTX
+3090 Ti was listed as `[Executed]`; `naga_capabilities::validate_capabilities`
+passed (1 executed, 0 failed). Its `.gpuconfig` entry reports vendor
+0x10de/device 0x2203, physical DXGI adapter, FL9_1 and driver 32.0.16.2101.
+A strict run with `WGPU_BACKEND=dx12` failed as intended before test discovery.
+The capability test initializes a public wgpu test context but performs no
+draw, so this is not counted as a rendering test. Existing dedicated strict
+public rendering tests remain the evidence for GPU execution.
+
+Commands:
+
+```powershell
+$env:WGPU_BACKEND = 'dx11'
+$env:WGPU_INFO_SAVE_GPUCONFIG_REPORT = '1'
+cargo +1.93 test --offline -j4 -p wgpu-info --all-features generate_gpuconfig_report -- --nocapture
+cargo +1.93 test --offline -j4 -p wgpu-test --all-features --test wgpu-gpu --no-run
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j4 -p wgpu-test --all-features --test wgpu-gpu validate_capabilities -- --nocapture
+```
+
+`cargo-nextest` is not installed in this environment, so this verification used
+the `wgpu-gpu` test binary through `cargo test` rather than `cargo xtask test`.
+Historical drivers, Lumia runtime execution and the broad core/HAL contract
+audit remain open.

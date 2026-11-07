@@ -10,6 +10,9 @@ keywords.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+dx11 = ["wgpu/dx11"]
+
 [dependencies]
 anyhow.workspace = true
 bitflags.workspace = true

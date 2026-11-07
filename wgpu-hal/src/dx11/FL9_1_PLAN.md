@@ -1021,3 +1021,21 @@ FL9_1; mip 2 readback matched 64 pixels and mip 0 attachment readback matched
 60 texels. The query-negative path is synthetic only. This does not establish
 behavior on historical restrictive hardware; continue the remaining public
 contract and platform audit.
+
+## Strict upstream GPU-test harness checkpoint — 2026-11-07
+
+The shared `wgpu-test` package and `wgpu-info` now have opt-in `dx11`
+features, so an all-features workspace test build compiles the D3D11 path. The
+native GPU-test harness checks `WGPU_DX11_REQUIRE_HARDWARE=1` requires
+`WGPU_BACKEND=dx11`, and that `.gpuconfig` includes a physical adapter whose
+driver info identifies FL9_1. The capability test's required downlevel
+properties allow the backend's documented border-sampler restriction, so it
+is not silently classified unsupported.
+
+On the RTX 3090 Ti, strict `.gpuconfig` generation recorded one DX11 adapter
+(0x10de:0x2203, driver 32.0.16.2101). The filtered `validate_capabilities`
+test was listed as `[Executed]` and passed; a run with `WGPU_BACKEND=dx12`
+failed at the strict gate. This capability test initializes the public test
+context but does not issue a draw; strict rendering evidence remains in
+`dx11_public` and the private HAL suite. Broader test-harness execution,
+public contract auditing, historical FL9_1 drivers, and Lumia remain open.

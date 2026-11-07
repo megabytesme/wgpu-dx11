@@ -40,11 +40,18 @@ fn test_limits() -> wgpu::Limits {
     limits
 }
 
+fn test_parameters() -> TestParameters {
+    let mut parameters = TestParameters::default()
+        .downlevel_flags(wgpu::DownlevelFlags::empty())
+        .limits(test_limits());
+    parameters
+        .required_downlevel_caps
+        .limits
+        .border_addressing_requires_comparison_sampler = true;
+    parameters
+}
+
 #[gpu_test]
 static VALIDATE_CAPABILITIES: GpuTestConfiguration = GpuTestConfiguration::new()
-    .parameters(
-        TestParameters::default()
-            .downlevel_flags(wgpu::DownlevelFlags::empty())
-            .limits(test_limits()),
-    )
+    .parameters(test_parameters())
     .run_sync(validate_capabilities);
