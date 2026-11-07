@@ -1218,11 +1218,13 @@ with known-positive values"). A checked-in compiler regression confirms this
 diagnostic and a `vs_5_0` control. A separate FXC regression confirms that a
 direct unsigned integer input on a custom IA semantic compiles at FL9_1. This
 leaves a possible host-supplied IA emulation route for `instance_index` (and a
-packed integer route for `vertex_index`) to investigate; neither has Naga
-lowering or runtime draw support yet. Keep both core limits false until the
-selected entry point, draw values, slot allocation and every draw replay path
-are implemented and verified. Do not infer support from the backend's separate
-per-instance vertex-stream emulation.
+packed integer route for `vertex_index`) to investigate. Naga now has an
+opt-in `fl9_instance_index_input` writer option that maps direct and
+struct-member inputs to `NAGA_INSTANCE_INDEX`; generated HLSL for both forms
+compiles with FL9_1 FXC. The D3D11 pipeline does not enable the option or bind
+the host value yet. Keep both core limits false until draw values, slot
+allocation and every draw replay path are implemented and verified. Do not
+infer support from the backend's separate per-instance vertex-stream emulation.
 
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise

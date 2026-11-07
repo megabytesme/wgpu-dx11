@@ -542,6 +542,11 @@ pub struct Options {
     /// It cannot be combined with the FL9 texel-load proof.
     pub fl9_viewport_transform: Option<u32>,
 
+    /// Lower vertex `instance_index` inputs to a host-provided unsigned input
+    /// with the `NAGA_INSTANCE_INDEX` semantic. The host must supply the exact
+    /// WebGPU instance index for each emulated draw.
+    pub fl9_instance_index_input: bool,
+
     /// Mapping of each bind group's sampler index buffer to a bind target.
     #[cfg_attr(
         feature = "deserialize",
@@ -600,6 +605,7 @@ impl Default for Options {
             direct_sampler_bindings: false,
             fl9_texel_load_proof: None,
             fl9_viewport_transform: None,
+            fl9_instance_index_input: false,
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,
             dynamic_storage_buffer_offsets_targets: alloc::collections::BTreeMap::new(),

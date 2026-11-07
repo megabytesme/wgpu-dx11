@@ -1,8 +1,9 @@
 # FL9_1 completion plan
 Latest shader follow-up: FXC accepts a direct unsigned vertex input on a custom
 IA semantic at FL9_1. This makes host-provided `instance_index` emulation a
-candidate despite the rejected `SV_InstanceID` semantic. Naga lowering, slot
-allocation, draw replay updates and GPU execution are still missing; both
+candidate despite the rejected `SV_InstanceID` semantic. An opt-in Naga writer
+mapping now compiles for direct and struct-member inputs; D3D11 IA slot
+allocation, per-draw value updates and GPU execution are still missing. Both
 system-value capabilities stay disabled. See `FL9_1_PROGRESS.md`.
 
 Latest format increment: the internal FL9_1 sampled/upload mip path now also

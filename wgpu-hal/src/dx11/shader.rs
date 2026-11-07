@@ -833,6 +833,44 @@ mod tests {
     }
 
     #[test]
+    fn fl91_naga_instance_index_host_input_compiles_with_fxc() {
+        for source in [
+            "@vertex fn main(@builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(f32(id), 0.0, 0.5, 1.0); }",
+            "struct Inputs { @builtin(instance_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(f32(input.id), 0.0, 0.5, 1.0); }",
+        ] {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let options = naga::back::hlsl::Options {
+                shader_model: naga::back::hlsl::ShaderModel::V5_0,
+                fake_missing_bindings: false,
+                fl9_instance_index_input: true,
+                ..Default::default()
+            };
+            let pipeline = naga::back::hlsl::PipelineOptions {
+                entry_point: Some((naga::ShaderStage::Vertex, "main".into())),
+            };
+            let mut hlsl = String::new();
+            let reflection = naga::back::hlsl::Writer::new(&mut hlsl, &options, &pipeline)
+                .write(&module, &info, None)
+                .unwrap();
+            let entry = reflection
+                .entry_point_names
+                .into_iter()
+                .next()
+                .unwrap()
+                .unwrap();
+            assert!(hlsl.contains("NAGA_INSTANCE_INDEX"), "{hlsl}");
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1)
+                .unwrap_or_else(|error| panic!("generated HLSL did not compile: {error:?}\n{hlsl}"));
+        }
+    }
+
+    #[test]
     fn fl91_viewport_transform_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             "struct Out { @builtin(position) pos: vec4f, @location(0) c: vec4f } @vertex fn main(@location(0) p: vec3f) -> Out { return Out(vec4f(p, 1.), vec4f(1.)); }",

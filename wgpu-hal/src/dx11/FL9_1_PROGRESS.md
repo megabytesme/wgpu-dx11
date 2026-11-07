@@ -10968,12 +10968,17 @@ underlying FL9_1 hardware is incapable of an alternative encoding.
 ## Follow-up compiler probe — custom unsigned IA semantic — 2026-11-07
 
 The float reconstruction result does not rule out every IA-based emulation.
-FXC accepts a scalar `uint` vertex input with the custom semantic
-`NAGA_INSTANCE_INDEX` under `vs_4_0_level_9_1`; a focused regression now
-compiles that HLSL to DXBC. This suggests a simpler host-supplied integer stream
-for `instance_index`, while `vertex_index` would still need values aligned with
-the backend's direct, indexed, rebased and gathered draw paths. No Naga remap,
-pipeline slot reservation, per-draw value update or GPU rendering is implemented
-yet, so both public downlevel limits remain false. The next audit step is to
-prototype the Naga custom-semantic lowering and then test every split/replay
-path before changing capability reporting.
+Naga's HLSL writer now has an opt-in `fl9_instance_index_input` mapping that
+emits `NAGA_INSTANCE_INDEX` for direct and struct-member inputs. A Naga writer
+test checks the default remains `SV_InstanceID`; a HAL/FXC test compiles both
+generated forms to DXBC under `vs_4_0_level_9_1`. The D3D11 call site does not
+enable the mapping and has no host-value stream, slot reservation or per-draw
+update yet. Both public limits remain false. The next step is to carry the
+exact `first_instance + instance` value through all split/replay paths and
+prove the result with GPU readback before changing capability reporting.
+
+Naga's focused writer test passed 1/1, and the HAL test compiled both generated
+WGSL forms through FXC to DXBC (1/1). `cargo clippy -p naga --tests` and the
+DX11 HAL test Clippy run passed; HAL reported ten existing warnings outside
+the new code. Rustfmt and `git diff --check` passed. No GPU operation or
+capability promotion is claimed for this compiler-only step.

@@ -855,7 +855,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         ShaderModel::V6_1,
                     ));
                 }
-                if let Some(builtin_str) = builtin.to_hlsl_str()? {
+                if builtin == crate::BuiltIn::InstanceIndex
+                    && stage == Some((ShaderStage::Vertex, Io::Input))
+                    && self.options.fl9_instance_index_input
+                {
+                    write!(self.out, " : NAGA_INSTANCE_INDEX")?;
+                } else if let Some(builtin_str) = builtin.to_hlsl_str()? {
                     write!(self.out, " : {builtin_str}")?;
                 }
                 false
@@ -1098,9 +1103,27 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
     ) -> Result<EntryPointInterface, Error> {
         let func = &ep.function;
         let stage = ep.stage;
+        let has_instance_index_input = self.options.fl9_instance_index_input
+            && stage == ShaderStage::Vertex
+            && func
+                .arguments
+                .iter()
+                .any(|arg| match module.types[arg.ty].inner {
+                    TypeInner::Struct { ref members, .. } => members.iter().any(|member| {
+                        matches!(
+                            member.binding,
+                            Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                        )
+                    }),
+                    _ => matches!(
+                        arg.binding,
+                        Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                    ),
+                });
         Ok(EntryPointInterface {
             input: if !func.arguments.is_empty()
                 && (stage == ShaderStage::Fragment
+                    || has_instance_index_input
                     || func
                         .arguments
                         .iter()
@@ -5492,5 +5515,25 @@ mod fl9_viewport_tests {
         assert!(translate(source, &options, ShaderStage::Vertex).is_err());
         let fragment = "@fragment fn main() -> @location(0) vec4f { return vec4f(1.0); }";
         assert!(translate(fragment, &make_options(), ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn instance_index_input_can_use_a_host_supplied_semantic() {
+        let source = "@vertex fn main(@builtin(instance_index) id: u32) -> @builtin(position) vec4f { return vec4f(f32(id), 0.0, 0.5, 1.0); }";
+        let options = Options {
+            fl9_instance_index_input: true,
+            ..Options::default()
+        };
+        let output = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(output.contains("NAGA_INSTANCE_INDEX"), "{output}");
+        assert!(output.contains("uint id = vertexinput_main.id"));
+        assert!(!output.contains("SV_InstanceID"), "{output}");
+        let default_output = translate(source, &Options::default(), ShaderStage::Vertex).unwrap();
+        assert!(default_output.contains("SV_InstanceID"));
+
+        let structured = "struct Inputs { @builtin(instance_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(f32(input.id), 0.0, 0.5, 1.0); }";
+        let output = translate(structured, &options, ShaderStage::Vertex).unwrap();
+        assert!(output.contains("uint id : NAGA_INSTANCE_INDEX"), "{output}");
+        assert!(output.contains("SV_InstanceID"), "{output}");
     }
 }
