@@ -26,6 +26,11 @@ frame after destroying that surface. The focused test passed 1/1 and the full
 strict public suite passed 62/62; the optional Float16x2 input-format branch
 remains a visible capability skip.
 
+The public query rejection test also covers both unsupported query classes:
+occlusion sets fail through the missing downlevel flag and timestamp sets fail
+through the absent timestamp feature before reaching the HAL. The focused
+strict test passed 1/1 on the physical RTX at requested/actual FL9_1.
+
 The HWND smoke test now also starts from `Surface::get_default_config` rather
 than a hand-built descriptor. At forced FL9_1, core resolves `Auto` values and
 clamps the generic two-frame hint to the surface's supported one-frame range;

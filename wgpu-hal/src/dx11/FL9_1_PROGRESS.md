@@ -9471,3 +9471,23 @@ The Lumia Device Portal was retried with
 `Invoke-LumiaPortal -Path '/api/os/devicefamily'`; the helper timed out in
 `GetResponse()` again. This remains an external runtime-verification blocker;
 no credentials or pairing state were changed.
+
+## Public timestamp query rejection — 2026-11-07
+
+The existing strict public query test covered occlusion query sets through the
+missing `DownlevelFlags::OCCLUSION_QUERY` gate. It now also requests a timestamp
+query set and verifies core rejects it through the unrequested
+`Features::TIMESTAMP_QUERY` gate before the private HAL's unsupported query-set
+creation method. The combined focused test passed 1/1 on the physical NVIDIA
+RTX 3090 Ti at requested/actual FL9_1 (`0x10de:0x2203`, driver
+`32.0.16.2101`); no query commands were issued to the GPU. After this change,
+the complete strict public D3D11 suite passed 62/62; its optional Float16x2
+vertex-input branch was explicitly skipped because the device query was
+negative.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_occlusion_queries_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+git diff --check
+~~~

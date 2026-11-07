@@ -11941,7 +11941,19 @@ fn public_dx11_rejects_occlusion_queries_at_fl91() {
             }));
         },
     );
-    println!("PASS: public core rejected an occlusion query set before the unsupported D3D11 query path could execute");
+    expect_validation_error_containing(
+        &device,
+        "FL9_1 timestamp query set",
+        "TIMESTAMP_QUERY",
+        || {
+            drop(device.create_query_set(&QuerySetDescriptor {
+                label: Some("unsupported FL9_1 timestamp queries"),
+                ty: QueryType::Timestamp,
+                count: 1,
+            }));
+        },
+    );
+    println!("PASS: public core rejected occlusion and timestamp query sets before unsupported D3D11 query creation");
 }
 
 #[test]
