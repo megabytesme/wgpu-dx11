@@ -9845,6 +9845,8 @@ pipeline and validates the ordinary public layout contract.
 
 ## Follow-up — D24S8 shadow comparison execution — 2026-11-07
 
+Code/test checkpoint: `b90387efc` (`dx11: validate D24S8 FL9_1 shadow sampling`).
+
 Generalized the existing private `SampleCmp` hardware case to execute against
 both D16 and D24S8, retaining the same two-pass layout and pixel expectations.
 The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) was
