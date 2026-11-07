@@ -1215,10 +1215,14 @@ An IA-stream emulation was also checked. Reconstructing a WGSL `u32` index
 from two exact `f32` halves requires dynamic integer arithmetic, which the
 same `vs_4_0_level_9_1` FXC profile rejects with X3548 ("uints can only be used
 with known-positive values"). A checked-in compiler regression confirms this
-diagnostic and a `vs_5_0` control. The current profile therefore has no verified
-type-preserving lowering for either system value. Keep both core limits false;
-do not infer support from the backend's separate per-instance vertex-stream
-emulation.
+diagnostic and a `vs_5_0` control. A separate FXC regression confirms that a
+direct unsigned integer input on a custom IA semantic compiles at FL9_1. This
+leaves a possible host-supplied IA emulation route for `instance_index` (and a
+packed integer route for `vertex_index`) to investigate; neither has Naga
+lowering or runtime draw support yet. Keep both core limits false until the
+selected entry point, draw values, slot allocation and every draw replay path
+are implemented and verified. Do not infer support from the backend's separate
+per-instance vertex-stream emulation.
 
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise

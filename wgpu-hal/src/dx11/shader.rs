@@ -825,6 +825,14 @@ mod tests {
     }
 
     #[test]
+    fn fl91_custom_unsigned_vertex_input_semantic_compiles() {
+        let source = "struct Input { uint instance_id : NAGA_INSTANCE_INDEX; }; float4 main(Input input) : SV_POSITION { return float4((float)input.instance_id, 0.0, 0.5, 1.0); }";
+        assert!(compile_hlsl(source, "main", ShaderProfile::VertexLevel9_1)
+            .unwrap()
+            .starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn fl91_viewport_transform_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             "struct Out { @builtin(position) pos: vec4f, @location(0) c: vec4f } @vertex fn main(@location(0) p: vec3f) -> Out { return Out(vec4f(p, 1.), vec4f(1.)); }",

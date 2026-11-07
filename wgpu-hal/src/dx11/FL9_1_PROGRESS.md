@@ -10964,3 +10964,16 @@ HLSL compiles under the `vs_5_0` control profile. Added a permanent compiler
 regression for this boundary; the adapter continues to reject both system
 values before HAL. This is a tested profile limitation, not proof that the
 underlying FL9_1 hardware is incapable of an alternative encoding.
+
+## Follow-up compiler probe — custom unsigned IA semantic — 2026-11-07
+
+The float reconstruction result does not rule out every IA-based emulation.
+FXC accepts a scalar `uint` vertex input with the custom semantic
+`NAGA_INSTANCE_INDEX` under `vs_4_0_level_9_1`; a focused regression now
+compiles that HLSL to DXBC. This suggests a simpler host-supplied integer stream
+for `instance_index`, while `vertex_index` would still need values aligned with
+the backend's direct, indexed, rebased and gathered draw paths. No Naga remap,
+pipeline slot reservation, per-draw value update or GPU rendering is implemented
+yet, so both public downlevel limits remain false. The next audit step is to
+prototype the Naga custom-semantic lowering and then test every split/replay
+path before changing capability reporting.

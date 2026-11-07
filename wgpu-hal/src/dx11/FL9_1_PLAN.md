@@ -1,4 +1,10 @@
 # FL9_1 completion plan
+Latest shader follow-up: FXC accepts a direct unsigned vertex input on a custom
+IA semantic at FL9_1. This makes host-provided `instance_index` emulation a
+candidate despite the rejected `SV_InstanceID` semantic. Naga lowering, slot
+allocation, draw replay updates and GPU execution are still missing; both
+system-value capabilities stay disabled. See `FL9_1_PROGRESS.md`.
+
 Latest format increment: the internal FL9_1 sampled/upload mip path now also
 covers R8G8B8A8_SNORM. Microsoft lists its `TEXTURE2D`, `SHADER_SAMPLE` and
 `MIP` guarantees at FL9_1; the selected device's `TEXTURE2D | MIP` query and

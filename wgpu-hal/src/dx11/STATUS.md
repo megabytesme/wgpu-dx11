@@ -403,6 +403,11 @@ universal claim that all feature-level 9_1 hardware makes the semantics
 impossible. A strict public wgpu test on the forced-FL9_1 adapter confirms that
 core rejects each selected entry before HAL and accepts a safe sibling pipeline.
 
+Follow-up compiler evidence narrows the emulation question: FXC accepts a
+direct `uint` vertex input using a custom semantic at FL9_1. A host-supplied IA
+value may therefore avoid the rejected system-value semantic. No Naga remap or
+runtime stream is implemented, so both capabilities remain rejected.
+
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;
