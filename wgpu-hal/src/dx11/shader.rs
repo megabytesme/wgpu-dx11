@@ -2791,6 +2791,20 @@ mod tests {
     }
 
     #[test]
+    fn fl91_pixel_profile_rejects_bitwise_single_sample_mask_emulation() {
+        let source = r#"
+            struct Input { uint mask : TEXCOORD0; };
+            float4 main(Input input) : SV_TARGET {
+                if ((input.mask & 1u) == 0u) discard;
+                return float4(1, 0, 0, 1);
+            }
+        "#;
+        let error = compile_hlsl(source, "main", ShaderProfile::PixelLevel9_1).unwrap_err();
+        assert!(error.message.contains("X3535"), "{}", error.message);
+        assert!(error.message.contains("Bitwise operations not supported"));
+    }
+
+    #[test]
     fn naga_fl91_pixel_profile_accepts_bound_texture3d_sampling() {
         use naga::{
             valid::{Capabilities, ValidationFlags, Validator},
@@ -2805,6 +2819,58 @@ mod tests {
             }
         "#;
         let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        compile_naga_with_bindings(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn naga_fl91_pixel_profile_compiles_constant_bias_forwarded_to_helper() {
+        use naga::{
+            valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
+        };
+
+        let module = naga::front::wgsl::parse_str(
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+                @group(0) @binding(42) var filtering: sampler;
+                fn biased(t: texture_2d<f32>, s: sampler, bias: f32, uv: vec2f) -> vec4f {
+                    return textureSampleBias(t, s, uv, bias);
+                }
+                @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                    return biased(image, filtering, 1.0, uv);
+                }
+            "#,
+        )
+        .unwrap();
         let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap();

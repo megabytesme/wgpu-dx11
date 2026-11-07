@@ -995,6 +995,7 @@ impl super::Adapter {
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
             shader_loops: true,
+            shader_dynamic_loops: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: unsafe {

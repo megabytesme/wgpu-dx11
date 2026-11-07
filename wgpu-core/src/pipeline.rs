@@ -783,7 +783,9 @@ pub enum CreateRenderPipelineError {
     AlphaToCoverageRequiresMultisampling,
     #[error("Alpha-to-coverage is not supported by this downlevel adapter")]
     UnsupportedAlphaToCoverage,
-    #[error("Shader loops are not supported by this downlevel adapter in the {stage:?} stage")]
+    #[error(
+        "A shader loop form is not supported by this downlevel adapter in the {stage:?} stage"
+    )]
     UnsupportedShaderLoops { stage: wgt::ShaderStages },
     #[error("The number of vertex buffers {given} exceeds the limit {limit}")]
     TooManyVertexBuffers { given: u32, limit: u32 },

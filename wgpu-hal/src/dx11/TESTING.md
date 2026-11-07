@@ -402,8 +402,9 @@ into each format, samples the result and checks all 64 pixels per format with
 a one-code tolerance for UNORM conversion. The first observed pixels were
 `[66, 0, 0, 255]`, `[66, 129, 0, 255]` and `[66, 130, 132, 255]`. The RTX
 reported `BLENDABLE` for all three formats. A second pass overlays half-alpha
-red with identical color and alpha equations, preserving FL9_1's separate-alpha
-restriction; readback verified all pixels as `[160, 0, 0, 255]` (R8),
+red with identical color and alpha equations, staying within FL9_1's
+separate-alpha restriction; readback verified all pixels as
+`[160, 0, 0, 255]` (R8),
 `[160, 65, 0, 255]` (RG8) and quantized `[165, 65, 66, 255]` (RGB565).
 On devices without the optional selected-query bit, this blend subcase is
 reported as skipped while the attachment/sample test still executes.
@@ -463,10 +464,11 @@ texture-to-buffer paths in one ordered submission.
 
 A ninth strict public test uploads all four levels of an 8×8 RGBA8 mip chain
 with different colors. Implicit derivatives and literal sample biases -3, +1
-and +3 select their expected mip colors across 256 readback pixels. Dynamic,
-helper-forwarded, out-of-range and offset biases are rejected by core validation
-before HAL compilation. CPU-only core analysis tests cover fractional bias and
-constant helper calls. The same public test confirms that a multi-mip R8
+and +3 select their expected mip colors, including +1 forwarded through a
+helper, across 384 readback pixels. Dynamic, out-of-range and offset biases
+are rejected by core validation before HAL compilation. CPU-only core analysis
+tests cover fractional bias, nested helper forwarding, multiple call sites and
+out-of-range helper arguments. The same public test confirms that a multi-mip R8
 texture is rejected because the selected format projection marks R8 as
 single-mip-only.
 
@@ -595,13 +597,12 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 
 ### FL9_1 shader-loop validation
 
-The core CPU test verifies direct and helper-reached loops are associated with
-the selected entry point and that a safe sibling entry remains unaffected.
-The strict HAL profile test forces FL9_1 on physical hardware, compiles
-dynamic-loop WGSL through the production Naga/FXC path, records the compiler
-diagnostics, and confirms a safe sibling still compiles. The strict core
-fixture verifies loop pipelines are rejected for both vertex and fragment
-stages before HAL.
+The core CPU test verifies static loops remain allowed, runtime-dependent
+exits are found through direct code and helper calls, local aliases are
+tracked, and safe sibling entries remain unaffected. The public strict test
+renders static vertex and fragment loops on forced-FL9_1 hardware and verifies
+dynamic vertex and fragment pipelines are rejected by core before FXC. A
+private HAL compiler test retains the underlying X3511 boundary evidence.
 
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl validation::tests::shader_loop_detection_follows_only_selected_entry_calls -- --nocapture
@@ -1488,10 +1489,12 @@ blend-state subset. These tests do not establish behavior on historical FL9_1
 drivers or enable public surface capabilities. The public sRGB format test
 below verifies the distinct transfer function and channel order; it does not
 validate every blend equation on sRGB targets.
-FL9_1 does not guarantee separate alpha blending: the production path rejects
-those modes with both RGB and alpha writes. Some older full-channel blend tests
-explicitly opt into a test-only RTX diagnostic and do not establish portability;
-they can fail on hardware that lacks separate alpha support.
+Microsoft's 10Level9 capability table marks Separate Alpha Blend unavailable
+at FL9_1. There is no selected-device query that promotes this guarantee, so
+the production path rejects differing RGB/alpha equations when both are
+written. Some older full-channel blend tests explicitly opt into a test-only
+RTX diagnostic and do not establish portability or change public capability
+reporting.
 
 Custom single-target blend factors and operations are translated independently
 of those preset tests. CPU tests verify every ordinary factor's RGB/alpha
@@ -2809,9 +2812,11 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 `public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91` compiles
 statically bounded vertex and fragment loops through the normal public
 pipeline path, renders their values, and checks all 64 pixels. Dynamic vertex
-and fragment loops are expected to fail FXC compilation with X3511 before GPU
-submission. The public downlevel loop capability represents this statically
-unrolled subset; it does not promise dynamic loop support.
+and fragment loops are rejected by core validation before FXC or GPU
+submission. The synthetic core test also covers helper pointer writes, local
+aliases, a safe sibling entry, and a provably unbounded loop with a literal
+false exit. The public limits distinguish the statically unrolled subset from
+dynamic-loop support.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
@@ -2884,3 +2889,15 @@ cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::capabilities::tests::private_fl91_shadow_sampling_requires_level_backend_and_positive_query -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_ -- --nocapture --test-threads=1
 ```
+
+### Public front-face and culling
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_front_face_and_backface_culling_at_fl91 -- --nocapture --test-threads=1
+```
+
+The test draws adjacent triangles with opposite winding through public wgpu
+pipelines using `FrontFace::Ccw` and `FrontFace::Cw`, both with back-face
+culling. The forced-FL9_1 RTX 3090 Ti readback contained 10 red CCW pixels,
+10 green CW pixels and 44 blue clear pixels, with no cross-winding output.

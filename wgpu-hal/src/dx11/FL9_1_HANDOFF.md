@@ -1,6 +1,77 @@
 # FL9_1 handoff
 
-## Latest mission state — cube-face GPU copies
+## Latest public rasterizer check — 2026-11-07
+
+The strict public D3D11 target now checks opposite triangle windings through
+`FrontFace::Ccw` and `FrontFace::Cw` pipelines with back-face culling. On the
+RTX 3090 Ti explicitly selected at FL9_1, readback verified 10 red CCW pixels,
+10 green CW pixels and 44 clear pixels. The focused case and full public target
+passed 1/1 and 71/71 respectively. The wider render-state and historical-driver
+audits remain open.
+
+## Latest shader audit note — literal sample bias through helpers
+
+Core and the private HAL now propagate finite literal or unary-negated-literal
+sample-bias arguments across nested helper calls at each call site. A strict
+public FL9_1 render confirmed that a helper-forwarded +1 bias selects the same
+mip as the direct +1 form; 384 pixels matched across the direct, helper and
+implicit-sampling images. Dynamic, out-of-range, offset and mixed valid/invalid
+call sites remain rejected. The strict public suite passed 70/70 and the
+private HAL suite 395/395. The one initial public-suite invocation had a
+transient empty adapter enumeration in the RGB565 test; the focused rerun and
+complete rerun both passed on the RTX 3090 Ti at requested/actual FL9_1.
+
+## Latest audit note — sample-mask compiler boundary
+
+A sample-mask discard emulation was evaluated and not enabled. A single
+sample observes only bit 0, but `ps_4_0_level_9_1` FXC rejects the required
+`mask & 1` operation with X3535. Treating any nonzero mask as coverage would
+change WGSL behavior for masks with higher bits only. Keep core's selected
+entry-point rejection in place unless an exact low-bit test is shown to compile
+for this profile. The negative FXC regression and strict public core-gate test
+passed 1/1 each on the RTX 3090 Ti at requested/actual FL9_1.
+
+## Previous audit note — query boundary
+
+Microsoft's 10Level9 table confirms occlusion queries are unavailable at
+FL9_1 (available from FL9_2). Keep public query sets rejected; the event query
+used internally for fences is not an occlusion-query substitute. Strict public
+validation already checks that occlusion, timestamp and pipeline-statistics
+query-set requests fail before HAL. Timestamp and pipeline-statistics remain
+unimplemented/unverified separately. The focused strict public test passed
+1/1 on the RTX 3090 Ti, explicitly requested and selected at FL9_1. A
+constant-expression false loop exit is also covered by the selected-entry
+analyzer unit test. The overall mission remains partial.
+
+## Latest mission state — selected-entry dynamic-loop validation
+
+The FL9_1 projection now distinguishes statically bounded shader loops from
+runtime-dependent loop termination. Core retains the tested static-loop
+subset and rejects dynamic loops selected by a pipeline before HAL/FXC. Its
+entry-point analysis follows reachable helpers and conservatively tracks
+uniform/global values, local aliases, function arguments, local variables
+passed to pointer parameters, and a literal-false loop exit. The strict public
+test still rendered all 64 pixels with static loops in both stages; dynamic
+vertex and fragment cases returned core validation errors. Synthetic core
+coverage includes direct, helper-global, helper-parameter, local-alias, and
+pointer-write bounds, a provably unbounded loop, and a safe sibling entry.
+
+Latest verification: strict public D3D11 70/70, strict private HAL 393/393,
+strict controlled core fixture 103/103, core library 95/95, `wgpu-types`
+all-features 94/94 plus 14 doc tests passed (21 ignored), DX12 core 94/94 and
+DX12 HAL 4/4. The strict public run includes a Float16x2 format-query branch
+that may skip its optional subcase. The RTX 3090 Ti (`0x10de:0x2203`, NVIDIA
+driver `32.0.16.2101`, `software=false`) was explicitly requested and selected
+at FL9_1. See `FL9_1_PROGRESS.md` for commands, lint output and remaining
+verification gaps. The mission remains **PARTIALLY COMPLETE**; historical
+FL9_1 drivers, Lumia/CoreWindow runtime and broad public conformance remain
+open.
+
+The last read-only Lumia Device Portal request to `/api/os/devicefamily`
+timed out and the device did not answer a LAN ping. No deployment was
+attempted; mobile runtime verification remains unavailable.
+
+## Previous checkpoint — cube-face GPU copies
 
 The query-supported RGBA8 cube path supports GPU-to-GPU copies between cube
 faces and ordinary 2D textures. The strict public test copied cube face 0 into
@@ -12,16 +83,6 @@ downlevel source limit; the HAL also refuses staging from an SRV-only resource.
 This follows the FL9_x GPU-to-CPU copy restriction and does not establish
 behavior on historical drivers. Checkpoint: `7fb6cf3c9` (`dx11: expand FL9_1
 public integration coverage`).
-
-The focused cross-shape copy test passed 1/1 on the same adapter. Verification
-on this tree: strict public D3D11 70/70 (one optional
-Float16x2 subcase visibly skipped), controlled core fixture 103/103, private
-HAL 391/391, `wgpu-types` 92/92 and serde `wgpu-types` 94/94, DX12 core 94/94
-and DX12 HAL 4/4. Adapter identity was NVIDIA GeForce RTX 3090 Ti
-(`0x10de:0x2203`), driver `32.0.16.2101`, physical adapter, `software=false`.
-See `FL9_1_PROGRESS.md` for exact commands and warnings. The overall mission
-remains **PARTIALLY COMPLETE**; historical FL9_1, Lumia/CoreWindow runtime,
-physical device-loss recovery and broad conformance remain open.
 
 ## Current mission state — public query-gated depth comparison
 
@@ -879,11 +940,13 @@ and historical-driver behavior remain unresolved.
 Equal min/mag, anisotropy-1 samplers can normalize finite LOD clamps on the
 one-mip path; pair validation checks the actual sampled view mip count.
 
-Current FL9_1 shader profiles accept offset-free literal textureSampleBias in
-[-3, 3] with equal min/mag filtering and anisotropy 1 for every used pair in
-the selected entry. Dynamic or out-of-range biases and helper arguments remain
-rejected. Wider bias support needs semantics-preserving lowering, and older
-drivers remain unverified.
+Current FL9_1 shader profiles accept offset-free finite literal
+textureSampleBias in [-3, 3] with equal min/mag filtering and anisotropy 1 for
+every used pair in the selected entry. Core and HAL propagate literal and
+unary-negated literal arguments through nested helper calls, with independent
+validation at each call site. Dynamic, out-of-range, offset and otherwise
+unproven bias expressions remain rejected. Wider bias support needs
+semantics-preserving lowering, and older drivers remain unverified.
 
 POT RGBA8/BGRA8 mip chains support initialization, transfers and sampled mip
 views. Native suffix views include the smallest resource mip; non-suffix views

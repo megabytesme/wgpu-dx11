@@ -1162,6 +1162,12 @@ pub struct DownlevelLimits {
     /// In particular, this does not guarantee that dynamically bounded loops are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub shader_loops: bool,
+    /// Whether vertex and fragment shader loops may have runtime-dependent termination.
+    ///
+    /// This can be unavailable when a backend's shader profiles require loops to have
+    /// statically determinable bounds.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub shader_dynamic_loops: bool,
     /// Whether vertex entry points may declare `@builtin(vertex_index)`.
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
@@ -1420,6 +1426,7 @@ impl Default for DownlevelLimits {
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
             shader_loops: true,
+            shader_dynamic_loops: true,
             vertex_index_input: true,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
@@ -1624,6 +1631,7 @@ impl DownlevelLimits {
             && (!required.multisampled_texture_bindings || self.multisampled_texture_bindings)
             && (!required.alpha_to_coverage || self.alpha_to_coverage)
             && (!required.shader_loops || self.shader_loops)
+            && (!required.shader_dynamic_loops || self.shader_dynamic_loops)
             && (!required.vertex_index_input || self.vertex_index_input)
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
@@ -1726,6 +1734,7 @@ impl DownlevelCapabilities {
             && self.limits.multisampled_texture_bindings
             && self.limits.alpha_to_coverage
             && self.limits.shader_loops
+            && self.limits.shader_dynamic_loops
             && self.limits.vertex_index_input
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
@@ -2108,11 +2117,11 @@ mod tests {
     #[test]
     fn shader_loops_are_a_downlevel_capability() {
         let available = DownlevelLimits {
-            shader_loops: false,
+            shader_dynamic_loops: false,
             ..DownlevelLimits::default()
         };
         assert!(available.check_limits(&DownlevelLimits {
-            shader_loops: false,
+            shader_dynamic_loops: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));
@@ -2288,6 +2297,7 @@ mod tests {
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
             shader_loops: false,
+            shader_dynamic_loops: false,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
@@ -2344,6 +2354,7 @@ mod tests {
             multisampled_texture_bindings: true,
             alpha_to_coverage: true,
             shader_loops: false,
+            shader_dynamic_loops: false,
             vertex_index_input: false,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
@@ -2701,6 +2712,7 @@ mod tests {
             "multisampled_texture_bindings",
             "alpha_to_coverage",
             "shader_loops",
+            "shader_dynamic_loops",
             "max_sampled_texture_sampler_pairs_per_shader_stage",
             "max_vertex_shader_uniform_vectors",
             "max_fragment_shader_uniform_vectors",
@@ -2736,6 +2748,7 @@ mod tests {
         assert!(limits.multisampled_texture_bindings);
         assert!(limits.alpha_to_coverage);
         assert!(limits.shader_loops);
+        assert!(limits.shader_dynamic_loops);
         assert_eq!(
             limits.max_sampled_texture_sampler_pairs_per_shader_stage,
             u32::MAX

@@ -103,8 +103,13 @@ minimum. For FL9_1, the baseline includes 2048 2D dimensions, one render target,
 shaders, and conditional NPOT textures. These are minimum guarantees, not
 assertions that larger sizes work on every device. Level 9_1 has no guaranteed
 separate alpha blending, hardware instancing, geometry or compute shader stage,
-or native UAV storage. The model also records constant and slope-scaled raster
-depth bias as hardware guarantees, and `DepthBiasClamp` as unavailable at 9.x
+or native UAV storage. Microsoft explicitly marks Separate Alpha Blend as
+unavailable at FL9_1; there is no selected-device query that safely promotes
+the capability. The public projection therefore keeps `SEPARATE_ALPHA_BLEND`
+unset and core rejects differing RGB/alpha equations when both channels are
+written. An RTX-only diagnostic that happens to render such states is not
+evidence of the FL9_1 contract. The model also records constant and
+slope-scaled raster depth bias as hardware guarantees, and `DepthBiasClamp` as unavailable at 9.x
 but guaranteed from 10.0. The implementation facts remain separate: the
 current private D24S8 path supports constant and slope-scaled bias on triangles,
 but not clamp or bias with selected `frag_depth` output. Modeling higher-level
@@ -341,6 +346,11 @@ about a particular driver's optional capabilities. Test names refer to private
 HAL tests unless stated otherwise; success on one modern adapter is not proof
 for all FL9 GPUs.
 
+Public culling coverage now complements the private rasterizer tests: strict
+forced-FL9_1 readback checked opposite triangle windings through separate
+CCW and CW back-face-culling pipelines, producing 10 red, 10 green and 44 clear
+pixels. Other pipeline and render-state combinations remain under audit.
+
 | Category | Hardware and private implementation | Coverage; wgpu mapping and remaining work |
 | --- | --- | --- |
 | Device / adapter | Native DXGI discovery excludes software adapters and creates only an explicitly requested FL9_1 device. The public opt-in adapter exposes the selected-device projection and a constrained HWND surface: BGRA8 sRGB FIFO, opaque composition, render-attachment usage, one frame of latency and owner-thread lifecycle. | Strict public wgpu tests select the RTX 3090 Ti, render/read back with uniforms in group 0, a sampler in group 4 and textures in group 7, replace only the group-7 texture between draws, verify overlapping near/far draws in both orders, concurrently submit through two public devices sharing the selected native device/context, and verify core rejection of unsupported resource/layout requests. A hidden-window lifecycle test configures, presents, resizes and presents again; a visible-window example presents 60 animated textured, indexed, depth-tested frames. The adapter exposes `TEXTURE_FORMAT_16BIT_NORM`, `TEXTURE_FORMAT_16BIT_PACKED` and comparison-sampler `ADDRESS_MODE_CLAMP_TO_BORDER` only when their implemented paths and selected-device queries permit them. It is not WebGPU-compliant. The exhaustive contract audit remains outstanding; visible client-area output has been qualitatively captured and inspected. |
@@ -479,7 +489,13 @@ GPU test submits 65,536 points and 65,538 triangle vertices; the visible point
 and triangle are only in the final batch, and readback confirms both. The
 triangle readback contained 32 red and 32 blue pixels. Historical driver
 behavior at large draw boundaries remains unverified.
-| Queries / synchronization / readback | Native event queries back the private fence; this is not a public query-set implementation. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core tests inject removal from fence wait, GetData, `GetDeviceRemovedReason` and queue-drop `wait_for_idle` paths; callbacks can re-enter polling, and queue destruction completes without panicking. Core rejects occlusion query sets when `OCCLUSION_QUERY` is absent, timestamp query sets when `TIMESTAMP_QUERY` is absent, and pipeline-statistics query sets when `PIPELINE_STATISTICS_QUERY` is absent; strict public tests verify all three gates on FL9_1 before HAL. The private HAL rejects query-set creation. Other unavailable resources use uninhabited HAL placeholders, so their destroy stubs cannot be reached through a valid safe core flow. Physical device removal/recovery, remaining lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
+| Queries / synchronization / readback | The 10Level9 feature table marks occlusion queries unavailable at FL9_1 and available from FL9_2; this is a hardware-level restriction, not just missing HAL work. Native event queries used internally for fences are synchronization and do not provide public query-set semantics. Timestamp and pipeline-statistics query sets also remain unimplemented and unadvertised. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core tests inject removal from fence wait, GetData, `GetDeviceRemovedReason` and queue-drop `wait_for_idle` paths; callbacks can re-enter polling, and queue destruction completes without panicking. Strict public tests verify FL9_1 core rejects occlusion, timestamp and pipeline-statistics query sets before HAL. The private HAL rejects query-set creation. Other unavailable resources use uninhabited HAL placeholders, so their destroy stubs cannot be reached through a valid safe core flow. Physical device removal/recovery, remaining lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
+
+Microsoft's [Direct3D feature-level table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro)
+lists occlusion queries as unavailable at FL9_1 and available at FL9_2 and
+above. This settles that specific query gap as a hardware boundary for this
+mission; it does not establish the availability of timestamps or pipeline
+statistics at FL9_1.
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and shader storage bindings. Core may retain storage bits for transfer-capable buffers but does not bind them as storage. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences. The controlled core fixture checks stage-specific storage-buffer layout rejection before HAL. Public strict tests verify core rejects compute-pipeline creation and `INDIRECT` buffer creation before reaching the corresponding unsupported HAL paths. No compute/storage feature is exposed; feature/limit gating alone remains insufficient for public device exposure. |
 | Presentation | FL9 hardware can support display through platform/format-specific paths. The private backend retains the WinRT CoreWindow path and exposes a constrained Win32 HWND surface through opt-in public wgpu: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. Configure, acquire and present are owner-thread-only. CoreWindow construction requires dispatcher-thread access and subsequent operations use the captured owner thread; public CoreWindow capabilities remain withheld. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-window configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. A fixture-only public test injects `DXGI_ERROR_DEVICE_REMOVED` at Present and verifies exactly one public lost callback plus prompt reentrant-poll rejection; this is synthetic and does not remove the GPU. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. Further lifecycle/error edges and historical driver behavior remain unverified. CoreWindow dispatcher/thread checks have CPU coverage and ARM32-UWP compile coverage only; no UWP runtime is claimed. This is not general surface or WebGPU support. |
 
@@ -621,7 +637,12 @@ uses `ps_4_0_level_9_1`; a strict-device FXC test confirms that the mask output
 fails while a color-only sibling compiles. Core checks the selected fragment
 entry point before HAL. The private renderer is single-sample, so a future
 semantics-preserving implementation could investigate lowering the low bit
-to discard, but no such rewrite is currently performed.
+to discard, but no such rewrite is currently performed. A direct FXC probe
+shows why a generic discard rewrite is not currently safe: the level-9_1
+profile rejects the bitwise `mask & 1` operation (X3535), which is needed to
+preserve the single-sample low-bit semantics for every valid `u32` mask.
+Treating every nonzero mask as covered would be observably wrong when only
+higher bits are set, so core continues to reject this output before HAL.
 
 The FL9_1 projection also disables
 `DownlevelLimits::fragment_non_perspective_interpolation`. Naga emits
@@ -837,9 +858,12 @@ can reach `textureSampleBias` is accepted only for finite literal biases in
 `ps_4_0_level_9_1` and `ps_4_0_level_9_3`, while the SM5 control compiles.
 Core and the private HAL reject direct and helper-reached offset forms before
 shader execution. Dynamic biases, out-of-range values and
-biases passed through helper arguments are rejected, even when the argument is
-a literal. All sampling pairs used by a selected entry containing bias must use
-equal min/mag filters and anisotropy 1; normal view and LOD checks still apply.
+bias expressions that cannot be proven from literals are rejected. Core and HAL
+resolve finite literal and unary-negated-literal arguments through nested
+helper calls per call site, so a valid literal forwarded to a helper is not
+mistaken for a dynamic bias; mixed call sites are checked independently. All
+sampling pairs used by a selected entry containing bias must use equal min/mag
+filters and anisotropy 1; normal view and LOD checks still apply.
 Unrelated entries remain usable. The tested FXC emitted an unclamped legacy
 `texldb`, for which Microsoft documents undefined behavior outside [-3, 3] at
 ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a
@@ -848,8 +872,10 @@ samplers. The public projection reports a maximum absolute literal bias of 3,
 no dynamic bias and no sampling offsets. Core's selected-entry analysis follows
 helper calls and rejects those unsupported forms as validation errors before
 HAL pipeline compilation. Public readback verifies implicit sampling and
-literal biases -3, +1 and +3 selected the expected mip colors across 256
-pixels; synthetic interface tests cover fractional and helper cases. This
+literal biases -3, +1 and +3 selected the expected mip colors across 384
+pixels, including a +1 bias forwarded to a helper; synthetic interface tests
+cover fractional bias, nested helper forwarding, dynamic arguments, mixed
+call sites and out-of-range values. This
 restricted implementation does not cover all valid biased sampling.
 
 The public offscreen adapter reports anisotropy availability through the
@@ -1256,13 +1282,15 @@ four-iteration vertex and three-iteration fragment loops. That test checks all
 64 output pixels on forced-FL9_1 hardware. FXC rejects the tested dynamic and
 unbounded loop forms with X3511 before any draw is submitted.
 
-The FL9_1 projection sets `DownlevelLimits::shader_loops` to true so constant-
-bound loops can reach the compiler. This is not a claim of dynamic loop
-support: unsupported loop forms fail pipeline compilation with an internal
-shader error, and FXC's instruction/unroll limits still apply. The loop
-capability is implemented through compiler unrolling rather than native pixel
-shader flow control. The RTX 3090 Ti result does not establish behavior on
-historical FL9_1 drivers.
+The FL9_1 projection sets `DownlevelLimits::shader_loops` to true for the
+statically bounded subset and `shader_dynamic_loops` to false. Core analyzes
+the selected entry point and called helpers, then rejects loops whose exit
+conditions depend on runtime data or whose exit is provably never taken before
+HAL compilation. The analysis conservatively tracks local writes through
+pointer parameters and unknown expressions. This avoids turning FXC's X3511
+diagnostic into the only failure path. Static loops still depend on FXC's
+instruction and unroll limits; the RTX 3090 Ti result does not establish
+behavior on historical FL9_1 drivers.
 
 ## Representative public 3D scene
 

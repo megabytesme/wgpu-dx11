@@ -59,13 +59,14 @@ Bottom level categories:
 - Add selected-device-query-gated FL9_1 D16 and D24S8 depth comparison sampling through the opt-in public D3D11 adapter.
 - Add query-backed Depth24Plus attachment and shadow-sampling support to the opt-in FL9_1 D3D11 adapter using D24S8 native storage without exposing stencil.
 - Add query-gated FL9_1 black and white border addressing for depth comparison samplers while rejecting ordinary border samplers.
+- Accept proven in-range `textureSampleBias` literals forwarded through helper calls in the opt-in FL9_1 D3D11 backend.
 
 ### Changes
 
 #### Validation
 
 - Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.
-- Add a downlevel shader-loop limit so the opt-in D3D11 FL9_1 backend rejects loop constructs that its bounded HLSL lowering cannot compile safely.
+- Add `DownlevelLimits::shader_dynamic_loops` so downlevel backends can reject selected shader entry points with runtime-dependent loop exits while retaining support for statically bounded loops.
 - Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
 - Gate bind-group layouts with empty shader visibility on downlevel support.
 - Gate unsupported sampled texture types and vertex-only visibility on downlevel support.

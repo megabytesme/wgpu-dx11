@@ -107,6 +107,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     multisampled_texture_bindings: false,
                     alpha_to_coverage: false,
                     shader_loops: false,
+                    shader_dynamic_loops: false,
                     vertex_index_input: false,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,

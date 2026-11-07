@@ -142,22 +142,6 @@ fn expect_validation_error_containing(
     );
 }
 
-fn expect_internal_error_containing(
-    device: &Device,
-    label: &str,
-    expected: &str,
-    operation: impl FnOnce(),
-) {
-    let scope = device.push_error_scope(ErrorFilter::Internal);
-    operation();
-    let error = poll_ready(scope.pop()).unwrap_or_else(|| panic!("{label} was accepted"));
-    assert!(matches!(error, Error::Internal { .. }), "{error:?}");
-    assert!(
-        format!("{error:?}").contains(expected),
-        "{label} produced the wrong compiler error: {error:?}"
-    );
-}
-
 #[test]
 fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -6842,8 +6826,10 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
              @fragment fn bias_positive(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 1.0); }\n\
              @fragment fn bias_min(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, -3.0); }\n\
              @fragment fn bias_max(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 3.0); }\n\
+             @fragment fn bias_helper_positive(input: VertexOut) -> @location(0) vec4f { return sample_with_bias(input.uv, 1.0); }\n\
              @fragment fn bias_dynamic(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, input.uv.x); }\n\
              @fragment fn bias_helper_dynamic(input: VertexOut) -> @location(0) vec4f { return sample_with_bias(input.uv, input.uv.x); }\n\
+             @fragment fn bias_helper_out_of_range(input: VertexOut) -> @location(0) vec4f { return sample_with_bias(input.uv, 4.0); }\n\
              @fragment fn bias_out_of_range(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 4.0); }\n\
              @fragment fn bias_offset(input: VertexOut) -> @location(0) vec4f { return textureSampleBias(levels, mip_sampler, input.uv, 1.0, vec2i(0, 0)); }\n\
              @fragment fn bias_offset_helper(input: VertexOut) -> @location(0) vec4f { return sample_with_bias_offset(input.uv); }\n\
@@ -6906,10 +6892,12 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         create_pipeline("bias_positive"),
         create_pipeline("bias_min"),
         create_pipeline("bias_max"),
+        create_pipeline("bias_helper_positive"),
     ];
     for entry_point in [
         "bias_dynamic",
         "bias_helper_dynamic",
+        "bias_helper_out_of_range",
         "bias_out_of_range",
         "bias_offset",
         "bias_offset_helper",
@@ -6956,7 +6944,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
     vertex_buffer.unmap();
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 sampled mip readback"),
-        size: 5 * 8 * 256,
+        size: 6 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -7040,7 +7028,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         TexelCopyBufferInfo {
             buffer: &readback,
             layout: TexelCopyBufferLayout {
-                offset: (4 * 8 * 256) as u64,
+                offset: (5 * 8 * 256) as u64,
                 bytes_per_row: Some(256),
                 rows_per_image: Some(8),
             },
@@ -7073,6 +7061,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             mip_colors[1],
             mip_colors[0],
             mip_colors[3],
+            mip_colors[1],
             mip_colors[2],
         ]
         .into_iter()
@@ -7091,7 +7080,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 selected expected mip colors; a non-suffix 2D view refreshed and sampled its selected mip range; 320 pixels matched, and core rejected unsupported bias, derivative and explicit-gradient forms before HAL");
+    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 (including a constant forwarded through a helper) selected expected mip colors; a non-suffix 2D view refreshed and sampled its selected mip range; 384 pixels matched, and core rejected unsupported bias, derivative and explicit-gradient forms before HAL");
 }
 
 #[test]
@@ -12280,6 +12269,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     assert!(downlevel.limits.shader_loops);
+    assert!(!downlevel.limits.shader_dynamic_loops);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false statically_unrolled_loops=true dynamic_loops=false",
         info.name, info.vendor, info.device, info.driver_info
@@ -12377,16 +12367,24 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
         attributes: &attributes,
     })];
     let pipeline = create_pipeline("vertex_static", "fragment_static", &vertex_buffers);
-    expect_internal_error_containing(&device, "dynamic vertex shader loop", "X3511", || {
-        drop(create_pipeline("vertex_dynamic", "fragment_dynamic", &[]))
-    });
-    expect_internal_error_containing(&device, "dynamic fragment shader loop", "X3511", || {
-        drop(create_pipeline(
-            "vertex_static",
-            "fragment_dynamic",
-            &vertex_buffers,
-        ))
-    });
+    expect_validation_error_containing(
+        &device,
+        "dynamic vertex shader loop",
+        "UnsupportedShaderLoops",
+        || drop(create_pipeline("vertex_dynamic", "fragment_dynamic", &[])),
+    );
+    expect_validation_error_containing(
+        &device,
+        "dynamic fragment shader loop",
+        "UnsupportedShaderLoops",
+        || {
+            drop(create_pipeline(
+                "vertex_static",
+                "fragment_dynamic",
+                &vertex_buffers,
+            ))
+        },
+    );
 
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 statically unrolled loop output"),
@@ -12502,7 +12500,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: FL9_1 static vertex and fragment loops rendered 64/64 expected pixels; dynamic loops failed at FXC compilation");
+    println!("PASS: FL9_1 static vertex and fragment loops rendered 64/64 expected pixels; core rejected dynamic loops before FXC");
 }
 
 #[test]
@@ -20069,4 +20067,236 @@ struct VertexOut {
     } else {
         println!("PASS: public FL9_1 {depth_format:?} LessEqual depth comparison matched 64 pixels (32 black, 32 red); invalid function, mismatched filters and anisotropy were rejected before HAL");
     }
+}
+
+#[test]
+fn public_dx11_front_face_and_backface_culling_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=front-face selection and back-face culling",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 face-culling test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 opposite-winding triangles"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.5, 1.0); }\n\
+             @fragment fn ccw_color() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn cw_color() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }],
+    })];
+    let target_state = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let create_pipeline = |front_face, fragment| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 front-face culling pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleList,
+                front_face,
+                cull_mode: Some(Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &target_state,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let ccw_pipeline = create_pipeline(FrontFace::Ccw, "ccw_color");
+    let cw_pipeline = create_pipeline(FrontFace::Cw, "cw_color");
+    let vertices = [
+        -0.95f32, -0.8, -0.05, -0.8, -0.5, 0.8, // CCW triangle on the left
+        0.05, -0.8, 0.5, 0.8, 0.95, -0.8, // CW triangle on the right
+    ];
+    let vertex_bytes = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect::<Vec<_>>();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 opposite-winding vertices"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map opposite-winding vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertex_buffer.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 culling readback target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 culling readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 front-face and culling commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("draw both windings with their selected front-face states"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_pipeline(&ccw_pipeline);
+        pass.draw(0..6, 0..1);
+        pass.set_pipeline(&cw_pipeline);
+        pass.draw(0..6, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 culling render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("culling readback callback")
+        .expect("map culling readback");
+
+    let mut ccw_pixels = 0;
+    let mut cw_pixels = 0;
+    let mut clear_pixels = 0;
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &data[offset..offset + 4];
+                if x < 4 {
+                    assert_ne!(
+                        pixel,
+                        &[0, 255, 0, 255],
+                        "CW color leaked left at ({x}, {y})"
+                    );
+                } else {
+                    assert_ne!(
+                        pixel,
+                        &[255, 0, 0, 255],
+                        "CCW color leaked right at ({x}, {y})"
+                    );
+                }
+                match pixel {
+                    [255, 0, 0, 255] => ccw_pixels += 1,
+                    [0, 255, 0, 255] => cw_pixels += 1,
+                    [0, 0, 255, 255] => clear_pixels += 1,
+                    other => panic!("unexpected culling output at ({x}, {y}): {other:?}"),
+                }
+            }
+        }
+    }
+    readback.unmap();
+    assert!(ccw_pixels > 0, "CCW triangle was fully culled");
+    assert!(cw_pixels > 0, "CW triangle was fully culled");
+    assert_eq!(ccw_pixels + cw_pixels + clear_pixels, 64);
+    println!(
+        "PASS: both winding modes were independently culled and rasterized; readback had {ccw_pixels} red CCW pixels, {cw_pixels} green CW pixels and {clear_pixels} blue clear pixels"
+    );
 }

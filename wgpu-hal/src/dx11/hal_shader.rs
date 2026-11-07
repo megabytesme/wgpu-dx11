@@ -43,6 +43,7 @@ mod tests {
             @fragment fn dynamic() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), value.x); }
             @fragment fn helper() -> @location(0) vec4f { return biased(image, smp, value.x); }
             @fragment fn helper_literal() -> @location(0) vec4f { return biased(image, smp, 1.0); }
+            @fragment fn helper_large() -> @location(0) vec4f { return biased(image, smp, 4.0); }
             @fragment fn min_bias() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -3.0); }
             @fragment fn max_bias() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 3.0); }
             @fragment fn fractional() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 0.5); }
@@ -264,15 +265,15 @@ mod tests {
 
     #[test]
     fn sample_bias_guard_uses_selected_entry_and_shader_profile() {
-        let (module, info) = sample_bias_module();
-        for (index, entry) in module.entry_points.iter().enumerate() {
+        let (module, _info) = sample_bias_module();
+        for entry in &module.entry_points {
             let uses_bias = matches!(
                 entry.name.as_str(),
                 "positive"
                     | "negative"
                     | "dynamic"
                     | "helper"
-                    | "helper_literal"
+                    | "helper_large"
                     | "too_small"
                     | "too_large"
                     | "biased_offset"
@@ -281,13 +282,7 @@ mod tests {
             for level in FeatureLevel::ALL_DESCENDING {
                 let profile = selected_shader_profile(entry.stage).unwrap();
                 assert_eq!(
-                    has_unsupported_sample_bias(
-                        &module,
-                        &info,
-                        &entry.function,
-                        info.get_entry_point(index),
-                        profile
-                    ),
+                    has_unsupported_sample_bias(&module, &entry.function, profile),
                     uses_bias,
                     "entry {}, level {level:?}, profile {profile:?}",
                     entry.name,
@@ -300,9 +295,7 @@ mod tests {
             ] {
                 assert!(!has_unsupported_sample_bias(
                     &module,
-                    &info,
                     &entry.function,
-                    info.get_entry_point(index),
                     profile
                 ));
             }
@@ -1023,7 +1016,7 @@ mod tests {
                 "negative",
                 "dynamic",
                 "helper",
-                "helper_literal",
+                "helper_large",
                 "too_small",
                 "too_large",
                 "biased_offset",
@@ -1061,7 +1054,7 @@ mod tests {
             assert!(shader
                 .compile_with_bindings(naga::ShaderStage::Fragment, "normal", &bindings)
                 .is_ok());
-            for entry in ["min_bias", "max_bias", "fractional"] {
+            for entry in ["min_bias", "max_bias", "fractional", "helper_literal"] {
                 assert!(shader
                     .uses_sample_bias(naga::ShaderStage::Fragment, entry)
                     .unwrap());
@@ -1970,47 +1963,164 @@ fn is_supported_integer_vertex_argument_expression(
     }
 }
 
+fn sample_bias_literal(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+    arguments: &[Option<f32>],
+) -> Option<f32> {
+    match function.expressions[expression] {
+        naga::Expression::Literal(naga::Literal::F32(value)) => Some(value),
+        naga::Expression::Unary {
+            op: naga::UnaryOperator::Negate,
+            expr,
+        } => sample_bias_literal(function, expr, arguments).map(|value| -value),
+        naga::Expression::FunctionArgument(index) => {
+            arguments.get(index as usize).copied().flatten()
+        }
+        _ => None,
+    }
+}
+
+fn sample_bias_block_is_unsupported(
+    module: &naga::Module,
+    function: &naga::Function,
+    block: &naga::Block,
+    arguments: &[Option<f32>],
+    budget: &mut usize,
+    depth: usize,
+) -> bool {
+    if depth >= 256 {
+        return true;
+    }
+    for statement in block.iter() {
+        if *budget == 0 {
+            return true;
+        }
+        *budget -= 1;
+        let unsupported = match statement {
+            naga::Statement::Block(block) => sample_bias_block_is_unsupported(
+                module,
+                function,
+                block,
+                arguments,
+                budget,
+                depth + 1,
+            ),
+            naga::Statement::If { accept, reject, .. } => {
+                sample_bias_block_is_unsupported(
+                    module,
+                    function,
+                    accept,
+                    arguments,
+                    budget,
+                    depth + 1,
+                ) || sample_bias_block_is_unsupported(
+                    module,
+                    function,
+                    reject,
+                    arguments,
+                    budget,
+                    depth + 1,
+                )
+            }
+            naga::Statement::Switch { cases, .. } => cases.iter().any(|case| {
+                sample_bias_block_is_unsupported(
+                    module,
+                    function,
+                    &case.body,
+                    arguments,
+                    budget,
+                    depth + 1,
+                )
+            }),
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => {
+                sample_bias_block_is_unsupported(
+                    module,
+                    function,
+                    body,
+                    arguments,
+                    budget,
+                    depth + 1,
+                ) || sample_bias_block_is_unsupported(
+                    module,
+                    function,
+                    continuing,
+                    arguments,
+                    budget,
+                    depth + 1,
+                )
+            }
+            naga::Statement::Call {
+                function: callee,
+                arguments: actual,
+                ..
+            } => {
+                let mapped = actual
+                    .iter()
+                    .map(|&expression| sample_bias_literal(function, expression, arguments))
+                    .collect::<Vec<_>>();
+                sample_bias_function_is_unsupported(
+                    module,
+                    &module.functions[*callee],
+                    &mapped,
+                    budget,
+                    depth + 1,
+                )
+            }
+            _ => false,
+        };
+        if unsupported {
+            return true;
+        }
+    }
+    false
+}
+
+fn sample_bias_function_is_unsupported(
+    module: &naga::Module,
+    function: &naga::Function,
+    arguments: &[Option<f32>],
+    budget: &mut usize,
+    depth: usize,
+) -> bool {
+    if depth >= 256 || function.expressions.len() > *budget {
+        return true;
+    }
+    *budget -= function.expressions.len();
+    for (_, expression) in function.expressions.iter() {
+        let naga::Expression::ImageSample {
+            level: naga::SampleLevel::Bias(bias),
+            offset,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        if offset.is_some()
+            || !sample_bias_literal(function, bias, arguments)
+                .is_some_and(|value| value.is_finite() && (-3.0..=3.0).contains(&value))
+        {
+            return true;
+        }
+    }
+    sample_bias_block_is_unsupported(module, function, &function.body, arguments, budget, depth)
+}
+
 fn has_unsupported_sample_bias(
     module: &naga::Module,
-    info: &naga::valid::ModuleInfo,
     function: &naga::Function,
-    function_info: &naga::valid::FunctionInfo,
     profile: ShaderProfile,
 ) -> bool {
-    matches!(
+    if !matches!(
         profile,
         ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-    ) && reachable_expression(
-        module,
-        info,
-        function,
-        function_info,
-        |_, function, _, expression| {
-            let naga::Expression::ImageSample {
-                level: naga::SampleLevel::Bias(bias),
-                offset,
-                ..
-            } = *expression
-            else {
-                return false;
-            };
-            if offset.is_some() {
-                return true;
-            }
-            let value = match function.expressions[bias] {
-                naga::Expression::Literal(naga::Literal::F32(value)) => Some(value),
-                naga::Expression::Unary {
-                    op: naga::UnaryOperator::Negate,
-                    expr,
-                } => match function.expressions[expr] {
-                    naga::Expression::Literal(naga::Literal::F32(value)) => Some(-value),
-                    _ => None,
-                },
-                _ => None,
-            };
-            !value.is_some_and(|value| value.is_finite() && (-3.0..=3.0).contains(&value))
-        },
-    )
+    ) {
+        return false;
+    }
+    let mut budget = 65_536;
+    sample_bias_function_is_unsupported(module, function, &[], &mut budget, 0)
 }
 
 fn has_unsupported_dynamic_access(
@@ -2690,13 +2800,8 @@ impl ShaderModule {
         let entry_info = info.get_entry_point(entry_index);
         let profile =
             selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
-        if has_unsupported_sample_bias(
-            &module,
-            &info,
-            &module.entry_points[entry_index].function,
-            entry_info,
-            profile,
-        ) {
+        if has_unsupported_sample_bias(&module, &module.entry_points[entry_index].function, profile)
+        {
             return Err(crate::PipelineError::Linkage(
                 stages,
                 "D3D11 FL9 texture sample bias is not implemented safely".into(),

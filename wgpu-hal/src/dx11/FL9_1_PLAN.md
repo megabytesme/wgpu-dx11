@@ -1,14 +1,25 @@
 # FL9_1 completion plan
 
-The latest public-API increment exercises same-format copies in both directions
-between ordinary 2D textures and cube subresources, alongside cube-face copies
-across mip levels. A copied cube face was sampled, and a cube face copied back
-to 2D was read back as 64 matching pixels. The strict public suite passed
-70/70, the core fixture 103/103 and the private HAL suite 391/391. Cube
+The latest contract correction separates statically bounded from
+runtime-dependent shader loops. Static vertex and fragment loops still render
+on the forced-FL9_1 RTX path; core rejects dynamic loop bounds in the selected
+entry point and reachable helpers before HAL compilation. The latest strict
+public suite passed 70/70, private HAL suite 395/395, controlled core fixture
+103/103, core library 95/95, and `wgpu-types` 94/94; DX12 core/HAL regressions
+passed 94/94 and 4/4. Exact commands and compiler/hardware evidence are in
+`FL9_1_PROGRESS.md`.
+
+A subsequent strict public test also verified both front-face windings and
+back-face culling with a 64-pixel readback. It passed 1/1 on the RTX 3090 Ti at
+requested and actual FL9_1; the complete public suite has not yet been rerun
+with that new test included.
+
+The preceding public increment exercises same-format copies in both
+directions between ordinary 2D textures and cube subresources, alongside
+cube-face copies across mip levels. A copied cube face was sampled, and a cube
+face copied back to 2D was read back as 64 matching pixels. Cube
 texture-to-buffer readback remains blocked by the one-layer downlevel source
-limit. Exact commands and the Microsoft copy restrictions are in
-`FL9_1_PROGRESS.md`. The verified public integration checkpoint is
-`7fb6cf3c9`.
+limit. Its verified public integration checkpoint is `7fb6cf3c9`.
 
 The objective is a usable explicit D3D11 backend through the public native wgpu
 API, with truthful downlevel capabilities, tested textured depth rendering and
@@ -95,6 +106,27 @@ implementation is checkpointed as `8d6c8f93e12c766a5f8fb413f2abf781c4b55408`.
 The broader surface and device-loss audit remains open.
 
 ## Ordered work and gates
+
+### Verified hardware boundary — occlusion queries
+
+Microsoft's 10Level9 feature table marks occlusion queries unavailable at
+FL9_1 and available from FL9_2. Keep `DownlevelFlags::OCCLUSION_QUERY` absent
+and reject public query-set creation before HAL. The D3D11 event query used
+internally by the fence is a synchronization primitive and does not change
+this result. Timestamp and pipeline-statistics queries remain separately
+unimplemented/unverified. The strict public query-validation test confirms
+core rejects all three query-set types for the selected FL9_1 projection.
+Reference: [Direct3D feature levels](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro).
+
+### Verified compiler boundary — fragment sample-mask emulation
+
+Do not emulate fragment `@builtin(sample_mask)` by discarding only when the
+whole mask is zero. Even for a single-sample target, WebGPU uses bit 0, so a
+mask with only higher bits set must discard. The exact low-bit test needs
+bitwise extraction, which FXC rejects for `ps_4_0_level_9_1` with X3535.
+The existing selected-entry core gate therefore remains correct. Revisit only
+if a level-9_1-expressible exact parity operation is found and tested; the
+RTX's modern driver does not relax the shader-profile restriction.
 
 ### Verified hardware boundary — ordinary 2D texture arrays
 
@@ -238,12 +270,11 @@ before HAL and do not claim historical-driver behavior from the modern RTX.
 
 The original blanket selected-entry loop rejection has been narrowed. The
 FL9_1 path disables Naga's dynamic loop guard, allowing FXC to unroll
-statically bounded loops in either shader stage. Dynamic and unbounded forms
-fail compilation with X3511. `DownlevelLimits::shader_loops` is enabled for
-this limited compiler-supported subset; it does not promise dynamic loop
-support. The strict public test renders and verifies all 64 pixels using
-loops in both stages. See the latest `FL9_1_PROGRESS.md` entry for exact
-commands and hardware details.
+statically bounded loops in either shader stage. `shader_loops` reports this
+subset and `shader_dynamic_loops` remains false. Core now rejects runtime-
+dependent loop exits for the selected entry and helper call graph before FXC;
+the strict public test keeps the static-loop 64-pixel GPU check. See the latest
+`FL9_1_PROGRESS.md` entry for exact commands and hardware details.
 
 Continue the selected-entry WGSL/FXC audit, prioritizing constructs that core
 accepts but the current FL9_1 HLSL path cannot compile or preserve. Keep each

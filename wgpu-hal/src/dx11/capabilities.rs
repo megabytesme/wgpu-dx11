@@ -529,6 +529,9 @@ impl Capabilities {
         if comparison_sampling {
             flags |= wgt::DownlevelFlags::COMPARISON_SAMPLERS;
         }
+        let shader_dynamic_loops = self.backend.shader_loops
+            && self.hardware.vertex_dynamic_flow_control
+            && self.hardware.fragment_dynamic_flow_control;
 
         let downlevel = wgt::DownlevelCapabilities {
             flags,
@@ -574,10 +577,8 @@ impl Capabilities {
                 sampled_uint_textures: false,
                 multisampled_texture_bindings: false,
                 alpha_to_coverage: self.backend.alpha_to_coverage,
-                shader_loops: self.backend.statically_unrolled_shader_loops
-                    || (self.backend.shader_loops
-                        && self.hardware.vertex_dynamic_flow_control
-                        && self.hardware.fragment_dynamic_flow_control),
+                shader_loops: self.backend.statically_unrolled_shader_loops || shader_dynamic_loops,
+                shader_dynamic_loops,
                 vertex_index_input: self.backend.vertex_index_input,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
@@ -1488,6 +1489,49 @@ mod tests {
         caps.backend.fl91_depth_comparison_sampling = true;
         caps.hardware = HardwareGuarantees::for_level(FeatureLevel::L9_2);
         assert!(!caps.private_fl91_depth_comparison_sampling());
+    }
+
+    #[test]
+    fn fl91_separate_alpha_blend_is_not_exposed() {
+        let caps = model(FeatureLevel::L9_1);
+        assert!(!caps.hardware.separate_alpha_blend);
+        let projected = caps.wgpu_projection().expect("FL9_1 projection");
+        assert!(!projected
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND));
+    }
+
+    #[test]
+    fn dynamic_shader_loops_require_implementation_and_both_stage_guarantees() {
+        let mut caps = model(FeatureLevel::L9_1);
+        let projected = caps.wgpu_projection().expect("FL9_1 projection");
+        assert!(projected.capabilities.downlevel.limits.shader_loops);
+        assert!(!projected.capabilities.downlevel.limits.shader_dynamic_loops);
+
+        caps.backend.shader_loops = true;
+        caps.hardware.vertex_dynamic_flow_control = true;
+        caps.hardware.fragment_dynamic_flow_control = true;
+        assert!(
+            caps.wgpu_projection()
+                .expect("synthetic dynamic-loop projection")
+                .capabilities
+                .downlevel
+                .limits
+                .shader_dynamic_loops
+        );
+
+        caps.hardware.fragment_dynamic_flow_control = false;
+        assert!(
+            !caps
+                .wgpu_projection()
+                .expect("incomplete dynamic-loop guarantee")
+                .capabilities
+                .downlevel
+                .limits
+                .shader_dynamic_loops
+        );
     }
 
     #[test]

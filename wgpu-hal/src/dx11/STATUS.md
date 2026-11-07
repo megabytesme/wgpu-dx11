@@ -24,6 +24,12 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The public rasterizer path now has a strict forced-FL9_1 readback test for
+opposite triangle windings under `FrontFace::Ccw` and `FrontFace::Cw` with
+back-face culling. The test verified 10 red CCW pixels, 10 green CW pixels and
+44 clear pixels on the RTX 3090 Ti. Other render-state combinations and
+historical driver behavior remain under audit.
+
 The opt-in public projection now exposes comparison sampling only when the
 selected FL9_1 device positively reports D3D9 shadow support. Strict public
 D16, Depth24Plus and D24S8 tests each verify 32 failed and 32 passing
@@ -202,9 +208,10 @@ partial copy between differently sized textures with nonzero origins, and
 full texture readback; all 36 destination texels match the expected patch and
 preserved background.
 A ninth strict test uploads and samples a four-level RGBA8 mip chain through
-implicit derivatives and literal sample biases -3, +1 and +3. The expected
-mip colors were verified across 256 pixels; core rejects dynamic,
-helper-forwarded, out-of-range and offset bias forms before HAL. A multi-mip R8
+implicit derivatives and literal sample biases -3, +1 and +3, including a +1
+bias forwarded through a helper. The expected mip colors were verified across
+384 pixels. Core rejects dynamic, out-of-range and offset bias forms before
+HAL, and validates each helper call site independently. A multi-mip R8
 descriptor is also rejected by core.
 A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
 wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
@@ -783,8 +790,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   format query and cannot represent the restricted blend-state subset.
   sRGB formats and broader public use remain unsupported. Historical
   FL9_1 driver behavior remains unverified.
-- FL9_1 rejects straight alpha, inversion and vignette blending when both RGB and alpha
-  are written because separate alpha is not guaranteed. Core now requires
+- The Microsoft 10Level9 feature table marks Separate Alpha Blend unavailable
+  at FL9_1, with no selected-device query to promote it. FL9_1 rejects straight
+  alpha, inversion and vignette blending when both RGB and alpha are written.
+  Core now requires
   `DownlevelFlags::SEPARATE_ALPHA_BLEND` for distinct color/alpha equations when
   both RGB and alpha are written; RGB-only and alpha-only cases use coupled
   factors and remain accepted. A test-only opt-in retains nonportable
@@ -992,13 +1001,14 @@ UNORM code value.
 ## WGSL loop control
 
 The D3D11 FL9_1 path disables Naga's dynamic loop-bounding guard so FXC can
-unroll statically bounded loops. A strict public test rendered correctly with
-static loops in both stages, validating every output pixel. The tested dynamic
-and unbounded forms fail FXC with X3511 during pipeline compilation. The
-projection's `shader_loops` capability therefore permits loop-containing
-shaders, but does not guarantee runtime-bounded loops; FXC's per-shader
-instruction and unrolling limits remain. Details and exact commands are in
-`FL9_1_PROGRESS.md`.
+unroll statically bounded loops. `shader_loops` reports that subset, while
+`shader_dynamic_loops` is false. Core analyzes the selected entry point and
+helper calls and rejects runtime-dependent exits and provably unbounded
+literal-false exits before HAL compilation. It also treats caller-local values
+passed to pointer parameters as runtime-tainted. A strict public test rendered
+correctly with static loops in both stages and checked every pixel; core also
+rejected the dynamic vertex and fragment cases. FXC instruction and unrolling
+limits remain. Details and exact commands are in `FL9_1_PROGRESS.md`.
 
 ## Query-gated 3D mip sampling
 

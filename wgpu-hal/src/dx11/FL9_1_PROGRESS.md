@@ -1,5 +1,134 @@
 # FL9_1 progress
 
+## Public front-face and culling readback — 2026-11-07
+
+Added a strict public wgpu test for rasterizer winding and back-face culling,
+which previously had private HAL coverage but no public readback check. One
+draw uses `FrontFace::Ccw` and one uses `FrontFace::Cw` over adjacent triangles
+with opposite winding. On the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), the selected device was explicitly requested and
+confirmed at FL9_1. Readback found 10 red pixels from the CCW triangle, 10 green
+pixels from the CW triangle and 44 clear pixels; neither winding appeared in
+the opposite half. The focused strict hardware test passed 1/1.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_front_face_and_backface_culling_at_fl91 -- --nocapture --test-threads=1
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+This closes public execution evidence for the configured front-face and
+back-face culling state; it does not close the wider pipeline/render-state or
+historical-driver audit.
+
+## Occlusion-query feature-level boundary — 2026-11-07
+
+The 10Level9 feature-level table explicitly marks occlusion queries
+unavailable at FL9_1 and available beginning at FL9_2. The private event
+query used for queue fences is only a completion primitive and must not be
+confused with public occlusion-query support. Keep the public downlevel flag
+absent and preserve core rejection before the HAL. The strict public test
+already checks that occlusion, timestamp and pipeline-statistics query-set
+requests fail at the selected FL9_1 projection; the unsupported HAL query-set
+path is therefore not reached. Timestamp and pipeline-statistics feature-level
+guarantees were not established by this check and remain unimplemented.
+
+Reference: [Microsoft's Direct3D feature-level table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro).
+The focused strict public query-validation test passed 1/1 on the NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1
+explicitly requested and selected; it reported `occlusion_queries=false` and
+confirmed core rejected all three query-set categories before HAL. The
+selected-entry loop-analysis unit test also covers an unbounded loop whose
+false exit is expressed as the constant comparison `1u == 2u`; it passed
+under `cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features
+--features dx11,wgsl,std --lib
+shader_loop_detection_follows_only_selected_entry_calls`. The initial
+public-test filter used the wrong function name and selected zero tests; the
+corrected command selected and passed the one hardware test.
+
+## Selected-entry dynamic-loop validation — 2026-11-07
+
+The previous loop checkpoint allowed statically bounded loops but reported
+dynamic-loop support through the same `DownlevelLimits::shader_loops` field.
+That allowed a runtime-dependent WGSL loop to pass core and fail later in
+FXC with X3511. Added `shader_dynamic_loops` as a separate downlevel limit,
+kept static loops enabled for the tested FL9_1 backend, and projected dynamic
+loops only when backend implementation and both shader-stage guarantees are
+present. Serde defaults the new field to true for older capability data, which
+preserves the existing behavior of other backends.
+
+Core now checks the selected entry points even when static loops are allowed.
+The Naga IR analysis follows reachable helper calls, recognizes runtime
+uniform/global values and local aliases, and fails closed for unknown
+expressions. It also tracks caller-local variables passed to pointer
+parameters so a helper cannot hide a runtime loop bound by mutating it through
+a pointer. It also rejects a provably unbounded loop whose only exit condition
+is the literal `false`. The analysis deliberately may reject some constant
+helper-parameter cases conservatively; no dynamic-loop support is advertised.
+A shader module's unselected entry points do not impose the restriction on
+the selected one.
+
+The strict public D3D11 loop test now renders static vertex and fragment loops
+and validates all 64 pixels, then expects dynamic vertex and fragment
+pipelines to return core validation errors before FXC. On the NVIDIA GeForce
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`), the
+requested and actual device level was FL9_1. The focused post-change run passed
+1/1 and reported the adapter and exact result.
+
+Verification with Rust 1.93.1 and the Visual Studio x64 environment:
+
+- Strict public D3D11 suite: 70/70 passed. The optional Float16x2 input-format
+  test includes a selected-device query skip branch.
+- Strict private D3D11 HAL suite: 393/393 passed, including real GPU tests.
+- Strict controlled core fixture: 103/103 passed, including hardware
+  rendering and the zero-public-adapter isolation check.
+- Core library tests: 95/95 passed.
+- `wgpu-types --all-features`: 94/94 unit tests and 14/14 runnable doc tests
+  passed; 21 doc tests were ignored.
+- DX12 core tests: 94/94; DX12 HAL tests: 4/4.
+- Core, HAL and `wgpu-types` Clippy passed. Existing warnings remain in
+  `wgpu-types` qualification tests and D3D11 HAL test/helper code; no new
+  warning was reported for the loop-analysis code.
+- An initial core test command omitted `std` and WGSL features and failed to
+  compile the test crate. The corrected commands above passed.
+
+The separate-alpha FL9_1 restriction remains in the same working tree and is
+still covered by its projection test. Historical FL9_1 hardware and Lumia
+runtime remain unverified. This closes a narrow core/HAL validation mismatch;
+the overall completion mission remains partial.
+
+## Separate-alpha blend contract review — 2026-11-07
+
+Rechecked the remaining separate-alpha blend concern against Microsoft's
+10Level9 feature-level table. It explicitly marks Separate Alpha Blend as
+unavailable at FL9_1, and the D3D9 options query does not provide a
+selected-device override. Keep `HardwareGuarantees::separate_alpha_blend`
+false, leave `DownlevelFlags::SEPARATE_ALPHA_BLEND` unset, and reject distinct
+RGB/alpha equations when both channels are written. Existing same-equation
+blending remains supported. A test-only RTX diagnostic is not public
+capability evidence.
+
+Added a CPU test that asserts the production FL9_1 projection keeps this flag
+disabled. The strict public core fixture already checks validation rejection.
+Microsoft reference: [Direct3D feature levels](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro).
+
+After this contract correction, the full strict private HAL suite was rerun
+with Rust 1.93.1 and the Visual Studio x64 environment. It passed 392/392
+tests, including the new projection test and the existing forced-FL9_1 GPU
+rendering, transfer, depth/stencil, sampler and surface tests. The run used
+`WGPU_DX11_REQUIRE_HARDWARE=1`; it did not rely on hardware skips.
+
+~~~powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 -- --test-threads=1'
+~~~
+
+A read-only Lumia Device Portal availability check for
+`/api/os/devicefamily` timed out during the helper's initial HTTPS request;
+the device also did not answer a LAN ping. No package was deployed and no
+device state was changed. Mobile runtime validation remains blocked by device
+reachability in this session.
+
 ## 2D/cube copy compatibility — 2026-11-07
 
 Extended the strict public cube transfer test to cover compatible native
@@ -99,6 +228,90 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 cargo +1.93 run --offline -j2 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std -- C:\Users\ben\AppData\Local\Temp\dx11-fl91-offscreen.ppm
 cargo +1.93 clippy --offline -j2 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
 rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+### Follow-up verification — 2026-11-07
+
+After the compiler-boundary regression was added, the complete strict private
+D3D11 HAL suite passed 394/394 with `WGPU_DX11_REQUIRE_HARDWARE=1`. The first
+public-suite compile at `-j16` failed in rustc while mapping `wgpu-types`
+metadata and exited with `STATUS_STACK_BUFFER_OVERRUN`; rerunning the same
+strict 70-test public suite at `-j2` passed 70/70 with zero test skips. The
+focused strict sample-mask gate test passed 1/1. Commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_fragment_sample_mask_output_at_fl91 -- --nocapture --test-threads=1
+~~~
+
+The hardware was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) explicitly requested and selected at FL9_1. The optional
+Float16x2 subcase remains capability-skipped because the selected adapter
+does not report its vertex-input support. No historical-device claim follows.
+
+## Follow-up — sample-mask emulation compiler limit — 2026-11-07
+
+Checked whether the current single-sample renderer can safely lower fragment
+`@builtin(sample_mask)` output to `discard`. The target sample observes only
+bit 0, so the translation must distinguish odd masks from masks with only
+higher bits set. A focused FXC test confirmed `ps_4_0_level_9_1` rejects
+`mask & 1` with X3535 (`Bitwise operations not supported on this target`).
+Treating all nonzero masks as covered would change valid WGSL semantics. Kept
+the existing selected-entry core rejection and added a negative compiler
+regression test. The focused test passed 1/1; this is compiler evidence, not a
+hardware execution test. A future exact arithmetic lowering would need a proof
+for the full `u32` domain, not just small mask values. The strict public
+regression also passed 1/1 on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and selected
+at FL9_1; core rejected the mask before FXC and accepted the color-only sibling.
+
+## Follow-up — constant sample bias through helper calls — 2026-11-07
+
+The FL9_1 projection already supported finite literal texture-sample biases
+from -3 through +3, but conservatively rejected a literal passed to a helper
+parameter. Naga's HLSL for this form compiles under `ps_4_0_level_9_1` when
+FXC sees the constant at the call site. Core and the private HAL now resolve
+literal and unary-negated-literal arguments through nested helper calls and
+validate each call site independently. Dynamic values, out-of-range literals,
+offset sampling and mixed call sets containing an invalid literal remain
+rejected. Analysis fails closed when its call-depth or work budget is exceeded.
+
+CPU tests cover direct helper forwarding, nested calls, two calls with different
+literal values, dynamic arguments, out-of-range values and selected-entry
+isolation. The public strict mip test now renders both direct and helper-based
++1 bias sampling; the direct/helper/implicit mip cases matched all 384 output
+pixels on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver
+`32.0.16.2101`, explicitly requested and selected at FL9_1. The strict full
+public suite passed 70/70 after a transient first-run adapter enumeration
+failure in the unrelated RGB565 test; that test passed alone and in the
+successful full rerun. The strict private HAL suite passed 395/395, core DX11
+passed 95/95 and core DX12 passed 94/94.
+
+Core, HAL and public-test Clippy passed. Existing warnings remain for
+`create_hal_view` argument count and HAL test expressions/order. The new HAL
+file changes were formatted with Rust 1.93 rustfmt. Workspace `cargo fmt --all
+-- --check` still reports unrelated existing formatting differences in Naga's
+HLSL writer, core resource/fixture code, D3D11 capabilities/transfer code and
+`wgpu-types`; these were left unchanged. `git diff --check` passed. A public
+suite build at `-j16` hit Windows paging/metadata allocation failure; `-j2`
+completed the same strict suite successfully.
+
+Commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib -- --test-threads=1
+cargo +1.93 test --offline -j1 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1
+cargo +1.93 clippy --offline -j1 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j1 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std
+cargo +1.93 clippy --offline -j1 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 wgpu-hal/src/dx11/hal_shader.rs
 git diff --check
 ~~~
 

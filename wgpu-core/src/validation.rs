@@ -287,6 +287,7 @@ struct EntryPoint {
     outputs: Vec<Varying>,
     fragment_position_used: bool,
     shader_loops_used: bool,
+    shader_dynamic_loops_used: bool,
     texture_load_used: bool,
     unsupported_runtime_integer_semantics: bool,
     unsupported_matrix_aggregate_store: bool,
@@ -312,6 +313,7 @@ struct EntryPoint {
 struct TextureSampleBias {
     literal: Option<f32>,
     has_offset: bool,
+    analysis_incomplete: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -443,6 +445,355 @@ fn entry_point_uses_loop(module: &naga::Module, entry_point: &naga::EntryPoint) 
         }
         let function = &module.functions[handle];
         if block_uses_loop(&function.body) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut pending);
+    }
+    false
+}
+
+fn local_variable_for_pointer(
+    function: &naga::Function,
+    pointer: naga::Handle<naga::Expression>,
+) -> Option<naga::Handle<naga::LocalVariable>> {
+    match &function.expressions[pointer] {
+        naga::Expression::LocalVariable(variable) => Some(*variable),
+        naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+            local_variable_for_pointer(function, *base)
+        }
+        _ => None,
+    }
+}
+
+fn expression_uses_runtime_value(
+    function: &naga::Function,
+    root: naga::Handle<naga::Expression>,
+    runtime_locals: &FastHashSet<naga::Handle<naga::LocalVariable>>,
+) -> bool {
+    let mut pending = alloc::vec![root];
+    let mut visited = FastHashSet::default();
+
+    while let Some(handle) = pending.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        match &function.expressions[handle] {
+            naga::Expression::Literal(_)
+            | naga::Expression::Constant(_)
+            | naga::Expression::Override(_)
+            | naga::Expression::ZeroValue(_)
+            | naga::Expression::LocalVariable(_) => {}
+            naga::Expression::FunctionArgument(_)
+            | naga::Expression::GlobalVariable(_)
+            | naga::Expression::CallResult(_)
+            | naga::Expression::ImageSample { .. }
+            | naga::Expression::ImageLoad { .. }
+            | naga::Expression::ImageQuery { .. }
+            | naga::Expression::ArrayLength(_)
+            | naga::Expression::AtomicResult { .. }
+            | naga::Expression::WorkGroupUniformLoadResult { .. }
+            | naga::Expression::RayQueryVertexPositions { .. }
+            | naga::Expression::RayQueryProceedResult
+            | naga::Expression::RayQueryGetIntersection { .. }
+            | naga::Expression::SubgroupBallotResult
+            | naga::Expression::SubgroupOperationResult { .. }
+            | naga::Expression::CooperativeLoad { .. } => return true,
+            naga::Expression::Load { pointer } => {
+                if local_variable_for_pointer(function, *pointer)
+                    .is_some_and(|local| runtime_locals.contains(&local))
+                {
+                    return true;
+                }
+                pending.push(*pointer);
+            }
+            naga::Expression::Compose { components, .. } => {
+                pending.extend(components.iter().copied());
+            }
+            naga::Expression::Access { base, index } => {
+                pending.push(*base);
+                pending.push(*index);
+            }
+            naga::Expression::AccessIndex { base, .. } => pending.push(*base),
+            naga::Expression::Splat { value, .. } => pending.push(*value),
+            naga::Expression::Swizzle { vector, .. } => pending.push(*vector),
+            naga::Expression::Unary { expr, .. }
+            | naga::Expression::Derivative { expr, .. }
+            | naga::Expression::As { expr, .. } => pending.push(*expr),
+            naga::Expression::Binary { left, right, .. } => {
+                pending.push(*left);
+                pending.push(*right);
+            }
+            naga::Expression::Select {
+                condition,
+                accept,
+                reject,
+            } => {
+                pending.push(*condition);
+                pending.push(*accept);
+                pending.push(*reject);
+            }
+            naga::Expression::Relational { argument, .. } => pending.push(*argument),
+            naga::Expression::Math {
+                arg,
+                arg1,
+                arg2,
+                arg3,
+                ..
+            } => {
+                pending.push(*arg);
+                pending.extend([*arg1, *arg2, *arg3].into_iter().flatten());
+            }
+            naga::Expression::CooperativeMultiplyAdd { a, b, c } => {
+                pending.extend([*a, *b, *c]);
+            }
+        }
+    }
+
+    false
+}
+
+fn function_runtime_locals(
+    module: &naga::Module,
+    function: &naga::Function,
+) -> FastHashSet<naga::Handle<naga::LocalVariable>> {
+    fn collect_stores(
+        block: &naga::Block,
+        stores: &mut Vec<(
+            naga::Handle<naga::Expression>,
+            naga::Handle<naga::Expression>,
+        )>,
+    ) {
+        for statement in block.iter() {
+            match statement {
+                naga::Statement::Store { pointer, value } => stores.push((*pointer, *value)),
+                naga::Statement::Block(block) => collect_stores(block, stores),
+                naga::Statement::If { accept, reject, .. } => {
+                    collect_stores(accept, stores);
+                    collect_stores(reject, stores);
+                }
+                naga::Statement::Switch { cases, .. } => {
+                    for case in cases {
+                        collect_stores(&case.body, stores);
+                    }
+                }
+                naga::Statement::Loop {
+                    body, continuing, ..
+                } => {
+                    collect_stores(body, stores);
+                    collect_stores(continuing, stores);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut runtime_locals = FastHashSet::default();
+    for (handle, local) in function.local_variables.iter() {
+        if local
+            .init
+            .is_some_and(|init| expression_uses_runtime_value(function, init, &runtime_locals))
+        {
+            runtime_locals.insert(handle);
+        }
+    }
+
+    let mut stores = Vec::new();
+    collect_stores(&function.body, &mut stores);
+
+    fn collect_pointer_arguments(
+        module: &naga::Module,
+        function: &naga::Function,
+        block: &naga::Block,
+        locals: &mut FastHashSet<naga::Handle<naga::LocalVariable>>,
+    ) {
+        for statement in block.iter() {
+            match statement {
+                naga::Statement::Call {
+                    function: callee,
+                    arguments,
+                    ..
+                } => {
+                    let callee = &module.functions[*callee];
+                    for (&argument, parameter) in arguments.iter().zip(&callee.arguments) {
+                        if matches!(
+                            module.types[parameter.ty].inner,
+                            naga::TypeInner::Pointer { .. }
+                        ) {
+                            if let Some(local) = local_variable_for_pointer(function, argument) {
+                                locals.insert(local);
+                            }
+                        }
+                    }
+                }
+                naga::Statement::Block(block) => {
+                    collect_pointer_arguments(module, function, block, locals)
+                }
+                naga::Statement::If { accept, reject, .. } => {
+                    collect_pointer_arguments(module, function, accept, locals);
+                    collect_pointer_arguments(module, function, reject, locals);
+                }
+                naga::Statement::Switch { cases, .. } => {
+                    for case in cases {
+                        collect_pointer_arguments(module, function, &case.body, locals);
+                    }
+                }
+                naga::Statement::Loop {
+                    body, continuing, ..
+                } => {
+                    collect_pointer_arguments(module, function, body, locals);
+                    collect_pointer_arguments(module, function, continuing, locals);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut pointer_locals = FastHashSet::default();
+    collect_pointer_arguments(module, function, &function.body, &mut pointer_locals);
+    runtime_locals.extend(pointer_locals);
+
+    loop {
+        let mut changed = false;
+        for &(pointer, value) in &stores {
+            if let Some(local) = local_variable_for_pointer(function, pointer) {
+                if expression_uses_runtime_value(function, value, &runtime_locals) {
+                    changed |= runtime_locals.insert(local);
+                }
+            }
+        }
+        if !changed {
+            return runtime_locals;
+        }
+    }
+}
+
+fn block_has_current_loop_break(block: &naga::Block) -> bool {
+    for statement in block.iter() {
+        match statement {
+            naga::Statement::Break => return true,
+            naga::Statement::Block(block) => {
+                if block_has_current_loop_break(block) {
+                    return true;
+                }
+            }
+            naga::Statement::If { accept, reject, .. } => {
+                if block_has_current_loop_break(accept) || block_has_current_loop_break(reject) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn collect_current_loop_break_conditions(
+    block: &naga::Block,
+    conditions: &mut Vec<naga::Handle<naga::Expression>>,
+) -> bool {
+    let mut has_break = false;
+    for statement in block.iter() {
+        match statement {
+            naga::Statement::Break => has_break = true,
+            naga::Statement::Block(block) => {
+                has_break |= collect_current_loop_break_conditions(block, conditions);
+            }
+            naga::Statement::If {
+                condition,
+                accept,
+                reject,
+            } => {
+                let controls_break =
+                    block_has_current_loop_break(accept) || block_has_current_loop_break(reject);
+                if controls_break {
+                    conditions.push(*condition);
+                    has_break = true;
+                }
+                has_break |= collect_current_loop_break_conditions(accept, conditions);
+                has_break |= collect_current_loop_break_conditions(reject, conditions);
+            }
+            _ => {}
+        }
+    }
+    has_break
+}
+
+fn block_uses_dynamic_loop(
+    block: &naga::Block,
+    function: &naga::Function,
+    runtime_locals: &FastHashSet<naga::Handle<naga::LocalVariable>>,
+) -> bool {
+    for statement in block.iter() {
+        match statement {
+            naga::Statement::Loop {
+                body,
+                continuing,
+                break_if,
+            } => {
+                let mut conditions = Vec::new();
+                if let Some(condition) = break_if {
+                    conditions.push(*condition);
+                }
+                let has_body_break = collect_current_loop_break_conditions(body, &mut conditions);
+                if break_if.is_none() && !has_body_break {
+                    return true;
+                }
+                if conditions.iter().any(|&condition| {
+                    matches!(
+                        function.expressions[condition],
+                        naga::Expression::Literal(naga::Literal::Bool(false))
+                    ) || expression_uses_runtime_value(function, condition, runtime_locals)
+                }) || block_uses_dynamic_loop(body, function, runtime_locals)
+                    || block_uses_dynamic_loop(continuing, function, runtime_locals)
+                {
+                    return true;
+                }
+            }
+            naga::Statement::Block(block) => {
+                if block_uses_dynamic_loop(block, function, runtime_locals) {
+                    return true;
+                }
+            }
+            naga::Statement::If { accept, reject, .. } => {
+                if block_uses_dynamic_loop(accept, function, runtime_locals)
+                    || block_uses_dynamic_loop(reject, function, runtime_locals)
+                {
+                    return true;
+                }
+            }
+            naga::Statement::Switch { cases, .. } => {
+                if cases
+                    .iter()
+                    .any(|case| block_uses_dynamic_loop(&case.body, function, runtime_locals))
+                {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn function_uses_dynamic_loop(module: &naga::Module, function: &naga::Function) -> bool {
+    let runtime_locals = function_runtime_locals(module, function);
+    block_uses_dynamic_loop(&function.body, function, &runtime_locals)
+}
+
+fn entry_point_uses_dynamic_loop(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
+    if function_uses_dynamic_loop(module, &entry_point.function) {
+        return true;
+    }
+
+    let mut pending = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut pending);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = pending.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function_uses_dynamic_loop(module, function) {
             return true;
         }
         collect_called_functions(&function.body, &mut pending);
@@ -1050,24 +1401,38 @@ fn entry_point_uses_unsupported_matrix_aggregate_store(
 fn expression_literal_f32(
     function: &naga::Function,
     expression: naga::Handle<naga::Expression>,
+    arguments: &[Option<f32>],
 ) -> Option<f32> {
     match function.expressions[expression] {
         naga::Expression::Literal(naga::Literal::F32(value)) => Some(value),
         naga::Expression::Unary {
             op: naga::UnaryOperator::Negate,
             expr,
-        } => match function.expressions[expr] {
-            naga::Expression::Literal(naga::Literal::F32(value)) => Some(-value),
-            _ => None,
-        },
+        } => expression_literal_f32(function, expr, arguments).map(|value| -value),
+        naga::Expression::FunctionArgument(index) => {
+            arguments.get(index as usize).copied().flatten()
+        }
         _ => None,
     }
 }
 
 fn collect_function_texture_sample_biases(
+    module: &naga::Module,
     function: &naga::Function,
+    arguments: &[Option<f32>],
     biases: &mut Vec<TextureSampleBias>,
-) {
+    budget: &mut usize,
+    depth: usize,
+) -> bool {
+    if depth >= 256 || function.expressions.len() > *budget {
+        biases.push(TextureSampleBias {
+            literal: None,
+            has_offset: false,
+            analysis_incomplete: true,
+        });
+        return false;
+    }
+    *budget -= function.expressions.len();
     for (_, expression) in function.expressions.iter() {
         let naga::Expression::ImageSample {
             level: naga::SampleLevel::Bias(bias),
@@ -1078,10 +1443,135 @@ fn collect_function_texture_sample_biases(
             continue;
         };
         biases.push(TextureSampleBias {
-            literal: expression_literal_f32(function, bias),
+            literal: expression_literal_f32(function, bias, arguments),
             has_offset: offset.is_some(),
+            analysis_incomplete: false,
         });
     }
+    collect_texture_sample_biases_in_block(
+        module,
+        function,
+        &function.body,
+        arguments,
+        biases,
+        budget,
+        depth,
+    )
+}
+
+fn collect_texture_sample_biases_in_block(
+    module: &naga::Module,
+    function: &naga::Function,
+    block: &naga::Block,
+    arguments: &[Option<f32>],
+    biases: &mut Vec<TextureSampleBias>,
+    budget: &mut usize,
+    depth: usize,
+) -> bool {
+    if depth >= 256 {
+        biases.push(TextureSampleBias {
+            literal: None,
+            has_offset: false,
+            analysis_incomplete: true,
+        });
+        return false;
+    }
+    for statement in block.iter() {
+        if *budget == 0 {
+            biases.push(TextureSampleBias {
+                literal: None,
+                has_offset: false,
+                analysis_incomplete: true,
+            });
+            return false;
+        }
+        *budget -= 1;
+        let complete = match statement {
+            naga::Statement::Block(block) => collect_texture_sample_biases_in_block(
+                module,
+                function,
+                block,
+                arguments,
+                biases,
+                budget,
+                depth + 1,
+            ),
+            naga::Statement::If { accept, reject, .. } => {
+                collect_texture_sample_biases_in_block(
+                    module,
+                    function,
+                    accept,
+                    arguments,
+                    biases,
+                    budget,
+                    depth + 1,
+                ) && collect_texture_sample_biases_in_block(
+                    module,
+                    function,
+                    reject,
+                    arguments,
+                    biases,
+                    budget,
+                    depth + 1,
+                )
+            }
+            naga::Statement::Switch { cases, .. } => cases.iter().all(|case| {
+                collect_texture_sample_biases_in_block(
+                    module,
+                    function,
+                    &case.body,
+                    arguments,
+                    biases,
+                    budget,
+                    depth + 1,
+                )
+            }),
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => {
+                collect_texture_sample_biases_in_block(
+                    module,
+                    function,
+                    body,
+                    arguments,
+                    biases,
+                    budget,
+                    depth + 1,
+                ) && collect_texture_sample_biases_in_block(
+                    module,
+                    function,
+                    continuing,
+                    arguments,
+                    biases,
+                    budget,
+                    depth + 1,
+                )
+            }
+            naga::Statement::Call {
+                function: callee,
+                arguments: actual,
+                ..
+            } => {
+                let mapped = actual
+                    .iter()
+                    .map(|&expression| expression_literal_f32(function, expression, arguments))
+                    .collect::<Vec<_>>();
+                collect_function_texture_sample_biases(
+                    module,
+                    &module.functions[*callee],
+                    &mapped,
+                    biases,
+                    budget,
+                    depth + 1,
+                )
+            }
+            _ => true,
+        };
+        if !complete {
+            return false;
+        }
+    }
+    true
 }
 
 fn entry_point_texture_sample_biases(
@@ -1089,19 +1579,15 @@ fn entry_point_texture_sample_biases(
     entry_point: &naga::EntryPoint,
 ) -> Vec<TextureSampleBias> {
     let mut biases = Vec::new();
-    collect_function_texture_sample_biases(&entry_point.function, &mut biases);
-
-    let mut called_functions = Vec::new();
-    collect_called_functions(&entry_point.function.body, &mut called_functions);
-    let mut visited = FastHashSet::default();
-    while let Some(handle) = called_functions.pop() {
-        if !visited.insert(handle) {
-            continue;
-        }
-        let function = &module.functions[handle];
-        collect_function_texture_sample_biases(function, &mut biases);
-        collect_called_functions(&function.body, &mut called_functions);
-    }
+    let mut budget = 65_536usize;
+    collect_function_texture_sample_biases(
+        module,
+        &entry_point.function,
+        &[],
+        &mut biases,
+        &mut budget,
+        0,
+    );
     biases
 }
 
@@ -2413,6 +2899,7 @@ impl Interface {
                     module_info,
                 ),
                 shader_loops_used: entry_point_uses_loop(module, entry_point),
+                shader_dynamic_loops_used: entry_point_uses_dynamic_loop(module, entry_point),
                 texture_load_used: entry_point_uses_texture_load(module, entry_point),
                 unsupported_runtime_integer_semantics:
                     entry_point_uses_unsupported_integer_semantics(
@@ -2764,7 +3251,8 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(entry_point.shader_loops_used && !limits.shader_loops)
+        Ok((entry_point.shader_loops_used && !limits.shader_loops)
+            || (entry_point.shader_dynamic_loops_used && !limits.shader_dynamic_loops))
     }
 
     pub(crate) fn entry_point_uses_unsupported_runtime_integer_semantics(
@@ -2832,7 +3320,8 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.texture_sample_biases.iter().any(|bias| {
-            (bias.has_offset && !limits.texture_sample_bias_offset)
+            bias.analysis_incomplete
+                || (bias.has_offset && !limits.texture_sample_bias_offset)
                 || match bias.literal {
                     Some(value) => {
                         limits.max_texture_sample_bias != u32::MAX
@@ -3707,6 +4196,8 @@ mod tests {
     fn shader_loop_detection_follows_only_selected_entry_calls() {
         let module = naga::front::wgsl::parse_str(
             r#"
+            @group(0) @binding(0) var<uniform> loop_limit: u32;
+
             fn helper_loop() -> u32 {
                 var i = 0u;
                 loop {
@@ -3714,6 +4205,28 @@ mod tests {
                     i += 1u;
                 }
                 return i;
+            }
+
+            fn dynamic_helper(bound: u32) -> u32 {
+                var i = 0u;
+                loop {
+                    if i >= bound { break; }
+                    i += 1u;
+                }
+                return i;
+            }
+
+            fn dynamic_global_helper() -> u32 {
+                var i = 0u;
+                loop {
+                    if i >= loop_limit { break; }
+                    i += 1u;
+                }
+                return i;
+            }
+
+            fn set_dynamic_bound(bound: ptr<function, u32>) {
+                *bound = loop_limit;
             }
 
             @vertex fn direct_loop() -> @builtin(position) vec4f {
@@ -3735,6 +4248,53 @@ mod tests {
             @fragment fn safe_sibling() -> @location(0) vec4f {
                 return vec4f(1.0);
             }
+
+            @fragment fn statically_unbounded_entry() -> @location(0) vec4f {
+                loop {
+                    continuing {
+                        break if false;
+                    }
+                }
+                return vec4f(1.0);
+            }
+
+            @fragment fn statically_unbounded_computed_entry() -> @location(0) vec4f {
+                loop {
+                    continuing {
+                        break if 1u == 2u;
+                    }
+                }
+                return vec4f(1.0);
+            }
+
+            @vertex fn dynamic_global_entry() -> @builtin(position) vec4f {
+                return vec4f(f32(dynamic_global_helper()), 0.0, 0.0, 1.0);
+            }
+
+            @fragment fn dynamic_parameter_entry() -> @location(0) vec4f {
+                return vec4f(f32(dynamic_helper(loop_limit)), 0.0, 0.0, 1.0);
+            }
+
+            @vertex fn dynamic_local_entry() -> @builtin(position) vec4f {
+                let bound = loop_limit;
+                var i = 0u;
+                loop {
+                    if i >= bound { break; }
+                    i += 1u;
+                }
+                return vec4f(f32(i), 0.0, 0.0, 1.0);
+            }
+
+            @vertex fn dynamic_pointer_entry() -> @builtin(position) vec4f {
+                var bound = 1u;
+                set_dynamic_bound(&bound);
+                var i = 0u;
+                loop {
+                    if i >= bound { break; }
+                    i += 1u;
+                }
+                return vec4f(f32(i), 0.0, 0.0, 1.0);
+            }
             "#,
         )
         .unwrap();
@@ -3746,33 +4306,57 @@ mod tests {
         .unwrap();
         let interface = Interface::new(&module, &info, wgt::Limits::defaults());
         let fl91 = wgt::DownlevelLimits {
-            shader_loops: false,
+            shader_dynamic_loops: false,
             ..Default::default()
         };
 
         for (stage, entry) in [
-            (naga::ShaderStage::Vertex, "direct_loop"),
-            (naga::ShaderStage::Vertex, "helper_entry"),
-            (naga::ShaderStage::Fragment, "helper_fragment"),
+            (naga::ShaderStage::Vertex, "dynamic_global_entry"),
+            (naga::ShaderStage::Vertex, "dynamic_local_entry"),
+            (naga::ShaderStage::Vertex, "dynamic_pointer_entry"),
+            (naga::ShaderStage::Fragment, "dynamic_parameter_entry"),
+            (naga::ShaderStage::Fragment, "statically_unbounded_entry"),
+            (
+                naga::ShaderStage::Fragment,
+                "statically_unbounded_computed_entry",
+            ),
         ] {
             assert!(
                 interface
                     .entry_point_uses_unsupported_shader_loops(stage, entry, &fl91)
                     .unwrap(),
-                "{entry} should reach a loop"
+                "{entry} should reach a dynamic loop"
             );
         }
-        assert!(!interface
+        for (stage, entry) in [
+            (naga::ShaderStage::Vertex, "direct_loop"),
+            (naga::ShaderStage::Vertex, "helper_entry"),
+            (naga::ShaderStage::Fragment, "helper_fragment"),
+            (naga::ShaderStage::Fragment, "safe_sibling"),
+        ] {
+            assert!(
+                !interface
+                    .entry_point_uses_unsupported_shader_loops(stage, entry, &fl91)
+                    .unwrap(),
+                "{entry} should not be treated as dynamic"
+            );
+        }
+        let no_loops = wgt::DownlevelLimits {
+            shader_loops: false,
+            shader_dynamic_loops: false,
+            ..Default::default()
+        };
+        assert!(interface
             .entry_point_uses_unsupported_shader_loops(
-                naga::ShaderStage::Fragment,
-                "safe_sibling",
-                &fl91,
+                naga::ShaderStage::Vertex,
+                "direct_loop",
+                &no_loops,
             )
             .unwrap());
         assert!(!interface
             .entry_point_uses_unsupported_shader_loops(
                 naga::ShaderStage::Vertex,
-                "direct_loop",
+                "dynamic_global_entry",
                 &wgt::DownlevelLimits::default(),
             )
             .unwrap());
@@ -3860,6 +4444,9 @@ mod tests {
             fn constant_helper(uv: vec2f) -> vec4f {
                 return textureSampleBias(image, smp, uv, 1.0);
             }
+            fn mixed_helper(uv: vec2f) -> vec4f {
+                return dynamic_helper(uv, 1.0) + dynamic_helper(uv, 4.0);
+            }
             fn offset_helper(uv: vec2f) -> vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1));
             }
@@ -3890,8 +4477,14 @@ mod tests {
             @fragment fn helper_forwarded_constant(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return dynamic_helper(uv, 1.0);
             }
+            @fragment fn helper_forwarded_out_of_range(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return dynamic_helper(uv, 4.0);
+            }
             @fragment fn helper_constant(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return constant_helper(uv);
+            }
+            @fragment fn helper_mixed_calls(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return mixed_helper(uv);
             }
             @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
             "#,
@@ -3916,6 +4509,7 @@ mod tests {
             "max_boundary",
             "fractional",
             "helper_constant",
+            "helper_forwarded_constant",
             "safe",
         ] {
             assert!(
@@ -3935,7 +4529,8 @@ mod tests {
             "offset",
             "helper_offset",
             "helper_dynamic",
-            "helper_forwarded_constant",
+            "helper_forwarded_out_of_range",
+            "helper_mixed_calls",
         ] {
             assert!(
                 interface
