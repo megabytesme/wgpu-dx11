@@ -18,6 +18,13 @@ audit is still in progress. An optional-format probe found no selected-device
 float-texture path to add at forced FL9_1. ARM32 UWP cross-compilation passed,
 but Lumia runtime execution remains unverified after Device Portal timed out.
 
+Checkpoint `72e10f78f` added selected-device-query-gated 4x D16/D24S8 depth
+attachments to matching 4x RGBA8 render/resolve passes. The strict public
+depth test, all 377 private HAL tests and all 63 public D3D11 tests passed on
+the forced-FL9_1 RTX 3090 Ti; DX12 core passed 92 tests. The HAL also
+cross-compiled for ARM32 UWP. This is one more verified slice, not closure of
+the broad API contract audit or proof of historical/Lumia runtime behavior.
+
 An opt-in D3D11 debug-layer run now covers the focused private indexed-render
 and readback path on the RTX at forced FL9_1: it reported zero error or
 corruption diagnostics and no live D3D11 resources after cleanup. This does

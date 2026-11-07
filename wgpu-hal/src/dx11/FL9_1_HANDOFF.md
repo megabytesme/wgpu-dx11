@@ -1,5 +1,24 @@
 # FL9_1 handoff
 
+## Current mission state — query-gated 4x depth attachments
+
+Checkpoint `72e10f78f` adds query-gated 4x D16/D24S8 depth attachments to
+matching 4x RGBA8 render/resolve passes. The RTX 3090 Ti reported one quality
+level for both depth formats while explicitly requested and actually running
+at FL9_1. A public near/far triangle test verified depth rejection in resolved
+pixels. The full strict HAL suite passed 377/377 and public D3D11 suite 63/63;
+the optional Float16x2 vertex-input branch was visibly skipped after a
+negative format query. Core adapter isolation passed 1/1, DX12 core passed
+92/92, HAL and public-test Clippy passed, and the HAL ARM32 UWP target
+cross-compiled. Details are in the latest `FL9_1_PROGRESS.md` entry.
+
+The public adapter remains an explicit D3D11 opt-in with a tested offscreen
+and constrained HWND subset. Applications matching that subset can trial it;
+it is not a drop-in wgpu backend. Unsupported resource, shader and API paths
+remain, the selected RTX does not stand in for historical FL9_1 GPUs, and
+Lumia runtime plus physical device-removal recovery are unverified. Continue
+the broad core/HAL contract audit.
+
 ## Current mission state — cloned public frame lifetime
 
 The public `SurfaceTexture` lifecycle is now shared across clones. Before the

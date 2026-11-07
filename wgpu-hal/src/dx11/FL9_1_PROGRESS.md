@@ -9666,3 +9666,15 @@ error`, but the compiler environment initialized and every listed Cargo command
 completed. The change remains private to the opt-in D3D11 projection; public
 default backend selection and normal adapter exposure are unchanged. Continue
 the API-contract audit; this does not make the backend broadly feature-complete.
+
+Follow-up target check: `wgpu-hal` also passed ARM32 UWP cross-compilation with
+Rust 1.93.1 and the installed ARM MSVC/Windows SDK environment. Artifacts were
+isolated under `%TEMP%\wgpu-fl91-ms8-arm32`; this verifies target compilation,
+not Lumia runtime behavior.
+
+~~~powershell
+$env:RUSTC_BOOTSTRAP = '1'
+$buildDir = Join-Path ([System.IO.Path]::GetTempPath()) 'wgpu-fl91-ms8-arm32'
+$env:CARGO_TARGET_DIR = $buildDir
+& cmd.exe /d /s /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64_arm store 10.0.22621.0 && cargo +1.93 -Z build-std=std,panic_unwind,panic_abort check --offline -j16 -p wgpu-hal --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11'
+~~~
