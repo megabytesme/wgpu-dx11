@@ -9,6 +9,15 @@ have run at forced FL9_1. A captured client-area frame was visually inspected:
 the rotating cube showed distinct red and green textured faces over the clear
 background. This plan does not claim WebGPU conformance.
 
+The 2026-11-07 verification checkpoint reran the strict private HAL and public
+D3D11 suites, the controlled core fixture, adapter selection and DX12
+regression; results and exact commands are recorded in
+`FL9_1_PROGRESS.md`. The public offscreen example also passed through wgpu on
+the physical adapter. The tested public subset is usable, but the contract
+audit is still in progress. An optional-format probe found no selected-device
+float-texture path to add at forced FL9_1. ARM32 UWP cross-compilation passed,
+but Lumia runtime execution remains unverified after Device Portal timed out.
+
 ## Ordered work and gates
 
 ### Verified hardware boundary — ordinary 2D texture arrays

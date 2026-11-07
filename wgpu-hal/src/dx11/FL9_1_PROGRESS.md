@@ -1,5 +1,50 @@
 # FL9_1 progress
 
+## Current validation checkpoint — 2026-11-07
+
+The current tested tree was `6be14b53f` (`docs: record FL9_1 volume copy
+audit`). With `WGPU_DX11_REQUIRE_HARDWARE=1`, the complete private HAL suite
+passed 377/377 and the public `wgpu` D3D11 suite passed 60/60 on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), explicitly requested and selected at FL9_1. The public suite
+reported its existing optional Float16x2 vertex-input subcase as a capability
+skip; it is not counted as a GPU execution. The controlled core fixture passed
+101/101, physical adapter selection passed 1/1, and the DX12 core regression
+passed 92/92. The public offscreen example completed through wgpu and read back
+1,024 pixels: 112 red, 277 green and 635 blue-background pixels.
+
+An ARM32 UWP HAL check and builds of both public D3D11 examples passed for
+`thumbv7a-uwp-windows-msvc` using installed nightly Cargo/Rust 1.95.0 with
+`build-std`; Rust 1.93.1 stable Cargo rejected `-Z build-std` before starting.
+This is compile/link coverage only. The Lumia Device Portal request to
+`/api/os/devicefamily` timed out, so device execution remains unverified.
+
+The selected-device FL9_1 format probe found no additional float-texture
+candidate: R16_FLOAT, R16G16_FLOAT and R16G16B16A16_FLOAT returned `E_FAIL`;
+R32_FLOAT and R32G32B32A32_FLOAT reported only `IA_VERTEX_BUFFER` (`0x2`).
+These formats remain unexposed. HAL, core-fixture and public Clippy passed with
+the existing warnings; `git diff --check` passed. The mission remains
+**PARTIALLY COMPLETE**: the tested public subset is usable, but broad
+core/HAL-contract closure, historical FL9_1 hardware and Lumia runtime are
+outstanding.
+
+Verification commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+cargo +1.93 clippy --offline -j32 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+cargo +nightly -Z build-std=std,panic_unwind,panic_abort check --offline -j32 -p wgpu-hal --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11
+cargo +nightly -Z build-std=std,panic_unwind,panic_abort build --offline -j32 -p wgpu --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11,wgsl,std --examples
+~~~
+
 ## Current position — 2026-11-06
 
 Latest code checkpoint: `47a0bce53` (`core: preserve pass stencil reference

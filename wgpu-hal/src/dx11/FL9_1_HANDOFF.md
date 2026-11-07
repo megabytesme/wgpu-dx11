@@ -1,5 +1,31 @@
 # FL9_1 handoff
 
+## Current mission state — 2026-11-07 verification update
+
+The current tested tree was `6be14b53f`; follow-up validation passed the full
+strict private HAL suite (377/377), public D3D11 suite (60/60), controlled core
+fixture (101/101), adapter selection (1/1) and DX12 core regression (92/92).
+The public offscreen example executed through wgpu on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+and selected at FL9_1; readback matched its expected 1,024-pixel red/green/
+background distribution. One optional Float16x2 IA subcase skipped after a
+negative selected-device query and is not counted as GPU execution.
+
+The D3D11 HAL and both public examples cross-checked for ARM32 UWP
+(`thumbv7a-uwp-windows-msvc`) using nightly 1.95.0 build-std. This is not Lumia
+runtime validation. A fresh read-only Device Portal request timed out. The
+optional format query also found no float-texture expansion supported by this
+forced-FL9_1 RTX, so no capability was added. The practical public subset is
+usable for applications within its documented constraints; this is not a
+drop-in general wgpu backend or a WebGPU-compliant adapter. The mission remains
+**PARTIALLY COMPLETE** while the broader public contract audit, historical
+FL9_1 coverage and Lumia runtime remain unresolved.
+
+The physical tests ran with `WGPU_DX11_REQUIRE_HARDWARE=1`; all x64 cargo tests
+used Rust 1.93.1. Stable Cargo rejected `-Z build-std`, so ARM32 cross-checks
+used the installed nightly toolchain. Exact commands and result details are in
+the newest entry of `FL9_1_PROGRESS.md`.
+
 ## Current mission state — 2026-11-07 follow-up
 
 Latest verified code checkpoint: `3de9d71ac` (`dx11: document FL9_1 volume
