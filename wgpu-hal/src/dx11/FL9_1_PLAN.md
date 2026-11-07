@@ -49,6 +49,15 @@ The projection now requires the format's implemented color-attachment path, and
 a synthetic RGB565 case covers the missing-render-target query. Continue
 auditing cross-capability implications in optional format reporting.
 
+Three-dimensional texture copies are not a deferred FL9_1 backend path.
+Microsoft's 10Level9 context contract permits only 2D textures and buffers to
+be copied within GPU-accessible memory, forbids 3D GPU-to-CPU copies, and
+forbids copies of mipmapped volume textures. The public projection therefore
+keeps `texture_3d_texture_copies` false and excludes `COPY_SRC` from the 3D
+usage mask. A strict public validation test rejects the unsupported 3D
+`COPY_SRC` descriptor before HAL. See the 10Level9
+[context restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context).
+
 The 4x RGBA8 format report also exposed a core/HAL usage mismatch: core accepted
 multisampled sampled/copy descriptors from ordinary per-format usage flags,
 while the D3D11 path creates only render-target resources. A dedicated

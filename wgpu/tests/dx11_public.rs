@@ -17396,6 +17396,22 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
             view_formats: &[],
         }));
     });
+    expect_validation_error(&device, "unsupported FL9_1 3D copy source", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("unsupported FL9_1 3D copy source"),
+            size: Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }));
+    });
     let unsupported_mip_count = if downlevel.limits.texture_3d_mipmaps {
         4
     } else {

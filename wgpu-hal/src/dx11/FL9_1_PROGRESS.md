@@ -8818,6 +8818,47 @@ rerun passed.
 This is a narrow compiler-supported expansion, not general dynamic loop
 support or FL9_1 completion. Continue the remaining core/HAL contract audit.
 
+## FL9_1 3D copy boundary audit — 2026-11-07
+
+The next transfer audit checked whether the existing query-gated 3D sampled
+and upload path could safely gain `COPY_SRC` or texture-to-texture copies.
+Microsoft's 10Level9 `CopySubresourceRegion`/`CopyResource` contract says
+FL9_1 permits only 2D textures and buffers to be copied within GPU-accessible
+memory, does not permit copying a 3D texture from GPU-accessible to
+CPU-accessible memory, and does not permit copying mipmapped volume textures.
+The existing FL9_1 projection correctly keeps `texture_3d_texture_copies`
+false and 3D `COPY_SRC` out of `texture_3d_usage_mask`; no unsafe emulation
+was added. A capability-model assertion and strict public validation test now
+cover that rejected use.
+
+Reference: [Microsoft 10Level9 context restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context).
+
+This closes one documentation and negative-validation gap, not the broader
+resource/HAL audit. Continue with feasible public graphics operations and
+keep hardware-impossible FL9_1 cases explicitly gated.
+
+Rust 1.93.1 / Visual Studio 2022 x64 validation:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 texture_3d_sampling_requires_its_own_query_and_backend_paths -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_3d_upload_and_sampling_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The capability test passed 1/1. The strict public test passed 1/1 on the
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), requested and actual FL9_1. Existing 3D mip sampling matched
+64/64 pixels; the full 3D upload/partial-update/zero-init render matched
+128/128 pixels. The new unsupported `COPY_SRC` request was captured as a
+validation error before HAL. Both Clippy commands passed with existing HAL
+warnings (10 in the HAL test build and one library warning in the public test
+build). Rustfmt still reports older formatting differences in these files;
+the newly added lines were aligned to rustfmt, and `git diff --check` passed.
+
 ## ARM32 UWP public example codegen — 2026-11-06
 
 The public `wgpu` library and `dx11_fl91_offscreen` example both type-check

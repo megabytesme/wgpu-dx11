@@ -1400,6 +1400,18 @@ mod tests {
         let projection = supported.wgpu_projection().expect("FL9_1 projection");
         assert!(projection.capabilities.downlevel.limits.texture_3d);
         assert_eq!(projection.capabilities.limits.max_texture_dimension_3d, 256);
+        assert!(
+            !projection
+                .capabilities
+                .downlevel
+                .limits
+                .texture_3d_texture_copies
+        );
+        assert_eq!(
+            projection.capabilities.downlevel.limits.texture_3d_usage_mask
+                & wgt::TextureUsages::COPY_SRC.bits(),
+            0
+        );
         assert!(!projection.capabilities.downlevel.limits.texture_3d_mipmaps);
 
         let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;

@@ -1142,8 +1142,13 @@ non-suffix 3D views before HAL. Buffer-to-volume uploads use a source buffer
 copy to a CPU-readable staging buffer followed by `Map` and `UpdateSubresource`,
 preserving execution ordering at the cost of a blocking transfer. 3D
 `COPY_SRC`, texture-to-texture copies, render attachments, storage and CPU
-readback remain unavailable. If the selected format query lacks MIP support,
-the public descriptor remains single-mip.
+readback remain unavailable. This is also required by the 10Level9 FL9_1
+context contract: only 2D textures and buffers may be copied within
+GPU-accessible memory, 3D textures cannot be copied from GPU-accessible to
+CPU-accessible memory, and mipmapped volume textures cannot be copied. The
+public test verifies that a 3D `COPY_SRC` descriptor is rejected by core. If
+the selected format query lacks MIP support, the public descriptor remains
+single-mip.
 The dynamic-uniform pipeline limit is twelve, matching the largest valid
 six-vertex/six-fragment visibility split; one shader stage remains limited to
 six. Other unsupported shader, storage and query paths remain absent from
