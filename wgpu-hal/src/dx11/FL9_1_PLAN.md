@@ -4,15 +4,15 @@ The latest contract correction separates statically bounded from
 runtime-dependent shader loops. Static vertex and fragment loops still render
 on the forced-FL9_1 RTX path; core rejects dynamic loop bounds in the selected
 entry point and reachable helpers before HAL compilation. The latest strict
-public suite passed 70/70, private HAL suite 395/395, controlled core fixture
+public suite passed 71/71, private HAL suite 395/395, controlled core fixture
 103/103, core library 95/95, and `wgpu-types` 94/94; DX12 core/HAL regressions
 passed 94/94 and 4/4. Exact commands and compiler/hardware evidence are in
 `FL9_1_PROGRESS.md`.
 
 A subsequent strict public test also verified both front-face windings and
 back-face culling with a 64-pixel readback. It passed 1/1 on the RTX 3090 Ti at
-requested and actual FL9_1; the complete public suite has not yet been rerun
-with that new test included.
+requested and actual FL9_1; the complete strict public suite was rerun with the
+new test and passed 71/71.
 
 The preceding public increment exercises same-format copies in both
 directions between ordinary 2D textures and cube subresources, alongside
