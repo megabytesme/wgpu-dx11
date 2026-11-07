@@ -9706,3 +9706,40 @@ The first run had 7/8 pass and failed only at the stale assertion; after
 updating it, the repeated strict run passed all 8. This confirms the optional
 depth multisample capability is carried through HAL into core without
 advertising depth resolve.
+
+## Follow-up — D16 and D24S8 4x depth execution — 2026-11-07
+
+Expanded `public_dx11_resolves_four_sample_rgba8_at_fl91` to execute every
+selected-device-query-supported 4x depth format, rather than only the first.
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) positively queried
+one 4x quality level for both D16 and D24S8 while the device was explicitly
+requested and confirmed at FL9_1. Both actual render/resolve runs checked all
+64 pixels: 28 near-red, 8 partial-coverage, and 28 clear; the farther green
+draw was rejected. The zero-sample-mask control preserved blue at all 64
+pixels. This is modern-driver evidence only, not historical FL9_1 coverage.
+
+The strict private HAL suite passed 377/377. The complete strict public D3D11
+test target passed 63/63; its optional Float16x2 vertex-input subcase was
+explicitly skipped after the selected-device query returned false. Public
+test Clippy passed with the pre-existing HAL `create_hal_view` argument-count
+warning. Rustfmt still reports four existing formatting differences outside
+the edited test, and `git diff --check` passed. The first public rebuild at 16
+Cargo jobs hit Windows paging-file exhaustion (OS error 1455); the focused
+test and full public target then built and ran successfully at `-j2`.
+
+The nested entry-interface builtin experiment was removed: Naga 30.0.1
+rejects the proposed nested IO structure during validation, so it cannot
+reach this backend from valid WGSL. No HAL shader behavior changed. Continue
+the core/HAL audit; public enumeration stays opt-in, and historical FL9_1,
+Lumia/CoreWindow runtime and physical device-removal behavior remain
+unverified.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib dx11:: -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~

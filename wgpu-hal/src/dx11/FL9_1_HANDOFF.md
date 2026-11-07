@@ -2155,3 +2155,15 @@ poll returned the expected presentation-guard timeout on the physical RTX
 opened at requested/actual FL9_1. See the latest entry in
 `FL9_1_PROGRESS.md`; physical device removal/recovery and the broader audit
 remain outstanding. Implementation checkpoint: `cb2e06cecae0a2b6dab1622558deb3ef2195dbeb`.
+
+Latest test-only follow-up extends 4x depth execution coverage to both
+query-supported public formats. Forced FL9_1 on the RTX 3090 Ti queried and
+render-tested D16 and D24S8, with 64/64 resolved pixels classified correctly
+for each. The strict HAL suite passed 377/377, and the complete strict public
+suite passed 63/63 with one explicitly skipped optional Float16x2 subcase.
+The public test Clippy check passed; rustfmt reports only four older,
+unrelated formatting differences. See the latest progress entry for commands
+and the transient Windows paging-file issue at `-j16` (retry succeeded at
+`-j2`). Next continue the audit of public-valid operations and their exact
+core/HAL rejection or execution paths; the backend remains a constrained
+opt-in implementation, not a general drop-in replacement.

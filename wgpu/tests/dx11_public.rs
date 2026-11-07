@@ -17284,29 +17284,32 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         println!("SKIP: selected FL9_1 device does not report RGBA8 4x render and resolve support");
         return;
     }
-    let depth_format = [
+    let depth_formats: Vec<_> = [
         TextureFormat::Depth24PlusStencil8,
         TextureFormat::Depth16Unorm,
     ]
     .into_iter()
-    .find(|format| {
+    .filter(|format| {
         adapter
             .get_texture_format_features(*format)
             .flags
             .contains(TextureFormatFeatureFlags::MULTISAMPLE_X4)
-    });
-    let Some(depth_format) = depth_format else {
+    })
+    .collect();
+    if depth_formats.is_empty() {
         assert!(
             !required,
             "strict mode requires a physical FL9_1 depth format with 4x multisample support"
         );
         println!("SKIP: selected FL9_1 device does not report 4x depth attachment support");
         return;
-    };
-    println!(
-        "Depth format {depth_format:?} features={:?}",
-        adapter.get_texture_format_features(depth_format)
-    );
+    }
+    for depth_format in &depth_formats {
+        println!(
+            "Depth format {depth_format:?} features={:?}",
+            adapter.get_texture_format_features(*depth_format)
+        );
+    }
     let multisampled_attachment_usage =
         TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT;
     assert!(downlevel
@@ -17390,20 +17393,6 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
         view_formats: &[],
     });
-    let depth = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 four-sample depth attachment"),
-        size: Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 4,
-        dimension: TextureDimension::D2,
-        format: depth_format,
-        usage: TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
     let resolved = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 single-sample RGBA8 resolve target"),
         size: Extent3d {
@@ -17419,11 +17408,6 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         view_formats: &[],
     });
     let msaa_view = msaa.create_view(&TextureViewDescriptor::default());
-    let depth_view_scope = device.push_error_scope(ErrorFilter::Validation);
-    let depth_view = depth.create_view(&TextureViewDescriptor::default());
-    if let Some(error) = poll_ready(depth_view_scope.pop()) {
-        panic!("FL9_1 4x depth view creation failed validation: {error:?}");
-    }
     let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 resolved image readback"),
@@ -17431,7 +17415,7 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let pipeline_scope = device.push_error_scope(ErrorFilter::Validation);
+    let shader_scope = device.push_error_scope(ErrorFilter::Validation);
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 multisample triangle shader"),
         source: ShaderSource::Wgsl(
@@ -17441,6 +17425,9 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
                 .into(),
         ),
     });
+    if let Some(error) = poll_ready(shader_scope.pop()) {
+        panic!("FL9_1 multisample shader creation failed validation: {error:?}");
+    }
     let attributes = [
         VertexAttribute {
             format: VertexFormat::Float32x3,
@@ -17463,168 +17450,193 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         blend: None,
         write_mask: ColorWrites::ALL,
     })];
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 four-sample triangle pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_layout,
-        },
-        primitive: PrimitiveState::default(),
-        depth_stencil: Some(DepthStencilState {
-            format: depth_format,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(CompareFunction::Less),
-            stencil: StencilState::default(),
-            bias: DepthBiasState::default(),
-        }),
-        multisample: MultisampleState {
-            count: 4,
-            ..Default::default()
-        },
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
-    if let Some(error) = poll_ready(pipeline_scope.pop()) {
-        panic!("FL9_1 4x color/depth pipeline failed validation: {error:?}");
-    }
-    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("FL9_1 multisample render and resolve"),
-    });
-    let render_internal_scope = device.push_error_scope(ErrorFilter::Internal);
-    let render_scope = device.push_error_scope(ErrorFilter::Validation);
-    {
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 four-sample triangle pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &msaa_view,
-                depth_slice: None,
-                resolve_target: Some(&resolved_view),
-                ops: Operations {
-                    load: LoadOp::Clear(Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 1.0,
-                        a: 1.0,
-                    }),
-                    store: StoreOp::Discard,
-                },
-            })],
-            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-                view: &depth_view,
-                depth_ops: Some(Operations {
-                    load: LoadOp::Clear(1.0),
-                    store: StoreOp::Store,
-                }),
-                stencil_ops: (depth_format == TextureFormat::Depth24PlusStencil8).then_some(
-                    Operations {
-                        load: LoadOp::Clear(0),
-                        store: StoreOp::Store,
-                    },
-                ),
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&pipeline);
-        pass.set_vertex_buffer(0, vertices.slice(..));
-        pass.draw(0..3, 0..1);
-        pass.draw(3..6, 0..1);
-    }
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &resolved,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(8),
+    for depth_format in depth_formats {
+        let depth = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 four-sample depth attachment"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
             },
-        },
-        Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-    );
-    let command_buffer = encoder.finish();
-    if let Some(error) = poll_ready(render_scope.pop()) {
-        panic!("FL9_1 4x color/depth command recording failed validation: {error:?}");
-    }
-    if let Some(error) = poll_ready(render_internal_scope.pop()) {
-        panic!("FL9_1 4x color/depth command recording failed internally: {error:?}");
-    }
-    let submit_scope = device.push_error_scope(ErrorFilter::Validation);
-    let submission = queue.submit([command_buffer]);
-    if let Some(error) = poll_ready(submit_scope.pop()) {
-        panic!("FL9_1 4x color/depth submission failed validation: {error:?}");
-    }
-    let (sender, receiver) = std::sync::mpsc::channel();
-    readback
-        .slice(..)
-        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
-    device
-        .poll(PollType::Wait {
-            submission_index: Some(submission),
-            timeout: Some(Duration::from_secs(10)),
-        })
-        .expect("wait for FL9_1 multisample render and resolve");
-    receiver
-        .recv_timeout(Duration::from_secs(10))
-        .expect("multisample resolve readback callback")
-        .expect("map multisample resolve readback");
-    let mut covered = 0;
-    let mut clear = 0;
-    let mut edge = 0;
-    {
-        let data = readback
+            mip_level_count: 1,
+            sample_count: 4,
+            dimension: TextureDimension::D2,
+            format: depth_format,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_view_scope = device.push_error_scope(ErrorFilter::Validation);
+        let depth_view = depth.create_view(&TextureViewDescriptor::default());
+        if let Some(error) = poll_ready(depth_view_scope.pop()) {
+            panic!("FL9_1 4x {depth_format:?} depth view creation failed validation: {error:?}");
+        }
+        let pipeline_scope = device.push_error_scope(ErrorFilter::Validation);
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 four-sample triangle pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: depth_format,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState {
+                count: 4,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        if let Some(error) = poll_ready(pipeline_scope.pop()) {
+            panic!("FL9_1 4x color/depth pipeline failed validation: {error:?}");
+        }
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 multisample render and resolve"),
+        });
+        let render_internal_scope = device.push_error_scope(ErrorFilter::Internal);
+        let render_scope = device.push_error_scope(ErrorFilter::Validation);
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 four-sample triangle pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &msaa_view,
+                    depth_slice: None,
+                    resolve_target: Some(&resolved_view),
+                    ops: Operations {
+                        load: LoadOp::Clear(Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 1.0,
+                            a: 1.0,
+                        }),
+                        store: StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: (depth_format == TextureFormat::Depth24PlusStencil8).then_some(
+                        Operations {
+                            load: LoadOp::Clear(0),
+                            store: StoreOp::Store,
+                        },
+                    ),
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertices.slice(..));
+            pass.draw(0..3, 0..1);
+            pass.draw(3..6, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &resolved,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let command_buffer = encoder.finish();
+        if let Some(error) = poll_ready(render_scope.pop()) {
+            panic!("FL9_1 4x color/depth command recording failed validation: {error:?}");
+        }
+        if let Some(error) = poll_ready(render_internal_scope.pop()) {
+            panic!("FL9_1 4x color/depth command recording failed internally: {error:?}");
+        }
+        let submit_scope = device.push_error_scope(ErrorFilter::Validation);
+        let submission = queue.submit([command_buffer]);
+        if let Some(error) = poll_ready(submit_scope.pop()) {
+            panic!("FL9_1 4x color/depth submission failed validation: {error:?}");
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
             .slice(..)
-            .get_mapped_range()
-            .expect("mapped resolved pixels");
-        for y in 0..8 {
-            for x in 0..8 {
-                let offset = y * 256 + x * 4;
-                let pixel = &data[offset..offset + 4];
-                assert_eq!(pixel[1], 0, "resolved green channel at ({x}, {y})");
-                assert_eq!(pixel[3], 255, "resolved alpha channel at ({x}, {y})");
-                assert!(
-                    (i16::from(pixel[0]) + i16::from(pixel[2]) - 255).abs() <= 1,
-                    "resolved red/blue coverage at ({x}, {y}): {pixel:?}"
-                );
-                if pixel[0] == 255 {
-                    covered += 1;
-                } else if pixel[0] == 0 {
-                    clear += 1;
-                } else {
-                    edge += 1;
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for FL9_1 multisample render and resolve");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("multisample resolve readback callback")
+            .expect("map multisample resolve readback");
+        let mut covered = 0;
+        let mut clear = 0;
+        let mut edge = 0;
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped resolved pixels");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    let pixel = &data[offset..offset + 4];
+                    assert_eq!(pixel[1], 0, "resolved green channel at ({x}, {y})");
+                    assert_eq!(pixel[3], 255, "resolved alpha channel at ({x}, {y})");
+                    assert!(
+                        (i16::from(pixel[0]) + i16::from(pixel[2]) - 255).abs() <= 1,
+                        "resolved red/blue coverage at ({x}, {y}): {pixel:?}"
+                    );
+                    if pixel[0] == 255 {
+                        covered += 1;
+                    } else if pixel[0] == 0 {
+                        clear += 1;
+                    } else {
+                        edge += 1;
+                    }
                 }
             }
         }
+        readback.unmap();
+        assert!(
+            covered >= 8,
+            "expected triangle interior, got {covered} pixels"
+        );
+        assert!(
+            clear >= 8,
+            "expected cleared pixels outside triangle, got {clear}"
+        );
+        assert!(edge > 0, "expected resolved partial-coverage edge pixels");
+        println!(
+            "PASS: FL9_1 4x {depth_format:?} depth test checked 64 resolved pixels ({covered} near red, {edge} partial coverage, {clear} clear); farther green draw was rejected"
+        );
     }
-    readback.unmap();
-    assert!(
-        covered >= 8,
-        "expected triangle interior, got {covered} pixels"
-    );
-    assert!(
-        clear >= 8,
-        "expected cleared pixels outside triangle, got {clear}"
-    );
-    assert!(edge > 0, "expected resolved partial-coverage edge pixels");
     let masked_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("FL9_1 four-sample zero-mask pipeline"),
         layout: None,
@@ -17728,7 +17740,7 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: FL9_1 RGBA8 4x rasterization and resolve checked 64 pixels ({covered} full triangle, {edge} partial coverage, {clear} clear), then the 4x zero sample-mask draw preserved all 64 blue clear pixels");
+    println!("PASS: FL9_1 RGBA8 4x zero sample-mask draw preserved all 64 blue clear pixels");
 }
 
 #[test]
