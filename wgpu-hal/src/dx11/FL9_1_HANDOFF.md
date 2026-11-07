@@ -1,5 +1,18 @@
 # FL9_1 handoff
 
+## Current mission state — 2026-11-07 debug-layer check
+
+The focused private indexed-render/readback test now supports an explicit
+`WGPU_DX11_DEBUG_LAYER=1` mode. On the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested and actual FL9_1, the debug layer emitted no
+error/corruption diagnostics; its detailed live-object report showed only the
+expected device and immediate context after resource cleanup. The complete
+strict private HAL suite then passed 377/377, and non-test HAL compilation
+passed. This closes a focused diagnostic check only: the full public suite
+has not been run with the debug layer, and public contract, historical driver,
+CoreWindow and Lumia runtime audits remain open. Exact commands are in the
+top entry of `FL9_1_PROGRESS.md`.
+
 ## Current mission state — 2026-11-07 verification update
 
 The current tested tree was `6be14b53f`; follow-up validation passed the full

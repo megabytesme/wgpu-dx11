@@ -1,5 +1,39 @@
 # FL9_1 progress
 
+## D3D11 debug-layer checkpoint — 2026-11-07
+
+The focused private FL9_1 indexed-render/readback test can now opt into the
+D3D11 debug device using `WGPU_DX11_DEBUG_LAYER=1`. With Windows Graphics Tools
+present, the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) created the
+explicitly requested FL9_1 device and executed the existing indexed draw and
+GPU-generated-index coverage. Readback matched the expected 64/64 red pixels
+and all secondary index-window outputs. The info queue contained zero
+error/corruption diagnostics. After clearing context state and issuing
+`ReportLiveDeviceObjects`, the detailed report contained only the expected
+device and immediate-context objects; no live D3D11 buffers, textures, views,
+shaders or other resources remained.
+
+Verification used Rust 1.93.1 and the Visual Studio 2022 x64 developer
+environment:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:WGPU_DX11_DEBUG_LAYER = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 fl9_1_hardware_indexed_triangle -- --nocapture --test-threads=1
+~~~
+
+Result: one test executed, one passed, zero failed and zero skipped. This is a
+focused private-HAL lifetime/diagnostic check, not a debug-layer run of the
+complete public suite. Ordinary device creation remains unchanged; the debug
+layer is used only by the explicit test path. `TESTING.md` documents the
+repeatable command. A subsequent strict full private-HAL run with
+`WGPU_DX11_REQUIRE_HARDWARE=1` passed 377/377; hardware-dependent tests used
+the physical RTX without a WARP fallback. Production HAL compilation passed.
+HAL Clippy passed with ten previously existing test/helper warnings; no new
+warning was introduced. `device.rs` passed targeted rustfmt; the
+`hal_encoder.rs` check still reports one pre-existing reflow at line 494,
+outside this change. `git diff --check` passed.
+
 ## Current validation checkpoint — 2026-11-07
 
 The current tested tree was `6be14b53f` (`docs: record FL9_1 volume copy

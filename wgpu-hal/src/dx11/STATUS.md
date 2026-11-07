@@ -844,14 +844,13 @@ representative application or a complete contract audit.
   context-backed resource creation against Present; same-thread reentrant work
   is rejected before queue or mapping state changes. The strict public test
   configures, clears, presents, resizes and presents again, then confirms
-  wrong-thread acquisition is rejected. It uses a hidden window; visible
-  desktop presentation and a continuously pumped event loop remain unverified
-  by this particular test.
+  wrong-thread acquisition is rejected. It uses a hidden window; the separate
+  visible example exercises the message pump and desktop presentation.
 - `wgpu/examples/dx11_fl91_windowed.rs` is a visible public-API example. It
   pumps Win32 messages, handles resize, and presents an animated indexed,
   textured, depth-tested cube. A 60-frame run passed on the RTX 3090 Ti at
-  forced FL9_1 and checked HWND visibility. The pixels were not captured for
-  independent visual inspection; strict offscreen tests provide readback.
+  forced FL9_1. A live client-area capture was visually inspected; strict
+  offscreen tests provide deterministic readback.
 - The public capability projection and core/HAL audit still need independent
 review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
@@ -861,10 +860,12 @@ request permitted by the limits.
 comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
-- Device removal/recovery, core handling of a failure during fence polling,
-  some destroy paths,
-historical FL9_1 drivers, CoreWindow on target UWP devices, ARM32 and visual
-inspection of desktop output remain unverified.
+- The opt-in D3D11 debug-layer indexed-render test reported zero error or
+  corruption messages and no live D3D11 resources after cleanup. This is a
+  focused private-HAL check, not a debug-layer audit of the whole public suite.
+- Physical device removal/recovery, historical FL9_1 drivers, CoreWindow on
+  target UWP devices and Lumia ARM32 runtime remain unverified. Synthetic
+  queue, fence, polling, and Present error paths have separate coverage.
 
 Event-query failure retention now has a strict HAL regression: an injected
 one-shot `E_FAIL` from `GetData` leaves the pending event and timeline value

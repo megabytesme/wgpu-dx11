@@ -1438,7 +1438,8 @@ If several physical adapters are present, the first DXGI hardware adapter is
 used; check its printed identity before treating a result as evidence for a
 particular GPU. No WARP or higher-feature-level fallback is attempted. This
 is a private HAL test, not a public wgpu or WebGPU conformance test. It does
-not prove leak freedom; a debug-layer lifetime check remains future work.
+does not by itself prove leak freedom; the opt-in debug-layer lifetime report
+below checks the focused indexed-render path.
 
 ### Recorded FL9_1 run
 
@@ -1450,6 +1451,25 @@ fence wait and readback executed: all 64 pixels were blue before submission
 and red after completion. The focused result was 1 executed, 1 passed, 0
 failed, 0 skipped. The Microsoft Basic Render Driver was enumerated as software
 and was not selected. No D3D11 debug layer was enabled.
+
+### Opt-in D3D11 debug-layer diagnostics
+
+Run the same end-to-end indexed rendering and GPU readback test with the
+Windows D3D11 debug layer enabled:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:WGPU_DX11_DEBUG_LAYER = '1'
+cargo +1.93 test --offline -j32 -p wgpu-hal --lib --no-default-features --features dx11 fl9_1_hardware_indexed_triangle -- --nocapture --test-threads=1
+```
+
+The debug flag is explicit and has no fallback: if Windows Graphics Tools is
+missing, device creation fails with the native error. The test clears device
+creation diagnostics, runs the indexed draw/readback sequence, fails on debug
+layer error or corruption messages, clears context state, and emits a detailed
+live-object report. The expected device and immediate context remain alive
+while the report is collected; any other live D3D11 object fails the test.
+This checks the focused private HAL path, not every public API operation.
 
 Before the change, the DX11 unit-test command below reported 64 passed and 0
 failed. Those tests did not report their hardware execution individually; the

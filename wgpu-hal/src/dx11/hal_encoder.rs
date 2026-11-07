@@ -2238,7 +2238,11 @@ mod tests {
                 "Selected hardware: {}; requested feature level: 9_1",
                 adapter.identity().name
             );
-            let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+            let debug_layer =
+                std::env::var_os("WGPU_DX11_DEBUG_LAYER").is_some_and(|value| value == "1");
+            std::println!("D3D11 debug layer requested: {debug_layer}");
+            let native =
+                Arc::new(adapter.open_device_with_debug_layer(&[FeatureLevel::L9_1], debug_layer)?);
             std::println!("Actual feature level: {:?}", native.feature_level());
             assert_eq!(native.feature_level(), FeatureLevel::L9_1);
             let caps = super::super::capabilities::Capabilities::query(&native);
@@ -2283,7 +2287,50 @@ mod tests {
                 multisample_caps
             );
             gpu_started.store(true, core::sync::atomic::Ordering::Relaxed);
-            indexed_triangle(native)?;
+            if debug_layer {
+                native.clear_debug_messages();
+            }
+            indexed_triangle(native.clone())?;
+            if debug_layer {
+                let messages = native.debug_messages()?;
+                for (severity, description) in &messages {
+                    std::println!("D3D11 debug message severity={severity}: {description}");
+                }
+                let errors: Vec<_> = messages
+                    .iter()
+                    .filter(|(severity, _)| *severity <= 1)
+                    .collect();
+                assert!(
+                    errors.is_empty(),
+                    "D3D11 debug layer reported error/corruption diagnostics: {errors:?}"
+                );
+                std::println!(
+                    "D3D11 debug layer: {} message(s), 0 error/corruption diagnostics",
+                    messages.len()
+                );
+                native.clear_debug_messages();
+                native.report_live_objects()?;
+                let live_objects = native.debug_messages()?;
+                for (severity, description) in &live_objects {
+                    std::println!("D3D11 live-object report severity={severity}: {description}");
+                }
+                let unexpected_live_objects: Vec<_> = live_objects
+                    .iter()
+                    .filter(|(_, description)| {
+                        description.starts_with("Live ")
+                            && !description.starts_with("Live ID3D11Device at")
+                            && !description.starts_with("Live ID3D11Context at")
+                    })
+                    .collect();
+                assert!(
+                    unexpected_live_objects.is_empty(),
+                    "D3D11 debug layer found live resources after test cleanup: {unexpected_live_objects:?}"
+                );
+                std::println!(
+                    "D3D11 live-object report: {} diagnostic message(s), no live resources beyond the device/context",
+                    live_objects.len(),
+                );
+            }
             Ok(true)
         });
         match result {

@@ -8,8 +8,8 @@ use windows::{
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL},
             Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
+                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11InfoQueue,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_DEBUG, D3D11_SDK_VERSION,
             },
             Dxgi::{
                 CreateDXGIFactory2, IDXGIAdapter, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1,
@@ -17,6 +17,13 @@ use windows::{
             },
         },
     },
+};
+
+#[cfg(test)]
+use core::mem::size_of;
+#[cfg(test)]
+use windows::Win32::Graphics::Direct3D11::{
+    ID3D11Debug, D3D11_MESSAGE, D3D11_RLDO_DETAIL, D3D11_RLDO_IGNORE_INTERNAL,
 };
 
 #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -103,6 +110,23 @@ impl NativeAdapter {
     /// D3D chooses the first supported level in the supplied order. This does
     /// not check wgpu features, limits, shaders, or presentation capabilities.
     pub fn open_device(&self, levels: &[FeatureLevel]) -> Result<NativeDevice> {
+        self.open_device_inner(levels, false)
+    }
+
+    #[cfg(test)]
+    pub(super) fn open_device_with_debug_layer(
+        &self,
+        levels: &[FeatureLevel],
+        debug_layer: bool,
+    ) -> Result<NativeDevice> {
+        self.open_device_inner(levels, debug_layer)
+    }
+
+    fn open_device_inner(
+        &self,
+        levels: &[FeatureLevel],
+        debug_layer: bool,
+    ) -> Result<NativeDevice> {
         if levels.is_empty() {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
@@ -114,12 +138,17 @@ impl NativeAdapter {
         let mut device = None;
         let mut context = None;
         let mut selected = D3D_FEATURE_LEVEL::default();
+        let flags = if debug_layer {
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_DEBUG
+        } else {
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT
+        };
         unsafe {
             D3D11CreateDevice(
                 &adapter,
                 D3D_DRIVER_TYPE_UNKNOWN,
                 HMODULE::default(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                flags,
                 Some(&requested),
                 D3D11_SDK_VERSION,
                 Some(&mut device),
@@ -132,10 +161,17 @@ impl NativeAdapter {
             .copied()
             .find(|level| level.as_raw() == selected.0 as u32)
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let debug_info_queue = if debug_layer {
+            Some(raw.cast::<ID3D11InfoQueue>()?)
+        } else {
+            None
+        };
         Ok(NativeDevice {
-            raw: device.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            raw,
             immediate: Mutex::new(context.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             level,
+            debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
             injected_oom_check_status: Mutex::new(None),
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -152,6 +188,8 @@ pub struct NativeDevice {
     raw: ID3D11Device,
     immediate: Mutex<ID3D11DeviceContext>,
     level: FeatureLevel,
+    #[cfg_attr(not(test), allow(dead_code))]
+    debug_info_queue: Option<ID3D11InfoQueue>,
     #[cfg(any(test, feature = "dx11-test-fixture"))]
     injected_oom_check_status: Mutex<Option<HRESULT>>,
     #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -161,6 +199,58 @@ pub struct NativeDevice {
 }
 
 impl NativeDevice {
+    #[cfg(test)]
+    pub(super) fn clear_debug_messages(&self) {
+        if let Some(queue) = &self.debug_info_queue {
+            unsafe { queue.ClearStoredMessages() };
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn report_live_objects(&self) -> Result<()> {
+        let debug: ID3D11Debug = self.raw.cast()?;
+        {
+            let context = self.immediate.lock();
+            unsafe {
+                context.ClearState();
+                context.Flush();
+            }
+        }
+        unsafe { debug.ReportLiveDeviceObjects(D3D11_RLDO_DETAIL | D3D11_RLDO_IGNORE_INTERNAL) }
+    }
+
+    #[cfg(test)]
+    pub(super) fn debug_messages(&self) -> Result<Vec<(i32, String)>> {
+        let queue = self
+            .debug_info_queue
+            .as_ref()
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let count = unsafe { queue.GetNumStoredMessages() };
+        let mut messages = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let mut size = 0usize;
+            unsafe { queue.GetMessage(index, None, &mut size)? };
+            if size < size_of::<D3D11_MESSAGE>() {
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let mut storage = alloc::vec![0u64; size.div_ceil(size_of::<u64>())];
+            unsafe {
+                queue.GetMessage(index, Some(storage.as_mut_ptr().cast()), &mut size)?;
+            }
+            let message = unsafe { &*storage.as_ptr().cast::<D3D11_MESSAGE>() };
+            let description = if message.pDescription.is_null() {
+                String::new()
+            } else {
+                let bytes = unsafe {
+                    core::slice::from_raw_parts(message.pDescription, message.DescriptionByteLength)
+                };
+                String::from_utf8_lossy(bytes).trim_end_matches('\0').into()
+            };
+            messages.push((message.Severity.0, description));
+        }
+        Ok(messages)
+    }
+
     #[cfg(test)]
     pub(super) fn enable_diagnostic_separate_alpha(&mut self) {
         self.diagnostic_separate_alpha = true;

@@ -18,6 +18,12 @@ audit is still in progress. An optional-format probe found no selected-device
 float-texture path to add at forced FL9_1. ARM32 UWP cross-compilation passed,
 but Lumia runtime execution remains unverified after Device Portal timed out.
 
+An opt-in D3D11 debug-layer run now covers the focused private indexed-render
+and readback path on the RTX at forced FL9_1: it reported zero error or
+corruption diagnostics and no live D3D11 resources after cleanup. This does
+not replace the outstanding broad public contract audit or historical-driver
+and Lumia runtime verification; exact evidence is in `FL9_1_PROGRESS.md`.
+
 ## Ordered work and gates
 
 ### Verified hardware boundary — ordinary 2D texture arrays
