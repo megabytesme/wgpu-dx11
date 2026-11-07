@@ -2186,3 +2186,12 @@ timed out and the read-only Device Portal family request timed out after about
 16 seconds. ARM32 UWP compilation is still compile-only evidence. CoreWindow
 phone execution remains unverified; continue independent core/HAL audit work
 while the device is unreachable.
+
+## Follow-up — depth necessity control
+
+The public textured cube integration test now renders a painter-order control
+without depth. At forced FL9_1 on the RTX 3090 Ti, the two D16-tested face
+orders match all 1,024 pixels while the no-depth orders differ at 223 pixels.
+This verifies that the test scene contains actual overlap and D16 resolves it.
+The strict scene test passed 1/1. This remains one bounded workload and does
+not change the overall partial status.

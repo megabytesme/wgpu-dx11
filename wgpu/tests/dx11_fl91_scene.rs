@@ -347,44 +347,52 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
-    let pipeline_scope = device.push_error_scope(ErrorFilter::Internal);
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 textured depth-tested cube pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_layout,
-        },
-        primitive: PrimitiveState {
-            cull_mode: None,
-            ..Default::default()
-        },
-        depth_stencil: Some(DepthStencilState {
+    let create_pipeline = |label, depth_stencil| {
+        let pipeline_scope = device.push_error_scope(ErrorFilter::Internal);
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        if let Some(error) = poll_ready(pipeline_scope.pop()) {
+            panic!("FL9_1 scene pipeline compilation failed: {error:?}");
+        }
+        pipeline
+    };
+    let pipeline = create_pipeline(
+        "FL9_1 textured depth-tested cube pipeline",
+        Some(DepthStencilState {
             format: TextureFormat::Depth16Unorm,
             depth_write_enabled: Some(true),
             depth_compare: Some(CompareFunction::Less),
             stencil: StencilState::default(),
             bias: DepthBiasState::default(),
         }),
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &[Some(ColorTargetState {
-                format: TextureFormat::Rgba8Unorm,
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
-    if let Some(error) = poll_ready(pipeline_scope.pop()) {
-        panic!("FL9_1 scene pipeline compilation failed: {error:?}");
-    }
+    );
+    let painter_pipeline = create_pipeline("FL9_1 textured painter-order control pipeline", None);
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 scene resources"),
         layout: &pipeline.get_bind_group_layout(0),
@@ -403,9 +411,27 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
             },
         ],
     });
+    let painter_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 painter-order scene resources"),
+        layout: &painter_pipeline.get_bind_group_layout(0),
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureView(&sampled_view),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 scene image readback"),
-        size: 2 * 32 * 256,
+        size: 4 * 32 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -413,10 +439,19 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 render scene in opposite primitive orders"),
     });
-    for (target_offset, index_buffer) in [(0, &forward_indices), (32 * 256, &reverse_indices)] {
+    for (target_offset, index_buffer, use_depth) in [
+        (0, &forward_indices, true),
+        (32 * 256, &reverse_indices, true),
+        (2 * 32 * 256, &forward_indices, false),
+        (3 * 32 * 256, &reverse_indices, false),
+    ] {
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("FL9_1 textured cube depth pass"),
+                label: Some(if use_depth {
+                    "FL9_1 textured cube depth pass"
+                } else {
+                    "FL9_1 textured cube painter-order control pass"
+                }),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &color_view,
                     depth_slice: None,
@@ -426,7 +461,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
                         store: StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
                     view: &depth_view,
                     depth_ops: Some(Operations {
                         load: LoadOp::Clear(1.0),
@@ -438,8 +473,20 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_pipeline(if use_depth {
+                &pipeline
+            } else {
+                &painter_pipeline
+            });
+            pass.set_bind_group(
+                0,
+                if use_depth {
+                    &bind_group
+                } else {
+                    &painter_bind_group
+                },
+                &[],
+            );
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
             pass.draw_indexed(0..36, 0, 0..1);
@@ -485,14 +532,23 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         .slice(..)
         .get_mapped_range()
         .expect("mapped FL9_1 scene pixels");
+    let image_size = 32 * 256;
     let mut colors = [0usize; 5];
+    let mut painter_order_differences = 0;
     for y in 0..32 {
         for x in 0..32 {
             let offset = y * 256 + x * 4;
             let forward = &data[offset..offset + 4];
-            let reverse_offset = 32 * 256 + offset;
+            let reverse_offset = image_size + offset;
             let reverse = &data[reverse_offset..reverse_offset + 4];
             assert_eq!(forward, reverse, "depth-order output differs at ({x}, {y})");
+            let painter_forward_offset = 2 * image_size + offset;
+            let painter_reverse_offset = 3 * image_size + offset;
+            if data[painter_forward_offset..painter_forward_offset + 4]
+                != data[painter_reverse_offset..painter_reverse_offset + 4]
+            {
+                painter_order_differences += 1;
+            }
             match forward {
                 [0, 0, 0, 255] => colors[0] += 1,
                 [255, 0, 0, 255] => colors[1] += 1,
@@ -507,6 +563,10 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     let visible_faces = colors[1..].iter().filter(|&&count| count > 0).count();
     assert!(shaded > 200, "cube covered too few pixels: {colors:?}");
     assert!(
+        painter_order_differences > 0,
+        "painter-order control unexpectedly matched at every pixel"
+    );
+    assert!(
         visible_faces >= 3,
         "fewer than three textured faces visible: {colors:?}"
     );
@@ -517,6 +577,6 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     drop(data);
     readback.unmap();
     println!(
-        "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; two opposite face submission orders matched all 1,024 pixels; clear/red/green/blue/yellow={colors:?}"
+        "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
     );
 }

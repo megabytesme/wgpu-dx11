@@ -2785,10 +2785,12 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 perspective-transformed cube through public wgpu using a sampled RGBA8 face
 texture, a uniform transform, a nearest sampler and a D16 depth attachment.
 It submits the same faces in forward and reverse order, then compares every
-pixel in both 32×32 readbacks. Identical images demonstrate that depth selects
-the visible faces independently of submission order; the test also checks the
-clear background and at least three distinct sampled face colors. This is a
-small integration scene, not a broader capability or performance claim.
+pixel in both 32×32 readbacks. The depth-tested images must match; a second
+pair of runs omits depth and must differ under reversed face order, proving
+that overlapping faces exercise depth rather than coincidentally avoiding
+overdraw. The test also checks the clear background and at least three
+distinct sampled face colors. This is a small integration scene, not a broader
+capability or performance claim.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

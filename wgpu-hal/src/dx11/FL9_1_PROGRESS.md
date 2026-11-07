@@ -9782,3 +9782,19 @@ cargo +1.93 clippy --offline -j2 -p wgpu --test dx11_public --no-default-feature
 rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ~~~
+
+## Follow-up — depth necessity control for the public 3D scene — 2026-11-07
+
+Extended `public_dx11_textured_depth_tested_3d_scene_at_fl91` with a second
+pipeline that omits depth. The same indexed cube is rendered in forward and
+reverse face order both with D16 `Less` depth testing and with painter-order
+overwrites. On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested/actual FL9_1, the depth-tested images matched at all 1,024 pixels;
+the painter-order outputs differed at 223 pixels. The depth image still
+contained 154 red, 21 blue, 70 yellow and 779 clear pixels. This confirms that
+overlapping faces are present and the stable result depends on depth testing.
+
+Strict hardware test passed 1/1. The first run exposed expected implicit
+pipeline-layout incompatibility between the two independently inferred
+pipelines; the test now creates a matching resource bind group for each
+pipeline and validates the ordinary public layout contract.

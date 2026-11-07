@@ -1248,7 +1248,9 @@ transformed indexed cube with a sampled 2D RGBA8 face texture, uniform matrix,
 nearest sampler and D16 depth attachment. It executes two command sequences
 with opposite face order and compares every pixel in both 32×32 readbacks;
 the RTX 3090 Ti at explicitly requested/actual FL9_1 produced identical
-images with 154 red, 21 blue, 70 yellow and 779 clear pixels. The test proves
-this specific shader, binding, indexed draw, depth and readback combination
-through public wgpu. It does not establish broader shader or format coverage,
-historical FL9_1 compatibility, or application-level performance.
+images with 154 red, 21 blue, 70 yellow and 779 clear pixels. A painter-order
+control omitting depth differs at 223 pixels when face order is reversed. The
+test proves this specific shader, binding, indexed draw, depth and readback
+combination through public wgpu. It does not establish broader shader or
+format coverage, historical FL9_1 compatibility, or application-level
+performance.
