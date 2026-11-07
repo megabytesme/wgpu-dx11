@@ -213,11 +213,11 @@ forwarded through a helper. The expected mip colors were verified across 384
 pixels. Core rejects dynamic, out-of-range and offset bias forms before HAL,
 and validates each helper call site independently. A separate R8_UNORM test
 query-gates mip-chain creation and verifies the sampled mip through readback.
-A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
-wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
-projected formats are filterable and single-mip-only; this draw uses nearest
-sampling, while the positive selected-device `SHADER_SAMPLE` query permits any
-filter.
+A strict test uploads and samples Rg8Snorm and Rgba8Snorm through public wgpu,
+verifies signed channel conversion in all 64 pixels, and checks filterability
+from the selected `SHADER_SAMPLE` query. Rg8Snorm and Rgba8Snorm mip chains are
+separately exposed only after the corresponding selected `TEXTURE2D | MIP`
+query and backend path are available.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels); core
 rejects the unsupported `instance_index` builtin.
@@ -300,12 +300,12 @@ public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8G8_UNORM, R16G16_SNORM, R8G8B8A8_SNORM, BC1_UNORM, BC2_UNORM,
-BC3_UNORM, D16_UNORM and D24S8 are always single-mip in the private
-implementation. R8G8_SNORM supports sampled/upload mip chains only when the
-selected device reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE`
-query controls filterability. Render-target, copy-source and readback uses
-remain unsupported. RGBA8 and BGRA8, including their
+R8G8_UNORM, R16G16_SNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8
+remain single-mip in the private implementation. R8G8_SNORM and
+R8G8B8A8_SNORM support sampled/upload mip chains only when the selected device
+reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE` query controls
+filterability. Render-target, copy-source and readback uses remain
+unsupported. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
 backend mip path is unavailable. The controlled fixture asserts this
@@ -561,10 +561,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   rejects a filtering layout from the queried format flags. Public use also
   requires `TEXTURE_FORMAT_16BIT_NORM`. The format remains single-mip,
   sampled/upload-only and is not renderable or readable back through a buffer.
-- R8G8B8A8_SNORM has the same queried one-mip sampled/upload subset. A strict
-  forced-FL9_1 test verifies padded signed four-channel data through GPU
-  sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
-  Render-target, copy-source, readback and mip-chain uses remain unsupported.
+- R8G8B8A8_SNORM's base sampled/upload subset remains selected-query-gated.
+  Its required FL9_1 format guarantees `TEXTURE2D | MIP | SHADER_SAMPLE`, but
+  the implementation also requires the selected device's `TEXTURE2D | MIP`
+  query and enabled backend path before exposing mip chains. Strict public
+  tests verify padded signed four-channel sampling and three-level biased
+  mip sampling. Render-target, copy-source and readback uses remain
+  unsupported.
 - BC1/BC2/BC3_UNORM have queried one-mip, one-layer sampled/upload subsets and
   block-aligned GPU texture-copy source paths. Dimensions, row pitches, offsets,
   updates and copy boxes align to 4×4 blocks and the format block size (8 bytes

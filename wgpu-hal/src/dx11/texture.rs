@@ -999,8 +999,10 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
-        let sampled_mip_chain = matches!(format, DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM)
-            && layers == 1
+        let sampled_mip_chain = matches!(
+            format,
+            DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+        ) && layers == 1
             && mip_levels > 1
             && sample_count == 1;
         let uncompressed_sampled = matches!(

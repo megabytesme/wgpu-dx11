@@ -10805,6 +10805,46 @@ Historical drivers, Lumia runtime execution and the broad core/HAL contract
 audit remain open.
 
 
+## Query-gated R8G8B8A8_SNORM mip chains — 2026-11-07
+
+The required DXGI format table guarantees `TEXTURE2D | SHADER_SAMPLE | MIP`
+for R8G8B8A8_SNORM beginning at FL9_1. The internal capability model now
+tracks that hardware guarantee separately from the backend path and the
+selected-device `CheckFormatSupport` result. The public format projection
+omits `SINGLE_MIP_ONLY` only when the selected device reports
+`TEXTURE2D | MIP` and the backend path is enabled. `SHADER_SAMPLE` continues to
+control filterability independently. NPOT chains still require positive
+unrestricted-NPOT support. The resource remains sampled/upload-only; render
+target, copy-source, and CPU-readback uses remain unavailable.
+
+A strict public test uploads three padded RGBA8_SNORM mip levels, samples mip
+1 through a literal `textureSampleBias`, and checks all 16 RGBA8 output pixels
+against `[192, 64, 160, 96]` within one UNORM code value. The RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) returned support mask `0x000213a0`
+with requested and actual FL9_1. R8G8_SNORM's existing three-level test was
+also rerun and matched all 16 expected pixels.
+
+Verification with Rust 1.93.1 and the Visual Studio x64 environment:
+
+- Synthetic mip capability test: 1/1.
+- Focused strict public RG8/RGBA8 SNORM mip tests: 2/2; both executed on the
+  physical adapter.
+- Complete private HAL suite: 402/402 test functions passed under strict mode.
+- Complete strict public D3D11 suite: 79/79 passed. The optional Float16x2
+  vertex-input subcase reported its expected capability skip.
+- Explicit D3D11 core adapter-selection test: 1/1, enumerating one physical
+  FL9_1 adapter. The public test `experimental_dx11_is_not_enabled_by_default`
+  passed, preserving default backend isolation.
+- DX12 core regression: 94/94.
+- D3D11 HAL build, HAL and public-test-target Clippy, rustfmt check and
+  `git diff --check` passed. Clippy emitted existing warnings in HAL test and
+  view code; none pointed to the new mip path.
+
+Microsoft reference: [Required DXGI formats](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/required-dxgi-formats).
+The forced modern RTX result verifies the selected driver path, not every
+historical FL9_1 implementation. The broad API and platform audit remains
+unfinished.
+
 ## Surface lifecycle regression — reentrant present after device loss — 2026-11-07
 
 A strict public fixture reproduced a consumed-frame leak when a device-lost

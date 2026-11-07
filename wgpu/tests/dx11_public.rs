@@ -7553,6 +7553,15 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
 
 #[test]
 fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
+    public_dx11_snorm_mip_chain_at_fl91(TextureFormat::Rg8Snorm);
+}
+
+#[test]
+fn public_dx11_rgba8_snorm_mip_chain_at_fl91() {
+    public_dx11_snorm_mip_chain_at_fl91(TextureFormat::Rgba8Snorm);
+}
+
+fn public_dx11_snorm_mip_chain_at_fl91(format: TextureFormat) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -7570,9 +7579,9 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
-    let features = adapter.get_texture_format_features(TextureFormat::Rg8Snorm);
+    let features = adapter.get_texture_format_features(format);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; R8G8_SNORM={features:?}",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; {format:?}={features:?}",
         info.name, info.vendor, info.device, info.driver_info
     );
     let mip_chain_supported = features
@@ -7584,21 +7593,40 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
     if !mip_chain_supported {
         assert!(
             !required,
-            "strict FL9_1 requires the queried R8G8_SNORM MIP path: {features:?}"
+            "strict FL9_1 requires the queried {format:?} MIP path: {features:?}"
         );
-        println!("SKIP: selected FL9_1 device did not expose the required R8G8_SNORM mip path");
+        println!("SKIP: selected FL9_1 device did not expose the required {format:?} mip path");
         return;
     }
 
+    let filterable = features
+        .flags
+        .contains(TextureFormatFeatureFlags::FILTERABLE);
+    let bytes_per_texel = if format == TextureFormat::Rg8Snorm {
+        2
+    } else {
+        4
+    };
+    let mip_values = match format {
+        TextureFormat::Rg8Snorm => [[0, 127, 0, 127], [64, -64, 0, 127], [-64, 64, 0, 127]],
+        TextureFormat::Rgba8Snorm => [[0, 0, 0, 0], [64, -64, 32, -32], [-64, 64, -32, 32]],
+        _ => unreachable!("the helper only tests supported signed-normalized formats"),
+    };
+    let expected = if format == TextureFormat::Rg8Snorm {
+        [192, 64, 0, 255]
+    } else {
+        [192, 64, 160, 96]
+    };
+
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public DX11 FL9_1 R8G8_SNORM mip test"),
+        label: Some("public DX11 FL9_1 SNORM mip test"),
         required_features: Features::empty(),
         required_limits: adapter.limits(),
         ..Default::default()
     }))
     .expect("request the selected FL9_1 device");
     let texture = device.create_texture(&TextureDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip chain"),
+        label: Some("public FL9_1 SNORM mip chain"),
         size: Extent3d {
             width: 4,
             height: 4,
@@ -7607,17 +7635,19 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
         mip_level_count: 3,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rg8Snorm,
+        format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    for (mip, value) in [[0i8, 127i8], [64, -64], [-64, 64]].into_iter().enumerate() {
+    for (mip, value) in mip_values.into_iter().enumerate() {
         let dimension = (4usize >> mip).max(1);
         let mut bytes = vec![0; dimension * 256];
         for y in 0..dimension {
             for x in 0..dimension {
-                let offset = y * 256 + x * 2;
-                bytes[offset..offset + 2].copy_from_slice(&[value[0] as u8, value[1] as u8]);
+                let offset = y * 256 + x * bytes_per_texel;
+                for channel in 0..bytes_per_texel {
+                    bytes[offset + channel] = value[channel] as u8;
+                }
             }
         }
         queue.write_texture(
@@ -7651,13 +7681,13 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
         ..Default::default()
     });
     let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip layout"),
+        label: Some("public FL9_1 SNORM mip layout"),
         entries: &[
             BindGroupLayoutEntry {
                 binding: 7,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: false },
+                    sample_type: TextureSampleType::Float { filterable },
                     view_dimension: TextureViewDimension::D2,
                     multisampled: false,
                 },
@@ -7666,13 +7696,17 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
             BindGroupLayoutEntry {
                 binding: 42,
                 visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                ty: BindingType::Sampler(if filterable {
+                    SamplerBindingType::Filtering
+                } else {
+                    SamplerBindingType::NonFiltering
+                }),
                 count: None,
             },
         ],
     });
     let group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip bindings"),
+        label: Some("public FL9_1 SNORM mip bindings"),
         layout: &layout,
         entries: &[
             BindGroupEntry {
@@ -7686,23 +7720,30 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
         ],
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip pipeline layout"),
+        label: Some("public FL9_1 SNORM mip pipeline layout"),
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip shader"),
+        label: Some("public FL9_1 SNORM mip shader"),
         source: ShaderSource::Wgsl(
-            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
-             @group(0) @binding(42) var image_sampler: sampler;\n\
-             struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
-             @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> Out { return Out(vec4f(position, 0.5, 1.0), uv); }\n\
-             @fragment fn fs(input: Out) -> @location(0) vec4f { let value = textureSampleBias(image, image_sampler, input.uv, 1.0); return vec4f(value.xy * 0.5 + vec2f(0.5), 0.0, 1.0); }"
+            format!(
+                "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+                 @group(0) @binding(42) var image_sampler: sampler;\n\
+                 struct Out {{ @builtin(position) position: vec4f, @location(0) uv: vec2f }};\n\
+                 @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> Out {{ return Out(vec4f(position, 0.5, 1.0), uv); }}\n\
+                 @fragment fn fs(input: Out) -> @location(0) vec4f {{ let value = textureSampleBias(image, image_sampler, input.uv, 1.0); {} }}",
+                if format == TextureFormat::Rg8Snorm {
+                    "return vec4f(value.xy * 0.5 + vec2f(0.5), 0.0, 1.0);"
+                } else {
+                    "return value * 0.5 + vec4f(0.5);"
+                }
+            )
                 .into(),
         ),
     });
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip pipeline"),
+        label: Some("public FL9_1 SNORM mip pipeline"),
         layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &shader,
@@ -7758,14 +7799,14 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
     .flat_map(f32::to_ne_bytes)
     .collect::<Vec<_>>();
     let vertex = device.create_buffer(&BufferDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip vertices"),
+        label: Some("public FL9_1 SNORM mip vertices"),
         size: vertices.len() as u64,
         usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     queue.write_buffer(&vertex, 0, &vertices);
     let target = device.create_texture(&TextureDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip target"),
+        label: Some("public FL9_1 SNORM mip target"),
         size: Extent3d {
             width: 4,
             height: 4,
@@ -7780,17 +7821,17 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
     });
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip readback"),
+        label: Some("public FL9_1 SNORM mip readback"),
         size: 4 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("public FL9_1 R8G8_SNORM mip encoder"),
+        label: Some("public FL9_1 SNORM mip encoder"),
     });
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("public FL9_1 R8G8_SNORM mip pass"),
+            label: Some("public FL9_1 SNORM mip pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: &target_view,
                 depth_slice: None,
@@ -7841,26 +7882,28 @@ fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
             submission_index: Some(submission),
             timeout: Some(Duration::from_secs(10)),
         })
-        .expect("wait for public R8G8_SNORM mip sample");
+        .expect("wait for public SNORM mip sample");
     receiver
         .recv_timeout(Duration::from_secs(10))
-        .expect("public R8G8_SNORM mip map callback")
-        .expect("map public R8G8_SNORM mip readback");
+        .expect("public SNORM mip map callback")
+        .expect("map public SNORM mip readback");
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
         for y in 0..4 {
             for x in 0..4 {
                 let offset = y * 256 + x * 4;
                 let pixel = &data[offset..offset + 4];
-                assert!(pixel[0].abs_diff(192) <= 1, "pixel ({x}, {y}): {pixel:?}");
-                assert!(pixel[1].abs_diff(64) <= 1, "pixel ({x}, {y}): {pixel:?}");
-                assert!(pixel[2] <= 1, "pixel ({x}, {y}): {pixel:?}");
-                assert_eq!(pixel[3], 255, "pixel ({x}, {y}): {pixel:?}");
+                for channel in 0..4 {
+                    assert!(
+                        pixel[channel].abs_diff(expected[channel]) <= 1,
+                        "{format:?} pixel ({x}, {y}) channel {channel}: expected {expected:?}, got {pixel:?}"
+                    );
+                }
             }
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 R8G8_SNORM three-level upload and biased sampling; all 16 pixels matched the signed mip-1 RG values [192, 64]");
+    println!("PASS: public FL9_1 {format:?} three-level upload and biased sampling; all 16 pixels matched mip-1 values {expected:?}");
 }
 
 #[test]
@@ -8563,12 +8606,6 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             "{format:?} shader-sample support should permit filtering: {features:?}"
         );
     }
-    assert!(
-        rgba_features
-            .flags
-            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY),
-        "Rgba8Snorm: {rgba_features:?}"
-    );
     let rg16_sampled = rg16_features
         .allowed_usages
         .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);

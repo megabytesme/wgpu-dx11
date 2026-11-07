@@ -1,12 +1,13 @@
 # FL9_1 completion plan
-Latest format increment: the implementation now exposes sampled/upload mip
-chains for FL9_1 R8G8_SNORM only when the selected format query confirms
-`TEXTURE2D | MIP` and the backend path is enabled. A strict public test on the
-RTX 3090 Ti at requested/actual FL9_1 uploaded three signed RG levels and
-verified all 16 rendered pixels sampled from mip 1. It does not add
-render-target, copy-source or readback support. See `FL9_1_PROGRESS.md`; the
-broader contract audit, historical-driver compatibility and Lumia runtime
-verification remain open.
+Latest format increment: the internal FL9_1 sampled/upload mip path now also
+covers R8G8B8A8_SNORM. Microsoft lists its `TEXTURE2D`, `SHADER_SAMPLE` and
+`MIP` guarantees at FL9_1; the selected device's `TEXTURE2D | MIP` query and
+the backend path are still required. Strict RTX 3090 Ti execution at requested
+and actual FL9_1 sampled mip 1 from a three-level upload and matched all 16
+pixels. R8G8_SNORM coverage remains intact. Neither path adds render-target,
+copy-source or readback support. See `FL9_1_PROGRESS.md`; the broader contract
+audit, historical-driver compatibility and Lumia runtime verification remain
+open.
 
 Latest integration-safety increment: `Backends::default()` excludes the
 experimental D3D11 backend, keeping public adapter exposure explicitly opted

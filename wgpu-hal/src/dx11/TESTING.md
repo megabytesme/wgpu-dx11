@@ -1871,12 +1871,12 @@ shader-sample formats. `R16G16_SNORM` has a FL9_1 2D-texture guarantee, but
 its required `SHADER_SAMPLE` support begins at FL9_2. D3D11 permits
 point-filtered sampling when a selected device reports `TEXTURE2D` without
 `SHADER_SAMPLE`; the backend reports that format as non-filterable. A failed
-query or missing `TEXTURE2D` bit is rejected. R8_UNORM and R8G8_SNORM permit
-sampled/upload mip chains only when the selected device reports `MIP` and the
-backend path is enabled; R8_UNORM additionally requires its hardware sampling
-guarantee. NPOT chains also require positive unrestricted-NPOT support.
-`SHADER_SAMPLE` independently controls filterability. The other listed
-sampled/upload formats remain single-mip. BC1/BC2/BC3 dimensions and updates
+query or missing `TEXTURE2D` bit is rejected. R8_UNORM, R8G8_SNORM and
+R8G8B8A8_SNORM permit sampled/upload mip chains only when the selected device
+reports `TEXTURE2D | MIP` and the backend path is enabled. NPOT chains also
+require positive unrestricted-NPOT support. `SHADER_SAMPLE` independently
+controls filterability. The other listed sampled/upload formats remain
+single-mip. BC1/BC2/BC3 dimensions and updates
 must be aligned to complete 4×4 blocks, and source offsets/row pitches align to
 the format block byte size.
 Run the synthetic capability checks and strict hardware tests with:
@@ -2175,6 +2175,24 @@ pixels matched `[192, 64, 0, 255]` within one code value. The device reported
 format support mask `0x00021320`. This path does not add render-target,
 copy-source or CPU-readback support for R8G8_SNORM, and the RTX result does not
 establish behavior on historical FL9_1 drivers.
+
+### Query-gated R8G8B8A8_SNORM mip chains
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib rgba8_snorm_mip_chains_require_feature_level_backend_and_driver_support -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public snorm_mip_chain_at_fl91 -- --nocapture --test-threads=1
+```
+
+Microsoft's required-format table lists `TEXTURE2D`, `SHADER_SAMPLE` and
+`MIP` for `R8G8B8A8_SNORM` beginning at FL9_1. The backend still requires the
+selected device to report `TEXTURE2D | MIP` and its mip path to be enabled;
+the format's `SHADER_SAMPLE` query independently determines filterability.
+The strict public test uploads three padded signed levels, samples mip 1 with
+a literal bias and compares all 16 pixels against `[192, 64, 160, 96]` within
+one code value. The RTX 3090 Ti reported `0x000213a0` at requested and actual
+FL9_1. Mip support does not add render-target, copy-source or CPU-readback
+support, and the modern driver does not represent historical FL9_1 devices.
 
 ### Non-suffix sampled mip views
 

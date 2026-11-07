@@ -2443,3 +2443,13 @@ other surface on a healthy device, and reacquired a frame. Both tests in
 `dx11_surface_error_fixture` passed. This is injected error-path coverage, not
 physical device removal/recovery. Full public API auditing, historical
 FL9_1 drivers and Lumia/CoreWindow runtime remain open.
+
+The latest verified format increment adds query-gated R8G8B8A8_SNORM sampled
+mip chains. The format's FL9_1 required-format guarantee includes MIP, while
+the selected-device `TEXTURE2D | MIP` query and backend path remain independent
+gates. The strict RTX 3090 Ti test sampled mip 1 from a three-level upload and
+matched all 16 pixels. Full private HAL passed 402/402, strict public D3D11
+passed 79/79 (one optional Float16x2 subcase skipped), the core adapter test
+passed 1/1 and DX12 core passed 94/94. See `FL9_1_PROGRESS.md` for commands
+and details. Continue the public contract audit; historical drivers and
+Lumia/CoreWindow remain unverified.
