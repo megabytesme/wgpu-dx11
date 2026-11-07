@@ -999,6 +999,8 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
+        let r8_mip_sampled =
+            format == DXGI_FORMAT_R8_UNORM && layers == 1 && mip_levels > 1 && sample_count == 1;
         let uncompressed_sampled = matches!(
             format,
             DXGI_FORMAT_R8_UNORM
@@ -1010,7 +1012,7 @@ impl NativeDevice {
                 | DXGI_FORMAT_B4G4R4A4_UNORM
                 | DXGI_FORMAT_R8G8B8A8_SNORM
         ) && (layers == 1 || cube)
-            && mip_levels == 1
+            && (mip_levels == 1 || r8_mip_sampled)
             && (!render_target
                 || matches!(
                     format,

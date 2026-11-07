@@ -373,7 +373,9 @@ impl crate::Device for Device {
             || desc.mip_level_count == 0
             || (desc.mip_level_count > 1
                 && (depth
-                    || sampled_upload
+                    || (sampled_upload
+                        && !(desc.format == wgt::TextureFormat::R8Unorm
+                            && capabilities.r8_unorm_mip_chains_supported()))
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || ((!desc.size.width.is_power_of_two()
                         || !desc.size.height.is_power_of_two())

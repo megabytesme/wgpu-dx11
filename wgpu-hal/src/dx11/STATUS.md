@@ -207,12 +207,12 @@ An eighth strict test verifies a padded, offset buffer-to-texture upload,
 partial copy between differently sized textures with nonzero origins, and
 full texture readback; all 36 destination texels match the expected patch and
 preserved background.
-A ninth strict test uploads and samples a four-level RGBA8 mip chain through
-implicit derivatives and literal sample biases -3, +1 and +3, including a +1
-bias forwarded through a helper. The expected mip colors were verified across
-384 pixels. Core rejects dynamic, out-of-range and offset bias forms before
-HAL, and validates each helper call site independently. A multi-mip R8
-descriptor is also rejected by core.
+A strict test uploads and samples a four-level RGBA8 mip chain through implicit
+derivatives and literal sample biases -3, +1 and +3, including a +1 bias
+forwarded through a helper. The expected mip colors were verified across 384
+pixels. Core rejects dynamic, out-of-range and offset bias forms before HAL,
+and validates each helper call site independently. A separate R8_UNORM test
+query-gates mip-chain creation and verifies the sampled mip through readback.
 A tenth strict test uploads and samples Rg8Snorm and Rgba8Snorm through public
 wgpu, verifies signed channel conversion in all 64 pixels, and checks that the
 projected formats are filterable and single-mip-only; this draw uses nearest
@@ -522,8 +522,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   descriptor requests to the reported cap before HAL creation; strict core
   hardware coverage creates native samplers for requests 2, 3 and 16. The
   single-mip resource model still cannot establish anisotropic visual quality.
-- R8_UNORM is supported for single-mip, single-layer 2D sampled textures with
-  RESOURCE and/or COPY_DST usage, subject to a positive device format query.
+- R8_UNORM is supported for single-layer 2D sampled textures with RESOURCE
+  and/or COPY_DST usage. Full mip chains require a positive selected-device
+  `TEXTURE2D | MIP` query and the implemented backend path; NPOT chains also
+  require positive unrestricted-NPOT support.
   A strict forced-FL9_1 test verifies a padded upload from a nonzero buffer
   offset and all 80 sampled output pixels. A positive `SHADER_SAMPLE` query
   reports `FILTERABLE`; when the bit is absent but `TEXTURE2D` is present, the
@@ -1048,3 +1050,14 @@ The pipeline subset now includes query-gated `POLYGON_MODE_LINE` where
 to triangle wireframe; polygon point remains unavailable. The strict public
 RTX test matched the full wireframe image to explicit line primitives, with 17
 green pixels on the 16×16 target.
+
+## Query-gated R8_UNORM mip chains
+
+R8_UNORM now supports mip chains only when the selected device reports
+TEXTURE2D | MIP and the backend path is enabled. NPOT chains also require
+positive unrestricted-NPOT support. Render-target and copy-source combinations
+require the selected RENDER_TARGET query and matching implemented path;
+SHADER_SAMPLE separately controls filterability. On the RTX 3090 Ti forced to
+FL9_1, a strict public test uploaded four mips, sampled mip 2, cleared mip 0
+as an attachment and read mip 0 back; all 64 RGBA pixels and all 64 R8 texels
+matched. Multi-mip R8 texture-to-texture copies remain unverified.

@@ -462,8 +462,12 @@ entry-point selection are covered by a strict public test.
    unsupported at 9_1; wgpu-core's `INDIRECT_EXECUTION` flag is also coupled to
    compute support and GPU argument validation, so the public validation path
    cannot currently expose a private CPU-staging emulation independently.
-   R8_UNORM is implemented as a queried single-mip sampled/upload format. Its
-   2D upload and nearest sampling pass on forced FL9_1. R8G8_UNORM, which is
+    R8_UNORM is implemented as a queried sampled/upload format; mip chains
+    require positive selected-device `TEXTURE2D | MIP` support. Color-target
+    and copy-source combinations also need a positive `RENDER_TARGET` query
+    and matching backend path. NPOT chains require unrestricted-NPOT support;
+    `SHADER_SAMPLE` separately controls filterability. Its 2D upload, nearest
+    sampling and query-gated mip chain pass on forced FL9_1. R8G8_UNORM, which is
    not a required FL9_1 sampled format, is exposed only after a positive
    selected-device `TEXTURE2D` query; `SHADER_SAMPLE` separately controls
    filterability. The RTX returned `0x0002c320`, and strict public
@@ -834,10 +838,13 @@ different texture dimensions at nonzero origins, and reads all 36 destination
 texels back through a padded buffer layout. The test also verifies untouched
 destination texels retain their prior values.
 
-The public RGBA8 sampled path now has a four-level POT mip-chain execution
-test. Distinct colors were uploaded to each level and implicit derivatives
-selected level 1 across the full 8×8 output. Core also rejects a multi-mip R8
-descriptor according to that format's `SINGLE_MIP_ONLY` report.
+The public RGBA8 sampled path has a four-level POT mip-chain execution test;
+the query-gated R8_UNORM path uploads and samples a four-level chain, then
+renders to mip 0 and reads it back when the selected query also permits render
+targets. Distinct values were uploaded to each mip and mip selection was
+verified through readback. R8 mip support is conditional on `TEXTURE2D | MIP`;
+copy-source/render-target use additionally requires `RENDER_TARGET`, while
+NPOT dimensions require unrestricted-NPOT support.
 
 Public Rg8Snorm and Rgba8Snorm capabilities now have upload, sample and
 conversion readback coverage through ordinary wgpu. The exact selected-device
@@ -979,3 +986,16 @@ edge-line rendering; the images matched at all pixels (17 green coverage
 pixels). Private HAL passed 398/398 and public D3D11 passed 73/73 with one
 optional Float16x2 subcase skipped. The mission remains partially complete;
 see `FL9_1_PROGRESS.md` for verification and open API/platform gaps.
+
+## Latest increment — query-gated R8_UNORM mip chains
+
+R8_UNORM mip chains require selected-device TEXTURE2D | MIP support and the
+backend path; NPOT chains additionally require a positive unrestricted-NPOT
+query. Color-target and copy-source combinations require RENDER_TARGET and
+matching implemented paths. SHADER_SAMPLE independently controls filterability.
+A strict forced-FL9_1 public test on the RTX 3090 Ti uploaded four mips, sampled
+mip 2, cleared mip 0 as an attachment and read mip 0 back; all 64 RGBA pixels
+and 64 R8 texels matched. Complete private HAL passed 402/402, public D3D11
+passed 75/75, adapter isolation passed 1/1, and DX12 core passed 94/94. The
+feature remains bounded; multi-mip R8 texture copies, historical hardware,
+Lumia runtime and broad core/HAL contract coverage remain open.

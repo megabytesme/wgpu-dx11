@@ -361,9 +361,11 @@ capabilities.
 
 A second public test checks `R8Unorm`'s selected-device format report, uploads
 two distinct values, samples them with a non-filtering sampler and renders to
-RGBA8. The format reports only `TEXTURE_BINDING | COPY_DST` and
-`SINGLE_MIP_ONLY`; all 64 pixels are checked, with 32 red values of 64 and 32
-red values of 192. It runs under the same strict hardware command above.
+RGBA8. The format reports `TEXTURE_BINDING | COPY_DST`; its `SINGLE_MIP_ONLY`
+flag is omitted only when the selected format query and implemented backend
+path permit R8 mip chains. This single-mip case checks all 64 pixels, with 32
+red values of 64 and 32 red values of 192. It runs under the same strict
+hardware command above.
 
 The same public test checks the optional `Rg8Unorm` projection. It is exposed
 after the selected device reports `TEXTURE2D`; the synthetic capability test
@@ -378,15 +380,19 @@ uploaded two distinct RG texels and sampled their red channel into an 8×8
 RGBA8 target; all 64 pixels matched (32 with red 64, 32 with red 192), proving
 the two-byte texel stride in the actual upload and sampling path. The linear
 test produced the expected eight-column gradient in all 64 output pixels. The
-selected format projection reports only `TEXTURE_BINDING | COPY_DST` and
-`SINGLE_MIP_ONLY`. A separate `RENDER_TARGET` query enables the narrow
-attachment path below. Copy-source, raw readback and mip-chain support are not
-asserted.
+selected format projection reports only `TEXTURE_BINDING | COPY_DST`; it
+reports `SINGLE_MIP_ONLY` when the queried format or backend lacks mip-chain
+support. A separate `RENDER_TARGET` query enables the narrow attachment path
+below. The query-gated full mip chain is exercised by the sampled-mip test.
 
 ### R8/RG8/RGB565 color attachments
 
-R8_UNORM, R8G8_UNORM and B5G6R5 remain single-mip, one-layer, one-sample
-resources. Their color-attachment usage is reported only when the selected device's
+R8G8_UNORM and B5G6R5 remain single-mip, one-layer, one-sample resources.
+R8_UNORM mip chains require `TEXTURE2D | MIP`; NPOT chains additionally require
+unrestricted-NPOT support. Mip chains can combine with render-target and copy
+source usage only when the selected device reports `RENDER_TARGET` and the
+matching backend path is enabled. `SHADER_SAMPLE` separately controls
+filterability. Color-attachment usage is reported only when the selected device's
 `CheckFormatSupport` query positively includes
 `D3D11_FORMAT_SUPPORT_RENDER_TARGET` (`0x00004000`). Each native texture has
 both RTV and SRV bind flags; B5G6R5 additionally requires the native-only
@@ -462,15 +468,22 @@ readback buffer and verifies every texel, including all unchanged green
 pixels. The test exercises buffer-to-texture, texture-to-texture and
 texture-to-buffer paths in one ordered submission.
 
-A ninth strict public test uploads all four levels of an 8×8 RGBA8 mip chain
-with different colors. Implicit derivatives and literal sample biases -3, +1
-and +3 select their expected mip colors, including +1 forwarded through a
-helper, across 384 readback pixels. Dynamic, out-of-range and offset biases
-are rejected by core validation before HAL compilation. CPU-only core analysis
-tests cover fractional bias, nested helper forwarding, multiple call sites and
-out-of-range helper arguments. The same public test confirms that a multi-mip R8
-texture is rejected because the selected format projection marks R8 as
-single-mip-only.
+A strict public R8_UNORM upload test additionally uploads all four levels of an
+8×8 mip chain when the selected format query reports `TEXTURE2D | MIP`, then
+samples mip 2 and validates all 64 output pixels. When the selected R8 query
+also reports `RENDER_TARGET`, the same texture is rendered into at mip 0 and
+copied to a padded readback buffer; all 64 R8 texels match white. A separate RGBA8 test covers
+implicit derivatives and literal sample biases -3, +1 and +3, including +1
+forwarded through a helper, across 384 readback pixels. Dynamic, out-of-range
+and offset biases are rejected by core validation before HAL compilation.
+CPU-only core analysis tests cover fractional bias, nested helper forwarding,
+multiple call sites and out-of-range helper arguments; RGBA8 coverage also
+includes query-gated NPOT dimensions.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_sampled_mip_chain_at_fl91 -- --nocapture --test-threads=1
+```
 
 The same strict test also expects core validation errors for direct and
 helper-reached `dpdx` / `dpdy` and `textureSampleGrad` entry points. CPU-only
@@ -2168,10 +2181,10 @@ Historical drivers remain unverified and public surface capabilities remain
 unavailable.
 
 The public wgpu test `public_dx11_sampled_mip_chain_at_fl91` additionally binds
-a non-suffix 2D view selecting source mips 1–2, clamps sampling to the view's
-second mip, and verifies the original mip-2 color in all 64 output pixels.
-Together with the four full-chain/bias draws, the strict public test checks 320
-pixels and exercises the public core-to-HAL clone refresh path.
+a non-suffix RGBA8 2D view selecting source mips 1–2, clamps sampling to the
+view's second mip, and verifies the original mip-2 color in all 64 output
+pixels. Together with the four full-chain/bias draws, the strict public test
+checks 320 pixels and exercises the public core-to-HAL clone refresh path.
 
 ### Individual color-attachment mip views
 

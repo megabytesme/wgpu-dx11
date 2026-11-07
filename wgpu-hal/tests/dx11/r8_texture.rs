@@ -44,8 +44,8 @@ fn sample_upload(
         fragment_body,
     } = texture;
     use windows::Win32::Graphics::Direct3D11::{
-        D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
-        D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
     };
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -132,7 +132,7 @@ fn sample_upload(
             "{format_name} usage {usage:?} with support {format_support:#010x}: {result:?}"
         );
     }
-    assert!(unsafe {
+    let mip_texture = unsafe {
         device.create_texture(&crate::TextureDescriptor {
             label: None,
             size: wgt::Extent3d {
@@ -148,8 +148,14 @@ fn sample_upload(
             memory_flags: crate::MemoryFlags::empty(),
             view_formats: vec![],
         })
-    }
-    .is_err());
+    };
+    let mip_chain_supported = format == wgt::TextureFormat::R8Unorm
+        && format_support & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0;
+    assert_eq!(
+        mip_texture.is_ok(),
+        mip_chain_supported,
+        "{format_name} mip-chain creation with support {format_support:#010x}: {mip_texture:?}"
+    );
     let entries = [
         wgt::BindGroupLayoutEntry {
             binding: 7,

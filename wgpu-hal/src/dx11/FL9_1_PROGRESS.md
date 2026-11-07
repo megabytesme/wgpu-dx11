@@ -10605,3 +10605,44 @@ The contract audit remains partial. Feature-gated shader operations, compute
 and storage, unsupported resource shapes and query types, surface portability,
 historical FL9_1 hardware, Lumia/CoreWindow runtime, and physical device-loss
 recovery remain open or unavailable.
+
+## Latest increment — query-gated R8_UNORM mip chains
+
+R8_UNORM mip chains now require the selected device to report TEXTURE2D | MIP
+and an enabled backend path. NPOT dimensions additionally require positive
+unrestricted-NPOT support. Attachment and copy-source combinations additionally
+require the selected RENDER_TARGET query and the matching implemented path;
+SHADER_SAMPLE separately controls filterability. Strict public rendering on
+the RTX 3090 Ti at requested/actual FL9_1 sampled mip 2 from a four-level
+upload, cleared mip 0 as a render attachment and read mip 0 back. All 64 RGBA
+pixels and all 64 R8 texels matched. Multi-mip R8 texture-to-texture copies
+remain unverified.
+
+The initial full HAL run found one obsolete negative assertion in the existing
+R8 upload test: it expected every R8 multi-mip creation to fail. The assertion
+now follows the positive MIP query for R8 and continues to reject other formats
+without an implemented mip path. The focused test passed after the correction.
+
+Verification:
+- Strict public R8 mip upload/sample/render/readback: 1 passed, 64/64 RGBA
+  pixels and 64/64 R8 texels matched.
+- Complete strict private D3D11 HAL suite: 402 passed, 0 failed.
+- Complete strict public D3D11 suite: 75 passed, 0 failed.
+- Selected DX11 adapter isolation test: 1 passed.
+- DX12 core regression suite: 94 passed, 0 failed.
+- Hardware: NVIDIA GeForce RTX 3090 Ti, vendor 0x10de, device 0x2203,
+  driver 32.0.16.2101, physical adapter, software=false, requested/actual
+  FL9_1; R8_UNORM format support 0x0002d3e0.
+
+Commands:
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx12,wgsl,std -- --test-threads=1
+~~~
+
+The mission remains partial. Multi-mip R8 texture copies, broader public API
+contract coverage, historical FL9_1 drivers, Lumia/CoreWindow execution and
+physical device-loss recovery remain open or unverified.

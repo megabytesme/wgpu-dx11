@@ -2374,3 +2374,17 @@ wireframe triangle's complete 16×16 output against five explicit line segments
 and matched all pixels. The private HAL suite passed 398/398 and public suite
 73/73, with one unrelated optional IA-format subcase skipped. See the latest
 progress entry; the wide capability and platform audit remains in progress.
+
+## Latest feature increment — query-gated R8_UNORM mip chains
+
+R8_UNORM mip chains now require selected-device TEXTURE2D | MIP support and
+the enabled backend path. NPOT dimensions additionally require positive
+unrestricted-NPOT support. Render-target and copy-source uses require
+RENDER_TARGET and matching implemented paths; SHADER_SAMPLE independently
+controls filterability. The strict public FL9_1 test sampled mip 2 from a
+four-level upload, cleared mip 0 and read mip 0 back on the RTX 3090 Ti; all
+64 RGBA pixels and 64 R8 texels matched. The full private HAL, public D3D11,
+adapter-isolation and DX12 core suites passed 402/402, 75/75, 1/1 and 94/94.
+Multi-mip R8 copies and historical/Lumia behavior remain unverified. Continue
+the public-valid core/HAL contract audit rather than treating this as backend
+completion.
