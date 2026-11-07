@@ -2970,3 +2970,11 @@ The test also copies the top-left 2x2 region from source mip 1 into the full
 2x2 destination mip 2, then reads back and checks all four texels. Thus both a
 partial same-level copy and a full cross-level copy are covered; other R8 mip
 source/destination combinations are not exhaustively tested.
+
+### R8_UNORM NPOT mip-chain verification
+
+When the selected device reports unrestricted NPOT mip sampling, the strict R8
+mip render test now uses a 6x10 four-level texture. The RTX 3090 Ti reported
+the capability at requested/actual FL9_1; mip 2 sampling matched all 64 RGBA
+pixels, while mip-0 attachment readback matched all 60 R8 texels. Devices
+without the optional query use the POT R8 chain and do not claim NPOT support.

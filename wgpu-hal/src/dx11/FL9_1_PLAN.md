@@ -1005,3 +1005,12 @@ between two mipmapped textures. All 16 destination texels, including the
 unchanged border, matched on the RTX 3090 Ti at requested/actual FL9_1. The
 complete public D3D11 suite now passes 76/76; copies between differing R8 mip
 indices remain unverified.
+
+### Latest hardware follow-up — R8 NPOT mips
+
+The R8 four-mip public test now uses a 6x10 chain when the selected device
+reports unrestricted NPOT sampling. The RTX 3090 Ti returned true at forced
+FL9_1; mip 2 readback matched 64 pixels and mip 0 attachment readback matched
+60 texels. The query-negative path is synthetic only. This does not establish
+behavior on historical restrictive hardware; continue the remaining public
+contract and platform audit.

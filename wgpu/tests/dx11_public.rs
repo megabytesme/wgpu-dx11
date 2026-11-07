@@ -7115,12 +7115,21 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let unrestricted_npot_mips = adapter
+        .get_downlevel_capabilities()
+        .limits
+        .unrestricted_npot_texture_sampling;
+    let (mip_width, mip_height) = if unrestricted_npot_mips {
+        (6, 10)
+    } else {
+        (8, 8)
+    };
     let r8_features = adapter.get_texture_format_features(TextureFormat::R8Unorm);
     let r8_mip_render_copy_supported = r8_features
         .allowed_usages
         .contains(TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; R8_UNORM={r8_features:?}",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; unrestricted_npot_mips={unrestricted_npot_mips}; R8_UNORM={r8_features:?}",
         info.name, info.vendor, info.device, info.driver_info
     );
     if !r8_features
@@ -7172,8 +7181,8 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
     let mip_texture = device.create_texture(&TextureDescriptor {
         label: Some("public FL9_1 query-gated R8 mip chain"),
         size: Extent3d {
-            width: 8,
-            height: 8,
+            width: mip_width,
+            height: mip_height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 4,
@@ -7301,8 +7310,8 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
         cache: None,
     });
     for (mip, value) in [32, 64, 128, 192].into_iter().enumerate() {
-        let width = 8 >> mip;
-        let height = 8 >> mip;
+        let width = ((mip_width as usize) >> mip).max(1);
+        let height = ((mip_height as usize) >> mip).max(1);
         let mut bytes = vec![0; height * 256];
         for y in 0..height {
             bytes[y * 256..y * 256 + width].fill(value);
@@ -7351,7 +7360,7 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
     let r8_mip_readback = r8_mip_render_copy_supported.then(|| {
         device.create_buffer(&BufferDescriptor {
             label: Some("public FL9_1 R8 mip render and copy readback"),
-            size: 8 * 256,
+            size: mip_height as u64 * 256,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         })
@@ -7419,12 +7428,12 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
                 layout: TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(256),
-                    rows_per_image: Some(8),
+                    rows_per_image: Some(mip_height),
                 },
             },
             Extent3d {
-                width: 8,
-                height: 8,
+                width: mip_width,
+                height: mip_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -7516,8 +7525,8 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
                 .slice(..)
                 .get_mapped_range()
                 .expect("mapped R8 mip attachment data");
-            for y in 0..8 {
-                for x in 0..8 {
+            for y in 0..mip_height as usize {
+                for x in 0..mip_width as usize {
                     assert_eq!(
                         data[y * 256 + x],
                         255,
@@ -7527,7 +7536,7 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
             }
         }
         r8_readback.unmap();
-        println!("PASS: public FL9_1 R8 four-mip sampled, render-attachment and copy-source usage; mip 2 sampling matched 64/64 RGBA pixels and mip 0 readback matched 64/64 R8 texels");
+        println!("PASS: public FL9_1 R8 four-mip {mip_width}x{mip_height} sampled, render-attachment and copy-source usage; mip 2 sampling matched 64/64 RGBA pixels and mip 0 readback matched {} R8 texels", mip_width * mip_height);
     } else {
         println!("PASS: public FL9_1 R8 four-mip texture-upload and sampling path; 64/64 pixels matched [128, 0, 0, 255]; SKIP: selected format query did not permit R8 mip render/copy-source usage");
     }

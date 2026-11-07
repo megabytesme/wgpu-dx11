@@ -2397,3 +2397,11 @@ nonzero destination origin; padded readback verified the 4x4 mip, copied values
 and preserved border. A mip-1-to-mip-2 copy also passed; other cross-level
 unverified. The mission remains partial; the broad API audit and historical
 hardware/runtime checks continue.
+
+### Follow-up — R8 NPOT mip execution
+
+The latest strict test exercised a 6x10 four-level R8_UNORM chain because the
+selected RTX 3090 Ti positively reported unrestricted NPOT mip sampling at
+requested/actual FL9_1. All 64 sampled output pixels and all 60 mip-0 texels
+matched. If the query is absent, the test reports the query state and exercises
+the POT baseline; synthetic capability tests prove NPOT rejection.

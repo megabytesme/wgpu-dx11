@@ -1061,3 +1061,12 @@ SHADER_SAMPLE separately controls filterability. On the RTX 3090 Ti forced to
 FL9_1, a strict public test uploaded four mips, sampled mip 2, cleared mip 0
 as an attachment and read mip 0 back; all 64 RGBA pixels and all 64 R8 texels
 matched. A strict public test also copied a partial rectangle at mip 1 between two mipmapped R8 textures and verified all 16 destination texels plus the preserved border; the same strict test also copied mip 1 to mip 2 and verified all four destination texels; other cross-level combinations remain unverified.
+
+## R8 NPOT mip-chain evidence
+
+R8_UNORM mip chains now have positive physical-device coverage for the
+unrestricted-NPOT branch. The RTX 3090 Ti reported unrestricted NPOT support
+while explicitly running at FL9_1. A strict public 6x10, four-level R8 chain
+was uploaded and sampled at mip 2; 64/64 RGBA pixels matched, and clearing and
+reading mip 0 verified all 60 R8 texels. Negative/unavailable query behavior
+remains covered synthetically; historical restrictive drivers are unverified.

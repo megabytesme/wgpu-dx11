@@ -10673,3 +10673,13 @@ the full destination mip 2, then reads back all four texels. The RTX 3090 Ti
 forced to FL9_1 passed the cross-level copy. This verifies mip-1-to-mip-2 on
 the tested device; it does not establish every mip pair or historical-driver
 behavior.
+
+### Follow-up — R8 NPOT mip-chain GPU evidence
+
+The strict public R8 sampled-mip test now selects a 6x10 texture when the
+selected adapter positively reports unrestricted NPOT mip sampling. On the
+RTX 3090 Ti forced to FL9_1, the query was positive; mip 2 sampling matched
+64/64 RGBA output pixels and mip-0 attachment readback matched all 60 R8
+texels. The path falls back to the POT test shape if the optional capability is
+absent; synthetic tests continue to verify that absent/negative queries reject
+NPOT chains.
