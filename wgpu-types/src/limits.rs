@@ -1128,8 +1128,8 @@ pub struct DownlevelLimits {
     pub alpha_to_coverage: bool,
     /// Whether vertex and fragment shader entry points may contain loops.
     ///
-    /// This can be unavailable when the selected shader profiles cannot preserve the shader's
-    /// loop behavior or when the backend's loop-bounding lowering is unsupported.
+    /// A backend may still reject loop forms that its selected shader profiles cannot preserve.
+    /// In particular, this does not guarantee that dynamically bounded loops are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub shader_loops: bool,
     /// Whether vertex entry points may declare `@builtin(vertex_index)`.

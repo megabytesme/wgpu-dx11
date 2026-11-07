@@ -2655,3 +2655,18 @@ storage support.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
+
+### FL9_1 WGSL loops
+
+`public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91` compiles
+statically bounded vertex and fragment loops through the normal public
+pipeline path, renders their values, and checks all 64 pixels. Dynamic vertex
+and fragment loops are expected to fail FXC compilation with X3511 before GPU
+submission. The public downlevel loop capability represents this statically
+unrolled subset; it does not promise dynamic loop support.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91 -- --nocapture --test-threads=1
+```

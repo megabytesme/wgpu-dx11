@@ -8757,6 +8757,67 @@ cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --f
 git diff --check
 ~~~
 
+## Follow-up — statically unrolled FL9_1 WGSL loops — 2026-11-07
+
+FXC testing showed that the FL9_1 profiles accept statically bounded WGSL
+loops when Naga's `force_loop_bounding` guard is disabled. The guard itself
+adds dynamic loop control that FXC cannot compile for these profiles. The HAL
+now disables that lowering for `vs_4_0_level_9_1` and
+`ps_4_0_level_9_1`; other profiles keep the existing bounded lowering. The
+capability model marks compiler-unrolled loops as implemented, so the
+selected-device projection exposes `DownlevelLimits::shader_loops` for this
+subset. FXC rejects the tested runtime-bounded and unbounded loops with X3511
+at pipeline creation. They report as shader-compilation errors, not as
+pre-HAL core validation errors. FXC instruction and unrolling limits still
+apply, and this modern-GPU result does not establish behavior on historical
+FL9_1 drivers.
+
+The public strict hardware test renders a full-screen triangle. Its vertex
+shader uses a four-iteration loop to produce the red channel; its fragment
+shader uses a three-iteration loop to produce green. All 64 pixels matched
+`[255, 191, 0, 255]`. Separate dynamic vertex and fragment pipelines were
+rejected by FXC before submission. The deterministic HAL compiler test also
+checks integer-loop compilation and an unbounded vertex-loop rejection. A
+core fixture explicitly disables the loop limit to retain coverage of the
+pre-HAL rejection path independently of the production projection.
+
+Verification used Rust 1.93.1, Visual Studio 2022 x64, strict hardware mode
+for D3D11 and the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and actual FL9_1:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl -- --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/shader.rs wgpu-hal/src/dx11/capabilities.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-types/src/limits.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+Results: strict private HAL 377/377; strict public D3D11 60/60; strict core
+fixture 101/101; physical adapter enumeration 1/1; DX12 core 92/92. The
+public suite's optional Float16x2 vertex-input subcase visibly skipped because
+the selected device reported no `R16G16_FLOAT` input support. Existing private
+tests also printed expected skips for local-vector rendering after their
+runtime-integer shaders were rejected. All three Clippy commands passed; the
+HAL and core runs emitted the pre-existing warnings recorded in earlier
+entries. `git diff --check` passed. Rustfmt still reports only the repository's
+existing formatting discrepancies in older regions of the touched files; the
+new loop code is formatted. An initial core-fixture run exposed that its
+synthetic no-loop rejection case inherited the newly enabled production
+projection; the fixture now explicitly sets `shader_loops = false`, and its
+rerun passed.
+
+This is a narrow compiler-supported expansion, not general dynamic loop
+support or FL9_1 completion. Continue the remaining core/HAL contract audit.
+
 ## ARM32 UWP public example codegen — 2026-11-06
 
 The public `wgpu` library and `dx11_fl91_offscreen` example both type-check

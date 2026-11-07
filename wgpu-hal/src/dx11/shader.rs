@@ -269,7 +269,13 @@ pub(super) fn compile_naga_with_viewport(
         },
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
-        force_loop_bounding: true,
+        // FXC rejects Naga's dynamic loop guard at FL9_1. Without the guard,
+        // FXC accepts statically bounded loops by unrolling them and rejects
+        // dynamic loop control for these profiles.
+        force_loop_bounding: !matches!(
+            profile,
+            ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+        ),
         ray_query_initialization_tracking: true,
         ..Default::default()
     };
@@ -500,6 +506,142 @@ fn synthesize_fragment_color_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @vertex fn static_loop(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                var x = 0.0;
+                for (var i = 0.0; i < 4.0; i += 1.0) {
+                    x += p.x;
+                }
+                return vec4f(x, p.y, 0.5, 1.0);
+            }
+            @vertex fn static_integer_loop(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                var x = 0.0;
+                for (var i = 0u; i < 4u; i += 1u) {
+                    x += f32(i);
+                }
+                return vec4f(x + p.x, p.y, 0.5, 1.0);
+            }
+            @fragment fn static_fragment_loop() -> @location(0) vec4f {
+                var x = 0.0;
+                for (var i = 0.0; i < 4.0; i += 1.0) {
+                    x += 0.25;
+                }
+                return vec4f(x, 0.0, 0.0, 1.0);
+            }
+            @fragment fn dynamic_loop(@location(0) limit: f32) -> @location(0) vec4f {
+                var x = 0.0;
+                for (var i = 0.0; i < limit; i += 1.0) {
+                    x += 0.25;
+                }
+                return vec4f(x, 0.0, 0.0, 1.0);
+            }
+            @vertex fn dynamic_vertex_loop(@location(0) limit: f32) -> @builtin(position) vec4f {
+                var x = 0.0;
+                for (var i = 0.0; i < limit; i += 1.0) {
+                    x += 0.25;
+                }
+                return vec4f(x, 0.0, 0.5, 1.0);
+            }
+            @vertex fn unbounded_vertex_loop(@location(0) p: vec2f) -> @builtin(position) vec4f {
+                loop {
+                    if p.x < -2.0 { break; }
+                }
+                return vec4f(p, 0.5, 1.0);
+            }
+            "#,
+        )
+        .expect("parse loop diagnostics shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate loop diagnostics shader");
+
+        let static_result = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "static_loop",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            false,
+        );
+        let integer_result = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "static_integer_loop",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            false,
+        );
+        let static_fragment_result = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "static_fragment_loop",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+            false,
+        );
+        let dynamic_result = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "dynamic_loop",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+            false,
+        );
+        let dynamic_vertex_result = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "dynamic_vertex_loop",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            false,
+        );
+        let unbounded_vertex_result = compile_naga_with_viewport(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "unbounded_vertex_loop",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            false,
+        );
+        assert!(
+            static_result.is_ok(),
+            "static vertex loop failed: {static_result:?}"
+        );
+        assert!(
+            integer_result.is_ok(),
+            "static integer loop failed: {integer_result:?}"
+        );
+        assert!(
+            static_fragment_result.is_ok(),
+            "static fragment loop failed: {static_fragment_result:?}"
+        );
+        for (entry, result) in [
+            ("dynamic pixel", dynamic_result),
+            ("dynamic vertex", dynamic_vertex_result),
+            ("unbounded vertex", unbounded_vertex_result),
+        ] {
+            let Err(NagaCompileError::Compilation(error)) = result else {
+                panic!("{entry} loop did not fail in FXC: {result:?}");
+            };
+            assert!(
+                error.message.contains("X3511"),
+                "{entry} loop failed for an unexpected reason: {error:?}"
+            );
+        }
+    }
 
     #[test]
     fn fl91_vertex_index_entry_inputs_are_rejected_by_fxc() {

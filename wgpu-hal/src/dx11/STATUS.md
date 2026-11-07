@@ -931,15 +931,14 @@ UNORM code value.
 
 ## WGSL loop control
 
-The D3D11 FL9_1 capability projection rejects WGSL loops in selected vertex
-or fragment entry points. Naga's configured `force_loop_bounding` lowering
-emits dynamic loop control, which is not a tested cross-stage FL9_1 path;
-Microsoft documents static flow control for the FL9_1 vertex profile but
-does not list loop control for its pixel profile. Core follows calls into
-helper functions and leaves unrelated entry points usable. The hardware/
-compiler and core validation tests are recorded in `FL9_1_PROGRESS.md`. This
-remains a backend implementation gap rather than a claim that all FL9_1
-hardware lacks static vertex loops.
+The D3D11 FL9_1 path disables Naga's dynamic loop-bounding guard so FXC can
+unroll statically bounded loops. A strict public test rendered correctly with
+static loops in both stages, validating every output pixel. The tested dynamic
+and unbounded forms fail FXC with X3511 during pipeline compilation. The
+projection's `shader_loops` capability therefore permits loop-containing
+shaders, but does not guarantee runtime-bounded loops; FXC's per-shader
+instruction and unrolling limits remain. Details and exact commands are in
+`FL9_1_PROGRESS.md`.
 
 ## Query-gated 3D mip sampling
 

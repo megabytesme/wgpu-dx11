@@ -301,6 +301,7 @@ pub(super) struct BackendCapabilities {
     pub runtime_integer_shader_operations: bool,
     pub matrix_aggregate_stores: bool,
     pub shader_loops: bool,
+    pub statically_unrolled_shader_loops: bool,
     pub depth_stencil: bool,
     pub d24s8_depth_attachment: bool,
     pub d16_depth_attachment: bool,
@@ -397,6 +398,7 @@ impl BackendCapabilities {
         runtime_integer_shader_operations: false,
         matrix_aggregate_stores: false,
         shader_loops: false,
+        statically_unrolled_shader_loops: true,
         depth_stencil: false,
         d24s8_depth_attachment: true,
         d16_depth_attachment: true,
@@ -545,9 +547,10 @@ impl Capabilities {
                 sampled_uint_textures: false,
                 multisampled_texture_bindings: false,
                 alpha_to_coverage: self.backend.alpha_to_coverage,
-                shader_loops: self.backend.shader_loops
-                    && self.hardware.vertex_dynamic_flow_control
-                    && self.hardware.fragment_dynamic_flow_control,
+                shader_loops: self.backend.statically_unrolled_shader_loops
+                    || (self.backend.shader_loops
+                        && self.hardware.vertex_dynamic_flow_control
+                        && self.hardware.fragment_dynamic_flow_control),
                 vertex_index_input: self.backend.vertex_index_input,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
@@ -1566,7 +1569,7 @@ mod tests {
             u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
         );
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
-        assert!(!exposed.downlevel.limits.shader_loops);
+        assert!(exposed.downlevel.limits.shader_loops);
         assert_eq!(
             exposed
                 .downlevel
@@ -2350,6 +2353,7 @@ mod tests {
             assert_eq!(caps.hardware.fragment_derivatives, fragment_derivatives);
             assert!(!caps.backend.fragment_derivatives);
             assert!(!caps.backend.shader_loops);
+            assert!(caps.backend.statically_unrolled_shader_loops);
             assert_eq!(
                 caps.hardware.texture_query,
                 level.as_raw() >= FeatureLevel::L10_0.as_raw()

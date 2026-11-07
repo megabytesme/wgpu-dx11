@@ -116,18 +116,16 @@ Continue auditing other core-accepted shader operations and render state
 against the selected FL9_1 compiler and HAL. Keep unsupported operations gated
 before HAL and do not claim historical-driver behavior from the modern RTX.
 
-### Shader-contract checkpoint — WGSL loops (`62d12ecd4`)
+### Shader-contract checkpoint — WGSL loops (`62d12ecd4`, updated)
 
-Selected-entry loop detection now follows calls from the chosen render entry
-point and records an explicit `DownlevelLimits::shader_loops` capability.
-The D3D11 FL9_1 projection disables it because the current Naga HLSL writer
-uses dynamically bounded loop lowering and FXC rejects the generated code for
-both FL9_1 stages. Microsoft documents static flow control for the 9_1 vertex
-profile but no flow-control support for the 9_1 pixel profile; the backend
-does not yet have a tested static-loop lowering. Core rejects a selected
-vertex or fragment entry that reaches a loop before HAL, while safe sibling
-entries remain available. See the latest `FL9_1_PROGRESS.md` entry for strict
-compiler and physical-device evidence.
+The original blanket selected-entry loop rejection has been narrowed. The
+FL9_1 path disables Naga's dynamic loop guard, allowing FXC to unroll
+statically bounded loops in either shader stage. Dynamic and unbounded forms
+fail compilation with X3511. `DownlevelLimits::shader_loops` is enabled for
+this limited compiler-supported subset; it does not promise dynamic loop
+support. The strict public test renders and verifies all 64 pixels using
+loops in both stages. See the latest `FL9_1_PROGRESS.md` entry for exact
+commands and hardware details.
 
 Continue the selected-entry WGSL/FXC audit, prioritizing constructs that core
 accepts but the current FL9_1 HLSL path cannot compile or preserve. Keep each

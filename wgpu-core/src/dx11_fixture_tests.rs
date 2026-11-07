@@ -1468,6 +1468,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     // This fixture exercises unrelated 2D validation and intentionally disables 3D.
     projected_capabilities.downlevel.limits.texture_3d = false;
     projected_capabilities.limits.max_texture_dimension_3d = 0;
+    // Preserve the independent core rejection test for adapters without loop support.
+    projected_capabilities.downlevel.limits.shader_loops = false;
     // Keep the restrictive NPOT branch deterministic even when the selected driver's query is positive.
     projected_capabilities
         .downlevel

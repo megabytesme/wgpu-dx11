@@ -142,6 +142,22 @@ fn expect_validation_error_containing(
     );
 }
 
+fn expect_internal_error_containing(
+    device: &Device,
+    label: &str,
+    expected: &str,
+    operation: impl FnOnce(),
+) {
+    let scope = device.push_error_scope(ErrorFilter::Internal);
+    operation();
+    let error = poll_ready(scope.pop()).unwrap_or_else(|| panic!("{label} was accepted"));
+    assert!(matches!(error, Error::Internal { .. }), "{error:?}");
+    assert!(
+        format!("{error:?}").contains(expected),
+        "{label} produced the wrong compiler error: {error:?}"
+    );
+}
+
 #[test]
 fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     use windows::{
@@ -11172,7 +11188,7 @@ fn public_dx11_rejects_compute_pipelines_at_fl91() {
 }
 
 #[test]
-fn public_dx11_rejects_selected_shader_loops_at_fl91() {
+fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -11191,13 +11207,13 @@ fn public_dx11_rejects_selected_shader_loops_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
-    assert!(!downlevel.limits.shader_loops);
+    assert!(downlevel.limits.shader_loops);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false shader_loops=false",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false statically_unrolled_loops=true dynamic_loops=false",
         info.name, info.vendor, info.device, info.driver_info
     );
-    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public DX11 FL9_1 shader-loop validation test"),
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 shader-loop test"),
         required_features: Features::empty(),
         required_limits: adapter.limits(),
         ..Default::default()
@@ -11208,7 +11224,11 @@ fn public_dx11_rejects_selected_shader_loops_at_fl91() {
         source: ShaderSource::Wgsl(
             r#"
             @group(0) @binding(0) var<uniform> loop_limit: f32;
-            fn loop_helper() -> f32 {
+            struct VertexOutput {
+                @builtin(position) position: vec4f,
+                @location(0) loop_value: f32,
+            }
+            fn dynamic_loop_helper() -> f32 {
                 var i = 0.0;
                 loop {
                     if i >= loop_limit { break; }
@@ -11216,17 +11236,30 @@ fn public_dx11_rejects_selected_shader_loops_at_fl91() {
                 }
                 return i;
             }
-            @vertex fn loop_vertex() -> @builtin(position) vec4f {
-                return vec4f(loop_helper(), 0.0, 0.0, 1.0);
+            fn static_vertex_loop() -> f32 {
+                var value = 0.0;
+                for (var i = 0.0; i < 4.0; i += 1.0) { value += 0.25; }
+                return value;
             }
-            @vertex fn safe_vertex() -> @builtin(position) vec4f {
-                return vec4f(0.0, 0.0, 0.0, 1.0);
+            fn static_fragment_loop() -> f32 {
+                var value = 0.0;
+                for (var i = 0.0; i < 3.0; i += 1.0) { value += 0.25; }
+                return value;
             }
-            @fragment fn loop_fragment() -> @location(0) vec4f {
-                return vec4f(loop_helper());
+            @vertex fn vertex_static(@location(0) p: vec2f) -> VertexOutput {
+                var output: VertexOutput;
+                output.position = vec4f(p, 0.0, 1.0);
+                output.loop_value = static_vertex_loop();
+                return output;
             }
-            @fragment fn safe_fragment() -> @location(0) vec4f {
-                return vec4f(1.0);
+            @fragment fn fragment_static(input: VertexOutput) -> @location(0) vec4f {
+                return vec4f(input.loop_value, static_fragment_loop(), 0.0, 1.0);
+            }
+            @vertex fn vertex_dynamic() -> @builtin(position) vec4f {
+                return vec4f(dynamic_loop_helper(), 0.0, 0.0, 1.0);
+            }
+            @fragment fn fragment_dynamic() -> @location(0) vec4f {
+                return vec4f(dynamic_loop_helper(), 0.0, 0.0, 1.0);
             }
             "#
             .into(),
@@ -11237,15 +11270,15 @@ fn public_dx11_rejects_selected_shader_loops_at_fl91() {
         blend: None,
         write_mask: ColorWrites::ALL,
     })];
-    let create_pipeline = |vertex_entry, fragment_entry| {
+    let create_pipeline = |vertex_entry, fragment_entry, vertex_buffers| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("FL9_1 selected-entry loop validation pipeline"),
+            label: Some("FL9_1 shader-loop pipeline"),
             layout: None,
             vertex: VertexState {
                 module: &shader,
                 entry_point: Some(vertex_entry),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[],
+                buffers: vertex_buffers,
             },
             primitive: PrimitiveState::default(),
             depth_stencil: None,
@@ -11261,24 +11294,143 @@ fn public_dx11_rejects_selected_shader_loops_at_fl91() {
         })
     };
 
-    expect_validation_error_containing(
-        &device,
-        "selected vertex shader loop",
-        "UnsupportedShaderLoops",
-        || {
-            drop(create_pipeline("loop_vertex", "safe_fragment"));
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = create_pipeline("vertex_static", "fragment_static", &vertex_buffers);
+    expect_internal_error_containing(&device, "dynamic vertex shader loop", "X3511", || {
+        drop(create_pipeline("vertex_dynamic", "fragment_dynamic", &[]))
+    });
+    expect_internal_error_containing(&device, "dynamic fragment shader loop", "X3511", || {
+        drop(create_pipeline(
+            "vertex_static",
+            "fragment_dynamic",
+            &vertex_buffers,
+        ))
+    });
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 statically unrolled loop output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = target.create_view(&TextureViewDescriptor::default());
+    let vertex_data: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 static-loop full-screen triangle"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map static-loop vertices")
+        .copy_from_slice(&vertex_data);
+    vertex.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 static-loop output readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 static-loop render"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 static-loop render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
         },
     );
-    expect_validation_error_containing(
-        &device,
-        "selected fragment shader loop",
-        "UnsupportedShaderLoops",
-        || {
-            drop(create_pipeline("safe_vertex", "loop_fragment"));
-        },
-    );
-    drop(create_pipeline("safe_vertex", "safe_fragment"));
-    println!("PASS: public core rejects selected loop stages and accepts safe siblings");
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 static-loop draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("static-loop readback callback")
+        .expect("map static-loop output");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = [255, 191, 0, 255];
+                for (channel, (&actual, expected)) in
+                    data[offset..offset + 4].iter().zip(expected).enumerate()
+                {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "pixel ({x}, {y}) channel {channel}: expected {expected}, observed {actual}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: FL9_1 static vertex and fragment loops rendered 64/64 expected pixels; dynamic loops failed at FXC compilation");
 }
 
 #[test]
