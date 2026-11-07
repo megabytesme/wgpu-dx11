@@ -80,16 +80,6 @@ impl Instance {
             display: instance_desc.display.take(),
         };
 
-        #[cfg(all(windows, feature = "dx11"))]
-        if instance_desc.backends.contains(Backends::DX11) {
-            log::warn!(
-                "DX11 is experimental and exposes a restricted FL9_1 graphics backend with an owner-thread HWND surface"
-            );
-        }
-
-        #[cfg(all(windows, feature = "dx11"))]
-        this.try_add_hal(hal::api::Dx11, &instance_desc, telemetry);
-
         #[cfg(all(vulkan, not(target_os = "netbsd")))]
         this.try_add_hal(hal::api::Vulkan, &instance_desc, telemetry);
         #[cfg(metal)]
@@ -100,6 +90,16 @@ impl Instance {
         this.try_add_hal(hal::api::Gles, &instance_desc, telemetry);
         #[cfg(feature = "noop")]
         this.try_add_hal(hal::api::Noop, &instance_desc, telemetry);
+
+        #[cfg(all(windows, feature = "dx11"))]
+        if instance_desc.backends.contains(Backends::DX11) {
+            log::warn!(
+                "DX11 is experimental and exposes a restricted FL9_1 graphics backend with an owner-thread HWND surface"
+            );
+        }
+
+        #[cfg(all(windows, feature = "dx11"))]
+        this.try_add_hal(hal::api::Dx11, &instance_desc, telemetry);
 
         this
     }

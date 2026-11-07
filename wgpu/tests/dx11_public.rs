@@ -10,6 +10,15 @@ use std::{
 };
 use wgpu::*;
 
+#[test]
+fn experimental_dx11_is_not_enabled_by_default() {
+    let adapters = poll_ready(Instance::default().enumerate_adapters(Backends::DX11));
+    assert!(
+        adapters.is_empty(),
+        "default wgpu instance must not enumerate experimental D3D11 adapters"
+    );
+}
+
 struct ThreadWaker(thread::Thread);
 
 impl Wake for ThreadWaker {

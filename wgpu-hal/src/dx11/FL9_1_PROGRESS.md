@@ -10683,3 +10683,45 @@ RTX 3090 Ti forced to FL9_1, the query was positive; mip 2 sampling matched
 texels. The path falls back to the POT test shape if the optional capability is
 absent; synthetic tests continue to verify that absent/negative queries reject
 NPOT chains.
+
+## Default backend selection boundary — 2026-11-07
+
+The public integration audit found that adding DX11 to `Backends::all()` also
+made it part of `Backends::default()`. A build with the experimental feature
+could therefore initialize and prefer restricted FL9_1 D3D11 for an ordinary
+default `wgpu::Instance`. `Backends::default()` now excludes DX11 while
+`Backends::DX11` and explicitly requested `Backends::all()` retain the backend.
+Core initializes DX11 after the pre-existing backend sequence, preserving
+their relative priority when callers explicitly request all backends.
+
+Verification on the NVIDIA GeForce RTX 3090 Ti (0x10de:0x2203, driver
+32.0.16.2101) at explicitly requested/actual FL9_1:
+- `wgpu-types`: 93/93 unit tests passed, including the default-set test.
+- Public default-instance regression: 1/1 passed; it exposed no D3D11 adapter.
+- Strict public D3D11 suite: 77/77 test functions passed, 0 failed. The optional `Float16x2` IA case reported its expected capability skip.
+- Strict core adapter-selection test: 1/1 passed and enumerated one physical FL9_1 adapter when DX11 was explicitly requested.
+- DX12 core regression suite: 94/94 passed.
+- Clippy passed for `wgpu`, `wgpu-core` and `wgpu-types`; existing HAL `create_hal_view` argument-count and `wgpu-types` unused-import/qualification warnings remain.
+- `git diff --check` passed. Workspace formatting checks report pre-existing differences in unrelated lines/files; the changed type and wgpu API files were clean under targeted rustfmt. `wgpu-core/src/instance.rs` has unrelated pre-existing formatting differences.
+
+Commands (run from the Visual Studio 2026 x64 developer environment):
+
+```powershell
+cargo +1.93 test --offline -j2 -p wgpu-types dx11_is_not_enabled_by_default
+cargo +1.93 test --offline -j2 -p wgpu-types --lib
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public experimental_dx11_is_not_enabled_by_default -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx12,wgsl,std -- --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --tests
+cargo +1.93 clippy --offline -j2 -p wgpu-core --no-default-features --features dx11,wgsl,std --tests
+cargo +1.93 clippy --offline -j2 -p wgpu-types --tests
+git diff --check
+```
+
+An initial test invocation used an overly specific `--exact` filter and ran
+zero tests; the corrected filter above ran the intended unit test.
+
+This restores runtime opt-in for the experimental backend and does not change
+the exposed capability matrix or complete the broader core/HAL contract audit.

@@ -1,5 +1,15 @@
 # FL9_1 handoff
 
+## Latest integration safety increment — 2026-11-07
+
+`Backends::default()` now excludes experimental DX11, so a default public
+`wgpu::Instance` does not initialize or enumerate the restricted FL9_1 path.
+Explicit `Backends::DX11` and `Backends::all()` still include it. Core now
+registers DX11 after the existing backend order. The default-path regression
+passed on the RTX 3090 Ti, and the strict public D3D11 suite passed 77/77 at
+requested/actual FL9_1. The mission remains partial; continue auditing the
+public core/HAL contract and unsupported-operation boundaries.
+
 ## Latest NPOT mip capability increment — 2026-11-07
 
 The D3D11 projection now sets `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` only when

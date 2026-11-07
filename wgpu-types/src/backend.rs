@@ -115,7 +115,8 @@ bitflags::bitflags! {
 
         /// Experimental Direct3D 11 backend identity with a restricted FL9_1
         /// wgpu adapter and rendering implementation. Requires the `dx11`
-        /// Cargo feature and is not WebGPU-compliant.
+        /// Cargo feature and is not WebGPU-compliant. It is not enabled by
+        /// default; request it explicitly through this flag or `Backends::all()`.
         const DX11 = 1 << Backend::Dx11 as u32;
 
         /// [`Backend::BrowserWebGpu`].
@@ -148,7 +149,7 @@ bitflags::bitflags! {
 
 impl Default for Backends {
     fn default() -> Self {
-        Self::all()
+        Self::from_bits_retain(Self::all().bits() & !Self::DX11.bits())
     }
 }
 
@@ -1042,5 +1043,11 @@ mod dx11_tests {
         assert_eq!(Backends::from_comma_list(" DX11, d3d11 "), Backends::DX11);
         assert!(!Backends::DX11.intersects(Backends::DX12 | Backends::GL));
         assert!(Backend::ALL.contains(&Backend::Dx11));
+    }
+
+    #[test]
+    fn dx11_is_not_enabled_by_default() {
+        assert!(!Backends::default().contains(Backends::DX11));
+        assert!(Backends::all().contains(Backends::DX11));
     }
 }

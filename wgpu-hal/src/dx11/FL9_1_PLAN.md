@@ -1,5 +1,12 @@
 # FL9_1 completion plan
 
+Latest integration-safety increment: `Backends::default()` excludes the
+experimental D3D11 backend, keeping public adapter exposure explicitly opted
+in while preserving explicit DX11 selection and prior backend priority. The
+strict public suite passed 77/77 on the RTX 3090 Ti at requested/actual FL9_1;
+see `FL9_1_PROGRESS.md` for exact commands. The full capability and platform
+completion audit remains open.
+
 Latest increment: the optional `FullNonPow2TextureSupport` result now controls
 the internal `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` projection for the
 implemented D2 path, in addition to per-format MIP queries. The private HAL
