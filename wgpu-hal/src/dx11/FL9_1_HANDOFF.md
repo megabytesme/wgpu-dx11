@@ -1,5 +1,31 @@
 # FL9_1 handoff
 
+## Current mission state — 2026-11-07
+
+Latest verified code checkpoint: `f336cc394` (`dx11: support statically
+unrolled FL9_1 shader loops`). The strict private D3D11 suite passed 377/377,
+the strict public D3D11 suite 60/60, the controlled core fixture 101/101,
+selected physical-adapter enumeration 1/1 and the DX12 core regression
+92/92. The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) was explicitly requested and selected at FL9_1. A new public
+test rendered 64/64 expected pixels with statically unrolled loops in both
+shader stages. Tested dynamic loops remain unsupported and fail FXC during
+pipeline compilation. One public Float16x2 vertex-input subcase skipped on a
+negative device-format query; it is not counted as GPU execution. Clippy
+passed with existing warnings, `git diff --check` passed, and rustfmt still
+reports older formatting differences in touched files.
+
+The backend is usable now for an application whose needs fit the documented
+and exercised subset; it is not a drop-in general-purpose wgpu backend and
+does not provide Core WebGPU conformance. Public adapter exposure is an
+explicitly selected D3D11 path with constrained HWND presentation. The
+selected modern GPU does not establish compatibility with historical FL9_1
+drivers, and Windows 10 Mobile ARM32 runtime testing is still unavailable.
+The broader public capability and core/HAL contract audit remains active, so
+this mission is **PARTIALLY COMPLETE**. Continue from `FL9_1_PLAN.md` and the
+latest dated entry in `FL9_1_PROGRESS.md`; do not treat the recent rendering
+coverage as proof that every FL9_1-valid wgpu operation is implemented.
+
 ## Current mission state — 2026-11-06
 
 This mission remains active on branch `uwp-dx11`; the latest code checkpoint
