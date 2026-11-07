@@ -1039,3 +1039,23 @@ failed at the strict gate. This capability test initializes the public test
 context but does not issue a draw; strict rendering evidence remains in
 `dx11_public` and the private HAL suite. Broader test-harness execution,
 public contract auditing, historical FL9_1 drivers, and Lumia remain open.
+
+
+## Current continuation checkpoint — surface loss cleanup — 2026-11-07
+
+The strict upstream harness and substantial public FL9_1 rendering/resource
+coverage are present, but the mission remains incomplete. A callback-reentrant
+present after device loss exposed an early `Surface::present` exit that retained
+the consumed core frame. The focused public regression now passes after
+releasing that frame on the lost-device path; the full surface fixture passes
+2/2 on the RTX 3090 Ti forced to FL9_1. See `FL9_1_PROGRESS.md` for the exact
+command and output.
+
+Continue by auditing core-valid public operations against HAL behavior and
+reachable failure paths, then broaden representative public workloads. The
+current opt-in path is suitable for a limited prototype whose API usage stays
+inside `CAPABILITIES.md`; it is not a general-purpose FL9_1 implementation.
+Intrinsic FL9_1 limits (including no compute/UAV, geometry stage, 1D textures,
+ordinary arrays or occlusion queries) remain unavailable. Historical FL9_1
+drivers, Lumia/CoreWindow runtime and physical device-loss recovery also remain
+unverified.

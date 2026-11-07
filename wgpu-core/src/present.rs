@@ -288,7 +288,11 @@ impl Surface {
             None => return Err(SurfaceError::NotConfigured),
         };
 
-        present.device.check_is_valid()?;
+        if let Err(error) = present.device.check_is_valid() {
+            drop(presentation);
+            let _ = self.release();
+            return Err(error.into());
+        }
         let queue = present
             .device
             .get_queue()
@@ -313,7 +317,13 @@ impl Queue {
             }
             return Err(SurfaceError::Invalid);
         }
-        let _present_guard = self.begin_present().ok_or(SurfaceError::Invalid)?;
+        let Some(_present_guard) = self.begin_present() else {
+            // Queue::present consumes the public frame even when reentrant presentation is rejected.
+            if matches!(surface.discard(), Err(SurfaceError::Device(_))) {
+                let _ = surface.release();
+            }
+            return Err(SurfaceError::Invalid);
+        };
 
         let texture = {
             let mut presentation = surface.presentation.lock();

@@ -2415,3 +2415,20 @@ selected RTX 3090 Ti positively reported unrestricted NPOT mip sampling at
 requested/actual FL9_1. All 64 sampled output pixels and all 60 mip-0 texels
 matched. If the query is absent, the test reports the query state and exercises
 the POT baseline; synthetic capability tests prove NPOT rejection.
+
+
+## Surface loss cleanup — reentrant present
+
+The public HWND fixture now covers a second acquired frame consumed by a
+device-lost callback's reentrant `Queue::present`. The cleanup bug was one
+layer earlier than the queue reentrancy guard: `Surface::present` checked the
+configured device and returned `Lost` before invoking the queue, while the
+public frame had already been marked presented. The surface's retained core
+acquisition is now released on that early lost-device return.
+
+On the physical RTX 3090 Ti at explicitly requested/actual FL9_1, the test
+injected `DXGI_ERROR_DEVICE_REMOVED`, observed the callback, reconfigured the
+other surface on a healthy device, and reacquired a frame. Both tests in
+`dx11_surface_error_fixture` passed. This is injected error-path coverage, not
+physical device removal/recovery. Full public API auditing, historical
+FL9_1 drivers and Lumia/CoreWindow runtime remain open.

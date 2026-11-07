@@ -185,3 +185,180 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
     );
     println!("PASS: injected DXGI_ERROR_DEVICE_REMOVED from Present reached the public device-lost callback exactly once; reentrant poll returned its expected presentation-guard timeout");
 }
+
+#[test]
+fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use windows::{
+        core::w,
+        Win32::{
+            Foundation::HWND,
+            Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED,
+            UI::WindowsAndMessaging::{
+                CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPED,
+            },
+        },
+    };
+
+    struct WindowGuard([HWND; 2]);
+
+    impl Drop for WindowGuard {
+        fn drop(&mut self) {
+            unsafe {
+                for hwnd in self.0 {
+                    let _ = DestroyWindow(hwnd);
+                }
+            }
+        }
+    }
+
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let create_window = |title| unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            title,
+            WS_OVERLAPPED,
+            0,
+            0,
+            16,
+            16,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+    let hwnd_a = match create_window(w!("wgpu D3D11 outer Present")) {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            assert!(!required, "strict mode requires test HWNDs: {error}");
+            println!("SKIP: could not create outer test HWND: {error}");
+            return;
+        }
+    };
+    let hwnd_b = match create_window(w!("wgpu D3D11 reentrant Present")) {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            unsafe {
+                let _ = DestroyWindow(hwnd_a);
+            }
+            assert!(!required, "strict mode requires test HWNDs: {error}");
+            println!("SKIP: could not create reentrant test HWND: {error}");
+            return;
+        }
+    };
+    let _windows = WindowGuard([hwnd_a, hwnd_b]);
+
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let make_surface = |hwnd: HWND| unsafe {
+        instance.create_surface_unsafe(SurfaceTargetUnsafe::RawHandle {
+            raw_display_handle: Some(rwh::WindowsDisplayHandle::new().into()),
+            raw_window_handle: rwh::Win32WindowHandle::new(
+                NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
+            )
+            .into(),
+        })
+    };
+    let surface_a = make_surface(hwnd_a).expect("create outer D3D11 HWND surface");
+    let surface_b = make_surface(hwnd_b).expect("create reentrant D3D11 HWND surface");
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        compatible_surface: Some(&surface_a),
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: no physical D3D11 surface adapter: {error}");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=reentrant Present cleanup after synthetic device loss",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let make_device = |label| {
+        poll_ready(adapter.request_device(&DeviceDescriptor {
+            label: Some(label),
+            required_features: Features::empty(),
+            required_limits: adapter.limits(),
+            ..Default::default()
+        }))
+        .expect("request a device within the FL9_1 projection")
+    };
+    let (device_a, queue_a) = make_device("outer Present device");
+    let (device_b, _queue_b) = make_device("replacement surface device");
+    let config = SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: TextureFormat::Bgra8Unorm,
+        width: 16,
+        height: 16,
+        present_mode: PresentMode::Fifo,
+        desired_maximum_frame_latency: 1,
+        alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![],
+        color_space: SurfaceColorSpace::Srgb,
+    };
+    surface_a.configure(&device_a, &config);
+    surface_b.configure(&device_a, &config);
+
+    let hal_surface_a =
+        unsafe { surface_a.as_hal::<wgpu_hal::api::Dx11>() }.expect("outer D3D11 HAL surface");
+    assert!(hal_surface_a.test_fixture_fail_next_present(DXGI_ERROR_DEVICE_REMOVED));
+    drop(hal_surface_a);
+
+    let frame_a = match surface_a.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("outer surface acquisition failed: {result:?}"),
+    };
+    let frame_b = match surface_b.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("reentrant surface acquisition failed: {result:?}"),
+    };
+
+    let pending_frame_b = std::sync::Mutex::new(Some(frame_b));
+    let callback_queue = queue_a.clone();
+    let (sender, receiver) = mpsc::channel();
+    device_a.set_device_lost_callback(move |reason, message| {
+        callback_queue.present(
+            pending_frame_b
+                .lock()
+                .expect("lock pending surface frame")
+                .take()
+                .expect("reentrant frame is presented once"),
+        );
+        sender.send((reason, message)).expect("receive device loss");
+    });
+
+    queue_a.present(frame_a);
+    let (reason, message) = receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("synthetic Present device loss invokes the callback");
+    assert_eq!(reason, DeviceLostReason::Unknown);
+    assert!(message.contains("Device is lost"), "{message}");
+
+    let reconfigure = catch_unwind(AssertUnwindSafe(|| surface_b.configure(&device_b, &config)));
+    assert!(
+        reconfigure.is_ok(),
+        "reentrant Queue::present must release its consumed frame before surface reconfiguration"
+    );
+    match surface_b.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+            drop(frame);
+        }
+        result => panic!("reconfigured surface did not reacquire a frame: {result:?}"),
+    }
+    println!("PASS: reentrant Queue::present consumed and released the second surface frame; a healthy device reconfigured and reacquired that surface");
+}

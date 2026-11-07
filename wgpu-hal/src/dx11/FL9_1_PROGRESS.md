@@ -10760,3 +10760,31 @@ cargo +1.93 test --offline -j4 -p wgpu-test --all-features --test wgpu-gpu valid
 the `wgpu-gpu` test binary through `cargo test` rather than `cargo xtask test`.
 Historical drivers, Lumia runtime execution and the broad core/HAL contract
 audit remain open.
+
+
+## Surface lifecycle regression — reentrant present after device loss — 2026-11-07
+
+A strict public fixture reproduced a consumed-frame leak when a device-lost
+callback reentrantly presents a second acquired surface frame. The reentrant
+call exits through `Surface::present`'s invalid-device check before reaching
+`Queue::present`; because the public frame is already marked presented, its
+drop does not discard the core acquisition. `Surface::present` now releases
+the retained core frame on that lost-device exit. A separate queue-level
+reentrancy cleanup remains for calls rejected after entering `Queue::present`.
+
+On the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1, the fixture injected
+`DXGI_ERROR_DEVICE_REMOVED`, verified the callback, then reconfigured the
+second surface with a healthy device and reacquired its frame. The test is a
+synthetic device-loss injection; physical removal/recovery is not established.
+
+Strict fixture results: 2/2 passed (Present callback/reentrant poll and
+reentrant consumed-frame cleanup). Targeted Clippy passed with the existing
+HAL `create_hal_view` argument-count warning. Rustfmt was applied to the two
+changed Rust files; `git diff --check` passed. The focused regression initially
+failed with `PreviousOutputExists`, confirming the retained frame, and passed
+after the early `Surface::present` cleanup.
+
+Continue the public core/HAL contract audit. The usable surface, resource and
+shader subset remains deliberately restricted; historical FL9_1 hardware,
+Lumia/CoreWindow runtime and physical device-loss recovery remain unverified.
