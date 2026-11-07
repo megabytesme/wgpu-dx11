@@ -2,6 +2,9 @@
 
 ## Public zero-stride indexed-fetch verification — 2026-11-07
 
+Implementation/test commit: `b0774e855de10e1d96c5345c23898d1f8585c099`
+(`dx11: verify zero-stride indexed fetch through wgpu`).
+
 Added `public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91`, a
 public wgpu → wgpu-core → wgpu-hal → D3D11 test. It creates a point-list
 pipeline with a zero-stride vertex-rate position and an instance-rate offset,
