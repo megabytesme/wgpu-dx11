@@ -1,5 +1,26 @@
 # FL9_1 handoff
 
+## Current mission state — 2026-11-07 follow-up
+
+Latest verified code checkpoint: `3de9d71ac` (`dx11: document FL9_1 volume
+copy restrictions`). The increment records Microsoft's FL9_1 restriction on
+3D texture copies, adds a capability-model assertion and a public validation
+test that rejects 3D `COPY_SRC`, and preserves the existing query-gated
+sample/upload path. The capability test passed 1/1; the strict public 3D test
+passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) at requested and actual FL9_1. Existing volume sampling
+matched 64/64 pixels and upload, partial update, zero initialization and
+sampling matched 128/128 pixels. HAL and public Clippy passed with existing
+warnings; `git diff --check` passed. rustfmt still reports prior discrepancies
+in these large files, with the new code aligned.
+
+This is a confirmed hardware limitation, not a backend feature gap. The
+broader practical completion mission remains **PARTIALLY COMPLETE**. Continue
+the audit from `FL9_1_PLAN.md`; the offscreen and constrained HWND public paths
+are usable for their tested subset, but this is not a drop-in general wgpu
+backend or a WebGPU-compliant adapter. Historical FL9_1 drivers and ARM32 UWP
+runtime remain unverified.
+
 ## Current mission state — 2026-11-07
 
 Latest verified code checkpoint: `f336cc394` (`dx11: support statically
