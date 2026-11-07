@@ -298,10 +298,7 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
 fn native_sample_mask(mask: u64, level: FeatureLevel, sample_count: u32) -> u32 {
     let native_mask = mask as u32;
     if level == FeatureLevel::L9_1 && native_mask == 0 {
-        !match sample_count {
-            4 => 0b1111,
-            _ => 1,
-        }
+        !((1u32 << sample_count) - 1)
     } else {
         native_mask
     }
@@ -751,6 +748,14 @@ mod tests {
         assert_eq!(
             native_sample_mask(0, FeatureLevel::L9_1, 4),
             u32::MAX - 0x0f
+        );
+        assert_eq!(
+            native_sample_mask(0, FeatureLevel::L9_1, 2),
+            u32::MAX - 0x03
+        );
+        assert_eq!(
+            native_sample_mask(0, FeatureLevel::L9_1, 8),
+            u32::MAX - 0xff
         );
         assert_eq!(
             native_sample_mask(1 << 32, FeatureLevel::L9_1, 4),
@@ -2231,7 +2236,7 @@ mod tests {
         unsafe {
             device.destroy_shader_module(primitive_shader);
         }
-        desc.multisample.count = 2;
+        desc.multisample.count = 16;
         assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
         assert!(Arc::ptr_eq(&pipeline.owner, &native));
         assert_eq!(pipeline.target_format, Some(wgt::TextureFormat::Rgba8Unorm));
@@ -2679,7 +2684,7 @@ impl RenderPipeline {
                 strip_index_format: None,
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
-            || !matches!(desc.multisample.count, 1 | 4)
+            || !matches!(desc.multisample.count, 1 | 2 | 4 | 8 | 16)
             || desc.multisample.alpha_to_coverage_enabled
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
@@ -2705,7 +2710,7 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
-        if desc.multisample.count == 4
+        if desc.multisample.count > 1
             && (target.is_none_or(|target| target.format != wgt::TextureFormat::Rgba8Unorm)
                 || super::capabilities::Capabilities::query(owner)
                     .check_private_texture_2d(
@@ -2714,12 +2719,12 @@ impl RenderPipeline {
                         [8, 8],
                         1,
                         1,
-                        4,
+                        desc.multisample.count,
                     )
                     .is_err()
                 || desc.depth_stencil.as_ref().is_some_and(|depth| {
                     super::capabilities::Capabilities::query(owner)
-                        .check_private_depth_stencil_samples(depth.format, 4)
+                        .check_private_depth_stencil_samples(depth.format, desc.multisample.count)
                         .is_err()
                 }))
         {

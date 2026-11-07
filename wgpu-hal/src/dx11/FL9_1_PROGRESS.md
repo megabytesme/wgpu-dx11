@@ -10413,3 +10413,52 @@ cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-featur
 cargo +1.93 fmt --all -- --check
 git diff --check
 ~~~
+
+### Follow-up — per-count query-gated FL9_1 multisampling — 2026-11-07
+
+Replaced the fixed 4x capability field with independent selected-device
+quality-level queries for 2x, 4x, 8x and 16x RGBA8, D16 and D24S8. Format
+flags, HAL resource/view creation, pipeline validation, sample masks, render
+passes and resolve now follow the queried count. Unsupported query results are
+not projected. The RTX 3090 Ti (`0x10de:0x2203`, NVIDIA driver
+`32.0.16.2101`, software=false), explicitly requested and selected at FL9_1,
+reported RGBA8 quality levels 1, 1, 1 and 0 for 2x, 4x, 8x and 16x. Thus x16
+remains rejected. D16 and D24S8 are queried separately.
+
+The new strict public test rendered, resolved and read back x2 and x8 RGBA8
+targets with matching Depth24Plus attachments; all 64 pixels were exactly
+green at both counts. Existing x4 depth and zero-sample-mask coverage still
+passed for D16, Depth24Plus and D24S8. Strict test results:
+
+- Private D3D11 HAL suite: 397 passed, 0 failed, strict hardware required.
+- Public D3D11 suite: 72 passed, 0 failed; one optional Float16x2 input
+  subcase reported SKIP because the selected device lacks the IA format query.
+- Selected-device controlled core fixture: 1 passed.
+- Public FL9_1 adapter-selection test: 1 passed.
+- DX12 core regression: 94 passed, 0 failed.
+- HAL and public-test Clippy passed. HAL retains pre-existing warnings,
+  including `create_hal_view` argument count and test-only range-vector lints.
+- Rustfmt check reported pre-existing formatting differences in unrelated
+  fixture code and capability assertions; other changed Rust files passed.
+- `git diff --check` passed.
+
+Commands (Visual Studio x64 developer environment, pinned Rust 1.93):
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_optional_fl91_sample_counts -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests::fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx12,wgsl,std -- --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustup run 1.93 rustfmt --check --edition 2021 wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/texture.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The mission remains partially complete. Historical FL9_1 drivers, Lumia
+runtime, physical device removal and broader API-contract coverage remain
+unverified or in progress.

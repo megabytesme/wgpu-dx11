@@ -372,8 +372,8 @@ impl crate::Device for Device {
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || !desc.size.width.is_power_of_two()
                     || !desc.size.height.is_power_of_two()))
-            || !matches!(desc.sample_count, 1 | 4)
-            || (desc.sample_count == 4
+            || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
+            || (desc.sample_count > 1
                 && (desc.mip_level_count != 1
                     || if depth {
                         !depth_stencil_usage_valid(desc.usage)
@@ -488,7 +488,7 @@ impl crate::Device for Device {
                 )
                 .map_err(|_| DeviceError::Unexpected)?;
         }
-        if desc.sample_count == 4 {
+        if desc.sample_count > 1 {
             super::capabilities::Capabilities::query(&self.native)
                 .check_private_texture_2d(
                     desc.format,
@@ -554,7 +554,7 @@ impl crate::Device for Device {
                 )
                 .map_err(device_error)?
         };
-        if desc.sample_count == 4 {
+        if desc.sample_count > 1 {
             self.native
                 .clear_multisampled_color_texture(&texture)
                 .map_err(device_error)?;
@@ -738,18 +738,29 @@ impl crate::Device for Device {
                     .texture_cube_dimension;
         let multisample_view_valid = match native.SampleDesc.Count {
             1 => true,
-            4 if native.MipLevels == 1 && !resource => {
+            sample_count @ (2 | 4 | 8 | 16) if native.MipLevels == 1 && !resource => {
                 let color_msaa = !depth
                     && format == wgt::TextureFormat::Rgba8Unorm
                     && target
                     && (desc.usage == wgt::TextureUses::COLOR_TARGET
                         || desc.usage
                             == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT));
+                let color_msaa = color_msaa
+                    && super::capabilities::Capabilities::query(&self.native)
+                        .check_private_texture_2d(
+                            format,
+                            desc.usage,
+                            [native.Width, native.Height],
+                            1,
+                            1,
+                            sample_count,
+                        )
+                        .is_ok();
                 let depth_msaa = depth
                     && !target
                     && depth_stencil_usage_valid(desc.usage)
                     && super::capabilities::Capabilities::query(&self.native)
-                        .check_private_depth_stencil_samples(format, 4)
+                        .check_private_depth_stencil_samples(format, sample_count)
                         .is_ok();
                 color_msaa || depth_msaa
             }
@@ -798,7 +809,7 @@ impl crate::Device for Device {
                             | wgt::TextureUses::DEPTH_STENCIL_WRITE,
                     )))
             || (!cube && native.ArraySize != 1)
-            || !matches!(native.SampleDesc.Count, 1 | 4)
+            || !matches!(native.SampleDesc.Count, 1 | 2 | 4 | 8 | 16)
             || !multisample_view_valid
             || (resource && native.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 == 0)
             || (target && native.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0)

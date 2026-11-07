@@ -1840,22 +1840,26 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     drop(create_texture_query_pipeline("safe"));
     println!("PASS: public core rejected selected texture queries and textureSampleBaseClampToEdge before HAL, including helper use, and compiled a safe sibling entry");
 
-    expect_validation_error(&device, "two-sample color texture creation", || {
-        drop(device.create_texture(&TextureDescriptor {
-            label: Some("unsupported public FL9_1 two-sample texture"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 2,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        }));
-    });
+    expect_validation_error(
+        &device,
+        "unreported sixteen-sample color texture creation",
+        || {
+            drop(device.create_texture(&TextureDescriptor {
+                label: Some("unreported public FL9_1 sixteen-sample texture"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 16,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            }));
+        },
+    );
     expect_validation_error(&device, "unsupported sampled texture format", || {
         drop(device.create_texture(&TextureDescriptor {
             label: Some("unsupported public FL9_1 R32Float texture"),
@@ -17535,6 +17539,282 @@ fn public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point() {
         || drop(create_pipeline("fs17")),
     );
     println!("PASS: 16 selected fragment sampling relationships compiled; a one-pair sibling entry point remained valid; 17 relationships were rejected by core before HAL");
+}
+
+#[test]
+fn public_dx11_resolves_optional_fl91_sample_counts() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical D3D11 adapter for optional FL9_1 sample counts");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let format_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    let supported_counts: Vec<_> = [
+        (2, TextureFormatFeatureFlags::MULTISAMPLE_X2),
+        (8, TextureFormatFeatureFlags::MULTISAMPLE_X8),
+    ]
+    .into_iter()
+    .filter_map(|(count, flag)| {
+        format_features
+            .flags
+            .contains(flag | TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
+            .then_some(count)
+    })
+    .collect();
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; queried RGBA8 sample counts={supported_counts:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    if supported_counts.is_empty() {
+        println!("SKIP: selected FL9_1 device reports neither 2x nor 8x RGBA8 resolve support");
+        return;
+    }
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 optional multisample counts"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within its FL9_1 capability projection");
+    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_bytes: Vec<_> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 optional MSAA fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped optional MSAA vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertex_buffer.unmap();
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 optional MSAA shader"),
+        source: ShaderSource::Wgsl(
+            "struct Out { @builtin(position) position: vec4f, }\n\
+             @vertex fn vs(@location(0) position: vec2f) -> Out { var out: Out; out.position = vec4f(position, 0.0, 1.0); return out; }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    for sample_count in supported_counts {
+        let depth_format = TextureFormat::Depth24Plus;
+        let depth_supported = adapter
+            .get_texture_format_features(depth_format)
+            .flags
+            .sample_count_supported(sample_count);
+        let multisampled = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 optional multisample target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
+            view_formats: &[],
+        });
+        let resolved = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 optional multisample resolve target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let multisampled_view = multisampled.create_view(&TextureViewDescriptor::default());
+        let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
+        let depth = depth_supported.then(|| {
+            device.create_texture(&TextureDescriptor {
+                label: Some("FL9_1 optional multisample depth target"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count,
+                dimension: TextureDimension::D2,
+                format: depth_format,
+                usage: TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+        });
+        let depth_view = depth
+            .as_ref()
+            .map(|texture| texture.create_view(&TextureViewDescriptor::default()));
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 optional multisample pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: depth_supported.then_some(DepthStencilState {
+                format: depth_format,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState {
+                count: sample_count,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 optional multisample commands"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 optional multisample pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &multisampled_view,
+                    depth_slice: None,
+                    resolve_target: Some(&resolved_view),
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                    RenderPassDepthStencilAttachment {
+                        view,
+                        depth_ops: Some(Operations {
+                            load: LoadOp::Clear(1.0),
+                            store: StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        let readback = device.create_buffer(&BufferDescriptor {
+            label: Some("FL9_1 optional multisample readback"),
+            size: 8 * 256,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &resolved,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for optional FL9_1 multisample resolve");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("optional FL9_1 resolve callback")
+            .expect("map optional FL9_1 resolved image");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped optional FL9_1 resolved image");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        &[0, 255, 0, 255],
+                        "{sample_count}x resolved pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: FL9_1 {sample_count}x RGBA8 draw/resolve{} matched all 64 pixels",
+            if depth_supported {
+                " with Depth24Plus attachment"
+            } else {
+                ""
+            }
+        );
+    }
 }
 
 #[test]

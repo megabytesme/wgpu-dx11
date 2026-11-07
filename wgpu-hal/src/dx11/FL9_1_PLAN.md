@@ -939,3 +939,13 @@ at 223 pixels. This closes one representative-scene coverage gap; continue
 auditing other public-valid combinations and keep the overall mission partial
 until material implementation, safety and platform gaps are resolved or
 explicitly blocked.
+
+Latest checkpoint: query-gated FL9_1 RGBA8 multisample render/resolve now
+supports the selected device's positive 2x/4x/8x queries, with independently
+queried matching depth attachments. On the RTX 3090 Ti forced to FL9_1, the
+strict private HAL suite passed 397/397, the public D3D11 suite passed 72/72
+(one optional Float16x2 input subcase skipped), and x2/x8 color, depth and
+resolve readbacks matched all pixels. The device reports no x16 support, which
+remains unavailable. DX12 core passed 94/94. The mission remains partially
+complete; broad API auditing, historical hardware and Lumia runtime remain
+open. Exact evidence is appended in `FL9_1_PROGRESS.md`.

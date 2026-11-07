@@ -419,8 +419,8 @@ impl NativeDevice {
         if !matches!(
             format,
             DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_D24_UNORM_S8_UINT
-        ) || !matches!(sample_count, 1 | 4)
-            || (sample_count == 4
+        ) || !matches!(sample_count, 1 | 2 | 4 | 8 | 16)
+            || (sample_count > 1
                 && !unsafe {
                     self.raw_device()
                         .CheckMultisampleQualityLevels(format, sample_count)
@@ -541,8 +541,8 @@ impl NativeDevice {
         let format = view.logical_format.unwrap_or(native_format);
         if desc.MipLevels != 1
             || desc.ArraySize != 1
-            || !matches!(desc.SampleDesc.Count, 1 | 4)
-            || (desc.SampleDesc.Count == 4
+            || !matches!(desc.SampleDesc.Count, 1 | 2 | 4 | 8 | 16)
+            || (desc.SampleDesc.Count > 1
                 && !unsafe {
                     self.raw_device()
                         .CheckMultisampleQualityLevels(desc.Format, desc.SampleDesc.Count)
@@ -839,8 +839,8 @@ impl NativeDevice {
             || view.mip_base >= desc.MipLevels
             || view.mip_base >= u32::BITS
             || desc.ArraySize != 1
-            || !matches!(desc.SampleDesc.Count, 1 | 4)
-            || (desc.SampleDesc.Count == 4
+            || !matches!(desc.SampleDesc.Count, 1 | 2 | 4 | 8 | 16)
+            || (desc.SampleDesc.Count > 1
                 && (format != wgt::TextureFormat::Rgba8Unorm
                     || (view.usage != wgt::TextureUses::COLOR_TARGET
                         && view.usage
@@ -868,8 +868,8 @@ impl NativeDevice {
         }
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { view.texture.as_2d()?.GetDesc(&mut desc) };
-        if !matches!(desc.SampleDesc.Count, 1 | 4)
-            || (desc.SampleDesc.Count == 4
+        if !matches!(desc.SampleDesc.Count, 1 | 2 | 4 | 8 | 16)
+            || (desc.SampleDesc.Count > 1
                 && view.usage != wgt::TextureUses::COLOR_TARGET
                 && view.usage != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
         {
@@ -1027,7 +1027,7 @@ impl NativeDevice {
                     || sample_count != 1
                     || render_target))
             || (sample_count != 1
-                && !(sample_count == 4
+                && !(matches!(sample_count, 2 | 4 | 8 | 16)
                     && mip_levels == 1
                     && layers == 1
                     && render_target
@@ -1116,7 +1116,7 @@ impl NativeDevice {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.as_2d()?.GetDesc(&mut desc) };
         if desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
-            || desc.SampleDesc.Count != 4
+            || desc.SampleDesc.Count == 1
             || desc.MipLevels != 1
             || desc.ArraySize != 1
             || desc.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0

@@ -2318,3 +2318,19 @@ orders match all 1,024 pixels while the no-depth orders differ at 223 pixels.
 This verifies that the test scene contains actual overlap and D16 resolves it.
 The strict scene test passed 1/1. This remains one bounded workload and does
 not change the overall partial status.
+
+## Latest increment — per-count query-gated multisampling — 2026-11-07
+
+RGBA8 render/resolve and matching depth attachments now use independent
+`CheckMultisampleQualityLevels` results for 2x, 4x, 8x and 16x. The RTX 3090 Ti
+forced to FL9_1 reports RGBA8 quality levels 1, 1, 1 and 0. Strict public
+draw/resolve/readback passed at 2x and 8x with Depth24Plus (64/64 green pixels
+each); the existing 4x test still passed with D16, Depth24Plus and D24S8,
+including zero sample-mask behavior. No 16x capability was projected.
+
+The private strict D3D11 suite passed 397/397, full public D3D11 passed 72/72
+with one optional Float16x2 input subcase skipped, the selected-device core
+fixture passed, and DX12 core passed 94/94. HAL/public Clippy passed with only
+existing HAL warnings. Rustfmt check still identifies unrelated pre-existing
+format differences in the fixture and capability files. The capability/core
+audit continues; this is not completion of the FL9_1 mission.

@@ -59,10 +59,10 @@ invalid-surface validation error rather than panicking on the stale ID. The
 strict test verifies this does not consume or disturb a frame acquired from a
 second active HWND surface.
 
-The optional RGBA8 four-sample path is restricted through
+The optional RGBA8 2x/4x/8x paths are restricted through
 `DownlevelLimits::multisampled_texture_usage_mask` to color attachment and
 transient attachment usages. Core rejects sampled and copy usages before the
-HAL even when the selected format reports 4x render/resolve support.
+HAL even when the selected format reports multisample render/resolve support.
 
 The selected FL9_1 projection exposes sampled RGBA8 3D textures only when the
 device reports `TEXTURE3D | SHADER_SAMPLE`. The tested subset is POT,
@@ -178,7 +178,7 @@ test then submitted independent clear/copy/readback workloads concurrently
 through two public devices from the same adapter; readback verified all 64
 pixels were red on one device and green on the other. This proves these paths
 through the public API, not every operation within the projection. Error-scope
-checks also confirmed that core rejects 2x MSAA, `R32Float` sampling,
+checks also confirmed that core rejects unreported 16x MSAA, `R32Float` sampling,
 multi-mip D24S8, vertex-visible storage-buffer layouts and `D2Array`
 sampled-texture layouts before the HAL. A separate public draw overlays
 near/far surfaces in both draw orders; all 64 readback pixels select the nearer
@@ -668,11 +668,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
   rejects a zero native `SampleMask`, a zero wgpu mask is translated to
   `0xffff_fffe`, which masks sample zero while satisfying the native nonzero
   requirement. A strict controlled core render preserved all 64 clear-color
-  pixels. Optional 4x RGBA8 render/resolve and D16/Depth24Plus/D24S8 depth attachments are
-  exposed only after their selected-device format and quality-level queries
-  pass. Depth must match the color and pipeline sample counts; depth resolve
-  and multisampled sampling remain unsupported. Other sample counts remain
-  unsupported. Alpha-to-coverage is separately gated by
+  pixels. Optional 2x/4x/8x RGBA8 render/resolve and matching
+  D16/Depth24Plus/D24S8 depth attachments are exposed only after their
+  selected-device format and per-count quality queries pass. Depth must match
+  the color and pipeline sample counts; depth resolve and multisampled
+  sampling remain unsupported. 16x is not available on the tested device.
+  Alpha-to-coverage is separately gated by
   `DownlevelLimits::alpha_to_coverage` and rejected by core before HAL.
 - Transient color and D24S8 attachments use ordinary D3D11 textures; no
   memoryless allocation or memory saving is claimed. Transient color requires
@@ -924,7 +925,7 @@ review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
 request permitted by the limits.
 - Compute, storage access, queries, indirect draws, general multisampling (except optional query-gated
-  4x RGBA8 render/resolve and D16/Depth24Plus/D24S8 depth attachments), arrays,
+  2x/4x/8x RGBA8 render/resolve and matching D16/Depth24Plus/D24S8 depth attachments), arrays,
 general comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.

@@ -70,7 +70,7 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The same strict public test submits unsupported descriptors under validation
-error scopes: 2x multisampled color textures, `R32Float` sampled textures,
+error scopes: unreported 16x multisampled color textures, `R32Float` sampled textures,
 two-mip D24S8 attachments, vertex-visible storage-buffer layouts and
 `D2Array` sampled-texture layouts. Each must return
 `wgpu::Error::Validation`, confirming the public capability projection rejects
@@ -2646,33 +2646,38 @@ The first test checks production mask translation, including high-only `u64`
 masks. The strict core fixture requested and selected FL9_1 on the RTX 3090 Ti;
 its `mask = 0` pipeline preserved all 64 blue clear pixels. FL9_1 forbids a
 zero native `SampleMask`, so the backend passes `0xffff_fffe` for single-sample
-rendering. For 4x rendering it passes `0xffff_fff0`, leaving all four sample
-bits disabled; the strict public test verified all 64 pixels remained at the
-blue clear value after resolve. The optional query-gated 4x RGBA8
-render-and-resolve path and 4x D16/Depth24Plus/D24S8 depth attachments are
-supported; Depth24Plus uses D24S8 native storage without stencil access.
-Multisampled sampling, other sample counts/formats and alpha-to-coverage remain
-unsupported. See
+rendering. For multisampled rendering it complements the active sample bits;
+the 2x, 4x and 8x masks therefore leave all active samples disabled while
+using nonzero native masks. The strict public zero-mask test still verifies
+the 4x result. Query-supported 2x, 4x and 8x RGBA8 render/resolve and matching
+D16/Depth24Plus/D24S8 depth attachments are supported; Depth24Plus uses D24S8
+native storage without stencil access. The strict public sample-count test
+rendered and resolved x2 and x8 targets, and the existing test exercises x4
+with depth. Sixteen-sample targets are not exposed on the tested device;
+multisampled sampling, other formats and alpha-to-coverage remain unsupported. See
 [OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
 and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpumultisamplestate).
 
-### Query-gated 4x RGBA8 render and resolve
+### Query-gated RGBA8 multisample render and resolve
 
-The FL9_1 feature level does not guarantee multisampling. The selected device
-must report a positive `CheckMultisampleQualityLevels(RGBA8_UNORM, 4)` result
-and `CheckFormatSupport` must include `TEXTURE2D`, `RENDER_TARGET`,
-`MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE`. Otherwise the format does
-not report `MULTISAMPLE_X4` or `MULTISAMPLE_RESOLVE`, and public core rejects
-4x allocation. The HAL supports a single-mip, single-layer RGBA8 4x color
-attachment and a same-sized single-sample RGBA8 resolve destination. D16_UNORM
-and D24_UNORM_S8_UINT depth attachments are enabled independently only when
-the format query and `CheckMultisampleQualityLevels(format, 4)` are positive;
-depth must match the color target and pipeline sample count. Depth resolve,
-multisampled sampling, other sample counts/formats and alpha-to-coverage remain
-unsupported.
+The FL9_1 feature level does not guarantee multisampling. For each supported
+count (2, 4, 8 or 16), the selected device must report a positive
+`CheckMultisampleQualityLevels(RGBA8_UNORM, count)` result and
+`CheckFormatSupport` must include `TEXTURE2D`, `RENDER_TARGET`,
+`MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE`. A failed or zero query
+omits only the corresponding sample-count flag, and core rejects that count.
+The HAL supports query-backed single-mip, single-layer RGBA8 color attachments
+and same-sized single-sample resolve destinations. D16_UNORM and
+D24_UNORM_S8_UINT depth attachments are enabled independently for each
+positively queried count; depth must match the color target and pipeline sample
+count. Depth resolve, multisampled sampling, other formats and alpha-to-coverage
+remain unsupported.
 
-On the RTX 3090 Ti forced to FL9_1, the quality-level query returned 1 and the
-RGBA8 format mask was `0x312ef3e2`. The strict public triangle resolved to a
+On the RTX 3090 Ti forced to FL9_1, RGBA8 quality-level queries for 2x, 4x, 8x
+and 16x returned 1, 1, 1 and 0; D16 and D24S8 are queried independently. The
+RGBA8 format mask was `0x312ef3e2`. Strict public fullscreen draws at 2x and 8x
+resolved to green and matched all 64 pixels at each count. The existing strict
+4x triangle resolved to a
 single-sample texture, and readback checked all 64 pixels: 28 full red triangle,
 8 partial-coverage red/blue resolve values and 28 clear blue pixels.
 This is optional selected-device evidence from a modern GPU, not a FL9_1
@@ -2713,9 +2718,9 @@ test native alpha-to-coverage rendering.
 
 The strict public resolve test also checks the exact usage subset exposed by
 `DownlevelLimits::multisampled_texture_usage_mask`. On devices that positively
-report 4x RGBA8 render/resolve, a render attachment remains creatable, while
-adding sampled, copy-source or copy-destination usage is rejected by core
-before native allocation. The HAL creates render-target-only 4x RGBA8 color
+report a supported RGBA8 sample count, a render attachment remains creatable,
+while adding sampled, copy-source or copy-destination usage is rejected by core
+before native allocation. The HAL creates render-target-only RGBA8 color
 resources and query-supported D16/D24S8 depth attachments, optionally marked
 transient.
 
@@ -2729,6 +2734,17 @@ the supported RGBA8 target with a query-supported D24S8 depth attachment,
 rejected `RENDER_ATTACHMENT | TEXTURE_BINDING`,
 `RENDER_ATTACHMENT | COPY_SRC` and `RENDER_ATTACHMENT | COPY_DST` before HAL,
 and verified all 64 resolve pixels.
+
+`public_dx11_resolves_optional_fl91_sample_counts` separately renders and
+resolves full-screen triangles for every queried x2 and x8 count. On the RTX
+3090 Ti both counts passed, and all 64 readback pixels per count were exactly
+green. Unsupported optional counts are visibly skipped; zero and failed
+queries do not enter the test's supported-count list.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_optional_fl91_sample_counts -- --nocapture --test-threads=1
+```
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

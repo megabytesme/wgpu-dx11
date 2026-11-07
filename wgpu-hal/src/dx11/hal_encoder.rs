@@ -751,7 +751,7 @@ impl crate::CommandEncoder for CommandEncoder {
         if self.recording.is_none()
             || self.render.is_some()
             || self.compute
-            || !matches!(desc.sample_count, 1 | 4)
+            || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
             || desc.multiview_mask.is_some()
             || desc.timestamp_writes.is_some()
             || desc.occlusion_query_set.is_some()
@@ -887,7 +887,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     return Err(DeviceError::Unexpected);
                 }
             };
-            if target_sample_count != 4
+            if target_sample_count <= 1
                 || resolve_samples != 1
                 || (attachment.usage != wgt::TextureUses::COLOR_TARGET
                     && attachment.usage
@@ -2410,7 +2410,7 @@ mod tests {
         assert!(unsafe { crate::Device::create_texture(&device, &unsupported) }.is_err());
         let unsupported = TextureDescriptor {
             format: wgt::TextureFormat::Rgba8Unorm,
-            sample_count: 2,
+            sample_count: 16,
             ..unsupported
         };
         assert!(unsafe { crate::Device::create_texture(&device, &unsupported) }.is_err());

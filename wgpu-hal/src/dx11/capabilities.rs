@@ -209,9 +209,9 @@ pub(super) struct DriverCapabilities {
     pub bgra8_srgb: Query<u32>,
     pub depth24_stencil8: Query<u32>,
     pub depth16_unorm: Query<u32>,
-    pub depth24_stencil8_samples_4: Query<u32>,
-    pub depth16_unorm_samples_4: Query<u32>,
-    pub rgba8_samples_4: Query<u32>,
+    pub depth24_stencil8_samples: SampleCountQueries,
+    pub depth16_unorm_samples: SampleCountQueries,
+    pub rgba8_samples: SampleCountQueries,
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
     pub r8_unorm: Query<u32>,
@@ -224,6 +224,36 @@ pub(super) struct DriverCapabilities {
     pub rgb5551_unorm: Query<u32>,
     pub rgba4444_unorm: Query<u32>,
     pub vertex_input_formats: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SampleCountQueries([Query<u32>; 4]);
+
+impl SampleCountQueries {
+    const COUNTS: [u32; 4] = [2, 4, 8, 16];
+
+    fn query(self, sample_count: u32) -> Option<Query<u32>> {
+        Self::COUNTS
+            .iter()
+            .position(|&count| count == sample_count)
+            .map(|index| self.0[index])
+    }
+
+    fn supported(self, sample_count: u32) -> bool {
+        matches!(self.query(sample_count), Some(Query::Value(levels)) if levels > 0)
+    }
+}
+
+fn multisample_format_flag(sample_count: u32) -> Option<crate::TextureFormatCapabilities> {
+    use crate::TextureFormatCapabilities as Caps;
+
+    match sample_count {
+        2 => Some(Caps::MULTISAMPLE_X2),
+        4 => Some(Caps::MULTISAMPLE_X4),
+        8 => Some(Caps::MULTISAMPLE_X8),
+        16 => Some(Caps::MULTISAMPLE_X16),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -781,6 +811,11 @@ impl Capabilities {
         let raw = device.raw_device();
         let format =
             |value: DXGI_FORMAT| Query::from_result(unsafe { raw.CheckFormatSupport(value) });
+        let sample_counts = |format: DXGI_FORMAT| {
+            SampleCountQueries(SampleCountQueries::COUNTS.map(|count| {
+                Query::from_result(unsafe { raw.CheckMultisampleQualityLevels(format, count) })
+            }))
+        };
         let vertex_input_formats = super::hal_pipeline::VERTEX_FORMATS.iter().fold(
             0,
             |mask, (vertex_format, dxgi_format, _)| {
@@ -816,15 +851,9 @@ impl Capabilities {
                 bgra8_srgb: format(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
                 depth24_stencil8: format(DXGI_FORMAT_D24_UNORM_S8_UINT),
                 depth16_unorm: format(DXGI_FORMAT_D16_UNORM),
-                depth24_stencil8_samples_4: Query::from_result(unsafe {
-                    raw.CheckMultisampleQualityLevels(DXGI_FORMAT_D24_UNORM_S8_UINT, 4)
-                }),
-                depth16_unorm_samples_4: Query::from_result(unsafe {
-                    raw.CheckMultisampleQualityLevels(DXGI_FORMAT_D16_UNORM, 4)
-                }),
-                rgba8_samples_4: Query::from_result(unsafe {
-                    raw.CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4)
-                }),
+                depth24_stencil8_samples: sample_counts(DXGI_FORMAT_D24_UNORM_S8_UINT),
+                depth16_unorm_samples: sample_counts(DXGI_FORMAT_D16_UNORM),
+                rgba8_samples: sample_counts(DXGI_FORMAT_R8G8B8A8_UNORM),
                 full_npot: query_full_npot(device),
                 comparison_shadow: Query::from_result(comparison_shadow),
                 r8_unorm: format(windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM),
@@ -873,20 +902,20 @@ impl Capabilities {
             | wgt::TextureUses::RESOURCE
             | wgt::TextureUses::COLOR_TARGET;
         let transient_msaa_target =
-            samples == 4 && usage == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT);
+            samples > 1 && usage == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT);
         if usage.is_empty() || !(allowed.contains(usage) || transient_msaa_target) {
             return Err(UnsupportedUsage);
         }
         let samples_supported = match samples {
             1 => true,
-            4 => {
+            2 | 4 | 8 | 16 => {
                 format == wgt::TextureFormat::Rgba8Unorm
                     && (usage == wgt::TextureUses::COLOR_TARGET
                         || usage == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
                     && layers == 1
                     && mips == 1
                     && self.backend.rgba8_multisample_resolve
-                    && matches!(self.driver.rgba8_samples_4, Query::Value(levels) if levels > 0)
+                    && self.driver.rgba8_samples.supported(samples)
                     && matches!(
                         self.driver.rgba8,
                         Query::Value(bits)
@@ -1068,12 +1097,12 @@ impl Capabilities {
         let (support, sample_support, guaranteed) = match format {
             wgt::TextureFormat::Depth16Unorm => (
                 self.driver.depth16_unorm,
-                self.driver.depth16_unorm_samples_4,
+                self.driver.depth16_unorm_samples,
                 self.hardware.d16_unorm_depth_attachment,
             ),
             wgt::TextureFormat::Depth24Plus | wgt::TextureFormat::Depth24PlusStencil8 => (
                 self.driver.depth24_stencil8,
-                self.driver.depth24_stencil8_samples_4,
+                self.driver.depth24_stencil8_samples,
                 true,
             ),
             _ => return Err(UnsupportedFormat),
@@ -1085,8 +1114,9 @@ impl Capabilities {
         }
         match samples {
             1 => Ok(()),
-            4 if self.backend.depth_stencil_multisampling
-                && matches!(sample_support, Query::Value(levels) if levels > 0) =>
+            2 | 4 | 8 | 16
+                if self.backend.depth_stencil_multisampling
+                    && sample_support.supported(samples) =>
             {
                 Ok(())
             }
@@ -1213,8 +1243,13 @@ impl Capabilities {
                 if self.private_fl91_depth_comparison_sampling() {
                     caps |= Caps::SAMPLED;
                 }
-                if self.check_private_depth_stencil_samples(format, 4).is_ok() {
-                    caps |= Caps::MULTISAMPLE_X4;
+                for sample_count in SampleCountQueries::COUNTS {
+                    if self
+                        .check_private_depth_stencil_samples(format, sample_count)
+                        .is_ok()
+                    {
+                        caps |= multisample_format_flag(sample_count).unwrap();
+                    }
                 }
                 caps
             } else {
@@ -1375,12 +1410,23 @@ impl Capabilities {
         {
             result |= Caps::COLOR_ATTACHMENT_BLEND;
         }
-        if format == wgt::TextureFormat::Rgba8Unorm
-            && self
-                .check_private_texture_2d(format, wgt::TextureUses::COLOR_TARGET, [8, 8], 1, 1, 4)
-                .is_ok()
-        {
-            result |= Caps::MULTISAMPLE_X4 | Caps::MULTISAMPLE_RESOLVE;
+        if format == wgt::TextureFormat::Rgba8Unorm {
+            for sample_count in SampleCountQueries::COUNTS {
+                if self
+                    .check_private_texture_2d(
+                        format,
+                        wgt::TextureUses::COLOR_TARGET,
+                        [8, 8],
+                        1,
+                        1,
+                        sample_count,
+                    )
+                    .is_ok()
+                {
+                    result |=
+                        multisample_format_flag(sample_count).unwrap() | Caps::MULTISAMPLE_RESOLVE;
+                }
+            }
         }
         result
     }
@@ -1452,9 +1498,14 @@ mod tests {
                 bgra8_srgb: Query::Value(u32::MAX),
                 depth24_stencil8: Query::Value(u32::MAX),
                 depth16_unorm: Query::Value(u32::MAX),
-                depth24_stencil8_samples_4: Query::Value(0),
-                depth16_unorm_samples_4: Query::Value(0),
-                rgba8_samples_4: Query::Value(1),
+                depth24_stencil8_samples: SampleCountQueries([Query::Value(0); 4]),
+                depth16_unorm_samples: SampleCountQueries([Query::Value(0); 4]),
+                rgba8_samples: SampleCountQueries([
+                    Query::Value(1),
+                    Query::Value(1),
+                    Query::Value(1),
+                    Query::Value(0),
+                ]),
                 full_npot: Query::Value(true),
                 comparison_shadow: Query::Value(true),
                 r8_unorm: Query::Value(u32::MAX),
@@ -1736,7 +1787,7 @@ mod tests {
 
         for query in [Query::Unavailable(-1), Query::Value(0)] {
             let mut caps = supported;
-            caps.driver.rgba8_samples_4 = query;
+            caps.driver.rgba8_samples.0[1] = query;
             assert!(caps
                 .check_private_texture_2d(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 1, 1, 4,)
                 .is_err());
@@ -1768,7 +1819,6 @@ mod tests {
                 4,
                 1,
             ),
-            (usage, 2, 1),
             (usage, 4, 2),
             (usage, 4, 4),
         ] {
@@ -1783,6 +1833,56 @@ mod tests {
                 )
                 .is_err());
         }
+    }
+
+    #[test]
+    fn rgba8_multisample_counts_are_individually_query_gated() {
+        let caps = model(FeatureLevel::L9_1);
+        for sample_count in [2, 4, 8] {
+            let flag = multisample_format_flag(sample_count).unwrap();
+            assert!(caps
+                .check_private_texture_2d(
+                    wgt::TextureFormat::Rgba8Unorm,
+                    wgt::TextureUses::COLOR_TARGET,
+                    [8, 8],
+                    1,
+                    1,
+                    sample_count,
+                )
+                .is_ok());
+            assert!(caps
+                .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+                .contains(flag | FormatCaps::MULTISAMPLE_RESOLVE));
+        }
+        assert!(caps
+            .check_private_texture_2d(
+                wgt::TextureFormat::Rgba8Unorm,
+                wgt::TextureUses::COLOR_TARGET,
+                [8, 8],
+                1,
+                1,
+                16,
+            )
+            .is_err());
+        assert!(!caps
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .contains(FormatCaps::MULTISAMPLE_X16));
+
+        let mut unavailable = caps;
+        unavailable.driver.rgba8_samples.0[2] = Query::Unavailable(-1);
+        assert!(unavailable
+            .check_private_texture_2d(
+                wgt::TextureFormat::Rgba8Unorm,
+                wgt::TextureUses::COLOR_TARGET,
+                [8, 8],
+                1,
+                1,
+                8,
+            )
+            .is_err());
+        assert!(!unavailable
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .contains(FormatCaps::MULTISAMPLE_X8));
     }
 
     #[test]
@@ -2460,9 +2560,14 @@ mod tests {
             identity.software,
             native.feature_level()
         );
+        let rgba8_sample_counts = SampleCountQueries::COUNTS.map(|sample_count| {
+            (
+                sample_count,
+                caps.driver.rgba8_samples.query(sample_count).unwrap(),
+            )
+        });
         std::println!(
-            "FL9_1 RGBA8 MSAA query: quality_levels={:?}; format_support={:?}; projected={:?}; multisample_texture_bindings={}",
-            caps.driver.rgba8_samples_4,
+            "FL9_1 RGBA8 sample-count quality queries: {rgba8_sample_counts:?}; format_support={:?}; projected={:?}; multisample_texture_bindings={}",
             caps.driver.rgba8,
             caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm),
             projection
@@ -3140,7 +3245,7 @@ mod tests {
             assert!(caps.check_private_depth_stencil_samples(format, 4).is_err());
         }
 
-        caps.driver.depth16_unorm_samples_4 = Query::Value(1);
+        caps.driver.depth16_unorm_samples.0[1] = Query::Value(1);
         caps.backend.depth_stencil_multisampling = false;
         assert!(!caps
             .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
@@ -3159,11 +3264,25 @@ mod tests {
         query: Query<u32>,
     ) {
         match format {
-            wgt::TextureFormat::Depth16Unorm => caps.driver.depth16_unorm_samples_4 = query,
+            wgt::TextureFormat::Depth16Unorm => caps.driver.depth16_unorm_samples.0[1] = query,
             wgt::TextureFormat::Depth24Plus | wgt::TextureFormat::Depth24PlusStencil8 => {
-                caps.driver.depth24_stencil8_samples_4 = query
+                caps.driver.depth24_stencil8_samples.0[1] = query
             }
             _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn depth_multisample_counts_are_reported_individually() {
+        let mut caps = model(FeatureLevel::L9_1);
+        for (index, sample_count) in SampleCountQueries::COUNTS.into_iter().enumerate() {
+            caps.driver.depth16_unorm_samples.0[index] = Query::Value(1);
+            assert!(caps
+                .check_private_depth_stencil_samples(wgt::TextureFormat::Depth16Unorm, sample_count)
+                .is_ok());
+            assert!(caps
+                .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
+                .contains(multisample_format_flag(sample_count).unwrap()));
         }
     }
 

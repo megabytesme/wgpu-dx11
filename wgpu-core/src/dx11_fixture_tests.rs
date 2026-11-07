@@ -1584,11 +1584,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         std::println!("SKIP: depth24/stencil8 attachment support unavailable");
         return;
     }
+    let multisample_caps = hal::TextureFormatCapabilities::MULTISAMPLE_X2
+        | hal::TextureFormatCapabilities::MULTISAMPLE_X4
+        | hal::TextureFormatCapabilities::MULTISAMPLE_X8
+        | hal::TextureFormatCapabilities::MULTISAMPLE_X16
+        | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE;
     assert_eq!(
-        rgba_caps
-            & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
-                | hal::TextureFormatCapabilities::MULTISAMPLE_X4
-                | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE),
+        rgba_caps & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND | multisample_caps),
         hal::TextureFormatCapabilities::COLOR_ATTACHMENT
             | hal::TextureFormatCapabilities::COPY_SRC
             | hal::TextureFormatCapabilities::COPY_DST
@@ -1596,8 +1598,15 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             | hal::TextureFormatCapabilities::SAMPLED_LINEAR
     );
     assert_eq!(
-        rgba_caps.contains(hal::TextureFormatCapabilities::MULTISAMPLE_X4),
-        rgba_caps.contains(hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE)
+        rgba_caps
+            .intersection(multisample_caps)
+            .contains(hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE),
+        rgba_caps.intersects(
+            hal::TextureFormatCapabilities::MULTISAMPLE_X2
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X4
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X8
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X16
+        )
     );
     let rgba_mips = fixture
         .test_fixture_copy_only_rgba8_mip_supported()
@@ -1614,13 +1623,9 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     } else {
         assert_eq!(
             bgra_caps
-                & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
-                    | hal::TextureFormatCapabilities::MULTISAMPLE_X4
-                    | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE),
+                & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND | multisample_caps),
             rgba_caps
-                & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND
-                    | hal::TextureFormatCapabilities::MULTISAMPLE_X4
-                    | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE)
+                & !(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND | multisample_caps)
         );
     }
     let bgra_mips = if bgra_caps.is_empty() {
@@ -1736,6 +1741,33 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             .contains(wgt::TextureFormatFeatureFlags::BLENDABLE),
         rgba_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND)
     );
+    for (core_flag, hal_flag) in [
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X2,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X2,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X4,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X4,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X8,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X8,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X16,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X16,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE,
+            hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE,
+        ),
+    ] {
+        assert_eq!(
+            rgba_core.flags.contains(core_flag),
+            rgba_caps.contains(hal_flag)
+        );
+    }
     let depth_core = global
         .adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Depth24PlusStencil8);
     let depth24_core =
@@ -1750,12 +1782,29 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(depth_core
         .flags
         .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
-    assert_eq!(
-        depth_core
-            .flags
-            .contains(wgt::TextureFormatFeatureFlags::MULTISAMPLE_X4),
-        depth_caps.contains(hal::TextureFormatCapabilities::MULTISAMPLE_X4)
-    );
+    for (core_flag, hal_flag) in [
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X2,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X2,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X4,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X4,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X8,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X8,
+        ),
+        (
+            wgt::TextureFormatFeatureFlags::MULTISAMPLE_X16,
+            hal::TextureFormatCapabilities::MULTISAMPLE_X16,
+        ),
+    ] {
+        assert_eq!(
+            depth_core.flags.contains(core_flag),
+            depth_caps.contains(hal_flag)
+        );
+    }
     assert!(!depth_core
         .flags
         .contains(wgt::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE));
@@ -2604,11 +2653,18 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     multisampled.sample_count = 2;
     let (texture, error) = global.device_create_texture(device, &multisampled, None);
     assert!(
+        error.is_none(),
+        "queried two-sample RGBA8 allocation should pass core validation: {error:?}"
+    );
+    global.texture_drop(texture);
+    multisampled.sample_count = 16;
+    let (texture, error) = global.device_create_texture(device, &multisampled, None);
+    assert!(
         matches!(
             error.as_ref(),
             Some(crate::resource::CreateTextureError::InvalidSampleCount(..))
         ),
-        "unsupported two-sample allocation must fail core validation: {error:?}"
+        "unreported 16-sample allocation must fail core validation: {error:?}"
     );
     global.texture_drop(texture);
     let invalid_usage = wgt::TextureUsages::TRANSIENT_ATTACHMENT
