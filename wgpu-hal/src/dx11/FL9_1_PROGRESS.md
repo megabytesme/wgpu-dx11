@@ -1,5 +1,50 @@
 # FL9_1 progress
 
+## Public wrong-thread present cleanup — 2026-11-07
+
+Implementation commit: `8d6c8f93e12c766a5f8fb413f2abf781c4b55408`
+(`dx11: release surface frames after rejected present`). An independent HWND
+lifecycle audit found that public `Queue::present` consumes its
+`SurfaceTexture` before core checks the HWND owner thread. Core returned
+`SurfaceError::Invalid` without clearing `Presentation.acquired_texture`, so
+the surface stayed unusable. A strict public test reproduced this on the RTX:
+the default uncaptured-error handler panicked on the worker; with a capturing
+handler, the next owner-thread acquisition returned `Lost`.
+
+On wrong-thread rejection, core now calls its existing surface discard path
+before returning the error. If the device is already lost, it uses the safe
+release path to drop the acquired texture. The regression test now observes
+the expected validation error, reacquires a frame on the owner thread and
+presents it successfully. It also retains the existing successful render,
+present, resize and wrong-thread acquisition checks.
+
+Verification used Rust 1.93.1, Visual Studio 2022 x64 and strict hardware
+mode on the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested/actual FL9_1:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,std,wgsl
+cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustfmt +1.93 --edition 2021 --check wgpu-core/src/present.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+Results: focused public HWND lifecycle 1/1; full strict public D3D11 62/62;
+controlled core fixture 101/101; DX12 core regression 92/92; both Clippy
+commands passed. The full public run visibly skipped only the optional
+Float16x2 IA branch after the selected device reported no support. Clippy
+reported pre-existing HAL and core-fixture warnings. Rustfmt reported three
+older formatting differences elsewhere in `dx11_public.rs`, not in this
+change; the full-workspace format check also reports older unrelated
+differences. `git diff --check` passed. The broader mission remains
+**PARTIALLY COMPLETE**; historical FL9_1 driver and Lumia runtime behavior
+remain unverified, and the core/HAL audit continues.
+
 ## Public unimplemented-feature rejection boundary — 2026-11-07
 
 An independent core/HAL contract audit found that pipeline-cache and ray-query

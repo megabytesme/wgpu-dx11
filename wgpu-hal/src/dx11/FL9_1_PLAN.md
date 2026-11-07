@@ -34,7 +34,8 @@ The HWND lifecycle audit found and fixed a consumed-frame leak when public
 `Queue::present` is called from a non-owner thread. Core now discards that
 acquired frame before returning the validation error; the strict public test
 confirms the surface can acquire and present another frame afterward. The
-broader surface and device-loss audit remains open.
+implementation is checkpointed as `8d6c8f93e12c766a5f8fb413f2abf781c4b55408`.
+The broader surface and device-loss audit remains open.
 
 ## Ordered work and gates
 
