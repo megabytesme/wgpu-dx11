@@ -808,6 +808,23 @@ mod tests {
     }
 
     #[test]
+    fn fl91_vertex_index_float_reconstruction_is_rejected_by_fxc() {
+        let source = "struct Input { float2 encoded_index : LOC0; }; float4 main(Input input) : SV_POSITION { uint index = (uint)input.encoded_index.x + ((uint)input.encoded_index.y * 65536u); return float4((float)index, 0.0, 0.0, 1.0); }";
+        let error = compile_hlsl(source, "main", ShaderProfile::VertexLevel9_1).unwrap_err();
+        std::println!("FL9_1 integer reconstruction diagnostic: {}", error.message);
+        assert!(error.message.contains("X3548"), "{}", error.message);
+        assert!(
+            error.message.contains("uints can only be used"),
+            "{}",
+            error.message
+        );
+
+        assert!(compile_hlsl(source, "main", ShaderProfile::Vertex5_0)
+            .unwrap()
+            .starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn fl91_viewport_transform_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             "struct Out { @builtin(position) pos: vec4f, @location(0) c: vec4f } @vertex fn main(@location(0) p: vec3f) -> Out { return Out(vec4f(p, 1.), vec4f(1.)); }",

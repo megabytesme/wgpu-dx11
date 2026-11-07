@@ -10952,3 +10952,15 @@ The backend remains a limited prototype with substantial explicit restrictions;
 continue the core/HAL contract audit and selected-device verification. The
 historical FL9_1 driver matrix, Lumia runtime, physical device-removal recovery
 and exhaustive public API audit remain open.
+
+## Vertex system-value emulation boundary — 2026-11-07
+
+The native FXC failures for `SV_VertexID` (X4555) and `SV_InstanceID` (X4016)
+were already covered. I tested whether the current instance-stream machinery
+could supply `vertex_index` through a synthetic float input instead. Exact
+`u32` reconstruction from float halves fails under `vs_4_0_level_9_1` with
+FXC X3548: dynamic `uint` use is restricted to known-positive values. The same
+HLSL compiles under the `vs_5_0` control profile. Added a permanent compiler
+regression for this boundary; the adapter continues to reject both system
+values before HAL. This is a tested profile limitation, not proof that the
+underlying FL9_1 hardware is incapable of an alternative encoding.

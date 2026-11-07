@@ -1211,6 +1211,15 @@ profile restriction, not a universal hardware claim. A strict public test on
 the forced-FL9_1 adapter verifies core rejection of both selected-entry uses
 before HAL and acceptance of a safe sibling pipeline.
 
+An IA-stream emulation was also checked. Reconstructing a WGSL `u32` index
+from two exact `f32` halves requires dynamic integer arithmetic, which the
+same `vs_4_0_level_9_1` FXC profile rejects with X3548 ("uints can only be used
+with known-positive values"). A checked-in compiler regression confirms this
+diagnostic and a `vs_5_0` control. The current profile therefore has no verified
+type-preserving lowering for either system value. Keep both core limits false;
+do not infer support from the backend's separate per-instance vertex-stream
+emulation.
+
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise
 that feature while the HAL rejects it. A strict public test confirms the bit
