@@ -221,9 +221,9 @@ can acquire and present another frame. A rejected `Queue::present` consumes
 its public `SurfaceTexture`; core must release the acquired native image so the
 surface does not remain stuck.
 Cloned public `SurfaceTexture` handles share the acquired frame's lifecycle:
-dropping a non-final clone preserves the image, presenting one clone prevents
-later aliases from discarding it, and dropping the final unpresented clone
-discards it so the surface can acquire again.
+dropping a non-final clone on a worker thread preserves the image, presenting
+one clone prevents later aliases from discarding it, and dropping the final
+unpresented clone discards it so the surface can acquire again.
 The D3D11 surface operations must run on the HWND's creating thread. A shared
 queue gate serializes submissions, writes, mapping flushes, polling and
 context-backed resource creation against `Present`; reentrant mutations return

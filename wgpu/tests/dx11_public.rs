@@ -373,7 +373,9 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         *captured_clone_error.lock().unwrap() = Some(error);
     }));
     let cloned_frame = frame.clone();
-    drop(frame);
+    thread::spawn(move || drop(frame))
+        .join()
+        .expect("drop a non-final surface frame clone from a worker");
     queue.present(cloned_frame);
     let captured = clone_error.lock().unwrap().take();
     assert!(

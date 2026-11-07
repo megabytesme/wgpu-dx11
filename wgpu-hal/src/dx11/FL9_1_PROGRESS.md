@@ -9366,3 +9366,13 @@ WebGPU public-crate check passed. The source-file rustfmt check passed; the
 large public D3D11 test file still reports three unrelated formatting deltas
 that predate this change. The opt-in backend and wider FL9_1 contract audit
 remain experimental and incomplete.
+
+## Follow-up — cross-thread surface-frame alias drop — 2026-11-07
+
+The strict HWND lifecycle regression now drops a non-final `SurfaceTexture`
+clone on a worker thread while retaining another clone on the owner thread,
+then presents the retained frame. This verifies shared lifecycle state across
+the public type's `Send + Sync` boundary and avoids running final frame discard
+on the worker in this case. The focused strict public test passed 1/1 on the
+RTX 3090 Ti at requested/actual FL9_1. The complete public suite was not rerun
+for this test-only extension; it passed 62/62 immediately before the change.

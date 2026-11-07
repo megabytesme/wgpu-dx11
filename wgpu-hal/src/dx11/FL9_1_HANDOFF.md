@@ -5,12 +5,13 @@
 The public `SurfaceTexture` lifecycle is now shared across clones. Before the
 fix, dropping one clone discarded the core-acquired image and presenting the
 remaining clone failed with `NothingToPresent`. The strict HWND regression
-covers dropping a non-final clone before presentation, dropping an alias after
-another clone was presented, and dropping the last unpresented clone followed
-by reacquisition. It passed on the RTX 3090 Ti at requested/actual FL9_1; the
-complete strict public D3D11 suite passed 62/62, with the existing optional
-Float16x2 IA subcase explicitly skipped. The wasm WebGPU public crate and DX12
-public crate both compile with the shared lifecycle representation. The full
+covers dropping a non-final clone on a worker thread before presentation,
+dropping an alias after another clone was presented, and dropping the last
+unpresented clone followed by reacquisition. It passed on the RTX 3090 Ti at
+requested/actual FL9_1; the complete strict public D3D11 suite passed 62/62,
+with the existing optional Float16x2 IA subcase explicitly skipped. The wasm
+WebGPU public crate and DX12 public crate both compile with the shared
+lifecycle representation. The full
 core/HAL audit, historical FL9_1 behavior, CoreWindow and Lumia runtime remain
 open.
 
