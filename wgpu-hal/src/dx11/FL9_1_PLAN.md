@@ -24,6 +24,12 @@ corruption diagnostics and no live D3D11 resources after cleanup. This does
 not replace the outstanding broad public contract audit or historical-driver
 and Lumia runtime verification; exact evidence is in `FL9_1_PROGRESS.md`.
 
+The public contract audit now has a strict regression test proving that
+`PIPELINE_CACHE` and `EXPERIMENTAL_RAY_QUERY` remain unadvertised and are
+rejected during device request because their HAL resource types are
+unavailable. This verifies two specific gates; it does not close the broader
+core/HAL audit.
+
 ## Ordered work and gates
 
 ### Verified hardware boundary — ordinary 2D texture arrays

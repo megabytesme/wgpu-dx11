@@ -1,5 +1,15 @@
 # FL9_1 handoff
 
+## Current mission state — unimplemented feature rejection boundary
+
+The strict public suite now verifies `PIPELINE_CACHE` and
+`EXPERIMENTAL_RAY_QUERY` remain absent from the adapter feature set and that
+requesting either fails before HAL open. The focused test passed on the
+physical RTX 3090 Ti at requested/actual FL9_1; the full suite passed 62/62.
+This closes a targeted feature-exposure regression gap only. The broader
+public contract audit, historical-device coverage and Lumia runtime remain
+open. Exact command and results are in the newest `FL9_1_PROGRESS.md` entry.
+
 ## Current mission state — public zero-stride indexed-fetch verification
 
 The negative base-adjusted zero-stride point case is now verified through the

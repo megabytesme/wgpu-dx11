@@ -16,6 +16,19 @@ public surface capabilities were unavailable or the adapter was offscreen-only
 describe the state at those earlier checkpoints; the current HWND contract is
 summarized above and in `CAPABILITIES.md`.
 
+### Public unimplemented-feature boundary test
+
+`public_dx11_rejects_unimplemented_hal_features_at_fl91` verifies that the
+physical FL9_1 adapter does not expose `PIPELINE_CACHE` or
+`EXPERIMENTAL_RAY_QUERY`, and that requesting either feature fails before HAL
+device open. This is a capability-boundary regression test, not a rendering
+test.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unimplemented_hal_features_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public offscreen integration test
 
 The public integration test selects DX11 explicitly, asserts the physical

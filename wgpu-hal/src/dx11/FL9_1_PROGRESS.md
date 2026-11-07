@@ -1,5 +1,35 @@
 # FL9_1 progress
 
+## Public unimplemented-feature rejection boundary — 2026-11-07
+
+An independent core/HAL contract audit found that pipeline-cache and ray-query
+handles are unavailable in the D3D11 HAL (`dx11::Api::Unavailable`), and these
+features are not projected by the selected adapter. Added
+`public_dx11_rejects_unimplemented_hal_features_at_fl91` to preserve that
+boundary: on the selected physical FL9_1 adapter it verifies both features are
+withheld and each `request_device` fails before opening the HAL. The focused
+test passed 1/1 on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), requested/actual FL9_1. This case tests feature rejection,
+not rendering.
+
+The full strict public test binary passed 62/62 on the same physical adapter;
+one optional Float16x2 subcase visibly skipped after its capability query. The
+new test itself also ran in the full suite. Clippy passed with the existing
+HAL `too_many_arguments` warning. `cargo +1.93 fmt --all -- --check` continues
+to report pre-existing formatting differences in other D3D11/core/Naga files;
+the new test line was formatted to rustfmt's expected form. `git diff --check`
+passed. The broader mission remains **PARTIALLY COMPLETE**; this closes a
+specific feature-exposure regression gap only.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unimplemented_hal_features_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93 fmt --all -- --check
+git diff --check
+~~~
+
 ## Public zero-stride indexed-fetch verification — 2026-11-07
 
 Implementation/test commit: `b0774e855de10e1d96c5345c23898d1f8585c099`

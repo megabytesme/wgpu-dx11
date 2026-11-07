@@ -11444,6 +11444,52 @@ fn public_dx11_rejects_compute_pipelines_at_fl91() {
 }
 
 #[test]
+fn public_dx11_rejects_unimplemented_hal_features_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let features = adapter.features();
+    let unsupported = [Features::PIPELINE_CACHE, Features::EXPERIMENTAL_RAY_QUERY];
+    for feature in unsupported {
+        assert!(
+            !features.contains(feature),
+            "the adapter must not expose {feature:?}"
+        );
+        let result = poll_ready(adapter.request_device(&DeviceDescriptor {
+            label: Some("reject a feature without a D3D11 HAL implementation"),
+            required_features: feature,
+            required_limits: adapter.limits(),
+            ..Default::default()
+        }));
+        assert!(
+            result.is_err(),
+            "device creation unexpectedly accepted {feature:?}"
+        );
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    println!(
+        "PASS: public adapter withheld PIPELINE_CACHE and EXPERIMENTAL_RAY_QUERY; both device requests failed before HAL open"
+    );
+}
+
+#[test]
 fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
