@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## BC2/BC3 texture upload and copy support — 2026-11-07
+## BC2/BC3 texture upload and copy support — 2026-11-07 — `324e45744`
 
 Added the private one-mip BC2_UNORM and BC3_UNORM sampled-upload paths beside
 the existing BC1 path. The implementation now uses queried per-format support,
