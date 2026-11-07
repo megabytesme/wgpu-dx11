@@ -259,19 +259,14 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         ..Default::default()
     }))
     .expect("request a device within the FL9_1 projection");
-    let mut configuration = SurfaceConfiguration {
-        usage: TextureUsages::RENDER_ATTACHMENT,
-        format: TextureFormat::Bgra8Unorm,
-        color_space: SurfaceColorSpace::Srgb,
-        width: 64,
-        height: 64,
-        present_mode: PresentMode::Fifo,
-        desired_maximum_frame_latency: 1,
-        alpha_mode: CompositeAlphaMode::Opaque,
-        view_formats: vec![],
-    };
+    let mut configuration = surface
+        .get_default_config(&adapter, 64, 64)
+        .expect("get default public D3D11 HWND configuration");
+    assert_eq!(configuration.color_space, SurfaceColorSpace::Auto);
+    assert_eq!(configuration.alpha_mode, CompositeAlphaMode::Auto);
+    assert_eq!(configuration.desired_maximum_frame_latency, 2);
     surface.configure(&device, &configuration);
-    println!("PASS: public HWND surface configured at 64x64");
+    println!("PASS: public HWND default config resolved and configured at 64x64");
 
     let frame = match surface.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,

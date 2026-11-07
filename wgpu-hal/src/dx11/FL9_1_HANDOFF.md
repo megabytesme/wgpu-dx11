@@ -15,6 +15,11 @@ lifecycle representation. The full
 core/HAL audit, historical FL9_1 behavior, CoreWindow and Lumia runtime remain
 open.
 
+The HWND smoke test now also starts from `Surface::get_default_config` rather
+than a hand-built descriptor. At forced FL9_1, core resolves `Auto` values and
+clamps the generic two-frame hint to the surface's supported one-frame range;
+the default configuration then presents successfully.
+
 ## Current mission state — wrong-thread present cleanup
 
 The public HWND lifecycle test now acquires a frame on the owner thread,

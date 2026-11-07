@@ -9376,3 +9376,15 @@ the public type's `Send + Sync` boundary and avoids running final frame discard
 on the worker in this case. The focused strict public test passed 1/1 on the
 RTX 3090 Ti at requested/actual FL9_1. The complete public suite was not rerun
 for this test-only extension; it passed 62/62 immediately before the change.
+
+## Follow-up — public HWND default configuration — 2026-11-07
+
+The public HWND smoke test now obtains its initial surface settings from
+`Surface::get_default_config`. The method returns `Auto` color-space and alpha
+values plus its generic two-frame latency hint; core resolves those values and
+clamps the hint to the D3D11 surface's advertised one-frame range before HAL
+configuration. The strict test then clears/presents, resizes and presents
+again at requested/actual FL9_1 on the RTX 3090 Ti. The focused test passed
+1/1. The full public suite was not rerun for this test-only change; its latest
+run passed 62/62 immediately beforehand with the optional Float16x2 IA branch
+explicitly skipped.

@@ -37,6 +37,11 @@ presentation and an owner-thread alias drop after presentation preserve the
 remaining frame; final unpresented drop allows reacquisition. The broader
 surface and device-loss audit remains open.
 
+The strict HWND smoke test now configures the surface through the public
+`get_default_config` result. Core resolves `Auto` color-space/alpha modes and
+clamps its generic latency hint to the D3D11 one-frame capability before HAL;
+the default public path configures and presents successfully.
+
 The HWND lifecycle audit found and fixed a consumed-frame leak when public
 `Queue::present` is called from a non-owner thread. Core now discards that
 acquired frame before returning the validation error; the strict public test
