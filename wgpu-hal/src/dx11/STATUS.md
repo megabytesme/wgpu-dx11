@@ -704,8 +704,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
   supported through core. Core rejects comparison sampler creation when the
   adapter omits `DownlevelFlags::COMPARISON_SAMPLERS`; the controlled FL9_1
   fixture verifies rejection before HAL. The private HAL has a separate
-  query-gated FL9_1 D16 `LessEqual` shadow-sampling path, verified by GPU
-  readback; this narrower contract is not publicly expressible. Historical
+  query-gated FL9_1 D16 and D24S8 `LessEqual` shadow-sampling paths, verified
+  by GPU readback; this narrower contract is not publicly expressible. Historical
   drivers remain unverified; public surface capabilities remain unavailable.
 - Sampled texture and sampler bindings accept `FRAGMENT` and
   `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.

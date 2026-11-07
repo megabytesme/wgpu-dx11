@@ -177,6 +177,17 @@ fn fl91_query_gated_shadow_resource_views() -> windows::core::Result<()> {
 
 #[test]
 fn fl91_sampled_depth_comparison_renders_query_gated_shadow() -> windows::core::Result<()> {
+    run_fl91_sampled_depth_comparison(wgt::TextureFormat::Depth16Unorm)
+}
+
+#[test]
+fn fl91_sampled_d24s8_comparison_renders_query_gated_shadow() -> windows::core::Result<()> {
+    run_fl91_sampled_depth_comparison(wgt::TextureFormat::Depth24PlusStencil8)
+}
+
+fn run_fl91_sampled_depth_comparison(
+    depth_format: wgt::TextureFormat,
+) -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -312,7 +323,7 @@ fn fl91_sampled_depth_comparison_renders_query_gated_shadow() -> windows::core::
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgt::TextureDimension::D2,
-                format: wgt::TextureFormat::Depth16Unorm,
+                format: depth_format,
                 usage: wgt::TextureUses::DEPTH_STENCIL_WRITE | wgt::TextureUses::RESOURCE,
                 memory_flags: crate::MemoryFlags::empty(),
                 view_formats: Vec::new(),
@@ -325,7 +336,7 @@ fn fl91_sampled_depth_comparison_renders_query_gated_shadow() -> windows::core::
                 &depth,
                 &crate::TextureViewDescriptor {
                     label: None,
-                    format: wgt::TextureFormat::Depth16Unorm,
+                    format: depth_format,
                     dimension: wgt::TextureViewDimension::D2,
                     usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
                     range: Default::default(),
@@ -339,7 +350,7 @@ fn fl91_sampled_depth_comparison_renders_query_gated_shadow() -> windows::core::
                 &depth,
                 &crate::TextureViewDescriptor {
                     label: None,
-                    format: wgt::TextureFormat::Depth16Unorm,
+                    format: depth_format,
                     dimension: wgt::TextureViewDimension::D2,
                     usage: wgt::TextureUses::RESOURCE,
                     range: Default::default(),
@@ -452,7 +463,7 @@ fn fl91_sampled_depth_comparison_renders_query_gated_shadow() -> windows::core::
                 },
                 primitive: wgt::PrimitiveState::default(),
                 depth_stencil: Some(wgt::DepthStencilState {
-                    format: wgt::TextureFormat::Depth16Unorm,
+                    format: depth_format,
                     depth_write_enabled: Some(true),
                     depth_compare: Some(wgt::CompareFunction::Less),
                     stencil: wgt::StencilState::default(),
@@ -611,6 +622,8 @@ fn fl91_sampled_depth_comparison_renders_query_gated_shadow() -> windows::core::
         device.destroy_bind_group_layout(bind_group_layout);
         device.destroy_shader_module(shader);
     }
-    std::println!("PASS: query-gated D16 SampleCmp produced 32 failing and 32 passing pixels");
+    std::println!(
+        "PASS: query-gated {depth_format:?} SampleCmp produced 32 failing and 32 passing pixels"
+    );
     Ok(())
 }

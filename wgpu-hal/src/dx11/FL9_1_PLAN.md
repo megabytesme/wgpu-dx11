@@ -11,11 +11,11 @@ background. This plan does not claim WebGPU conformance.
 
 Latest private increment: a narrow FL9_1 sampled-depth comparison path is
 implemented only when the selected device positively reports
-`D3D11_FEATURE_D3D9_SHADOW_SUPPORT`. Strict D16 rendering, typeless D16/D24S8
-view creation, the complete HAL suite, core rejection before HAL and DX12
-regressions passed on 2026-11-07. This does not enable public comparison
-samplers or close the overall core/HAL audit; see the last entry in
-`FL9_1_PROGRESS.md`.
+`D3D11_FEATURE_D3D9_SHADOW_SUPPORT`. Strict D16 and D24S8 rendering, typeless
+D16/D24S8 view creation, the complete HAL suite, core rejection before HAL
+and DX12 regressions passed on 2026-11-07. This does not enable public
+comparison samplers or close the overall core/HAL audit; see the latest entry
+in `FL9_1_PROGRESS.md`.
 
 The 2026-11-07 verification checkpoint reran the strict private HAL and public
 D3D11 suites, the controlled core fixture, adapter selection and DX12

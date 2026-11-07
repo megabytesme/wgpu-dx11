@@ -9842,3 +9842,39 @@ Strict hardware test passed 1/1. The first run exposed expected implicit
 pipeline-layout incompatibility between the two independently inferred
 pipelines; the test now creates a matching resource bind group for each
 pipeline and validates the ordinary public layout contract.
+
+## Follow-up — D24S8 shadow comparison execution — 2026-11-07
+
+Generalized the existing private `SampleCmp` hardware case to execute against
+both D16 and D24S8, retaining the same two-pass layout and pixel expectations.
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) was
+explicitly requested and selected at FL9_1. `D3D11_FEATURE_D3D9_SHADOW_SUPPORT`
+returned true. Both formats rendered an 8×8 RGBA8 target with exactly 32
+failing black comparisons and 32 passing red comparisons. The format probe
+also created D16/R16 and D24S8/R24 typeless resources and typed views. The
+typed SRV `CheckFormatSupport` calls returned `E_FAIL` (`0x80004005`), while
+the actual native creation calls and subsequent HAL D24S8 shader sampling
+succeeded. This records a driver-query limitation separately from verified
+resource and execution behavior.
+
+The focused strict shadow tests passed 3/3; the view test covers D16 and D24S8
+creation, and separate D16/D24S8 tests each rendered and read back the result.
+The full
+strict private HAL suite passed 386/386 with 2 unrelated tests filtered. The
+controlled core fixture passed 1/1; its public comparison-sampler requests
+remain rejected before HAL. No public capability changed. Existing compiler
+diagnostics for intentionally rejected FL9_1 shader forms and synthetic
+failure-injection tests appeared in the full suite; no test failed.
+HAL test Clippy passed with ten warnings in existing HAL/test code outside the
+new test; no new lint warning was reported. Changed-file rustfmt and
+`git diff --check` passed.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::hal_encoder::shadow_sampling_tests:: -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11:: -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests::fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --tests --no-default-features --features dx11
+rustup run 1.93 rustfmt --edition 2021 --check wgpu-hal/tests/dx11/shadow_sampling.rs
+git diff --check
+~~~
