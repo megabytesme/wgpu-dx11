@@ -1,5 +1,55 @@
 # FL9_1 progress
 
+## Query-gated NPOT mipmapped 2D textures — 2026-11-07
+
+The capability model now separates FL9_x conditional NPOT behavior from a
+positive `D3D11_FEATURE_DATA_D3D9_OPTIONS.FullNonPow2TextureSupport` result. The
+internal `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` flag is projected only when the
+backend path and effective feature-level capability allow it. D2 texture
+creation, sampled-view validation and shader/resource draw compatibility now
+use the same selected-device result; the per-format `MIP` query remains
+required. Negative/unavailable 9_x queries and a disabled backend path remain
+conservative in synthetic tests. NPOT cube shapes and arrays were not enabled.
+
+The strict public test explicitly requested and selected FL9_1 on the NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false).
+The runtime reported full-NPOT support. It created a 6×10 RGBA8 texture with
+four mip levels, uploaded distinctive colors through padded buffer-to-texture
+copies in one submission, then sampled mip 2 in a later render submission. All
+64 output pixels matched `[0, 0, 255, 255]`. The test uses clamp addressing
+because the public FL9_1 projection's finite repeat limit independently
+prevents repeat sampler creation; it validates NPOT mip capability, not NPOT
+wrap semantics. The RTX's positive optional query does not model restrictive
+historical 9_x drivers.
+
+Verification with pinned Rust 1.93.1 and the Visual Studio x64 environment:
+the strict private HAL suite passed 401/401, the strict public D3D11 suite
+passed 74/74, core's selected FL9_1 adapter test passed 1/1, and the DX12 core
+regression passed 94/94. The full HAL rerun updated three earlier assertions
+that still assumed all NPOT mip chains were forbidden; the corrected tests
+check positive, negative and unavailable driver-query behavior. HAL build,
+targeted Clippy, Rust formatting and `git diff --check` passed. Clippy reported
+existing warnings in `texture.rs`, `hal_device.rs`, `swapchain.rs` and the
+texel-load test; no new warning pointed to this increment.
+
+Commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+cargo +1.93 build --offline -j8 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustup run 1.93 rustfmt --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/sampling.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/tests/dx11/texture_transfers.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The wider FL9_1 completion mission remains partial; see the capability matrix
+for outstanding resource, shader, presentation and historical-driver gaps.
+
 ## BC2/BC3 texture upload and copy support — 2026-11-07 — `324e45744`
 
 Added the private one-mip BC2_UNORM and BC3_UNORM sampled-upload paths beside

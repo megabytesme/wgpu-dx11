@@ -272,6 +272,7 @@ pub(super) struct BackendCapabilities {
     pub pot_copy_only_mip_chains: bool,
     pub pot_color_attachment_mips: bool,
     pub pot_sampled_attachment_mips: bool,
+    pub npot_mipmapped_textures: bool,
     pub rgba8_single_mip_transfers: bool,
     pub bgra8_single_mip_transfers: bool,
     pub rgba8_srgb_single_mip_transfers: bool,
@@ -376,6 +377,7 @@ impl BackendCapabilities {
         pot_copy_only_mip_chains: true,
         pot_color_attachment_mips: true,
         pot_sampled_attachment_mips: true,
+        npot_mipmapped_textures: true,
         rgba8_single_mip_transfers: true,
         bgra8_single_mip_transfers: true,
         rgba8_srgb_single_mip_transfers: true,
@@ -498,8 +500,8 @@ impl Capabilities {
 
     pub fn texture_3d_format_mask(&self) -> u32 {
         let format = wgt::TextureFormat::Rgba8Unorm;
-        let required = (D3D11_FORMAT_SUPPORT_TEXTURE3D.0
-            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
         if self.backend.texture_3d_sampling
             && self.backend.texture_3d_upload
             && self.hardware.texture_3d_dimension != 0
@@ -580,6 +582,9 @@ impl Capabilities {
         }
         if comparison_sampling {
             flags |= wgt::DownlevelFlags::COMPARISON_SAMPLERS;
+        }
+        if self.npot_mipmapped_textures_supported() {
+            flags |= wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES;
         }
         let shader_dynamic_loops = self.backend.shader_loops
             && self.hardware.vertex_dynamic_flow_control
@@ -832,6 +837,10 @@ impl Capabilities {
 
     pub fn unrestricted_npot_texture_sampling(&self) -> bool {
         !self.hardware.conditional_npot || matches!(self.driver.full_npot, Query::Value(true))
+    }
+
+    pub fn npot_mipmapped_textures_supported(&self) -> bool {
+        self.backend.npot_mipmapped_textures && self.unrestricted_npot_texture_sampling()
     }
 
     pub fn query(device: &NativeDevice) -> Self {
@@ -1099,8 +1108,8 @@ impl Capabilities {
             return Err(UnsupportedShape);
         }
         if mips > 1 {
-            if !extent[0].is_power_of_two()
-                || !extent[1].is_power_of_two()
+            let dimensions_are_npot = !extent[0].is_power_of_two() || !extent[1].is_power_of_two();
+            if (dimensions_are_npot && !self.npot_mipmapped_textures_supported())
                 || mips > extent[0].max(extent[1]).ilog2() + 1
             {
                 return Err(UnsupportedShape);
@@ -1802,7 +1811,11 @@ mod tests {
                 .texture_3d_texture_copies
         );
         assert_eq!(
-            projection.capabilities.downlevel.limits.texture_3d_usage_mask
+            projection
+                .capabilities
+                .downlevel
+                .limits
+                .texture_3d_usage_mask
                 & wgt::TextureUsages::COPY_SRC.bits(),
             0
         );
@@ -2074,6 +2087,7 @@ mod tests {
                 | wgt::DownlevelFlags::ANISOTROPIC_FILTERING
                 | wgt::DownlevelFlags::CUBE_TEXTURES
                 | wgt::DownlevelFlags::COMPARISON_SAMPLERS
+                | wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
         );
         assert!(!exposed.downlevel.limits.texture_1d);
         assert!(exposed.downlevel.limits.texture_3d);
@@ -2081,12 +2095,14 @@ mod tests {
             exposed.downlevel.limits.texture_3d_usage_mask,
             (wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST).bits()
         );
-        assert!(exposed.downlevel.limits.supports_texture_3d_format(
-            wgt::TextureFormat::Rgba8Unorm
-        ));
-        assert!(!exposed.downlevel.limits.supports_texture_3d_format(
-            wgt::TextureFormat::Rg8Unorm
-        ));
+        assert!(exposed
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm));
+        assert!(!exposed
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Rg8Unorm));
         assert!(exposed.downlevel.limits.texture_3d_mipmaps);
         assert!(!exposed.downlevel.limits.texture_3d_non_suffix_mip_views);
         assert_eq!(
@@ -3410,16 +3426,44 @@ mod tests {
         let mut fl9 = model(FeatureLevel::L9_1);
         fl9.driver.full_npot = Query::Value(false);
         assert!(!fl9.unrestricted_npot_texture_sampling());
+        assert!(!fl9.npot_mipmapped_textures_supported());
+        assert!(!fl9
+            .wgpu_projection()
+            .unwrap()
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES));
 
         fl9.driver.full_npot = Query::Unavailable(-1);
         assert!(!fl9.unrestricted_npot_texture_sampling());
+        assert!(!fl9.npot_mipmapped_textures_supported());
 
         fl9.driver.full_npot = Query::Value(true);
         assert!(fl9.unrestricted_npot_texture_sampling());
+        assert!(fl9.npot_mipmapped_textures_supported());
+        assert!(fl9
+            .wgpu_projection()
+            .unwrap()
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES));
+
+        fl9.backend.npot_mipmapped_textures = false;
+        assert!(!fl9.npot_mipmapped_textures_supported());
+        assert!(!fl9
+            .wgpu_projection()
+            .unwrap()
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES));
 
         let mut fl10 = model(FeatureLevel::L10_0);
         fl10.driver.full_npot = Query::Unavailable(-1);
         assert!(fl10.unrestricted_npot_texture_sampling());
+        assert!(fl10.npot_mipmapped_textures_supported());
     }
 
     #[test]
@@ -3437,7 +3481,8 @@ mod tests {
     #[test]
     fn upload_only_mips_require_copy_backend_pot_shape_and_driver_support() {
         use TextureRejection::*;
-        let caps = model(FeatureLevel::L9_1);
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.full_npot = Query::Value(false);
         let usage = wgt::TextureUses::COPY_DST;
         assert!(supported_mip_texture_usage(usage));
         assert!(supported_mip_texture_usage(wgt::TextureUses::COPY_SRC));
@@ -3508,7 +3553,9 @@ mod tests {
     #[test]
     fn pot_mips_require_matching_backend_shape_and_driver() {
         use TextureRejection::*;
-        let caps = model(FeatureLevel::L9_1);
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.full_npot = Query::Value(false);
+        let full_npot_caps = model(FeatureLevel::L9_1);
         let copy = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
         let upload_sample = wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE;
         let rgba = wgt::TextureFormat::Rgba8Unorm;
@@ -3521,6 +3568,12 @@ mod tests {
         assert!(caps.backend.pot_color_attachment_mips);
         assert!(caps.backend.pot_sampled_attachment_mips);
         for format in [rgba, bgra] {
+            let sampled_upload = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+            assert_eq!(
+                check(&full_npot_caps, format, sampled_upload, [6, 10], 1, 4, 1),
+                Ok(())
+            );
+
             let usage_bits = [
                 wgt::TextureUses::COPY_SRC,
                 wgt::TextureUses::COPY_DST,
@@ -3540,6 +3593,10 @@ mod tests {
                 );
                 assert!(supported_mip_texture_usage(usage), "{usage:?}");
                 assert_eq!(check(&caps, format, usage, [8, 4], 1, 4, 1), Ok(()));
+                assert_eq!(
+                    check(&full_npot_caps, format, usage, [6, 10], 1, 4, 1),
+                    Ok(())
+                );
             }
             for usage in [
                 wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
@@ -3646,6 +3703,62 @@ mod tests {
             }
         }
         let mut restricted = caps;
+        for format in [rgba, bgra] {
+            restricted.driver.full_npot = Query::Value(false);
+            assert_eq!(
+                check(
+                    &restricted,
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [6, 10],
+                    1,
+                    4,
+                    1
+                ),
+                Err(UnsupportedShape)
+            );
+            restricted.driver.full_npot = Query::Unavailable(-1);
+            assert_eq!(
+                check(
+                    &restricted,
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [6, 10],
+                    1,
+                    4,
+                    1
+                ),
+                Err(UnsupportedShape)
+            );
+            restricted.driver.full_npot = Query::Value(true);
+            restricted.backend.npot_mipmapped_textures = false;
+            assert_eq!(
+                check(
+                    &restricted,
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [6, 10],
+                    1,
+                    4,
+                    1
+                ),
+                Err(UnsupportedShape)
+            );
+            restricted.backend.npot_mipmapped_textures = true;
+        }
+        assert_eq!(
+            check(
+                &caps,
+                rgba,
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                [6, 10],
+                1,
+                5,
+                1
+            ),
+            Err(UnsupportedShape)
+        );
+        restricted = caps;
         restricted.backend.pot_sampled_attachment_mips = false;
         assert_eq!(
             check(

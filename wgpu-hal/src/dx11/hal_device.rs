@@ -288,6 +288,7 @@ impl crate::Device for Device {
             texture.set_usage(desc.usage);
             return Ok(texture);
         }
+        let capabilities = super::capabilities::Capabilities::query(&self.native);
         let depth = matches!(
             desc.format,
             wgt::TextureFormat::Depth16Unorm
@@ -374,8 +375,9 @@ impl crate::Device for Device {
                 && (depth
                     || sampled_upload
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
-                    || !desc.size.width.is_power_of_two()
-                    || !desc.size.height.is_power_of_two()))
+                    || ((!desc.size.width.is_power_of_two()
+                        || !desc.size.height.is_power_of_two())
+                        && !capabilities.npot_mipmapped_textures_supported())))
             || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
             || (desc.sample_count > 1
                 && (desc.mip_level_count != 1
@@ -488,7 +490,7 @@ impl crate::Device for Device {
             _ => return Err(DeviceError::Unexpected),
         };
         if cube {
-            super::capabilities::Capabilities::query(&self.native)
+            capabilities
                 .check_private_cube_texture(
                     desc.format,
                     desc.usage,
@@ -500,7 +502,7 @@ impl crate::Device for Device {
                 .map_err(|_| DeviceError::Unexpected)?;
         }
         if desc.sample_count > 1 {
-            super::capabilities::Capabilities::query(&self.native)
+            capabilities
                 .check_private_texture_2d(
                     desc.format,
                     desc.usage,

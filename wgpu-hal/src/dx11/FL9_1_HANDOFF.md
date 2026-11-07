@@ -1,5 +1,19 @@
 # FL9_1 handoff
 
+## Latest NPOT mip capability increment — 2026-11-07
+
+The D3D11 projection now sets `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` only when
+the backend path exists and the selected feature level/optional query proves
+unrestricted NPOT support. The HAL applies the same check to D2 creation and
+sampled views; the existing per-format `MIP` query still gates the format. CPU
+tests cover positive, negative, unavailable and backend-disabled inputs. A
+strict public test on the RTX 3090 Ti explicitly requested FL9_1, observed
+`FullNonPow2TextureSupport=true`, uploaded a 6×10 four-level RGBA8 texture and
+rendered mip 2 to an 8×8 target; 64/64 pixels matched. This verifies the
+positive driver path only, not historical restrictive hardware or every
+format/usage. The mission remains partial; continue the contract audit rather
+than treating this query-gated extension as general texture completion.
+
 ## Latest format checkpoint — BC1/BC2/BC3
 
 The private FL9_1 subset now supports queried sampled upload, block-aligned

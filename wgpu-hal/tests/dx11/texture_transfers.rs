@@ -213,7 +213,13 @@ fn fl91_texture_transfer_chain_readback_and_lifetime() -> windows::core::Result<
     assert!(unsafe { device.create_texture(&unsupported) }.is_err());
     unsupported.sample_count = 1;
     unsupported.mip_level_count = 2;
-    assert!(unsafe { device.create_texture(&unsupported) }.is_err());
+    let npot_mipmaps_supported = super::super::capabilities::Capabilities::query(&native)
+        .npot_mipmapped_textures_supported();
+    let npot_mip_result = unsafe { device.create_texture(&unsupported) };
+    assert_eq!(npot_mip_result.is_ok(), npot_mipmaps_supported);
+    if let Ok(texture) = npot_mip_result {
+        unsafe { device.destroy_texture(texture) };
+    }
     unsupported.mip_level_count = 1;
     unsupported.size.depth_or_array_layers = 2;
     assert!(unsafe { device.create_texture(&unsupported) }.is_err());

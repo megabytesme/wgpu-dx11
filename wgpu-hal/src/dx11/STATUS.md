@@ -494,9 +494,14 @@ all out-of-target rectangles. Other backends keep the default true capability.
   binding layouts and views;
   storage-texture array layouts use the same array gate. A one-layer 2D-array
   view is rejected before reaching the HAL. Core also gates NPOT mip chains
-  with `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`; D3D11 leaves it absent because
-  this HAL implements POT-only mip chains regardless of optional full-NPOT
-  driver support.
+  with `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`; D3D11 projects the flag only when
+  its NPOT mip path is implemented and the selected FL9_x device positively
+  reports full-NPOT support. Texture creation and sampled views apply the same
+  query, with per-format MIP support checked independently. A strict public
+  forced-FL9_1 test uploads a 6×10 RGBA8 four-mip chain and verifies mip-2
+  sampling across 64 output pixels. Negative and unavailable queries remain
+  covered synthetically; the RTX reports full NPOT support, so it cannot
+  simulate restrictive historical hardware.
 - RGBA8 and BGRA8 sampled/color textures, texture views, bounded staging
   transfers, zero initialization and GPU texture-region copies, and point/linear,
   clamp/repeat/mirror samplers with anisotropy
@@ -593,8 +598,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   strict clone-backed GPU cases passed across both formats, including a recorded
   upload followed by an indexed draw in the same submission; the controlled core
   fixture checked 64 yellow pixels after a source update. The clone incurs
-  per-draw copies and storage. NPOT mip chains and same-subresource copies remain
-  unsupported. Native FL9 sampled views must include the smallest resource mip;
+  per-draw copies and storage. NPOT mip chains require a positive full-NPOT
+  query and a supported format path; same-subresource copies remain unsupported.
+  Native FL9 sampled views must include the smallest resource mip;
   historical GPU behavior is unverified.
 - POT RGBA8 and BGRA8 color-attachment mip chains support an individual
   single-mip render-target view, with optional sampled, copy-source and

@@ -592,6 +592,8 @@ prevents WebGPU-compliance reporting:
 ```powershell
 cargo test --offline -p wgpu-types source_alpha_saturated_blend_is_a_downlevel_capability -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib mip -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_npot_mip_chain_at_fl91 -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
@@ -2052,8 +2054,15 @@ of a texture with multiple mips is not a power of two. D2 array-layer counts do
 not participate because they are not mip dimensions. The strict controlled
 fixture requests a 6×8 RGBA8 texture with two mips while the flag is absent and
 verifies a `MissingDownlevelFlags` validation error before HAL. The device's
-optional full-NPOT query does not imply that this backend implements NPOT mip
-chains. The CPU test covers D1/D2/D3 dimensions and the D2 array-layer case.
+optional full-NPOT query is combined with the backend path and per-format MIP
+support before the D3D11 projection sets the flag. Synthetic capability tests
+verify false and unavailable queries remain conservative. A strict public
+forced-FL9_1 test on the RTX 3090 Ti uploaded all four levels of a 6×10 RGBA8
+texture using padded rows and command-buffer copies, then sampled mip 2 into an
+8×8 target. All 64 pixels matched the expected blue mip color. The adapter
+reported `FullNonPow2TextureSupport=true`; this does not simulate a restrictive
+historical driver. The CPU core test still covers D1/D2/D3 dimensions and the
+D2 array-layer case.
 
 ### Copy-only POT mip transfers
 
@@ -2087,9 +2096,9 @@ and fail in strict mode; the core fixture propagates query errors as failures in
 either mode.
 
 These tests do not exercise sampled or attachment mip views. Native FL9 shader-resource
-views must include the smallest resource mip; NPOT mip chains, same-subresource copies and
-general mip sampling remain unsupported. Historical FL9 GPU behavior is
-unverified.
+views must include the smallest resource mip; NPOT mip chains require a positive
+full-NPOT query and a supported per-format path. Same-subresource copies remain
+unsupported. Historical FL9 GPU behavior is unverified.
 
 ### Sampled POT mip chains
 
@@ -2118,7 +2127,7 @@ render target; the SRV-only native texture cannot be directly read back.
 A sampler whose minimum LOD was normalized requires
 a single mip; when a finite maximum was raised, a used multi-mip view requires
 the original maximum to reach the last mip and anisotropy 1. NPOT mip chains
-remain unsupported;
+require positive full-NPOT and per-format MIP support;
 historical FL9 GPU behavior is unverified.
 
 The same strict test samples zero-initialized POT chains with `RESOURCE` alone

@@ -156,6 +156,8 @@ pub(super) fn compatible(
                     + 1
             && lod.compatible(texture.mip_levels)
             && (texture.mip_levels == 1
+                || level.as_raw() >= FeatureLevel::L10_0.as_raw()
+                || matches!(full_npot, Query::Value(true))
                 || texture
                     .size
                     .iter()
@@ -628,11 +630,23 @@ mod tests {
             Query::Unavailable(-1)
         ));
         changed.textures[0].mip_levels = 2;
-        assert!(!compatible(
+        assert!(compatible(
             &multiple,
             &changed,
             FeatureLevel::L9_1,
             Query::Value(true)
+        ));
+        assert!(!compatible(
+            &multiple,
+            &changed,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        assert!(!compatible(
+            &multiple,
+            &changed,
+            FeatureLevel::L9_1,
+            Query::Unavailable(-1)
         ));
     }
 
@@ -788,7 +802,19 @@ mod tests {
             &get("valid"),
             &actual,
             FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        assert!(compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
             Query::Value(true)
+        ));
+        assert!(!compatible(
+            &get("valid"),
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Unavailable(-1)
         ));
         actual.textures[0].size = [4, 8, 1];
         actual.samplers_lod.clear();

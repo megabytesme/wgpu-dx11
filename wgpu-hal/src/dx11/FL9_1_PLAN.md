@@ -1,5 +1,16 @@
 # FL9_1 completion plan
 
+Latest increment: the optional `FullNonPow2TextureSupport` result now controls
+the internal `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES` projection for the
+implemented D2 path, in addition to per-format MIP queries. The private HAL
+accepts the same query-gated 2D mip shapes and sampled views. On the RTX 3090 Ti
+explicitly forced to FL9_1, a public test uploaded a 6×10 four-mip RGBA8 chain
+through buffer-to-texture copies and sampled mip 2; all 64 readback pixels
+matched. Negative and unavailable 9_x queries remain conservative in synthetic
+tests. This does not verify restrictive historical hardware, other formats or
+all usages. See the latest `FL9_1_PROGRESS.md` entry; the overall completion
+mission remains partial.
+
 Latest texture-format increment: private BC1/BC2/BC3_UNORM now support queried
 single-mip sampled uploads, aligned partial block updates and same-format GPU
 texture copies. Strict FL9_1 readback matched 256/256 output pixels for each

@@ -698,6 +698,9 @@ impl NativeDevice {
         unsafe { view.texture.as_2d()?.GetDesc(&mut desc) };
         unsafe { resource.GetDesc(&mut view_desc) };
         let cube_view = view_desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE;
+        let npot_mips_unsupported = desc.MipLevels > 1
+            && (!desc.Width.is_power_of_two() || !desc.Height.is_power_of_two())
+            && !super::capabilities::Capabilities::query(self).npot_mipmapped_textures_supported();
         let valid_shape = if cube_view {
             desc.ArraySize == 6
                 && desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 != 0
@@ -735,8 +738,7 @@ impl NativeDevice {
                 && (!(view.usage == wgt::TextureUses::RESOURCE
                     || view.usage
                         == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET))
-                    || !desc.Width.is_power_of_two()
-                    || !desc.Height.is_power_of_two()
+                    || npot_mips_unsupported
                     || (view.usage.contains(wgt::TextureUses::COLOR_TARGET)
                         && view.mip_count != 1)))
             || view.mip_count == 0
@@ -837,14 +839,16 @@ impl NativeDevice {
             DXGI_FORMAT_B5G6R5_UNORM => wgt::TextureFormat::Rgb5g6b5Unorm,
             _ => return Err(invalid()),
         };
+        let npot_mips_unsupported = desc.MipLevels > 1
+            && (!desc.Width.is_power_of_two() || !desc.Height.is_power_of_two())
+            && !super::capabilities::Capabilities::query(self).npot_mipmapped_textures_supported();
         if desc.Width == 0
             || desc.Height == 0
             || (desc.MipLevels > 1
                 && (!(view.usage == wgt::TextureUses::COLOR_TARGET
                     || view.usage
                         == (wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET))
-                    || !desc.Width.is_power_of_two()
-                    || !desc.Height.is_power_of_two()
+                    || npot_mips_unsupported
                     || (view.usage.contains(wgt::TextureUses::RESOURCE)
                         && view.refresh.is_none()
                         && view.mip_base.checked_add(1) != Some(desc.MipLevels))))
