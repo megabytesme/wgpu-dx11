@@ -9,6 +9,14 @@ have run at forced FL9_1. A captured client-area frame was visually inspected:
 the rotating cube showed distinct red and green textured faces over the clear
 background. This plan does not claim WebGPU conformance.
 
+Latest private increment: a narrow FL9_1 sampled-depth comparison path is
+implemented only when the selected device positively reports
+`D3D11_FEATURE_D3D9_SHADOW_SUPPORT`. Strict D16 rendering, typeless D16/D24S8
+view creation, the complete HAL suite, core rejection before HAL and DX12
+regressions passed on 2026-11-07. This does not enable public comparison
+samplers or close the overall core/HAL audit; see the last entry in
+`FL9_1_PROGRESS.md`.
+
 The 2026-11-07 verification checkpoint reran the strict private HAL and public
 D3D11 suites, the controlled core fixture, adapter selection and DX12
 regression; results and exact commands are recorded in
@@ -872,8 +880,10 @@ batches; readback proves HAL rebases point input and preserves whole triangles
 through public core submission. Continue the public-valid core/HAL audit,
 especially selected-entry shader validation and render-state combinations.
 
-The strict public integration target also now renders a perspective cube with
-sampled texture and D16 depth, comparing full output under reversed face order.
-This closes one representative-scene coverage gap; continue auditing other
-public-valid combinations and keep the overall mission partial until material
-implementation, safety and platform gaps are resolved or explicitly blocked.
+The strict public integration target also renders a perspective cube with a
+sampled texture and D16 depth. At forced FL9_1, opposite face orders match over
+all 1,024 pixels with depth, while the no-depth painter-order controls differ
+at 223 pixels. This closes one representative-scene coverage gap; continue
+auditing other public-valid combinations and keep the overall mission partial
+until material implementation, safety and platform gaps are resolved or
+explicitly blocked.

@@ -139,7 +139,26 @@ pub(crate) struct UniformBinding {
 pub(crate) enum ShaderBindingKind {
     Uniform,
     TextureFloat,
+    TextureDepth,
     Sampler,
+    SamplerComparison,
+}
+
+impl ShaderBindingKind {
+    fn same_register_namespace(self, other: Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Uniform, Self::Uniform)
+                | (
+                    Self::TextureFloat | Self::TextureDepth,
+                    Self::TextureFloat | Self::TextureDepth
+                )
+                | (
+                    Self::Sampler | Self::SamplerComparison,
+                    Self::Sampler | Self::SamplerComparison
+                )
+        )
+    }
 }
 
 /// One Naga binding mapped to a D3D11 `b`, `t`, or `s` register.
@@ -159,9 +178,8 @@ pub(super) fn shader_binding_kind(
         naga::AddressSpace::Uniform => Some(ShaderBindingKind::Uniform),
         naga::AddressSpace::Handle => match module.types[global.ty].inner {
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2
-                    | naga::ImageDimension::D3
-                    | naga::ImageDimension::Cube,
+                dim:
+                    naga::ImageDimension::D2 | naga::ImageDimension::D3 | naga::ImageDimension::Cube,
                 arrayed: false,
                 class:
                     naga::ImageClass::Sampled {
@@ -169,7 +187,15 @@ pub(super) fn shader_binding_kind(
                         multi: false,
                     },
             } => Some(ShaderBindingKind::TextureFloat),
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class: naga::ImageClass::Depth { multi: false },
+            } => Some(ShaderBindingKind::TextureDepth),
             naga::TypeInner::Sampler { comparison: false } => Some(ShaderBindingKind::Sampler),
+            naga::TypeInner::Sampler { comparison: true } => {
+                Some(ShaderBindingKind::SamplerComparison)
+            }
             _ => None,
         },
         _ => None,
@@ -282,7 +308,12 @@ pub(super) fn compile_naga_with_viewport(
     if level_9
         && bindings
             .iter()
-            .filter(|mapping| mapping.kind == ShaderBindingKind::TextureFloat)
+            .filter(|mapping| {
+                matches!(
+                    mapping.kind,
+                    ShaderBindingKind::TextureFloat | ShaderBindingKind::TextureDepth
+                )
+            })
             .count()
             > 8
     {
@@ -291,14 +322,15 @@ pub(super) fn compile_naga_with_viewport(
     for (index, mapping) in bindings.iter().enumerate() {
         let max_slots = match mapping.kind {
             ShaderBindingKind::Uniform => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT,
-            ShaderBindingKind::Sampler => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT,
-            ShaderBindingKind::TextureFloat if level_9 => 16,
-            ShaderBindingKind::TextureFloat => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT,
+            ShaderBindingKind::Sampler | ShaderBindingKind::SamplerComparison => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT,
+            ShaderBindingKind::TextureFloat | ShaderBindingKind::TextureDepth if level_9 => 16,
+            ShaderBindingKind::TextureFloat | ShaderBindingKind::TextureDepth => windows::Win32::Graphics::Direct3D11::D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT,
         };
         if mapping.slot >= max_slots
             || bindings[..index].iter().any(|other| {
                 other.binding == mapping.binding
-                    || (other.kind == mapping.kind && other.slot == mapping.slot)
+                    || (other.kind.same_register_namespace(mapping.kind)
+                        && other.slot == mapping.slot)
             })
         {
             return Err(NagaCompileError::InvalidBindingMapping);
@@ -1017,6 +1049,76 @@ mod tests {
             let bytes = compile_hlsl(source, "main", profile).expect("compile simple HLSL");
             assert!(bytes.starts_with(b"DXBC"), "{profile:?}");
         }
+    }
+
+    #[test]
+    fn level_9_1_pixel_profile_compiles_shadow_comparison_sampling() {
+        let source = "Texture2D<float> shadow_map : register(t0); SamplerComparisonState shadow_sampler : register(s0); float4 main(float2 uv : TEXCOORD0, float reference : TEXCOORD1) : SV_TARGET { float shadow = shadow_map.SampleCmp(shadow_sampler, uv, reference); return float4(shadow, shadow, shadow, 1.0); }";
+        let bytes = compile_hlsl(source, "main", ShaderProfile::PixelLevel9_1)
+            .expect("the level 9_1 shadow profile supports query-gated SampleCmp");
+        assert!(bytes.starts_with(b"DXBC"));
+    }
+
+    #[test]
+    fn naga_maps_depth_comparison_bindings_to_fl91_registers() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var shadow_map: texture_depth_2d;
+            @group(0) @binding(42) var shadow_sampler: sampler_comparison;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let value = textureSampleCompare(shadow_map, shadow_sampler, uv, 0.5);
+                return vec4f(value, value, value, 1.0);
+            }
+            "#,
+        )
+        .expect("parse comparison shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate comparison shader");
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureDepth,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::SamplerComparison,
+            },
+        ];
+        let bytes = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .expect("translate and compile comparison resources");
+        assert!(bytes.starts_with(b"DXBC"));
+        let mut wrong_sampler = bindings;
+        wrong_sampler[1].kind = ShaderBindingKind::Sampler;
+        assert!(matches!(
+            compile_naga_with_bindings(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "main",
+                ShaderProfile::PixelLevel9_1,
+                &wrong_sampler,
+            ),
+            Err(NagaCompileError::InvalidBindingMapping)
+        ));
     }
 
     #[test]
@@ -2682,7 +2784,10 @@ mod tests {
 
     #[test]
     fn naga_fl91_pixel_profile_accepts_bound_texture3d_sampling() {
-        use naga::{valid::{Capabilities, ValidationFlags, Validator}, ShaderStage};
+        use naga::{
+            valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
+        };
 
         let source = r#"
             @group(0) @binding(7) var volume: texture_3d<f32>;

@@ -53,7 +53,11 @@ fn fl91_nonfiltering_sampler_layout_render_and_transitions() -> windows::core::R
     let nonfiltering = make_group_layout(wgt::SamplerBindingType::NonFiltering)
         .expect("FL9_1 non-filtering sampler layout");
     let filtering = make_group_layout(wgt::SamplerBindingType::Filtering).unwrap();
-    assert!(make_group_layout(wgt::SamplerBindingType::Comparison).is_err());
+    let comparison_supported = super::super::capabilities::Capabilities::query(&native)
+        .private_fl91_depth_comparison_sampling();
+    let comparison_layout = make_group_layout(wgt::SamplerBindingType::Comparison);
+    assert_eq!(comparison_layout.is_ok(), comparison_supported);
+    drop(comparison_layout);
     let make_layout = |group| unsafe {
         device
             .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
@@ -158,7 +162,8 @@ fn fl91_nonfiltering_sampler_layout_render_and_transitions() -> windows::core::R
     let linear = unsafe { device.create_sampler(&linear_desc).unwrap() };
     let mut comparison_desc = sampler_desc.clone();
     comparison_desc.compare = Some(wgt::CompareFunction::LessEqual);
-    assert!(unsafe { device.create_sampler(&comparison_desc) }.is_err());
+    let comparison_sampler = unsafe { device.create_sampler(&comparison_desc) };
+    assert_eq!(comparison_sampler.is_ok(), comparison_supported);
     let texture_desc = crate::TextureDescriptor {
         label: None,
         size: wgt::Extent3d {

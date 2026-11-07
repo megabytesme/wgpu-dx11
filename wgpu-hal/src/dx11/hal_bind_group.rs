@@ -23,9 +23,11 @@ pub(super) struct GroupKind {
     pub uniforms: [Option<UniformLayout>; MAX_UNIFORMS],
     pub textures: [Option<u32>; MAX_TEXTURES],
     pub texture_unfilterable_mask: u8,
+    pub texture_depth_mask: u8,
     pub texture_vertex_visibility_mask: u8,
     pub samplers: [Option<u32>; MAX_SAMPLERS],
     pub sampler_non_filtering_mask: u16,
+    pub sampler_comparison_mask: u16,
     pub sampler_vertex_visibility_mask: u16,
 }
 
@@ -34,9 +36,11 @@ impl GroupKind {
         uniforms: [None; MAX_UNIFORMS],
         textures: [None; MAX_TEXTURES],
         texture_unfilterable_mask: 0,
+        texture_depth_mask: 0,
         texture_vertex_visibility_mask: 0,
         samplers: [None; MAX_SAMPLERS],
         sampler_non_filtering_mask: 0,
+        sampler_comparison_mask: 0,
         sampler_vertex_visibility_mask: 0,
     };
 
@@ -54,21 +58,36 @@ impl GroupKind {
                 kind: ShaderBindingKind::Uniform,
             });
         }
-        for (kind, slots) in [
-            (ShaderBindingKind::TextureFloat, self.textures.as_slice()),
-            (ShaderBindingKind::Sampler, self.samplers.as_slice()),
-        ] {
-            for (slot, binding) in slots.iter().enumerate() {
-                if let Some(binding) = binding {
-                    bindings.push(ShaderBinding {
-                        binding: naga::ResourceBinding {
-                            group: 0,
-                            binding: *binding,
-                        },
-                        slot: slot as u32,
-                        kind,
-                    });
-                }
+        for (slot, binding) in self.textures.iter().enumerate() {
+            if let Some(binding) = binding {
+                bindings.push(ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: *binding,
+                    },
+                    slot: slot as u32,
+                    kind: if self.texture_depth_mask & (1 << slot) != 0 {
+                        ShaderBindingKind::TextureDepth
+                    } else {
+                        ShaderBindingKind::TextureFloat
+                    },
+                });
+            }
+        }
+        for (slot, binding) in self.samplers.iter().enumerate() {
+            if let Some(binding) = binding {
+                bindings.push(ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: *binding,
+                    },
+                    slot: slot as u32,
+                    kind: if self.sampler_comparison_mask & (1 << slot) != 0 {
+                        ShaderBindingKind::SamplerComparison
+                    } else {
+                        ShaderBindingKind::Sampler
+                    },
+                });
             }
         }
         bindings
@@ -90,12 +109,14 @@ impl GroupKind {
                             && uniform.visibility.contains(stage)
                     })
                 }
-                super::shader::ShaderBindingKind::TextureFloat => {
+                super::shader::ShaderBindingKind::TextureFloat
+                | super::shader::ShaderBindingKind::TextureDepth => {
                     stage == wgt::ShaderStages::FRAGMENT
                         || (stage == wgt::ShaderStages::VERTEX
                             && self.texture_vertex_visibility_mask & (1u8 << binding.slot) != 0)
                 }
-                super::shader::ShaderBindingKind::Sampler => {
+                super::shader::ShaderBindingKind::Sampler
+                | super::shader::ShaderBindingKind::SamplerComparison => {
                     stage == wgt::ShaderStages::FRAGMENT
                         || (stage == wgt::ShaderStages::VERTEX
                             && self.sampler_vertex_visibility_mask & (1u16 << binding.slot) != 0)
@@ -154,14 +175,19 @@ impl BindingPlan {
                 let sampler_count = dense_count(&group.samplers)?;
                 let texture_count = dense_count(&group.textures)?;
                 if u32::from(
-                    group.sampler_non_filtering_mask | group.sampler_vertex_visibility_mask,
+                    group.sampler_non_filtering_mask
+                        | group.sampler_comparison_mask
+                        | group.sampler_vertex_visibility_mask,
                 ) >> sampler_count
                     != 0
                 {
                     return Err(crate::DeviceError::Unexpected);
                 }
-                if u32::from(group.texture_unfilterable_mask | group.texture_vertex_visibility_mask)
-                    >> texture_count
+                if u32::from(
+                    group.texture_unfilterable_mask
+                        | group.texture_depth_mask
+                        | group.texture_vertex_visibility_mask,
+                ) >> texture_count
                     != 0
                 {
                     return Err(crate::DeviceError::Unexpected);
@@ -211,22 +237,32 @@ impl BindingPlan {
                     slots.samplers
                 } as usize;
                 let flat = offset.checked_add(local)?;
-                let constrained = if texture {
-                    group.texture_unfilterable_mask & (1u8 << local) != 0
+                let (constrained, comparison_class) = if texture {
+                    (
+                        group.texture_unfilterable_mask & (1u8 << local) != 0,
+                        group.texture_depth_mask & (1u8 << local) != 0,
+                    )
                 } else {
-                    group.sampler_non_filtering_mask & (1u16 << local) != 0
+                    (
+                        group.sampler_non_filtering_mask & (1u16 << local) != 0,
+                        group.sampler_comparison_mask & (1u16 << local) != 0,
+                    )
                 };
-                Some((flat, constrained))
+                Some((flat, constrained, comparison_class))
             };
-            let Some((texture_slot, unfilterable)) = lookup(pair.texture, true) else {
+            let Some((texture_slot, unfilterable, texture_depth)) = lookup(pair.texture, true)
+            else {
                 return false;
             };
-            let Some((sampler_slot, non_filtering)) = lookup(pair.sampler, false) else {
+            let Some((sampler_slot, non_filtering, sampler_comparison)) =
+                lookup(pair.sampler, false)
+            else {
                 return false;
             };
             texture_slot == pair.texture_slot
                 && sampler_slot == pair.sampler_slot
                 && (!unfilterable || non_filtering)
+                && texture_depth == sampler_comparison
         })
     }
 
@@ -242,8 +278,12 @@ impl BindingPlan {
                     binding.binding.group = index as u32;
                     binding.slot += match binding.kind {
                         ShaderBindingKind::Uniform => slots.uniforms,
-                        ShaderBindingKind::TextureFloat => slots.textures,
-                        ShaderBindingKind::Sampler => slots.samplers,
+                        ShaderBindingKind::TextureFloat | ShaderBindingKind::TextureDepth => {
+                            slots.textures
+                        }
+                        ShaderBindingKind::Sampler | ShaderBindingKind::SamplerComparison => {
+                            slots.samplers
+                        }
                     };
                     binding
                 }));
@@ -266,8 +306,13 @@ fn entries_match(entries: &[crate::BindGroupEntry], expected: &[(u32, u32)]) -> 
         })
 }
 
-fn sampler_binding_compatible(non_filtering: bool, filtering: bool) -> bool {
-    !non_filtering || !filtering
+fn sampler_binding_compatible(
+    non_filtering: bool,
+    comparison: bool,
+    filtering: bool,
+    sampler_comparison: bool,
+) -> bool {
+    (!non_filtering || !filtering) && (comparison == sampler_comparison)
 }
 
 fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate::DeviceError> {
@@ -293,23 +338,41 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
         match entry.ty {
             wgt::BindingType::Texture {
                 sample_type: wgt::TextureSampleType::Float { filterable },
-                view_dimension: wgt::TextureViewDimension::D2
+                view_dimension:
+                    wgt::TextureViewDimension::D2
                     | wgt::TextureViewDimension::D3
                     | wgt::TextureViewDimension::Cube,
                 multisampled: false,
             } if sampled_visibility(entry.visibility) => textures.push((
                 entry.binding,
                 !filterable,
+                false,
                 entry.visibility.contains(wgt::ShaderStages::VERTEX),
             )),
+            wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Depth,
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            } if entry.visibility == wgt::ShaderStages::FRAGMENT => {
+                textures.push((entry.binding, false, true, false))
+            }
             wgt::BindingType::Sampler(
                 sampler_type @ (wgt::SamplerBindingType::Filtering
-                | wgt::SamplerBindingType::NonFiltering),
-            ) if sampled_visibility(entry.visibility) => samplers.push((
-                entry.binding,
-                sampler_type == wgt::SamplerBindingType::NonFiltering,
-                entry.visibility.contains(wgt::ShaderStages::VERTEX),
-            )),
+                | wgt::SamplerBindingType::NonFiltering
+                | wgt::SamplerBindingType::Comparison),
+            ) if if sampler_type == wgt::SamplerBindingType::Comparison {
+                entry.visibility == wgt::ShaderStages::FRAGMENT
+            } else {
+                sampled_visibility(entry.visibility)
+            } =>
+            {
+                samplers.push((
+                    entry.binding,
+                    sampler_type == wgt::SamplerBindingType::NonFiltering,
+                    sampler_type == wgt::SamplerBindingType::Comparison,
+                    entry.visibility.contains(wgt::ShaderStages::VERTEX),
+                ))
+            }
             wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
                 has_dynamic_offset,
@@ -341,19 +404,25 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
     for (slot, uniform) in uniforms.into_iter().enumerate() {
         kind.uniforms[slot] = Some(uniform);
     }
-    for (slot, (binding, unfilterable, vertex)) in textures.into_iter().enumerate() {
+    for (slot, (binding, unfilterable, depth, vertex)) in textures.into_iter().enumerate() {
         kind.textures[slot] = Some(binding);
         if unfilterable {
             kind.texture_unfilterable_mask |= 1u8 << slot;
+        }
+        if depth {
+            kind.texture_depth_mask |= 1u8 << slot;
         }
         if vertex {
             kind.texture_vertex_visibility_mask |= 1u8 << slot;
         }
     }
-    for (slot, (binding, non_filtering, vertex)) in samplers.into_iter().enumerate() {
+    for (slot, (binding, non_filtering, comparison, vertex)) in samplers.into_iter().enumerate() {
         kind.samplers[slot] = Some(binding);
         if non_filtering {
             kind.sampler_non_filtering_mask |= 1u16 << slot;
+        }
+        if comparison {
+            kind.sampler_comparison_mask |= 1u16 << slot;
         }
         if vertex {
             kind.sampler_vertex_visibility_mask |= 1u16 << slot;
@@ -398,6 +467,15 @@ impl BindGroupLayout {
         desc: &crate::BindGroupLayoutDescriptor,
     ) -> Result<Self, crate::DeviceError> {
         if !desc.flags.is_empty() {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        if desc
+            .entries
+            .iter()
+            .any(|entry| entry.ty == wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison))
+            && !super::capabilities::Capabilities::query(&owner)
+                .private_fl91_depth_comparison_sampling()
+        {
             return Err(crate::DeviceError::Unexpected);
         }
         let kind = group_kind(desc.entries)?;
@@ -505,7 +583,13 @@ impl BindGroup {
             let (view, size, mip_levels) = owner
                 .sampled_binding(binding.view)
                 .map_err(super::hal_device::device_error)?;
-            if !view.filterable && kind.texture_unfilterable_mask & (1u8 << slot) == 0 {
+            if view.depth != (kind.texture_depth_mask & (1u8 << slot) != 0) {
+                return Err(crate::DeviceError::Unexpected);
+            }
+            if !view.depth
+                && !view.filterable
+                && kind.texture_unfilterable_mask & (1u8 << slot) == 0
+            {
                 return Err(crate::DeviceError::Unexpected);
             }
             views.push(view);
@@ -520,7 +604,9 @@ impl BindGroup {
             let raw = sampler.raw_for(owner)?;
             if !sampler_binding_compatible(
                 kind.sampler_non_filtering_mask & (1u16 << slot) != 0,
+                kind.sampler_comparison_mask & (1u16 << slot) != 0,
                 sampler.filtering(),
+                sampler.comparison(),
             ) {
                 return Err(crate::DeviceError::Unexpected);
             }
@@ -555,6 +641,7 @@ impl BindGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dx11::shader::ShaderBindingKind;
     use crate::dx11::{enumerate_native_adapters, Device, FeatureLevel};
     use crate::Device as _;
     use windows::Win32::Graphics::Direct3D11::D3D11_SAMPLER_DESC;
@@ -637,6 +724,71 @@ mod tests {
             assert!(group_kind(&[entry(1, visibility, texture)]).is_err());
             assert!(group_kind(&[entry(1, visibility, sampler)]).is_err());
         }
+    }
+
+    #[test]
+    fn depth_comparison_layout_uses_matching_texture_and_sampler_namespaces() {
+        let entries = [
+            wgt::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Texture {
+                    sample_type: wgt::TextureSampleType::Depth,
+                    view_dimension: wgt::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgt::BindGroupLayoutEntry {
+                binding: 42,
+                visibility: wgt::ShaderStages::FRAGMENT,
+                ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
+                count: None,
+            },
+        ];
+        let group = group_kind(&entries).unwrap();
+        assert_eq!(group.texture_depth_mask, 1);
+        assert_eq!(group.sampler_comparison_mask, 1);
+        let bindings = group.stage_bindings(wgt::ShaderStages::FRAGMENT);
+        assert_eq!(bindings[0].kind, ShaderBindingKind::TextureDepth);
+        assert_eq!(bindings[0].slot, 0);
+        assert_eq!(bindings[1].kind, ShaderBindingKind::SamplerComparison);
+        assert_eq!(bindings[1].slot, 0);
+        let plan = BindingPlan::new(&[Some(group)]).unwrap();
+        let pair = super::super::sampling::SamplingPair {
+            texture: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            sampler: naga::ResourceBinding {
+                group: 0,
+                binding: 42,
+            },
+            texture_slot: 0,
+            sampler_slot: 0,
+            requires_bias_compatible: false,
+        };
+        assert!(plan.sampling_pairs_compatible(&[pair]));
+
+        let mut invalid = group;
+        invalid.sampler_comparison_mask = 0;
+        let invalid_plan = BindingPlan::new(&[Some(invalid)]).unwrap();
+        assert!(!invalid_plan.sampling_pairs_compatible(&[pair]));
+        assert!(
+            group_kind(&[
+                entries[0],
+                wgt::BindGroupLayoutEntry {
+                    ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+                    ..entries[1]
+                },
+            ])
+            .unwrap()
+            .sampler_comparison_mask
+                == 0
+        );
+        let mut vertex_visible = entries;
+        vertex_visible[1].visibility = wgt::ShaderStages::VERTEX;
+        assert!(group_kind(&vertex_visible).is_err());
     }
 
     #[test]
@@ -784,10 +936,12 @@ mod tests {
         let mut invalid = kind;
         invalid.sampler_non_filtering_mask |= 1 << 4;
         assert!(BindingPlan::new(&[Some(invalid)]).is_err());
-        assert!(sampler_binding_compatible(false, false));
-        assert!(sampler_binding_compatible(false, true));
-        assert!(sampler_binding_compatible(true, false));
-        assert!(!sampler_binding_compatible(true, true));
+        assert!(sampler_binding_compatible(false, false, false, false));
+        assert!(sampler_binding_compatible(false, false, true, false));
+        assert!(sampler_binding_compatible(true, false, false, false));
+        assert!(!sampler_binding_compatible(true, false, true, false));
+        assert!(sampler_binding_compatible(false, true, true, true));
+        assert!(!sampler_binding_compatible(false, true, true, false));
     }
 
     #[test]
@@ -1007,7 +1161,7 @@ mod tests {
                 ..sampler
             }
         ])
-        .is_err());
+        .is_ok());
         assert!(group_kind(&[
             wgt::BindGroupLayoutEntry {
                 ty: wgt::BindingType::Texture {

@@ -30,10 +30,12 @@ use windows::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
                 DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_D16_UNORM,
-                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
-                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS,
+                DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS,
+                DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -141,7 +143,6 @@ impl NativeTexture {
     pub(super) fn supports_usage(&self, usage: wgt::TextureUses) -> bool {
         self.usage.contains(usage)
     }
-
 }
 
 /// A shader-resource view, retaining the owning device and texture.
@@ -153,6 +154,7 @@ pub struct NativeTextureView {
     render_target: Option<ID3D11RenderTargetView>,
     surface_target: Option<Arc<ID3D11RenderTargetView>>,
     depth_stencil: Option<ID3D11DepthStencilView>,
+    depth_sampled: bool,
     usage: wgt::TextureUses,
     owner: ID3D11Device,
     texture: NativeTextureResource,
@@ -205,6 +207,7 @@ pub(super) struct SampledBinding {
     pub mip_base: u32,
     pub mip_count: u32,
     pub filterable: bool,
+    pub depth: bool,
 }
 
 impl NativeTextureView {
@@ -406,6 +409,7 @@ impl NativeDevice {
         height: u32,
         format: DXGI_FORMAT,
         sample_count: u32,
+        sampled: bool,
     ) -> Result<NativeTexture> {
         if !matches!(
             format,
@@ -420,18 +424,35 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
+        if sampled && sample_count != 1 {
+            return Err(invalid());
+        }
+        let resource_format = if sampled {
+            match format {
+                DXGI_FORMAT_D16_UNORM => DXGI_FORMAT_R16_TYPELESS,
+                DXGI_FORMAT_D24_UNORM_S8_UINT => DXGI_FORMAT_R24G8_TYPELESS,
+                _ => return Err(invalid()),
+            }
+        } else {
+            format
+        };
         let desc = D3D11_TEXTURE2D_DESC {
             Width: width,
             Height: height,
             MipLevels: 1,
             ArraySize: 1,
-            Format: format,
+            Format: resource_format,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: sample_count,
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: D3D11_BIND_DEPTH_STENCIL.0 as u32,
+            BindFlags: D3D11_BIND_DEPTH_STENCIL.0 as u32
+                | if sampled {
+                    D3D11_BIND_SHADER_RESOURCE.0 as u32
+                } else {
+                    0
+                },
             ..Default::default()
         };
         let mut raw = None;
@@ -505,8 +526,10 @@ impl NativeDevice {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { view.texture.as_2d()?.GetDesc(&mut desc) };
         let format = match desc.Format {
-            DXGI_FORMAT_D16_UNORM => wgt::TextureFormat::Depth16Unorm,
-            DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
+            DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_R16_TYPELESS => wgt::TextureFormat::Depth16Unorm,
+            DXGI_FORMAT_D24_UNORM_S8_UINT | DXGI_FORMAT_R24G8_TYPELESS => {
+                wgt::TextureFormat::Depth24PlusStencil8
+            }
             _ => return Err(invalid()),
         };
         if desc.MipLevels != 1
@@ -544,6 +567,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                     | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
+                    | DXGI_FORMAT_R16_TYPELESS
+                    | DXGI_FORMAT_R24G8_TYPELESS
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_BC1_UNORM
@@ -681,6 +706,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                     | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
+                    | DXGI_FORMAT_R16_TYPELESS
+                    | DXGI_FORMAT_R24G8_TYPELESS
             )
             || (desc.MipLevels > 1
                 && (!(view.usage == wgt::TextureUses::RESOURCE
@@ -700,7 +727,22 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
-        let filterable = if matches!(
+        let depth = matches!(
+            desc.Format,
+            DXGI_FORMAT_R16_TYPELESS | DXGI_FORMAT_R24G8_TYPELESS
+        );
+        if depth
+            && (!view.depth_sampled
+                || view.mip_base != 0
+                || view.mip_count != 1
+                || desc.MipLevels != 1
+                || desc.SampleDesc.Count != 1)
+        {
+            return Err(invalid());
+        }
+        let filterable = if depth {
+            false
+        } else if matches!(
             desc.Format,
             DXGI_FORMAT_R8_UNORM
                 | DXGI_FORMAT_R8G8_UNORM
@@ -742,6 +784,7 @@ impl NativeDevice {
                 mip_base: view.mip_base,
                 mip_count: view.mip_count,
                 filterable,
+                depth: view.depth_sampled,
             },
             size,
             levels,
@@ -1070,8 +1113,11 @@ impl NativeDevice {
         }
         let mut view = None;
         unsafe {
-            self.raw_device()
-                .CreateRenderTargetView(texture.raw.as_2d()?, None, Some(&mut view))?;
+            self.raw_device().CreateRenderTargetView(
+                texture.raw.as_2d()?,
+                None,
+                Some(&mut view),
+            )?;
         }
         let view = view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let context = self.immediate_context();
@@ -1089,8 +1135,11 @@ impl NativeDevice {
         let texture = self.create_rgba_texture_inner(width, height, 1, 1, true)?;
         let mut view = None;
         unsafe {
-            self.raw_device()
-                .CreateRenderTargetView(texture.raw.as_2d()?, None, Some(&mut view))?;
+            self.raw_device().CreateRenderTargetView(
+                texture.raw.as_2d()?,
+                None,
+                Some(&mut view),
+            )?;
         }
         Ok(NativeRenderTarget {
             texture,
@@ -1119,14 +1168,18 @@ impl NativeDevice {
         self.check_texture_owner(texture)?;
         let mut view = None;
         unsafe {
-            self.raw_device()
-                .CreateShaderResourceView(texture.raw.as_2d()?, None, Some(&mut view))?;
+            self.raw_device().CreateShaderResourceView(
+                texture.raw.as_2d()?,
+                None,
+                Some(&mut view),
+            )?;
         }
         Ok(NativeTextureView {
             resource: Some(view.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             render_target: None,
             surface_target: None,
             depth_stencil: None,
+            depth_sampled: false,
             usage: wgt::TextureUses::RESOURCE,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
@@ -1147,6 +1200,20 @@ impl NativeDevice {
         mip_range: (u32, u32),
     ) -> Result<NativeTextureView> {
         self.check_texture_owner(texture)?;
+        let depth_sampled = if resource
+            && matches!(
+                texture.format,
+                DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_D24_UNORM_S8_UINT
+            ) {
+            let mut desc = D3D11_TEXTURE2D_DESC::default();
+            unsafe { texture.raw.as_2d()?.GetDesc(&mut desc) };
+            matches!(
+                desc.Format,
+                DXGI_FORMAT_R16_TYPELESS | DXGI_FORMAT_R24G8_TYPELESS
+            )
+        } else {
+            false
+        };
         let (mip_base, mip_count) = mip_range;
         if texture.dimension == wgt::TextureDimension::D3 {
             if !resource
@@ -1196,6 +1263,7 @@ impl NativeDevice {
                 render_target: None,
                 surface_target: None,
                 depth_stencil: None,
+                depth_sampled: false,
                 usage,
                 owner: self.raw_device().clone(),
                 texture: texture.raw.clone(),
@@ -1307,7 +1375,11 @@ impl NativeDevice {
                 }
                 let shader_desc = if cube {
                     D3D11_SHADER_RESOURCE_VIEW_DESC {
-                        Format: texture_desc.Format,
+                        Format: match texture_desc.Format {
+                            DXGI_FORMAT_R16_TYPELESS => DXGI_FORMAT_R16_UNORM,
+                            DXGI_FORMAT_R24G8_TYPELESS => DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+                            format => format,
+                        },
                         ViewDimension: D3D11_SRV_DIMENSION_TEXTURECUBE,
                         Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                             TextureCube: D3D11_TEXCUBE_SRV {
@@ -1318,7 +1390,11 @@ impl NativeDevice {
                     }
                 } else {
                     D3D11_SHADER_RESOURCE_VIEW_DESC {
-                        Format: texture_desc.Format,
+                        Format: match texture_desc.Format {
+                            DXGI_FORMAT_R16_TYPELESS => DXGI_FORMAT_R16_UNORM,
+                            DXGI_FORMAT_R24G8_TYPELESS => DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+                            format => format,
+                        },
                         ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
                         Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                             Texture2D: D3D11_TEX2D_SRV {
@@ -1367,7 +1443,11 @@ impl NativeDevice {
                 let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
                 texture.raw.as_2d()?.GetDesc(&mut texture_desc);
                 let depth_desc = D3D11_DEPTH_STENCIL_VIEW_DESC {
-                    Format: texture_desc.Format,
+                    Format: match texture_desc.Format {
+                        DXGI_FORMAT_R16_TYPELESS => DXGI_FORMAT_D16_UNORM,
+                        DXGI_FORMAT_R24G8_TYPELESS => DXGI_FORMAT_D24_UNORM_S8_UINT,
+                        format => format,
+                    },
                     ViewDimension: if texture_desc.SampleDesc.Count == 1 {
                         D3D11_DSV_DIMENSION_TEXTURE2D
                     } else {
@@ -1407,6 +1487,7 @@ impl NativeDevice {
             render_target: target,
             surface_target,
             depth_stencil: depth,
+            depth_sampled,
             usage,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
@@ -1542,7 +1623,6 @@ impl NativeDevice {
         Ok(())
     }
 
-
     /// Upload a checked rectangle with an explicit source row pitch.
     pub(crate) fn write_rgba_region(
         &self,
@@ -1664,16 +1744,7 @@ impl NativeDevice {
         let context = self.immediate_context();
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
-            context.CopySubresourceRegion(
-                &staging,
-                0,
-                0,
-                0,
-                0,
-                texture.raw.as_2d()?,
-                index,
-                None,
-            );
+            context.CopySubresourceRegion(&staging, 0, 0, 0, 0, texture.raw.as_2d()?, index, None);
             context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
             if mapped.pData.is_null() || mapped.RowPitch < width * 4 {
                 context.Unmap(&staging, 0);
@@ -1751,11 +1822,9 @@ mod tests {
         let wrapped = NativeTexture::from_core_window_backbuffer(&device, raw)?;
         assert_eq!((wrapped.width, wrapped.height), (4, 4));
         let rgba = device.create_rgba_texture(4, 4, 1, 1)?;
-        assert!(NativeTexture::from_core_window_backbuffer(
-            &device,
-            rgba.raw.as_2d()?.clone()
-        )
-        .is_err());
+        assert!(
+            NativeTexture::from_core_window_backbuffer(&device, rgba.raw.as_2d()?.clone()).is_err()
+        );
         Ok(())
     }
 

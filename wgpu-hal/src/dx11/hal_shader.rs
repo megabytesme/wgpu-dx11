@@ -1694,6 +1694,10 @@ fn type_may_contain_integer<'a>(
                     return true;
                 }
             }
+            naga::TypeInner::Image {
+                class: naga::ImageClass::Depth { .. },
+                ..
+            } => {}
             naga::TypeInner::Sampler { .. } => {}
             _ => return true,
         }
@@ -2719,7 +2723,9 @@ impl ShaderModule {
                         Some(
                             ShaderBindingKind::Uniform
                                 | ShaderBindingKind::TextureFloat
+                                | ShaderBindingKind::TextureDepth
                                 | ShaderBindingKind::Sampler
+                                | ShaderBindingKind::SamplerComparison
                         )
                     )
             })

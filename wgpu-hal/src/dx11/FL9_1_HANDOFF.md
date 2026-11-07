@@ -1,5 +1,26 @@
 # FL9_1 handoff
 
+## Current mission state — private depth comparison sample
+
+The newest strict private HAL increment added query-gated FL9_1 D16
+`LessEqual` depth comparison sampling. On the RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) requested and actual FL9_1, `SampleCmp` rendered 32
+failing black pixels and 32 passing red pixels. D16/R16 and D24S8/R24 native
+DSV/SRV resource-view creation also passed; D24S8 shader comparison remains
+untested. Comparison sampler layouts and sampler creation require a positive
+device query, FL9_1, and the private implementation flag. Core/public capability
+projection remains unchanged and rejects comparison samplers because it
+cannot represent LessEqual-only support. Full strict HAL passed 385/385, the
+controlled core fixture 1/1, explicit DX11 adapter selection 1/1 and DX12 core
+92/92. Exact commands and the typed format-query diagnostic are in the latest
+`FL9_1_PROGRESS.md` entry.
+
+The overall mission remains **PARTIALLY COMPLETE**. The public opt-in subset
+is usable for matching applications, but is not a general drop-in backend.
+Continue auditing public-valid paths and shader coverage; historical FL9_1
+drivers, Lumia/CoreWindow runtime and physical device-removal recovery remain
+unverified.
+
 ## Current mission state — query-gated 4x depth attachments
 
 Checkpoint `72e10f78f` adds query-gated 4x D16/D24S8 depth attachments to

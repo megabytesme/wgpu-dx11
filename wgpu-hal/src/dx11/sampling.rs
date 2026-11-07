@@ -84,9 +84,19 @@ pub(super) fn relationships(
             .global_variables
             .try_get(pair.sampler)
             .map_err(|_| ())?;
+        let texture_kind = shader_binding_kind(module, texture);
+        let sampler_kind = shader_binding_kind(module, sampler);
         if stage != naga::ShaderStage::Fragment
-            || shader_binding_kind(module, texture) != Some(ShaderBindingKind::TextureFloat)
-            || shader_binding_kind(module, sampler) != Some(ShaderBindingKind::Sampler)
+            || !matches!(
+                texture_kind,
+                Some(ShaderBindingKind::TextureFloat | ShaderBindingKind::TextureDepth)
+            )
+            || !matches!(
+                sampler_kind,
+                Some(ShaderBindingKind::Sampler | ShaderBindingKind::SamplerComparison)
+            )
+            || (texture_kind == Some(ShaderBindingKind::TextureDepth))
+                != (sampler_kind == Some(ShaderBindingKind::SamplerComparison))
         {
             return Err(());
         }
@@ -105,8 +115,8 @@ pub(super) fn relationships(
         pairs.push(SamplingPair {
             texture,
             sampler,
-            texture_slot: find(texture, ShaderBindingKind::TextureFloat)?,
-            sampler_slot: find(sampler, ShaderBindingKind::Sampler)?,
+            texture_slot: find(texture, texture_kind.ok_or(())?)?,
+            sampler_slot: find(sampler, sampler_kind.ok_or(())?)?,
             requires_bias_compatible: false,
         });
     }
@@ -139,14 +149,24 @@ pub(super) fn compatible(
         texture.size.iter().all(|dimension| *dimension != 0)
             && (!pair.requires_bias_compatible || bias_compatible)
             && texture.mip_levels
-                <= texture.size[0].max(texture.size[1]).max(texture.size[2]).ilog2() + 1
+                <= texture.size[0]
+                    .max(texture.size[1])
+                    .max(texture.size[2])
+                    .ilog2()
+                    + 1
             && lod.compatible(texture.mip_levels)
             && (texture.mip_levels == 1
-                || texture.size.iter().all(|dimension| dimension.is_power_of_two()))
+                || texture
+                    .size
+                    .iter()
+                    .all(|dimension| dimension.is_power_of_two()))
             && (level.as_raw() >= FeatureLevel::L10_0.as_raw()
                 || matches!(full_npot, Query::Value(true))
                 || !wraps
-                || texture.size.iter().all(|dimension| dimension.is_power_of_two()))
+                || texture
+                    .size
+                    .iter()
+                    .all(|dimension| dimension.is_power_of_two()))
     })
 }
 
@@ -327,6 +347,67 @@ mod tests {
             FeatureLevel::L9_1,
             Query::Value(false)
         ));
+    }
+
+    #[test]
+    fn entry_point_sampling_set_recognizes_comparison_texture_pairs() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var shadow: texture_depth_2d;
+            @group(0) @binding(42) var comparison: sampler_comparison;
+            fn compare_depth(t: texture_depth_2d, s: sampler_comparison, uv: vec2f) -> f32 {
+                return textureSampleCompare(t, s, uv, 0.5);
+            }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let value = compare_depth(shadow, comparison, uv);
+                return vec4f(value, value, value, 1.0);
+            }
+            "#,
+        )
+        .expect("parse depth comparison sampling shader");
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .expect("validate depth comparison sampling shader");
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureDepth,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::SamplerComparison,
+            },
+        ];
+        let pairs = relationships(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            &bindings,
+        )
+        .expect("resolve comparison resource identities");
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].texture.binding, 7);
+        assert_eq!(pairs[0].sampler.binding, 42);
+
+        let mut wrong_bindings = bindings;
+        wrong_bindings[0].kind = ShaderBindingKind::TextureFloat;
+        assert!(relationships(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            &wrong_bindings,
+        )
+        .is_err());
     }
 
     #[test]

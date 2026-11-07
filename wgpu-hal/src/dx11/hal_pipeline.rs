@@ -276,16 +276,20 @@ fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
             uniforms: _,
             textures: _,
             texture_unfilterable_mask: _,
+            texture_depth_mask: _,
             texture_vertex_visibility_mask: _,
             samplers: _,
             sampler_non_filtering_mask: _,
+            sampler_comparison_mask: _,
             sampler_vertex_visibility_mask: _,
         } = group;
         for binding in group.shader_bindings() {
             match binding.kind {
                 ShaderBindingKind::Uniform
                 | ShaderBindingKind::TextureFloat
-                | ShaderBindingKind::Sampler => {}
+                | ShaderBindingKind::TextureDepth
+                | ShaderBindingKind::Sampler
+                | ShaderBindingKind::SamplerComparison => {}
             }
         }
     }

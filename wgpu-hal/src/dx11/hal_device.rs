@@ -88,6 +88,8 @@ fn depth_stencil_usage_valid(usage: wgt::TextureUses) -> bool {
     [
         wgt::TextureUses::DEPTH_STENCIL_WRITE,
         read_write,
+        wgt::TextureUses::DEPTH_STENCIL_WRITE | wgt::TextureUses::RESOURCE,
+        read_write | wgt::TextureUses::RESOURCE,
         wgt::TextureUses::DEPTH_STENCIL_WRITE | wgt::TextureUses::TRANSIENT,
         read_write | wgt::TextureUses::TRANSIENT,
     ]
@@ -202,8 +204,8 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
-        let cube = desc.dimension == wgt::TextureDimension::D2
-            && desc.size.depth_or_array_layers == 6;
+        let cube =
+            desc.dimension == wgt::TextureDimension::D2 && desc.size.depth_or_array_layers == 6;
         let max_dimension =
             super::capabilities::HardwareGuarantees::for_level(self.native.feature_level());
         let max_dimension = match desc.dimension {
@@ -215,8 +217,8 @@ impl crate::Device for Device {
         if desc.dimension == wgt::TextureDimension::D3 {
             let capabilities = super::capabilities::Capabilities::query(&self.native);
             let format_bit = wgt::DownlevelLimits::texture_3d_format_bit(desc.format);
-            let format_supported = format_bit != 0
-                && capabilities.texture_3d_format_mask() & format_bit != 0;
+            let format_supported =
+                format_bit != 0 && capabilities.texture_3d_format_mask() & format_bit != 0;
             if !format_supported
                 || desc.format != wgt::TextureFormat::Rgba8Unorm
                 || desc.usage.is_empty()
@@ -272,6 +274,7 @@ impl crate::Device for Device {
             desc.format,
             wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
         );
+        let depth_sampled = depth && desc.usage.contains(wgt::TextureUses::RESOURCE);
         let sampled_upload = matches!(
             desc.format,
             wgt::TextureFormat::R8Unorm
@@ -299,7 +302,13 @@ impl crate::Device for Device {
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
-                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+                wgt::TextureUses::DEPTH_STENCIL_READ
+                    | wgt::TextureUses::DEPTH_STENCIL_WRITE
+                    | if depth_sampled {
+                        wgt::TextureUses::RESOURCE
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
             } else if sampled_upload {
                 wgt::TextureUses::COPY_DST
                     | wgt::TextureUses::RESOURCE
@@ -394,6 +403,14 @@ impl crate::Device for Device {
             super::capabilities::Capabilities::query(&self.native)
                 .check_private_depth_stencil_samples(desc.format, desc.sample_count)
                 .map_err(|_| DeviceError::Unexpected)?;
+            if depth_sampled
+                && (desc.sample_count != 1
+                    || !depth_stencil_usage_valid(desc.usage)
+                    || !super::capabilities::Capabilities::query(&self.native)
+                        .private_fl91_depth_comparison_sampling())
+            {
+                return Err(DeviceError::Unexpected);
+            }
             let mut texture = self
                 .native
                 .create_depth_stencil_texture(
@@ -401,6 +418,7 @@ impl crate::Device for Device {
                     desc.size.height,
                     native_format,
                     desc.sample_count,
+                    depth_sampled,
                 )
                 .map_err(device_error)?;
             texture.set_usage(desc.usage);
@@ -570,16 +588,13 @@ impl crate::Device for Device {
                 DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B5G6R5_UNORM,
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
                 DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
-                DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         if texture.dimension == wgt::TextureDimension::D3 {
-            let native = self
-                .native
-                .texture_3d_desc(texture)
-                .map_err(device_error)?;
+            let native = self.native.texture_3d_desc(texture).map_err(device_error)?;
             let mip_base = desc.range.base_mip_level;
             let mip_count = desc
                 .range
@@ -630,8 +645,10 @@ impl crate::Device for Device {
             DXGI_FORMAT_B5G6R5_UNORM => wgt::TextureFormat::Rgb5g6b5Unorm,
             DXGI_FORMAT_B5G5R5A1_UNORM => wgt::TextureFormat::Rgb5a1Unorm,
             DXGI_FORMAT_B4G4R4A4_UNORM => wgt::TextureFormat::Rgba4Unorm,
-            DXGI_FORMAT_D16_UNORM => wgt::TextureFormat::Depth16Unorm,
-            DXGI_FORMAT_D24_UNORM_S8_UINT => wgt::TextureFormat::Depth24PlusStencil8,
+            DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_R16_TYPELESS => wgt::TextureFormat::Depth16Unorm,
+            DXGI_FORMAT_D24_UNORM_S8_UINT | DXGI_FORMAT_R24G8_TYPELESS => {
+                wgt::TextureFormat::Depth24PlusStencil8
+            }
             _ => return Err(DeviceError::Unexpected),
         };
         let is_depth = matches!(
@@ -658,7 +675,13 @@ impl crate::Device for Device {
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if is_depth {
-                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE
+                wgt::TextureUses::DEPTH_STENCIL_READ
+                    | wgt::TextureUses::DEPTH_STENCIL_WRITE
+                    | if desc.usage == wgt::TextureUses::RESOURCE {
+                        wgt::TextureUses::RESOURCE
+                    } else {
+                        wgt::TextureUses::empty()
+                    }
             } else if sampled_upload {
                 wgt::TextureUses::RESOURCE
                     | if sampled_color_target {
@@ -710,6 +733,11 @@ impl crate::Device for Device {
             || !supported.contains(desc.usage)
             || !transient_texture_usage_valid(desc.usage, is_depth)
             || !texture.supports_usage(desc.usage)
+            || (is_depth
+                && resource
+                && (native.SampleDesc.Count != 1
+                    || !super::capabilities::Capabilities::query(&self.native)
+                        .private_fl91_depth_comparison_sampling()))
             || (if desc.usage.is_empty()
                 || (native.MipLevels > 1 && desc.usage == wgt::TextureUses::RESOURCE)
             {
@@ -1045,6 +1073,8 @@ mod tests {
         for usage in [
             wgt::TextureUses::DEPTH_STENCIL_WRITE,
             read_write,
+            wgt::TextureUses::DEPTH_STENCIL_WRITE | wgt::TextureUses::RESOURCE,
+            read_write | wgt::TextureUses::RESOURCE,
             wgt::TextureUses::DEPTH_STENCIL_WRITE | wgt::TextureUses::TRANSIENT,
             read_write | wgt::TextureUses::TRANSIENT,
         ] {
@@ -1053,7 +1083,6 @@ mod tests {
         for usage in [
             wgt::TextureUses::empty(),
             wgt::TextureUses::DEPTH_STENCIL_READ,
-            read_write | wgt::TextureUses::RESOURCE,
             read_write | wgt::TextureUses::COPY_SRC,
         ] {
             assert!(!depth_stencil_usage_valid(usage));

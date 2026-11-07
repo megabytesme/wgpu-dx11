@@ -11,6 +11,7 @@ pub struct Sampler {
     owner: Arc<NativeDevice>,
     raw: ID3D11SamplerState,
     filtering: bool,
+    comparison: bool,
     wraps: bool,
     bias_compatible: bool,
     lod: super::sampling::SamplerLod,
@@ -18,9 +19,18 @@ pub struct Sampler {
 crate::impl_dyn_resource!(Sampler);
 impl crate::DynSampler for Sampler {}
 
+#[cfg(test)]
 fn translate_sampler(
     desc: &crate::SamplerDescriptor,
     level: super::device::FeatureLevel,
+) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
+    translate_sampler_with_shadow_support(desc, level, false)
+}
+
+fn translate_sampler_with_shadow_support(
+    desc: &crate::SamplerDescriptor,
+    level: super::device::FeatureLevel,
+    shadow_supported: bool,
 ) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
     use wgt::FilterMode::{Linear, Nearest};
     use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
@@ -30,12 +40,18 @@ fn translate_sampler(
         wgt::AddressMode::MirrorRepeat => Ok(D3D11_TEXTURE_ADDRESS_MIRROR),
         wgt::AddressMode::ClampToBorder => Err(crate::DeviceError::Unexpected),
     };
-    if !(1..=MAX_ANISOTROPY).contains(&desc.anisotropy_clamp)
+    let comparison = desc.compare.is_some();
+    if (comparison
+        && (!shadow_supported
+            || level != super::device::FeatureLevel::L9_1
+            || desc.compare != Some(wgt::CompareFunction::LessEqual)
+            || desc.min_filter != desc.mag_filter
+            || desc.anisotropy_clamp != 1))
+        || !comparison && !(1..=MAX_ANISOTROPY).contains(&desc.anisotropy_clamp)
         || (desc.anisotropy_clamp > 1
             && (desc.min_filter != Linear
                 || desc.mag_filter != Linear
                 || desc.mipmap_filter != MipLinear))
-        || desc.compare.is_some()
         || !desc.lod_clamp.start.is_finite()
         || !desc.lod_clamp.end.is_finite()
         || desc.lod_clamp.start < 0.0
@@ -59,7 +75,18 @@ fn translate_sampler(
         return Err(crate::DeviceError::Unexpected);
     }
     let single_mip_only = finite_max || normalize_lod;
-    let filter = if desc.anisotropy_clamp == 2 {
+    let filter = if comparison {
+        match (desc.min_filter, desc.mipmap_filter) {
+            (Nearest, wgt::MipmapFilterMode::Nearest) => D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT,
+            (Nearest, wgt::MipmapFilterMode::Linear) => {
+                D3D11_FILTER_COMPARISON_MIN_MAG_POINT_MIP_LINEAR
+            }
+            (Linear, wgt::MipmapFilterMode::Nearest) => {
+                D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT
+            }
+            (Linear, wgt::MipmapFilterMode::Linear) => D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR,
+        }
+    } else if desc.anisotropy_clamp == 2 {
         D3D11_FILTER_ANISOTROPIC
     } else {
         match (desc.min_filter, desc.mag_filter, desc.mipmap_filter) {
@@ -86,15 +113,23 @@ fn translate_sampler(
             AddressU: address(desc.address_modes[0])?,
             AddressV: address(desc.address_modes[1])?,
             AddressW: address(desc.address_modes[2])?,
-            MaxAnisotropy: u32::from(desc.anisotropy_clamp),
-            ComparisonFunc: D3D11_COMPARISON_NEVER,
+            MaxAnisotropy: if comparison {
+                0
+            } else {
+                u32::from(desc.anisotropy_clamp)
+            },
+            ComparisonFunc: if comparison {
+                D3D11_COMPARISON_LESS_EQUAL
+            } else {
+                D3D11_COMPARISON_NEVER
+            },
             BorderColor: border,
-            MinLOD: if normalize_lod {
+            MinLOD: if comparison || normalize_lod {
                 0.0
             } else {
                 desc.lod_clamp.start
             },
-            MaxLOD: if single_mip_only {
+            MaxLOD: if comparison || single_mip_only {
                 f32::MAX
             } else {
                 desc.lod_clamp.end
@@ -140,7 +175,11 @@ impl Sampler {
         owner: Arc<NativeDevice>,
         desc: &crate::SamplerDescriptor,
     ) -> Result<Self, crate::DeviceError> {
-        let (native, _) = translate_sampler(desc, owner.feature_level())?;
+        let comparison = desc.compare.is_some();
+        let shadow_supported = super::capabilities::Capabilities::query(&owner)
+            .private_fl91_depth_comparison_sampling();
+        let (native, _) =
+            translate_sampler_with_shadow_support(desc, owner.feature_level(), shadow_supported)?;
         let lod = sampler_lod(desc, &native);
         let mut raw = None;
         unsafe {
@@ -153,6 +192,7 @@ impl Sampler {
             owner,
             raw: raw.ok_or(crate::DeviceError::Unexpected)?,
             filtering: sampler_filtering(desc),
+            comparison,
             lod,
             wraps: requires_power_of_two(&desc.address_modes),
             bias_compatible: bias_compatible(desc),
@@ -176,6 +216,10 @@ impl Sampler {
 
     pub(super) fn filtering(&self) -> bool {
         self.filtering
+    }
+
+    pub(super) fn comparison(&self) -> bool {
+        self.comparison
     }
 
     pub(super) fn bias_compatible(&self) -> bool {
@@ -338,6 +382,31 @@ mod tests {
             assert!(translate_sampler(&desc, FeatureLevel::L9_1).is_err());
             desc.address_modes[0] = Repeat;
         }
+    }
+
+    #[test]
+    fn fl91_comparison_sampler_requires_the_optional_shadow_contract() {
+        let mut desc = descriptor();
+        desc.compare = Some(wgt::CompareFunction::LessEqual);
+        let (native, _) = translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true)
+            .expect("query-gated FL9_1 LEQUAL comparison sampler");
+        assert_eq!(native.Filter, D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT);
+        assert_eq!(native.ComparisonFunc, D3D11_COMPARISON_LESS_EQUAL);
+        assert_eq!(native.MaxAnisotropy, 0);
+        assert_eq!(native.MinLOD, 0.0);
+        assert_eq!(native.MaxLOD, f32::MAX);
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, false).is_err());
+
+        desc.compare = Some(wgt::CompareFunction::Less);
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
+        desc.compare = Some(wgt::CompareFunction::LessEqual);
+        desc.anisotropy_clamp = 2;
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
+        desc.anisotropy_clamp = 1;
+        desc.mag_filter = wgt::FilterMode::Linear;
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
+        desc.mag_filter = desc.min_filter;
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true).is_err());
     }
 
     #[test]

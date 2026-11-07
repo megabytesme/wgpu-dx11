@@ -700,11 +700,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
   each sampling pair used by the selected entry has a NonFiltering sampler.
   Two strict RTX images and a 64-pixel core case covered this subset; invalid
   filtering pairs were rejected, while unused incompatible pairs were allowed.
-  No additional unfilterable formats or comparison samplers are supported.
-  Core now rejects comparison sampler creation when the adapter omits
-  `DownlevelFlags::COMPARISON_SAMPLERS`; the controlled FL9_1 fixture verifies
-  rejection before HAL. Historical drivers remain unverified; public surface
-  capabilities remain unavailable.
+  No additional unfilterable formats or general comparison samplers are
+  supported through core. Core rejects comparison sampler creation when the
+  adapter omits `DownlevelFlags::COMPARISON_SAMPLERS`; the controlled FL9_1
+  fixture verifies rejection before HAL. The private HAL has a separate
+  query-gated FL9_1 D16 `LessEqual` shadow-sampling path, verified by GPU
+  readback; this narrower contract is not publicly expressible. Historical
+  drivers remain unverified; public surface capabilities remain unavailable.
 - Sampled texture and sampler bindings accept `FRAGMENT` and
   `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.
   Actual vertex-stage sampling remains rejected. Two strict RTX images covered

@@ -254,6 +254,7 @@ pub(super) struct BackendCapabilities {
     pub packed_16bit_sampled_upload: bool,
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
+    pub fl91_depth_comparison_sampling: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -352,6 +353,7 @@ impl BackendCapabilities {
         packed_16bit_sampled_upload: true,
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
+        fl91_depth_comparison_sampling: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -436,6 +438,12 @@ pub(super) struct WgpuCapabilityProjection {
 }
 
 impl Capabilities {
+    pub fn private_fl91_depth_comparison_sampling(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1
+            && self.backend.fl91_depth_comparison_sampling
+            && self.driver.comparison_shadow == Query::Value(true)
+    }
+
     pub fn texture_3d_format_mask(&self) -> u32 {
         let format = wgt::TextureFormat::Rgba8Unorm;
         let required =
@@ -1438,6 +1446,25 @@ mod tests {
             },
             backend: BackendCapabilities::CURRENT,
         }
+    }
+
+    #[test]
+    fn private_fl91_shadow_sampling_requires_level_backend_and_positive_query() {
+        let mut caps = model(FeatureLevel::L9_1);
+        assert!(caps.private_fl91_depth_comparison_sampling());
+
+        caps.driver.comparison_shadow = Query::Value(false);
+        assert!(!caps.private_fl91_depth_comparison_sampling());
+        caps.driver.comparison_shadow = Query::Unavailable(-1);
+        assert!(!caps.private_fl91_depth_comparison_sampling());
+
+        caps.driver.comparison_shadow = Query::Value(true);
+        caps.backend.fl91_depth_comparison_sampling = false;
+        assert!(!caps.private_fl91_depth_comparison_sampling());
+
+        caps.backend.fl91_depth_comparison_sampling = true;
+        caps.hardware = HardwareGuarantees::for_level(FeatureLevel::L9_2);
+        assert!(!caps.private_fl91_depth_comparison_sampling());
     }
 
     #[test]

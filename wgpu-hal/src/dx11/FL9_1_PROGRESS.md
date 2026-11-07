@@ -9520,6 +9520,50 @@ rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ~~~
 
+## Query-gated FL9_1 depth comparison sampling — 2026-11-07
+
+Added a restricted private HAL path for sampled D16 depth with
+`textureSampleCompare`. Comparison layouts and sampler creation now share an
+internal capability predicate requiring all three conditions: the selected
+level is FL9_1, the backend path is implemented, and
+`D3D11_FEATURE_D3D9_SHADOW_SUPPORT` returns `true`. Unavailable or negative
+queries and other feature levels reject the path. The private sampler supports
+LessEqual only, matching min/mag filters, anisotropy 1 and the FL9_1 native LOD
+requirements. The public wgpu projection still does not advertise comparison
+samplers or sampled depth because its existing flags cannot express this
+narrower contract.
+
+The strict RTX 3090 Ti test (`0x10de:0x2203`, driver `32.0.16.2101`) requested
+and confirmed FL9_1, reported shadow support true, wrote depth 0.25 to half of
+an 8x8 D16 resource, then compared against 0.5. All 32 failing pixels were
+black and all 32 passing pixels red. A second hardware test created typeless
+D16/R16 and D24S8/R24 DSV/SRV views and LEQUAL samplers. Typed SRV
+`CheckFormatSupport` returned `E_FAIL` for both view formats, while native
+resource and view creation succeeded; only D16 comparison was rendered, so
+D24S8 comparison remains unverified.
+
+The full strict private HAL suite passed 385/385. The two new private hardware
+tests passed; the capability predicate CPU test passed. The controlled core
+fixture passed 1/1 and confirmed public comparison sampler requests still fail
+the missing-downlevel gate; explicit core D3D11 adapter selection passed 1/1.
+DX12 core regression passed 92/92. HAL `cargo check` and test Clippy passed;
+Clippy reports existing warnings, including `create_hal_view` argument count,
+single-range slice construction, items-after-test-module and an old needless
+borrow. Rustfmt check found only four pre-existing formatting differences in
+`capabilities.rs`; newly changed code in that file is formatted. `git diff
+--check` passed.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11:: -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests::fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 check --offline -j8 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --tests --no-default-features --features dx11
+git diff --check
+~~~
+
 ## Public integration readiness check — 2026-11-07
 
 Rebuilt and reran the public offscreen wgpu example from the current clean

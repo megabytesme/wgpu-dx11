@@ -494,10 +494,7 @@ impl crate::CommandEncoder for CommandEncoder {
         }
         for region in regions {
             if dst.dimension == wgt::TextureDimension::D3 {
-                let transfer = match self
-                    .device
-                    .prepare_buffer_to_texture_3d(src, dst, &region)
-                {
+                let transfer = match self.device.prepare_buffer_to_texture_3d(src, dst, &region) {
                     Ok(transfer) => transfer,
                     Err(error) => {
                         self.failure = Some(super::hal_device::device_error(error));
@@ -4552,6 +4549,9 @@ mod texture_transfer_tests;
 #[cfg(test)]
 #[path = "../../tests/dx11/depth_render.rs"]
 mod depth_render_tests;
+#[cfg(test)]
+#[path = "../../tests/dx11/shadow_sampling.rs"]
+mod shadow_sampling_tests;
 
 #[cfg(test)]
 #[path = "../../tests/dx11/depth_comparison.rs"]

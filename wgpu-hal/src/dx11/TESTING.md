@@ -2796,3 +2796,21 @@ capability or performance claim.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene -- --nocapture --test-threads=1
 ```
+
+### Private query-gated FL9_1 depth comparison sampling
+
+The private HAL accepts a sampled D16 depth view with a comparison sampler
+only when `D3D11_FEATURE_D3D9_SHADOW_SUPPORT` positively reports the FL9_1
+LessEqual path. The test writes 0.25 to the left half of a D16 target, leaves
+the right half at 1.0, samples with reference 0.5 and checks the full
+8×8 RGBA8 result: 32 failed comparisons are black and 32 passing comparisons
+are red. This does not enable core/public comparison samplers; core cannot
+represent the narrower LessEqual-only contract. A separate probe exercises
+native D16/R16 and D24S8/R24 typeless DSV/SRV creation when the query succeeds;
+only D16 has a shader execution test.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::hal_encoder::shadow_sampling_tests:: -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::capabilities::tests::private_fl91_shadow_sampling_requires_level_backend_and_positive_query -- --nocapture --test-threads=1
+```
