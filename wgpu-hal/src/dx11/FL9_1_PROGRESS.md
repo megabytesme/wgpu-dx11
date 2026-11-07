@@ -1,5 +1,33 @@
 # FL9_1 progress
 
+## Indexed zero-stride semantics audit — 2026-11-07
+
+Resolved the previously documented open question for the backend's exposed
+shader subset. The current WebGPU vertex-fetch algorithm resolves each index
+with `baseVertex`, then computes an attribute address as the binding offset
+plus `vertexIndex * arrayStride`. When every vertex-rate stream has zero
+stride, a negative resolved index still references the same in-range attribute
+element. The HAL avoids rebasing those index values for its indexed-point
+emulation, while preserving the requested point count and instance behavior.
+
+The existing `fl91_indexed_points_order_instances_and_lifetime` hardware test
+already checks the observable result: Uint16 and Uint32 indexed point draws
+use extreme indices and `i32::MIN` base vertex with zero-stride vertex-rate
+streams, and verify the visible point pixels in all 64 target pixels. It was
+rerun with strict hardware mode and passed on the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, software=false), explicitly requested and selected
+at FL9_1. One hardware test executed and passed; no tests were skipped.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_indexed_points_order_instances_and_lifetime -- --nocapture --test-threads=1
+~~~
+
+This closes the implementation/test gap for the currently supported point
+path; it does not establish behavior on historical FL9_1 drivers, or enable
+`vertex_index`. The three old status notes describing this case as unresolved
+were updated to reflect the specification algorithm and test evidence.
+
 ## D3D11 debug-layer checkpoint — 2026-11-07
 
 The focused private FL9_1 indexed-render/readback test can now opt into the

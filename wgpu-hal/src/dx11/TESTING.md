@@ -1058,11 +1058,14 @@ and selected FL9_1. The GPU case checked five full-image executions with the
 constant stream first or last, covering direct and strip draws, Uint16 and
 Uint32 indexed windows and gather, a constant-resource update, and rejection of
 a 19-byte range where the attribute needs 20 bytes. An all-zero-stream triangle
-only established degenerate draw completion. The controlled core fixture used a
-synthetic per-stage buffer limit of two and checked 64 green pixels. The correct
-handling of a negative base-adjusted index when all streams have zero stride is
-still an open specification question; there is no visible proof from the current
-indexed triangle-only subset. Historical FL9_1 drivers remain unverified.
+only established degenerate draw completion. Negative effective-index behavior
+is separately verified by `fl91_indexed_points_order_instances_and_lifetime`:
+Uint16 and Uint32 indexed point draws use negative base-adjusted indices while
+all vertex-rate streams have zero stride, and the test checks the visible point
+pixels. This follows WebGPU's vertex-fetch calculation, where a zero array
+stride leaves the attribute offset unchanged. The controlled core fixture used
+a synthetic per-stage buffer limit of two and checked 64 green pixels.
+Historical FL9_1 drivers remain unverified.
 
 With strict hardware mode enabled, run the instance-stream checks with:
 

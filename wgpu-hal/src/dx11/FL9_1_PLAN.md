@@ -47,6 +47,18 @@ probe returned `E_INVALIDARG` on the RTX 3090 Ti. A strict public validation
 test covers both pairs. See `FL9_1_PROGRESS.md`; this does not block standalone
 typed sRGB textures or ordinary same-format views.
 
+### Verified indexed-fetch case — negative indices with zero vertex stride
+
+The earlier open question is closed for the exposed shader subset. WebGPU's
+vertex-fetch algorithm computes each attribute offset as the bound offset plus
+the resolved vertex index times `arrayStride`; with a zero stride, a negative
+base-adjusted index still addresses the same in-range attribute element. The
+strict `fl91_indexed_points_order_instances_and_lifetime` test visibly renders
+Uint16 and Uint32 indexed points with negative resolved indices and only
+zero-stride vertex-rate streams. `vertex_index` remains unavailable, and this
+test does not claim behavior for historical FL9_1 drivers. See the current
+progress entry for the rerun result.
+
 Continue the core/HAL audit using independently reproduced public-valid
 operations. Prioritize validation boundaries and lifetime/device-loss paths,
 and keep optional format reports query-gated.

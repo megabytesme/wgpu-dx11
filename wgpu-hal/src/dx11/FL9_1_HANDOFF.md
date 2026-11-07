@@ -1,5 +1,17 @@
 # FL9_1 handoff
 
+## Current mission state — indexed zero-stride semantics audit
+
+The previously open negative base-adjusted index question is closed for the
+supported indexed-point path. WebGPU computes a fetched attribute address as
+the bound offset plus the resolved index multiplied by array stride; with
+zero-stride vertex-rate streams, negative resolved values retain the same
+in-range attribute address. The strict Uint16 and Uint32 indexed-point test
+passed again at requested/actual FL9_1 on the RTX 3090 Ti and checked visible
+pixel output. Historical FL9_1 behavior remains unverified. See the newest
+`FL9_1_PROGRESS.md` entry. Continue the broader public core/HAL contract audit;
+the mission remains partially complete.
+
 ## Current mission state — 2026-11-07 debug-layer check
 
 The focused private indexed-render/readback test now supports an explicit

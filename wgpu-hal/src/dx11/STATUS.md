@@ -717,8 +717,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - Zero-stride vertex streams repeat a constant attribute element in direct,
   nonindexed strip and indexed triangle-list paths, including mixed streams and
   window or gather translation. A bound range must contain the full attribute
-  extent. Historical FL9_1 devices and the negative-effective-index semantics
-  when every stream has zero stride remain unverified.
+  extent. In the tested indexed-point path, negative base-adjusted indices
+  remain valid when every vertex-rate stream has zero stride: the WebGPU
+  vertex-fetch formula adds `vertexIndex * arrayStride`, so the bound element
+  remains at the same in-range offset. The strict Uint16/Uint32 point test
+  verifies visible output for this case. Historical FL9_1 devices remain
+  unverified.
 - Exact premultiplied-alpha blending uses coupled `ONE` / `INV_SRC_ALPHA` add
   factors for RGB and alpha, including all color-write masks. Strict FL9_1
   tests checked six full images on linear RGBA8/BGRA8, including transitions;
