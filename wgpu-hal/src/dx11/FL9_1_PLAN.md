@@ -997,5 +997,11 @@ A strict forced-FL9_1 public test on the RTX 3090 Ti uploaded four mips, sampled
 mip 2, cleared mip 0 as an attachment and read mip 0 back; all 64 RGBA pixels
 and 64 R8 texels matched. Complete private HAL passed 402/402, public D3D11
 passed 75/75, adapter isolation passed 1/1, and DX12 core passed 94/94. The
-feature remains bounded; multi-mip R8 texture copies, historical hardware,
+feature remains bounded; a partial mip-1 copy between mipmapped R8 textures now passes, while copies between different R8 mip indices, historical hardware,
 Lumia runtime and broad core/HAL contract coverage remain open.
+
+The latest follow-up adds strict public coverage for a partial R8 copy at mip 1
+between two mipmapped textures. All 16 destination texels, including the
+unchanged border, matched on the RTX 3090 Ti at requested/actual FL9_1. The
+complete public D3D11 suite now passes 76/76; copies between differing R8 mip
+indices remain unverified.

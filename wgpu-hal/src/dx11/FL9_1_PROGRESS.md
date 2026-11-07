@@ -10646,3 +10646,22 @@ cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --featur
 The mission remains partial. Multi-mip R8 texture copies, broader public API
 contract coverage, historical FL9_1 drivers, Lumia/CoreWindow execution and
 physical device-loss recovery remain open or unverified.
+
+### Follow-up — R8 mip-subresource texture copy
+
+The query-gated R8 path now has a strict public GPU test copying a partial 2x3
+region at mip 1 between separate four-level textures, using source origin
+(1,0) and destination origin (1,1). A padded readback of the destination mip
+verified all 16 texels and the preserved cleared border. This establishes a
+mipmapped R8 texture-to-texture subresource copy at matching mip indices;
+copies between different R8 mip indices remain unverified. The physical RTX
+3090 Ti executed at requested/actual FL9_1. The complete strict public D3D11 suite passed 76/76 after adding this test.
+
+## Follow-up result — R8 mip-subresource copy
+
+After adding the partial mip-1 R8 texture-to-texture copy, the complete strict
+public D3D11 suite passed 76/76 on the RTX 3090 Ti at forced FL9_1. The test
+used a nonzero source origin and destination origin, a padded R8 readback, and
+verified all 16 mip texels including the cleared destination border. Clippy and
+targeted rustfmt passed; only the pre-existing HAL create_hal_view argument
+count warning remains in the wgpu test Clippy output.

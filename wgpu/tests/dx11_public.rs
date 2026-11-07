@@ -7534,6 +7534,207 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
 }
 
 #[test]
+fn public_dx11_r8_multimip_texture_copy_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let r8_features = adapter.get_texture_format_features(TextureFormat::R8Unorm);
+    let required_usages =
+        TextureUsages::COPY_DST | TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT;
+    let supported = r8_features.allowed_usages.contains(required_usages)
+        && !r8_features
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; R8_UNORM={r8_features:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    if !supported {
+        assert!(
+            !required,
+            "strict mode requires query-gated R8 mip render/copy support"
+        );
+        println!("SKIP: selected FL9_1 device did not query R8 mip copy support");
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 R8 mip copy test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    let texture_descriptor = |label| TextureDescriptor {
+        label: Some(label),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 4,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::R8Unorm,
+        usage: required_usages,
+        view_formats: &[],
+    };
+    let source = device.create_texture(&texture_descriptor("public FL9_1 R8 mip-copy source"));
+    let destination =
+        device.create_texture(&texture_descriptor("public FL9_1 R8 mip-copy destination"));
+    let destination_mip_view = destination.create_view(&TextureViewDescriptor {
+        usage: Some(TextureUsages::RENDER_ATTACHMENT),
+        base_mip_level: 1,
+        mip_level_count: Some(1),
+        ..Default::default()
+    });
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 R8 mip-copy readback"),
+        size: 4 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut source_mip = vec![0; 4 * 256];
+    for y in 0..4 {
+        for x in 0..4 {
+            source_mip[y * 256 + x] = 16 + y as u8 * 40 + x as u8 * 9;
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &source_mip,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 R8 mip-copy commands"),
+    });
+    {
+        let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public FL9_1 R8 mip-copy destination initialization"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &destination_mip_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 1,
+            origin: Origin3d { x: 1, y: 0, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 1,
+            origin: Origin3d { x: 1, y: 1, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 3,
+            depth_or_array_layers: 1,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public R8 mip copy");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public R8 mip-copy callback")
+        .expect("map public R8 mip-copy readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped R8 mip-copy data");
+        for y in 0..4 {
+            for x in 0..4 {
+                let expected = if (1..3).contains(&x) && (1..4).contains(&y) {
+                    16 + (y - 1) as u8 * 40 + x as u8 * 9
+                } else {
+                    0
+                };
+                assert_eq!(
+                    data[y * 256 + x],
+                    expected,
+                    "copied R8 mip pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 partial R8 mip-1 copy between mipmapped textures preserved the destination border and matched all 16 texels");
+}
+
+#[test]
 fn public_dx11_query_gated_npot_mip_chain_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

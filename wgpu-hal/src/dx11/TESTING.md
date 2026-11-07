@@ -2957,3 +2957,11 @@ Reference: [D3D11_RASTERIZER_DESC](https://learn.microsoft.com/en-us/windows/win
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_wireframe_at_fl91 -- --nocapture --test-threads=1
 ```
+
+### R8 mip-subresource copy follow-up
+
+The strict public forced-FL9_1 test now copies a partial 2x3 rectangle at mip 1
+between two four-level R8_UNORM textures, with a nonzero destination origin. It
+reads back the full 4x4 destination mip using padded rows and verifies all 16
+texels, including the unchanged cleared border. Copies between different R8
+mip indices remain unverified.

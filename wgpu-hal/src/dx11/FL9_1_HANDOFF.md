@@ -2385,6 +2385,15 @@ controls filterability. The strict public FL9_1 test sampled mip 2 from a
 four-level upload, cleared mip 0 and read mip 0 back on the RTX 3090 Ti; all
 64 RGBA pixels and 64 R8 texels matched. The full private HAL, public D3D11,
 adapter-isolation and DX12 core suites passed 402/402, 75/75, 1/1 and 94/94.
-Multi-mip R8 copies and historical/Lumia behavior remain unverified. Continue
+A partial mip-1 R8 copy between mipmapped textures now passes; copies between different R8 mip indices and historical/Lumia behavior remain unverified. Continue
 the public-valid core/HAL contract audit rather than treating this as backend
 completion.
+
+## Follow-up — R8 mip subresource copy verified
+
+The strict public D3D11 suite now passes 76/76 with a new FL9_1 partial mip-1
+R8 copy test. Two four-level R8 textures copy a 2x3 region from mip 1 into a
+nonzero destination origin; padded readback verified the 4x4 mip, copied values
+and preserved border. Copies between different R8 mip indices are still
+unverified. The mission remains partial; the broad API audit and historical
+hardware/runtime checks continue.
