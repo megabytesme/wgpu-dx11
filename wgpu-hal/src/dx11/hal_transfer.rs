@@ -280,8 +280,11 @@ impl NativeDevice {
         ) {
             return Err(invalid());
         }
-        let (source, src_size, source_subresource) =
-            self.texture_copy_texture_source(source, region.src_base.mip_level)?;
+        let (source, src_size, source_subresource) = self.texture_copy_texture_source(
+            source,
+            region.src_base.mip_level,
+            region.src_base.array_layer,
+        )?;
         let (destination, dst_size, destination_subresource) = self.texture_copy_destination(
             destination,
             region.dst_base.mip_level,
@@ -317,7 +320,7 @@ impl NativeDevice {
         let layout = &region.buffer_layout;
         self.validate_texture_readback_source(texture)?;
         let (source, dimensions, source_subresource) =
-            self.texture_copy_texture_source(texture, base.mip_level)?;
+            self.texture_copy_texture_source(texture, base.mip_level, base.array_layer)?;
         let source_box = texture_box(base, size, dimensions)?;
         let block = format_block_layout(self.texture_desc(texture)?.Format)?;
         if !block_aligned_box(base, size, block) {

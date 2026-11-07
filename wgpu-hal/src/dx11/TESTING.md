@@ -1,9 +1,11 @@
 # Direct3D 11 validation plan
 
 The `dx11` feature enumerates only physical adapters that create the explicitly
-requested FL9_1 device and pass the selected-device capability projection. The
-reported feature set is empty, and the downlevel contract is not WebGPU-
-compliant. A narrow public HWND surface is available with BGRA8 sRGB FIFO,
+requested FL9_1 device and pass the selected-device capability projection.
+Only selected-device-gated features are exposed: the implemented 16-bit
+normalized/packed texture paths and comparison-sampler border addressing when
+the required query succeeds. The downlevel contract is not WebGPU-compliant.
+A narrow public HWND surface is available with BGRA8 sRGB FIFO,
 opaque composition, render-attachment usage and one frame of latency. Configure,
 acquire and present are owner-thread-only. The strict public test uses a hidden
 window. The bounded visible example pumps events, presents an animated cube
@@ -27,6 +29,19 @@ test.
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unimplemented_hal_features_at_fl91 -- --nocapture --test-threads=1
+```
+
+### Public buffer-clear transfer test
+
+`public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91` uploads a
+distinct 64-byte pattern, clears bytes 16–48, copies the buffer to a mapped
+readback allocation and verifies that only the requested bytes changed. It
+also submits unaligned and out-of-bounds clear ranges and checks that core
+validation rejects them before HAL execution.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91 -- --nocapture --test-threads=1
 ```
 
 ### Public offscreen integration test
@@ -106,6 +121,28 @@ binding numbers reused across groups. This is a representative public offscreen
 integration case, not a complete application or adapter-contract audit.
 All six unsupported resource requests were
 rejected by public core validation.
+
+### Query-gated FL9_1 comparison border test
+
+`public_dx11_query_gated_fl91_comparison_border_sampling` and
+`public_dx11_query_gated_fl91_comparison_border_white_sampling` require the
+selected FL9_1 device to positively report D3D9 shadow support. They enable the
+public border-addressing feature only for a `LessEqual` comparison sampler and
+sample outside the depth view. Opaque black makes all 64 comparisons fail;
+opaque white makes all 64 pass. Core validation rejects an ordinary border
+sampler under the comparison-only downlevel limit and rejects
+`SamplerBorderColor::Zero` because clamp-to-zero was not requested. The related
+synthetic capability tests verify that an unavailable shadow query exposes
+neither this feature nor depth sampling. Microsoft's [D3D9 shadow
+contract](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_feature_data_d3d9_shadow_support)
+explicitly permits border addressing for this comparison-sampler case at
+FL9_1; it does not make general border samplers available.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_comparison_border_sampling -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_comparison_border_white_sampling -- --nocapture --test-threads=1
+```
 
 ### Public render bundle execution
 
@@ -1931,9 +1968,12 @@ CPU tests check sampler-class identity, the non-filtering mask, logical binding
 order and the original descriptor's filter class. The initial strict baseline
 rejected the NonFiltering layout. The controlled core fixture also verifies
 comparison-sampler creation returns the missing `COMPARISON_SAMPLERS` downlevel
-flag before calling the D3D11 HAL. Comparison samplers remain unsupported;
-historical drivers remain unverified, and public surface capabilities remain
-unavailable.
+flag before calling the D3D11 HAL when the optional query is unavailable. The
+public D3D11 path now exposes only the query-gated FL9_1 `LessEqual` subset;
+its strict readback test checks both output classes and rejects a different
+compare function, unequal min/mag filters and anisotropy above one before HAL.
+General comparison sampler support remains unavailable. Historical drivers
+remain unverified, and public surface capabilities remain unavailable.
 
 ### Sampled-resource visibility
 
@@ -2606,8 +2646,9 @@ zero native `SampleMask`, so the backend passes `0xffff_fffe` for single-sample
 rendering. For 4x rendering it passes `0xffff_fff0`, leaving all four sample
 bits disabled; the strict public test verified all 64 pixels remained at the
 blue clear value after resolve. The optional query-gated 4x RGBA8
-render-and-resolve path and 4x D16/D24S8 depth attachments are supported;
-multisampled sampling, other sample counts/formats and alpha-to-coverage remain
+render-and-resolve path and 4x D16/Depth24Plus/D24S8 depth attachments are
+supported; Depth24Plus uses D24S8 native storage without stencil access.
+Multisampled sampling, other sample counts/formats and alpha-to-coverage remain
 unsupported. See
 [OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
 and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpumultisamplestate).
@@ -2636,10 +2677,12 @@ hardware guarantee.
 
 The same strict test selected D24PlusStencil8 after a positive 4x query,
 created the matching multisampled depth view and drew near red geometry before
-far green geometry over the same triangle. The resolved 8×8 target contained
-28 full-red interior pixels, 8 red/blue edge pixels and 28 blue clear pixels;
-all 64 green channels were zero, confirming the farther draw failed depth.
-This verifies the selected RTX execution path, not every FL9_1 driver.
+far green geometry over the same triangle. It then repeated the test with
+Depth24Plus, whose native backing is D24S8 but whose stencil aspect is hidden.
+Both resolved 8×8 targets contained 28 full-red interior pixels, 8 red/blue
+edge pixels and 28 blue clear pixels; all 64 green channels were zero,
+confirming the farther draw failed depth. This verifies the selected RTX
+execution path, not every FL9_1 driver.
 
 The same strict run then cleared the multisampled target blue, rendered with a
 zero WebGPU sample mask and resolved again; all 64 pixels remained exactly
@@ -2718,12 +2761,21 @@ six-face GPU clone refresh. Strict mode requires the positive mip query;
 non-strict mode visibly skips mip-specific coverage if the device lacks it.
 Nonsquare, NPOT, oversized, unsupported-mip, multisampled and render-target
 cube descriptors, an ordinary two-layer array and a single-face D2 view are
-checked through public core validation.
+checked through public core validation. The test also copies face 0 of a
+second cube into face 1 of the sampled cube at every mip, then checks that
+face's changed color in the render readback. It also copies a regular 2D image
+into cube face 2 and cube face 3 back to an ordinary 2D texture. The
+2D-to-cube copy is observed through sampling; the cube-to-2D copy is verified
+by reading back all 64 texels. Core rejects cube-to-buffer readback before the
+FL9_1 HAL path, which cannot stage an SRV-only resource for CPU access.
 
 The RTX 3090 Ti at requested/actual FL9_1 reported format mask `0x1f1f`,
 vendor/device `0x10de:0x2203`, driver `32.0.16.2101`, and software=false.
-Its RGBA8 format query reported mip support. Cube sampling passed with all 960
-pixels matching expected face and mip colors, including the non-suffix view.
+Its RGBA8 format query reported mip support. Cube sampling and GPU face copies
+passed with all 960 pixels matching expected face and mip colors, including
+the cross-shape copied face and non-suffix view. Cube-to-2D readback matched
+all 64 texels. The public adapter reports a maximum of one layer for
+texture-to-buffer copies and rejected cube readback in core.
 The RG8_UNORM cube request was rejected by core from the selected format mask.
 These per-format `CheckFormatSupport` results do not imply historical FL9_1
 drivers support the same optional formats.
@@ -2797,21 +2849,38 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene -- --nocapture --test-threads=1
 ```
 
-### Private query-gated FL9_1 depth comparison sampling
+### Query-gated FL9_1 depth comparison sampling
 
-The private HAL accepts a sampled D16 or D24S8 depth view with a comparison
+The private HAL accepts a sampled D16, Depth24Plus or D24S8 depth view with a comparison
 sampler only when `D3D11_FEATURE_D3D9_SHADOW_SUPPORT` positively reports the
 FL9_1 LessEqual path. Each test writes 0.25 to the left half of a depth target,
 leaves the right half at 1.0, samples with reference 0.5 and checks the full
 8×8 RGBA8 result: 32 failed comparisons are black and 32 passing comparisons
-are red. This does not enable core/public comparison samplers; core cannot
-represent the narrower LessEqual-only contract. A separate probe checks native
-DSV/SRV creation for both typeless depth formats. The typed SRV support query
-returns `E_FAIL` on the tested driver, but native resource/view creation and
-actual sampled output succeed for both formats.
+are red. The public projection exposes this subset only when the selected
+device query is positive: the `LessEqual` function bit, equal min/mag filters,
+comparison anisotropy 1, and single-sample D16/Depth24Plus/D24S8 sampled usage. Core checks
+those restrictions before HAL. The public test uses separate depth-attachment
+and sampled views, renders the same two comparison outcomes, and validates all
+64 output pixels. Public Depth24Plus coverage uses a D24S8-backed resource but
+keeps the stencil aspect inaccessible; the controlled core fixture confirms
+Depth24Plus and D24S8 project the same queried depth capabilities and that a
+DepthOnly view of a combined D24S8 texture is still non-renderable. A separate
+private probe checks native DSV/SRV creation for the typeless D16 and D24
+resources. The typed SRV support query returns `E_FAIL` on the tested driver,
+but native resource/view creation and actual sampled output succeed for all
+three public depth formats.
+
+The Depth24Plus path maps to a native D24S8 texture while preserving the
+logical Depth24Plus format through texture and view metadata. It uses the same
+selected-device D24S8 format and shadow-support queries as D24S8, but core does
+not expose the backing stencil aspect. On the RTX 3090 Ti, its public
+comparison test rendered 32 failing black pixels and 32 passing red pixels.
+This verifies the selected driver path, not compatibility with every FL9_1
+driver.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::hal_encoder::shadow_sampling_tests:: -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::capabilities::tests::private_fl91_shadow_sampling_requires_level_backend_and_positive_query -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_ -- --nocapture --test-threads=1
 ```

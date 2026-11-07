@@ -525,6 +525,10 @@ fn type_may_contain_integer(
             naga::TypeInner::Image {
                 class: naga::ImageClass::Sampled { .. },
                 ..
+            }
+            | naga::TypeInner::Image {
+                class: naga::ImageClass::Depth { .. },
+                ..
             } => {}
             naga::TypeInner::Sampler { .. } => {}
             _ => return true,
@@ -4825,6 +4829,40 @@ mod tests {
                 &fl91,
             )
             .is_err());
+    }
+
+    #[test]
+    fn depth_comparison_sampling_is_not_runtime_integer_semantics() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var shadow: texture_depth_2d;
+            @group(0) @binding(42) var shadow_sampler: sampler_comparison;
+            @fragment fn sample_depth(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let result = textureSampleCompare(shadow, shadow_sampler, uv, 0.5);
+                return vec4f(result, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "sample_depth",
+                &fl91,
+            )
+            .unwrap());
     }
 
     #[test]

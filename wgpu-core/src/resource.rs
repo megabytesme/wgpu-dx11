@@ -1911,7 +1911,7 @@ pub enum CreateTextureError {
         npot: bool,
     },
     #[error(
-        "Cube textures require one mip level, one sample, texture-binding usage, and no usages outside TEXTURE_BINDING | COPY_DST"
+        "Cube textures require one sample, texture-binding usage, and only TEXTURE_BINDING, COPY_DST, or COPY_SRC usages"
     )]
     InvalidCubeTextureShape,
     #[error("Texture usage STORAGE_BINDING is not allowed for multisampled textures")]
@@ -2455,6 +2455,18 @@ pub enum CreateSamplerError {
         address_mode: wgt::AddressMode,
         maximum: u32,
     },
+    #[error(
+        "Comparison function {function:?} is not supported by comparison samplers on this adapter"
+    )]
+    UnsupportedComparisonFunction { function: wgt::CompareFunction },
+    #[error(
+        "Comparison samplers on this adapter require equal minification and magnification filters"
+    )]
+    ComparisonSamplerFilterMismatch,
+    #[error("Comparison sampler anisotropy {requested} exceeds the adapter limit of {maximum}")]
+    ComparisonSamplerAnisotropyExceeded { requested: u16, maximum: u16 },
+    #[error("Clamp-to-border addressing on this adapter requires a comparison sampler")]
+    BorderAddressingRequiresComparisonSampler,
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
     #[error(transparent)]
@@ -2479,7 +2491,11 @@ impl WebGpuError for CreateSamplerError {
             | Self::InvalidAnisotropy(_)
             | Self::InvalidFilterModeWithAnisotropy { .. }
             | Self::InvalidMipmapFilterModeWithAnisotropy { .. }
-            | Self::TextureRepeatLimitExceeded { .. } => ErrorType::Validation,
+            | Self::TextureRepeatLimitExceeded { .. }
+            | Self::UnsupportedComparisonFunction { .. }
+            | Self::ComparisonSamplerFilterMismatch
+            | Self::ComparisonSamplerAnisotropyExceeded { .. }
+            | Self::BorderAddressingRequiresComparisonSampler => ErrorType::Validation,
         }
     }
 }

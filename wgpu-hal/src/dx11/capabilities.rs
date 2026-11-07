@@ -446,8 +446,8 @@ impl Capabilities {
 
     pub fn texture_3d_format_mask(&self) -> u32 {
         let format = wgt::TextureFormat::Rgba8Unorm;
-        let required =
-            (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE3D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
         if self.backend.texture_3d_sampling
             && self.backend.texture_3d_upload
             && self.hardware.texture_3d_dimension != 0
@@ -483,6 +483,7 @@ impl Capabilities {
         let texture_3d_sampling = texture_3d_format_mask
             & wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rgba8Unorm)
             != 0;
+        let comparison_sampling = self.private_fl91_depth_comparison_sampling();
         let mut limits = wgt::Limits::downlevel_defaults();
         limits.max_texture_dimension_1d = 2048;
         limits.max_texture_dimension_2d = self.hardware.texture_2d_dimension;
@@ -525,6 +526,9 @@ impl Capabilities {
         if cube_texture_sampling {
             flags |= wgt::DownlevelFlags::CUBE_TEXTURES;
         }
+        if comparison_sampling {
+            flags |= wgt::DownlevelFlags::COMPARISON_SAMPLERS;
+        }
 
         let downlevel = wgt::DownlevelCapabilities {
             flags,
@@ -545,6 +549,7 @@ impl Capabilities {
                     | wgt::TextureUsages::TRANSIENT_ATTACHMENT)
                     .bits(),
                 texture_to_buffer_copy_format_mask: self.texture_to_buffer_copy_format_mask(),
+                max_texture_to_buffer_copy_layers: 1,
                 texture_3d_texture_copies: false,
                 npot_texture_3d: false,
                 max_texture_cube_dimension: if cube_texture_sampling {
@@ -554,7 +559,17 @@ impl Capabilities {
                 },
                 texture_cube_format_mask: cube_texture_format_mask,
                 npot_cube_textures: false,
-                sampled_depth_textures: false,
+                sampled_depth_textures: comparison_sampling,
+                comparison_sampler_function_mask: if comparison_sampling {
+                    wgt::DownlevelLimits::comparison_sampler_function_bit(
+                        wgt::CompareFunction::LessEqual,
+                    )
+                } else {
+                    0
+                },
+                comparison_sampler_independent_filters: false,
+                max_comparison_sampler_anisotropy: if comparison_sampling { 1 } else { 0 },
+                border_addressing_requires_comparison_sampler: comparison_sampling,
                 sampled_sint_textures: false,
                 sampled_uint_textures: false,
                 multisampled_texture_bindings: false,
@@ -639,6 +654,9 @@ impl Capabilities {
             .contains(crate::TextureFormatCapabilities::SAMPLED)
         {
             features |= wgt::Features::TEXTURE_FORMAT_16BIT_NORM;
+        }
+        if comparison_sampling {
+            features |= wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
         }
         if [
             wgt::TextureFormat::Rgb5g6b5Unorm,
@@ -1052,7 +1070,7 @@ impl Capabilities {
                 self.driver.depth16_unorm_samples_4,
                 self.hardware.d16_unorm_depth_attachment,
             ),
-            wgt::TextureFormat::Depth24PlusStencil8 => (
+            wgt::TextureFormat::Depth24Plus | wgt::TextureFormat::Depth24PlusStencil8 => (
                 self.driver.depth24_stencil8,
                 self.driver.depth24_stencil8_samples_4,
                 true,
@@ -1099,9 +1117,9 @@ impl Capabilities {
         {
             return Err(UnsupportedShape);
         }
-        if !usage.contains(wgt::TextureUses::RESOURCE)
-            || !(wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST).contains(usage)
-        {
+        let cube_usage =
+            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+        if !usage.contains(wgt::TextureUses::RESOURCE) || !cube_usage.contains(usage) {
             return Err(UnsupportedUsage);
         }
         let query = match format {
@@ -1167,7 +1185,9 @@ impl Capabilities {
 
         if matches!(
             format,
-            wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+            wgt::TextureFormat::Depth16Unorm
+                | wgt::TextureFormat::Depth24Plus
+                | wgt::TextureFormat::Depth24PlusStencil8
         ) {
             let required =
                 (D3D11_FORMAT_SUPPORT_DEPTH_STENCIL.0 | D3D11_FORMAT_SUPPORT_TEXTURE2D.0) as u32;
@@ -1177,7 +1197,7 @@ impl Capabilities {
                     self.backend.d16_depth_attachment,
                     self.driver.depth16_unorm,
                 ),
-                wgt::TextureFormat::Depth24PlusStencil8 => (
+                wgt::TextureFormat::Depth24Plus | wgt::TextureFormat::Depth24PlusStencil8 => (
                     true,
                     self.backend.d24s8_depth_attachment,
                     self.driver.depth24_stencil8,
@@ -1189,6 +1209,9 @@ impl Capabilities {
                 && matches!(query, Query::Value(bits) if bits & required == required)
             {
                 let mut caps = Caps::DEPTH_STENCIL_ATTACHMENT | Caps::SINGLE_MIP_ONLY;
+                if self.private_fl91_depth_comparison_sampling() {
+                    caps |= Caps::SAMPLED;
+                }
                 if self.check_private_depth_stencil_samples(format, 4).is_ok() {
                     caps |= Caps::MULTISAMPLE_X4;
                 }
@@ -1468,10 +1491,97 @@ mod tests {
     }
 
     #[test]
+    fn public_fl91_shadow_capabilities_require_the_positive_optional_query() {
+        let mut caps = model(FeatureLevel::L9_1);
+        let projected = caps.wgpu_projection().expect("FL9_1 projection");
+        assert!(projected
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
+        assert!(
+            projected
+                .capabilities
+                .downlevel
+                .limits
+                .sampled_depth_textures
+        );
+        assert_eq!(
+            projected
+                .capabilities
+                .downlevel
+                .limits
+                .comparison_sampler_function_mask,
+            wgt::DownlevelLimits::comparison_sampler_function_bit(wgt::CompareFunction::LessEqual)
+        );
+        assert!(projected
+            .features
+            .contains(wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER));
+        assert!(
+            projected
+                .capabilities
+                .downlevel
+                .limits
+                .border_addressing_requires_comparison_sampler
+        );
+        for format in [
+            wgt::TextureFormat::Depth16Unorm,
+            wgt::TextureFormat::Depth24Plus,
+            wgt::TextureFormat::Depth24PlusStencil8,
+        ] {
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SAMPLED));
+        }
+
+        caps.driver.comparison_shadow = Query::Unavailable(-1);
+        let projected = caps.wgpu_projection().expect("FL9_1 projection");
+        assert!(!projected
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
+        assert!(
+            !projected
+                .capabilities
+                .downlevel
+                .limits
+                .sampled_depth_textures
+        );
+        assert_eq!(
+            projected
+                .capabilities
+                .downlevel
+                .limits
+                .comparison_sampler_function_mask,
+            0
+        );
+        assert!(!projected
+            .features
+            .contains(wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER));
+        assert!(
+            !projected
+                .capabilities
+                .downlevel
+                .limits
+                .border_addressing_requires_comparison_sampler
+        );
+        for format in [
+            wgt::TextureFormat::Depth16Unorm,
+            wgt::TextureFormat::Depth24Plus,
+            wgt::TextureFormat::Depth24PlusStencil8,
+        ] {
+            let reported = caps.texture_format_capabilities(format);
+            assert!(reported.contains(FormatCaps::DEPTH_STENCIL_ATTACHMENT));
+            assert!(!reported.contains(FormatCaps::SAMPLED));
+        }
+    }
+
+    #[test]
     fn texture_3d_sampling_requires_its_own_query_and_backend_paths() {
         let rgba8 = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rgba8Unorm);
-        let required = (D3D11_FORMAT_SUPPORT_TEXTURE3D.0
-            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
         let mut supported = model(FeatureLevel::L9_1);
         supported.driver.rgba8 = Query::Value(required);
         assert_eq!(supported.texture_3d_format_mask(), rgba8);
@@ -1676,7 +1786,29 @@ mod tests {
             32
         );
         assert!(!exposed.downlevel.limits.empty_binding_visibility);
-        assert!(!exposed.downlevel.limits.sampled_depth_textures);
+        assert!(exposed.downlevel.limits.sampled_depth_textures);
+        assert!(exposed
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
+        assert!(exposed
+            .downlevel
+            .limits
+            .supports_comparison_sampler_function(wgt::CompareFunction::LessEqual));
+        assert!(!exposed
+            .downlevel
+            .limits
+            .supports_comparison_sampler_function(wgt::CompareFunction::Greater));
+        assert!(
+            !exposed
+                .downlevel
+                .limits
+                .comparison_sampler_independent_filters
+        );
+        assert_eq!(
+            exposed.downlevel.limits.max_comparison_sampler_anisotropy,
+            1
+        );
         assert!(!exposed.downlevel.limits.sampled_sint_textures);
         assert!(!exposed.downlevel.limits.sampled_uint_textures);
         assert!(!exposed.downlevel.limits.multisampled_texture_bindings);
@@ -1686,6 +1818,7 @@ mod tests {
             wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED
                 | wgt::DownlevelFlags::ANISOTROPIC_FILTERING
                 | wgt::DownlevelFlags::CUBE_TEXTURES
+                | wgt::DownlevelFlags::COMPARISON_SAMPLERS
         );
         assert!(!exposed.downlevel.limits.texture_1d);
         assert!(exposed.downlevel.limits.texture_3d);
@@ -1756,7 +1889,6 @@ mod tests {
             wgt::DownlevelFlags::COMPUTE_SHADERS
                 | wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE
                 | wgt::DownlevelFlags::INDIRECT_EXECUTION
-                | wgt::DownlevelFlags::COMPARISON_SAMPLERS
                 | wgt::DownlevelFlags::TEXTURE_2D_ARRAYS
                 | wgt::DownlevelFlags::OCCLUSION_QUERY
         ));
@@ -1836,6 +1968,13 @@ mod tests {
             .downlevel
             .limits
             .supports_texture_cube_format(wgt::TextureFormat::Rgba8Unorm));
+        assert_eq!(
+            projection
+                .downlevel
+                .limits
+                .max_texture_to_buffer_copy_layers,
+            1
+        );
         assert!(!projection
             .downlevel
             .limits
@@ -1866,6 +2005,18 @@ mod tests {
         assert!(caps
             .check_private_cube_texture(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 6, 1, 1)
             .is_ok());
+        let copy_usage = usage | wgt::TextureUses::COPY_SRC;
+        assert!(
+            caps.check_private_cube_texture(
+                wgt::TextureFormat::Rgba8Unorm,
+                copy_usage,
+                [8, 8],
+                6,
+                1,
+                1,
+            )
+            .is_ok()
+        );
         for (extent, layers, mips, samples) in [
             ([7, 7], 6, 1, 1),
             ([6, 6], 6, 2, 1),
@@ -1890,6 +2041,17 @@ mod tests {
         assert!(caps
             .check_private_cube_texture(wgt::TextureFormat::Rgba8Unorm, usage, [8, 8], 6, 4, 1)
             .is_ok());
+        assert!(
+            caps.check_private_cube_texture(
+                wgt::TextureFormat::Rgba8Unorm,
+                copy_usage,
+                [8, 8],
+                6,
+                4,
+                1,
+            )
+            .is_ok()
+        );
         let mut no_cube_mips = caps;
         no_cube_mips.backend.cube_texture_mipmaps = false;
         assert!(no_cube_mips
@@ -1974,6 +2136,7 @@ mod tests {
         caps.driver.full_npot = Query::Unavailable(-1);
         caps.driver.bc1_unorm = Query::Unavailable(-1);
         caps.driver.rg16_snorm = Query::Unavailable(-1);
+        caps.driver.comparison_shadow = Query::Unavailable(-1);
         let projection = caps.wgpu_projection().unwrap();
 
         assert!(
@@ -1989,6 +2152,18 @@ mod tests {
         assert!(!projection
             .features
             .contains(wgt::Features::TEXTURE_FORMAT_16BIT_NORM));
+        assert!(!projection
+            .capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
+        assert!(
+            !projection
+                .capabilities
+                .downlevel
+                .limits
+                .sampled_depth_textures
+        );
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Bc1RgbaUnorm)
             .is_empty());
@@ -2786,16 +2961,27 @@ mod tests {
         let depth = caps.texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8);
         assert_eq!(
             depth,
-            FormatCaps::DEPTH_STENCIL_ATTACHMENT | FormatCaps::SINGLE_MIP_ONLY
+            FormatCaps::DEPTH_STENCIL_ATTACHMENT
+                | FormatCaps::SAMPLED
+                | FormatCaps::SINGLE_MIP_ONLY
+        );
+        assert_eq!(
+            caps.texture_format_capabilities(wgt::TextureFormat::Depth24Plus),
+            depth
         );
         caps.backend.d24s8_depth_attachment = false;
         assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8)
             .is_empty());
+        assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth24Plus)
+            .is_empty());
 
         assert_eq!(
             caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm),
-            FormatCaps::DEPTH_STENCIL_ATTACHMENT | FormatCaps::SINGLE_MIP_ONLY
+            FormatCaps::DEPTH_STENCIL_ATTACHMENT
+                | FormatCaps::SAMPLED
+                | FormatCaps::SINGLE_MIP_ONLY
         );
         caps.backend.d16_depth_attachment = false;
         assert!(caps
@@ -2832,6 +3018,9 @@ mod tests {
             .texture_format_capabilities(wgt::TextureFormat::Depth24PlusStencil8)
             .is_empty());
         assert!(caps
+            .texture_format_capabilities(wgt::TextureFormat::Depth24Plus)
+            .is_empty());
+        assert!(caps
             .texture_format_capabilities(wgt::TextureFormat::Depth16Unorm)
             .is_empty());
 
@@ -2853,7 +3042,9 @@ mod tests {
         caps.driver.depth16_unorm = Query::Value(required);
         assert_eq!(
             caps.texture_format_capabilities(wgt::TextureFormat::Depth16Unorm),
-            FormatCaps::DEPTH_STENCIL_ATTACHMENT | FormatCaps::SINGLE_MIP_ONLY
+            FormatCaps::DEPTH_STENCIL_ATTACHMENT
+                | FormatCaps::SAMPLED
+                | FormatCaps::SINGLE_MIP_ONLY
         );
 
         caps.driver.depth16_unorm = Query::Unavailable(-1);
@@ -2883,6 +3074,7 @@ mod tests {
         let mut caps = model(FeatureLevel::L9_1);
         for format in [
             wgt::TextureFormat::Depth16Unorm,
+            wgt::TextureFormat::Depth24Plus,
             wgt::TextureFormat::Depth24PlusStencil8,
         ] {
             set_depth_sample_query(&mut caps, format, Query::Value(1));
@@ -2924,7 +3116,7 @@ mod tests {
     ) {
         match format {
             wgt::TextureFormat::Depth16Unorm => caps.driver.depth16_unorm_samples_4 = query,
-            wgt::TextureFormat::Depth24PlusStencil8 => {
+            wgt::TextureFormat::Depth24Plus | wgt::TextureFormat::Depth24PlusStencil8 => {
                 caps.driver.depth24_stencil8_samples_4 = query
             }
             _ => unreachable!(),

@@ -2760,13 +2760,15 @@ impl RenderPipeline {
         let depth_desc = if let Some(state) = &desc.depth_stencil {
             if !matches!(
                 state.format,
-                wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+                wgt::TextureFormat::Depth16Unorm
+                    | wgt::TextureFormat::Depth24Plus
+                    | wgt::TextureFormat::Depth24PlusStencil8
             ) {
                 return Err(invalid());
             }
             let (stencil_enable, stencil_read_mask, stencil_write_mask, mut face) =
                 stencil_state(&state.stencil).ok_or_else(invalid)?;
-            if state.format == wgt::TextureFormat::Depth16Unorm && stencil_enable {
+            if state.format != wgt::TextureFormat::Depth24PlusStencil8 && stencil_enable {
                 return Err(invalid());
             }
             depth_bias =

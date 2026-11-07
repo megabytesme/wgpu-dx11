@@ -592,6 +592,21 @@ fn validate_texture_repeat_limit(
     }
 }
 
+fn validate_sampler_border_addressing(
+    address_modes: [wgt::AddressMode; 3],
+    comparison: bool,
+    limits: &wgt::DownlevelLimits,
+) -> Result<(), resource::CreateSamplerError> {
+    if limits.border_addressing_requires_comparison_sampler
+        && !comparison
+        && address_modes.contains(&wgt::AddressMode::ClampToBorder)
+    {
+        Err(resource::CreateSamplerError::BorderAddressingRequiresComparisonSampler)
+    } else {
+        Ok(())
+    }
+}
+
 fn limit_sampler_anisotropy(requested: u16, downlevel: &wgt::DownlevelCapabilities) -> u16 {
     if downlevel
         .flags
@@ -626,6 +641,38 @@ mod sampler_repeat_limit_tests {
         }
         assert!(validate_texture_repeat_limit([AddressMode::ClampToEdge; 3], 128).is_ok());
         assert!(validate_texture_repeat_limit([AddressMode::Repeat; 3], u32::MAX).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod sampler_border_addressing_tests {
+    use super::validate_sampler_border_addressing;
+    use wgt::{AddressMode, DownlevelLimits};
+
+    #[test]
+    fn comparison_only_border_restriction_is_applied_by_sampler_type() {
+        let limits = DownlevelLimits {
+            border_addressing_requires_comparison_sampler: true,
+            ..DownlevelLimits::default()
+        };
+        let address_modes = [
+            AddressMode::ClampToBorder,
+            AddressMode::ClampToEdge,
+            AddressMode::ClampToEdge,
+        ];
+
+        assert!(matches!(
+            validate_sampler_border_addressing(address_modes, false, &limits),
+            Err(crate::resource::CreateSamplerError::BorderAddressingRequiresComparisonSampler)
+        ));
+        assert!(validate_sampler_border_addressing(address_modes, true, &limits).is_ok());
+
+        assert!(validate_sampler_border_addressing(
+            address_modes,
+            false,
+            &DownlevelLimits::default()
+        )
+        .is_ok());
     }
 }
 
@@ -1892,8 +1939,9 @@ impl Device {
                         desc.format,
                     ));
                 }
-                let supported_usages =
-                    wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST;
+                let supported_usages = wgt::TextureUsages::TEXTURE_BINDING
+                    | wgt::TextureUsages::COPY_DST
+                    | wgt::TextureUsages::COPY_SRC;
                 if desc.sample_count != 1
                     || !desc.usage.contains(wgt::TextureUsages::TEXTURE_BINDING)
                     || !supported_usages.contains(desc.usage)
@@ -2856,6 +2904,11 @@ impl Device {
             .any(|am| am == &wgt::AddressMode::ClampToBorder)
         {
             self.require_features(wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER)?;
+            validate_sampler_border_addressing(
+                desc.address_modes,
+                desc.compare.is_some(),
+                &self.downlevel.limits,
+            )?;
         }
 
         if desc.border_color == Some(wgt::SamplerBorderColor::Zero) {
@@ -2912,8 +2965,31 @@ impl Device {
 
         let anisotropy_clamp = limit_sampler_anisotropy(desc.anisotropy_clamp, &self.downlevel);
 
-        if desc.compare.is_some() {
+        if let Some(function) = desc.compare {
             self.require_downlevel_flags(wgt::DownlevelFlags::COMPARISON_SAMPLERS)?;
+            if !self
+                .downlevel
+                .limits
+                .supports_comparison_sampler_function(function)
+            {
+                return Err(
+                    resource::CreateSamplerError::UnsupportedComparisonFunction { function },
+                );
+            }
+            if !self.downlevel.limits.comparison_sampler_independent_filters
+                && desc.min_filter != desc.mag_filter
+            {
+                return Err(resource::CreateSamplerError::ComparisonSamplerFilterMismatch);
+            }
+            let maximum = self.downlevel.limits.max_comparison_sampler_anisotropy;
+            if desc.anisotropy_clamp > maximum {
+                return Err(
+                    resource::CreateSamplerError::ComparisonSamplerAnisotropyExceeded {
+                        requested: desc.anisotropy_clamp,
+                        maximum,
+                    },
+                );
+            }
         }
 
         let hal_desc = hal::SamplerDescriptor {

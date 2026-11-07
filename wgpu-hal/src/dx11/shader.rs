@@ -1060,6 +1060,14 @@ mod tests {
     }
 
     #[test]
+    fn level_9_1_pixel_profile_compiles_shadow_comparison_level_zero() {
+        let source = "Texture2D<float> shadow_map : register(t0); SamplerComparisonState shadow_sampler : register(s0); float4 main(float2 uv : TEXCOORD0, float reference : TEXCOORD1) : SV_TARGET { float shadow = shadow_map.SampleCmpLevelZero(shadow_sampler, uv, reference); return float4(shadow, shadow, shadow, 1.0); }";
+        let bytes = compile_hlsl(source, "main", ShaderProfile::PixelLevel9_1)
+            .expect("the level 9_1 shadow profile supports query-gated SampleCmpLevelZero");
+        assert!(bytes.starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn naga_maps_depth_comparison_bindings_to_fl91_registers() {
         let module = naga::front::wgsl::parse_str(
             r#"

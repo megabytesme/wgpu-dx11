@@ -1,19 +1,57 @@
 # FL9_1 handoff
 
-## Current mission state — private depth comparison sample
+## Latest mission state — cube-face GPU copies
 
-The newest strict private HAL increment added query-gated FL9_1 D16 and D24S8
-`LessEqual` depth comparison sampling. On the RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`) requested and actual FL9_1,
-`SampleCmp` rendered 32 failing black pixels and 32 passing red pixels for
-each format. Typed DSV/SRV creation succeeded even though typed SRV format
-queries returned `E_FAIL`. Comparison sampler layouts and sampler creation
-require a positive device query, FL9_1, and the private implementation flag.
-Core/public capability projection remains unchanged and rejects comparison
-samplers because it cannot represent LessEqual-only support. Full strict HAL
-passed 386/386; the controlled core fixture passed 1/1 and still rejected
-public comparison samplers before HAL. Exact commands and the typed
-format-query diagnostic are in the latest `FL9_1_PROGRESS.md` entry.
+The query-supported RGBA8 cube path supports GPU-to-GPU copies between cube
+faces and ordinary 2D textures. The strict public test copied cube face 0 into
+face 1 across four mips, copied a separately uploaded 2D texture into face 2,
+and copied face 3 back into a 2D texture. Subsequent cube sampling matched
+960/960 pixels, and CPU readback of the copied 2D texture matched all 64
+texels. Core rejects cube texture-to-buffer readback using the one-layer
+downlevel source limit; the HAL also refuses staging from an SRV-only resource.
+This follows the FL9_x GPU-to-CPU copy restriction and does not establish
+behavior on historical drivers.
+
+The focused cross-shape copy test passed 1/1 on the same adapter. Verification
+on this tree: strict public D3D11 70/70 (one optional
+Float16x2 subcase visibly skipped), controlled core fixture 103/103, private
+HAL 391/391, `wgpu-types` 92/92 and serde `wgpu-types` 94/94, DX12 core 94/94
+and DX12 HAL 4/4. Adapter identity was NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`), driver `32.0.16.2101`, physical adapter, `software=false`.
+See `FL9_1_PROGRESS.md` for exact commands and warnings. The overall mission
+remains **PARTIALLY COMPLETE**; historical FL9_1, Lumia/CoreWindow runtime,
+physical device-loss recovery and broad conformance remain open.
+
+## Current mission state — public query-gated depth comparison
+
+The latest increment carries the private query-gated FL9_1 depth comparison
+path through core and the opt-in public API. The internal downlevel model now
+expresses a supported comparison-function mask, min/mag filter independence
+and comparison anisotropy. On the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) forced to requested and actual FL9_1, the public projection
+reports only `LessEqual`, equal min/mag filters and anisotropy 1. Public D16,
+Depth24Plus and D24S8 sample comparisons each rendered and read back 32
+failing black pixels and 32 passing red pixels. Depth24Plus uses D24S8 backing
+without exposing stencil. Core rejected a different comparison function,
+unequal filters and anisotropy 2 before HAL. Their typed SRV support
+queries returned `E_FAIL`, but resource/view creation and rendering passed.
+The public `textureSampleCompareLevel` path also passed its 64-pixel D16
+readback, and FXC accepted Naga's `SampleCmpLevelZero` output for the FL9_1
+pixel profile. See the newest `FL9_1_PROGRESS.md` entry for verification
+commands and results. The complete strict public suite passed 67/67, the
+private HAL suite passed 390/390, the core adapter-isolation and selected-device
+fixture tests passed 1/1 each, and the core DX12 regression suite passed
+93/93 on this tree.
+The public 4x render/resolve test also verified depth ordering with D16,
+Depth24Plus and D24S8; each resolved image had 28 full-red, 8 partially
+covered and 28 clear pixels, with no farther green fragments.
+
+The positive D3D9 shadow query also enables the documented FL9_1 border-mode
+exception for depth comparison samplers. Strict public renders sampled beyond
+the D16 view: opaque black failed and opaque white passed all 64 comparisons.
+Core rejected an ordinary border sampler and the separate unrequested
+zero-border feature. This does not enable general border sampling; older
+drivers remain unverified.
 
 The overall mission remains **PARTIALLY COMPLETE**. The public opt-in subset
 is usable for matching applications, but is not a general drop-in backend.

@@ -1,5 +1,137 @@
 # FL9_1 progress
 
+## 2D/cube copy compatibility — 2026-11-07
+
+Extended the strict public cube transfer test to cover compatible native
+`Texture2D` copies in both directions between ordinary single-layer textures
+and cube subresources. A distinct 2D upload was copied into cube face 2 and
+verified through the cube sampling render. Cube face 3 was copied into an
+ordinary 2D texture, then read back; all 64 RGBA8 texels matched the source.
+These checks exercise the same-format, one-mip, one-sample path on the actual
+device. Cube-to-buffer readback remains rejected by the FL9_1 downlevel layer
+limit and SRV-only staging restriction.
+
+The focused strict public test passed 1/1 on the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`), with FL9_1
+requested and selected. The modified cube sampling test also checked all
+960 rendered pixels, including the copied 2D face, across four mips.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_cube_texture_sampling_at_fl91 -- --nocapture --test-threads=1
+```
+
+## Query-gated cube-face GPU copies — 2026-11-07
+
+The sampled cube path now permits `COPY_SRC` when the selected format supports
+the usage. The HAL maps the requested face and mip to the native 2D subresource;
+`CopySubresourceRegion` copies face 0 from a second cube into face 1 of the
+sampled cube at all four mips. The strict public test then samples the
+destination cube and validates 960/960 pixels, so the copy result is observed
+through the GPU rather than inferred from command acceptance.
+
+Cube resources remain shader-resource-only at FL9_1. Core advertises a
+one-layer maximum for texture-to-buffer source textures and rejects cube
+readback before HAL; the HAL independently rejects CPU staging from a resource
+whose only bind flag is `D3D11_BIND_SHADER_RESOURCE`. This follows Microsoft's
+[10Level9 context restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context).
+The restriction does not block GPU-to-GPU copies between compatible cube
+subresources. The cube format mask still requires selected-device
+`TEXTURE2D|TEXTURECUBE` and sampled-format support.
+
+Strict hardware execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with FL9_1 requested and selected and
+`software=false`. The public D3D11 target passed 70/70 test functions (one
+optional Float16x2 subcase was visibly skipped). The core fixture passed
+103/103, the private DX11 HAL suite 391/391, `wgpu-types` 92/92 without serde
+and 94/94 with serde, the DX12 core regression 94/94, and DX12 HAL 4/4. The
+fixture's previous unconditional expectations for depth-texture and comparison
+sampler rejection were corrected to follow the selected device's already
+query-gated capabilities. Clippy passed with existing warnings: core's
+nonminimal-boolean, single-element-loop and nested-if suggestions; HAL's seven
+single-range-in-vec-initializer suggestions, one test-module ordering warning,
+the existing `create_hal_view` argument-count warning and one needless borrow.
+The multi-file rustfmt check still reports existing formatting drift in adjacent
+3D-texture code; the edited public test file passes rustfmt. No historical
+FL9_1 driver or Lumia runtime was exercised.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 -- --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-types --lib
+cargo +1.93 test --offline -j2 -p wgpu-types --lib --features serde
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
+cargo +1.93 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx12 -- --test-threads=1
+~~~
+
+## Public R8 filtering and clear-buffer verification — 2026-11-07
+
+The strict public sampled-format test now exercises both nearest and linear
+filtering for R8_UNORM. Sampling a two-texel `[64, 192]` pattern across an
+8×8 target produced the expected eight-column gradient within two code values;
+all 64 pixels matched. A new public `clear_buffer` test uploads a distinct
+64-byte pattern, clears only bytes 16–48, copies the result to a mapped
+readback buffer, and verifies both the zeroed range and every preserved byte
+outside it. Core rejected unaligned and out-of-bounds clear ranges before HAL
+execution. The first negative check exposed that clear validation is finalized
+when the encoder is finished; the test now finishes the invalid encoder inside
+the validation scope.
+
+Both operations executed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with FL9_1 explicitly requested and
+selected and `software=false`. The complete strict public D3D11 target passed
+70/70 test functions; one optional Float16x2 vertex-input subcase was visibly
+skipped because the selected-device query reports it unsupported. Public-test
+Clippy passed with the existing HAL `create_hal_view` argument-count warning;
+the changed Rust test file passed rustfmt and `git diff --check`. The public
+offscreen example was also rebuilt and run through wgpu on that physical
+adapter; it validated all 1,024 pixels (112 red, 277 green and 635 blue
+background).
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_sampled_upload_renders_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 run --offline -j2 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std -- C:\Users\ben\AppData\Local\Temp\dx11-fl91-offscreen.ppm
+cargo +1.93 clippy --offline -j2 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+## Public R8 linear-filter verification — 2026-11-07
+
+The selected-device projection advertises R8_UNORM linear filtering when the
+format query reports the required filtering support. The existing strict
+public sampled-format test now distinguishes that behavior from nearest
+filtering: a two-texel `[64, 192]` R8 texture is sampled across an 8×8 target,
+and each output column is checked against the expected interpolated red value
+with a two-code-value tolerance. All 64 pixels matched. This closes the R8
+filtering evidence gap on the selected driver; it does not establish behavior
+on historical FL9_1 hardware.
+
+The full strict public D3D11 target passed 69/69 test functions on the NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly
+requested and selected at FL9_1 with `software=false`. The optional Float16x2
+input-format subcase remained visibly skipped after the selected-device query
+returned false. Public-test Clippy passed with the existing HAL
+`create_hal_view` argument-count warning; rustfmt on `wgpu/tests/dx11_public.rs`
+and `git diff --check` passed. The stale introductory claim that the adapter
+reports no optional features was corrected in `CAPABILITIES.md` and
+`TESTING.md`; the actual projection may report query-gated 16-bit format and
+comparison-border features.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_sampled_upload_renders_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
 ## Public wrong-thread present cleanup — 2026-11-07
 
 Implementation commit: `8d6c8f93e12c766a5f8fb413f2abf781c4b55408`
@@ -33,6 +165,63 @@ cargo +1.93 clippy --offline -j16 -p wgpu --test dx11_public --no-default-featur
 rustfmt +1.93 --edition 2021 --check wgpu-core/src/present.rs wgpu/tests/dx11_public.rs
 git diff --check
 ~~~
+
+## Follow-up — query-gated FL9_1 comparison border addressing — 2026-11-07
+
+Rechecked the D3D9 shadow exception and extended the optional FL9_1 shadow
+query path through public core validation. When the selected device positively
+reports `D3D11_FEATURE_D3D9_SHADOW_SUPPORT`, the adapter now exposes
+`ADDRESS_MODE_CLAMP_TO_BORDER` and a new
+`DownlevelLimits::border_addressing_requires_comparison_sampler` restriction.
+Core rejects ordinary border samplers; the private HAL maps border mode only
+for the supported query-gated `LessEqual` comparison sampler. Clamp-to-zero
+remains unexposed, and an unavailable/failed query does not enable the feature.
+
+The strict public RTX 3090 Ti tests explicitly requested and confirmed FL9_1
+(`0x10de:0x2203`, NVIDIA driver `32.0.16.2101`, physical adapter). Sampling
+outside a D16 view with opaque black returned failing comparisons at all
+64 pixels; opaque white passed all 64. Core rejected ordinary border use and
+`SamplerBorderColor::Zero`. This confirms the tested driver's selected-level
+path, not historical FL9_1 behavior.
+
+Synthetic tests cover the positive optional-query projection, unavailable
+query behavior, comparison-only border compatibility, monotonic downlevel
+limit matching, WebGPU-compliance rejection and old serialized limits
+defaulting the new restriction to false. The focused strict border tests passed
+2/2. With `WGPU_DX11_REQUIRE_HARDWARE=1`, the full private HAL suite passed
+391/391 and the full public D3D11 suite passed 69/69; the public suite has one
+visible optional Float16x2 vertex-input subcase skip because the device query
+is negative. The full core DX11 unit target passed 95/95, adapter-isolation
+and selected-device fixture checks passed 1/1 each, and DX12 core passed
+94/94. The core fixture was updated to derive its expected optional feature
+set from the selected-device projection after correctly detecting the newly
+reported border feature.
+
+`wgpu-types` tests with serde passed 93/93, and workspace checks for
+`wgpu-test` and `wgpu-info` all-targets succeeded. HAL, core fixture, public
+test and `wgpu-types` Clippy checks succeeded. Remaining warnings are existing:
+HAL `create_hal_view` argument count, three unrelated core fixture lints and
+six older unnecessary qualifications in `wgpu-types` tests. Public-test
+Clippy has no warning from the new test. `cargo +1.93 fmt --all -- --check`
+still reports previously existing formatting drift in Naga and earlier 3D
+texture/capability fixture code; no newly added border code was listed.
+`git diff --check` passed. This optional sampler path does not materially
+change overall readiness: the opt-in adapter remains a constrained workload
+subset, with broad API auditing, historical hardware, Lumia/CoreWindow runtime
+and physical device-removal recovery still outstanding.
+
+Verification used the pinned `+1.93` toolchain, Visual Studio 2022 x64
+developer environment, offline dependencies and bounded `-j16` parallelism.
+The full suites and checks were:
+
+- `cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 -- --test-threads=1`
+- `cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1`
+- `cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std -- --test-threads=1`
+- `cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,wgsl,std`
+- `cargo +1.93 test --offline -j16 -p wgpu-types --features serde --lib`
+- `cargo +1.93 check --offline -j16 -p wgpu-test -p wgpu-info --all-targets`
+- `cargo +1.93 fmt --all -- --check`
+- `git diff --check`
 
 Results: focused public HWND lifecycle 1/1; full strict public D3D11 62/62;
 controlled core fixture 101/101; DX12 core regression 92/92; both Clippy
@@ -9878,5 +10067,135 @@ cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11
 cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests::fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 cargo +1.93 clippy --offline -j8 -p wgpu-hal --tests --no-default-features --features dx11
 rustup run 1.93 rustfmt --edition 2021 --check wgpu-hal/tests/dx11/shadow_sampling.rs
+git diff --check
+~~~
+
+## Query-gated public depth comparison — 2026-11-07
+
+Added the selected-device D3D9 shadow-support query to the public FL9_1
+projection. A positive query now permits only `LessEqual` comparison sampling,
+equal minification/magnification filters, comparison anisotropy 1 and sampled
+single-sample D16/D24S8 views. Core validates these limits before the HAL.
+Naga's selected-entry runtime-integer gate also now treats depth images as
+floating-point sampling resources; a regression test covers a valid
+`textureSampleCompare` entry point.
+
+The HAL view metadata check previously rejected depth-only and stencil-only
+D24S8 ranges, although core correctly resolves a sampled D24S8 view to its
+DepthOnly aspect. It now accepts the two valid aspect ranges while retaining
+the full-resource requirement for the restricted D24 path. Public core still
+rejects aspect-specific D24S8 render-attachment views.
+
+On the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), explicit requested and actual FL9_1 matched.
+`D3D11_FEATURE_D3D9_SHADOW_SUPPORT` was true. Separate public D16 and D24S8
+comparison renders each read back 64 pixels: exactly 32 black failed
+comparisons and 32 red passing comparisons. The D24S8 load/clear/discard
+transition test also read back its expected 576 pixels.
+
+Verification:
+
+- Strict complete public D3D11 test target: 65/65 passed, zero skipped.
+- Strict private D3D11 HAL suite: 389/389 passed, zero skipped.
+- Focused core projection/adapter test: 1/1 passed on physical FL9_1.
+- Selected-entry depth sampling validation regression: 1/1 passed.
+- Shared core DX12 regression suite: 93/93 passed.
+- GLES HAL check and `wgpu-types` Clippy passed.
+- HAL, core-fixture and public-test Clippy passed; warnings were existing
+  HAL/test warnings, including `create_hal_view` argument count and
+  single-range test expressions.
+- `git diff --check` passed. Rustfmt check still reports pre-existing
+  formatting differences in unchanged sections of the fixture and capability
+  test files; those unrelated sections were left untouched.
+
+The strict public command was
+`WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1`.
+The strict private command was
+`WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 -- --test-threads=1`.
+
+This enables a narrow query-gated public capability only on devices reporting
+the optional feature. The full core/HAL audit, historical FL9_1 behavior,
+Lumia/CoreWindow runtime and physical device-removal recovery remain open.
+
+### Follow-up — explicit-level shadow sampling coverage — 2026-11-07
+
+Added public `textureSampleCompareLevel` execution coverage and a focused FXC
+profile test. Naga lowers the WGSL builtin to `SampleCmpLevelZero`, which FXC
+accepted for `ps_4_0_level_9_1`. On the physical RTX 3090 Ti at explicitly
+requested and selected FL9_1, the public D16 test rendered/read back all 64
+pixels: 32 failed comparisons were black and 32 passing comparisons were red.
+The full strict public target passed 66/66 with zero skips; the full strict
+private HAL suite passed 390/390 with zero skips. This is separate from the
+implicit-derivative `textureSampleCompare` runs for D16 and D24S8, which remain
+covered by the preceding entry. It does not widen the supported comparison
+sampler contract.
+
+Focused FXC command:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::shader::tests::level_9_1_pixel_profile_compiles_shadow_comparison_level_zero -- --nocapture
+```
+
+### Follow-up — public Depth24Plus shadow sampling — 2026-11-07
+
+Extended the query-gated public depth path to `Depth24Plus`. The D3D11 HAL
+backs this logical format with D24S8 storage, tracks the logical format through
+texture views and pipelines, and does not expose the backing stencil aspect.
+Its attachment and comparison-sampling projection uses the selected device's
+D24S8 format and shadow-support queries. The controlled core fixture confirms
+the `Depth24Plus` projection matches D24S8, creates the texture and view, and
+keeps `DepthOnly` views of combined D24S8 non-renderable; `StencilOnly` D24S8
+view creation remains rejected.
+
+The physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) created an explicitly requested and selected FL9_1 device.
+Its positive `D3D11_FEATURE_D3D9_SHADOW_SUPPORT` query enabled only the
+existing `LessEqual`, equal-filter, anisotropy-1 comparison subset. The public
+Depth24Plus render/readback verified all 64 pixels: 32 failed comparisons were
+black and 32 passing comparisons were red. This is selected-driver evidence;
+it does not establish behavior on historical FL9_1 devices.
+
+The existing public 4x color resolve/depth test was expanded to include
+Depth24Plus rather than inferring its multisample attachment behavior from the
+shared D24S8 backing. On the same forced-FL9_1 adapter, D16, Depth24Plus and
+D24S8 each passed the near/far depth test: 28 full-red pixels, 8 partially
+covered red/blue pixels and 28 blue clear pixels, with all green channels zero
+after resolve. The focused test passed 1/1; after this addition the complete
+strict public D3D11 target passed 67/67.
+
+The independent read-only review found no concrete correctness issue in the
+logical/native format mapping, view handling, capability gates or core stencil
+validation. Historical-driver coverage remains the caveat.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the full private HAL suite passed 390/390
+and the full public D3D11 integration target passed 67/67. The core adapter
+isolation test and selected-device fixture test passed 1/1 each on hardware;
+the core DX12 regression suite passed 93/93. All three crate checks for HAL,
+core fixture and public wgpu passed before the final full test run. Clippy for
+those targets passed; it reported existing warnings in HAL tests and the
+`create_hal_view` argument count, with no warning on the new Depth24Plus path.
+
+The initial core isolation invocation omitted `std` and `wgsl` while using
+`--no-default-features`, so it failed to compile the test target. Re-running
+with `--features dx11,wgsl,std` passed. `cargo +1.93 fmt --all -- --check`
+still reports pre-existing formatting drift in Naga, HAL transfer imports,
+and earlier fixture/capability code; the new Depth24Plus fixture assertions
+were formatted without reformatting those unrelated regions. `git diff
+--check` passed.
+
+Commands (run from the Visual Studio 2022 x64 developer environment):
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11,wgsl,std dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests::fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu-core --lib --no-default-features --features dx12,wgsl,std
+cargo +1.93 clippy --offline -j32 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 clippy --offline -j32 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std
+cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93 fmt --all -- --check
 git diff --check
 ~~~

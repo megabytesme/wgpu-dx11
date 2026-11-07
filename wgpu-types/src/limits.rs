@@ -1086,6 +1086,16 @@ pub struct DownlevelLimits {
         serde(default = "default_texture_to_buffer_copy_format_mask")
     )]
     pub texture_to_buffer_copy_format_mask: u32,
+    /// Maximum number of 2D array layers in a texture that may be copied to a buffer.
+    ///
+    /// This can be lower than [`Limits::max_texture_array_layers`] when a backend can copy
+    /// selected 2D subresources between GPU textures but cannot stage layered resources for
+    /// CPU-visible readback.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_max_texture_to_buffer_copy_layers")
+    )]
+    pub max_texture_to_buffer_copy_layers: u32,
     /// Whether copies directly between 3D textures are supported.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_3d_texture_copies: bool,
@@ -1114,6 +1124,26 @@ pub struct DownlevelLimits {
     /// This can be unavailable even when the backend supports depth attachments.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub sampled_depth_textures: bool,
+    /// Comparison functions supported by comparison samplers, represented by
+    /// [`comparison_sampler_function_bit`].
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_comparison_sampler_function_mask")
+    )]
+    pub comparison_sampler_function_mask: u16,
+    /// Whether comparison samplers may use different minification and
+    /// magnification filters.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub comparison_sampler_independent_filters: bool,
+    /// Maximum anisotropy accepted for comparison samplers.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_max_comparison_sampler_anisotropy")
+    )]
+    pub max_comparison_sampler_anisotropy: u16,
+    /// Whether clamp-to-border addressing is restricted to comparison samplers.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub border_addressing_requires_comparison_sampler: bool,
     /// Whether signed-integer sample types are supported by sampled texture bindings.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub sampled_sint_textures: bool,
@@ -1303,6 +1333,16 @@ fn default_max_sampler_anisotropy() -> u16 {
 }
 
 #[cfg(feature = "serde")]
+fn default_comparison_sampler_function_mask() -> u16 {
+    0x00ff
+}
+
+#[cfg(feature = "serde")]
+fn default_max_comparison_sampler_anisotropy() -> u16 {
+    16
+}
+
+#[cfg(feature = "serde")]
 fn default_max_texture_sample_bias() -> u32 {
     u32::MAX
 }
@@ -1343,6 +1383,11 @@ fn default_texture_to_buffer_copy_format_mask() -> u32 {
 }
 
 #[cfg(feature = "serde")]
+fn default_max_texture_to_buffer_copy_layers() -> u32 {
+    u32::MAX
+}
+
+#[cfg(feature = "serde")]
 fn default_max_sampled_texture_sampler_pairs() -> u32 {
     u32::MAX
 }
@@ -1359,12 +1404,17 @@ impl Default for DownlevelLimits {
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
             texture_to_buffer_copy_format_mask: u32::MAX,
+            max_texture_to_buffer_copy_layers: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             max_texture_cube_dimension: u32::MAX,
             texture_cube_format_mask: u32::MAX,
             npot_cube_textures: true,
             sampled_depth_textures: true,
+            comparison_sampler_function_mask: 0x00ff,
+            comparison_sampler_independent_filters: true,
+            max_comparison_sampler_anisotropy: 16,
+            border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
@@ -1404,6 +1454,22 @@ impl Default for DownlevelLimits {
 }
 
 impl DownlevelLimits {
+    /// Returns the bit assigned to a comparison function in
+    /// [`DownlevelLimits::comparison_sampler_function_mask`].
+    #[must_use]
+    pub const fn comparison_sampler_function_bit(function: crate::CompareFunction) -> u16 {
+        1 << (function as u32 - 1)
+    }
+
+    /// Returns whether a comparison function is supported by comparison samplers.
+    #[must_use]
+    pub const fn supports_comparison_sampler_function(
+        &self,
+        function: crate::CompareFunction,
+    ) -> bool {
+        self.comparison_sampler_function_mask & Self::comparison_sampler_function_bit(function) != 0
+    }
+
     /// Returns the bit assigned to a format in the cube-texture capability mask.
     #[must_use]
     pub const fn texture_cube_format_bit(format: crate::TextureFormat) -> u32 {
@@ -1540,11 +1606,19 @@ impl DownlevelLimits {
                 == required.multisampled_texture_usage_mask
             && self.texture_to_buffer_copy_format_mask & required.texture_to_buffer_copy_format_mask
                 == required.texture_to_buffer_copy_format_mask
+            && self.max_texture_to_buffer_copy_layers >= required.max_texture_to_buffer_copy_layers
             && self.max_texture_cube_dimension >= required.max_texture_cube_dimension
             && self.texture_cube_format_mask & required.texture_cube_format_mask
                 == required.texture_cube_format_mask
             && (!required.npot_cube_textures || self.npot_cube_textures)
             && (!required.sampled_depth_textures || self.sampled_depth_textures)
+            && self.comparison_sampler_function_mask & required.comparison_sampler_function_mask
+                == required.comparison_sampler_function_mask
+            && (!required.comparison_sampler_independent_filters
+                || self.comparison_sampler_independent_filters)
+            && self.max_comparison_sampler_anisotropy >= required.max_comparison_sampler_anisotropy
+            && (!self.border_addressing_requires_comparison_sampler
+                || required.border_addressing_requires_comparison_sampler)
             && (!required.sampled_sint_textures || self.sampled_sint_textures)
             && (!required.sampled_uint_textures || self.sampled_uint_textures)
             && (!required.multisampled_texture_bindings || self.multisampled_texture_bindings)
@@ -1630,6 +1704,7 @@ impl DownlevelCapabilities {
             && self.limits.texture_3d_non_suffix_mip_views
             && self.limits.multisampled_texture_usage_mask == crate::TextureUsages::all().bits()
             && self.limits.texture_to_buffer_copy_format_mask == u32::MAX
+            && self.limits.max_texture_to_buffer_copy_layers == u32::MAX
             && self.limits.texture_3d_texture_copies
             && self.limits.npot_texture_3d
             && self.limits.max_texture_cube_dimension
@@ -1639,6 +1714,13 @@ impl DownlevelCapabilities {
                 == DownlevelLimits::default().texture_cube_format_mask
             && self.limits.npot_cube_textures
             && self.limits.sampled_depth_textures
+            && self.limits.comparison_sampler_function_mask
+                & DownlevelLimits::default().comparison_sampler_function_mask
+                == DownlevelLimits::default().comparison_sampler_function_mask
+            && self.limits.comparison_sampler_independent_filters
+            && self.limits.max_comparison_sampler_anisotropy
+                >= DownlevelLimits::default().max_comparison_sampler_anisotropy
+            && !self.limits.border_addressing_requires_comparison_sampler
             && self.limits.sampled_sint_textures
             && self.limits.sampled_uint_textures
             && self.limits.multisampled_texture_bindings
@@ -1894,7 +1976,7 @@ pub enum ShaderModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TextureFormat;
+    use crate::{CompareFunction, TextureFormat};
     use alloc::{format, string::String, vec::Vec};
 
     #[test]
@@ -1943,6 +2025,63 @@ mod tests {
         capabilities.limits.unrestricted_npot_texture_sampling = true;
         capabilities.limits.max_texture_repeat_per_primitive = 128;
         assert!(!capabilities.is_webgpu_compliant());
+    }
+
+    #[test]
+    fn comparison_sampler_limits_model_partial_support() {
+        let mut available = DownlevelLimits {
+            sampled_depth_textures: true,
+            comparison_sampler_function_mask: DownlevelLimits::comparison_sampler_function_bit(
+                CompareFunction::LessEqual,
+            ),
+            comparison_sampler_independent_filters: false,
+            max_comparison_sampler_anisotropy: 1,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.supports_comparison_sampler_function(CompareFunction::LessEqual));
+        assert!(!available.supports_comparison_sampler_function(CompareFunction::Greater));
+        assert!(available.check_limits(&DownlevelLimits {
+            comparison_sampler_function_mask: DownlevelLimits::comparison_sampler_function_bit(
+                CompareFunction::LessEqual
+            ),
+            comparison_sampler_independent_filters: false,
+            max_comparison_sampler_anisotropy: 1,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            comparison_sampler_function_mask: DownlevelLimits::comparison_sampler_function_bit(
+                CompareFunction::Greater
+            ),
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available.clone(),
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+
+        available.comparison_sampler_function_mask = 0;
+        available.comparison_sampler_independent_filters = false;
+        available.max_comparison_sampler_anisotropy = 0;
+        assert!(!available.supports_comparison_sampler_function(CompareFunction::LessEqual));
+    }
+
+    #[test]
+    fn comparison_only_border_addressing_is_a_downlevel_restriction() {
+        let unrestricted = DownlevelLimits::default();
+        let comparison_only = DownlevelLimits {
+            border_addressing_requires_comparison_sampler: true,
+            ..DownlevelLimits::default()
+        };
+
+        assert!(unrestricted.check_limits(&comparison_only));
+        assert!(!comparison_only.check_limits(&unrestricted));
+        assert!(!DownlevelCapabilities {
+            limits: comparison_only,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
     }
 
     #[test]
@@ -2136,9 +2275,14 @@ mod tests {
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
             texture_to_buffer_copy_format_mask: u32::MAX,
+            max_texture_to_buffer_copy_layers: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
+            comparison_sampler_function_mask: 0x00ff,
+            comparison_sampler_independent_filters: true,
+            max_comparison_sampler_anisotropy: 16,
+            border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
@@ -2187,9 +2331,14 @@ mod tests {
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: crate::TextureUsages::all().bits(),
             texture_to_buffer_copy_format_mask: u32::MAX,
+            max_texture_to_buffer_copy_layers: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             sampled_depth_textures: true,
+            comparison_sampler_function_mask: 0x00ff,
+            comparison_sampler_independent_filters: true,
+            max_comparison_sampler_anisotropy: 16,
+            border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,
@@ -2441,6 +2590,28 @@ mod tests {
     }
 
     #[test]
+    fn texture_to_buffer_copy_layer_limit_is_a_downlevel_limit() {
+        let single_layer = DownlevelLimits {
+            max_texture_to_buffer_copy_layers: 1,
+            ..DownlevelLimits::default()
+        };
+        assert!(single_layer.check_limits(&DownlevelLimits {
+            max_texture_to_buffer_copy_layers: 1,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!single_layer.check_limits(&DownlevelLimits {
+            max_texture_to_buffer_copy_layers: 6,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            flags: DownlevelFlags::all(),
+            shader_model: ShaderModel::Sm5,
+            limits: single_layer,
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn explicit_texture_sample_level_is_a_downlevel_capability() {
         let available = DownlevelLimits {
             texture_sample_level: false,
@@ -2520,6 +2691,11 @@ mod tests {
         for field in [
             "empty_binding_visibility",
             "sampled_depth_textures",
+            "max_texture_to_buffer_copy_layers",
+            "comparison_sampler_function_mask",
+            "comparison_sampler_independent_filters",
+            "max_comparison_sampler_anisotropy",
+            "border_addressing_requires_comparison_sampler",
             "sampled_sint_textures",
             "sampled_uint_textures",
             "multisampled_texture_bindings",
@@ -2550,6 +2726,11 @@ mod tests {
         let limits: DownlevelLimits = serde_json::from_value(serialized).unwrap();
         assert!(limits.empty_binding_visibility);
         assert!(limits.sampled_depth_textures);
+        assert_eq!(limits.max_texture_to_buffer_copy_layers, u32::MAX);
+        assert_eq!(limits.comparison_sampler_function_mask, 0x00ff);
+        assert!(limits.comparison_sampler_independent_filters);
+        assert_eq!(limits.max_comparison_sampler_anisotropy, 16);
+        assert!(!limits.border_addressing_requires_comparison_sampler);
         assert!(limits.sampled_sint_textures);
         assert!(limits.sampled_uint_textures);
         assert!(limits.multisampled_texture_bindings);

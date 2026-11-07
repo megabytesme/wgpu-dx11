@@ -96,6 +96,7 @@ pub struct NativeTexture {
     layers: u32,
     pub(super) dimension: wgt::TextureDimension,
     pub(super) format: DXGI_FORMAT,
+    pub(super) logical_format: Option<wgt::TextureFormat>,
     sample_count: u32,
     pub(super) usage: wgt::TextureUses,
 }
@@ -131,6 +132,7 @@ impl NativeTexture {
             layers: 1,
             dimension: wgt::TextureDimension::D2,
             format: desc.Format,
+            logical_format: None,
             sample_count: 1,
             usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::PRESENT,
         })
@@ -155,6 +157,7 @@ pub struct NativeTextureView {
     surface_target: Option<Arc<ID3D11RenderTargetView>>,
     depth_stencil: Option<ID3D11DepthStencilView>,
     depth_sampled: bool,
+    logical_format: Option<wgt::TextureFormat>,
     usage: wgt::TextureUses,
     owner: ID3D11Device,
     texture: NativeTextureResource,
@@ -398,6 +401,7 @@ impl NativeDevice {
             layers: 1,
             dimension: wgt::TextureDimension::D3,
             format: desc.Format,
+            logical_format: None,
             sample_count: 1,
             usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
         })
@@ -408,6 +412,7 @@ impl NativeDevice {
         width: u32,
         height: u32,
         format: DXGI_FORMAT,
+        logical_format: wgt::TextureFormat,
         sample_count: u32,
         sampled: bool,
     ) -> Result<NativeTexture> {
@@ -509,6 +514,7 @@ impl NativeDevice {
             layers: 1,
             dimension: wgt::TextureDimension::D2,
             format,
+            logical_format: Some(logical_format),
             sample_count,
             usage: wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
         })
@@ -525,13 +531,14 @@ impl NativeDevice {
         let depth = view.depth_stencil.as_ref().ok_or_else(invalid)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { view.texture.as_2d()?.GetDesc(&mut desc) };
-        let format = match desc.Format {
+        let native_format = match desc.Format {
             DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_R16_TYPELESS => wgt::TextureFormat::Depth16Unorm,
             DXGI_FORMAT_D24_UNORM_S8_UINT | DXGI_FORMAT_R24G8_TYPELESS => {
                 wgt::TextureFormat::Depth24PlusStencil8
             }
             _ => return Err(invalid()),
         };
+        let format = view.logical_format.unwrap_or(native_format);
         if desc.MipLevels != 1
             || desc.ArraySize != 1
             || !matches!(desc.SampleDesc.Count, 1 | 4)
@@ -556,10 +563,14 @@ impl NativeDevice {
         &self,
         texture: &NativeTexture,
         mip: u32,
+        layer: u32,
     ) -> Result<(ID3D11Texture2D, [u32; 2], u32)> {
         self.check_texture_owner(texture)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.as_2d()?.GetDesc(&mut desc) };
+        let single_texture = desc.ArraySize == 1 && layer == 0;
+        let cube_face =
+            desc.ArraySize == 6 && desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 != 0;
         if !texture.usage.contains(wgt::TextureUses::COPY_SRC)
             || !matches!(
                 desc.Format,
@@ -576,12 +587,12 @@ impl NativeDevice {
             )
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
-            || desc.ArraySize != 1
+            || !(single_texture || cube_face)
             || desc.SampleDesc.Count != 1
         {
             return Err(invalid());
         }
-        let (width, height, index, _) = subresource_layout(texture, mip, 0)?;
+        let (width, height, index, _) = subresource_layout(texture, mip, layer)?;
         Ok((texture.raw.as_2d()?.clone(), [width, height], index))
     }
 
@@ -1071,6 +1082,7 @@ impl NativeDevice {
             layers,
             dimension: wgt::TextureDimension::D2,
             format,
+            logical_format: None,
             sample_count,
             usage: if !render_target
                 && matches!(
@@ -1180,6 +1192,7 @@ impl NativeDevice {
             surface_target: None,
             depth_stencil: None,
             depth_sampled: false,
+            logical_format: texture.logical_format,
             usage: wgt::TextureUses::RESOURCE,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
@@ -1264,6 +1277,7 @@ impl NativeDevice {
                 surface_target: None,
                 depth_stencil: None,
                 depth_sampled: false,
+                logical_format: texture.logical_format,
                 usage,
                 owner: self.raw_device().clone(),
                 texture: texture.raw.clone(),
@@ -1488,6 +1502,7 @@ impl NativeDevice {
             surface_target,
             depth_stencil: depth,
             depth_sampled,
+            logical_format: texture.logical_format,
             usage,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),

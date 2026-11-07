@@ -159,6 +159,97 @@ fn expect_internal_error_containing(
 }
 
 #[test]
+fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=public clear_buffer",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 clear-buffer test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let input: Vec<u8> = (0..64).map(|value| (value * 3 + 1) as u8).collect();
+    let buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 clear-buffer source"),
+        size: input.len() as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    expect_validation_error(&device, "unaligned clear_buffer range", || {
+        let mut invalid_encoder =
+            device.create_command_encoder(&CommandEncoderDescriptor::default());
+        invalid_encoder.clear_buffer(&buffer, 2, Some(4));
+        drop(invalid_encoder.finish());
+    });
+    expect_validation_error(&device, "out-of-bounds clear_buffer range", || {
+        let mut invalid_encoder =
+            device.create_command_encoder(&CommandEncoderDescriptor::default());
+        invalid_encoder.clear_buffer(&buffer, 60, Some(8));
+        drop(invalid_encoder.finish());
+    });
+    queue.write_buffer(&buffer, 0, &input);
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 clear-buffer readback"),
+        size: input.len() as u64,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 clear-buffer encoder"),
+    });
+    encoder.clear_buffer(&buffer, 16, Some(32));
+    encoder.copy_buffer_to_buffer(&buffer, 0, &readback, 0, input.len() as u64);
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public FL9_1 clear-buffer submission");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public clear-buffer readback callback")
+        .expect("map public clear-buffer readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        let mut expected = input;
+        expected[16..48].fill(0);
+        assert_eq!(
+            &data[..],
+            expected,
+            "clear_buffer changed bytes outside its range or failed to clear the requested bytes"
+        );
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 rejected unaligned and out-of-bounds clear_buffer ranges; the valid clear zeroed bytes 16..48 and preserved all 32 bytes outside the requested range");
+}
+
+#[test]
 fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     use windows::{
         core::w,
@@ -3406,6 +3497,99 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
     }
     readback.unmap();
     println!("PASS: public FL9_1 Rg8Unorm linear filtering produced the expected 8-column gradient across 64 pixels");
+
+    let r8_linear_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("public FL9_1 linearly sampled R8 resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&texture_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&linear_sampler),
+            },
+        ],
+    });
+    let mut r8_linear_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = r8_linear_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public FL9_1 R8 linear sampling pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLUE),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &r8_linear_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 0..1);
+    }
+    r8_linear_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let r8_linear_submission = queue.submit([r8_linear_encoder.finish()]);
+    let (r8_linear_sender, r8_linear_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        r8_linear_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(r8_linear_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public R8 linear sampled render");
+    r8_linear_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public R8 linear readback map callback")
+        .expect("map public R8 linear readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        let expected_red = [72u8, 88, 104, 120, 136, 152, 168, 184];
+        for y in 0..8 {
+            for (x, expected_red) in expected_red.into_iter().enumerate() {
+                let offset = y * 256 + x * 4;
+                let actual = &data[offset..offset + 4];
+                let expected = [expected_red, 0, 0, 255];
+                for (channel, (&observed, expected)) in actual.iter().zip(expected).enumerate() {
+                    assert!(
+                        observed.abs_diff(expected) <= 2,
+                        "R8 linear sampled pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 R8Unorm linear filtering produced the expected 8-column gradient across 64 pixels");
 }
 
 #[test]
@@ -4281,6 +4465,14 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let format_features = adapter.get_texture_format_features(TextureFormat::Depth24PlusStencil8);
+    let downlevel = adapter.get_downlevel_capabilities();
+    let comparison_sampling = downlevel
+        .flags
+        .contains(DownlevelFlags::COMPARISON_SAMPLERS)
+        && downlevel.limits.sampled_depth_textures
+        && downlevel
+            .limits
+            .supports_comparison_sampler_function(CompareFunction::LessEqual);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; D24S8={format_features:?}",
         info.name, info.vendor, info.device, info.driver, info.driver_info,
@@ -4288,9 +4480,15 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
     assert!(format_features
         .allowed_usages
         .contains(TextureUsages::RENDER_ATTACHMENT));
-    assert!(!format_features.allowed_usages.intersects(
-        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST
-    ));
+    assert_eq!(
+        format_features
+            .allowed_usages
+            .contains(TextureUsages::TEXTURE_BINDING),
+        comparison_sampling
+    );
+    assert!(!format_features
+        .allowed_usages
+        .intersects(TextureUsages::COPY_SRC | TextureUsages::COPY_DST));
     assert!(format_features
         .flags
         .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
@@ -4301,10 +4499,10 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         ..Default::default()
     }))
     .expect("request the selected FL9_1 device");
-
-    expect_validation_error(&device, "sampled D24S8 texture", || {
-        drop(device.create_texture(&TextureDescriptor {
-            label: Some("unsupported sampled FL9_1 D24S8 texture"),
+    if comparison_sampling {
+        let internal_scope = device.push_error_scope(ErrorFilter::Internal);
+        let sampleable = device.create_texture(&TextureDescriptor {
+            label: Some("query-gated sampled FL9_1 D24S8 texture"),
             size: Extent3d {
                 width: 8,
                 height: 8,
@@ -4316,8 +4514,38 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
             format: TextureFormat::Depth24PlusStencil8,
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
-        }));
-    });
+        });
+        let _attachment_view = sampleable.create_view(&TextureViewDescriptor {
+            usage: Some(TextureUsages::RENDER_ATTACHMENT),
+            ..Default::default()
+        });
+        let _sampled_view = sampleable.create_view(&TextureViewDescriptor {
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: TextureAspect::DepthOnly,
+            ..Default::default()
+        });
+        assert!(
+            poll_ready(internal_scope.pop()).is_none(),
+            "query-gated D24S8 sampled views must not lose the public device"
+        );
+    } else {
+        expect_validation_error(&device, "sampled D24S8 texture", || {
+            drop(device.create_texture(&TextureDescriptor {
+                label: Some("unsupported sampled FL9_1 D24S8 texture"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Depth24PlusStencil8,
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            }));
+        });
+    }
 
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 D24S8 transition shader"),
@@ -4358,11 +4586,44 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         view_formats: &[],
     });
     for aspect in [TextureAspect::DepthOnly, TextureAspect::StencilOnly] {
-        expect_validation_error(&device, "D24S8 aspect-specific attachment view", || {
-            drop(depth_stencil.create_view(&TextureViewDescriptor {
+        expect_validation_error(&device, "D24S8 aspect-specific render attachment", || {
+            let aspect_view = depth_stencil.create_view(&TextureViewDescriptor {
                 aspect,
                 ..Default::default()
+            });
+            let (depth_ops, stencil_ops) = match aspect {
+                TextureAspect::DepthOnly => (
+                    Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    None,
+                ),
+                TextureAspect::StencilOnly => (
+                    None,
+                    Some(Operations {
+                        load: LoadOp::Clear(0),
+                        store: StoreOp::Store,
+                    }),
+                ),
+                _ => unreachable!(),
+            };
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("reject D24S8 aspect-specific attachment use"),
+            });
+            drop(encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("reject D24S8 aspect-specific attachment use"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &aspect_view,
+                    depth_ops,
+                    stencil_ops,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
             }));
+            drop(encoder.finish());
         });
     }
     let depth_stencil_view = depth_stencil.create_view(&TextureViewDescriptor::default());
@@ -4963,7 +5224,7 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 D24S8 LOAD/CLEAR/DISCARD, independent read-only aspects and colorless depth prepass matched all 576 checked transition pixels; read-only depth and stencil writes were rejected by core; sampled usage and aspect-specific views remain rejected");
+    println!("PASS: public FL9_1 D24S8 LOAD/CLEAR/DISCARD, independent read-only aspects and colorless depth prepass matched all 576 checked transition pixels; read-only depth and stencil writes were rejected by core");
 }
 
 #[test]
@@ -6814,8 +7075,8 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             mip_colors[3],
             mip_colors[2],
         ]
-            .into_iter()
-            .enumerate()
+        .into_iter()
+        .enumerate()
         {
             for y in 0..8 {
                 for x in 0..8 {
@@ -8510,7 +8771,10 @@ fn public_dx11_splits_point_and_triangle_draws_at_fl91_limits() {
     let instance = Instance::new(descriptor);
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
-        assert!(required, "strict mode requires a physical FL9_1 D3D11 adapter");
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
         return;
     };
@@ -12749,6 +13013,17 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let format_features = adapter.get_texture_format_features(TextureFormat::Depth16Unorm);
+    let downlevel = adapter.get_downlevel_capabilities();
+    let less_equal_comparison = downlevel
+        .limits
+        .supports_comparison_sampler_function(CompareFunction::LessEqual);
+    let comparison_sampling = downlevel
+        .flags
+        .contains(DownlevelFlags::COMPARISON_SAMPLERS)
+        && downlevel.limits.sampled_depth_textures
+        && less_equal_comparison;
+    let depth_stencil_features =
+        adapter.get_texture_format_features(TextureFormat::Depth24PlusStencil8);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Depth16Unorm={format_features:?}",
         info.name, info.vendor, info.device, info.driver, info.driver_info
@@ -12756,9 +13031,27 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
     assert!(format_features
         .allowed_usages
         .contains(TextureUsages::RENDER_ATTACHMENT));
-    assert!(!format_features.allowed_usages.intersects(
-        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST
-    ));
+    assert_eq!(
+        format_features
+            .allowed_usages
+            .contains(TextureUsages::TEXTURE_BINDING),
+        comparison_sampling
+    );
+    assert!(!format_features
+        .allowed_usages
+        .intersects(TextureUsages::COPY_SRC | TextureUsages::COPY_DST));
+    assert!(depth_stencil_features
+        .allowed_usages
+        .contains(TextureUsages::RENDER_ATTACHMENT));
+    assert_eq!(
+        depth_stencil_features
+            .allowed_usages
+            .contains(TextureUsages::TEXTURE_BINDING),
+        comparison_sampling
+    );
+    assert!(!depth_stencil_features
+        .allowed_usages
+        .intersects(TextureUsages::COPY_SRC | TextureUsages::COPY_DST));
     assert!(format_features
         .flags
         .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
@@ -17286,6 +17579,7 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
     }
     let depth_formats: Vec<_> = [
         TextureFormat::Depth24PlusStencil8,
+        TextureFormat::Depth24Plus,
         TextureFormat::Depth16Unorm,
     ]
     .into_iter()
@@ -17766,6 +18060,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     assert!(downlevel.flags.contains(DownlevelFlags::CUBE_TEXTURES));
     assert!(!downlevel.flags.contains(DownlevelFlags::TEXTURE_2D_ARRAYS));
     assert_eq!(downlevel.limits.max_texture_cube_dimension, 512);
+    assert_eq!(downlevel.limits.max_texture_to_buffer_copy_layers, 1);
     assert!(downlevel
         .limits
         .supports_texture_cube_format(TextureFormat::Rgba8Unorm));
@@ -17782,7 +18077,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     let limits = adapter.limits();
     assert_eq!(limits.max_texture_array_layers, 6);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; cube dimension={} format_mask={:#x} layers={} arrays={}",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; cube dimension={} format_mask={:#x} layers={} arrays={} max_texture_to_buffer_copy_layers={}",
         info.name,
         info.vendor,
         info.device,
@@ -17791,6 +18086,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
         downlevel.limits.texture_cube_format_mask,
         limits.max_texture_array_layers,
         downlevel.flags.contains(DownlevelFlags::TEXTURE_2D_ARRAYS),
+        downlevel.limits.max_texture_to_buffer_copy_layers,
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 cube sampling test"),
@@ -17871,6 +18167,10 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     let has_partial_view = mip_levels > 2;
     let height = (mip_levels + u32::from(has_partial_view)) * 4;
     let cube = device.create_texture(&cube_descriptor(SIDE, SIDE, mip_levels));
+    let cube_copy_source = device.create_texture(&TextureDescriptor {
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        ..cube_descriptor(SIDE, SIDE, mip_levels)
+    });
     expect_validation_error(&device, "2D face view of FL9_1 cube backing", || {
         let _ = cube.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2),
@@ -17914,36 +18214,241 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     ];
     for mip in 0..mip_levels {
         let mip_side = (SIDE >> mip).max(1);
-        for (face, color) in colors[mip as usize].iter().enumerate() {
-            let mut pixels = Vec::with_capacity((mip_side * mip_side * 4) as usize);
-            for _ in 0..mip_side * mip_side {
-                pixels.extend_from_slice(color);
-            }
-            queue.write_texture(
-                TexelCopyTextureInfo {
-                    texture: &cube,
-                    mip_level: mip,
-                    origin: Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: face as u32,
+        for texture in [&cube, &cube_copy_source] {
+            for (face, color) in colors[mip as usize].iter().enumerate() {
+                let mut pixels = Vec::with_capacity((mip_side * mip_side * 4) as usize);
+                for _ in 0..mip_side * mip_side {
+                    pixels.extend_from_slice(color);
+                }
+                queue.write_texture(
+                    TexelCopyTextureInfo {
+                        texture,
+                        mip_level: mip,
+                        origin: Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: face as u32,
+                        },
+                        aspect: TextureAspect::All,
                     },
-                    aspect: TextureAspect::All,
-                },
-                &pixels,
-                TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(mip_side * 4),
-                    rows_per_image: Some(mip_side),
-                },
-                Extent3d {
-                    width: mip_side,
-                    height: mip_side,
-                    depth_or_array_layers: 1,
-                },
-            );
+                    &pixels,
+                    TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(mip_side * 4),
+                        rows_per_image: Some(mip_side),
+                    },
+                    Extent3d {
+                        width: mip_side,
+                        height: mip_side,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
     }
+    let copied_2d_face = [201, 23, 87, 255];
+    let copied_2d_pixels = copied_2d_face.repeat((SIDE * SIDE) as usize);
+    let texture_2d_source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 2D-to-cube copy source"),
+        size: Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture_2d_source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &copied_2d_pixels,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(SIDE * 4),
+            rows_per_image: Some(SIDE),
+        },
+        Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+    );
+    let texture_2d_destination = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 cube-to-2D copy destination"),
+        size: Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let copied_face_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 copied cube face readback"),
+        size: u64::from(SIDE) * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut copy_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 cube face copies"),
+    });
+    for mip in 0..mip_levels {
+        let mip_side = (SIDE >> mip).max(1);
+        copy_encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: &cube_copy_source,
+                mip_level: mip,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: &cube,
+                mip_level: mip,
+                origin: Origin3d { x: 0, y: 0, z: 1 },
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: mip_side,
+                height: mip_side,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    copy_encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &texture_2d_source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &cube,
+            mip_level: 0,
+            origin: Origin3d { x: 0, y: 0, z: 2 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+    );
+    copy_encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &cube_copy_source,
+            mip_level: 0,
+            origin: Origin3d { x: 0, y: 0, z: 3 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &texture_2d_destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+    );
+    copy_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &texture_2d_destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &copied_face_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(SIDE),
+            },
+        },
+        Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+    );
+    let copy_submission = queue.submit([copy_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    copied_face_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(copy_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 cube and 2D copies");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("FL9_1 copied cube face callback")
+        .expect("map copied cube face");
+    {
+        let pixels = copied_face_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped copied cube face");
+        for y in 0..SIDE as usize {
+            for x in 0..SIDE as usize {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &colors[0][3],
+                    "cube-to-2D copied texel ({x}, {y})"
+                );
+            }
+        }
+    }
+    copied_face_readback.unmap();
+    let copy_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 cube copy readback rejection"),
+        size: u64::from(SIDE) * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    expect_validation_error(&device, "FL9_1 cube texture-to-buffer readback", || {
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &cube_copy_source,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &copy_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(SIDE),
+                },
+            },
+            Extent3d {
+                width: SIDE,
+                height: SIDE,
+                depth_or_array_layers: 1,
+            },
+        );
+        drop(encoder.finish());
+    });
+    println!("PASS: cube face copies across all {mip_levels} mips, 2D-to-cube and cube-to-2D copies; 64/64 copied pixels matched and core rejected FL9_1 cube-to-buffer readback before HAL");
     let cube_view = cube.create_view(&TextureViewDescriptor {
         label: Some("six-face FL9_1 cube SRV"),
         format: Some(TextureFormat::Rgba8Unorm),
@@ -18249,9 +18754,16 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
                 let offset = y * 256 + x * 4;
                 let band = y / 4;
                 let mip = if band < mip_levels as usize { band } else { 1 };
+                let expected = if face == 1 {
+                    colors[mip][0]
+                } else if face == 2 && mip == 0 {
+                    copied_2d_face
+                } else {
+                    colors[mip][face]
+                };
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    colors[mip][face],
+                    expected,
                     "cube mip {mip} face {face} pixel ({x}, {y})"
                 );
             }
@@ -18275,14 +18787,20 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
             && info.driver_info.contains("FL9_1")
             && info.driver_info.contains("physical")
     }) else {
-        assert!(!required, "strict mode requires a physical FL9_1 D3D11 adapter");
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
         println!("SKIP: no physical FL9_1 D3D11 adapter for 3D texture sampling");
         return;
     };
     let info = adapter.get_info();
     let downlevel = adapter.get_downlevel_capabilities();
     if !downlevel.limits.texture_3d {
-        assert!(!required, "strict mode requires queried FL9_1 3D texture support");
+        assert!(
+            !required,
+            "strict mode requires queried FL9_1 3D texture support"
+        );
         println!("SKIP: selected FL9_1 device did not report 3D texture support");
         return;
     }
@@ -19049,4 +19567,506 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
     }
     readback.unmap();
     println!("PASS: FL9_1 3D RGBA8 upload, nonzero-offset partial update, zero initialization, sparse sampled bindings and 128 readback pixels verified");
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_d16_depth_comparison_sampling() {
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, false, None);
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling() {
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth24PlusStencil8, false, None);
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_depth24plus_comparison_sampling() {
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth24Plus, false, None);
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_depth_comparison_level_zero() {
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, true, None);
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_comparison_border_sampling() {
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth16Unorm,
+        false,
+        Some(SamplerBorderColor::OpaqueBlack),
+    );
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_comparison_border_white_sampling() {
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth16Unorm,
+        false,
+        Some(SamplerBorderColor::OpaqueWhite),
+    );
+}
+
+fn run_public_fl91_depth_comparison_sampling(
+    depth_format: TextureFormat,
+    level_zero: bool,
+    border_color: Option<SamplerBorderColor>,
+) {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    let adapter_features = adapter.features();
+    let less_equal = DownlevelLimits::comparison_sampler_function_bit(CompareFunction::LessEqual);
+    let supported = downlevel
+        .flags
+        .contains(DownlevelFlags::COMPARISON_SAMPLERS)
+        && downlevel.limits.sampled_depth_textures
+        && downlevel.limits.comparison_sampler_function_mask & less_equal != 0;
+    if !supported {
+        assert!(
+            !required,
+            "strict mode requires the selected FL9_1 device's positive D3D9 shadow-comparison query"
+        );
+        println!(
+            "SKIP: selected FL9_1 adapter does not expose query-gated LessEqual depth sampling"
+        );
+        return;
+    }
+    let border_supported = adapter_features.contains(Features::ADDRESS_MODE_CLAMP_TO_BORDER)
+        && downlevel
+            .limits
+            .border_addressing_requires_comparison_sampler;
+    if border_color.is_some() && !border_supported {
+        assert!(
+            !required,
+            "strict mode requires query-gated FL9_1 comparison border addressing"
+        );
+        println!("SKIP: selected FL9_1 adapter does not expose comparison border addressing");
+        return;
+    }
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let depth_features = adapter.get_texture_format_features(depth_format);
+    assert!(depth_features
+        .allowed_usages
+        .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT));
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; comparison_functions={:#06x} independent_filters={} max_comparison_anisotropy={} depth_format={depth_format:?} features={depth_features:?}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        downlevel.limits.comparison_sampler_function_mask,
+        downlevel.limits.comparison_sampler_independent_filters,
+        downlevel.limits.max_comparison_sampler_anisotropy
+    );
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public query-gated FL9_1 depth comparison"),
+        required_features: if border_color.is_some() {
+            Features::ADDRESS_MODE_CLAMP_TO_BORDER
+        } else {
+            Features::empty()
+        },
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request selected FL9_1 device");
+    let vertex_bytes: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let internal_buffer_scope = device.push_error_scope(ErrorFilter::Internal);
+    let buffer_scope = device.push_error_scope(ErrorFilter::Validation);
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 comparison triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    if let Some(error) = poll_ready(buffer_scope.pop()) {
+        panic!("comparison vertex buffer creation failed: {error:?}");
+    }
+    if let Some(error) = poll_ready(internal_buffer_scope.pop()) {
+        panic!("comparison vertex buffer creation failed internally: {error:?}");
+    }
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map comparison triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+
+    let shader_source = r#"
+@group(0) @binding(7) var shadow: texture_depth_2d;
+@group(0) @binding(42) var shadow_sampler: sampler_comparison;
+struct VertexOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+}
+@vertex fn vs(@location(0) position: vec2f) -> VertexOut {
+    return VertexOut(vec4f(position, 0.25, 1.0), position * 0.5 + vec2f(0.5));
+}
+@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+    let result = textureSampleCompare(shadow, shadow_sampler, uv, 0.5);
+    return vec4f(result, 0.0, 0.0, 1.0);
+}
+"#;
+    let mut shader_source = if level_zero {
+        shader_source.replace("textureSampleCompare(", "textureSampleCompareLevel(")
+    } else {
+        shader_source.to_owned()
+    };
+    if border_color.is_some() {
+        shader_source =
+            shader_source.replace("position * 0.5 + vec2f(0.5)", "position * 0.5 + vec2f(1.5)");
+    }
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some(if level_zero {
+            "FL9_1 comparison level-zero sampler test shader"
+        } else {
+            "FL9_1 comparison sampler test shader"
+        }),
+        source: ShaderSource::Wgsl(shader_source.into()),
+    });
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 comparison layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Depth,
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Comparison),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 comparison pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("FL9_1 LessEqual comparison sampler"),
+        address_mode_u: if border_color.is_some() {
+            AddressMode::ClampToBorder
+        } else {
+            AddressMode::ClampToEdge
+        },
+        address_mode_v: if border_color.is_some() {
+            AddressMode::ClampToBorder
+        } else {
+            AddressMode::ClampToEdge
+        },
+        address_mode_w: if border_color.is_some() {
+            AddressMode::ClampToBorder
+        } else {
+            AddressMode::ClampToEdge
+        },
+        compare: Some(CompareFunction::LessEqual),
+        min_filter: FilterMode::Nearest,
+        mag_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        border_color,
+        ..Default::default()
+    });
+    let size = Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let depth = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 sampled depth texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: depth_format,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let depth_attachment = depth.create_view(&TextureViewDescriptor {
+        usage: Some(TextureUsages::RENDER_ATTACHMENT),
+        aspect: if depth_format == TextureFormat::Depth16Unorm {
+            TextureAspect::DepthOnly
+        } else {
+            TextureAspect::All
+        },
+        ..Default::default()
+    });
+    let depth_sampled = depth.create_view(&TextureViewDescriptor {
+        usage: Some(TextureUsages::TEXTURE_BINDING),
+        aspect: TextureAspect::DepthOnly,
+        ..Default::default()
+    });
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 depth comparison bindings"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&depth_sampled),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let color = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 comparison output"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let depth_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 depth population pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilState {
+            format: depth_format,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(CompareFunction::Less),
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
+        multisample: MultisampleState::default(),
+        fragment: None,
+        multiview_mask: None,
+        cache: None,
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let comparison_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 comparison sampling pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    if let Some(error) = poll_ready(pipeline_validation_scope.pop()) {
+        panic!("comparison pipeline validation failed: {error:?}");
+    }
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 comparison readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let command_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 comparison commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("populate half the comparison depth texture"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_attachment,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.set_pipeline(&depth_pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("sample depth comparisons"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&comparison_pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        size,
+    );
+    let commands = encoder.finish();
+    if let Some(error) = poll_ready(command_validation_scope.pop()) {
+        panic!("comparison command validation failed: {error:?}");
+    }
+    let submit_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let submission = queue.submit([commands]);
+    if let Some(error) = poll_ready(submit_validation_scope.pop()) {
+        panic!("comparison submission validation failed: {error:?}");
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for comparison submission");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("comparison readback callback")
+        .expect("map comparison readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped output");
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let expected = match border_color {
+                    Some(SamplerBorderColor::OpaqueWhite) => [255, 0, 0, 255],
+                    Some(_) => [0, 0, 0, 255],
+                    None if x >= 4 => [255, 0, 0, 255],
+                    None => [0, 0, 0, 255],
+                };
+                let offset = y * 256 + x * 4;
+                assert_eq!(&pixels[offset..offset + 4], expected, "pixel ({x}, {y})");
+            }
+        }
+    }
+    readback.unmap();
+    expect_validation_error(&device, "unsupported FL9_1 comparison function", || {
+        drop(device.create_sampler(&SamplerDescriptor {
+            compare: Some(CompareFunction::Greater),
+            ..Default::default()
+        }));
+    });
+    expect_validation_error(&device, "independent FL9_1 comparison filters", || {
+        drop(device.create_sampler(&SamplerDescriptor {
+            compare: Some(CompareFunction::LessEqual),
+            min_filter: FilterMode::Nearest,
+            mag_filter: FilterMode::Linear,
+            ..Default::default()
+        }));
+    });
+    expect_validation_error(&device, "FL9_1 comparison anisotropy above one", || {
+        drop(device.create_sampler(&SamplerDescriptor {
+            compare: Some(CompareFunction::LessEqual),
+            anisotropy_clamp: 2,
+            ..Default::default()
+        }));
+    });
+    if border_color.is_some() {
+        expect_validation_error(&device, "non-comparison FL9_1 border sampler", || {
+            drop(device.create_sampler(&SamplerDescriptor {
+                address_mode_u: AddressMode::ClampToBorder,
+                address_mode_v: AddressMode::ClampToBorder,
+                address_mode_w: AddressMode::ClampToBorder,
+                ..Default::default()
+            }));
+        });
+        expect_validation_error(&device, "FL9_1 comparison border Zero feature", || {
+            drop(device.create_sampler(&SamplerDescriptor {
+                address_mode_u: AddressMode::ClampToBorder,
+                address_mode_v: AddressMode::ClampToBorder,
+                address_mode_w: AddressMode::ClampToBorder,
+                compare: Some(CompareFunction::LessEqual),
+                border_color: Some(SamplerBorderColor::Zero),
+                ..Default::default()
+            }));
+        });
+        println!("PASS: public FL9_1 LessEqual comparison border sampling returned {border_color:?} results for all 64 out-of-range pixels; ordinary border and unrequested Zero border were rejected");
+    } else {
+        println!("PASS: public FL9_1 {depth_format:?} LessEqual depth comparison matched 64 pixels (32 black, 32 red); invalid function, mismatched filters and anisotropy were rejected before HAL");
+    }
 }

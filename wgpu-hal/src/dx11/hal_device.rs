@@ -108,13 +108,31 @@ fn metadata_view_range_valid(
                 count != 0 && base.checked_add(count).is_some_and(|end| end <= total)
             })
     }
-    format.aspect_specific_format(range.aspect) == Some(format)
+    (format.aspect_specific_format(range.aspect) == Some(format)
+        || (format == wgt::TextureFormat::Depth24PlusStencil8
+            && matches!(
+                range.aspect,
+                wgt::TextureAspect::DepthOnly | wgt::TextureAspect::StencilOnly
+            )))
         && valid_range(range.base_mip_level, range.mip_level_count, mip_levels)
         && valid_range(
             range.base_array_layer,
             range.array_layer_count,
             array_layers,
         )
+}
+
+fn metadata_view_range_is_full_resource(
+    range: &wgt::ImageSubresourceRange,
+    format: wgt::TextureFormat,
+    mip_levels: u32,
+    array_layers: u32,
+) -> bool {
+    metadata_view_range_valid(range, format, mip_levels, array_layers)
+        && range.base_mip_level == 0
+        && range.mip_level_count.unwrap_or(mip_levels) == mip_levels
+        && range.base_array_layer == 0
+        && range.array_layer_count.unwrap_or(array_layers) == array_layers
 }
 
 crate::impl_dyn_resource!(Device);
@@ -272,7 +290,9 @@ impl crate::Device for Device {
         }
         let depth = matches!(
             desc.format,
-            wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+            wgt::TextureFormat::Depth16Unorm
+                | wgt::TextureFormat::Depth24Plus
+                | wgt::TextureFormat::Depth24PlusStencil8
         );
         let depth_sampled = depth && desc.usage.contains(wgt::TextureUses::RESOURCE);
         let sampled_upload = matches!(
@@ -390,7 +410,9 @@ impl crate::Device for Device {
             };
             let native_format = match desc.format {
                 wgt::TextureFormat::Depth16Unorm => DXGI_FORMAT_D16_UNORM,
-                wgt::TextureFormat::Depth24PlusStencil8 => DXGI_FORMAT_D24_UNORM_S8_UINT,
+                wgt::TextureFormat::Depth24Plus | wgt::TextureFormat::Depth24PlusStencil8 => {
+                    DXGI_FORMAT_D24_UNORM_S8_UINT
+                }
                 _ => return Err(DeviceError::Unexpected),
             };
             let support = unsafe { self.native.raw_device().CheckFormatSupport(native_format) }
@@ -417,6 +439,7 @@ impl crate::Device for Device {
                     desc.size.width,
                     desc.size.height,
                     native_format,
+                    desc.format,
                     desc.sample_count,
                     depth_sampled,
                 )
@@ -492,7 +515,8 @@ impl crate::Device for Device {
             }
             | if desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
                 || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
-                    && desc.format != wgt::TextureFormat::Bc1RgbaUnorm)
+                    && desc.format != wgt::TextureFormat::Bc1RgbaUnorm
+                    && !cube)
             {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
@@ -631,7 +655,7 @@ impl crate::Device for Device {
                 .map_err(device_error);
         }
         let native = self.native.texture_desc(texture).map_err(device_error)?;
-        let format = match native.Format {
+        let native_format = match native.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
             DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
@@ -651,9 +675,12 @@ impl crate::Device for Device {
             }
             _ => return Err(DeviceError::Unexpected),
         };
+        let format = texture.logical_format.unwrap_or(native_format);
         let is_depth = matches!(
             format,
-            wgt::TextureFormat::Depth16Unorm | wgt::TextureFormat::Depth24PlusStencil8
+            wgt::TextureFormat::Depth16Unorm
+                | wgt::TextureFormat::Depth24Plus
+                | wgt::TextureFormat::Depth24PlusStencil8
         );
         let sampled_upload = matches!(
             format,
@@ -754,9 +781,12 @@ impl crate::Device for Device {
                         != 1
             } else {
                 native.MipLevels != 1
-                    || !desc
-                        .range
-                        .is_full_resource(format, native.MipLevels, native.ArraySize)
+                    || !metadata_view_range_is_full_resource(
+                        &desc.range,
+                        format,
+                        native.MipLevels,
+                        native.ArraySize,
+                    )
             })
             || (cube
                 && (!cube_resource
@@ -1117,6 +1147,15 @@ mod tests {
         range.array_layer_count = Some(1);
         range.aspect = wgt::TextureAspect::DepthOnly;
         assert!(!metadata_view_range_valid(&range, format, 4, 1));
+
+        let format = wgt::TextureFormat::Depth24PlusStencil8;
+        assert!(metadata_view_range_valid(&range, format, 1, 1));
+        assert!(metadata_view_range_is_full_resource(&range, format, 1, 1));
+        range.aspect = wgt::TextureAspect::StencilOnly;
+        assert!(metadata_view_range_valid(&range, format, 1, 1));
+        assert!(metadata_view_range_is_full_resource(&range, format, 1, 1));
+        range.aspect = wgt::TextureAspect::All;
+        assert!(metadata_view_range_is_full_resource(&range, format, 1, 1));
     }
 
     #[test]
@@ -1188,7 +1227,7 @@ mod tests {
                 mip
             );
             assert!(native
-                .texture_copy_texture_source(&upload_only, mip)
+                .texture_copy_texture_source(&upload_only, mip, 0)
                 .is_err());
         }
         assert!(native.read_rgba_texture(&upload_only, 0, 0).is_err());
@@ -1247,7 +1286,7 @@ mod tests {
             windows::Win32::Graphics::Direct3D11::D3D11_BIND_SHADER_RESOURCE.0 as u32
         );
         assert!(native
-            .texture_copy_texture_source(&upload_sample, 0)
+            .texture_copy_texture_source(&upload_sample, 0, 0)
             .is_err());
         assert!(native.read_rgba_texture(&upload_sample, 0, 0).is_err());
         for mip in 0..4 {
@@ -1261,7 +1300,7 @@ mod tests {
                 .read_rgba_texture(&sampled, mip, 0)?
                 .iter()
                 .all(|&byte| byte == 0));
-            assert_eq!(native.texture_copy_texture_source(&sampled, mip)?.2, mip);
+            assert_eq!(native.texture_copy_texture_source(&sampled, mip, 0)?.2, mip);
             assert_eq!(native.texture_copy_destination(&sampled, mip, 0)?.2, mip);
         }
         let full_sampled = TextureViewDescriptor {
@@ -1383,7 +1422,7 @@ mod tests {
         let mut combined_desc = sampled_desc.clone();
         combined_desc.usage |= wgt::TextureUses::COLOR_TARGET;
         let combined = unsafe { crate::Device::create_texture(&device, &combined_desc) }.unwrap();
-        assert!(native.texture_copy_texture_source(&combined, 1).is_ok());
+        assert!(native.texture_copy_texture_source(&combined, 1, 0).is_ok());
         assert!(native.texture_copy_destination(&combined, 1, 0).is_ok());
         let mut combined_view_desc = view_desc.clone();
         combined_view_desc.usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET;

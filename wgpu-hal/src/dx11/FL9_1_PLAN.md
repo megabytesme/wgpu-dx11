@@ -1,5 +1,14 @@
 # FL9_1 completion plan
 
+The latest public-API increment exercises same-format copies in both directions
+between ordinary 2D textures and cube subresources, alongside cube-face copies
+across mip levels. A copied cube face was sampled, and a cube face copied back
+to 2D was read back as 64 matching pixels. The strict public suite passed
+70/70, the core fixture 103/103 and the private HAL suite 391/391. Cube
+texture-to-buffer readback remains blocked by the one-layer downlevel source
+limit. Exact commands and the Microsoft copy restrictions are in
+`FL9_1_PROGRESS.md`.
+
 The objective is a usable explicit D3D11 backend through the public native wgpu
 API, with truthful downlevel capabilities, tested textured depth rendering and
 Windows presentation. The opt-in public adapter exposes physical FL9_1 devices
@@ -9,13 +18,24 @@ have run at forced FL9_1. A captured client-area frame was visually inspected:
 the rotating cube showed distinct red and green textured faces over the clear
 background. This plan does not claim WebGPU conformance.
 
-Latest private increment: a narrow FL9_1 sampled-depth comparison path is
-implemented only when the selected device positively reports
-`D3D11_FEATURE_D3D9_SHADOW_SUPPORT`. Strict D16 and D24S8 rendering, typeless
-D16/D24S8 view creation, the complete HAL suite, core rejection before HAL
-and DX12 regressions passed on 2026-11-07. This does not enable public
-comparison samplers or close the overall core/HAL audit; see the latest entry
-in `FL9_1_PROGRESS.md`.
+Latest increment: the query-gated FL9_1 sampled-depth comparison path now
+reaches the opt-in public API, but only when the selected device positively
+reports `D3D11_FEATURE_D3D9_SHADOW_SUPPORT`. Its downlevel limits allow
+`LessEqual`, equal min/mag filters and comparison anisotropy 1; other
+comparison states remain rejected. The public path now reports and executes
+`Depth24Plus` as well as D16 and D24S8, with native D24S8 storage keeping the
+stencil aspect hidden. Strict FL9_1 readback checks 32 failed and 32 passing
+comparisons in each public depth format. A 4x depth-tested render also
+verified D16, Depth24Plus and D24S8 against resolved RGBA8 output. This does
+not enable general comparison sampler support or close the overall core/HAL
+audit; see the latest entry in `FL9_1_PROGRESS.md`.
+
+The optional shadow query also enables the D3D9-specific border-addressing
+exception for comparison samplers. The public projection requires comparison
+use for border mode, and the strict FL9_1 test verifies 64/64 out-of-range
+pixels return opaque black. Ordinary border and clamp-to-zero samplers remain
+rejected. This is query-selected driver behavior, not a universal FL9_1
+guarantee.
 
 The 2026-11-07 verification checkpoint reran the strict private HAL and public
 D3D11 suites, the controlled core fixture, adapter selection and DX12
@@ -339,13 +359,13 @@ entry-point selection are covered by a strict public test.
    ordering in both draw orders, `DepthOnly` view use, rejection of stencil and
    multi-mip use, preservation across a second-pass LOAD and reset by CLEAR.
    A discard followed by LOAD also verifies that stale depth does not affect
-   rendering. Public D24S8 tests now verify both aspects survive LOAD, each
+   rendering. Public D24S8 tests verify both aspects survive LOAD, each
    aspect's CLEAR independently changes later comparisons, and each aspect's
-   DISCARD followed by LOAD is initialized before use. Sampled D24S8 is
-   rejected through core; public core rejects depth-only/stencil-only D24S8
-   views while retaining the combined attachment, and the D16 test rejects its
-   unsupported stencil-only view. Continue auditing less common render-pass
-   combinations and format aspects before widening public claims.
+   DISCARD followed by LOAD is initialized before use. Query-gated D24S8
+   comparison sampling now passes through public core and HAL; DepthOnly SRVs
+   are valid, while aspect-specific depth/stencil render attachments remain
+   rejected by core. Continue auditing less common render-pass combinations
+   and format aspects before widening public claims.
 3. Broaden pipeline and resource functionality: vertex layouts, topology,
    indexed semantics, render state, mips/formats and multiple groups. Dynamic
    uniform offsets have restricted private coverage. A controlled core test

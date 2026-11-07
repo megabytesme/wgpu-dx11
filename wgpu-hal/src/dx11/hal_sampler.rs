@@ -34,13 +34,18 @@ fn translate_sampler_with_shadow_support(
 ) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
     use wgt::FilterMode::{Linear, Nearest};
     use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
+    let comparison = desc.compare.is_some();
+    let border_addressing_supported =
+        comparison && shadow_supported && level == super::device::FeatureLevel::L9_1;
     let address = |mode| match mode {
         wgt::AddressMode::ClampToEdge => Ok(D3D11_TEXTURE_ADDRESS_CLAMP),
         wgt::AddressMode::Repeat => Ok(D3D11_TEXTURE_ADDRESS_WRAP),
         wgt::AddressMode::MirrorRepeat => Ok(D3D11_TEXTURE_ADDRESS_MIRROR),
+        wgt::AddressMode::ClampToBorder if border_addressing_supported => {
+            Ok(D3D11_TEXTURE_ADDRESS_BORDER)
+        }
         wgt::AddressMode::ClampToBorder => Err(crate::DeviceError::Unexpected),
     };
-    let comparison = desc.compare.is_some();
     if (comparison
         && (!shadow_supported
             || level != super::device::FeatureLevel::L9_1
@@ -407,6 +412,44 @@ mod tests {
         assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
         desc.mag_filter = desc.min_filter;
         assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true).is_err());
+    }
+
+    #[test]
+    fn fl91_comparison_border_requires_shadow_query_and_representable_colors() {
+        use wgt::AddressMode::{ClampToBorder, ClampToEdge};
+        let mut desc = descriptor();
+        desc.compare = Some(wgt::CompareFunction::LessEqual);
+        desc.address_modes = [ClampToBorder, ClampToEdge, ClampToBorder];
+        for (border_color, expected) in [
+            (
+                wgt::SamplerBorderColor::TransparentBlack,
+                [0.0, 0.0, 0.0, 0.0],
+            ),
+            (wgt::SamplerBorderColor::OpaqueBlack, [0.0, 0.0, 0.0, 1.0]),
+            (wgt::SamplerBorderColor::OpaqueWhite, [1.0; 4]),
+        ] {
+            desc.border_color = Some(border_color);
+            let (native, _) =
+                translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true)
+                    .expect("query-gated comparison border sampler");
+            assert_eq!(
+                [native.AddressU, native.AddressV, native.AddressW],
+                [
+                    D3D11_TEXTURE_ADDRESS_BORDER,
+                    D3D11_TEXTURE_ADDRESS_CLAMP,
+                    D3D11_TEXTURE_ADDRESS_BORDER,
+                ]
+            );
+            assert_eq!(native.BorderColor, expected);
+            assert!(
+                translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, false).is_err()
+            );
+        }
+
+        desc.compare = None;
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
+        desc.compare = Some(wgt::CompareFunction::Less);
+        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
     }
 
     #[test]

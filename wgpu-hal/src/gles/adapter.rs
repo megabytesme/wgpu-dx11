@@ -975,6 +975,7 @@ impl super::Adapter {
             texture_3d_non_suffix_mip_views: true,
             multisampled_texture_usage_mask: wgt::TextureUsages::all().bits(),
             texture_to_buffer_copy_format_mask: u32::MAX,
+            max_texture_to_buffer_copy_layers: u32::MAX,
             texture_3d_texture_copies: true,
             npot_texture_3d: true,
             max_texture_cube_dimension: unsafe {
@@ -985,6 +986,10 @@ impl super::Adapter {
             npot_cube_textures: supported((3, 0), (2, 0))
                 || extensions.contains("GL_OES_texture_npot"),
             sampled_depth_textures: true,
+            comparison_sampler_function_mask: 0x00ff,
+            comparison_sampler_independent_filters: true,
+            max_comparison_sampler_anisotropy: max_sampler_anisotropy,
+            border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,
             sampled_uint_textures: true,
             multisampled_texture_bindings: true,

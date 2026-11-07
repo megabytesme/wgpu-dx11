@@ -24,6 +24,24 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The opt-in public projection now exposes comparison sampling only when the
+selected FL9_1 device positively reports D3D9 shadow support. Strict public
+D16, Depth24Plus and D24S8 tests each verify 32 failed and 32 passing
+comparisons. Depth24Plus uses D24S8 native storage and exposes no stencil
+aspect. Core rejects unsupported functions, unequal filters and comparison
+anisotropy above one. Historical drivers and depth-comparison behavior on
+other hardware remain unverified.
+
+When the same selected-device shadow query is positive, the opt-in projection
+also enables `ADDRESS_MODE_CLAMP_TO_BORDER` for comparison samplers only.
+`DownlevelLimits::border_addressing_requires_comparison_sampler` makes core
+reject ordinary border samplers before HAL; clamp-to-zero remains unexposed.
+The strict public FL9_1 tests used out-of-range depth coordinates and verified
+that opaque black fails and opaque white passes all 64 comparison pixels,
+while ordinary border and unrequested zero-border descriptors fail
+validation. This selected NVIDIA result does not establish behavior on
+historical FL9_1 drivers.
+
 Public `SurfaceTexture` clones now share one presentation lifecycle. Dropping
 an alias no longer discards a frame still held by another clone, and presenting
 any clone prevents later aliases from trying to discard the already-presented
@@ -78,8 +96,12 @@ selected format query reports `D3D11_FORMAT_SUPPORT_MIP`; all mip contents must
 be supplied by the caller. Core gates cube size, shape, mip count and format;
 ordinary 2D arrays and cube arrays remain disabled. On the RTX 3090 Ti forced
 to FL9_1, all six faces across four mips and a non-suffix mip view matched
-960/960 output pixels. Cube texture-to-texture copies and render-target cube
-views remain unsupported.
+960/960 output pixels. GPU copies are also tested between cube subresources and
+ordinary 2D textures in both directions: the copied cube face is sampled, and
+the copied 2D texture is read back. Cube texture-to-buffer readback remains
+rejected by core's one-layer source limit because FL9_1 cannot stage an
+SRV-only resource to CPU-visible memory. Render-target cube views remain
+unsupported.
 
 The selected-entry sampler contract also rejects the WGSL constant offset
 variant of texture sampling through the existing bias-offset limit. Direct and
@@ -97,6 +119,11 @@ The public `Buffer::destroy` path now checks for outstanding mapped views
 before delegating to core unmap/destruction. The check leaves the mapped-range
 state intact on panic; a strict FL9_1 public test verifies both disjoint views
 remain readable and that destruction succeeds after they are dropped.
+
+The strict public buffer-transfer test uploads a patterned 64-byte buffer,
+clears a requested aligned 16..48 range, and verifies by copy/map readback that
+the range is zero while bytes outside it are unchanged. Core rejects unaligned
+and out-of-bounds clear ranges before HAL.
 
 The selected FL9_1 public projection also reports a separate limit of 16
 distinct sampled texture/sampler relationships per shader entry point. Core
@@ -296,10 +323,10 @@ depth-only and stencil-only CLEAR cases prove each aspect changes the later
 comparison independently. It also discards each aspect separately, loads it
 again, and verifies core initializes it before use; all 320 checked pixels
 matched the expected results. The selected RTX's FL9_1 D24S8 path passed these
-cases. Public core rejects sampled D24S8 usage, and the D16 test rejects its
-unsupported `StencilOnly` view. The selected public D24S8 format report is
-render-attachment/transient only and single-mip; core rejects aspect-specific
-D24S8 views while retaining the combined attachment view. These results do
+cases. The D24S8 format report now also exposes sampled usage after a positive
+shadow query, and the public comparison test verifies the depth-only sampled
+view. Core continues to reject aspect-specific D24S8 render-attachment views
+while retaining the combined attachment view. These results do
 not establish behavior on historical FL9_1 drivers or native post-discard
 contents.
 
@@ -634,7 +661,7 @@ all out-of-target rectangles. Other backends keep the default true capability.
   rejects a zero native `SampleMask`, a zero wgpu mask is translated to
   `0xffff_fffe`, which masks sample zero while satisfying the native nonzero
   requirement. A strict controlled core render preserved all 64 clear-color
-  pixels. Optional 4x RGBA8 render/resolve and D16/D24S8 depth attachments are
+  pixels. Optional 4x RGBA8 render/resolve and D16/Depth24Plus/D24S8 depth attachments are
   exposed only after their selected-device format and quality-level queries
   pass. Depth must match the color and pipeline sample counts; depth resolve
   and multisampled sampling remain unsupported. Other sample counts remain
@@ -703,10 +730,14 @@ all out-of-target rectangles. Other backends keep the default true capability.
   No additional unfilterable formats or general comparison samplers are
   supported through core. Core rejects comparison sampler creation when the
   adapter omits `DownlevelFlags::COMPARISON_SAMPLERS`; the controlled FL9_1
-  fixture verifies rejection before HAL. The private HAL has a separate
-  query-gated FL9_1 D16 and D24S8 `LessEqual` shadow-sampling paths, verified
-  by GPU readback; this narrower contract is not publicly expressible. Historical
-  drivers remain unverified; public surface capabilities remain unavailable.
+  fixture verifies rejection before HAL. When the selected device positively
+  reports `D3D11_FEATURE_D3D9_SHADOW_SUPPORT`, the opt-in public projection
+  exposes only `LessEqual`, equal min/mag filters, anisotropy 1 and single-
+  sample D16/Depth24Plus/D24S8 sampled usage. Strict public renders for all
+  three formats each validate 64 pixels. Core rejects unsupported functions,
+  filter mismatch and anisotropy
+  are rejected before HAL. Historical drivers remain unverified; public
+  surface capabilities remain unavailable.
 - Sampled texture and sampler bindings accept `FRAGMENT` and
   `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.
   Actual vertex-stage sampling remains rejected. Two strict RTX images covered
@@ -884,8 +915,8 @@ review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
 request permitted by the limits.
 - Compute, storage access, queries, indirect draws, general multisampling (except optional query-gated
-  4x RGBA8 render/resolve and D16/D24S8 depth attachments), arrays,
-comparison samplers, several shader builtins and unrestricted WGSL remain
+  4x RGBA8 render/resolve and D16/Depth24Plus/D24S8 depth attachments), arrays,
+general comparison samplers, several shader builtins and unrestricted WGSL remain
 unavailable and are gated or rejected. The texel-load/dimensions experiments
 remain isolated proofs.
 - The opt-in D3D11 debug-layer indexed-render test reported zero error or

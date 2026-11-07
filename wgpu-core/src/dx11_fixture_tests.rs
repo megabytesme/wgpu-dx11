@@ -91,12 +91,17 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                         !wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
                             wgt::TextureFormat::Bc1RgbaUnorm,
                         ),
+                    max_texture_to_buffer_copy_layers: 1,
                     texture_3d_texture_copies: false,
                     npot_texture_3d: false,
                     max_texture_cube_dimension: 0,
                     texture_cube_format_mask: 0,
                     npot_cube_textures: false,
                     sampled_depth_textures: false,
+                    comparison_sampler_function_mask: 0,
+                    comparison_sampler_independent_filters: false,
+                    max_comparison_sampler_anisotropy: 0,
+                    border_addressing_requires_comparison_sampler: false,
                     sampled_sint_textures: false,
                     sampled_uint_textures: false,
                     multisampled_texture_bindings: false,
@@ -255,10 +260,20 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (features, capabilities) = fixture
         .test_fixture_wgpu_capabilities()
         .expect("selected FL9_1 device capability projection");
-    assert_eq!(
-        features,
-        wgt::Features::TEXTURE_FORMAT_16BIT_NORM | wgt::Features::TEXTURE_FORMAT_16BIT_PACKED
-    );
+    let mut expected_features =
+        wgt::Features::TEXTURE_FORMAT_16BIT_NORM | wgt::Features::TEXTURE_FORMAT_16BIT_PACKED;
+    if capabilities
+        .downlevel
+        .limits
+        .border_addressing_requires_comparison_sampler
+    {
+        expected_features |= wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
+        assert!(capabilities
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
+    }
+    assert_eq!(features, expected_features);
     assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
     assert!(capabilities.limits.max_bind_groups >= 2);
     assert_eq!(
@@ -817,7 +832,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             wgt::TextureAspect::DepthOnly,
             wgt::TextureAspect::StencilOnly,
         ] {
-            let (_, error) = global.texture_create_view(
+            let (aspect_view, error) = global.texture_create_view(
                 texture,
                 &crate::resource::TextureViewDescriptor {
                     range: wgt::ImageSubresourceRange {
@@ -829,20 +844,73 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
                 },
                 None,
             );
-            assert!(
-                matches!(
-                    error,
-                    Some(
-                        crate::resource::CreateTextureViewError::TextureViewFormatNotRenderable(_)
-                    )
-                ),
-                "projected FL9_1 D24S8 aspect view {aspect:?} must fail before HAL: {error:?}"
-            );
+            if aspect == wgt::TextureAspect::DepthOnly {
+                assert!(
+                    error.is_none(),
+                    "projected D24S8 depth-only view format must create: {error:?}"
+                );
+                let view_info = global.hub.texture_views.get(aspect_view).get().unwrap();
+                assert_eq!(view_info.desc.range.aspect, aspect);
+                assert!(
+                    matches!(
+                        view_info.render_extent,
+                        Err(crate::resource::TextureViewNotRenderableReason::Aspects(_))
+                    ),
+                    "a DepthOnly view of combined D24S8 must be non-renderable"
+                );
+                global.texture_view_drop(aspect_view);
+            } else {
+                assert!(
+                    matches!(
+                        error,
+                        Some(
+                            crate::resource::CreateTextureViewError::TextureViewFormatNotRenderable(
+                                _
+                            )
+                        )
+                    ),
+                    "projected D24S8 stencil-only view must fail before HAL: {error:?}"
+                );
+            }
         }
         global.texture_drop(texture);
     } else {
         assert!(!required, "strict projection requires a D24S8 attachment");
         std::println!("SKIP: selected device does not project D24S8 attachments");
+    }
+
+    let depth24_features =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Depth24Plus);
+    if depth24_features.allowed_usages.contains(depth_usage) {
+        let (texture, error) = global.device_create_texture(
+            device,
+            &texture_desc(wgt::TextureFormat::Depth24Plus, depth_usage),
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "projected Depth24Plus attachment must create through core and HAL: {error:?}"
+        );
+        let (view, error) = global.texture_create_view(
+            texture,
+            &crate::resource::TextureViewDescriptor {
+                usage: Some(depth_usage),
+                ..Default::default()
+            },
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "projected Depth24Plus view must create through core and HAL: {error:?}"
+        );
+        global.texture_view_drop(view);
+        global.texture_drop(texture);
+    } else {
+        assert!(
+            !required,
+            "strict projection requires Depth24Plus attachments"
+        );
+        std::println!("SKIP: selected device does not project Depth24Plus attachments");
     }
 
     global.queue_drop(queue);
@@ -1503,6 +1571,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let depth_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Depth24PlusStencil8)
     };
+    let depth24_caps = unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Depth24Plus)
+    };
+    assert_eq!(depth24_caps, depth_caps);
     if !depth_caps.contains(hal::TextureFormatCapabilities::DEPTH_STENCIL_ATTACHMENT) {
         assert!(
             !required,
@@ -1665,10 +1737,15 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     );
     let depth_core = global
         .adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Depth24PlusStencil8);
-    assert_eq!(
-        depth_core.allowed_usages,
-        wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT
+    let depth24_core =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Depth24Plus);
+    let mut expected_depth_usages =
+        wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT;
+    expected_depth_usages.set(
+        wgt::TextureUsages::TEXTURE_BINDING,
+        depth_caps.contains(hal::TextureFormatCapabilities::SAMPLED),
     );
+    assert_eq!(depth_core.allowed_usages, expected_depth_usages);
     assert!(depth_core
         .flags
         .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
@@ -1681,6 +1758,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(!depth_core
         .flags
         .contains(wgt::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE));
+    assert_eq!(depth24_core, depth_core);
     let bc1_core =
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc1RgbaUnorm);
     assert_eq!(
@@ -2022,21 +2100,31 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             },
             None,
         );
-        assert!(
-            matches!(
-                error.as_ref(),
-                Some(binding_model::CreateBindGroupLayoutError::Entry {
-                    error: binding_model::BindGroupLayoutEntryError::SampledTextureTypeUnavailable(
-                        actual
-                    ),
-                    ..
-                }) if *actual == sample_type
-            ),
-            "unsupported sampled type {sample_type:?} must fail core validation before HAL: {error:?}"
-        );
+        if sample_type == wgt::TextureSampleType::Depth
+            && depth_caps.contains(hal::TextureFormatCapabilities::SAMPLED)
+        {
+            assert!(
+                error.is_none(),
+                "query-supported depth sampling must pass core validation: {error:?}"
+            );
+            std::println!("PASS: selected depth format capability permits depth-sampled layouts");
+        } else {
+            assert!(
+                matches!(
+                    error.as_ref(),
+                    Some(binding_model::CreateBindGroupLayoutError::Entry {
+                        error: binding_model::BindGroupLayoutEntryError::SampledTextureTypeUnavailable(
+                            actual
+                        ),
+                        ..
+                    }) if *actual == sample_type
+                ),
+                "unsupported sampled type {sample_type:?} must fail core validation before HAL: {error:?}"
+            );
+        }
         global.bind_group_layout_drop(layout);
     }
-    std::println!("PASS: depth and integer sampled-texture layouts rejected by core validation");
+    std::println!("PASS: depth sampling follows selected format support; integer sampled-texture layouts are rejected");
     let (multisampled_layout, multisampled_error) = global.device_create_bind_group_layout(
         device,
         &binding_model::BindGroupLayoutDescriptor {
@@ -4518,18 +4606,30 @@ fn render_triangle(
         },
         None,
     );
-    assert!(
-        matches!(
-            comparison_layout_error.as_ref(),
-            Some(binding_model::CreateBindGroupLayoutError::Entry {
-                error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
-                    crate::device::MissingDownlevelFlags(flags)
-                ),
-                ..
-            }) if *flags == wgt::DownlevelFlags::COMPARISON_SAMPLERS
-        ),
-        "FL9_1 core validation must reject comparison-sampler layouts before HAL: {comparison_layout_error:?}"
-    );
+    let comparison_supported = global
+        .device_downlevel_properties(device)
+        .flags
+        .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS);
+    if comparison_supported {
+        assert!(
+            comparison_layout_error.is_none(),
+            "query-supported comparison-sampler layout must pass core validation: {comparison_layout_error:?}"
+        );
+        std::println!("PASS: selected FL9_1 query permits comparison-sampler layouts");
+    } else {
+        assert!(
+            matches!(
+                comparison_layout_error.as_ref(),
+                Some(binding_model::CreateBindGroupLayoutError::Entry {
+                    error: binding_model::BindGroupLayoutEntryError::MissingDownlevelFlags(
+                        crate::device::MissingDownlevelFlags(flags)
+                    ),
+                    ..
+                }) if *flags == wgt::DownlevelFlags::COMPARISON_SAMPLERS
+            ),
+            "FL9_1 core validation must reject comparison-sampler layouts before HAL: {comparison_layout_error:?}"
+        );
+    }
     global.bind_group_layout_drop(comparison_layout);
     let comparison_desc = resource::SamplerDescriptor {
         compare: Some(wgt::CompareFunction::LessEqual),
@@ -4537,15 +4637,23 @@ fn render_triangle(
     };
     let (comparison_sampler, comparison_error) =
         global.device_create_sampler(device, &comparison_desc, None);
-    assert!(
-        matches!(
-            comparison_error,
-            Some(resource::CreateSamplerError::MissingDownlevelFlags(
-                crate::device::MissingDownlevelFlags(flags)
-            )) if flags == wgt::DownlevelFlags::COMPARISON_SAMPLERS
-        ),
-        "FL9_1 core validation must reject comparison samplers before HAL: {comparison_error:?}"
-    );
+    if comparison_supported {
+        assert!(
+            comparison_error.is_none(),
+            "query-supported comparison sampler must pass core validation: {comparison_error:?}"
+        );
+        std::println!("PASS: selected FL9_1 query permits a LessEqual comparison sampler");
+    } else {
+        assert!(
+            matches!(
+                comparison_error,
+                Some(resource::CreateSamplerError::MissingDownlevelFlags(
+                    crate::device::MissingDownlevelFlags(flags)
+                )) if flags == wgt::DownlevelFlags::COMPARISON_SAMPLERS
+            ),
+            "FL9_1 core validation must reject comparison samplers before HAL: {comparison_error:?}"
+        );
+    }
     global.sampler_drop(comparison_sampler);
     let multi_group = case == VertexCase::MultiGroupUniformBindings;
     let mut group_entries = if multi_group {

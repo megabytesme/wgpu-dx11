@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### Hal
 
+- Permit selected-device-supported FL9_1 cube-face copies between GPU textures in the opt-in D3D11 backend; cube readback remains restricted.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
@@ -55,11 +56,15 @@ Bottom level categories:
 - Add query-gated R8, RG8 and RGB565 texture copies and CPU readback to the opt-in D3D11 backend.
 - Add query-gated BC1 GPU texture-to-texture copying to the opt-in D3D11 FL9_1 backend.
 - Add query-gated R8, RG8 and RGB565 attachment blending to the opt-in D3D11 backend.
+- Add selected-device-query-gated FL9_1 D16 and D24S8 depth comparison sampling through the opt-in public D3D11 adapter.
+- Add query-backed Depth24Plus attachment and shadow-sampling support to the opt-in FL9_1 D3D11 adapter using D24S8 native storage without exposing stencil.
+- Add query-gated FL9_1 black and white border addressing for depth comparison samplers while rejecting ordinary border samplers.
 
 ### Changes
 
 #### Validation
 
+- Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.
 - Add a downlevel shader-loop limit so the opt-in D3D11 FL9_1 backend rejects loop constructs that its bounded HLSL lowering cannot compile safely.
 - Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
 - Gate bind-group layouts with empty shader visibility on downlevel support.
@@ -77,6 +82,8 @@ Bottom level categories:
 - Add a downlevel per-primitive texture-repeat limit and reject Repeat/MirrorRepeat samplers when core cannot guarantee the device's finite limit.
 - Model source-alpha-saturated blending as a downlevel capability and reject it before HAL on unsupported devices.
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.
+- Add downlevel comparison-sampler limits for supported compare functions, independent min/mag filters and anisotropy.
+- Add a downlevel sampler limit for hardware where clamp-to-border is available only with comparison sampling.
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
 - Require stage-specific downlevel support before creating storage-buffer layouts.
 - Add downlevel limits for runtime integer shader operations and matrix aggregate stores.
@@ -115,6 +122,7 @@ Bottom level categories:
 
 #### Validation
 
+- Treat depth-image sampling as floating-point shader semantics when checking downlevel runtime integer operations.
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
 - Reject non-finite viewport coordinates and dimensions.
 - Validate pipelines without panicking when inter-stage variable limits are zero or below built-in deductions.
