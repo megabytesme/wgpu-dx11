@@ -2167,3 +2167,20 @@ and the transient Windows paging-file issue at `-j16` (retry succeeded at
 `-j2`). Next continue the audit of public-valid operations and their exact
 core/HAL rejection or execution paths; the backend remains a constrained
 opt-in implementation, not a general drop-in replacement.
+
+The next strict public workload is a perspective-transformed indexed cube with
+an uploaded RGBA8 face texture, WGSL transform uniform, nearest sampler and
+D16 depth. The RTX 3090 Ti at requested/actual FL9_1 produced identical full
+32×32 readbacks when the six face draw order was reversed: 154 red, 21 blue,
+70 yellow and 779 clear pixels. The new test passed 1/1 and Clippy passed;
+the complete public suite remains 63/63 from the immediately preceding
+checkpoint, with one visible optional Float16x2 subcase skip. This supplies a
+representative scene check but does not change the broader incomplete status.
+
+Checkpoint `08702e95f9c930e8e14a59d53c18711db39bb2bb` records execution for
+both D16 and D24S8 in the 4x resolve test. The latest strict private suite was
+377/377. A fresh Lumia reachability check failed: ping to `192.168.1.157:443`
+timed out and the read-only Device Portal family request timed out after about
+16 seconds. ARM32 UWP compilation is still compile-only evidence. CoreWindow
+phone execution remains unverified; continue independent core/HAL audit work
+while the device is unreachable.

@@ -2778,3 +2778,19 @@ the generic `max_texture_dimension_1d` value is nonzero.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
 ```
+
+### Public textured, depth-tested 3D scene
+
+`public_dx11_textured_depth_tested_3d_scene_at_fl91` draws an indexed,
+perspective-transformed cube through public wgpu using a sampled RGBA8 face
+texture, a uniform transform, a nearest sampler and a D16 depth attachment.
+It submits the same faces in forward and reverse order, then compares every
+pixel in both 32×32 readbacks. Identical images demonstrate that depth selects
+the visible faces independently of submission order; the test also checks the
+clear background and at least three distinct sampled face colors. This is a
+small integration scene, not a broader capability or performance claim.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene -- --nocapture --test-threads=1
+```

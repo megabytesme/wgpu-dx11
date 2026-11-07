@@ -871,3 +871,9 @@ vertices. The only visible point and triangle are in their respective second
 batches; readback proves HAL rebases point input and preserves whole triangles
 through public core submission. Continue the public-valid core/HAL audit,
 especially selected-entry shader validation and render-state combinations.
+
+The strict public integration target also now renders a perspective cube with
+sampled texture and D16 depth, comparing full output under reversed face order.
+This closes one representative-scene coverage gap; continue auditing other
+public-valid combinations and keep the overall mission partial until material
+implementation, safety and platform gaps are resolved or explicitly blocked.

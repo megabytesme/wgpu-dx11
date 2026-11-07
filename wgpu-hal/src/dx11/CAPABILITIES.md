@@ -1240,3 +1240,15 @@ shader error, and FXC's instruction/unroll limits still apply. The loop
 capability is implemented through compiler unrolling rather than native pixel
 shader flow control. The RTX 3090 Ti result does not establish behavior on
 historical FL9_1 drivers.
+
+## Representative public 3D scene
+
+The strict public `dx11_fl91_scene` integration test renders a perspective-
+transformed indexed cube with a sampled 2D RGBA8 face texture, uniform matrix,
+nearest sampler and D16 depth attachment. It executes two command sequences
+with opposite face order and compares every pixel in both 32×32 readbacks;
+the RTX 3090 Ti at explicitly requested/actual FL9_1 produced identical
+images with 154 red, 21 blue, 70 yellow and 779 clear pixels. The test proves
+this specific shader, binding, indexed draw, depth and readback combination
+through public wgpu. It does not establish broader shader or format coverage,
+historical FL9_1 compatibility, or application-level performance.

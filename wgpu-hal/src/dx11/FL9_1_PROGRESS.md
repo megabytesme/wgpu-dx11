@@ -9707,6 +9707,42 @@ updating it, the repeated strict run passed all 8. This confirms the optional
 depth multisample capability is carried through HAL into core without
 advertising depth resolve.
 
+## Latest increment — representative public 3D scene and Lumia probe — 2026-11-07
+
+Checkpoint `08702e95f9c930e8e14a59d53c18711db39bb2bb` expanded the public 4x
+depth test to execute both selected-device-supported formats. The follow-up
+adds `public_dx11_textured_depth_tested_3d_scene_at_fl91`, an indexed cube
+using an uploaded RGBA8 face texture, a WGSL uniform transform, nearest
+sampling and a D16 depth target. It rendered the 24-vertex/36-index cube twice
+with opposite face order. On the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at explicitly requested and actual FL9_1, all 1,024 pixels
+matched between images; the output contained 154 red, 21 blue, 70 yellow and
+779 clear pixels. This verifies one representative public scene workload, not
+the rest of the wgpu API or historical hardware.
+
+The strict scene test passed 1/1 and test-target Clippy passed with the existing
+HAL `create_hal_view` argument-count warning. The 4x depth focused test and
+full public suite were also rerun in the preceding checkpoint: D16 and D24S8
+each checked 64 expected resolved pixels, and the public suite passed 63/63
+with the optional Float16x2 vertex format visibly skipped. The private HAL
+suite passed 377/377. The first public rebuild at 16 jobs hit OS error 1455;
+retry at `-j2` passed.
+
+Platform probe: ping to `192.168.1.157:443` timed out, and the configured
+read-only Lumia Device Portal `GET /api/os/devicefamily` timed out after about
+16 seconds. Existing ARM32 UWP cross-compilation does not establish phone
+runtime behavior. CoreWindow/Lumia verification remains blocked by device
+reachability; no network or device settings were changed. Continue the
+public-valid core/HAL audit and keep the mission **PARTIALLY COMPLETE**.
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j2 -p wgpu --test dx11_fl91_scene --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_fl91_scene.rs
+git diff --check
+~~~
+
 ## Follow-up — D16 and D24S8 4x depth execution — 2026-11-07
 
 Expanded `public_dx11_resolves_four_sample_rgba8_at_fl91` to execute every

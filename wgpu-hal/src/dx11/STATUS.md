@@ -982,3 +982,11 @@ Present. On the physical RTX 3090 Ti opened at requested/actual FL9_1, core
 delivered the public lost callback exactly once; callback-reentrant polling
 returned the expected presentation-guard timeout. Injection bypasses the
 native Present call and does not simulate physical device removal.
+
+The public integration suite now includes an indexed perspective cube rendered
+with an uploaded RGBA8 face texture, a uniform transform, a nearest sampler
+and D16 depth. At forced FL9_1 on the RTX 3090 Ti, rendering the faces in
+forward and reverse order produced identical complete 32×32 readbacks; red,
+blue and yellow faces plus the clear background were all observed. This is a
+representative small scene, not evidence that the remaining public API surface
+is implemented.
