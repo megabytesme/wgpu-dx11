@@ -10,7 +10,8 @@ and copied face 3 back into a 2D texture. Subsequent cube sampling matched
 texels. Core rejects cube texture-to-buffer readback using the one-layer
 downlevel source limit; the HAL also refuses staging from an SRV-only resource.
 This follows the FL9_x GPU-to-CPU copy restriction and does not establish
-behavior on historical drivers.
+behavior on historical drivers. Checkpoint: `7fb6cf3c9` (`dx11: expand FL9_1
+public integration coverage`).
 
 The focused cross-shape copy test passed 1/1 on the same adapter. Verification
 on this tree: strict public D3D11 70/70 (one optional

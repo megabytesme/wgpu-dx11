@@ -15,6 +15,7 @@ The focused strict public test passed 1/1 on the physical NVIDIA GeForce RTX
 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`), with FL9_1
 requested and selected. The modified cube sampling test also checked all
 960 rendered pixels, including the copied 2D face, across four mips.
+Checkpoint: `7fb6cf3c9` (`dx11: expand FL9_1 public integration coverage`).
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'

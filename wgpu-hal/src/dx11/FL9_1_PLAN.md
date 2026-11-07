@@ -7,7 +7,8 @@ to 2D was read back as 64 matching pixels. The strict public suite passed
 70/70, the core fixture 103/103 and the private HAL suite 391/391. Cube
 texture-to-buffer readback remains blocked by the one-layer downlevel source
 limit. Exact commands and the Microsoft copy restrictions are in
-`FL9_1_PROGRESS.md`.
+`FL9_1_PROGRESS.md`. The verified public integration checkpoint is
+`7fb6cf3c9`.
 
 The objective is a usable explicit D3D11 backend through the public native wgpu
 API, with truthful downlevel capabilities, tested textured depth rendering and
