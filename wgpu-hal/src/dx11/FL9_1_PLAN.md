@@ -827,3 +827,16 @@ public callback once and permits a callback-reentrant poll to return promptly
 under the active presentation guard. Physical device removal and recovery
 remain unverified; continue auditing other public surface lifecycle and
 core/HAL error paths.
+
+## Integration readiness checkpoint — 2026-11-07
+
+The current strict public offscreen example was rerun from the clean checkpoint
+on the RTX 3090 Ti at requested/actual FL9_1 and validated all 1,024 pixels.
+An opt-in application trial is reasonable when its API usage matches the
+capability matrix, but this is not a general-purpose wgpu backend yet. Continue
+the exact core/HAL contract audit, prioritizing public-valid operations that
+can still reach unsupported HAL paths and shader forms whose selected-entry
+validation is incomplete. Then broaden public workload coverage. Keep the
+desktop HWND and private CoreWindow paths separate in the claims: HWND output
+has been qualitatively captured, while Lumia/CoreWindow runtime, historical
+FL9_1 drivers and physical device-removal recovery remain unverified.

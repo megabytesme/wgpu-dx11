@@ -9519,3 +9519,27 @@ cargo +1.93 clippy --offline -j32 -p wgpu --test dx11_public --no-default-featur
 rustup run 1.93 rustfmt --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ~~~
+
+## Public integration readiness check — 2026-11-07
+
+Rebuilt and reran the public offscreen wgpu example from the current clean
+checkpoint using Rust 1.93.1 and the Visual Studio 2022 x64 environment. It
+selected the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), explicitly requested and received FL9_1, and reported
+`software=false`. The public API rendered and read back the textured indexed
+cube; the 32×32 image contained 112 red, 277 green and 635 blue-background
+pixels, with all 1,024 pixels classified as expected.
+
+This confirms that a constrained opt-in project trial is practical today; it
+does not establish broad application compatibility. The README now matches the
+current conditional `TEXTURE_FORMAT_16BIT_NORM` and
+`TEXTURE_FORMAT_16BIT_PACKED` projection, distinguishes the qualitative HWND
+capture from automated offscreen pixel checks, and calls out major unsupported
+API paths. The larger shader/resource/core-HAL audit, historical-driver
+coverage, physical device-loss behavior and Lumia CoreWindow runtime remain
+open.
+
+~~~powershell
+& $env:ComSpec /d /c 'call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std'
+git diff --check
+~~~

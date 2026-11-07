@@ -8,10 +8,12 @@ change default backend selection.
 
 The adapter can be used for offscreen rendering and a constrained native HWND
 surface through the public wgpu API. It exposes the native-only
-`TEXTURE_FORMAT_16BIT_NORM` feature only when a selected-device query reports
-the required 2D format support; it is not WebGPU-compliant. HWND surfaces currently expose only BGRA8 sRGB FIFO
-presentation, opaque composition, one frame of latency and render-attachment
-usage. Configure, acquire and present must run on the HWND's creating thread.
+`TEXTURE_FORMAT_16BIT_NORM` and `TEXTURE_FORMAT_16BIT_PACKED` features only
+when the selected device reports the format support required by their
+implemented paths. It is not WebGPU-compliant. HWND surfaces currently expose
+only BGRA8 sRGB FIFO presentation, opaque composition, one frame of latency and
+render-attachment usage. Configure, acquire and present must run on the HWND's
+creating thread.
 Queue submissions, writes, mapped-buffer updates and context-backed resource
 creation are serialized against Present; same-thread reentrant work that would
 touch queue/context state is rejected. Drop views of the previous backbuffer
@@ -36,8 +38,17 @@ the window to exit; `--frames=N` bounds a smoke run:
 cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=120
 ```
 
-A 60-frame run passed on the RTX 3090 Ti at forced FL9_1. The code checked
-that the HWND became visible, but did not capture the displayed pixels.
+A 60-frame run passed on the RTX 3090 Ti at forced FL9_1. The visible client
+area was captured and visually inspected for the distinct cube faces and clear
+background. Unlike the offscreen example, the windowed example does not make
+an automated pixel-level assertion about presented pixels.
+
+This is ready for an opt-in project integration trial when the application's
+rendering subset matches the [capability matrix](CAPABILITIES.md). Keep a
+fallback backend available: compute/storage, indirect draws, query sets,
+multiple color targets, ordinary texture arrays and unsupported shader forms
+remain unavailable or rejected. The current coverage is not a claim that a
+general wgpu application will run unchanged.
 
 The strict public integration test requires physical FL9_1 hardware and rejects
 missing hardware, software substitution, device-creation failures and wrong
