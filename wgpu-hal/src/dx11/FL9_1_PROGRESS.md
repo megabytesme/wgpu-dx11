@@ -10871,3 +10871,53 @@ after the early `Surface::present` cleanup.
 Continue the public core/HAL contract audit. The usable surface, resource and
 shader subset remains deliberately restricted; historical FL9_1 hardware,
 Lumia/CoreWindow runtime and physical device-loss recovery remain unverified.
+
+## Optional R8G8_UNORM sampled mip path — 2026-11-07
+
+Added an optional sampled/upload mip path for `Rg8Unorm`. Multi-mip creation,
+`SINGLE_MIP_ONLY` projection and native `R8G8_UNORM` resource creation now
+require both the selected device's `TEXTURE2D | MIP` query and the backend path.
+`SHADER_SAMPLE` remains an independent filterability check, and NPOT mip chains
+still require positive unrestricted-NPOT support. The CPU capability test
+exercises positive, missing, unavailable and backend-disabled cases.
+
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested/actual
+FL9_1 reports `R8G8_UNORM=0x0002c320`, which lacks `D3D11_FORMAT_SUPPORT_MIP`.
+The strict public test and controlled core fixture logged an explicit optional
+capability skip; no RG8 mip draw is claimed on this adapter. The positive
+driver-query path remains unverified on hardware. The previously existing
+single-mip RG8 upload, filtering, attachment, copy and readback tests still
+execute and pass.
+
+Updating the controlled core fixture exposed stale expectations unrelated to
+the mip predicate: the shared BC compression feature now projects queried
+BC2/BC3 formats too, and the restrictive NPOT regression had disabled its
+limit but not the matching downlevel flag. The fixture now checks BC2/BC3
+against their selected HAL capabilities and clears the flag for the synthetic
+NPOT rejection case. A second existing assertion now allows only the two
+query-gated features `ADDRESS_MODE_CLAMP_TO_BORDER` and `POLYGON_MODE_LINE`.
+
+Verification with Rust 1.93.1, Visual Studio x64, strict hardware mode and
+bounded Cargo jobs:
+
+- New synthetic RG8 mip capability test: 1/1 passed.
+- Complete private D3D11 HAL suite: 403/403 test functions passed.
+- Complete strict public D3D11 suite: 80/80 passed. The optional RG8 mip path
+  logged SKIP because the selected device lacks MIP; the existing Float16x2
+  vertex-input subcase also logged its selected-format skip.
+- All controlled D3D11 core fixtures: 8/8 passed. The main fixture rendered
+  its full set of representative workloads on the physical adapter and logged
+  the expected optional RG8 mip skip; device-loss cases use injected errors.
+- Targeted strict public RG8 mip test: test function passed with the explicit
+  unsupported-capability SKIP; a strict positive RG8 mip execution was not
+  possible because the driver query lacks MIP.
+- HAL, core-fixture and public-test Clippy completed. Warnings were existing:
+  `create_hal_view` has too many arguments; the core fixture reports older
+  boolean, single-element-loop and collapsible-if suggestions. No new lint
+  warning points to this increment.
+- Rustfmt check and `git diff --check` passed.
+
+This increment remains a query-gated capability model and implementation
+extension, not evidence that the development RTX executes RG8_UNORM mip chains.
+Continue the core/HAL contract audit and prioritize functionality that can be
+verified on the available FL9_1 device.

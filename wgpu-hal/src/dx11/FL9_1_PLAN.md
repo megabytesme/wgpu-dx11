@@ -1068,3 +1068,17 @@ Intrinsic FL9_1 limits (including no compute/UAV, geometry stage, 1D textures,
 ordinary arrays or occlusion queries) remain unavailable. Historical FL9_1
 drivers, Lumia/CoreWindow runtime and physical device-loss recovery also remain
 unverified.
+
+## Follow-up — optional RG8_UNORM sampled mip chains
+
+R8G8_UNORM mip uploads and biased sampling now follow a conservative selected-
+device gate: `TEXTURE2D | MIP` must be positively reported and the backend path
+enabled; `SHADER_SAMPLE` controls filtering independently, and NPOT mips also
+require unrestricted NPOT support. The synthetic capability test covers these
+branches. The RTX 3090 Ti at forced FL9_1 reports `0x0002c320`, which lacks MIP,
+so the strict public test logs an optional-capability skip and does not claim a
+GPU mip result. The core fixture verifies that this query projects single-mip
+behavior and conditionally allows creation. The fixture also now matches the
+already implemented query-gated BC2/BC3 support and clears the NPOT mip
+downlevel flag in its restrictive validation case. See `FL9_1_PROGRESS.md` for
+the exact run results.

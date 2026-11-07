@@ -539,14 +539,17 @@ all out-of-target rectangles. Other backends keep the default true capability.
   `RENDER_TARGET` query also enables a single-mip color-attachment path; it is
   blendable only when the selected query also reports `BLENDABLE`; copy-source
   and direct readback are controlled separately.
-- R8G8_UNORM is not a required FL9_1 sampled format. Its one-mip,
-  single-layer sampled/upload path is exposed only when the selected device
-  reports `TEXTURE2D`; `SHADER_SAMPLE` controls filterability. The forced-FL9_1 RTX returned
+- R8G8_UNORM is not a required FL9_1 sampled format. Its single-layer
+  sampled/upload path is exposed only when the selected device reports
+  `TEXTURE2D`; sampled mip chains additionally require `MIP` and the backend
+  mip path. The forced-FL9_1 RTX returned
   `0x0002c320`; a strict public upload/sample test verified 64 pixels and the
   two-byte texel stride. A second pass verifies linear filtering with an
   eight-column gradient. The selected-device `RENDER_TARGET` query also
   gates single-mip attachment use. Blendability, copy-source and direct
   readback are separately selected-query-gated.
+  The RTX query mask lacks `MIP`, so its strict public case skips RG8_UNORM
+  mip execution; capability tests cover the positive and negative query paths.
 - R8G8_SNORM's one-mip sampled/upload subset remains available when the
   selected device reports `TEXTURE2D`. A separate sampled/upload mip-chain
   path requires positive `TEXTURE2D | MIP` support. Strict
@@ -1081,3 +1084,13 @@ while explicitly running at FL9_1. A strict public 6x10, four-level R8 chain
 was uploaded and sampled at mip 2; 64/64 RGBA pixels matched, and clearing and
 reading mip 0 verified all 60 R8 texels. Negative/unavailable query behavior
 remains covered synthetically; historical restrictive drivers are unverified.
+
+## Optional RG8_UNORM sampled mip chains
+
+RG8_UNORM mip chains are now an optional sampled/upload path, gated by the
+selected device's `TEXTURE2D | MIP` query and the backend path. Filterability
+continues to follow `SHADER_SAMPLE`; NPOT chains require the positive
+unrestricted-NPOT capability. The RTX 3090 Ti query (`0x0002c320`) omits MIP,
+so its strict test explicitly skips mip execution while confirming the
+single-mip projection. Synthetic tests cover the positive and negative query
+branches. No physical execution is claimed for the mip path.

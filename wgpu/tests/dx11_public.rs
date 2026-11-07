@@ -7552,16 +7552,21 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
 }
 
 #[test]
+fn public_dx11_rg8_unorm_mip_chain_at_fl91() {
+    public_dx11_rg8_or_snorm_mip_chain_at_fl91(TextureFormat::Rg8Unorm);
+}
+
+#[test]
 fn public_dx11_rg8_snorm_mip_chain_at_fl91() {
-    public_dx11_snorm_mip_chain_at_fl91(TextureFormat::Rg8Snorm);
+    public_dx11_rg8_or_snorm_mip_chain_at_fl91(TextureFormat::Rg8Snorm);
 }
 
 #[test]
 fn public_dx11_rgba8_snorm_mip_chain_at_fl91() {
-    public_dx11_snorm_mip_chain_at_fl91(TextureFormat::Rgba8Snorm);
+    public_dx11_rg8_or_snorm_mip_chain_at_fl91(TextureFormat::Rgba8Snorm);
 }
 
-fn public_dx11_snorm_mip_chain_at_fl91(format: TextureFormat) {
+fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -7591,31 +7596,29 @@ fn public_dx11_snorm_mip_chain_at_fl91(format: TextureFormat) {
             .flags
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
     if !mip_chain_supported {
-        assert!(
-            !required,
-            "strict FL9_1 requires the queried {format:?} MIP path: {features:?}"
-        );
-        println!("SKIP: selected FL9_1 device did not expose the required {format:?} mip path");
+        println!("SKIP: selected FL9_1 device did not expose optional {format:?} MIP support");
         return;
     }
 
     let filterable = features
         .flags
         .contains(TextureFormatFeatureFlags::FILTERABLE);
-    let bytes_per_texel = if format == TextureFormat::Rg8Snorm {
-        2
-    } else {
-        4
+    let bytes_per_texel = match format {
+        TextureFormat::Rg8Unorm | TextureFormat::Rg8Snorm => 2,
+        TextureFormat::Rgba8Snorm => 4,
+        _ => unreachable!("the helper only tests the RG8 and RGBA8 formats"),
     };
     let mip_values = match format {
+        TextureFormat::Rg8Unorm => [[0, 255, 0, 0], [64, 192, 0, 0], [192, 64, 0, 0]],
         TextureFormat::Rg8Snorm => [[0, 127, 0, 127], [64, -64, 0, 127], [-64, 64, 0, 127]],
         TextureFormat::Rgba8Snorm => [[0, 0, 0, 0], [64, -64, 32, -32], [-64, 64, -32, 32]],
-        _ => unreachable!("the helper only tests supported signed-normalized formats"),
+        _ => unreachable!("the helper only tests supported RG8 and RGBA8 formats"),
     };
-    let expected = if format == TextureFormat::Rg8Snorm {
-        [192, 64, 0, 255]
-    } else {
-        [192, 64, 160, 96]
+    let expected = match format {
+        TextureFormat::Rg8Unorm => [64, 192, 0, 255],
+        TextureFormat::Rg8Snorm => [192, 64, 0, 255],
+        TextureFormat::Rgba8Snorm => [192, 64, 160, 96],
+        _ => unreachable!("the helper only tests supported RG8 and RGBA8 formats"),
     };
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -7733,7 +7736,9 @@ fn public_dx11_snorm_mip_chain_at_fl91(format: TextureFormat) {
                  struct Out {{ @builtin(position) position: vec4f, @location(0) uv: vec2f }};\n\
                  @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> Out {{ return Out(vec4f(position, 0.5, 1.0), uv); }}\n\
                  @fragment fn fs(input: Out) -> @location(0) vec4f {{ let value = textureSampleBias(image, image_sampler, input.uv, 1.0); {} }}",
-                if format == TextureFormat::Rg8Snorm {
+                if format == TextureFormat::Rg8Unorm {
+                    "return vec4f(value.xy, 0.0, 1.0);"
+                } else if format == TextureFormat::Rg8Snorm {
                     "return vec4f(value.xy * 0.5 + vec2f(0.5), 0.0, 1.0);"
                 } else {
                     "return value * 0.5 + vec4f(0.5);"

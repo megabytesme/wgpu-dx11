@@ -1001,7 +1001,10 @@ impl NativeDevice {
         );
         let sampled_mip_chain = matches!(
             format,
-            DXGI_FORMAT_R8_UNORM | DXGI_FORMAT_R8G8_SNORM | DXGI_FORMAT_R8G8B8A8_SNORM
+            DXGI_FORMAT_R8_UNORM
+                | DXGI_FORMAT_R8G8_UNORM
+                | DXGI_FORMAT_R8G8_SNORM
+                | DXGI_FORMAT_R8G8B8A8_SNORM
         ) && layers == 1
             && mip_levels > 1
             && sample_count == 1;

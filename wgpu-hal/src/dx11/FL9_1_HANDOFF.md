@@ -2453,3 +2453,12 @@ passed 79/79 (one optional Float16x2 subcase skipped), the core adapter test
 passed 1/1 and DX12 core passed 94/94. See `FL9_1_PROGRESS.md` for commands
 and details. Continue the public contract audit; historical drivers and
 Lumia/CoreWindow remain unverified.
+
+The current follow-up adds an optional RG8_UNORM sampled/upload mip path. It is
+exposed only when `CheckFormatSupport` reports `TEXTURE2D | MIP` and the
+backend path is enabled; filterability and NPOT remain independently gated.
+The RTX 3090 Ti forced to FL9_1 reports `0x0002c320` without MIP, so its strict
+test explicitly skips this optional operation. Synthetic capability checks
+pass, and the controlled core fixture confirms the restricted projection.
+The positive mip path has not run on hardware. Continue the wider public
+contract audit and historical hardware/runtime verification.

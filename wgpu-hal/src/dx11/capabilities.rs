@@ -286,6 +286,7 @@ pub(super) struct BackendCapabilities {
     pub r8_unorm_sampled_upload: bool,
     pub r8_unorm_sampled_mips: bool,
     pub rg8_unorm_sampled_upload: bool,
+    pub rg8_unorm_sampled_mips: bool,
     pub rg8_snorm_sampled_mips: bool,
     pub rgba8_snorm_sampled_mips: bool,
     pub r8_unorm_color_attachment: bool,
@@ -394,6 +395,7 @@ impl BackendCapabilities {
         r8_unorm_sampled_upload: true,
         r8_unorm_sampled_mips: true,
         rg8_unorm_sampled_upload: true,
+        rg8_unorm_sampled_mips: true,
         rg8_snorm_sampled_mips: true,
         rgba8_snorm_sampled_mips: true,
         r8_unorm_color_attachment: true,
@@ -542,6 +544,12 @@ impl Capabilities {
         self.hardware.rg8_snorm_mipmapped_texture
             && self.backend.rg8_snorm_sampled_mips
             && matches!(self.driver.rg8_snorm, Query::Value(bits) if bits & required == required)
+    }
+
+    pub fn rg8_unorm_mip_chains_supported(&self) -> bool {
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+        self.backend.rg8_unorm_sampled_mips
+            && matches!(self.driver.rg8_unorm, Query::Value(bits) if bits & required == required)
     }
 
     pub fn rgba8_snorm_mip_chains_supported(&self) -> bool {
@@ -995,6 +1003,7 @@ impl Capabilities {
         };
         let sampled_mip_chain_path = match format {
             wgt::TextureFormat::R8Unorm => self.r8_unorm_mip_chain_path_available(),
+            wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_sampled_mips,
             wgt::TextureFormat::Rg8Snorm => {
                 self.hardware.rg8_snorm_mipmapped_texture && self.backend.rg8_snorm_sampled_mips
             }
@@ -1413,6 +1422,7 @@ impl Capabilities {
                 let mut result = Caps::SAMPLED | Caps::COPY_DST;
                 let mip_chains_supported = match format {
                     wgt::TextureFormat::R8Unorm => self.r8_unorm_mip_chains_supported(),
+                    wgt::TextureFormat::Rg8Unorm => self.rg8_unorm_mip_chains_supported(),
                     wgt::TextureFormat::Rg8Snorm => self.rg8_snorm_mip_chains_supported(),
                     wgt::TextureFormat::Rgba8Snorm => self.rgba8_snorm_mip_chains_supported(),
                     _ => false,
@@ -3282,6 +3292,7 @@ mod tests {
                 !matches!(
                     format,
                     wgt::TextureFormat::R8Unorm
+                        | wgt::TextureFormat::Rg8Unorm
                         | wgt::TextureFormat::Rg8Snorm
                         | wgt::TextureFormat::Rgba8Snorm
                 )
@@ -4375,7 +4386,6 @@ mod tests {
                 | FormatCaps::SAMPLED_LINEAR
                 | FormatCaps::COPY_DST
                 | FormatCaps::COLOR_ATTACHMENT
-                | FormatCaps::SINGLE_MIP_ONLY
         ));
         for usage in [
             wgt::TextureUses::COLOR_TARGET,
@@ -4454,7 +4464,7 @@ mod tests {
             .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
         assert_eq!(
             caps.check_private_texture_2d(format, sampled_upload, [8, 8], 1, 2, 1),
-            Err(UnsupportedShape)
+            Ok(())
         );
         let mut missing_backend = caps;
         missing_backend.backend.rg8_unorm_color_attachment = false;
@@ -4480,6 +4490,80 @@ mod tests {
         assert_eq!(
             missing_backend.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Err(UnsupportedUsage)
+        );
+    }
+
+    #[test]
+    fn rg8_unorm_mip_chains_require_selected_query_and_backend() {
+        use TextureRejection::*;
+
+        let mut caps = model(FeatureLevel::L9_1);
+        let format = wgt::TextureFormat::Rg8Unorm;
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        let sample = D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32;
+
+        caps.driver.rg8_unorm = Query::Value(texture2d | mip | sample);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Ok(())
+        );
+        assert!(caps.rg8_unorm_mip_chains_supported());
+        assert!(!caps
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.driver.rg8_unorm = Query::Value(texture2d | sample);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Ok(())
+        );
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert!(caps
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.driver.rg8_unorm = Query::Value(texture2d | mip);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Ok(())
+        );
+        let point_only = caps.texture_format_capabilities(format);
+        assert!(point_only.contains(FormatCaps::SAMPLED));
+        assert!(!point_only.contains(FormatCaps::SAMPLED_LINEAR));
+        assert!(!point_only.contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.backend.rg8_unorm_sampled_mips = false;
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert!(caps
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.backend.rg8_unorm_sampled_mips = true;
+        caps.driver.rg8_unorm = Query::Unavailable(-1);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Err(DriverQueryUnavailable)
+        );
+        assert!(caps.texture_format_capabilities(format).is_empty());
+
+        caps.driver.rg8_unorm = Query::Value(texture2d | mip | sample);
+        caps.driver.full_npot = Query::Value(false);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [7, 5], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        caps.driver.full_npot = Query::Value(true);
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [7, 5], 1, 2, 1),
+            Ok(())
         );
     }
 

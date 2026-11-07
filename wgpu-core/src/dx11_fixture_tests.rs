@@ -261,20 +261,30 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (features, capabilities) = fixture
         .test_fixture_wgpu_capabilities()
         .expect("selected FL9_1 device capability projection");
-    let mut expected_features =
+    let expected_features =
         wgt::Features::TEXTURE_FORMAT_16BIT_NORM | wgt::Features::TEXTURE_FORMAT_16BIT_PACKED;
     if capabilities
         .downlevel
         .limits
         .border_addressing_requires_comparison_sampler
     {
-        expected_features |= wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
         assert!(capabilities
             .downlevel
             .flags
             .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
     }
-    assert_eq!(features, expected_features);
+    let query_gated_features =
+        wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER | wgt::Features::POLYGON_MODE_LINE;
+    assert_eq!(features & !query_gated_features, expected_features);
+    if capabilities
+        .downlevel
+        .limits
+        .border_addressing_requires_comparison_sampler
+    {
+        assert!(features.contains(wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER));
+    } else {
+        assert!(!features.contains(wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER));
+    }
     assert_eq!(capabilities.limits.max_texture_dimension_2d, 2048);
     assert!(capabilities.limits.max_bind_groups >= 2);
     assert_eq!(
@@ -1544,6 +1554,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         .downlevel
         .limits
         .unrestricted_npot_texture_sampling = false;
+    projected_capabilities.downlevel.flags.set(
+        wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES,
+        false,
+    );
     let texture_to_buffer_mask = projected_capabilities
         .downlevel
         .limits
@@ -1659,6 +1673,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(
         (bc1_caps & !bc1_required & !hal::TextureFormatCapabilities::SAMPLED_LINEAR).is_empty()
     );
+    let bc2_caps = unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc2RgbaUnorm)
+    };
+    let bc3_caps = unsafe {
+        hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc3RgbaUnorm)
+    };
     if required {
         assert!(
             bc1_supported,
@@ -1667,9 +1687,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     for unsupported_bc in [
         wgt::TextureFormat::Bc1RgbaUnormSrgb,
-        wgt::TextureFormat::Bc2RgbaUnorm,
         wgt::TextureFormat::Bc2RgbaUnormSrgb,
-        wgt::TextureFormat::Bc3RgbaUnorm,
         wgt::TextureFormat::Bc3RgbaUnormSrgb,
         wgt::TextureFormat::Bc4RUnorm,
         wgt::TextureFormat::Bc4RSnorm,
@@ -1694,7 +1712,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         // This fixture opt-in is limited to BC1 testing; production withholds the BCn feature.
         fixture_features |= wgt::Features::TEXTURE_COMPRESSION_BC;
     }
-    let one_mip_format_caps = [
+    let optional_sampled_format_caps = [
         wgt::TextureFormat::R8Unorm,
         wgt::TextureFormat::Rg8Unorm,
         wgt::TextureFormat::Rg8Snorm,
@@ -1847,11 +1865,45 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         assert!(bc1_core.allowed_usages.is_empty());
         assert!(bc1_core.flags.is_empty());
     }
-    let bc2_core =
-        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc2RgbaUnorm);
-    assert!(bc2_core.allowed_usages.is_empty());
-    assert!(bc2_core.flags.is_empty());
-    for (format, hal_caps) in one_mip_format_caps {
+    for (format, hal_caps) in [
+        (wgt::TextureFormat::Bc2RgbaUnorm, bc2_caps),
+        (wgt::TextureFormat::Bc3RgbaUnorm, bc3_caps),
+    ] {
+        let core_caps = global.adapter_get_texture_format_features(adapter_id, format);
+        let sampled = hal_caps.contains(
+            hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST,
+        );
+        assert_eq!(
+            core_caps.allowed_usages,
+            if sampled {
+                wgt::TextureUsages::COPY_DST
+                    | wgt::TextureUsages::TEXTURE_BINDING
+                    | if hal_caps.contains(hal::TextureFormatCapabilities::COPY_SRC) {
+                        wgt::TextureUsages::COPY_SRC
+                    } else {
+                        wgt::TextureUsages::empty()
+                    }
+            } else {
+                wgt::TextureUsages::empty()
+            },
+            "compressed format usage projection for {format:?}"
+        );
+        assert_eq!(
+            core_caps.flags,
+            if sampled {
+                wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+                    | if hal_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR) {
+                        wgt::TextureFormatFeatureFlags::FILTERABLE
+                    } else {
+                        wgt::TextureFormatFeatureFlags::empty()
+                    }
+            } else {
+                wgt::TextureFormatFeatureFlags::empty()
+            },
+            "compressed format feature projection for {format:?}"
+        );
+    }
+    for (format, hal_caps) in optional_sampled_format_caps {
         if required {
             assert!(
                 !hal_caps.is_empty(),
@@ -1869,6 +1921,8 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 hal_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT);
             let blendable =
                 hal_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND);
+            let single_mip_only =
+                hal_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY);
             assert_eq!(
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
@@ -1883,7 +1937,11 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     } else {
                         hal::TextureFormatCapabilities::empty()
                     }
-                    | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY
+                    | if single_mip_only {
+                        hal::TextureFormatCapabilities::SINGLE_MIP_ONLY
+                    } else {
+                        hal::TextureFormatCapabilities::empty()
+                    }
                     | if filterable {
                         hal::TextureFormatCapabilities::SAMPLED_LINEAR
                     } else {
@@ -1913,17 +1971,19 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             );
             assert_eq!(
                 core_caps.flags,
-                wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
-                    | if filterable {
-                        wgt::TextureFormatFeatureFlags::FILTERABLE
-                    } else {
-                        wgt::TextureFormatFeatureFlags::empty()
-                    }
-                    | if blendable {
-                        wgt::TextureFormatFeatureFlags::BLENDABLE
-                    } else {
-                        wgt::TextureFormatFeatureFlags::empty()
-                    }
+                if single_mip_only {
+                    wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+                } else {
+                    wgt::TextureFormatFeatureFlags::empty()
+                } | if filterable {
+                    wgt::TextureFormatFeatureFlags::FILTERABLE
+                } else {
+                    wgt::TextureFormatFeatureFlags::empty()
+                } | if blendable {
+                    wgt::TextureFormatFeatureFlags::BLENDABLE
+                } else {
+                    wgt::TextureFormatFeatureFlags::empty()
+                }
             );
         }
     }
@@ -2537,6 +2597,30 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     std::println!("PASS: single-mip format capabilities gate multi-mip creation in core");
 
+    let rg8_unorm_caps =
+        global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Rg8Unorm);
+    if rg8_unorm_caps
+        .flags
+        .contains(wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY)
+    {
+        std::println!(
+            "SKIP: RG8_UNORM mip creation requires selected-device TEXTURE2D | MIP support"
+        );
+    } else {
+        let mut mip_desc = texture_desc(
+            wgt::TextureFormat::Rg8Unorm,
+            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+        );
+        mip_desc.mip_level_count = 2;
+        let (texture, error) = global.device_create_texture(device, &mip_desc, None);
+        assert!(
+            error.is_none(),
+            "query-gated RG8_UNORM mips must create through the core projection: {error:?}"
+        );
+        global.texture_drop(texture);
+        std::println!("PASS: selected RG8_UNORM MIP query permits sampled upload mip chains");
+    }
+
     let rgba8_mip_caps =
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Rgba8Unorm);
     if rgba8_mip_caps
@@ -2615,9 +2699,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     if bc1_supported {
         for format in [
             wgt::TextureFormat::Bc1RgbaUnormSrgb,
-            wgt::TextureFormat::Bc2RgbaUnorm,
             wgt::TextureFormat::Bc2RgbaUnormSrgb,
-            wgt::TextureFormat::Bc3RgbaUnorm,
             wgt::TextureFormat::Bc3RgbaUnormSrgb,
             wgt::TextureFormat::Bc4RUnorm,
             wgt::TextureFormat::Bc4RSnorm,
@@ -2645,6 +2727,36 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             );
             global.texture_drop(texture);
         }
+    }
+    for (format, caps) in [
+        (wgt::TextureFormat::Bc2RgbaUnorm, bc2_caps),
+        (wgt::TextureFormat::Bc3RgbaUnorm, bc3_caps),
+    ] {
+        let (texture, error) = global.device_create_texture(
+            device,
+            &texture_desc(
+                format,
+                wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+            ),
+            None,
+        );
+        if caps.contains(
+            hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST,
+        ) {
+            assert!(
+                error.is_none(),
+                "queried {format:?} support must be accepted: {error:?}"
+            );
+        } else {
+            assert!(
+                matches!(
+                    error.as_ref(),
+                    Some(crate::resource::CreateTextureError::InvalidFormatUsages(..))
+                ),
+                "unavailable {format:?} support must be rejected: {error:?}"
+            );
+        }
+        global.texture_drop(texture);
     }
     let mut multisampled = texture_desc(
         wgt::TextureFormat::Rgba8Unorm,

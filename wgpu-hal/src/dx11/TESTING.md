@@ -3041,3 +3041,24 @@ a physical adapter whose report identifies FL9_1. The capability test's
 requirements. The `dx11` test-package feature is included by `--all-features`;
 ordinary test runs without `WGPU_BACKEND=dx11` continue to use the default
 backend set, which excludes D3D11.
+
+### Optional R8G8_UNORM sampled mip chains
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j2 -p wgpu-hal --lib --features dx11 rg8_unorm_mip_chains_require_selected_query_and_backend
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rg8_unorm_mip_chain_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std dx11_fixture_tests::fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+RG8_UNORM has no static FL9_1 sampled-mip guarantee. The backend exposes its
+sampled/upload mip path only when the selected device positively reports
+`TEXTURE2D | MIP` and the implementation path is enabled; `SHADER_SAMPLE`
+continues to determine filtering independently. The synthetic test covers
+missing and unavailable query bits, backend disablement and NPOT gating. The
+RTX 3090 Ti at requested/actual FL9_1 reports `R8G8_UNORM=0x0002c320`, which
+does not contain MIP. The strict public test therefore reports an explicit
+optional-capability skip and performs no RG8 mip draw on this machine. The
+controlled core fixture confirms the single-mip projection and conditional
+creation rule. Execution on an FL9_1 device whose RG8_UNORM query includes MIP
+remains unverified.
