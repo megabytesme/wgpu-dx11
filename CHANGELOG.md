@@ -128,6 +128,7 @@ Bottom level categories:
 - Reject buffer destruction while mapped views remain alive, preserving the memory behind safe `BufferView` references.
 - Share `SurfaceTexture` presentation and discard state across clones so dropping one clone does not discard a frame still held by
   another.
+- Make dropping an unpresented `SurfaceTexture` safe after its `Surface` has been dropped.
 
 #### Hal
 

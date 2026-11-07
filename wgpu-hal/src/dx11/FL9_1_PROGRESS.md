@@ -9388,3 +9388,40 @@ again at requested/actual FL9_1 on the RTX 3090 Ti. The focused test passed
 1/1. The full public suite was not rerun for this test-only change; its latest
 run passed 62/62 immediately beforehand with the optional Float16x2 IA branch
 explicitly skipped.
+
+## Public frame cleanup after surface destruction — 2026-11-07
+
+The HWND lifecycle test found a safe-API panic when a `Surface` was dropped
+while an acquired, unpresented `SurfaceTexture` remained alive. Dropping the
+frame afterward called `surface_texture_discard` through a removed
+`SurfaceId`. `CoreSurface` and its output details now share a lifecycle mutex:
+surface destruction marks the handle unavailable before removing it, and
+discard/release serialize their core calls through the same guard. Output
+cleanup becomes a no-op once the owning surface has removed and released the
+frame.
+
+The strict test reproduces surface destruction with a live frame and confirms
+that dropping the frame causes no uncaptured error. The focused HWND test
+passed 1/1 and the complete strict public suite passed 62/62 on the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested/actual
+FL9_1. The suite's optional Float16x2 IA branch explicitly skipped after a
+negative selected-device query.
+
+Cross-backend validation used Rust 1.93.1 and the Visual Studio 2022 x64
+environment:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 check --offline -p wgpu --no-default-features --features dx12,wgsl,std
+cargo +1.93 check --offline -p wgpu --target wasm32-unknown-unknown --no-default-features --features webgpu,wgsl
+cargo +1.93 clippy --offline -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+rustup run 1.93 rustfmt --edition 2021 --check wgpu/src/backend/wgpu_core.rs wgpu/tests/dx11_public.rs
+git diff --check
+~~~
+
+The DX12 and wasm public-crate checks and targeted Clippy passed; Clippy
+reported the pre-existing D3D11 `create_hal_view` argument-count warning.
+`wgpu_core.rs` passes rustfmt; the public test file reports three older
+formatting differences in unrelated regions. This does not validate
+CoreWindow or historical-driver behavior.

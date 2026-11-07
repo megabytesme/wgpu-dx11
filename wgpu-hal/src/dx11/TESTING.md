@@ -227,6 +227,9 @@ Cloned public `SurfaceTexture` handles share the acquired frame's lifecycle:
 dropping a non-final clone on a worker thread preserves the image, presenting
 one clone prevents later aliases from discarding it, and dropping the final
 unpresented clone discards it so the surface can acquire again.
+The test also drops a `Surface` while its unpresented frame remains alive, then
+drops the frame and verifies that cleanup does not access the removed core
+surface ID.
 The D3D11 surface operations must run on the HWND's creating thread. A shared
 queue gate serializes submissions, writes, mapping flushes, polling and
 context-backed resource creation against `Present`; reentrant mutations return

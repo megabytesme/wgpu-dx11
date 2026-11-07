@@ -448,6 +448,7 @@ fn map_pass_channel<V: Copy>(ops: Option<&Operations<V>>) -> wgc::command::PassC
 pub struct CoreSurface {
     pub(crate) context: ContextWgpuCore,
     id: wgc::id::SurfaceId,
+    output_lifecycle: Arc<Mutex<bool>>,
     /// Configured device is needed to know which backend
     /// code to execute when acquiring a new frame.
     configured_device: Mutex<Option<wgc::id::DeviceId>>,
@@ -620,6 +621,7 @@ pub struct CoreTlas {
 pub struct CoreSurfaceOutputDetail {
     context: ContextWgpuCore,
     surface_id: wgc::id::SurfaceId,
+    output_lifecycle: Arc<Mutex<bool>>,
     error_sink: ErrorSink,
 }
 
@@ -849,6 +851,7 @@ impl dispatch::InstanceInterface for ContextWgpuCore {
         Ok(CoreSurface {
             context: self.clone(),
             id,
+            output_lifecycle: Arc::new(Mutex::new(true)),
             configured_device: Mutex::default(),
             error_sink: Mutex::default(),
         }
@@ -4001,6 +4004,7 @@ impl dispatch::SurfaceInterface for CoreSurface {
         let output_detail = CoreSurfaceOutputDetail {
             context: self.context.clone(),
             surface_id: self.id,
+            output_lifecycle: Arc::clone(&self.output_lifecycle),
             error_sink: error_sink.clone(),
         }
         .into();
@@ -4042,13 +4046,21 @@ impl dispatch::SurfaceInterface for CoreSurface {
 
 impl Drop for CoreSurface {
     fn drop(&mut self) {
+        *self.output_lifecycle.lock() = false;
         self.context.0.surface_drop(self.id)
     }
 }
 
 impl dispatch::SurfaceOutputDetailInterface for CoreSurfaceOutputDetail {
     fn texture_discard(&self) {
-        match self.context.0.surface_texture_discard(self.surface_id) {
+        let result = {
+            let surface_alive = self.output_lifecycle.lock();
+            if !*surface_alive {
+                return;
+            }
+            self.context.0.surface_texture_discard(self.surface_id)
+        };
+        match result {
             Ok(_status) => (),
             Err(err) => {
                 self.context
@@ -4058,7 +4070,14 @@ impl dispatch::SurfaceOutputDetailInterface for CoreSurfaceOutputDetail {
     }
 
     fn texture_release(&self) {
-        match self.context.0.surface_texture_release(self.surface_id) {
+        let result = {
+            let surface_alive = self.output_lifecycle.lock();
+            if !*surface_alive {
+                return;
+            }
+            self.context.0.surface_texture_release(self.surface_id)
+        };
+        match result {
             Ok(_status) => (),
             Err(err) => {
                 self.context

@@ -28,6 +28,8 @@ Public `SurfaceTexture` clones now share one presentation lifecycle. Dropping
 an alias no longer discards a frame still held by another clone, and presenting
 any clone prevents later aliases from trying to discard the already-presented
 frame. The strict HWND test covers both clone-drop orders and reacquisition.
+Dropping an unpresented frame after its `Surface` is destroyed is also safe;
+the core output detail no longer calls through a removed surface ID.
 
 The optional RGBA8 four-sample path is restricted through
 `DownlevelLimits::multisampled_texture_usage_mask` to color attachment and

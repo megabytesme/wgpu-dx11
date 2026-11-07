@@ -455,11 +455,28 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     })
     .join()
     .expect("wrong-thread surface acquisition test");
-    drop(returned_surface);
     assert!(
         wrong_thread_rejected,
         "acquisition must stay on the HWND thread"
     );
+
+    let frame = match returned_surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("public D3D11 HWND acquisition before surface drop failed: {result:?}"),
+    };
+    let teardown_error = Arc::new(std::sync::Mutex::new(None));
+    let captured_teardown_error = Arc::clone(&teardown_error);
+    device.on_uncaptured_error(Arc::new(move |error| {
+        *captured_teardown_error.lock().unwrap() = Some(error);
+    }));
+    drop(returned_surface);
+    drop(frame);
+    let teardown_error = teardown_error.lock().unwrap().take();
+    assert!(
+        teardown_error.is_none(),
+        "dropping an acquired frame after its surface must remain safe: {teardown_error:?}"
+    );
+    println!("PASS: dropping an acquired frame after its surface did not access a stale SurfaceId");
     println!("PASS: public HWND rendered, presented, rejected wrong-thread acquisition and resized to 80x48");
 }
 

@@ -20,6 +20,14 @@ than a hand-built descriptor. At forced FL9_1, core resolves `Auto` values and
 clamps the generic two-frame hint to the surface's supported one-frame range;
 the default configuration then presents successfully.
 
+The same strict test exposed and fixes a related destruction hazard: dropping
+the surface before its acquired frame previously caused the frame's later
+discard to panic on a removed `SurfaceId`. Core surface-output details now
+serialize cleanup with surface destruction and skip the stale lookup after
+the owning surface is removed. The expanded full strict public suite passed
+62/62 on forced FL9_1; one optional Float16x2 input-format branch was visibly
+skipped by the device query.
+
 ## Current mission state — wrong-thread present cleanup
 
 The public HWND lifecycle test now acquires a frame on the owner thread,
