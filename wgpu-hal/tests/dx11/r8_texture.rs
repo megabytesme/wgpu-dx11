@@ -149,8 +149,10 @@ fn sample_upload(
             view_formats: vec![],
         })
     };
-    let mip_chain_supported = format == wgt::TextureFormat::R8Unorm
-        && format_support & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0;
+    let mip_chain_supported = matches!(
+        format,
+        wgt::TextureFormat::R8Unorm | wgt::TextureFormat::Rg8Snorm
+    ) && format_support & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0;
     assert_eq!(
         mip_texture.is_ok(),
         mip_chain_supported,

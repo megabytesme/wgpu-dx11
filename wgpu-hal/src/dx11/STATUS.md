@@ -300,14 +300,20 @@ public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8_UNORM, R8G8_UNORM, R8G8_SNORM, R16G16_SNORM, R8G8B8A8_SNORM,
-BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8 are always single-mip
-in the private implementation. RGBA8 and BGRA8, including their
+R8G8_UNORM, R16G16_SNORM, R8G8B8A8_SNORM, BC1_UNORM, BC2_UNORM,
+BC3_UNORM, D16_UNORM and D24S8 are always single-mip in the private
+implementation. R8G8_SNORM supports sampled/upload mip chains only when the
+selected device reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE`
+query controls filterability. Render-target, copy-source and readback uses
+remain unsupported. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
 backend mip path is unavailable. The controlled fixture asserts this
 projection against the actual format-query result. This closes the POT
 multi-mip gap that device-wide NPOT and depth-attachment flags cannot express.
+R8_UNORM also has a selected-query-gated sampled/upload mip path; it requires
+the hardware/backend path and `TEXTURE2D | MIP`, with positive unrestricted
+NPOT support for non-power-of-two chains.
 
 RGBA8_SRGB and BGRA8_SRGB now follow the linear RGBA8/BGRA8 upload, sampled
 view, render-target and readback paths, with independent FL9_1 guarantees and
@@ -541,10 +547,12 @@ all out-of-target rectangles. Other backends keep the default true capability.
   eight-column gradient. The selected-device `RENDER_TARGET` query also
   gates single-mip attachment use. Blendability, copy-source and direct
   readback are separately selected-query-gated.
-- R8G8_SNORM has the same queried one-mip sampled/upload subset. A strict
-  forced-FL9_1 test verifies padded signed two-channel data through GPU
-  sampling and 80-pixel RGBA8 readback (one-code UNORM conversion tolerance).
-  Render-target, copy-source, readback and mip-chain uses remain unsupported.
+- R8G8_SNORM's one-mip sampled/upload subset remains available when the
+  selected device reports `TEXTURE2D`. A separate sampled/upload mip-chain
+  path requires positive `TEXTURE2D | MIP` support. Strict
+  forced-FL9_1 tests verify padded signed two-channel data and a three-level
+  chain through GPU sampling. Render-target, copy-source and readback uses
+  remain unsupported.
 - R16G16_SNORM is not guaranteed to support shader sampling at FL9_1; the
   required-format table raises `SHADER_SAMPLE` to FL9_2. The selected device
   can still support point-only sampling when it reports `TEXTURE2D`. The RTX

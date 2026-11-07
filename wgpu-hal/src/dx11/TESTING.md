@@ -1871,10 +1871,14 @@ shader-sample formats. `R16G16_SNORM` has a FL9_1 2D-texture guarantee, but
 its required `SHADER_SAMPLE` support begins at FL9_2. D3D11 permits
 point-filtered sampling when a selected device reports `TEXTURE2D` without
 `SHADER_SAMPLE`; the backend reports that format as non-filterable. A failed
-query or missing `TEXTURE2D` bit is rejected. These formats support only
-single-mip sampled/upload textures. BC1/BC2/BC3 dimensions and updates must be
-aligned to complete 4×4 blocks, and source offsets/row pitches align to the
-format block byte size.
+query or missing `TEXTURE2D` bit is rejected. R8_UNORM and R8G8_SNORM permit
+sampled/upload mip chains only when the selected device reports `MIP` and the
+backend path is enabled; R8_UNORM additionally requires its hardware sampling
+guarantee. NPOT chains also require positive unrestricted-NPOT support.
+`SHADER_SAMPLE` independently controls filterability. The other listed
+sampled/upload formats remain single-mip. BC1/BC2/BC3 dimensions and updates
+must be aligned to complete 4×4 blocks, and source offsets/row pitches align to
+the format block byte size.
 Run the synthetic capability checks and strict hardware tests with:
 
 ```powershell
@@ -2152,6 +2156,25 @@ path. CPU capability tests cover every nonempty usage subset of `RESOURCE`,
 `COLOR_TARGET`, `COPY_SRC` and `COPY_DST`; the physical tests exercise the
 previously rejected resource-only and source-only shapes alongside existing
 upload, sampled, attachment and copy combinations.
+
+### Query-gated R8G8_SNORM mip chains
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib rg8_snorm_mip_chains_require_feature_level_backend_and_driver_support -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rg8_snorm_mip_chain_at_fl91 -- --nocapture --test-threads=1
+```
+
+The CPU capability test covers the FL9_1 guarantee, backend path and selected
+device `TEXTURE2D | MIP` query independently, including unavailable and
+negative query results. It also verifies that NPOT dimensions still require a
+positive unrestricted-NPOT result. The strict public test ran on the RTX 3090
+Ti at requested and actual FL9_1 (driver 32.0.16.2101); it uploaded three
+distinct signed RG levels and rendered mip 1 into a 4×4 RGBA8 target. All 16
+pixels matched `[192, 64, 0, 255]` within one code value. The device reported
+format support mask `0x00021320`. This path does not add render-target,
+copy-source or CPU-readback support for R8G8_SNORM, and the RTX result does not
+establish behavior on historical FL9_1 drivers.
 
 ### Non-suffix sampled mip views
 

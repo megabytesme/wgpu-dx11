@@ -1,5 +1,16 @@
 # FL9_1 handoff
 
+## Latest format increment — query-gated R8G8_SNORM mip chain — 2026-11-07
+
+Sampled/upload R8G8_SNORM textures may now use mip chains when the selected
+device reports `TEXTURE2D | MIP` and the backend path is active. On the RTX
+3090 Ti at explicitly requested/actual FL9_1, the strict public test uploaded
+three signed levels and verified all 16 pixels sampled from mip 1. The private
+HAL suite passed 402/402, public D3D11 suite 78/78 (one optional Float16x2
+subcase skipped), core adapter isolation 1/1, and DX12 core 94/94. Render-target,
+copy-source and readback uses remain unsupported. Historical driver and Lumia
+runtime behavior remain unverified; continue the public core/HAL contract audit.
+
 ## Latest integration safety increment — 2026-11-07
 
 `Backends::default()` now excludes experimental DX11, so a default public

@@ -1,5 +1,48 @@
 # FL9_1 progress
 
+## Query-gated R8G8_SNORM sampled mip chains — 2026-11-07
+
+The R8G8_SNORM path now accepts multiple mips for the existing sampled/upload
+usage subset when its FL9_1 hardware guarantee, backend implementation path
+and selected-device `TEXTURE2D | MIP` query all permit the shape. The same
+predicate removes `SINGLE_MIP_ONLY` from the public format projection; absent
+or failed format queries remain conservative. `SHADER_SAMPLE` continues to
+control filterability independently. NPOT mip chains still require positive
+full-NPOT support. Render-target, copy-source and CPU readback uses remain
+unsupported.
+
+The strict public test ran on the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at explicitly requested and selected
+FL9_1. The device reported R8G8_SNORM support mask `0x00021320`. The test
+uploaded three distinct signed RG mip levels and sampled level 1 into a 4×4
+RGBA8 target. All 16 pixels matched `[192, 64, 0, 255]` within one code value.
+This verifies the positive query path on a modern forced-FL9_1 driver, not
+legacy driver compatibility.
+
+The synthetic capability test passed for positive, missing, failed and
+unavailable MIP queries, disabled backend/feature-level guarantees, and NPOT
+positive/negative query behavior. After updating two pre-existing assertions
+that still expected the old one-mip restriction, the strict private HAL suite
+passed 402/402 and the strict public D3D11 suite passed 78/78 (one optional
+Float16x2 input subcase explicitly skipped). The public adapter-isolation
+regression passed 1/1 and DX12 core passed 94/94. Targeted Clippy passed for
+HAL and the public test target; it reported the existing HAL argument-count,
+single-range-vector, test-order and needless-borrow warnings. Rustfmt and
+`git diff --check` passed.
+
+Commands:
+
+~~~powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+~~~
+
+
 ## Query-gated NPOT mipmapped 2D textures — 2026-11-07
 
 The capability model now separates FL9_x conditional NPOT behavior from a
