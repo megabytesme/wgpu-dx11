@@ -11120,27 +11120,38 @@ cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
 ```
 
-## Surface-frame release after device loss — 2026-11-08
+## Surface queue identity and frame release — 2026-11-08
 
 Core now releases an acquired frame when `Surface::discard` finds its
-configured device invalid. The `Queue::present` early-error paths also use a
-shared cleanup helper that drops the presentation lock before attempting
-discard/release. The public D3D11 HWND fixture now keeps a second acquired
-frame alive while a synthetic `DXGI_ERROR_DEVICE_REMOVED` invalidates its
-device, drops that frame, then reconfigures the surface to a healthy device and
-successfully acquires again. This covers the public `SurfaceTexture` drop path;
-the injected HRESULT is not physical device-loss/recovery evidence.
-Implementation checkpoint: `a7205baf35fe2799a4eb13b5fca9b129068d55b3`
-(`dx11: release acquired frames after device loss`).
+configured device invalid. The `Queue::present` early-error paths use a shared
+cleanup helper that drops the presentation lock before attempting
+discard/release. Public queue dispatch now passes the receiver queue ID to
+core, so its existing device-identity check rejects a queue from another
+device and consumes/releases the frame. The strict D3D11 HWND fixture verifies
+the mismatch error, reconfiguration and successful reacquisition with the
+matching device. It also keeps a second acquired frame alive while synthetic
+`DXGI_ERROR_DEVICE_REMOVED` invalidates its device, drops that frame, then
+reconfigures the surface to a healthy device and successfully acquires again.
+Queue presentation checks device validity before entering the present guard,
+so the existing reentrant lost-device path releases its frame without
+reporting a spurious invalid-surface error. The injected HRESULT is not
+physical device-loss/recovery evidence.
 
 The strict fixture passed 2/2 on the NVIDIA GeForce RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1. The
-existing synthetic Present-loss callback/reentrant-poll test still passes,
-and the new drop-after-loss case proves later reconfiguration and acquisition
-work. One experimental wrong-queue assertion was removed after inspection
-showed that the public wgpu-core dispatch currently routes `Queue::present`
-through `Surface::present` and selects the configured device's queue; the
-public call does not pass the receiver queue ID to core.
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1. It
+covers wrong-device rejection, matching-queue reacquisition, the synthetic
+Present-loss callback/reentrant-poll case, reentrant presentation after loss,
+and dropping an unpresented frame after loss. The initial lifecycle cleanup is
+checkpointed at `a7205baf35fe2799a4eb13b5fca9b129068d55b3`; queue identity is
+checkpointed at `d890ee6bb15537eddca530c9fd5b25b26836c9fc`. The Deno surface
+API retains configured-device presentation while the native wgpu `Queue`
+entry point carries its receiver queue identity into core. `cargo +1.93 check
+--offline -j8 -p deno_webgpu` passed under the Visual Studio x64 environment.
+That workspace check exposed a missing GLES initializer for the added
+`DownlevelLimits::vertex_index_topology_mask`; GLES now explicitly retains all
+topologies in `b62b88464633122acb9134b92a340c21aa909a87`. Rustfmt,
+`git diff --check`, and targeted public-fixture Clippy passed; Clippy reported
+only the existing HAL `too_many_arguments` warnings.
 
 ## PointList `vertex_index` support — 2026-11-08
 

@@ -1,9 +1,18 @@
 # FL9_1 completion plan
-Latest lifecycle increment: discarding an acquired public `SurfaceTexture`
-after its configured device becomes invalid now releases the retained HAL
-frame. The strict HWND fixture exercises synthetic device removal, drop,
-reconfiguration and reacquisition at forced FL9_1. Actual device removal and
-recovery remain unverified. See `FL9_1_PROGRESS.md`.
+Latest lifecycle increment: public `Queue::present` now preserves the receiver
+queue identity through core validation, rejects a different-device queue and
+releases the consumed frame. Dropping an acquired public `SurfaceTexture`
+after its configured device becomes invalid also releases the retained HAL
+frame. The strict HWND fixture exercises mismatch, synthetic device removal,
+drop, reconfiguration and reacquisition at forced FL9_1. Actual device removal
+and recovery remain unverified. The strict fixture passed 2/2 and the Deno
+workspace check passed; see `FL9_1_PROGRESS.md`. Checkpoint:
+`d890ee6bb15537eddca530c9fd5b25b26836c9fc`.
+
+The next core/HAL audit fixes are selected-entry-aware accounting for the
+hidden vertex-input slot used by emulated `vertex_index`, then a bounded
+vertex-stage dynamic uniform-array indexing experiment. Both must establish
+core validation behavior before relaxing backend rejection.
 
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
 `vertex_index` uses a host-generated float IA stream for TriangleList and

@@ -3,17 +3,19 @@
 ## Latest surface lifecycle checkpoint — 2026-11-08
 
 The public D3D11 HWND error fixture passed 2/2 on the RTX 3090 Ti at requested
-and actual FL9_1. It covers a synthetic `DXGI_ERROR_DEVICE_REMOVED` during
-Present, a reentrant poll in the lost callback, and dropping a second acquired
-frame after its configured device becomes invalid. The invalid-device discard
-path now releases the retained frame, after which the surface can be
-reconfigured to a healthy device and acquire another frame. The HRESULT is
-injected; actual device removal and recovery remain unverified. The public
-queue-present dispatch currently routes through the surface's configured
-device queue, so a wrong receiver queue cannot be tested through this public
-dispatch without changing that API path. See `FL9_1_PROGRESS.md` for details.
-Implementation checkpoint: `a7205baf35fe2799a4eb13b5fca9b129068d55b3`
-(`dx11: release acquired frames after device loss`).
+and actual FL9_1. Public queue dispatch now passes the receiver queue ID to
+core, where queue/device mismatch is rejected and the consumed frame is
+released. The same fixture verifies a matching queue can reacquire afterward,
+that a synthetic `DXGI_ERROR_DEVICE_REMOVED` invokes the lost callback with a
+reentrant poll, and that dropping another acquired frame after device loss
+allows later reconfiguration and acquisition. The invalid-device discard path
+releases the retained HAL frame. Device removal is injected; actual removal
+and recovery remain unverified. The first cleanup checkpoint is
+`a7205baf35fe2799a4eb13b5fca9b129068d55b3`; queue identity is verified in
+`d890ee6bb15537eddca530c9fd5b25b26836c9fc`. `cargo +1.93 check --offline
+-j8 -p deno_webgpu` passed under the Visual Studio x64 environment. Historical
+device removal and Lumia runtime behavior remain unverified. See
+`FL9_1_PROGRESS.md` for details.
 
 ## Latest public topology-validation checkpoint — 2026-11-08
 
