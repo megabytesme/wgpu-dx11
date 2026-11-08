@@ -17876,6 +17876,317 @@ fn public_dx11_render_bundle_executes_at_fl91() {
 }
 
 #[test]
+fn public_dx11_empty_render_bundle_resets_pass_state_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 empty render bundle state test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 empty-bundle state shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+            struct Tint { color: vec4f }
+            @group(0) @binding(0) var<uniform> tint: Tint;
+            @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
+                return vec4f(position, 0.5, 1.0);
+            }
+            @fragment fn fs() -> @location(0) vec4f { return tint.color; }
+            "#
+            .into(),
+        ),
+    });
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 empty-bundle uniform layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 empty-bundle pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 empty-bundle pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let tint_bytes = [1.0f32, 0.25, 0.0, 1.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let tint_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 empty-bundle tint"),
+        size: tint_bytes.len() as u64,
+        usage: BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    tint_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map tint buffer")
+        .copy_from_slice(&tint_bytes);
+    tint_buffer.unmap();
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 empty-bundle uniform group"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: tint_buffer.as_entire_binding(),
+        }],
+    });
+    let vertex_values = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_bytes = vertex_values
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 empty-bundle full-screen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map vertex buffer")
+        .copy_from_slice(&vertex_bytes);
+    vertex_buffer.unmap();
+    let empty_encoder = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+        label: Some("FL9_1 empty bundle encoder"),
+        color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+        depth_stencil: None,
+        sample_count: 1,
+        multiview: None,
+    });
+    let empty_bundle = empty_encoder.finish(&RenderBundleDescriptor {
+        label: Some("FL9_1 empty render bundle"),
+    });
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 empty-bundle output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    macro_rules! encode_pass {
+        ($encoder:expr, $label:expr) => {
+            $encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some($label),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            })
+        };
+    }
+
+    expect_validation_error_containing(
+        &device,
+        "draw without resetting pipeline after an empty bundle",
+        "MissingPipeline",
+        || {
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+            {
+                let mut pass = encode_pass!(&mut encoder, "pipeline reset validation");
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.execute_bundles([&empty_bundle]);
+                pass.draw(0..3, 0..1);
+            }
+            drop(encoder.finish());
+        },
+    );
+    expect_validation_error_containing(
+        &device,
+        "draw without resetting bind group after an empty bundle",
+        "MissingBindGroup",
+        || {
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+            {
+                let mut pass = encode_pass!(&mut encoder, "bind group reset validation");
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.execute_bundles([&empty_bundle]);
+                pass.set_pipeline(&pipeline);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.draw(0..3, 0..1);
+            }
+            drop(encoder.finish());
+        },
+    );
+    expect_validation_error_containing(
+        &device,
+        "draw without resetting vertex buffer after an empty bundle",
+        "MissingVertexBuffer",
+        || {
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+            {
+                let mut pass = encode_pass!(&mut encoder, "vertex buffer reset validation");
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.execute_bundles([&empty_bundle]);
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            drop(encoder.finish());
+        },
+    );
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 empty-bundle output readback"),
+        size: 2048,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 empty-bundle state reset execution"),
+    });
+    {
+        let mut pass = encode_pass!(&mut encoder, "empty-bundle valid state reset pass");
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.execute_bundles([&empty_bundle]);
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 empty-bundle draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("empty-bundle readback callback")
+        .expect("map empty-bundle readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[255, 64, 0, 255],
+                    "empty-bundle valid draw pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: empty-bundle execution reset pipeline, bind-group and vertex-buffer state; explicitly rebinding state rendered all 64 expected pixels");
+}
+
+#[test]
 fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
