@@ -239,7 +239,9 @@ fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
         );
     }
     readback.unmap();
-    println!("PASS: public FL9_1 rejected unaligned and out-of-bounds clear_buffer ranges; the valid clear zeroed bytes 16..48 and preserved all 32 bytes outside the requested range");
+    println!(
+        "PASS: public FL9_1 rejected unaligned and out-of-bounds clear_buffer ranges; the valid clear zeroed bytes 16..48 and preserved all 32 bytes outside the requested range"
+    );
 }
 
 #[test]
@@ -461,7 +463,9 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         captured.is_none(),
         "dropping a SurfaceTexture clone must not discard the shared frame: {captured:?}"
     );
-    println!("PASS: dropping one public SurfaceTexture clone preserved the shared frame for presentation");
+    println!(
+        "PASS: dropping one public SurfaceTexture clone preserved the shared frame for presentation"
+    );
 
     let frame = match surface.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -620,7 +624,9 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         "dropping an acquired frame after its surface must remain safe: {teardown_error:?}"
     );
     println!("PASS: dropping an acquired frame after its surface did not access a stale SurfaceId");
-    println!("PASS: public HWND rendered, presented, rejected wrong-thread acquisition and resized to 80x48");
+    println!(
+        "PASS: public HWND rendered, presented, rejected wrong-thread acquisition and resized to 80x48"
+    );
 }
 
 #[test]
@@ -959,7 +965,9 @@ fn public_dx11_enforces_fl91_aggregate_uniform_constants() {
         }
     }
     readback.unmap();
-    println!("PASS: two sparse fragment uniforms used 32 vectors; 33 were rejected; 64/64 pixels matched [191, 0, 0, 255]");
+    println!(
+        "PASS: two sparse fragment uniforms used 32 vectors; 33 were rejected; 64/64 pixels matched [191, 0, 0, 255]"
+    );
 }
 
 #[test]
@@ -992,7 +1000,11 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
     );
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; vertex_uniform_vectors=255 max_uniform_binding_size={}",
-        info.name, info.vendor, info.device, info.driver_info, limits.max_uniform_buffer_binding_size
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        limits.max_uniform_buffer_binding_size
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 255 vertex uniform vectors"),
@@ -1330,7 +1342,9 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
         red_x * green_count > green_x * red_count,
         "c254 did not shift the rendered geometry right: green={green_count}/{green_x}, red={red_count}/{red_x}"
     );
-    println!("PASS: public FL9_1 vertex uniform binding exposed 4080 bytes; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels), and core rejected 256 vertex vectors before HAL");
+    println!(
+        "PASS: public FL9_1 vertex uniform binding exposed 4080 bytes; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels), and core rejected 256 vertex vectors before HAL"
+    );
 }
 
 #[test]
@@ -1394,7 +1408,9 @@ fn public_dx11_buffer_destroy_preserves_live_mapped_views() {
     drop(second_view);
     drop(first_view);
     buffer.destroy();
-    println!("PASS: destroying a mapped buffer with a live view failed safely; view contents remained valid and destruction succeeded after drop");
+    println!(
+        "PASS: destroying a mapped buffer with a live view failed safely; view contents remained valid and destruction succeeded after drop"
+    );
 }
 
 #[test]
@@ -1621,7 +1637,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         || drop(create_matrix_pipeline("unsafe_entry")),
     );
     drop(create_matrix_pipeline("safe_entry"));
-    println!("PASS: public core rejected unsupported selected-entry integer and matrix stores and accepted safe sibling entries");
+    println!(
+        "PASS: public core rejected unsupported selected-entry integer and matrix stores and accepted safe sibling entries"
+    );
 
     let sample_level_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 explicit texture-level validation layout"),
@@ -1704,7 +1722,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         || drop(create_sample_level_pipeline("exact_helper")),
     );
     drop(create_sample_level_pipeline("implicit"));
-    println!("PASS: public core rejected reachable explicit textureSampleLevel before HAL and compiled the implicit-sampling sibling");
+    println!(
+        "PASS: public core rejected reachable explicit textureSampleLevel before HAL and compiled the implicit-sampling sibling"
+    );
 
     let texture_gather_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 texture-gather selected-entry shader"),
@@ -1756,7 +1776,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         || drop(create_texture_gather_pipeline("gather_indirect")),
     );
     drop(create_texture_gather_pipeline("implicit"));
-    println!("PASS: public core rejects direct and helper-reached textureGather at FL9_1 and compiles an implicit-sampling sibling");
+    println!(
+        "PASS: public core rejects direct and helper-reached textureGather at FL9_1 and compiles an implicit-sampling sibling"
+    );
 
     let texture_query_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 texture-query validation layout"),
@@ -1847,7 +1869,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         );
     }
     drop(create_texture_query_pipeline("safe"));
-    println!("PASS: public core rejected selected texture queries and textureSampleBaseClampToEdge before HAL, including helper use, and compiled a safe sibling entry");
+    println!(
+        "PASS: public core rejected selected texture queries and textureSampleBaseClampToEdge before HAL, including helper use, and compiled a safe sibling entry"
+    );
 
     expect_validation_error(
         &device,
@@ -2747,7 +2771,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             .join()
             .expect("second public device worker did not panic");
     });
-    println!("PASS: public wgpu D3D11 FL9_1; core rejected 3D, 4x-MSAA, R32Float, multi-mip D24S8, vertex storage and D2Array layouts; indexed group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; overlapping near/far geometry rendered red in both draw orders; concurrent devices read back 64/64 red and green pixels");
+    println!(
+        "PASS: public wgpu D3D11 FL9_1; core rejected 3D, 4x-MSAA, R32Float, multi-mip D24S8, vertex storage and D2Array layouts; indexed group-7 sampling and dynamic uniforms rendered 32 tinted-red/32 green pixels, the updated transform rendered 16 blue/32 tinted-red/16 green; overlapping near/far geometry rendered red in both draw orders; concurrent devices read back 64/64 red and green pixels"
+    );
 }
 
 #[test]
@@ -3247,7 +3273,9 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 R8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
+    println!(
+        "PASS: public FL9_1 R8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]"
+    );
 
     let rg8_features = adapter.get_texture_format_features(TextureFormat::Rg8Unorm);
     println!("Public Rg8Unorm format projection: {rg8_features:?}");
@@ -3394,7 +3422,9 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 Rg8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]");
+    println!(
+        "PASS: public FL9_1 Rg8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]"
+    );
 
     let linear_sampler = device.create_sampler(&SamplerDescriptor {
         mag_filter: FilterMode::Linear,
@@ -3493,7 +3523,9 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 Rg8Unorm linear filtering produced the expected 8-column gradient across 64 pixels");
+    println!(
+        "PASS: public FL9_1 Rg8Unorm linear filtering produced the expected 8-column gradient across 64 pixels"
+    );
 
     let r8_linear_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("public FL9_1 linearly sampled R8 resources"),
@@ -3586,7 +3618,9 @@ fn public_dx11_r8_sampled_upload_renders_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 R8Unorm linear filtering produced the expected 8-column gradient across 64 pixels");
+    println!(
+        "PASS: public FL9_1 R8Unorm linear filtering produced the expected 8-column gradient across 64 pixels"
+    );
 }
 
 #[test]
@@ -4116,8 +4150,8 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
                             1
                         };
                         assert!(
-                        observed.abs_diff(expected) <= tolerance,
-                        "{format:?} render-target sample at ({x}, {y}) channel {channel}: expected {expected}±{tolerance}, observed {observed}"
+                            observed.abs_diff(expected) <= tolerance,
+                            "{format:?} render-target sample at ({x}, {y}) channel {channel}: expected {expected}±{tolerance}, observed {observed}"
                         );
                     }
                 }
@@ -5221,7 +5255,9 @@ fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 D24S8 LOAD/CLEAR/DISCARD, independent read-only aspects and colorless depth prepass matched all 576 checked transition pixels; read-only depth and stencil writes were rejected by core");
+    println!(
+        "PASS: public FL9_1 D24S8 LOAD/CLEAR/DISCARD, independent read-only aspects and colorless depth prepass matched all 576 checked transition pixels; read-only depth and stencil writes were rejected by core"
+    );
 }
 
 #[test]
@@ -6050,7 +6086,9 @@ fn public_dx11_sparse_multi_texture_sampling_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 sparse pairs across groups 1/4 and 6/7; replacing only group 7 from linear to nearest changed the right half; all 128 pixels matched");
+    println!(
+        "PASS: public FL9_1 sparse pairs across groups 1/4 and 6/7; replacing only group 7 from linear to nearest changed the right half; all 128 pixels matched"
+    );
 }
 
 #[test]
@@ -6390,7 +6428,9 @@ fn public_dx11_eight_sampled_textures_at_fl91() {
     readback.unmap();
     assert_eq!(textures.len(), 8);
     assert_eq!(views.len(), 8);
-    println!("PASS: public FL9_1 shader used all eight sampled textures; core rejected texture 9 and all 64 pixels matched [180, 72, 36, 255]");
+    println!(
+        "PASS: public FL9_1 shader used all eight sampled textures; core rejected texture 9 and all 64 pixels matched [180, 72, 36, 255]"
+    );
 }
 
 #[test]
@@ -6628,7 +6668,9 @@ fn public_dx11_partial_texture_transfer_roundtrip_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 buffer→texture→texture→buffer transfer; padded source rows and nonzero origins produced the expected 2×2 patch while all other destination texels remained green");
+    println!(
+        "PASS: public FL9_1 buffer→texture→texture→buffer transfer; padded source rows and nonzero origins produced the expected 2×2 patch while all other destination texels remained green"
+    );
 }
 
 #[test]
@@ -7102,7 +7144,9 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 (including a constant forwarded through a helper) selected expected mip colors; a non-suffix 2D view refreshed and sampled its selected mip range; 384 pixels matched, and core rejected unsupported bias, derivative and explicit-gradient forms before HAL");
+    println!(
+        "PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 (including a constant forwarded through a helper) selected expected mip colors; a non-suffix 2D view refreshed and sampled its selected mip range; 384 pixels matched, and core rejected unsupported bias, derivative and explicit-gradient forms before HAL"
+    );
 }
 
 #[test]
@@ -7545,9 +7589,14 @@ fn public_dx11_r8_sampled_mip_chain_at_fl91() {
             }
         }
         r8_readback.unmap();
-        println!("PASS: public FL9_1 R8 four-mip {mip_width}x{mip_height} sampled, render-attachment and copy-source usage; mip 2 sampling matched 64/64 RGBA pixels and mip 0 readback matched {} R8 texels", mip_width * mip_height);
+        println!(
+            "PASS: public FL9_1 R8 four-mip {mip_width}x{mip_height} sampled, render-attachment and copy-source usage; mip 2 sampling matched 64/64 RGBA pixels and mip 0 readback matched {} R8 texels",
+            mip_width * mip_height
+        );
     } else {
-        println!("PASS: public FL9_1 R8 four-mip texture-upload and sampling path; 64/64 pixels matched [128, 0, 0, 255]; SKIP: selected format query did not permit R8 mip render/copy-source usage");
+        println!(
+            "PASS: public FL9_1 R8 four-mip texture-upload and sampling path; 64/64 pixels matched [128, 0, 0, 255]; SKIP: selected format query did not permit R8 mip render/copy-source usage"
+        );
     }
 }
 
@@ -7908,7 +7957,9 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 {format:?} three-level upload and biased sampling; all 16 pixels matched mip-1 values {expected:?}");
+    println!(
+        "PASS: public FL9_1 {format:?} three-level upload and biased sampling; all 16 pixels matched mip-1 values {expected:?}"
+    );
 }
 
 #[test]
@@ -8181,7 +8232,9 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
     }
     readback.unmap();
     readback_next_level.unmap();
-    println!("PASS: public FL9_1 partial R8 mip-1 copy preserved its destination border (16/16 texels); a mip-1 to mip-2 copy matched all 4 destination texels");
+    println!(
+        "PASS: public FL9_1 partial R8 mip-1 copy preserved its destination border (16/16 texels); a mip-1 to mip-2 copy matched all 4 destination texels"
+    );
 }
 
 #[test]
@@ -8569,7 +8622,9 @@ fn public_dx11_query_gated_npot_mip_chain_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: query-gated NPOT 6x10 four-mip texture sampled at forced FL9_1; all 64 pixels matched mip 2");
+    println!(
+        "PASS: query-gated NPOT 6x10 four-mip texture sampled at forced FL9_1; all 64 pixels matched mip 2"
+    );
 }
 
 #[test]
@@ -8665,7 +8720,9 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
                 });
             },
         );
-        println!("PASS: public FL9_1 capabilities omit Rg16Snorm when the selected driver query lacks shader sampling");
+        println!(
+            "PASS: public FL9_1 capabilities omit Rg16Snorm when the selected driver query lacks shader sampling"
+        );
     }
 
     let rg_texture = device.create_texture(&TextureDescriptor {
@@ -9133,7 +9190,8 @@ fn public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91() {
         let caps = adapter.get_texture_format_features(format);
         assert_eq!(
             caps.allowed_usages.contains(TextureUsages::COPY_SRC),
-            caps.allowed_usages.contains(TextureUsages::RENDER_ATTACHMENT),
+            caps.allowed_usages
+                .contains(TextureUsages::RENDER_ATTACHMENT),
             "FL9_1 copy-source use requires the backend's queried render-target bind: {format:?} {caps:?}"
         );
     }
@@ -9704,7 +9762,9 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             }
         }
         readback.unmap();
-        println!("PASS: FL9_1 {format_name} padded upload, native SRV sampling and RGBA8 readback; all 64 pixels matched expected color and alpha quadrants");
+        println!(
+            "PASS: FL9_1 {format_name} padded upload, native SRV sampling and RGBA8 readback; all 64 pixels matched expected color and alpha quadrants"
+        );
     }
 }
 
@@ -9938,7 +9998,9 @@ fn public_dx11_instance_rate_vertex_streams_at_fl91() {
     assert!(green > 0, "the second instance must render green");
     assert!(yellow > 0, "the third instance must render yellow");
     assert!(blue > 0, "the untouched background must remain blue");
-    println!("PASS: public FL9_1 emulated instance-rate streams and host-supplied instance_index for first_instance=1; green={green}, yellow={yellow}, blue={blue}");
+    println!(
+        "PASS: public FL9_1 emulated instance-rate streams and host-supplied instance_index for first_instance=1; green={green}, yellow={yellow}, blue={blue}"
+    );
 }
 
 #[test]
@@ -10155,7 +10217,9 @@ fn public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: nonindexed first_instance=2 and indexed first_instance=4 produced distinct full-target colors; 128/128 pixels matched at forced FL9_1");
+    println!(
+        "PASS: nonindexed first_instance=2 and indexed first_instance=4 produced distinct full-target colors; 128/128 pixels matched at forced FL9_1"
+    );
 }
 
 #[test]
@@ -10737,7 +10801,9 @@ fn public_dx11_vertex_index_point_list_at_fl91() {
     for readback in &readbacks {
         readback.unmap();
     }
-    println!("PASS: PointList vertex_index direct readback matched 3 points; repeated indexed ID readback matched 1 point");
+    println!(
+        "PASS: PointList vertex_index direct readback matched 3 points; repeated indexed ID readback matched 1 point"
+    );
 }
 
 #[test]
@@ -11714,7 +11780,9 @@ fn public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91() {
             }
         }
     }
-    println!("PASS: public indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32, including restart runs");
+    println!(
+        "PASS: public indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32, including restart runs"
+    );
 }
 
 #[test]
@@ -11798,7 +11866,9 @@ fn public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91() {
         || drop(pipeline("depth_only")),
     );
     drop(pipeline("color_and_depth"));
-    println!("PASS: core rejected direct-only frag_depth before FXC and accepted the structured color+depth output");
+    println!(
+        "PASS: core rejected direct-only frag_depth before FXC and accepted the structured color+depth output"
+    );
 }
 
 #[test]
@@ -11875,7 +11945,9 @@ fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
         || drop(pipeline("with_mask")),
     );
     drop(pipeline("color_only"));
-    println!("PASS: core rejected fragment sample-mask output before FXC and accepted the color-only sibling");
+    println!(
+        "PASS: core rejected fragment sample-mask output before FXC and accepted the color-only sibling"
+    );
 }
 
 #[test]
@@ -11941,7 +12013,9 @@ fn public_dx11_rejects_sample_index_without_multisampled_shading() {
             "@fragment fn fs(@location(0) @interpolate(perspective) value: f32) -> @location(0) vec4f { return vec4f(value, 0.0, 0.0, 1.0); }".into(),
         ),
     }));
-    println!("PASS: core rejected sample_index and sample-qualified interpolation through Naga's multisampled-shading capability and accepted perspective interpolation");
+    println!(
+        "PASS: core rejected sample_index and sample-qualified interpolation through Naga's multisampled-shading capability and accepted perspective interpolation"
+    );
 }
 
 #[test]
@@ -12148,7 +12222,9 @@ fn public_dx11_fragment_interpolation_profile_boundaries_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: core rejected fragment flat/linear before HAL; FL9_1 centroid and perspective pipelines produced matching 64/64 pixel images");
+    println!(
+        "PASS: core rejected fragment flat/linear before HAL; FL9_1 centroid and perspective pipelines produced matching 64/64 pixel images"
+    );
 }
 
 #[test]
@@ -12402,7 +12478,9 @@ fn public_dx11_srgb_texture_copies_preserve_bits_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: RGBA8 and BGRA8 linear↔sRGB GPU copies preserved all 32 intermediate and round-trip pixels bit-for-bit at forced FL9_1");
+    println!(
+        "PASS: RGBA8 and BGRA8 linear↔sRGB GPU copies preserved all 32 intermediate and round-trip pixels bit-for-bit at forced FL9_1"
+    );
 }
 
 #[test]
@@ -12867,7 +12945,9 @@ fn public_dx11_srgb_texture_sampling_and_rendering() {
         readback.unmap();
     }
     assert_eq!(render_counts, [64, 64]);
-    println!("PASS: RGBA8/BGRA8 sRGB sampling decoded all 128 pixels to [55, 13, 134, 255]; sRGB render targets encoded all 128 pixels with the expected channel order and transfer curve");
+    println!(
+        "PASS: RGBA8/BGRA8 sRGB sampling decoded all 128 pixels to [55, 13, 134, 255]; sRGB render targets encoded all 128 pixels with the expected channel order and transfer curve"
+    );
 }
 
 #[test]
@@ -13303,7 +13383,9 @@ fn public_dx11_srgb_mip_chain_sampling_at_fl91() {
         readback.unmap();
     }
     assert_eq!(verified_pixels, 128);
-    println!("PASS: implicit LOD selected mip 1 for both sRGB formats; 128/128 pixels decoded to [55, 13, 134, 255]");
+    println!(
+        "PASS: implicit LOD selected mip 1 for both sRGB formats; 128/128 pixels decoded to [55, 13, 134, 255]"
+    );
 }
 
 #[test]
@@ -13537,7 +13619,9 @@ fn public_dx11_dont_care_load_overwrite_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 color and depth LoadOp::DontCare; full overwrite produced [255, 0, 0, 255] at all 64 pixels");
+    println!(
+        "PASS: public FL9_1 color and depth LoadOp::DontCare; full overwrite produced [255, 0, 0, 255] at all 64 pixels"
+    );
 }
 
 #[test]
@@ -13665,7 +13749,9 @@ fn public_dx11_discarded_color_is_initialized_before_read_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 StoreOp::Discard followed by copy reinitialized all 64 pixels to transparent black before readback");
+    println!(
+        "PASS: public FL9_1 StoreOp::Discard followed by copy reinitialized all 64 pixels to transparent black before readback"
+    );
 }
 
 #[test]
@@ -13938,7 +14024,9 @@ fn public_dx11_discarded_color_is_initialized_before_sampling_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 StoreOp::Discard followed by sampled-view use reinitialized all 64 pixels to transparent black");
+    println!(
+        "PASS: public FL9_1 StoreOp::Discard followed by sampled-view use reinitialized all 64 pixels to transparent black"
+    );
 }
 
 #[test]
@@ -14084,7 +14172,9 @@ fn public_dx11_discarded_color_is_initialized_before_load_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 render-pass LoadOp::Load after StoreOp::Discard loaded initialized transparent black at all 64 pixels");
+    println!(
+        "PASS: public FL9_1 render-pass LoadOp::Load after StoreOp::Discard loaded initialized transparent black at all 64 pixels"
+    );
 }
 
 #[test]
@@ -14212,7 +14302,9 @@ fn public_dx11_new_color_is_initialized_before_load_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 first LoadOp::Load on a new color attachment observed transparent black at all 64 pixels");
+    println!(
+        "PASS: public FL9_1 first LoadOp::Load on a new color attachment observed transparent black at all 64 pixels"
+    );
 }
 
 #[test]
@@ -14343,7 +14435,9 @@ fn public_dx11_texture_references_survive_until_submission_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 command buffer retained the dropped texture and view through submission; all 64 readback pixels were blue");
+    println!(
+        "PASS: public FL9_1 command buffer retained the dropped texture and view through submission; all 64 readback pixels were blue"
+    );
 }
 
 #[test]
@@ -14391,7 +14485,9 @@ fn public_dx11_rejects_indirect_buffers_at_fl91() {
             }));
         },
     );
-    println!("PASS: public core rejected INDIRECT usage before any D3D11 HAL indirect draw path could execute");
+    println!(
+        "PASS: public core rejected INDIRECT usage before any D3D11 HAL indirect draw path could execute"
+    );
 }
 
 #[test]
@@ -14445,7 +14541,9 @@ fn public_dx11_rejects_compute_pipelines_at_fl91() {
             }));
         },
     );
-    println!("PASS: public core rejected a compute pipeline before any unsupported D3D11 compute method could execute");
+    println!(
+        "PASS: public core rejected a compute pipeline before any unsupported D3D11 compute method could execute"
+    );
 }
 
 #[test]
@@ -14746,7 +14844,9 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: FL9_1 static vertex and fragment loops rendered 64/64 expected pixels; core rejected dynamic loops before FXC");
+    println!(
+        "PASS: FL9_1 static vertex and fragment loops rendered 64/64 expected pixels; core rejected dynamic loops before FXC"
+    );
 }
 
 #[test]
@@ -14817,7 +14917,9 @@ fn public_dx11_rejects_unavailable_query_types_at_fl91() {
             }));
         },
     );
-    println!("PASS: public core rejected occlusion, timestamp and pipeline-statistics query sets before unsupported D3D11 query creation");
+    println!(
+        "PASS: public core rejected occlusion, timestamp and pipeline-statistics query sets before unsupported D3D11 query creation"
+    );
 }
 
 #[test]
@@ -15234,7 +15336,9 @@ fn public_dx11_transient_attachments_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 transient color clear/draw/discard executed; transient D24S8 clear/draw/discard controlled the stored color result, with 64/64 green pixels; core rejected transient sampling, invalid LOAD/STORE, read-only transient depth and an empty render pass");
+    println!(
+        "PASS: public FL9_1 transient color clear/draw/discard executed; transient D24S8 clear/draw/discard controlled the stored color result, with 64/64 green pixels; core rejected transient sampling, invalid LOAD/STORE, read-only transient depth and an empty render pass"
+    );
 }
 
 #[test]
@@ -15786,7 +15890,9 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 D16 depth attachment; near geometry won both draw orders, LOAD preserved depth, CLEAR reset depth and a post-discard LOAD did not expose stale depth; 192/192 pass-transition pixels validated; core rejected mips, stencil view, stencil state");
+    println!(
+        "PASS: public FL9_1 D16 depth attachment; near geometry won both draw orders, LOAD preserved depth, CLEAR reset depth and a post-discard LOAD did not expose stale depth; 192/192 pass-transition pixels validated; core rejected mips, stencil view, stencil state"
+    );
 }
 
 #[test]
@@ -16144,7 +16250,9 @@ fn public_dx11_outputless_fragment_depth_only_pass_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 targetless fragment passes; outputless discard produced 32 red / 32 depth-blocked blue pixels, and an unmatched location-0 color result was ignored while depth still blocked the later draw at all 64 pixels");
+    println!(
+        "PASS: public FL9_1 targetless fragment passes; outputless discard produced 32 red / 32 depth-blocked blue pixels, and an unmatched location-0 color result was ignored while depth still blocked the later draw at all 64 pixels"
+    );
 }
 
 #[test]
@@ -16547,7 +16655,9 @@ fn public_dx11_outputless_fragment_depth_stencil_pass_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 outputless fragment discard with D24S8; stencil equality and later depth comparison independently confirmed 32 red/green pixels where discard prevented stencil/depth writes and 32 blue pixels where the surviving fragment wrote both");
+    println!(
+        "PASS: public FL9_1 outputless fragment discard with D24S8; stencil equality and later depth comparison independently confirmed 32 red/green pixels where discard prevented stencil/depth writes and 32 blue pixels where the surviving fragment wrote both"
+    );
 }
 
 #[test]
@@ -16780,7 +16890,9 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: 64/64 pixels show red; shader depth 0.2 beat vertex depth 0.8 and rejected the later fragment depth 0.8 despite its vertex depth 0.2");
+    println!(
+        "PASS: 64/64 pixels show red; shader depth 0.2 beat vertex depth 0.8 and rejected the later fragment depth 0.8 despite its vertex depth 0.2"
+    );
 }
 
 #[test]
@@ -16963,7 +17075,9 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         poll_ready(scope.pop()).is_none(),
         "LineList pipelines without vertex_index remain supported"
     );
-    println!("PASS: public core accepted supported TriangleList vertex builtins, rejected unsupported topology and hidden-slot exhaustion, and retained ordinary pipelines");
+    println!(
+        "PASS: public core accepted supported TriangleList vertex builtins, rejected unsupported topology and hidden-slot exhaustion, and retained ordinary pipelines"
+    );
 }
 
 #[test]
@@ -17157,7 +17271,9 @@ fn public_dx11_render_bundle_executes_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public render bundle executed one indexed-free triangle and all 64 pixels read back as [255, 64, 0, 255]");
+    println!(
+        "PASS: public render bundle executed one indexed-free triangle and all 64 pixels read back as [255, 64, 0, 255]"
+    );
 }
 
 #[test]
@@ -17714,7 +17830,9 @@ fn public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: indexed render bundle sampled the retained texture after source handles were dropped; all 64 pixels matched [51, 128, 204, 255]");
+    println!(
+        "PASS: indexed render bundle sampled the retained texture after source handles were dropped; all 64 pixels matched [51, 128, 204, 255]"
+    );
 }
 
 #[test]
@@ -18038,7 +18156,9 @@ fn public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: consecutive render bundles rebound both sparse uniform and sampled groups; all 64 pixels matched the left/right expected colors");
+    println!(
+        "PASS: consecutive render bundles rebound both sparse uniform and sampled groups; all 64 pixels matched the left/right expected colors"
+    );
 }
 
 #[test]
@@ -18285,7 +18405,9 @@ fn public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: consecutive render bundles selected distinct 256-byte dynamic uniform offsets; all 64 pixels matched both expected colors after source resources were dropped");
+    println!(
+        "PASS: consecutive render bundles selected distinct 256-byte dynamic uniform offsets; all 64 pixels matched both expected colors after source resources were dropped"
+    );
 }
 
 #[test]
@@ -18589,7 +18711,9 @@ fn public_dx11_render_bundle_pipeline_layout_transition_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: consecutive bundles switched from a uniform-only layout to a texture/sampler-only layout; 64/64 output pixels were red/green as expected after source resources were dropped");
+    println!(
+        "PASS: consecutive bundles switched from a uniform-only layout to a texture/sampler-only layout; 64/64 output pixels were red/green as expected after source resources were dropped"
+    );
 }
 
 #[test]
@@ -18838,7 +18962,9 @@ fn public_dx11_render_bundle_depth_attachment_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: two depth-enabled render bundles retained writable D16 state; the later far green draw failed depth everywhere, and all 64 pixels remained red after dropping the vertex buffer");
+    println!(
+        "PASS: two depth-enabled render bundles retained writable D16 state; the later far green draw failed depth everywhere, and all 64 pixels remained red after dropping the vertex buffer"
+    );
 }
 
 #[test]
@@ -19061,7 +19187,9 @@ fn public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: one render bundle used pass-level scissor and changing blend constants on consecutive executions; all 64 left/right pixels matched red/green");
+    println!(
+        "PASS: one render bundle used pass-level scissor and changing blend constants on consecutive executions; all 64 left/right pixels matched red/green"
+    );
 }
 
 #[test]
@@ -19371,7 +19499,9 @@ fn public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: two executions of one render bundle stored distinct pass stencil references; comparison draws produced red/green halves and all 64 pixels matched");
+    println!(
+        "PASS: two executions of one render bundle stored distinct pass stencil references; comparison draws produced red/green halves and all 64 pixels matched"
+    );
 }
 
 #[test]
@@ -19721,7 +19851,9 @@ fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: twelve sparse dynamic uniforms (six vertex, six fragment) used distinct nonzero subranges and changed output across two draws; 64/64 pixels validated on the FL9_1 hardware adapter");
+    println!(
+        "PASS: twelve sparse dynamic uniforms (six vertex, six fragment) used distinct nonzero subranges and changed output across two draws; 64/64 pixels validated on the FL9_1 hardware adapter"
+    );
 }
 
 #[test]
@@ -19861,7 +19993,9 @@ fn public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point() {
         "TooManySampledTextureSamplerPairs",
         || drop(create_pipeline("fs17")),
     );
-    println!("PASS: 16 selected fragment sampling relationships compiled; a one-pair sibling entry point remained valid; 17 relationships were rejected by core before HAL");
+    println!(
+        "PASS: 16 selected fragment sampling relationships compiled; a one-pair sibling entry point remained valid; 17 relationships were rejected by core before HAL"
+    );
 }
 
 #[test]
@@ -21049,7 +21183,9 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
         );
         drop(encoder.finish());
     });
-    println!("PASS: cube face copies across all {mip_levels} mips, 2D-to-cube and cube-to-2D copies; 64/64 copied pixels matched and core rejected FL9_1 cube-to-buffer readback before HAL");
+    println!(
+        "PASS: cube face copies across all {mip_levels} mips, 2D-to-cube and cube-to-2D copies; 64/64 copied pixels matched and core rejected FL9_1 cube-to-buffer readback before HAL"
+    );
     let cube_view = cube.create_view(&TextureViewDescriptor {
         label: Some("six-face FL9_1 cube SRV"),
         format: Some(TextureFormat::Rgba8Unorm),
@@ -21372,7 +21508,14 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     }
     readback.unmap();
     let checked = WIDTH * height;
-    println!("PASS: FL9_1 cube shader sampled all six uploaded faces across {mip_levels} mip levels{}; {checked}/{checked} readback pixels matched expected colors", if has_partial_view { " and a non-suffix cube view" } else { "" });
+    println!(
+        "PASS: FL9_1 cube shader sampled all six uploaded faces across {mip_levels} mip levels{}; {checked}/{checked} readback pixels matched expected colors",
+        if has_partial_view {
+            " and a non-suffix cube view"
+        } else {
+            ""
+        }
+    );
 }
 
 #[test]
@@ -22025,7 +22168,9 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
             }
         }
         readback.unmap();
-        println!("PASS: FL9_1 3D suffix mip views sampled three uploaded mip levels; 64/64 pixels matched");
+        println!(
+            "PASS: FL9_1 3D suffix mip views sampled three uploaded mip levels; 64/64 pixels matched"
+        );
     } else {
         println!("SKIP: selected FL9_1 RGBA8 3D format query did not report mip support");
     }
@@ -22167,7 +22312,9 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
         assert_eq!(checked, 64);
     }
     readback.unmap();
-    println!("PASS: FL9_1 3D RGBA8 upload, nonzero-offset partial update, zero initialization, sparse sampled bindings and 128 readback pixels verified");
+    println!(
+        "PASS: FL9_1 3D RGBA8 upload, nonzero-offset partial update, zero initialization, sparse sampled bindings and 128 readback pixels verified"
+    );
 }
 
 #[test]
@@ -22666,9 +22813,13 @@ struct VertexOut {
                 ..Default::default()
             }));
         });
-        println!("PASS: public FL9_1 LessEqual comparison border sampling returned {border_color:?} results for all 64 out-of-range pixels; ordinary border and unrequested Zero border were rejected");
+        println!(
+            "PASS: public FL9_1 LessEqual comparison border sampling returned {border_color:?} results for all 64 out-of-range pixels; ordinary border and unrequested Zero border were rejected"
+        );
     } else {
-        println!("PASS: public FL9_1 {depth_format:?} LessEqual depth comparison matched 64 pixels (32 black, 32 red); invalid function, mismatched filters and anisotropy were rejected before HAL");
+        println!(
+            "PASS: public FL9_1 {depth_format:?} LessEqual depth comparison matched 64 pixels (32 black, 32 red); invalid function, mismatched filters and anisotropy were rejected before HAL"
+        );
     }
 }
 
@@ -23183,9 +23334,17 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                     @location(0) color: vec4f,
                 }
                 @group(0) @binding(17) var<uniform> colors: array<vec4f, 4>;
+                fn color_for(index: u32) -> vec4f { return colors[index]; }
+                fn color_for_two_hops(index: u32) -> vec4f { return color_for(index); }
 
                 @vertex fn vs(@location(0) position: vec2f, @builtin(vertex_index) index: u32) -> VertexOutput {
                     return VertexOutput(vec4f(position, 0.5, 1.0), colors[index]);
+                }
+                @vertex fn vs_helper(@location(0) position: vec2f, @builtin(vertex_index) index: u32) -> VertexOutput {
+                    return VertexOutput(vec4f(position, 0.5, 1.0), color_for_two_hops(index));
+                }
+                @vertex fn vs_instance_helper(@location(0) position: vec2f, @builtin(instance_index) index: u32) -> VertexOutput {
+                    return VertexOutput(vec4f(position, 0.5, 1.0), color_for_two_hops(index));
                 }
                 @fragment fn fs(@location(0) color: vec4f) -> @location(0) vec4f {
                     return color;
@@ -23204,35 +23363,61 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 vertex uniform-array indexing pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_layout,
-        },
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::PointList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &[Some(ColorTargetState {
-                format: TextureFormat::Rgba8Unorm,
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 vertex uniform-array layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 17,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
     });
-    let bind_group_layout = pipeline.get_bind_group_layout(0);
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 vertex uniform-array pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let create_pipeline = |label, vertex_entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::PointList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipeline = create_pipeline("FL9_1 direct vertex uniform-array pipeline", "vs");
+    let helper_pipeline =
+        create_pipeline("FL9_1 helper vertex uniform-array pipeline", "vs_helper");
+    let instance_helper_pipeline = create_pipeline(
+        "FL9_1 helper instance uniform-array pipeline",
+        "vs_instance_helper",
+    );
     let uniform_values = [
         [1.0, 0.0, 0.0, 1.0],
         [0.0, 1.0, 0.0, 1.0],
@@ -23301,7 +23486,13 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         view_formats: &[],
     });
     let target_view = target.create_view(&TextureViewDescriptor::default());
-    let readbacks = ["in-range", "out-of-range"].map(|label| {
+    let readbacks = [
+        "in-range",
+        "out-of-range",
+        "helper-chain",
+        "instance-helper",
+    ]
+    .map(|label| {
         device.create_buffer(&BufferDescriptor {
             label: Some(label),
             size: 8 * 256,
@@ -23330,13 +23521,18 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&pipeline);
+            pass.set_pipeline(match draw {
+                2 => &helper_pipeline,
+                3 => &instance_helper_pipeline,
+                _ => &pipeline,
+            });
             pass.set_bind_group(0, &bind_group, &[]);
             pass.set_vertex_buffer(0, vertex.slice(..));
-            if draw == 0 {
-                pass.draw(0..4, 0..1);
-            } else {
-                pass.draw(4..5, 0..1);
+            match draw {
+                0 | 2 => pass.draw(0..4, 0..1),
+                1 => pass.draw(4..5, 0..1),
+                3 => pass.draw(0..4, 2..3),
+                _ => unreachable!(),
             }
         }
         encoder.copy_texture_to_buffer(
@@ -23396,7 +23592,12 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
             .expect("mapped uniform-array readback");
         for y in 0..8 {
             for x in 0..8 {
-                let expected = if index == 0 {
+                let expected = if index == 3 {
+                    expected_points
+                        .iter()
+                        .find(|((point_x, point_y), _)| (*point_x, *point_y) == (x, y))
+                        .map_or([0, 0, 0, 255], |(_, _)| [0, 0, 255, 255])
+                } else if index != 1 {
                     expected_points
                         .iter()
                         .find(|((point_x, point_y), _)| (*point_x, *point_y) == (x, y))
@@ -23411,11 +23612,12 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                     &data[offset..offset + 4],
                     expected,
                     "{} pixel ({x}, {y})",
-                    if index == 0 {
-                        "in-range"
-                    } else {
-                        "out-of-range"
-                    }
+                    [
+                        "in-range",
+                        "out-of-range",
+                        "helper-chain",
+                        "instance-helper"
+                    ][index]
                 );
             }
         }
@@ -23423,6 +23625,6 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         readback.unmap();
     }
     println!(
-        "PASS: sparse vertex uniform array indexed all four entries; index 4 selected the final in-range element"
+        "PASS: direct and two-helper vertex uniform-array reads, including instance_index, selected the expected values; vertex index 4 selected the final in-range element"
     );
 }

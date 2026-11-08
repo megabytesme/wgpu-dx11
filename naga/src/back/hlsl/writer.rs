@@ -505,15 +505,27 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 ));
             }
             if self.options.fl9_instance_index_input {
-                writeln!(self.out, "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; uint naga_fl9_instance_index; }};")?;
+                writeln!(
+                    self.out,
+                    "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; uint naga_fl9_instance_index; }};"
+                )?;
             } else {
-                writeln!(self.out, "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; }};")?;
+                writeln!(
+                    self.out,
+                    "cbuffer naga_fl9_viewport_constants : register(b{register}) {{ float4 {FL9_VIEWPORT_PARAMS}; }};"
+                )?;
             }
-            writeln!(self.out, "precise float4 {FL9_VIEWPORT_ADJUST}(precise float4 p) {{ return float4(p.xy * {FL9_VIEWPORT_PARAMS}.xy + p.ww * {FL9_VIEWPORT_PARAMS}.zw, p.zw); }}")?;
+            writeln!(
+                self.out,
+                "precise float4 {FL9_VIEWPORT_ADJUST}(precise float4 p) {{ return float4(p.xy * {FL9_VIEWPORT_PARAMS}.xy + p.ww * {FL9_VIEWPORT_PARAMS}.zw, p.zw); }}"
+            )?;
         }
 
         if self.options.fl9_instance_index_input && self.options.fl9_viewport_transform.is_none() {
-            writeln!(self.out, "cbuffer naga_fl9_instance_constants : register(b13) {{ float4 naga_fl9_instance_padding; uint naga_fl9_instance_index; }};")?;
+            writeln!(
+                self.out,
+                "cbuffer naga_fl9_instance_constants : register(b13) {{ float4 naga_fl9_instance_padding; uint naga_fl9_instance_index; }};"
+            )?;
         }
 
         if module.uses_mesh_shaders() && self.options.shader_model < ShaderModel::V6_5 {
@@ -769,14 +781,23 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 self.out,
                 "SamplerState naga_fl9_load_sampler : register(s15);"
             )?;
-            writeln!(self.out, "cbuffer naga_fl9_load_dimensions : register(b13) {{ float4 naga_fl9_load_size; }};")?;
+            writeln!(
+                self.out,
+                "cbuffer naga_fl9_load_dimensions : register(b13) {{ float4 naga_fl9_load_size; }};"
+            )?;
             writeln!(self.out, "float4 naga_fl9_load(float2 p, float mip) {{")?;
             writeln!(
                 self.out,
                 "    float2 safe_p = clamp(p, float2(0.0, 0.0), naga_fl9_load_size.xy - 1.0);"
             )?;
-            writeln!(self.out, "    float4 value = {name}.Sample(naga_fl9_load_sampler, (safe_p + 0.5) * naga_fl9_load_size.zw);")?;
-            writeln!(self.out, "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.x < naga_fl9_load_size.x && p.y < naga_fl9_load_size.y) ? value : float4(0.0, 0.0, 0.0, 0.0);")?;
+            writeln!(
+                self.out,
+                "    float4 value = {name}.Sample(naga_fl9_load_sampler, (safe_p + 0.5) * naga_fl9_load_size.zw);"
+            )?;
+            writeln!(
+                self.out,
+                "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.x < naga_fl9_load_size.x && p.y < naga_fl9_load_size.y) ? value : float4(0.0, 0.0, 0.0, 0.0);"
+            )?;
             writeln!(self.out, "}}")?;
         }
 
@@ -1327,8 +1348,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 write!(
                     self.out,
                     "{{ GetAttributeAtVertex({0}.{1}, 0), GetAttributeAtVertex({0}.{1}, 1), GetAttributeAtVertex({0}.{1}, 2) }}",
-                    ep_input.arg_name,
-                    fake_member.name,
+                    ep_input.arg_name, fake_member.name,
                 )?;
             }
             _ => {
@@ -2451,7 +2471,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             }
             _ => arg.ty,
         };
-        self.write_type(module, arg_ty)?;
+        if (self.options.fl9_vertex_index_input || self.options.fl9_instance_index_input)
+            && self
+                .options
+                .fl9_uniform_index_arguments
+                .contains(&(handle.index() as u32, index as u32))
+        {
+            write!(self.out, "float")?;
+        } else {
+            self.write_type(module, arg_ty)?;
+        }
 
         let argument_name = &self.names[&NameKey::FunctionArgument(handle, index as u32)];
 
@@ -3311,7 +3340,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     ref other => {
                         return Err(Error::Custom(format!(
                             "invalid address space {other:?} for atomic statement"
-                        )))
+                        )));
                     }
                 }
                 if let Some(cmp) = compare_expr {
@@ -5682,7 +5711,7 @@ fn get_inner_matrix_of_global_uniform(
             {
                 return mat_data.or_else(|| {
                     array_base.and_then(|array_base| get_inner_matrix_data(module, array_base))
-                })
+                });
             }
             _ => break,
         };
@@ -5748,6 +5777,33 @@ mod fl9_viewport_tests {
         let unsigned = translate(source, &options, ShaderStage::Vertex).unwrap();
         assert!(unsigned.contains("min(uint("), "{unsigned}");
         assert!(unsigned.contains("3u)"), "{unsigned}");
+    }
+
+    #[test]
+    fn fl9_uniform_index_parameter_rewrite_is_explicit() {
+        let source = "struct Values { data: array<vec4f, 4> } @group(0) @binding(7) var<uniform> values: Values; fn indexed(index: u32) -> vec4f { return values.data[index]; } fn ordinary(value: u32) -> vec4f { return vec4f(f32(value)); } @vertex fn main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f { return indexed(index) + ordinary(0u); }";
+        let module = crate::front::wgsl::parse_str(source).unwrap();
+        let index_function = module
+            .functions
+            .iter()
+            .find_map(|(handle, function)| {
+                (function.name.as_deref() == Some("indexed")).then_some(handle.index() as u32)
+            })
+            .unwrap();
+        let mut options = Options {
+            fl9_vertex_index_input: true,
+            ..Options::default()
+        };
+        options
+            .fl9_uniform_index_arguments
+            .push((index_function, 0));
+        let translated = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(translated.contains("float index"), "{translated}");
+        assert!(translated.contains("uint value"), "{translated}");
+
+        options.fl9_uniform_index_arguments.clear();
+        let untranslated = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(untranslated.contains("uint index"), "{untranslated}");
     }
 
     #[test]

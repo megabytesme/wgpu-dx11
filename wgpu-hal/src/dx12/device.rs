@@ -1508,6 +1508,7 @@ impl crate::Device for super::Device {
                 fl9_viewport_transform: None,
                 fl9_instance_index_input: false,
                 fl9_vertex_index_input: false,
+                fl9_uniform_index_arguments: Vec::new(),
                 sampler_buffer_binding_map,
                 external_texture_binding_map,
                 force_loop_bounding: true,

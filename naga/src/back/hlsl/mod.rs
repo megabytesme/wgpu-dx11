@@ -558,6 +558,11 @@ pub struct Options {
     /// backend-provided `NAGA_VERTEX_INDEX` input semantic.
     pub fl9_vertex_index_input: bool,
 
+    /// Function parameters proven by the backend to be used only as bounded
+    /// uniform-array indices or forwarded to another proven parameter. These
+    /// HLSL parameters use `float` for the FL9 emulated-index path.
+    pub fl9_uniform_index_arguments: Vec<(u32, u32)>,
+
     /// Mapping of each bind group's sampler index buffer to a bind target.
     #[cfg_attr(
         feature = "deserialize",
@@ -618,6 +623,7 @@ impl Default for Options {
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
             fl9_vertex_index_input: false,
+            fl9_uniform_index_arguments: Vec::new(),
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,
             dynamic_storage_buffer_offsets_targets: alloc::collections::BTreeMap::new(),

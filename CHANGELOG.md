@@ -60,7 +60,7 @@ Bottom level categories:
 - Add query-backed Depth24Plus attachment and shadow-sampling support to the opt-in FL9_1 D3D11 adapter using D24S8 native storage without exposing stencil.
 - Add query-gated FL9_1 black and white border addressing for depth comparison samplers while rejecting ordinary border samplers.
 - Accept proven in-range `textureSampleBias` literals forwarded through helper calls in the opt-in FL9_1 D3D11 backend.
-- Support direct `vertex_index` and `instance_index` reads from fixed-size `vec3` and `vec4` uniform arrays in the opt-in FL9_1 D3D11 backend.
+- Support direct `vertex_index` and `instance_index` reads, including unchanged helper forwarding, from fixed-size `vec3` and `vec4` uniform arrays in the opt-in FL9_1 D3D11 backend.
 
 ### Changes
 

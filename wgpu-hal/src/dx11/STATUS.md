@@ -1082,13 +1082,15 @@ green pixels on the 16×16 target.
 ## Direct vertex-stage uniform-array indexing
 
 Core and HAL permit a selected vertex entry point to index a fixed-size uniform
-array of `vec3` or `vec4` directly with `vertex_index` or `instance_index`.
-Computed indices, helper-mediated accesses, fragment-stage accesses, nested
-arrays and other element types remain rejected. Naga emits a signed bounds
-clamp for the FL9_1 profiles because FXC rejects its default unsigned clamp
-form. The strict public RTX 3090 Ti test at requested/actual FL9_1 read four
-distinct elements and confirmed an index equal to the array length uses the
-final in-range value. Historical FL9_1 driver behavior remains unverified.
+array of `vec3` or `vec4` with `vertex_index` or `instance_index`, including
+unchanged forwarding of that builtin through helper parameters when the value
+is used exclusively for the supported array access. Computed indices,
+fragment-stage accesses, nested arrays and other element types remain
+rejected. Naga emits a signed bounds clamp for the FL9_1 profiles because FXC
+rejects its default unsigned clamp form. The strict public RTX 3090 Ti test at
+requested/actual FL9_1 read distinct entries through direct and two-helper
+paths and confirmed an index equal to the array length uses the final
+in-range value. Historical FL9_1 driver behavior remains unverified.
 
 ## Hidden `vertex_index` input-slot validation
 

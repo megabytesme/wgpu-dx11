@@ -292,7 +292,7 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs(
     bindings: &[ShaderBinding],
     input_options: Fl9ShaderInputOptions,
 ) -> Result<Vec<u8>, NagaCompileError> {
-    let (source, name) = translate_naga_with_viewport_and_fl9_inputs(
+    compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         module,
         info,
         stage,
@@ -300,10 +300,35 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs(
         profile,
         bindings,
         input_options,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+    bindings: &[ShaderBinding],
+    input_options: Fl9ShaderInputOptions,
+    uniform_index_arguments: &[(u32, u32)],
+) -> Result<Vec<u8>, NagaCompileError> {
+    let (source, name) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+        module,
+        info,
+        stage,
+        entry,
+        profile,
+        bindings,
+        input_options,
+        uniform_index_arguments,
     )?;
     compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
 }
 
+#[cfg(test)]
 fn translate_naga_with_viewport_and_fl9_inputs(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
@@ -312,6 +337,29 @@ fn translate_naga_with_viewport_and_fl9_inputs(
     profile: ShaderProfile,
     bindings: &[ShaderBinding],
     input_options: Fl9ShaderInputOptions,
+) -> Result<(String, String), NagaCompileError> {
+    translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+        module,
+        info,
+        stage,
+        entry,
+        profile,
+        bindings,
+        input_options,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+    bindings: &[ShaderBinding],
+    input_options: Fl9ShaderInputOptions,
+    uniform_index_arguments: &[(u32, u32)],
 ) -> Result<(String, String), NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
@@ -350,6 +398,7 @@ fn translate_naga_with_viewport_and_fl9_inputs(
             && stage == naga::ShaderStage::Vertex,
         fl9_vertex_index_input: input_options.vertex_index_input
             && stage == naga::ShaderStage::Vertex,
+        fl9_uniform_index_arguments: uniform_index_arguments.to_vec(),
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
         // FXC rejects Naga's dynamic loop guard at FL9_1. Without the guard,

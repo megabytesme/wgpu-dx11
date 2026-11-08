@@ -4,8 +4,8 @@ use super::shader::compile_naga_with_bindings;
 use super::{
     device::NativeDevice,
     shader::{
-        compile_naga_with_viewport_and_fl9_inputs, shader_binding_kind, Fl9ShaderInputOptions,
-        NagaCompileError, ShaderBinding, ShaderBindingKind, ShaderProfile,
+        compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices, shader_binding_kind,
+        Fl9ShaderInputOptions, NagaCompileError, ShaderBinding, ShaderBindingKind, ShaderProfile,
     },
 };
 use alloc::{format, string::ToString, sync::Arc, vec::Vec};
@@ -149,7 +149,7 @@ mod tests {
             &function,
             info.get_entry_point(index),
             Some(&core::cell::Cell::new(1)),
-            |_, _, _| false
+            |_, _, _, _| false
         ));
         let ty = module
             .types
@@ -615,6 +615,11 @@ mod tests {
             @group(0) @binding(7) var<uniform> uniforms: Uniforms;
             @group(0) @binding(42) var<uniform> color: vec4f;
             fn choose(index: u32) -> vec4f { return uniforms.vec4_values[index]; }
+            fn choose_twice(index: u32) -> vec4f { return choose(index); }
+            fn choose_and_compare(index: u32) -> vec4f {
+                let is_zero = index == 0u;
+                return uniforms.vec4_values[index] + select(vec4f(0.0), color, is_zero);
+            }
             @vertex fn vertex_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
                 return uniforms.vec4_values[index];
             }
@@ -629,6 +634,25 @@ mod tests {
             }
             @vertex fn helper_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
                 return choose(index);
+            }
+            @vertex fn helper_index_two_hops(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return choose_twice(index);
+            }
+            @vertex fn helper_instance_index_two_hops(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
+                return choose_twice(index);
+            }
+            @vertex fn helper_index_mixed_calls(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return choose(index) + choose(0u);
+            }
+            @vertex fn helper_index_non_index_use(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return choose_and_compare(index);
+            }
+            @vertex fn helper_index_uniform_value(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return choose(u32(color.x));
+            }
+            @vertex fn helper_index_local_copy(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var copied = index;
+                return choose(copied);
             }
             @vertex fn computed_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
                 return uniforms.vec4_values[index + 1u];
@@ -685,6 +709,9 @@ mod tests {
             ("instance_index", instance_options),
             ("component_index", vertex_options),
             ("vec3_index", vertex_options),
+            ("helper_index", vertex_options),
+            ("helper_index_two_hops", vertex_options),
+            ("helper_instance_index_two_hops", instance_options),
         ] {
             let index = selected(naga::ShaderStage::Vertex, name);
             for requests_checks in [false, true] {
@@ -704,7 +731,9 @@ mod tests {
         }
 
         for name in [
-            "helper_index",
+            "helper_index_mixed_calls",
+            "helper_index_uniform_value",
+            "helper_index_local_copy",
             "computed_index",
             "uniform_vector_index",
             "integer_array_index",
@@ -728,6 +757,59 @@ mod tests {
                     "{name} must remain rejected"
                 );
             }
+        }
+
+        let uniform_binding = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        for (name, options) in [
+            ("helper_index_two_hops", vertex_options),
+            ("helper_instance_index_two_hops", instance_options),
+        ] {
+            let helper_entry = selected(naga::ShaderStage::Vertex, name);
+            let helper_indices = fl9_uniform_index_helper_arguments(
+                &module,
+                &info,
+                &module.entry_points[helper_entry].function,
+                info.get_entry_point(helper_entry),
+                DynamicAccessMode::new(naga::ShaderStage::Vertex, options, true, true),
+            )
+            .expect("helper index parameters have a supported provenance");
+            assert_eq!(helper_indices.len(), 2);
+            let compilation = compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                naga::ShaderStage::Vertex,
+                name,
+                ShaderProfile::VertexLevel9_1,
+                &uniform_binding,
+                options,
+                &helper_indices,
+            );
+            assert!(
+                compilation.is_ok(),
+                "{name} compilation failed: {compilation:?}"
+            );
+        }
+
+        for name in ["helper_index_mixed_calls", "helper_index_non_index_use"] {
+            let entry = selected(naga::ShaderStage::Vertex, name);
+            assert!(
+                fl9_uniform_index_helper_arguments(
+                    &module,
+                    &info,
+                    &module.entry_points[entry].function,
+                    info.get_entry_point(entry),
+                    DynamicAccessMode::new(naga::ShaderStage::Vertex, vertex_options, true, true,),
+                )
+                .is_none(),
+                "{name} must not rewrite a helper parameter with unsafe uses"
+            );
         }
 
         for name in ["local_array_index", "local_array_write"] {
@@ -1651,7 +1733,7 @@ where
         function,
         function_info,
         None,
-        |module, function, info| {
+        |module, _, function, info| {
             function
                 .expressions
                 .iter()
@@ -1669,7 +1751,12 @@ fn reachable_function<F>(
     predicate: F,
 ) -> bool
 where
-    F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo) -> bool,
+    F: Fn(
+        &naga::Module,
+        Option<naga::Handle<naga::Function>>,
+        &naga::Function,
+        &naga::valid::FunctionInfo,
+    ) -> bool,
 {
     fn block_contains<F>(
         module: &naga::Module,
@@ -1681,7 +1768,12 @@ where
         depth: usize,
     ) -> bool
     where
-        F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo) -> bool,
+        F: Fn(
+            &naga::Module,
+            Option<naga::Handle<naga::Function>>,
+            &naga::Function,
+            &naga::valid::FunctionInfo,
+        ) -> bool,
     {
         if depth >= 256 {
             return true;
@@ -1767,6 +1859,7 @@ where
                     function_contains(
                         module,
                         module_info,
+                        Some(*function),
                         &module.functions[*function],
                         &module_info[*function],
                         visited,
@@ -1778,9 +1871,11 @@ where
             _ => false,
         })
     }
+    #[allow(clippy::too_many_arguments)]
     fn function_contains<F>(
         module: &naga::Module,
         module_info: &naga::valid::ModuleInfo,
+        function_handle: Option<naga::Handle<naga::Function>>,
         function: &naga::Function,
         function_info: &naga::valid::FunctionInfo,
         visited: &mut Vec<naga::Handle<naga::Function>>,
@@ -1788,10 +1883,15 @@ where
         walk: (Option<&core::cell::Cell<usize>>, usize),
     ) -> bool
     where
-        F: Fn(&naga::Module, &naga::Function, &naga::valid::FunctionInfo) -> bool,
+        F: Fn(
+            &naga::Module,
+            Option<naga::Handle<naga::Function>>,
+            &naga::Function,
+            &naga::valid::FunctionInfo,
+        ) -> bool,
     {
         let (budget, depth) = walk;
-        predicate(module, function, function_info)
+        predicate(module, function_handle, function, function_info)
             || block_contains(
                 module,
                 module_info,
@@ -1805,6 +1905,7 @@ where
     function_contains(
         module,
         module_info,
+        None,
         function,
         function_info,
         &mut Vec::new(),
@@ -2015,15 +2116,16 @@ fn has_unsafe_integer_semantics_with_budget(
     )
 }
 
-fn has_unsafe_integer_semantics_with_fl9_inputs(
+fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
     profile: ShaderProfile,
     input_options: Fl9ShaderInputOptions,
+    uniform_index_arguments: &[(u32, u32)],
 ) -> bool {
-    has_unsafe_integer_semantics_with_options(
+    has_unsafe_integer_semantics_with_options_and_uniform_indices(
         module,
         info,
         function,
@@ -2031,9 +2133,11 @@ fn has_unsafe_integer_semantics_with_fl9_inputs(
         profile,
         65536,
         input_options,
+        uniform_index_arguments,
     )
 }
 
+#[cfg(test)]
 fn has_unsafe_integer_semantics_with_options(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
@@ -2042,6 +2146,29 @@ fn has_unsafe_integer_semantics_with_options(
     profile: ShaderProfile,
     limit: usize,
     input_options: Fl9ShaderInputOptions,
+) -> bool {
+    has_unsafe_integer_semantics_with_options_and_uniform_indices(
+        module,
+        info,
+        function,
+        function_info,
+        profile,
+        limit,
+        input_options,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    profile: ShaderProfile,
+    limit: usize,
+    input_options: Fl9ShaderInputOptions,
+    uniform_index_arguments: &[(u32, u32)],
 ) -> bool {
     if !matches!(
         profile,
@@ -2096,7 +2223,7 @@ fn has_unsafe_integer_semantics_with_options(
         function,
         function_info,
         Some(&budget),
-        |module, function, info| {
+        |module, function_handle, function, info| {
             let Some(remaining) = budget.get().checked_sub(function.arguments.len()) else {
                 return true;
             };
@@ -2108,7 +2235,12 @@ fn has_unsafe_integer_semantics_with_options(
                             || (input_options.instance_index_input
                                 && is_supported_instance_index_argument(module, function, index))
                             || (input_options.vertex_index_input
-                                && is_supported_vertex_index_argument(module, function, index))))
+                                && is_supported_vertex_index_argument(module, function, index))
+                            || function_handle.is_some_and(|handle| {
+                                uniform_index_arguments
+                                    .contains(&(handle.index() as u32, index as u32))
+                                    && is_u32_scalar(module, argument.ty)
+                            })))
                 {
                     return true;
                 }
@@ -2141,7 +2273,15 @@ fn has_unsafe_integer_semantics_with_options(
                         ) || (input_options.instance_index_input
                             && is_instance_index_expression(module, function, handle))
                             || (input_options.vertex_index_input
-                                && is_vertex_index_expression(module, function, handle)));
+                                && is_vertex_index_expression(module, function, handle))
+                            || function_handle.is_some_and(|function_handle| {
+                                is_supported_uniform_index_helper_expression(
+                                    function,
+                                    function_handle,
+                                    handle,
+                                    uniform_index_arguments,
+                                )
+                            }));
                 let integer_operation = match *expression {
                     naga::Expression::Binary { left, right, .. } => integer(left) || integer(right),
                     naga::Expression::Unary { expr, .. } => integer(expr) || integer(handle),
@@ -2611,54 +2751,486 @@ fn has_unsupported_dynamic_access(
         uses_uniform,
         requests_checks,
     } = mode;
-    reachable_function(
-        module,
-        module_info,
-        function,
-        function_info,
-        None,
-        |module, function, info| {
-            let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
-            function.expressions.iter().any(|(handle, expression)| {
-                let naga::Expression::Access { base, index } = *expression else {
-                    return false;
-                };
-                if info[handle].ref_count == 0 || kinds.is_const(index) {
-                    return false;
-                }
+    let mut pending = alloc::vec![(None, Vec::new())];
+    let mut visited = Vec::new();
+    while let Some((function_handle, parameter_origins)) = pending.pop() {
+        let context = (function_handle, parameter_origins.clone());
+        if visited.contains(&context) {
+            continue;
+        }
+        visited.push(context);
+        if visited.len() > 1024 {
+            return true;
+        }
 
-                if dynamic_access_has_uniform_origin(module, function, info, base) {
-                    return !is_supported_dynamic_uniform_array_read(
+        let (function, function_info) = match function_handle {
+            Some(handle) => (&module.functions[handle], &module_info[handle]),
+            None => (function, function_info),
+        };
+        if function_has_unsupported_dynamic_access(
+            module,
+            function,
+            function_info,
+            stage,
+            input_options,
+            uses_uniform,
+            requests_checks,
+            &parameter_origins,
+        ) {
+            return true;
+        }
+
+        let Some(call_sites) = collect_dynamic_call_sites(&function.body) else {
+            return true;
+        };
+        for (callee, arguments) in call_sites {
+            let callee_function = &module.functions[callee];
+            if arguments.len() != callee_function.arguments.len() {
+                return true;
+            }
+            let callee_origins = arguments
+                .into_iter()
+                .zip(&callee_function.arguments)
+                .map(|(argument, parameter)| {
+                    is_u32_scalar(module, parameter.ty)
+                        && direct_builtin_index_expression(
+                            module,
+                            function,
+                            function_info,
+                            argument,
+                            &parameter_origins,
+                            input_options,
+                        )
+                })
+                .collect();
+            pending.push((Some(callee), callee_origins));
+        }
+    }
+    false
+}
+
+fn fl9_uniform_index_helper_arguments(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    entry_function: &naga::Function,
+    entry_info: &naga::valid::FunctionInfo,
+    mode: DynamicAccessMode,
+) -> Option<Vec<(u32, u32)>> {
+    if mode.stage != naga::ShaderStage::Vertex
+        || !(mode.input_options.vertex_index_input || mode.input_options.instance_index_input)
+    {
+        return Some(Vec::new());
+    }
+
+    let mut pending = alloc::vec![(None, Vec::new())];
+    let mut visited = Vec::new();
+    let mut calls = Vec::new();
+    let mut indexed_arguments = Vec::new();
+    while let Some((function_handle, parameter_origins)) = pending.pop() {
+        let context = (function_handle, parameter_origins.clone());
+        if visited.contains(&context) {
+            continue;
+        }
+        visited.push(context);
+        if visited.len() > 1024 {
+            return None;
+        }
+
+        let (function, function_info) = match function_handle {
+            Some(handle) => (&module.functions[handle], &module_info[handle]),
+            None => (entry_function, entry_info),
+        };
+        if function_has_unsupported_dynamic_access(
+            module,
+            function,
+            function_info,
+            mode.stage,
+            mode.input_options,
+            mode.uses_uniform,
+            mode.requests_checks,
+            &parameter_origins,
+        ) {
+            return None;
+        }
+
+        let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+        for (handle, expression) in function.expressions.iter() {
+            let naga::Expression::Access { base, index } = *expression else {
+                continue;
+            };
+            if function_info[handle].ref_count == 0
+                || kinds.is_const(index)
+                || !dynamic_access_has_uniform_origin(module, function, function_info, base)
+            {
+                continue;
+            }
+            if !is_supported_dynamic_uniform_array_read(
+                DynamicUniformAccessContext {
+                    module,
+                    function,
+                    function_info,
+                    stage: mode.stage,
+                    input_options: mode.input_options,
+                    supported_builtin_arguments: &parameter_origins,
+                },
+                handle,
+                base,
+                index,
+            ) {
+                return None;
+            }
+            if let (Some(function_handle), Some(argument)) = (
+                function_handle,
+                direct_function_argument_index(function, index),
+            ) {
+                if parameter_origins.get(argument).copied().unwrap_or(false)
+                    && function
+                        .arguments
+                        .get(argument)
+                        .is_some_and(|parameter| is_u32_scalar(module, parameter.ty))
+                {
+                    indexed_arguments.push((function_handle, argument as u32));
+                }
+            }
+        }
+
+        let call_sites = collect_dynamic_call_sites(&function.body)?;
+        for (callee, arguments) in call_sites {
+            let callee_function = &module.functions[callee];
+            if arguments.len() != callee_function.arguments.len() {
+                return None;
+            }
+            let callee_origins = arguments
+                .iter()
+                .copied()
+                .zip(&callee_function.arguments)
+                .map(|(argument, parameter)| {
+                    is_u32_scalar(module, parameter.ty)
+                        && direct_builtin_index_expression(
+                            module,
+                            function,
+                            function_info,
+                            argument,
+                            &parameter_origins,
+                            mode.input_options,
+                        )
+                })
+                .collect::<Vec<_>>();
+            calls.push((function_handle, callee, arguments, callee_origins.clone()));
+            pending.push((Some(callee), callee_origins));
+        }
+    }
+
+    let mut marked = indexed_arguments;
+    marked.sort_unstable_by_key(|(function, argument)| (function.index(), *argument));
+    marked.dedup();
+    loop {
+        let mut changed = false;
+        for (caller, callee, arguments, origins) in &calls {
+            for (argument, &origin) in origins.iter().enumerate() {
+                if !marked.contains(&(*callee, argument as u32)) {
+                    continue;
+                }
+                if !origin {
+                    return None;
+                }
+                if let Some(caller) = caller {
+                    let caller_function = &module.functions[*caller];
+                    let caller_argument =
+                        direct_function_argument_index(caller_function, arguments[argument])?;
+                    if !caller_function
+                        .arguments
+                        .get(caller_argument)
+                        .is_some_and(|parameter| is_u32_scalar(module, parameter.ty))
+                    {
+                        return None;
+                    }
+                    let marker = (*caller, caller_argument as u32);
+                    if !marked.contains(&marker) {
+                        marked.push(marker);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    for &(function_handle, argument) in &marked {
+        if visited.iter().any(|(handle, origins)| {
+            *handle == Some(function_handle)
+                && !origins.get(argument as usize).copied().unwrap_or(false)
+        }) || !helper_index_argument_has_only_index_uses(
+            module,
+            &module.functions[function_handle],
+            &module_info[function_handle],
+            argument as usize,
+            &marked,
+            mode,
+        ) {
+            return None;
+        }
+    }
+
+    marked.sort_unstable_by_key(|(function, argument)| (function.index(), *argument));
+    Some(
+        marked
+            .into_iter()
+            .map(|(function, argument)| (function.index() as u32, argument))
+            .collect(),
+    )
+}
+
+fn helper_index_argument_has_only_index_uses(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    argument: usize,
+    marked: &[(naga::Handle<naga::Function>, u32)],
+    mode: DynamicAccessMode,
+) -> bool {
+    let Some(parameter) = function.arguments.get(argument) else {
+        return false;
+    };
+    if !is_u32_scalar(module, parameter.ty) {
+        return false;
+    }
+    let Some(argument_expression) = function.expressions.iter().find_map(|(handle, expression)| {
+        matches!(expression, naga::Expression::FunctionArgument(index) if *index as usize == argument)
+            .then_some(handle)
+    }) else {
+        return false;
+    };
+
+    let mut value_expressions = alloc::vec![argument_expression];
+    for (handle, expression) in function.expressions.iter() {
+        if matches!(expression, naga::Expression::Load { pointer } if *pointer == argument_expression)
+        {
+            value_expressions.push(handle);
+        }
+    }
+    let mut expected_references = alloc::vec![0usize; function.expressions.len()];
+    for _ in value_expressions.iter().skip(1) {
+        expected_references[argument_expression.index()] += 1;
+    }
+
+    let mut supported_arguments = alloc::vec![false; function.arguments.len()];
+    supported_arguments[argument] = true;
+    let input_options = mode.input_options;
+    for (handle, expression) in function.expressions.iter() {
+        if let naga::Expression::Access { base, index } = *expression {
+            if value_expressions.contains(&index) {
+                if !dynamic_access_has_uniform_origin(module, function, function_info, base)
+                    || !is_supported_dynamic_uniform_array_read(
                         DynamicUniformAccessContext {
                             module,
                             function,
-                            function_info: info,
-                            stage,
+                            function_info,
+                            stage: mode.stage,
                             input_options,
+                            supported_builtin_arguments: &supported_arguments,
                         },
                         handle,
                         base,
                         index,
-                    );
-                }
-
-                if !requests_checks {
+                    )
+                {
                     return false;
                 }
+                expected_references[index.index()] += 1;
+            }
+        }
+    }
 
-                match *info[base].ty.inner_with(&module.types) {
-                    naga::TypeInner::Vector { .. } => false,
-                    naga::TypeInner::ValuePointer { size: Some(_), .. } => true,
-                    naga::TypeInner::Pointer { base, .. }
-                        if matches!(module.types[base].inner, naga::TypeInner::Vector { .. }) =>
-                    {
-                        true
-                    }
-                    _ => uses_uniform,
+    let Some(call_sites) = collect_dynamic_call_sites(&function.body) else {
+        return false;
+    };
+    for (callee, arguments) in call_sites {
+        for (callee_argument, &expression) in arguments.iter().enumerate() {
+            if value_expressions.contains(&expression) {
+                if !marked.contains(&(callee, callee_argument as u32)) {
+                    return false;
                 }
-            })
+                expected_references[expression.index()] += 1;
+            }
+        }
+    }
+
+    value_expressions.iter().all(|&expression| {
+        function_info[expression].ref_count == expected_references[expression.index()]
+    })
+}
+
+fn direct_function_argument_index(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> Option<usize> {
+    match function.expressions[expression] {
+        naga::Expression::FunctionArgument(argument) => Some(argument as usize),
+        naga::Expression::Load { pointer } => match function.expressions[pointer] {
+            naga::Expression::FunctionArgument(argument) => Some(argument as usize),
+            _ => None,
         },
+        _ => None,
+    }
+}
+
+fn function_has_unsupported_dynamic_access(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    stage: naga::ShaderStage,
+    input_options: Fl9ShaderInputOptions,
+    uses_uniform: bool,
+    requests_checks: bool,
+    supported_builtin_arguments: &[bool],
+) -> bool {
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    function.expressions.iter().any(|(handle, expression)| {
+        let naga::Expression::Access { base, index } = *expression else {
+            return false;
+        };
+        if function_info[handle].ref_count == 0 || kinds.is_const(index) {
+            return false;
+        }
+
+        if dynamic_access_has_uniform_origin(module, function, function_info, base) {
+            return !is_supported_dynamic_uniform_array_read(
+                DynamicUniformAccessContext {
+                    module,
+                    function,
+                    function_info,
+                    stage,
+                    input_options,
+                    supported_builtin_arguments,
+                },
+                handle,
+                base,
+                index,
+            );
+        }
+
+        if !requests_checks {
+            return false;
+        }
+
+        match *function_info[base].ty.inner_with(&module.types) {
+            naga::TypeInner::Vector { .. } => false,
+            naga::TypeInner::ValuePointer { size: Some(_), .. } => true,
+            naga::TypeInner::Pointer { base, .. }
+                if matches!(module.types[base].inner, naga::TypeInner::Vector { .. }) =>
+            {
+                true
+            }
+            _ => uses_uniform,
+        }
+    })
+}
+
+type DynamicCallSite = (
+    naga::Handle<naga::Function>,
+    Vec<naga::Handle<naga::Expression>>,
+);
+
+fn collect_dynamic_call_sites(block: &naga::Block) -> Option<Vec<DynamicCallSite>> {
+    let mut call_sites = Vec::new();
+    let mut blocks = alloc::vec![block];
+    let mut budget = 65_536usize;
+    while let Some(block) = blocks.pop() {
+        for statement in block.iter() {
+            if budget == 0 {
+                return None;
+            }
+            budget -= 1;
+            match statement {
+                naga::Statement::Call {
+                    function,
+                    arguments,
+                    ..
+                } => call_sites.push((*function, arguments.to_vec())),
+                naga::Statement::Block(block) => blocks.push(block),
+                naga::Statement::If { accept, reject, .. } => {
+                    blocks.push(accept);
+                    blocks.push(reject);
+                }
+                naga::Statement::Switch { cases, .. } => {
+                    blocks.extend(cases.iter().map(|case| &case.body));
+                }
+                naga::Statement::Loop {
+                    body, continuing, ..
+                } => {
+                    blocks.push(body);
+                    blocks.push(continuing);
+                }
+                _ => {}
+            }
+        }
+    }
+    Some(call_sites)
+}
+
+fn is_u32_scalar(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    matches!(
+        module.types[ty].inner,
+        naga::TypeInner::Scalar(naga::Scalar {
+            kind: naga::ScalarKind::Uint,
+            width: 4,
+        })
     )
+}
+
+fn is_supported_uniform_index_helper_expression(
+    function: &naga::Function,
+    function_handle: naga::Handle<naga::Function>,
+    expression: naga::Handle<naga::Expression>,
+    supported_arguments: &[(u32, u32)],
+) -> bool {
+    let argument = match function.expressions[expression] {
+        naga::Expression::FunctionArgument(argument) => argument,
+        naga::Expression::Load { pointer } => match function.expressions[pointer] {
+            naga::Expression::FunctionArgument(argument) => argument,
+            _ => return false,
+        },
+        _ => return false,
+    };
+    supported_arguments.contains(&(function_handle.index() as u32, argument))
+}
+
+fn direct_builtin_index_expression(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    expression: naga::Handle<naga::Expression>,
+    supported_builtin_arguments: &[bool],
+    input_options: Fl9ShaderInputOptions,
+) -> bool {
+    if input_options.vertex_index_input && is_vertex_index_expression(module, function, expression)
+        || input_options.instance_index_input
+            && is_instance_index_expression(module, function, expression)
+    {
+        return true;
+    }
+    let argument = match function.expressions[expression] {
+        naga::Expression::FunctionArgument(argument) => argument as usize,
+        naga::Expression::Load { pointer } => match function.expressions[pointer] {
+            naga::Expression::FunctionArgument(argument) => argument as usize,
+            _ => return false,
+        },
+        _ => return false,
+    };
+    supported_builtin_arguments
+        .get(argument)
+        .copied()
+        .unwrap_or(false)
+        && matches!(
+            function_info[expression].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
 }
 
 fn dynamic_access_has_uniform_origin(
@@ -2810,6 +3382,7 @@ struct DynamicUniformAccessContext<'a> {
     function_info: &'a naga::valid::FunctionInfo,
     stage: naga::ShaderStage,
     input_options: Fl9ShaderInputOptions,
+    supported_builtin_arguments: &'a [bool],
 }
 
 fn is_supported_dynamic_uniform_array_read(
@@ -2824,6 +3397,7 @@ fn is_supported_dynamic_uniform_array_read(
         function_info,
         stage,
         input_options,
+        supported_builtin_arguments,
     } = context;
     if stage != naga::ShaderStage::Vertex
         || !matches!(
@@ -2840,10 +3414,14 @@ fn is_supported_dynamic_uniform_array_read(
                 } if is_float_array_element(module, base)
             )
         )
-        || !(input_options.vertex_index_input
-            && is_vertex_index_expression(module, function, index)
-            || input_options.instance_index_input
-                && is_instance_index_expression(module, function, index))
+        || !direct_builtin_index_expression(
+            module,
+            function,
+            function_info,
+            index,
+            supported_builtin_arguments,
+            input_options,
+        )
         || block_uses_dynamic_access_as_pointer(
             module,
             function,
@@ -2987,7 +3565,7 @@ fn has_unsafe_matrix_store_with_budget(
                     return arguments
                         .get(index as usize)
                         .copied()
-                        .unwrap_or(Provenance::Unknown)
+                        .unwrap_or(Provenance::Unknown);
                 }
                 _ => return Provenance::Unknown,
             }
@@ -3534,13 +4112,38 @@ impl ShaderModule {
                 "D3D11 FL9 texture sample bias is not implemented safely".into(),
             ));
         }
-        if has_unsafe_integer_semantics_with_fl9_inputs(
+        let uses_uniform = module.global_variables.iter().any(|(handle, global)| {
+            !entry_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
+        });
+        let dynamic_access_mode =
+            DynamicAccessMode::new(stage, input_options, uses_uniform, requests_checks);
+        let uniform_index_arguments = if matches!(profile, ShaderProfile::VertexLevel9_1)
+            && (input_options.vertex_index_input || input_options.instance_index_input)
+        {
+            fl9_uniform_index_helper_arguments(
+                &module,
+                &info,
+                &module.entry_points[entry_index].function,
+                entry_info,
+                dynamic_access_mode,
+            )
+            .ok_or_else(|| {
+                crate::PipelineError::Linkage(
+                    stages,
+                    "unsupported FL9_1 helper uniform-index parameter usage".into(),
+                )
+            })?
+        } else {
+            Vec::new()
+        };
+        if has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
             &module,
             &info,
             &module.entry_points[entry_index].function,
             entry_info,
             profile,
             input_options,
+            &uniform_index_arguments,
         ) {
             return Err(crate::PipelineError::Linkage(
                 stages,
@@ -3568,9 +4171,6 @@ impl ShaderModule {
                 "checked D3D11 buffer and storage bindings are not implemented".into(),
             ));
         }
-        let uses_uniform = module.global_variables.iter().any(|(handle, global)| {
-            !entry_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
-        });
         if has_unsafe_matrix_store(
             &module,
             &info,
@@ -3592,7 +4192,7 @@ impl ShaderModule {
                 &info,
                 &module.entry_points[entry_index].function,
                 entry_info,
-                DynamicAccessMode::new(stage, input_options, uses_uniform, requests_checks),
+                dynamic_access_mode,
             )
         {
             return Err(crate::PipelineError::Linkage(
@@ -3622,7 +4222,7 @@ impl ShaderModule {
                 &module, &info, entry, profile, &present,
             )
         } else {
-            compile_naga_with_viewport_and_fl9_inputs(
+            compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
                 &module,
                 &info,
                 stage,
@@ -3630,6 +4230,7 @@ impl ShaderModule {
                 profile,
                 &present,
                 input_options,
+                &uniform_index_arguments,
             )
         };
         compiled.map_err(|error| {
