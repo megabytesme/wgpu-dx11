@@ -125,6 +125,289 @@ fn clear_and_verify(
     readback.unmap();
 }
 
+#[test]
+fn public_dx11_uniform_gpu_updates_are_ordered_between_draws_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=two GPU uniform copies interleaved with draws",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 ordered uniform updates"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the physical FL9_1 device");
+
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 ordered uniform layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 17,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 ordered uniform pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 ordered uniform shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(17) var<uniform> color: vec4f;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return color; }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 ordered uniform pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let source_buffer = |label, color: [f32; 4]| {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            size: 16,
+            usage: BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+        });
+        let mut data = [0u8; 16];
+        for (component, value) in color.into_iter().enumerate() {
+            data[component * 4..component * 4 + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+        buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("map uniform payload source")
+            .copy_from_slice(&data);
+        buffer.unmap();
+        buffer
+    };
+    let red_source = source_buffer("FL9_1 red uniform payload", [1.0, 0.0, 0.0, 1.0]);
+    let green_source = source_buffer("FL9_1 green uniform payload", [0.0, 1.0, 0.0, 1.0]);
+    let uniform = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 execution-time uniform destination"),
+        size: 16,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 ordered uniform bind group"),
+        layout: &layout,
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: uniform.as_entire_binding(),
+        }],
+    });
+    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_bytes = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect::<Vec<_>>();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 ordered uniform full-screen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map ordered uniform triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 ordered uniform output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 ordered uniform readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 interleaved uniform updates and draws"),
+    });
+    encoder.copy_buffer_to_buffer(&red_source, 0, &uniform, 0, 16);
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 draw using first uniform update"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_buffer_to_buffer(&green_source, 0, &uniform, 0, 16);
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 draw using second uniform update"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for interleaved uniform GPU work");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("uniform readback callback")
+        .expect("map interleaved uniform output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped interleaved uniform output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 255, 0, 255]
+                };
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected,
+                    "interleaved uniform output pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: two GPU copies updated one uniform between draws in a single submission; 32 red and 32 green pixels matched"
+    );
+}
+
 fn expect_validation_error(device: &Device, label: &str, operation: impl FnOnce()) {
     let scope = device.push_error_scope(ErrorFilter::Validation);
     operation();

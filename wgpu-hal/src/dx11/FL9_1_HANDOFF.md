@@ -9,7 +9,9 @@ from default backend selection. The latest verified code checkpoint is
 selected-entry cube `textureDimensions` proof backed by Naga/Core/HAL
 validation and strict RTX 3090 Ti readback at requested/actual FL9_1. The
 latest complete results are wgpu-types 108 unit and 14 doc tests, Naga 148,
-Core 107, private HAL 436 and strict public D3D11 99. DX12 HAL check, DX12 Core
+Core 107, private HAL 436 and strict public D3D11 100. A separate public
+uniform-update ordering test passed 1/1, and the public textured depth-tested
+scene passed 1/1. DX12 HAL check, DX12 Core
 106 tests, affected Clippy and format/diff checks passed with existing
 warnings. Full commands and output evidence are in `FL9_1_PROGRESS.md`. This
 remains an incremental graphics subset, not mission completion.

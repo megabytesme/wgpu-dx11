@@ -12400,3 +12400,23 @@ passed 107/107. All Rust formatting and `git diff --check` passed. Historical-
 device/runtime, broad CTS, and physical device-removal coverage remain open.
 
 Implementation checkpoint: `baacde33d` (`dx11: add narrow FL9_1 cube texture dimensions`).
+
+## Public uniform update ordering regression — 2026-11-08
+
+Added a public wgpu regression that records a GPU copy of a red uniform payload,
+draws the left half of an offscreen target, copies a green payload into the same
+uniform buffer, then draws the right half in a second pass in the same
+submission. The shader binds the same buffer throughout. Readback verified all
+32 red and 32 green pixels, so the second draw observes the execution-time
+update rather than stale materialized data.
+
+Strict verification ran with Rust 1.93.1 and the Visual Studio x64 environment
+on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false, requested/actual FL9_1):
+
+- Focused strict test `public_dx11_uniform_gpu_updates_are_ordered_between_draws_at_fl91`: 1/1 passed.
+- Complete strict public D3D11 integration target: 100/100 passed. Three optional selected-device subcases logged skips for R8G8_UNORM mip support, R8G8_UNORM vertex-input support and Float16x2 vertex input; required hardware tests did not skip.
+- Public textured perspective cube with D16 depth: 1/1 passed; depth-tested opposite face orders matched all 1,024 pixels while painter-order controls differed at 223 pixels.
+- Public-test Clippy, formatting of the changed Rust file and `git diff --check` passed. Clippy reported only existing D3D11 helper argument-count and public-test `HashMap` warnings.
+
+The copy/draw sequence was tested through public wgpu and exercised real GPU submission and readback. Broader concurrent uniform updates, historical FL9_1 driver behavior and Lumia/CoreWindow execution remain open. Implementation checkpoint: pending commit.

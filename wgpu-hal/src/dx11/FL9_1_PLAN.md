@@ -1,5 +1,14 @@
 # FL9_1 completion plan
 
+## Latest verified regression — ordered uniform GPU updates — 2026-11-08
+
+The public path now tests two GPU copies into one uniform buffer interleaved
+with draws in a single command buffer. The first draw reads red into the left
+half, the second reads green into the right half, and the full 8×8 readback
+matched all 64 pixels. This checks replay-time buffer contents and uniform
+materialization ordering. It does not add a new capability. See
+`FL9_1_PROGRESS.md` for strict hardware and regression results.
+
 ## Latest verified increment — cube fragment `textureDimensions` — 2026-11-08
 
 The opt-in projection now has an independent `texture_dimensions_cube_float_fragment`
