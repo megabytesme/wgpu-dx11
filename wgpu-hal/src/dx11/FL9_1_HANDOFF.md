@@ -2,16 +2,17 @@
 
 ## Latest public topology-validation checkpoint — 2026-11-08
 
-The opt-in public projection reports that emulated `vertex_index` is valid only
-for `TriangleList`. A strict public error-scope regression confirms core accepts
-the supported TriangleList builtin pipeline, rejects the same builtin on
-LineList before HAL, and still accepts an ordinary LineList pipeline. The full
-strict public D3D11 suite passed 82/82 on the RTX 3090 Ti at explicitly
-requested and selected FL9_1; optional Float16x2 IA and Rg8Unorm mip subcases
-were explicitly skipped by selected-device capability checks. The private
-strict HAL suite passed 409/409. Historical FL9_1 behavior remains unverified,
-and the backend remains partially complete. See `FL9_1_PROGRESS.md` for the
-checkpoint and reproduction commands. Implementation checkpoint:
+The opt-in public projection reports that emulated `vertex_index` is valid for
+`TriangleList` and `PointList`. Public strict tests verify triangle index
+remapping and point-list direct/indexed output. Core accepts both supported
+topologies and rejects `LineList` use before HAL while retaining ordinary
+LineList pipelines. The strict public D3D11 suite passed 83/83 and the private
+strict HAL suite passed 409/409. The public point-list test read back three
+direct points and one repeated indexed point on the RTX 3090 Ti at explicitly
+requested and selected FL9_1. Optional Float16x2 IA and Rg8Unorm mip subcases
+were explicitly skipped by selected-device capability checks. Historical
+FL9_1 behavior remains unverified, and the backend remains partially complete.
+See `FL9_1_PROGRESS.md` for the checkpoint and reproduction commands. Implementation checkpoint:
 `2e2bd70bb038ea09ca7e6eb5fe60dd5630c18867`; public regression checkpoint:
 `732c629a1788a316512f20097ce450c99d4e9449`.
 
@@ -26,9 +27,8 @@ draws. Core allows the supported builtin-to-f32 usage and keeps unrelated
 integer operations gated. On the RTX 3090 Ti at requested/actual FL9_1, the
 per-instance stream test and the indexed/non-indexed test passed; all 128
 pixels in the latter matched. FXC accepted direct, struct-only and mixed input
-forms. The later TriangleList-only `vertex_index` implementation and its core
-topology gate are documented in the latest checkpoint above; historical-device
-verification remains open.
+forms. The later core topology gate and PointList extension are documented in
+the latest checkpoints above; historical-device verification remains open.
 ## Latest format increment — query-gated R8G8_SNORM mip chain — 2026-11-07
 
 Sampled/upload R8G8_SNORM textures may now use mip chains when the selected

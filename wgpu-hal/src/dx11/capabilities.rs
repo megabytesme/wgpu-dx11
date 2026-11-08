@@ -381,6 +381,11 @@ pub(super) struct BackendCapabilities {
 }
 
 impl BackendCapabilities {
+    pub(super) fn supports_vertex_index_topology(self, topology: wgt::PrimitiveTopology) -> bool {
+        self.vertex_index_topology_mask & wgt::DownlevelLimits::vertex_index_topology_bit(topology)
+            != 0
+    }
+
     pub const CURRENT: Self = Self {
         depth_stencil_mip_levels: false,
         src_alpha_saturated_blend: false,
@@ -460,6 +465,8 @@ impl BackendCapabilities {
         vertex_index_input: true,
         vertex_index_topology_mask: wgt::DownlevelLimits::vertex_index_topology_bit(
             wgt::PrimitiveTopology::TriangleList,
+        ) | wgt::DownlevelLimits::vertex_index_topology_bit(
+            wgt::PrimitiveTopology::PointList,
         ),
         instance_index_input: true,
         vertex_texture_sampling: false,
@@ -2203,8 +2210,11 @@ mod tests {
             .downlevel
             .limits
             .supports_vertex_index_topology(wgt::PrimitiveTopology::TriangleList));
+        assert!(exposed
+            .downlevel
+            .limits
+            .supports_vertex_index_topology(wgt::PrimitiveTopology::PointList));
         for topology in [
-            wgt::PrimitiveTopology::PointList,
             wgt::PrimitiveTopology::LineList,
             wgt::PrimitiveTopology::LineStrip,
             wgt::PrimitiveTopology::TriangleStrip,

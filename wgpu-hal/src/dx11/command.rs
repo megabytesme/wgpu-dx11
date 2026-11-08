@@ -214,9 +214,12 @@ pub(super) enum NativeCommand {
     },
     DrawPoints {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        first_vertex: u32,
         count: u32,
         instances: u32,
         max_points: u32,
+        max_vertex_index: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instance_bindings: InstanceBindings,
     },
     DrawLines {
@@ -272,6 +275,8 @@ pub(super) enum NativeCommand {
         count: u32,
         base_vertex: i32,
         max_points: u32,
+        max_vertex_index: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -886,12 +891,18 @@ impl CommandBuffer {
                     }
                     NativeCommand::DrawPoints {
                         vertices,
+                        first_vertex,
                         count,
                         instances,
                         max_points,
+                        max_vertex_index,
+                        vertex_index,
                         instance_bindings,
                     } => {
                         instance_bindings.validate(*instances)?;
+                        first_vertex
+                            .checked_add(count.saturating_sub(1))
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                         point_batches(*count, *max_points, |first, _| {
                             for (_, _, offset, stride) in vertices {
                                 strip_vertex_offset(*offset, *stride, first)?;
@@ -911,9 +922,53 @@ impl CommandBuffer {
                                         Some(&offset),
                                     );
                                 }
+                                if let Some((slot, identity)) = vertex_index {
+                                    let absolute_first = first_vertex
+                                        .checked_add(first)
+                                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                    let last = absolute_first
+                                        .checked_add(count - 1)
+                                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                    let (buffer, offset) = if last <= *max_vertex_index {
+                                        let offset = absolute_first
+                                            .checked_mul(4)
+                                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                        (identity.clone(), offset)
+                                    } else {
+                                        let mut ids = Vec::new();
+                                        ids.try_reserve_exact(count as usize)
+                                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                                        ids.extend(
+                                            (0..count).map(|i| u64::from(absolute_first + i)),
+                                        );
+                                        let device = context.GetDevice()?;
+                                        (
+                                            super::hal_index::create_vertex_index_buffer(
+                                                &device, &ids,
+                                            )?,
+                                            0,
+                                        )
+                                    };
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer)),
+                                        Some(&4),
+                                        Some(&offset),
+                                    );
+                                }
                                 context.Draw(count, 0);
                                 Ok(())
                             })?;
+                        }
+                        if let Some((slot, identity)) = vertex_index {
+                            context.IASetVertexBuffers(
+                                *slot,
+                                1,
+                                Some(&Some(identity.clone())),
+                                Some(&4),
+                                Some(&0),
+                            );
                         }
                     }
                     NativeCommand::DrawLines {
@@ -1064,6 +1119,8 @@ impl CommandBuffer {
                         count,
                         base_vertex,
                         max_points,
+                        max_vertex_index,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => binding.draw_points(
@@ -1074,6 +1131,8 @@ impl CommandBuffer {
                         vertices,
                         (*max_points, *instances),
                         instance_bindings,
+                        *max_vertex_index,
+                        vertex_index.as_ref(),
                     )?,
                     NativeCommand::DrawIndexedLines {
                         binding,

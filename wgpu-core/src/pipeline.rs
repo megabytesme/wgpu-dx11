@@ -1004,12 +1004,27 @@ mod vertex_index_topology_tests {
         assert!(
             validate_vertex_index_topology(wgt::PrimitiveTopology::TriangleList, &limits).is_ok()
         );
+        assert!(
+            validate_vertex_index_topology(wgt::PrimitiveTopology::PointList, &limits).is_err()
+        );
         assert!(matches!(
             validate_vertex_index_topology(wgt::PrimitiveTopology::LineList, &limits),
             Err(CreateRenderPipelineError::UnsupportedVertexIndexTopology {
                 topology: wgt::PrimitiveTopology::LineList
             })
         ));
+
+        let point_limits = wgt::DownlevelLimits {
+            vertex_index_input: true,
+            vertex_index_topology_mask: wgt::DownlevelLimits::vertex_index_topology_bit(
+                wgt::PrimitiveTopology::PointList,
+            ),
+            ..wgt::DownlevelLimits::default()
+        };
+        assert!(
+            validate_vertex_index_topology(wgt::PrimitiveTopology::PointList, &point_limits)
+                .is_ok()
+        );
     }
 }
 

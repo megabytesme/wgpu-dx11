@@ -66,7 +66,10 @@ impl NativeDevice {
     }
 }
 
-fn create_vertex_index_buffer(device: &ID3D11Device, indices: &[u64]) -> Result<ID3D11Buffer> {
+pub(super) fn create_vertex_index_buffer(
+    device: &ID3D11Device,
+    indices: &[u64],
+) -> Result<ID3D11Buffer> {
     let mut values = Vec::new();
     values
         .try_reserve_exact(indices.len())
@@ -227,10 +230,12 @@ impl IndexBinding {
         vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
         draw_limits: (u32, u32),
         instance_bindings: &super::command::InstanceBindings,
+        max_vertex_index: u32,
+        vertex_index: Option<&(u32, ID3D11Buffer)>,
     ) -> Result<()> {
         let (max_points, instances) = draw_limits;
         instance_bindings.validate(instances)?;
-        if vertices.is_empty()
+        if (vertices.is_empty() && vertex_index.is_none())
             || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
                 !offset.is_multiple_of(4)
                     || !stride.is_multiple_of(4)
@@ -272,7 +277,19 @@ impl IndexBinding {
             };
             let plan = plan_point_runs(read, count as usize, base, max_points, &layouts);
             context.Unmap(&self.staging, 0);
-            let Some(plan) = plan? else { return Ok(()) };
+            let Some(plan) = plan? else {
+                if let Some((slot, identity)) = vertex_index {
+                    context.IASetVertexBuffers(
+                        *slot,
+                        1,
+                        Some(&Some(identity.clone())),
+                        Some(&4),
+                        Some(&0),
+                    );
+                }
+                return Ok(());
+            };
+            let device = context.GetDevice()?;
             for instance in 0..instances {
                 instance_bindings.bind(context, instance)?;
                 for run in &plan {
@@ -287,8 +304,47 @@ impl IndexBinding {
                             Some(offset),
                         );
                     }
+                    if let Some((slot, identity)) = vertex_index {
+                        let last = run
+                            .first_vertex
+                            .checked_add(i64::from(run.count - 1))
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        let (buffer, offset) =
+                            if run.first_vertex >= 0 && last <= i64::from(max_vertex_index) {
+                                let offset = u32::try_from(run.first_vertex)
+                                    .ok()
+                                    .and_then(|index| index.checked_mul(4))
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                (identity.clone(), offset)
+                            } else {
+                                let mut ids = Vec::new();
+                                ids.try_reserve_exact(run.count as usize)
+                                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                                ids.extend((0..run.count).map(|i| {
+                                    let effective = run.first_vertex + i64::from(i);
+                                    u64::from(effective as u32)
+                                }));
+                                (create_vertex_index_buffer(&device, &ids)?, 0)
+                            };
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(buffer)),
+                            Some(&4),
+                            Some(&offset),
+                        );
+                    }
                     context.Draw(run.count, 0);
                 }
+            }
+            if let Some((slot, identity)) = vertex_index {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(identity.clone())),
+                    Some(&4),
+                    Some(&0),
+                );
             }
         }
         Ok(())
@@ -1667,6 +1723,7 @@ impl IndexBinding {
 
 #[derive(Debug, PartialEq, Eq)]
 struct PointRun {
+    first_vertex: i64,
     count: u32,
     offsets: Vec<u32>,
 }
@@ -1678,50 +1735,57 @@ fn plan_point_runs(
     max_points: u32,
     layouts: &[(u32, u64, u32, u32)],
 ) -> Result<Option<Vec<PointRun>>> {
-    if max_points == 0 || layouts.is_empty() {
+    if max_points == 0 {
         return Err(Error::from_hresult(E_INVALIDARG));
     }
     for i in 0..count {
-        if !multi_u32_index_in_bounds(
-            read(i),
-            base,
-            layouts
-                .iter()
-                .map(|&(_, length, stride, extent)| (length, stride, extent)),
-        ) {
+        if !layouts.is_empty()
+            && !multi_u32_index_in_bounds(
+                read(i),
+                base,
+                layouts
+                    .iter()
+                    .map(|&(_, length, stride, extent)| (length, stride, extent)),
+            )
+        {
             return Ok(None);
         }
     }
     let mut runs = Vec::new();
     let mut start = 0;
     while start < count {
-        let first = (i64::from(read(start)) + i64::from(base)) as u64;
+        let first = i64::from(read(start)) + i64::from(base);
         let mut end = start + 1;
         while end < count && end - start < max_points as usize {
-            let current = (i64::from(read(end)) + i64::from(base)) as u64;
-            if first.checked_add((end - start) as u64) != Some(current) {
+            let current = i64::from(read(end)) + i64::from(base);
+            if first.checked_add((end - start) as i64) != Some(current) {
                 break;
             }
             end += 1;
         }
         let last = first
-            .checked_add((end - start - 1) as u64)
+            .checked_add((end - start - 1) as i64)
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
         let mut offsets = Vec::new();
         offsets
             .try_reserve_exact(layouts.len())
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-        for &(offset, length, stride, extent) in layouts {
-            let layout = (length, stride, extent);
-            let first_offset = rebased_vertex_offset(first, offset, layout)
-                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-            rebased_vertex_offset(last, offset, layout)
-                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-            offsets.push(first_offset);
+        if !layouts.is_empty() {
+            let first = u64::try_from(first).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+            let last = u64::try_from(last).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+            for &(offset, length, stride, extent) in layouts {
+                let layout = (length, stride, extent);
+                let first_offset = rebased_vertex_offset(first, offset, layout)
+                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                rebased_vertex_offset(last, offset, layout)
+                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                offsets.push(first_offset);
+            }
         }
         runs.try_reserve(1)
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         runs.push(PointRun {
+            first_vertex: first,
             count: (end - start) as u32,
             offsets,
         });
@@ -3085,6 +3149,10 @@ mod tests {
             runs.iter().map(|run| run.count).collect::<Vec<_>>(),
             [2, 1, 1, 2]
         );
+        assert_eq!(
+            runs.iter().map(|run| run.first_vertex).collect::<Vec<_>>(),
+            [4, 5, 0, 99_997]
+        );
         assert_eq!(runs[0].offsets, [80, 156, 8]);
         assert_eq!(runs[1].offsets, [96, 188, 8]);
         assert_eq!(runs[2].offsets, [16, 28, 8]);
@@ -3103,6 +3171,7 @@ mod tests {
         );
         assert_eq!(runs[0].offsets, [0]);
         assert_eq!(runs[1].offsets, [262_140]);
+        assert_eq!(runs[1].first_vertex, 65_535);
     }
 
     #[test]
@@ -3116,7 +3185,20 @@ mod tests {
             );
         }
         assert!(super::plan_point_runs(|_| 0, 1, 0, 0, &layouts).is_err());
-        assert!(super::plan_point_runs(|_| 0, 1, 0, 1, &[]).is_err());
+        assert_eq!(
+            super::plan_point_runs(|_| 0, 1, 0, 1, &[])
+                .unwrap()
+                .unwrap()[0]
+                .first_vertex,
+            0
+        );
+        assert_eq!(
+            super::plan_point_runs(|_| 0, 1, -1, 1, &[])
+                .unwrap()
+                .unwrap()[0]
+                .first_vertex,
+            -1
+        );
         assert!(super::plan_point_runs(|_| 1, 1, 0, 1, &[(u32::MAX - 3, 8, 4, 4)]).is_err());
     }
 

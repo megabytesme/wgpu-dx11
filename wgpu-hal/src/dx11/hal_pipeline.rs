@@ -2681,10 +2681,13 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
-        if uses_vertex_index && desc.primitive.topology != wgt::PrimitiveTopology::TriangleList {
+        if uses_vertex_index
+            && !super::capabilities::BackendCapabilities::CURRENT
+                .supports_vertex_index_topology(desc.primitive.topology)
+        {
             return Err(crate::PipelineError::Linkage(
                 wgt::ShaderStages::VERTEX,
-                "D3D11 FL9 vertex_index currently supports triangle-list pipelines only".into(),
+                "D3D11 FL9 vertex_index does not support this primitive topology".into(),
             ));
         }
         let target = match desc.color_targets {

@@ -231,7 +231,7 @@ query and backend path are available.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels). A later
 strict test verifies WGSL `instance_index` through the host-updated FL9_1
-constant path; the latest strict test verifies TriangleList-only `vertex_index` emulation.
+constant path; strict tests verify TriangleList and PointList `vertex_index` emulation.
 
 A twelfth strict public test verifies the FL9_1 aggregate fragment uniform
 budget across two sparse bindings: all 32 float4 vectors contribute to the
@@ -401,9 +401,9 @@ impossibility.
 The selected FL9_1 projection enables `DownlevelLimits::vertex_index_input` for
 a constrained host-stream emulation. FXC rejects native `SV_VertexID` with
 X4555, so Naga emits a custom float IA semantic and command replay supplies
-identity or temporary remapping streams. This path supports TriangleList only
-and `DownlevelLimits::vertex_index_topology_mask` now limits core validation to
-that topology; the HAL retains its own defensive check. Core permits direct
+identity or temporary remapping streams. This path supports TriangleList and
+PointList, and `DownlevelLimits::vertex_index_topology_mask` limits core
+validation to those topologies; the HAL retains its own defensive check. Core permits direct
 `u32`-to-`f32` use; integer arithmetic remains rejected. `instance_index` is
 emulated through reserved vertex constant b13, updated to
 `first_instance + instance` before each draw. Neither emulation is proof of
@@ -412,7 +412,9 @@ compatibility with historical FL9_1 drivers.
 Strict RTX tests at requested/actual FL9_1 cover both builtins. The latest
 vertex-index public readback checks normal and degenerate draws, negative base
 vertex, reindexed wide indices, `first_vertex=100000`, and state after the
-remapping draw. See `TESTING.md` for the exact command and results.
+remapping draw. A PointList regression verifies direct IDs and repeated
+indexed IDs through full-target readback. See `TESTING.md` for the exact command
+and results.
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;

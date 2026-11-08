@@ -11120,6 +11120,32 @@ cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
 ```
 
+## PointList `vertex_index` support — 2026-11-08
+
+The earlier TriangleList-only implementation now supports PointList as well.
+The backend emits the effective vertex ID through its existing hidden float
+attribute path for direct and indexed point draws, preserving first vertex,
+index values and base-vertex resolution. Core receives a topology capability
+mask and rejects unsupported `vertex_index` topologies before HAL pipeline
+creation; ordinary LineList pipelines remain valid. A private replay test
+checks resolved point IDs, including the signed-base-vertex case.
+
+On the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), the public test requested and asserted FL9_1. It rendered three
+direct points and one repeated indexed point; readback matched the exact
+expected locations. The strict private HAL suite passed 409/409 and the
+complete strict public D3D11 suite passed 83/83. The core hardware fixture
+passed 1/1, core zero-D3D11-adapter isolation passed 1/1, and DX12 core
+regression passed 95/95. Optional Float16x2 vertex input and RG8_UNORM mip
+subcases were reported as capability skips. Historical FL9_1 devices remain
+unverified.
+
+Rustfmt and `git diff --check` passed. Public D3D11 Clippy passed at `-j2`;
+the `-j8` attempt exhausted the Windows page file (error 1455), then the
+bounded retry succeeded. Remaining warnings are pre-existing argument-count
+warnings in the HAL and a pre-existing `std::HashMap` warning in the public
+test. Exact reproduction commands are in `FL9_1_HANDOFF.md`.
+
 ## Core validation for TriangleList-only `vertex_index` — 2026-11-08
 
 The public capability projection now carries a topology mask in

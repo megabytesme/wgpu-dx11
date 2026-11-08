@@ -5726,6 +5726,16 @@ fn render_triangle(
         );
         global.render_pipeline_drop(valid_pipeline);
 
+        vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::PointList;
+        let (valid_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            error.is_none(),
+            "FL9_1 core and HAL must accept the supported PointList vertex_index topology: {error:?}"
+        );
+        global.render_pipeline_drop(valid_pipeline);
+
+        vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::TriangleList;
         vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("instance_index"));
         let (invalid_pipeline, error) =
             global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);

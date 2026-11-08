@@ -1211,6 +1211,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         let uses_vertex_index = render.uses_vertex_index;
+        let vertex_index = render.vertex_index.clone();
         let mut vertices = Vec::new();
         for (slot, layout) in render.vertex_layouts.iter().enumerate() {
             let Some((stride, extent, mode)) = *layout else {
@@ -1264,7 +1265,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             };
             if last > max_vertex_index {
-                let Some((slot, identity)) = render.vertex_index.as_ref() else {
+                let Some((slot, identity)) = vertex_index.as_ref() else {
                     self.reject();
                     return;
                 };
@@ -1418,9 +1419,16 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             self.record(NativeCommand::DrawPoints {
                 vertices,
+                first_vertex,
                 count: vertex_count,
                 instances: instance_count,
                 max_points: max_vertices,
+                max_vertex_index: hardware.max_vertex_index,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instance_bindings,
             });
             return;
@@ -1815,15 +1823,21 @@ impl crate::CommandEncoder for CommandEncoder {
             let max_points =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                     .max_primitives_per_draw;
-            if constant_ranges == Some(true) {
+            if constant_ranges == Some(true) && !uses_vertex_index {
                 self.record(NativeCommand::DrawPoints {
                     vertices: vertices
                         .into_iter()
                         .map(|(slot, buffer, offset, _, stride, _)| (slot, buffer, offset, stride))
                         .collect(),
+                    first_vertex: 0,
                     count: index_count,
                     instances: instance_count,
                     max_points,
+                    max_vertex_index: super::capabilities::HardwareGuarantees::for_level(
+                        self.device.feature_level(),
+                    )
+                    .max_vertex_index,
+                    vertex_index: None,
                     instance_bindings,
                 });
             } else {
@@ -1834,6 +1848,11 @@ impl crate::CommandEncoder for CommandEncoder {
                     count: index_count,
                     base_vertex,
                     max_points,
+                    max_vertex_index: super::capabilities::HardwareGuarantees::for_level(
+                        self.device.feature_level(),
+                    )
+                    .max_vertex_index,
+                    vertex_index,
                     instances: instance_count,
                     instance_bindings,
                 });
