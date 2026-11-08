@@ -1012,7 +1012,7 @@ fn public_dx11_enforces_fl91_aggregate_uniform_constants() {
 }
 
 #[test]
-fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
+fn public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
     instance_descriptor.backends = Backends::DX11;
@@ -1200,6 +1200,7 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
         }
         data
     };
+    let blue_data = make_fragment_data([0.0, 0.0, 1.0, 1.0]);
     let green_data = make_fragment_data([0.0, 1.0, 0.0, 1.0]);
     let red_data = make_fragment_data([1.0, 0.0, 0.0, 1.0]);
     let base_vertex = create_buffer(
@@ -1215,10 +1216,10 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
         BufferUsages::UNIFORM,
     );
     let green = create_buffer(
-        "FL9_1 green c31 buffer",
+        "FL9_1 c31 buffer updated after encoding",
         fragment_size,
-        &green_data,
-        BufferUsages::UNIFORM,
+        &blue_data,
+        BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     );
     let red = create_buffer(
         "FL9_1 red c31 buffer",
@@ -1334,7 +1335,10 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
-    let submission = queue.submit([encoder.finish()]);
+    let commands = encoder.finish();
+    let c31_offset = 31 * 16;
+    queue.write_buffer(&green, c31_offset as u64, &green_data[c31_offset..]);
+    let submission = queue.submit([commands]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
         .slice(..)
@@ -1384,7 +1388,7 @@ fn public_dx11_uses_255_vertex_uniform_vectors_at_fl91() {
         "c254 did not shift the rendered geometry right: green={green_count}/{green_x}, red={red_count}/{red_x}"
     );
     println!(
-        "PASS: public FL9_1 vertex uniform binding exposed 4080 bytes; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels), and core rejected 256 vertex vectors before HAL"
+        "PASS: public FL9_1 queue.write_buffer after command encoding changed c31 blue to green before the first draw; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels), and core rejected 256 vertex vectors before HAL"
     );
 }
 
