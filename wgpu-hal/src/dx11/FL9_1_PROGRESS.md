@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## `vertex_index` on LineList — 2026-11-08
+## `vertex_index` on LineList — 2026-11-08 — `0835c23cf`
 
 Core's selected-topology projection and the HAL now permit LineList in the
 existing emulated `vertex_index` subset; LineStrip and TriangleStrip remain

@@ -5,16 +5,15 @@
 The opt-in public D3D11 path is substantially usable for a restricted FL9_1
 graphics subset, but the completion mission remains partial. It is excluded
 from default backend selection. The latest verified code checkpoint is
-`baacde33d` (`dx11: add narrow FL9_1 cube texture dimensions`). It adds a
-selected-entry cube `textureDimensions` proof backed by Naga/Core/HAL
-validation and strict RTX 3090 Ti readback at requested/actual FL9_1. The
-latest complete results are wgpu-types 108 unit and 14 doc tests, Naga 148,
-Core 107, private HAL 436 and strict public D3D11 100. A separate public
-uniform-update ordering test passed 1/1, and the public textured depth-tested
-scene passed 1/1. DX12 HAL check, DX12 Core
-106 tests, affected Clippy and format/diff checks passed with existing
-warnings. Full commands and output evidence are in `FL9_1_PROGRESS.md`. This
-remains an incremental graphics subset, not mission completion.
+`0835c23cf` (`dx11: emulate FL9_1 vertex_index for line lists`). Direct and
+indexed LineList `vertex_index` now pass strict public readback on the RTX 3090
+Ti at requested/actual FL9_1, including high-index Gather and restoration of
+user vertex streams before subsequent triangle draws. The full private HAL
+suite passed 437/437, strict public D3D11 passed 102/102, Core fixtures passed
+115/115 and DX12 Core regression passed 106/106. A stale Core fixture was
+updated for the already query-gated timestamp feature pair. Full commands and
+warnings are recorded in `FL9_1_PROGRESS.md`. This remains a restricted
+incremental graphics subset, not mission completion.
 
 The Lumia Device Portal retry for `/api/os/devicefamily` timed out. CoreWindow
 surface capabilities remain withheld, and no Lumia runtime result is claimed.

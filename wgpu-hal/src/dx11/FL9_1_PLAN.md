@@ -1,6 +1,6 @@
 # FL9_1 completion plan
 
-## Latest verified increment — `vertex_index` with LineList — 2026-11-08
+## Latest verified increment — `vertex_index` with LineList — 2026-11-08 — `0835c23cf`
 
 The selected FL9_1 projection and defensive HAL gate now permit emulated
 `vertex_index` for LineList in addition to TriangleList and PointList. Direct
