@@ -4,36 +4,15 @@
 
 The opt-in public D3D11 path is substantially usable for a restricted FL9_1
 graphics subset, but the completion mission remains partial. It is excluded
-from default backend selection. Recent checkpoints include helper-forwarded
-vertex/instance index reads, core-valid byte offsets, padded `vec2` uniform
-indexing, Present-loss frame-reservation release, empty-render-bundle state
-reset, and queue-write ordering after command encoding. Earlier public
-regression commits include `9e07459a3eee540c349c9e28cc6a864221c3c01f` and
-`818fee943b117018cae30c813d17fa0e389c7669`. The latest implementation
-checkpoint is `ede5c299f`, which adds device-query-gated timestamp queries.
-The latest public regression checkpoint is `fe0cc897a`, which tests
-asynchronous nonzero-slice buffer writes followed by GPU copies and readback.
-
-The current uncommitted shader increment implements GLSL `outerProduct`
-lowering in Naga's HLSL writer and corrects rectangular GLSL overload
-dimensions. DX11 now exposes the corresponding FL9_1 downlevel limit. Strict
-RTX 3090 Ti rendering passed at requested/actual FL9_1, checking square and
-rectangular results across 64/64 pixels; the full strict public suite passed
-94/94, with three optional capability subcases skipped. Naga GLSL-enabled
-library tests passed 142/142. DX12 keeps the capability withheld. See the
-latest `FL9_1_PROGRESS.md` entry for exact commands. This remains an
+from default backend selection. The latest verified code checkpoint is
+`0fd033d33` (`dx11: extend verified FL9_1 rendering support`). It includes
+narrow fragment 3D `textureLoad` and `textureDimensions` plus implicit sampling
+proofs, backed by Naga/Core/HAL validation and strict RTX 3090 Ti readback at
+requested/actual FL9_1. The latest complete results are Naga 147/147, Core
+106/106, private HAL 434/434 and strict public D3D11 98/98. DX12 HAL check,
+affected Clippy and format/diff checks passed with existing warnings. Full
+commands and output evidence are in `FL9_1_PROGRESS.md`. This remains an
 incremental graphics subset, not mission completion.
-
-The newest verified feature checkpoint is `061e2acca` (`dx11: add narrow
-FL9_1 texture loads and cube readback`). It adds selected-entry-only,
-fragment texture-load emulation for one direct single-mip `texture_2d<f32>`
-with in-bounds, out-of-bounds and nonzero-mip readback, plus query-gated
-six-face cube-to-buffer readback. The RTX 3090 Ti reported requested/actual
-FL9_1; the strict private HAL suite passed 419/419 and the public D3D11 suite
-passed 93/93. `wgpu-types` passed 101/101 and DX12 Core passed 102/102. The
-latest full workspace formatting check, `git diff --check`, and affected
-Clippy runs passed with existing warnings. Exact commands are recorded in
-`FL9_1_PROGRESS.md`.
 
 The Lumia Device Portal retry for `/api/os/devicefamily` timed out. CoreWindow
 surface capabilities remain withheld, and no Lumia runtime result is claimed.

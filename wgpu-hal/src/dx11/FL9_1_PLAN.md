@@ -18,6 +18,7 @@ private HAL 434/434 and public strict D3D11 98/98. A DX12 HAL check and affected
 Clippy/format checks passed; existing warnings are noted in the progress
 journal. General texture queries remain disabled, and historical FL9_1 drivers,
 Lumia/CoreWindow runtime and physical device-loss recovery remain unverified.
+Implementation and documentation checkpoint: `0fd033d33`.
 
 ## Previous verified increment — narrow 3D fragment `textureLoad` — 2026-11-08
 
