@@ -1,4 +1,12 @@
 # FL9_1 completion plan
+Latest checkpoint `1fd14a6eac95d88204ef56106ae423d59ba3200f` extends the
+direct vertex-uniform-array path and adds selected-entry core preflight for
+both dynamic local-array checks and the hidden IA slot used by `vertex_index`.
+Focused production, FXC and strict GPU tests passed; see the progress journal.
+The next small shader increment under review is unchanged direct-builtin index
+forwarding through helper parameters. The public core/HAL, platform and legacy
+hardware audits remain open.
+
 Latest core/HAL validation increment: selected `vertex_index` pipelines now
 preflight the actual FL9_1 vertex-slot allocation, including overlap spills
 and the hidden emulation input. Core rejects exhausted layouts before HAL;

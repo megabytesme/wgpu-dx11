@@ -11370,3 +11370,32 @@ Follow-up verification after integrating the capability and core gate:
 The first HAL test link attempt returned LNK1114 because a temporary linker
 file was momentarily locked; the bounded `-j2` retry passed. No test was
 counted as a hardware skip-success in strict mode.
+
+## Checkpoint — selected-entry vertex-index contracts — 2026-11-08
+
+Commit `1fd14a6eac95d88204ef56106ae423d59ba3200f` records the direct
+vertex-uniform-array indexing path, core/HAL parity for checked dynamic local
+array accesses, and core preflight for the hidden vertex-input slot consumed
+by emulated `vertex_index`.
+
+The latest-tree focused rerun used the installed Visual Studio 2022 x64
+environment and passed:
+
+- Core `emulated_vertex_index_requires_a_free_physical_input_slot`: 1/1.
+- Core `restricted_vertex_uniform_array_indexing_is_selected_entry_aware`:
+  1/1.
+- HAL `dynamic_uniform_array_reads_allow_direct_vertex_builtins`: 1/1,
+  including the FL9_1 shader compilation checks.
+- Strict public `public_dx11_vertex_uniform_array_indexing_at_fl91`: 1/1 on
+  NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
+  software=false, requested/actual FL9_1. Readback verified all four uniform
+  entries and the out-of-range clamp to the last entry.
+- `git diff --cached --check`: passed before commit.
+
+Earlier in this increment, the complete strict private HAL, public D3D11,
+core DX11, core DX12 and focused GLES checks passed as recorded above. A
+read-only resource/format/view audit found no concrete core-valid request
+reaching an unsupported HAL path; broader format-matrix coverage and
+historical hardware remain open. The next shader candidate is one-hop direct
+builtin forwarding through helper parameters, pending the independent shader
+audit. This checkpoint does not close the public contract or platform audit.
