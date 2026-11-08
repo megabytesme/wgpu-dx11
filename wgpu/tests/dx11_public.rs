@@ -12411,6 +12411,124 @@ fn public_dx11_rejects_unimplemented_legacy_shader_builtins_at_fl91() {
     );
 }
 
+#[cfg(feature = "glsl")]
+#[test]
+fn public_dx11_rejects_unimplemented_matrix_inverse_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 matrix inverse validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let vertex_source = |shader: &str| ShaderSource::Glsl {
+        shader: std::borrow::Cow::Owned(shader.to_owned()),
+        stage: naga::ShaderStage::Vertex,
+        defines: &[],
+    };
+    let fragment_source = |shader: &str| ShaderSource::Glsl {
+        shader: std::borrow::Cow::Owned(shader.to_owned()),
+        stage: naga::ShaderStage::Fragment,
+        defines: &[],
+    };
+    let vertex = |label, shader| {
+        device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: vertex_source(shader),
+        })
+    };
+    let fragment = |label, shader| {
+        device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: fragment_source(shader),
+        })
+    };
+    let inverse = vertex(
+        "unsupported FL9_1 matrix inverse GLSL shader",
+        "#version 450\nvec2 apply_inverse(mat2 m, vec2 v) { return inverse(m) * v; }\nvoid main() { vec2 v = apply_inverse(mat2(1.0), vec2(0.0)); gl_Position = vec4(v, 0.0, 1.0); }",
+    );
+    let inverse_helper = vertex(
+        "unused FL9_1 matrix inverse GLSL helper",
+        "#version 450\nmat2 invert(mat2 m) { return inverse(m); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
+    );
+    let ordinary = vertex(
+        "ordinary FL9_1 GLSL vertex sibling",
+        "#version 450\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
+    );
+    let pixel = fragment(
+        "ordinary FL9_1 GLSL fragment shader",
+        "#version 450\nlayout(location = 0) out vec4 color;\nvoid main() { color = vec4(1.0); }",
+    );
+    let target = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = |module: &ShaderModule| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 matrix inverse pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module,
+                entry_point: Some("main"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::PointList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &pixel,
+                entry_point: Some("main"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &target,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    expect_validation_error_containing(
+        &device,
+        "unsupported FL9_1 matrix inverse",
+        "Matrix inverse",
+        || drop(pipeline(&inverse)),
+    );
+    expect_validation_error_containing(
+        &device,
+        "unused FL9_1 matrix inverse helper",
+        "Matrix inverse",
+        || drop(pipeline(&inverse_helper)),
+    );
+    drop(pipeline(&ordinary));
+    println!(
+        "PASS: core rejected GLSL matrix inverse before HAL and accepted an ordinary sibling shader"
+    );
+}
+
 #[test]
 fn public_dx11_rejects_sample_index_without_multisampled_shading() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");

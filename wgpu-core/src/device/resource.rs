@@ -5583,6 +5583,24 @@ impl Device {
                             },
                         );
                     }
+                    if !self.downlevel.limits.matrix_inverse
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_unsupported_matrix_inverse(
+                                    stage.to_naga(),
+                                    &_vertex_entry_point_name,
+                                    &self.downlevel.limits,
+                                )
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedMatrixInverse {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
                     if !self.downlevel.limits.matrix_aggregate_stores
                         && match interface {
                             Some(interface) => interface
@@ -6129,6 +6147,25 @@ impl Device {
                 {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
+                            stage: stage_bit,
+                        },
+                    );
+                }
+
+                if !self.downlevel.limits.matrix_inverse
+                    && match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_matrix_inverse(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                                &self.downlevel.limits,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    }
+                {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedMatrixInverse {
                             stage: stage_bit,
                         },
                     );

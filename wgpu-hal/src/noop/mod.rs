@@ -245,6 +245,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_gather: true,
                 texture_load: true,
                 runtime_integer_shader_operations: true,
+                matrix_inverse: true,
                 matrix_aggregate_stores: true,
                 max_texture_sample_bias: u32::MAX,
                 texture_sample_bias_dynamic: true,

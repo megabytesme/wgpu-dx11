@@ -738,7 +738,8 @@ impl super::Adapter {
         // TODO: Determine if IPresentationManager is supported
         let presentation_timer = auxil::dxgi::time::PresentationTimer::new_dxgi();
 
-        let downlevel = wgt::DownlevelCapabilities::default();
+        let mut downlevel = wgt::DownlevelCapabilities::default();
+        downlevel.limits.matrix_inverse = false;
 
         // Limits that must share D3D12's root signature size of
         // D3D12_MAX_ROOT_COST 64 DWORDS (256 bytes).

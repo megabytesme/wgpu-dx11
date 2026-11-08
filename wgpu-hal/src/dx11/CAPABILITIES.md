@@ -1094,6 +1094,15 @@ float-only matrix reads are allowed. These are backend/compiler limits, not
 feature-level hardware guarantees. The public regression covers fragment
 integer arithmetic and vertex aggregate stores on the forced-FL9_1 path; CPU
 tests cover helper pointer arguments and entry-point selection.
+Matrix inverse is also rejected when used by a selected entry point: Naga's
+HLSL writer currently returns `Error::Unimplemented` for this operation before
+FXC, even though Naga accepts it from GLSL and SPIR-V. The new
+`DownlevelLimits::matrix_inverse` gate follows calls to helper functions. Since
+Naga's HLSL writer emits every regular module function, inverse in an otherwise
+unused helper is also rejected; a separate ordinary shader module remains
+valid. DX12's HLSL projection and Metal's MSL projection also disable this
+operation because their current writers do not lower it. This is a compiler
+limitation, not an FL9_1 hardware guarantee.
 Computed indices, helper-mediated indexing, fragment-stage uniform indexing,
 integer or nested array elements and other general dynamic uniform indexing
 remain unsupported. `DownlevelLimits::vertex_uniform_array_indexing` enables

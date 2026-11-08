@@ -1125,6 +1125,17 @@ RTX 3090 Ti at requested and actual FL9_1 verifies the four validation errors
 and successful pipeline creation for ordinary GLSL shaders. This closes a
 core/HAL validation mismatch; it does not add shader functionality.
 
+## Matrix inverse shader validation
+
+The HLSL writer does not lower Naga's matrix-inverse operation and returns an
+unimplemented error before FXC. `DownlevelLimits::matrix_inverse` now exposes
+that compiler restriction to core, which checks selected vertex and fragment
+entry points and regular module functions. Naga's HLSL writer emits every
+regular function, so even an unused helper containing inverse is rejected;
+ordinary separate shader modules remain valid. DX12's HLSL and Metal's MSL
+projections also disable inverse because their writers do not lower it. This
+remains a compiler limitation and does not add hardware functionality.
+
 ## Query-gated R8_UNORM mip chains
 
 R8_UNORM now supports mip chains only when the selected device reports

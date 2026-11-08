@@ -1333,6 +1333,7 @@ impl super::CapabilitiesQuery {
 
     pub fn capabilities(&self, instance_flags: wgt::InstanceFlags) -> crate::Capabilities {
         let mut downlevel = wgt::DownlevelCapabilities::default();
+        downlevel.limits.matrix_inverse = false;
         downlevel.flags.set(
             wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE,
             self.fragment_rw_storage,

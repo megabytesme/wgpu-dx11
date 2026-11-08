@@ -832,6 +832,8 @@ pub enum CreateRenderPipelineError {
     UnsupportedInstanceIndexInput,
     #[error("Shader `@builtin({builtin})` is not supported by this downlevel adapter")]
     UnsupportedDownlevelBuiltin { builtin: &'static str },
+    #[error("Matrix inverse is not supported in {stage:?} shaders by this downlevel adapter")]
+    UnsupportedMatrixInverse { stage: wgt::ShaderStages },
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
     UnsupportedDepthBiasWithFragmentDepth,
     #[error(
@@ -1038,6 +1040,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::VertexIndexInputSlotsExhausted
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDownlevelBuiltin { .. }
+            | Self::UnsupportedMatrixInverse { .. }
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
             | Self::UnsupportedFragmentSampleMaskOutput

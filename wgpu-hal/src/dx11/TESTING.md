@@ -3174,3 +3174,20 @@ and `PointCoord` before HAL and confirms ordinary GLSL vertex/fragment
 pipelines remain valid. On the RTX 3090 Ti the selected adapter is reported
 as physical hardware at requested and actual FL9_1; rejected-pipeline cases
 exercise validation and do not submit draws.
+
+### Matrix inverse compiler gate
+
+Run the selected-entry core test and strict public regression with GLSL enabled:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib unsupported_matrix_inverse_covers_compiled_entry_and_module_functions
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_rejects_unimplemented_matrix_inverse_at_fl91 -- --nocapture --test-threads=1
+```
+
+The core test covers selected entry points, regular module functions, vertex
+and fragment stages, and a backend that permits inverse. The public test
+verifies that the FL9_1 projection rejects selected inverse operations and
+inverse-bearing helper functions before the HLSL writer while an ordinary
+separate shader module remains valid; pipeline validation does not issue a
+draw.

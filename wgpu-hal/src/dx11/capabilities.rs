@@ -361,6 +361,7 @@ pub(super) struct BackendCapabilities {
     pub texture_sample_level: bool,
     pub texture_gather: bool,
     pub runtime_integer_shader_operations: bool,
+    pub matrix_inverse: bool,
     pub matrix_aggregate_stores: bool,
     pub shader_loops: bool,
     pub statically_unrolled_shader_loops: bool,
@@ -487,6 +488,7 @@ impl BackendCapabilities {
         texture_sample_level: false,
         texture_gather: false,
         runtime_integer_shader_operations: false,
+        matrix_inverse: false,
         matrix_aggregate_stores: false,
         shader_loops: false,
         statically_unrolled_shader_loops: true,
@@ -768,6 +770,7 @@ impl Capabilities {
                     && self.backend.texture_sample_level,
                 texture_gather: self.hardware.texture_gather && self.backend.texture_gather,
                 runtime_integer_shader_operations: self.backend.runtime_integer_shader_operations,
+                matrix_inverse: self.backend.matrix_inverse,
                 matrix_aggregate_stores: self.backend.matrix_aggregate_stores,
                 vertex_format_mask: self.vertex_input_format_mask(),
             },
@@ -2259,6 +2262,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.texture_sample_level);
         assert!(!exposed.downlevel.limits.texture_gather);
         assert!(!exposed.downlevel.limits.runtime_integer_shader_operations);
+        assert!(!exposed.downlevel.limits.matrix_inverse);
         assert!(!exposed.downlevel.limits.matrix_aggregate_stores);
         assert_eq!(
             exposed
