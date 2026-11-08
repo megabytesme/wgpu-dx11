@@ -743,39 +743,34 @@ the same validation error through wgpu while a sibling pipeline is accepted.
 The surrounding public render tests execute on the GPU; texture-load rejection
 itself occurs before GPU work.
 
-### Vertex system-value input validation
+### FL9_1 vertex shader system-value emulation
 
-The controlled FL9_1 core fixture sets `vertex_index_input` and
-`instance_index_input` false. It verifies that the selected vertex entry point
-is rejected before HAL when it declares either input, and that another safe
-entry point in the same module remains usable. CPU interface tests cover direct
-and structure-member declarations, unused declarations, safe sibling entries
-and missing entry names. A separate D3DCompile test verifies that compiling the
-backend-generated `SV_VertexID` interface for `vs_4_0_level_9_1` fails with
-FXC X4555, whether the WGSL value is used or unused. FXC also rejects generated
-`SV_InstanceID` under the 10Level9 profile with X4016, for direct and
-structure-member declarations whether used or unused. The safe sibling compiles
-at FL9_1, and the used input compiles with the `vs_5_0` control; the backend
-continues to reject it at FL9_1.
-A strict public test also creates a device from the selected FL9_1 adapter,
-verifies that pipelines selecting either unsupported input fail through core's
-specific validation error before HAL, and compiles a safe sibling pipeline.
+The selected FL9_1 projection supports a bounded `vertex_index` subset for
+TriangleList pipelines. The backend does not emit `SV_VertexID`: FXC rejects
+that native semantic with X4555. Naga maps the selected input to a custom float
+IA semantic, and command replay binds identity or temporary remapping buffers.
+Core permits direct `u32`-to-`f32` use and rejects integer arithmetic. Other
+primitive topologies fail at backend pipeline creation because current core
+limits cannot express the topology-specific restriction.
+
+The same private shader path also emulates `instance_index` from a host-updated
+constant at b13. CPU tests cover selected-entry detection and restricted integer
+semantics. FXC tests distinguish rejected native system semantics from the
+custom Naga-generated input that compiles under `vs_4_0_level_9_1`.
+
+Run the strict hardware test from a Visual Studio x64 developer environment:
 
 ```powershell
-cargo test --offline -p wgpu-types --lib vertex_builtins_are_downlevel_capabilities -- --nocapture --test-threads=1
-cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std vertex_builtin_detection_uses_selected_entry_point_declarations -- --nocapture --test-threads=1
-cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_index_entry_inputs_are_rejected_by_fxc -- --nocapture --test-threads=1
-cargo +1.93 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 fl91_instance_index_entry_inputs_are_rejected_by_fxc -- --nocapture --test-threads=1
-$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_vertex_system_values_at_fl91 -- --nocapture --test-threads=1
-$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_triangle_list_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The fixture exercises core validation on the forced-FL9_1 adapter; it does not
-draw using either unsupported input. These restrictions are recorded as
-profile/backend limitations, not hardware guarantees.
-
+The test requires a physical adapter, explicitly requests and verifies FL9_1,
+and checks complete 8x8 readbacks. On the RTX 3090 Ti, the red-pixel counts
+were 32 for a normal nonindexed draw, 0 for a degenerate indexed draw, 12 for
+a negative base-vertex draw, 32 for reindexed Uint32 indices, 32 for
+`first_vertex=100000`, and 32 after temporary-stream use. The tested driver is
+`32.0.16.2101`; historical FL9_1 driver behavior remains unverified.
 ### Out-of-target viewport validation
 
 The FL9_1 fixture reports

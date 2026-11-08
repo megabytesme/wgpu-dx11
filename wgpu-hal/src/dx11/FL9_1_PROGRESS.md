@@ -11053,3 +11053,68 @@ reported this builtin as rejected have been marked as superseded; the current
 strict evidence above is the source of truth. The next selected shader gap is
 `vertex_index`, whose implementation must preserve source IDs through the
 backend's rebased and gathered index paths.
+
+## Host-emulated `vertex_index` for FL9_1 TriangleList — 2026-11-08
+
+The private D3D11 path and opt-in wgpu projection now support the selected
+vertex entry point's `@builtin(vertex_index)` through Naga's opt-in custom
+float IA semantic. Core permits direct `u32`-to-`f32` conversion from this
+input and rejects other integer runtime operations. Pipeline creation reserves
+a native input slot and initializes an identity float stream through the
+FL9_1 maximum direct vertex index (65,534). Nonindexed `first_vertex` ranges
+above that limit are replayed with immutable per-draw float streams; user
+vertex streams are rebound at the matching absolute byte offset. Existing
+indexed translation also carries the resolved unsigned vertex IDs through
+rebased Uint16 windows and wide-triangle gather paths. Negative resolved IDs
+retain their u32 bit-pattern value for the supported conversion semantics.
+The emulation is accepted only for TriangleList pipelines; other topologies
+fail at HAL pipeline creation because current core limits cannot express this
+restriction. Direct integer arithmetic remains rejected. Temporary buffers
+are created during command replay and retained through each draw; this adds
+per-draw CPU allocation and native resource creation for remapped IDs.
+
+A strict public GPU test requested and asserted FL9_1 on the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`; software=false).
+It verified complete 8x8 readbacks for a normal nonindexed draw, a degenerate
+indexed draw, negative base vertex, reindexed Uint32 IDs 100000–100002,
+nonindexed `first_vertex=100000`, and a normal draw after temporary remapping.
+Observed red-pixel counts were 32/0/12/32/32/32. The high-ID test confirms the
+custom stream and user-stream offset logic for this case; it is not evidence
+for every large range or historical driver.
+
+Validation after the implementation and argument-option cleanup:
+
+- Strict public D3D11 suite: 82 passed, 0 failed, on the physical RTX at forced
+  FL9_1. One optional Float16 vertex-format subcase logged a capability skip;
+  no optional format execution is claimed.
+- Private D3D11 HAL suite: 409 passed, 0 failed, including strict FL9_1 GPU
+  execution cases.
+- Naga library: 137 passed, including writer tests for the opt-in semantic.
+- Core FL9 integer-semantics gate: 1 passed; core zero-public-DX11-adapter
+  isolation: 1 passed.
+- DX12 core regression: 94 passed.
+- DX12 HAL regression: 4 passed.
+- After the final shader-option refactor, the D3D11 HAL check, focused strict
+  GPU readback and FXC semantic test passed; the complete public and HAL suites
+  above were then rerun successfully.
+
+Clippy passed for Naga, DX11 core, DX11 HAL and the public D3D11 integration
+suite. The HAL reports existing `too_many_arguments`, test range-vector,
+item-order and needless-borrow warnings; the public test reports its existing
+`std::HashMap` warning. No warning was introduced by this increment. Rustfmt
+and `git diff --check` passed. The forced modern RTX driver cannot establish
+behavior on historical FL9_1 hardware. Public topology-specific core
+validation remains a gap, so this capability must not be treated as a complete
+public contract.
+
+Reproduction from Visual Studio 2022 x64 with Rust 1.93.1:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p naga --lib
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl91_integer_semantics_gate_follows_selected_entry_and_helper_calls
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib requesting_dx11_exposes_only_fl91_hardware_adapters
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+```

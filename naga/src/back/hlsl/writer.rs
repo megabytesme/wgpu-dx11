@@ -401,6 +401,26 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             }
         }
 
+        if self.options.fl9_vertex_index_input {
+            let entry = match self.pipeline_options.entry_point.as_ref() {
+                Some(&(ShaderStage::Vertex, ref name)) => module
+                    .entry_points
+                    .iter()
+                    .find(|entry| entry.stage == ShaderStage::Vertex && entry.name == *name),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                Error::Custom(
+                    "FL9 vertex-index input requires a selected vertex entry point".into(),
+                )
+            })?;
+            if !function_has_input_builtin(module, &entry.function, crate::BuiltIn::VertexIndex) {
+                return Err(Error::Custom(
+                    "FL9 vertex-index input requires a vertex_index entry-point input".into(),
+                ));
+            }
+        }
+
         if let Some(register) = self.options.fl9_viewport_transform {
             let entry = match self.pipeline_options.entry_point.as_ref() {
                 Some(&(ShaderStage::Vertex, ref name)) => module
@@ -1026,9 +1046,23 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             if let Some(ref binding) = m.binding {
                 self.write_modifier(binding)?;
             }
-            self.write_type(module, m.ty)?;
+            let fl9_vertex_index = shader_stage == (ShaderStage::Vertex, Io::Input)
+                && self.options.fl9_vertex_index_input
+                && matches!(
+                    m.binding,
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::VertexIndex))
+                );
+            if fl9_vertex_index {
+                write!(self.out, "float")?;
+            } else {
+                self.write_type(module, m.ty)?;
+            }
             write!(self.out, " {}", &m.name)?;
-            self.write_semantic(&m.binding, Some(shader_stage))?;
+            if fl9_vertex_index {
+                write!(self.out, " : NAGA_VERTEX_INDEX")?;
+            } else {
+                self.write_semantic(&m.binding, Some(shader_stage))?;
+            }
             writeln!(self.out, ";")?;
         }
         if subgroup_id_used && local_invocation_index_name.is_none() {
@@ -1198,9 +1232,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         let has_instance_index_input = self.options.fl9_instance_index_input
             && stage == ShaderStage::Vertex
             && function_has_input_builtin(module, func, crate::BuiltIn::InstanceIndex);
+        let has_vertex_index_input = self.options.fl9_vertex_index_input
+            && stage == ShaderStage::Vertex
+            && function_has_input_builtin(module, func, crate::BuiltIn::VertexIndex);
         Ok(EntryPointInterface {
             input: if !func.arguments.is_empty()
                 && (stage == ShaderStage::Fragment
+                    || has_vertex_index_input
                     || (has_instance_index_input && function_has_other_input(module, func))
                     || func
                         .arguments
@@ -1246,6 +1284,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 if self.options.fl9_instance_index_input =>
             {
                 write!(self.out, "naga_fl9_instance_index")?
+            }
+            Some(crate::Binding::BuiltIn(crate::BuiltIn::VertexIndex))
+                if self.options.fl9_vertex_index_input =>
+            {
+                write!(self.out, "{}.{}", ep_input.arg_name, fake_member.name)?
             }
             Some(crate::Binding::BuiltIn(crate::BuiltIn::SubgroupSize)) => {
                 write!(self.out, "WaveGetLaneCount()")?
@@ -1360,7 +1403,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         let mut fake_iter = ep_input.members.iter();
         for (arg_index, arg) in func.arguments.iter().enumerate() {
             write!(self.out, "{}", back::INDENT)?;
-            self.write_type(module, arg.ty)?;
+            if self.options.fl9_vertex_index_input
+                && matches!(
+                    arg.binding,
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::VertexIndex))
+                )
+            {
+                write!(self.out, "float")?;
+            } else {
+                self.write_type(module, arg.ty)?;
+            }
             let arg_name = &self.names[&NameKey::EntryPointArgument(ep_index, arg_index as u32)];
             write!(self.out, " {arg_name}")?;
             match module.types[arg.ty].inner {
@@ -1889,7 +1941,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     }
 
                     // Write the member type and name
-                    self.write_type(module, member.ty)?;
+                    if self.options.fl9_vertex_index_input
+                        && matches!(
+                            member.binding,
+                            Some(crate::Binding::BuiltIn(crate::BuiltIn::VertexIndex))
+                        )
+                    {
+                        write!(self.out, "float")?;
+                    } else {
+                        self.write_type(module, member.ty)?;
+                    }
                     write!(
                         self.out,
                         " {}",
@@ -1904,7 +1965,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
                 ))
             {
-                self.write_semantic(&member.binding, shader_stage)?;
+                if self.options.fl9_vertex_index_input
+                    && matches!(
+                        member.binding,
+                        Some(crate::Binding::BuiltIn(crate::BuiltIn::VertexIndex))
+                    )
+                {
+                    write!(self.out, " : NAGA_VERTEX_INDEX")?;
+                } else {
+                    self.write_semantic(&member.binding, shader_stage)?;
+                }
             }
             writeln!(self.out, ";")?;
         }
@@ -5710,5 +5780,45 @@ mod fl9_viewport_tests {
             "{output}"
         );
         assert!(!output.contains("SV_InstanceID"), "{output}");
+    }
+
+    #[test]
+    fn vertex_index_input_can_use_a_custom_float_ia_semantic() {
+        let source = "@vertex fn main(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(f32(id), 0.0, 0.5, 1.0); }";
+        let options = Options {
+            fl9_vertex_index_input: true,
+            ..Options::default()
+        };
+        let output = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(
+            output.contains("float id_1 : NAGA_VERTEX_INDEX"),
+            "{output}"
+        );
+        assert!(
+            output.contains("float id = vertexinput_main.id_1"),
+            "{output}"
+        );
+        let default_output = translate(source, &Options::default(), ShaderStage::Vertex).unwrap();
+        assert!(default_output.contains("SV_VertexID"), "{default_output}");
+
+        let structured = "struct Inputs { @builtin(vertex_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(f32(input.id), 0.0, 0.5, 1.0); }";
+        let output = translate(structured, &options, ShaderStage::Vertex).unwrap();
+        assert!(output.contains("float id : NAGA_VERTEX_INDEX"), "{output}");
+        assert!(
+            output.contains("Inputs input = { vertexinput_main.id }"),
+            "{output}"
+        );
+
+        let mixed = "struct Inputs { @location(0) position: vec2f, @builtin(vertex_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(input.position + vec2f(f32(input.id) * 0.001), 0.5, 1.0); }";
+        let output = translate(mixed, &options, ShaderStage::Vertex).unwrap();
+        assert!(output.contains("float2 position : LOC0"), "{output}");
+        assert!(output.contains("float id : NAGA_VERTEX_INDEX"), "{output}");
+        assert!(
+            output.contains("Inputs input = { vertexinput_main.position, vertexinput_main.id }"),
+            "{output}"
+        );
+
+        let fragment = "@fragment fn main() -> @location(0) vec4f { return vec4f(1.0); }";
+        assert!(translate(fragment, &options, ShaderStage::Fragment).is_err());
     }
 }

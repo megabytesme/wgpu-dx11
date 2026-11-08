@@ -10159,6 +10159,353 @@ fn public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91() {
 }
 
 #[test]
+fn public_dx11_vertex_index_triangle_list_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.vertex_index_input);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=vertex_index triangle-list emulation",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 vertex-index emulation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex-index shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                @vertex fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let id = f32(index);
+                    var x: f32;
+                    var y: f32;
+                    if id < 3.0 {
+                        x = id - 1.0;
+                        y = 1.0 - abs(x) * 2.0;
+                    } else if id >= 100000.0 && id <= 100002.0 {
+                        x = id - 100001.0;
+                        y = 1.0 - abs(x) * 2.0;
+                    } else if id > 4.0e9 {
+                        x = -1.0;
+                        y = -1.0;
+                    } else {
+                        x = id / 32767.0 - 1.0;
+                        y = 1.0;
+                    }
+                    return vec4f(x, y, 0.5, 1.0);
+                }
+                @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }
+            "#
+            .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 vertex-index triangle-list pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 vertex-index target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback_size = 8 * 256;
+    let nonindexed_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 nonindexed vertex-index readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let indexed_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 indexed vertex-index readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let negative_base_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 negative-base vertex-index readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let wide_index_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 wide-index vertex-index readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let large_nonindexed_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 large nonindexed vertex-index readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let post_transition_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 post-transition vertex-index readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let index = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 degenerate vertex-index input"),
+        size: 8,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    let index_data = [0u16, 0, 1, 0]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect::<Vec<_>>();
+    index
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped index data")
+        .copy_from_slice(&index_data);
+    index.unmap();
+    let negative_base_index = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 negative-base vertex-index input"),
+        size: 8,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    let negative_base_index_data = [0u16, 32_768, 65_534, 0]
+        .into_iter()
+        .flat_map(u16::to_ne_bytes)
+        .collect::<Vec<_>>();
+    negative_base_index
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped negative-base index data")
+        .copy_from_slice(&negative_base_index_data);
+    negative_base_index.unmap();
+    let wide_index = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 wide vertex-index input"),
+        size: 16,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    let wide_index_data = [100_000u32, 100_001, 100_002, 0]
+        .into_iter()
+        .flat_map(u32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    wide_index
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped wide index data")
+        .copy_from_slice(&wide_index_data);
+    wide_index.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 vertex-index encoder"),
+    });
+    for (draw, readback) in [
+        (0, &nonindexed_readback),
+        (1, &indexed_readback),
+        (2, &negative_base_readback),
+        (3, &wide_index_readback),
+        (4, &large_nonindexed_readback),
+        (5, &post_transition_readback),
+    ] {
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some(match draw {
+                    0 => "nonindexed FL9_1 vertex-index pass",
+                    1 => "indexed FL9_1 vertex-index pass",
+                    2 => "negative-base FL9_1 vertex-index pass",
+                    3 => "wide-index FL9_1 vertex-index pass",
+                    4 => "large nonindexed FL9_1 vertex-index pass",
+                    _ => "post-transition FL9_1 vertex-index pass",
+                }),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            if draw == 1 {
+                pass.set_index_buffer(index.slice(..), IndexFormat::Uint16);
+                pass.draw_indexed(0..3, 0, 0..1);
+            } else if draw == 2 {
+                pass.set_index_buffer(negative_base_index.slice(..), IndexFormat::Uint16);
+                pass.draw_indexed(0..3, -1, 0..1);
+            } else if draw == 3 {
+                pass.set_index_buffer(wide_index.slice(..), IndexFormat::Uint32);
+                pass.draw_indexed(0..3, 0, 0..1);
+            } else if draw == 4 {
+                pass.draw(100_000..100_003, 0..1);
+            } else {
+                pass.draw(0..3, 0..1);
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for (name, readback) in [
+        ("nonindexed", &nonindexed_readback),
+        ("indexed", &indexed_readback),
+        ("negative_base", &negative_base_readback),
+        ("wide_index", &wide_index_readback),
+        ("large_nonindexed", &large_nonindexed_readback),
+        ("post_transition", &post_transition_readback),
+    ] {
+        let sender = sender.clone();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            sender.send((name, result)).unwrap()
+        });
+    }
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 vertex-index execution");
+    let mut mapped = std::collections::HashMap::new();
+    for _ in 0..6 {
+        let (name, result) = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("vertex-index map callback");
+        result.expect("map vertex-index output");
+        mapped.insert(name, ());
+    }
+    assert_eq!(mapped.len(), 6);
+    let count_red = |readback: &Buffer| {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped pixels");
+        let mut red = 0;
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                if data[offset] > 200 && data[offset + 1] < 8 && data[offset + 2] < 8 {
+                    red += 1;
+                }
+            }
+        }
+        red
+    };
+    let nonindexed_red = count_red(&nonindexed_readback);
+    let indexed_red = count_red(&indexed_readback);
+    let negative_base_red = count_red(&negative_base_readback);
+    let wide_index_red = count_red(&wide_index_readback);
+    let large_nonindexed_red = count_red(&large_nonindexed_readback);
+    let post_transition_red = count_red(&post_transition_readback);
+    assert!(
+        nonindexed_red > 8,
+        "nonindexed vertex IDs did not form a triangle: {nonindexed_red}"
+    );
+    assert_eq!(
+        indexed_red, 0,
+        "indices [0, 0, 1] should collapse the triangle"
+    );
+    assert!(
+        negative_base_red > 8,
+        "base_vertex=-1 IDs should form a distinct triangle: {negative_base_red}"
+    );
+    assert!(
+        wide_index_red > 8,
+        "wide index IDs should form a triangle: {wide_index_red}"
+    );
+    assert!(
+        large_nonindexed_red > 8,
+        "large nonindexed IDs should form a triangle: {large_nonindexed_red}"
+    );
+    assert_eq!(post_transition_red, nonindexed_red);
+    nonindexed_readback.unmap();
+    indexed_readback.unmap();
+    negative_base_readback.unmap();
+    wide_index_readback.unmap();
+    large_nonindexed_readback.unmap();
+    post_transition_readback.unmap();
+    println!(
+        "PASS: public FL9_1 vertex_index emulation verified nonindexed, indexed, negative-base, reindexed-U32, large-firstVertex and post-transition output; red_pixels={nonindexed_red}/{indexed_red}/{negative_base_red}/{wide_index_red}/{large_nonindexed_red}/{post_transition_red}"
+    );
+}
+
+#[test]
 fn public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -16202,7 +16549,7 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
 }
 
 #[test]
-fn public_dx11_emulates_instance_but_rejects_vertex_index_at_fl91() {
+fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -16218,6 +16565,12 @@ fn public_dx11_emulates_instance_but_rejects_vertex_index_at_fl91() {
     };
     let info = adapter.get_info();
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .vertex_index_input
+    );
     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public FL9_1 vertex system-value validation test"),
         required_features: Features::empty(),
@@ -16277,11 +16630,11 @@ fn public_dx11_emulates_instance_but_rejects_vertex_index_at_fl91() {
         })
     };
     let no_buffers = [];
-    expect_validation_error_containing(
-        &device,
-        "vertex_index input",
-        "UnsupportedVertexIndexInput",
-        || drop(create_pipeline("vertex_index", &no_buffers)),
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline("vertex_index", &no_buffers));
+    assert!(
+        poll_ready(scope.pop()).is_none(),
+        "the emulated vertex_index input must pass core and HAL pipeline creation"
     );
     let scope = device.push_error_scope(ErrorFilter::Validation);
     drop(create_pipeline("instance_index", &no_buffers));
@@ -16300,7 +16653,7 @@ fn public_dx11_emulates_instance_but_rejects_vertex_index_at_fl91() {
         attributes: &attributes,
     })];
     drop(create_pipeline("safe", &safe_buffers));
-    println!("PASS: public core rejected vertex_index, accepted the emulated instance_index input, and accepted a safe sibling entry");
+    println!("PASS: public core and HAL accepted emulated vertex_index and instance_index inputs and a safe sibling entry");
 }
 
 #[test]

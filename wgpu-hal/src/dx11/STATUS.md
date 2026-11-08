@@ -1,3 +1,11 @@
+
+Latest shader-input status: `instance_index` and a restricted `vertex_index`
+subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
+IA semantic with direct identity IDs up to 65,534 and temporary remapped streams
+for larger IDs, including nonindexed `first_vertex`. It is limited to
+TriangleList pipelines and direct `u32`-to-`f32` use. The strict RTX 3090 Ti
+test verified nonindexed, indexed, negative-base, wide-index, large-firstVertex
+and transition output. See `TESTING.md`; topology validation remains a core gap.
 # Direct3D 11 backend status
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an
@@ -221,7 +229,7 @@ query and backend path are available.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels). A later
 strict test verifies WGSL `instance_index` through the host-updated FL9_1
-constant path; `vertex_index` remains unavailable.
+constant path; the latest strict test verifies TriangleList-only `vertex_index` emulation.
 
 A twelfth strict public test verifies the FL9_1 aggregate fragment uniform
 budget across two sparse bindings: all 32 float4 vectors contribute to the
@@ -388,25 +396,19 @@ position is unavailable in the 9_x shader model; front-facing remains a tested
 compiler/backend limitation, not a separate claim about hardware
 impossibility.
 
-The FL9_1 projection continues to report
-DownlevelLimits::vertex_index_input = false: FXC rejects the generated
-SV_VertexID input with X4555. instance_index_input is now supported through an
-opt-in Naga lowering that reads the host-provided value from reserved vertex
-constant register b13. The viewport transform and instance index share one
-32-byte constant buffer; replay writes first_instance plus emulated_instance
-before each draw, including direct indexed draws. Core permits the selected
-builtin and its supported u32-to-f32 use, while integer arithmetic and other
-newly introduced integer operations remain gated. This is an emulation of the
-observable draw value, not use of the unsupported SV_InstanceID system
-semantic.
+The selected FL9_1 projection enables `DownlevelLimits::vertex_index_input` for
+a constrained host-stream emulation. FXC rejects native `SV_VertexID` with
+X4555, so Naga emits a custom float IA semantic and command replay supplies
+identity or temporary remapping streams. This path supports TriangleList only
+and core permits direct `u32`-to-`f32` use; integer arithmetic remains
+rejected. `instance_index` is emulated through reserved vertex constant b13,
+updated to `first_instance + instance` before each draw. Neither emulation is
+proof of compatibility with historical FL9_1 drivers.
 
-Strict RTX 3090 Ti tests at requested/actual FL9_1 passed for per-instance
-vertex streams plus instance-index-dependent color, and for non-indexed and
-indexed draws using first_instance=2 and first_instance=4. The latter
-verified 128/128 pixels. The generated direct, struct-only and mixed
-location/builtin HLSL forms compiled with vs_4_0_level_9_1 FXC. Historical
-FL9_1 driver behavior remains unverified; vertex_index is still rejected.
-
+Strict RTX tests at requested/actual FL9_1 cover both builtins. The latest
+vertex-index public readback checks normal and degenerate draws, negative base
+vertex, reindexed wide indices, `first_vertex=100000`, and state after the
+remapping draw. See `TESTING.md` for the exact command and results.
 Core also models the vertex-stage sampled-texture limit separately from the
 shared per-stage texture limit. The controlled FL9_1 fixture reports zero and
 checks the selected shader entry point before pipeline creation reaches HAL;

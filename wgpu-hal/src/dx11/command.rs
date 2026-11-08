@@ -24,8 +24,9 @@ use windows::{
                 ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
                 ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
                 ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
-                ID3D11ShaderResourceView, ID3D11VertexShader, D3D11_BOX, D3D11_CLEAR_DEPTH,
-                D3D11_CLEAR_STENCIL, D3D11_VIEWPORT,
+                ID3D11ShaderResourceView, ID3D11VertexShader, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX,
+                D3D11_BUFFER_DESC, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, D3D11_SUBRESOURCE_DATA,
+                D3D11_USAGE_IMMUTABLE, D3D11_VIEWPORT,
             },
             Dxgi::Common::DXGI_FORMAT,
         },
@@ -168,6 +169,7 @@ pub(super) enum NativeCommand {
         blend: Option<windows::Win32::Graphics::Direct3D11::ID3D11BlendState>,
         sample_mask: u32,
         depth_state: Option<ID3D11DepthStencilState>,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
     },
     SetBlendConstant([f32; 4]),
     SetVertexShader(ID3D11VertexShader),
@@ -207,6 +209,7 @@ pub(super) enum NativeCommand {
         instances: u32,
         max_vertices: u32,
         zero_input: bool,
+        vertex_index: Option<VertexIndexDraw>,
         instance_bindings: InstanceBindings,
     },
     DrawPoints {
@@ -249,6 +252,7 @@ pub(super) enum NativeCommand {
         max_vertices: u32,
         instances: u32,
         instance_bindings: InstanceBindings,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
     },
     DrawIndexedMulti {
         binding: Arc<IndexBinding>,
@@ -259,6 +263,7 @@ pub(super) enum NativeCommand {
         max_vertices: u32,
         instances: u32,
         instance_bindings: InstanceBindings,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
     },
     DrawIndexedPoints {
         binding: Arc<IndexBinding>,
@@ -303,6 +308,14 @@ pub(super) enum NativeCommand {
     EndRender {
         resolve: Option<ResolveOperation>,
     },
+}
+
+#[derive(Debug)]
+pub(super) struct VertexIndexDraw {
+    pub slot: u32,
+    pub identity: ID3D11Buffer,
+    pub max_vertex_index: u32,
+    pub vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
 }
 
 pub(super) fn draw_batches(
@@ -505,6 +518,7 @@ impl CommandBuffer {
         let mut active_sample_mask = u32::MAX;
         let mut blend_constant = [1.0; 4];
         let mut stencil_reference = 0;
+        let mut active_vertex_index_slot = None;
         for command in &self.commands {
             unsafe {
                 match command {
@@ -564,6 +578,7 @@ impl CommandBuffer {
                         blend_constant = [1.0; 4];
                         stencil_reference = 0;
                         context.ClearState();
+                        active_vertex_index_slot = None;
                         if let Some(target) = &target {
                             context.OMSetRenderTargets(
                                 Some(&[Some(target.clone())]),
@@ -635,6 +650,7 @@ impl CommandBuffer {
                         blend,
                         sample_mask,
                         depth_state,
+                        vertex_index,
                     } => {
                         active_depth_state = depth_state.clone();
                         active_blend_state = blend.clone();
@@ -648,6 +664,18 @@ impl CommandBuffer {
                         context
                             .OMSetDepthStencilState(active_depth_state.as_ref(), stencil_reference);
                         context.IASetInputLayout(input.as_ref());
+                        if let Some((slot, buffer)) = vertex_index {
+                            context.IASetVertexBuffers(
+                                *slot,
+                                1,
+                                Some(&Some(buffer.clone())),
+                                Some(&4),
+                                Some(&0),
+                            );
+                        } else if let Some(slot) = active_vertex_index_slot {
+                            context.IASetVertexBuffers(slot, 1, Some(&None), Some(&0), Some(&0));
+                        }
+                        active_vertex_index_slot = vertex_index.as_ref().map(|(slot, _)| *slot);
                         context.IASetPrimitiveTopology(match topology {
                             wgt::PrimitiveTopology::PointList => D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
                             wgt::PrimitiveTopology::LineList => D3D_PRIMITIVE_TOPOLOGY_LINELIST,
@@ -746,15 +774,114 @@ impl CommandBuffer {
                         instances,
                         max_vertices,
                         zero_input,
+                        vertex_index,
                         instance_bindings,
                     } => {
                         instance_bindings.validate(*instances)?;
-                        draw_batches(*first, *count, 0, *max_vertices, |_, _| {})?;
-                        for instance in 0..*instances {
-                            instance_bindings.bind(context, instance)?;
-                            draw_batches(*first, *count, 1, *max_vertices, |first, count| {
-                                context.Draw(count, draw_start_vertex(first, *zero_input));
-                            })?;
+                        if let Some(vertex_index) = vertex_index {
+                            let batch_limit = (*max_vertices)
+                                .min(vertex_index.max_vertex_index.saturating_add(1));
+                            let batch_limit = batch_limit - batch_limit % 3;
+                            if batch_limit == 0 {
+                                return Err(Error::from_hresult(E_INVALIDARG));
+                            }
+                            draw_batches(0, *count, 0, batch_limit, |_, _| {})?;
+                            let device = context.GetDevice()?;
+                            let mut chunks = Vec::new();
+                            let chunk_count = count.div_ceil(batch_limit) as usize;
+                            chunks
+                                .try_reserve_exact(chunk_count)
+                                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                            let mut relative = 0;
+                            while relative < *count {
+                                let count = (*count - relative).min(batch_limit);
+                                let first = first
+                                    .checked_add(relative)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                first
+                                    .checked_add(count - 1)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                let byte_width = count
+                                    .checked_mul(4)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                let mut values = Vec::new();
+                                values
+                                    .try_reserve_exact(count as usize)
+                                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                                for index in 0..count {
+                                    values.push((first + index) as f32);
+                                }
+                                let desc = D3D11_BUFFER_DESC {
+                                    ByteWidth: byte_width,
+                                    Usage: D3D11_USAGE_IMMUTABLE,
+                                    BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                                    ..Default::default()
+                                };
+                                let data = D3D11_SUBRESOURCE_DATA {
+                                    pSysMem: values.as_ptr().cast(),
+                                    ..Default::default()
+                                };
+                                let mut buffer = None;
+                                device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                                chunks.push((
+                                    first,
+                                    count,
+                                    buffer.ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                                ));
+                                relative = relative
+                                    .checked_add(count)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            }
+                            for instance in 0..*instances {
+                                instance_bindings.bind(context, instance)?;
+                                for (first, count, index_buffer) in &chunks {
+                                    for (slot, buffer, offset, stride) in &vertex_index.vertices {
+                                        let offset = u64::from(*offset)
+                                            .checked_add(u64::from(*first) * u64::from(*stride))
+                                            .and_then(|offset| u32::try_from(offset).ok())
+                                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                        context.IASetVertexBuffers(
+                                            *slot,
+                                            1,
+                                            Some(&Some(buffer.clone())),
+                                            Some(stride),
+                                            Some(&offset),
+                                        );
+                                    }
+                                    context.IASetVertexBuffers(
+                                        vertex_index.slot,
+                                        1,
+                                        Some(&Some(index_buffer.clone())),
+                                        Some(&4),
+                                        Some(&0),
+                                    );
+                                    context.Draw(*count, 0);
+                                }
+                            }
+                            for (slot, buffer, offset, stride) in &vertex_index.vertices {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(stride),
+                                    Some(offset),
+                                );
+                            }
+                            context.IASetVertexBuffers(
+                                vertex_index.slot,
+                                1,
+                                Some(&Some(vertex_index.identity.clone())),
+                                Some(&4),
+                                Some(&0),
+                            );
+                        } else {
+                            draw_batches(*first, *count, 0, *max_vertices, |_, _| {})?;
+                            for instance in 0..*instances {
+                                instance_bindings.bind(context, instance)?;
+                                draw_batches(*first, *count, 1, *max_vertices, |first, count| {
+                                    context.Draw(count, draw_start_vertex(first, *zero_input));
+                                })?;
+                            }
                         }
                     }
                     NativeCommand::DrawPoints {
@@ -897,6 +1024,7 @@ impl CommandBuffer {
                         max_vertices,
                         instances,
                         instance_bindings,
+                        vertex_index,
                     } => {
                         binding.draw(
                             context,
@@ -906,6 +1034,7 @@ impl CommandBuffer {
                             (vertex, *vertex_offset, *vertex_bytes, *stride, *extent),
                             (*max_vertices, *instances),
                             instance_bindings,
+                            vertex_index.as_ref(),
                         )?;
                     }
                     NativeCommand::DrawIndexedMulti {
@@ -917,6 +1046,7 @@ impl CommandBuffer {
                         max_vertices,
                         instances,
                         instance_bindings,
+                        vertex_index,
                     } => binding.draw_multi(
                         context,
                         *first,
@@ -925,6 +1055,7 @@ impl CommandBuffer {
                         vertices,
                         (*max_vertices, *instances),
                         instance_bindings,
+                        vertex_index.as_ref(),
                     )?,
                     NativeCommand::DrawIndexedPoints {
                         binding,

@@ -38,6 +38,13 @@ impl ShaderProfile {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct Fl9ShaderInputOptions {
+    pub viewport_transform: bool,
+    pub instance_index_input: bool,
+    pub vertex_index_input: bool,
+}
+
 /// The compiler HRESULT and any diagnostic text returned by FXC.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -262,27 +269,28 @@ pub(super) fn compile_naga_with_viewport(
     bindings: &[ShaderBinding],
     viewport_transform: bool,
 ) -> Result<Vec<u8>, NagaCompileError> {
-    compile_naga_with_viewport_and_instance_index(
+    compile_naga_with_viewport_and_fl9_inputs(
         module,
         info,
         stage,
         entry,
         profile,
         bindings,
-        viewport_transform,
-        false,
+        Fl9ShaderInputOptions {
+            viewport_transform,
+            ..Default::default()
+        },
     )
 }
 
-pub(super) fn compile_naga_with_viewport_and_instance_index(
+pub(super) fn compile_naga_with_viewport_and_fl9_inputs(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
     stage: naga::ShaderStage,
     entry: &str,
     profile: ShaderProfile,
     bindings: &[ShaderBinding],
-    viewport_transform: bool,
-    instance_index_input: bool,
+    input_options: Fl9ShaderInputOptions,
 ) -> Result<Vec<u8>, NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
@@ -310,12 +318,17 @@ pub(super) fn compile_naga_with_viewport_and_instance_index(
         shader_model: hlsl::ShaderModel::V5_0,
         fake_missing_bindings: false,
         direct_sampler_bindings: true,
-        fl9_viewport_transform: if viewport_transform && stage == naga::ShaderStage::Vertex {
+        fl9_viewport_transform: if input_options.viewport_transform
+            && stage == naga::ShaderStage::Vertex
+        {
             Some(13)
         } else {
             None
         },
-        fl9_instance_index_input: instance_index_input && stage == naga::ShaderStage::Vertex,
+        fl9_instance_index_input: input_options.instance_index_input
+            && stage == naga::ShaderStage::Vertex,
+        fl9_vertex_index_input: input_options.vertex_index_input
+            && stage == naga::ShaderStage::Vertex,
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
         // FXC rejects Naga's dynamic loop guard at FL9_1. Without the guard,
@@ -853,6 +866,45 @@ mod tests {
         assert!(compile_hlsl(source, "main", ShaderProfile::VertexLevel9_1)
             .unwrap()
             .starts_with(b"DXBC"));
+    }
+
+    #[test]
+    fn fl91_naga_vertex_index_float_input_compiles_with_fxc() {
+        for source in [
+            "@vertex fn main(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f { return vec4f(f32(id), 0.0, 0.5, 1.0); }",
+            "struct Inputs { @builtin(vertex_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(f32(input.id), 0.0, 0.5, 1.0); }",
+            "struct Inputs { @location(0) position: vec2f, @builtin(vertex_index) id: u32 } @vertex fn main(input: Inputs) -> @builtin(position) vec4f { return vec4f(input.position + vec2f(f32(input.id) * 0.001), 0.5, 1.0); }",
+        ] {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let options = naga::back::hlsl::Options {
+                shader_model: naga::back::hlsl::ShaderModel::V5_0,
+                fake_missing_bindings: false,
+                fl9_vertex_index_input: true,
+                ..Default::default()
+            };
+            let pipeline = naga::back::hlsl::PipelineOptions {
+                entry_point: Some((naga::ShaderStage::Vertex, "main".into())),
+            };
+            let mut hlsl = String::new();
+            let reflection = naga::back::hlsl::Writer::new(&mut hlsl, &options, &pipeline)
+                .write(&module, &info, None)
+                .unwrap();
+            let entry = reflection
+                .entry_point_names
+                .into_iter()
+                .next()
+                .unwrap()
+                .unwrap();
+            assert!(hlsl.contains("NAGA_VERTEX_INDEX"), "{hlsl}");
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1)
+                .unwrap_or_else(|error| panic!("generated HLSL did not compile: {error:?}\n{hlsl}"));
+        }
     }
 
     #[test]

@@ -3,31 +3,33 @@ use super::{
     api::Unavailable,
     device::{FeatureLevel, NativeDevice},
     hal_shader::ShaderModule,
+    shader::Fl9ShaderInputOptions,
 };
 use alloc::{string::ToString, sync::Arc};
 use windows::{
     core::PCSTR,
     Win32::Graphics::{
         Direct3D11::{
-            ID3D11BlendState, ID3D11ClassLinkage, ID3D11DepthStencilState, ID3D11InputLayout,
-            ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader, D3D11_BLEND,
-            D3D11_BLEND_BLEND_FACTOR, D3D11_BLEND_DESC, D3D11_BLEND_DEST_ALPHA,
-            D3D11_BLEND_DEST_COLOR, D3D11_BLEND_INV_BLEND_FACTOR, D3D11_BLEND_INV_DEST_ALPHA,
-            D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
-            D3D11_BLEND_ONE, D3D11_BLEND_OP, D3D11_BLEND_OP_ADD, D3D11_BLEND_OP_MAX,
-            D3D11_BLEND_OP_MIN, D3D11_BLEND_OP_REV_SUBTRACT, D3D11_BLEND_OP_SUBTRACT,
-            D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_SRC_COLOR, D3D11_BLEND_ZERO,
-            D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
-            D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
-            D3D11_COMPARISON_FUNC, D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT,
-            D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
-            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
-            D3D11_FILL_WIREFRAME, D3D11_FORMAT_SUPPORT_BLENDABLE,
-            D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
-            D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT,
-            D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT,
-            D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO,
+            ID3D11BlendState, ID3D11Buffer, ID3D11ClassLinkage, ID3D11DepthStencilState,
+            ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader,
+            D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND, D3D11_BLEND_BLEND_FACTOR, D3D11_BLEND_DESC,
+            D3D11_BLEND_DEST_ALPHA, D3D11_BLEND_DEST_COLOR, D3D11_BLEND_INV_BLEND_FACTOR,
+            D3D11_BLEND_INV_DEST_ALPHA, D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA,
+            D3D11_BLEND_INV_SRC_COLOR, D3D11_BLEND_ONE, D3D11_BLEND_OP, D3D11_BLEND_OP_ADD,
+            D3D11_BLEND_OP_MAX, D3D11_BLEND_OP_MIN, D3D11_BLEND_OP_REV_SUBTRACT,
+            D3D11_BLEND_OP_SUBTRACT, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_SRC_COLOR,
+            D3D11_BLEND_ZERO, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALPHA,
+            D3D11_COLOR_WRITE_ENABLE_BLUE, D3D11_COLOR_WRITE_ENABLE_GREEN,
+            D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_FUNC,
+            D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT, D3D11_CULL_NONE,
+            D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
+            D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_FILL_WIREFRAME,
+            D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
+            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR,
+            D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT,
+            D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE,
+            D3D11_STENCIL_OP_ZERO, D3D11_SUBRESOURCE_DATA, D3D11_USAGE_IMMUTABLE,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -333,18 +335,22 @@ fn overlapping_vertex_element(
 struct VertexSlotAllocator {
     logical_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
     ranges: [alloc::vec::Vec<(u32, u32)>; crate::MAX_VERTEX_BUFFERS],
+    occupied: [bool; crate::MAX_VERTEX_BUFFERS],
     level: FeatureLevel,
 }
 
 impl VertexSlotAllocator {
-    fn new(level: FeatureLevel, occupied: impl Iterator<Item = usize>) -> Self {
+    fn new(level: FeatureLevel, occupied_slots: impl Iterator<Item = usize>) -> Self {
         let mut logical_slots = [None; crate::MAX_VERTEX_BUFFERS];
-        for slot in occupied {
+        let mut occupied = [false; crate::MAX_VERTEX_BUFFERS];
+        for slot in occupied_slots {
             logical_slots[slot] = Some(slot);
+            occupied[slot] = true;
         }
         Self {
             logical_slots,
             ranges: core::array::from_fn(|_| alloc::vec::Vec::new()),
+            occupied,
             level,
         }
     }
@@ -359,9 +365,16 @@ impl VertexSlotAllocator {
                     && !overlapping_vertex_element(self.level, &self.ranges[*physical], range)
             })
             .map(|(physical, _)| physical)
-            .or_else(|| self.logical_slots.iter().position(Option::is_none))?;
+            .or_else(|| self.occupied.iter().position(|used| !used))?;
+        self.occupied[slot] = true;
         self.logical_slots[slot] = Some(logical);
         self.ranges[slot].push(range);
+        Some(slot as u32)
+    }
+
+    fn reserve_hidden(&mut self) -> Option<u32> {
+        let slot = self.occupied.iter().position(|used| !used)?;
+        self.occupied[slot] = true;
         Some(slot as u32)
     }
 }
@@ -588,9 +601,12 @@ pub struct RenderPipeline {
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     pub(super) vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; crate::MAX_VERTEX_BUFFERS],
     pub(super) vertex_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
+    pub(super) vertex_index_slot: Option<u32>,
+    pub(super) vertex_index_buffer: Option<ID3D11Buffer>,
     pub(super) topology: wgt::PrimitiveTopology,
     pub(super) strip_index_format: Option<wgt::IndexFormat>,
     pub(super) uses_instance_index: bool,
+    pub(super) uses_vertex_index: bool,
 }
 
 #[cfg(test)]
@@ -2630,9 +2646,9 @@ impl RenderPipeline {
         else {
             return Err(invalid());
         };
-        vertex_stage
+        let uses_vertex_index = vertex_stage
             .module
-            .validate_vertex_index(vertex_stage.entry_point)?;
+            .uses_vertex_index_input(vertex_stage.entry_point)?;
         let uses_instance_index = vertex_stage
             .module
             .uses_instance_index_input(vertex_stage.entry_point)?;
@@ -2664,6 +2680,12 @@ impl RenderPipeline {
         ) && desc.primitive.strip_index_format.is_some())
         {
             return Err(invalid());
+        }
+        if uses_vertex_index && desc.primitive.topology != wgt::PrimitiveTopology::TriangleList {
+            return Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::VERTEX,
+                "D3D11 FL9 vertex_index currently supports triangle-list pipelines only".into(),
+            ));
         }
         let target = match desc.color_targets {
             [Some(target)] => Some(target),
@@ -2929,8 +2951,11 @@ impl RenderPipeline {
             vertex_stage.entry_point,
             &vertex_bindings,
             false,
-            false,
-            uses_instance_index,
+            Fl9ShaderInputOptions {
+                instance_index_input: uses_instance_index,
+                vertex_index_input: uses_vertex_index,
+                ..Default::default()
+            },
             vertex_stage.constants,
         )?;
         // Keep the original shader available when the remap exceeds FL9 limits.
@@ -2938,9 +2963,12 @@ impl RenderPipeline {
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
             &vertex_bindings,
-            true,
             false,
-            uses_instance_index,
+            Fl9ShaderInputOptions {
+                viewport_transform: true,
+                instance_index_input: uses_instance_index,
+                vertex_index_input: uses_vertex_index,
+            },
             vertex_stage.constants,
         ) {
             Ok(code) => Some(code),
@@ -3037,6 +3065,21 @@ impl RenderPipeline {
             vertex_layouts[slot] =
                 Some((layout.array_stride as u32, vertex_extent, layout.step_mode));
         }
+        let vertex_index_slot = if uses_vertex_index {
+            let slot = vertex_slots.reserve_hidden().ok_or_else(invalid)?;
+            input_desc.push(D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: PCSTR(c"NAGA_VERTEX_INDEX".as_ptr().cast()),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32_FLOAT,
+                InputSlot: slot,
+                AlignedByteOffset: 0,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            });
+            Some(slot)
+        } else {
+            None
+        };
         let raster_desc = D3D11_RASTERIZER_DESC {
             FillMode: match desc.primitive.polygon_mode {
                 wgt::PolygonMode::Fill => D3D11_FILL_SOLID,
@@ -3058,6 +3101,7 @@ impl RenderPipeline {
         };
         let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend, mut depth_state) =
             (None, None, None, None, None, None);
+        let mut vertex_index_buffer = None;
         let mut viewport_vertex = None;
         let failure = |error: windows::core::Error| {
             crate::PipelineError::Linkage(
@@ -3091,7 +3135,32 @@ impl RenderPipeline {
                     Some(&mut fragment),
                 )
                 .map_err(failure)?;
-            if has_vertex_input {
+            if uses_vertex_index {
+                let max_vertex_index =
+                    super::capabilities::HardwareGuarantees::for_level(owner.feature_level())
+                        .max_vertex_index;
+                let mut ids = alloc::vec::Vec::new();
+                ids.try_reserve_exact(max_vertex_index as usize + 1)
+                    .map_err(|_| crate::PipelineError::Device(crate::DeviceError::OutOfMemory))?;
+                ids.extend((0..=max_vertex_index).map(|index| index as f32));
+                let byte_width =
+                    u32::try_from(ids.len() * size_of::<f32>()).map_err(|_| invalid())?;
+                let desc = D3D11_BUFFER_DESC {
+                    ByteWidth: byte_width,
+                    Usage: D3D11_USAGE_IMMUTABLE,
+                    BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                    ..Default::default()
+                };
+                let data = D3D11_SUBRESOURCE_DATA {
+                    pSysMem: ids.as_ptr().cast(),
+                    ..Default::default()
+                };
+                owner
+                    .raw_device()
+                    .CreateBuffer(&desc, Some(&data), Some(&mut vertex_index_buffer))
+                    .map_err(failure)?;
+            }
+            if has_vertex_input || uses_vertex_index {
                 owner
                     .raw_device()
                     .CreateInputLayout(&input_desc, &vertex_code, Some(&mut input))
@@ -3155,9 +3224,12 @@ impl RenderPipeline {
             required_uniform_sizes,
             vertex_layouts,
             vertex_slots: vertex_slots.logical_slots,
+            vertex_index_slot,
+            vertex_index_buffer,
             topology: desc.primitive.topology,
             strip_index_format: desc.primitive.strip_index_format,
             uses_instance_index,
+            uses_vertex_index,
         })
     }
 }

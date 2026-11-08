@@ -996,6 +996,50 @@ fn supported_instance_index_argument(
     found
 }
 
+fn supported_vertex_index_argument(
+    module: &naga::Module,
+    function: &naga::Function,
+    index: usize,
+) -> bool {
+    let Some(argument) = function.arguments.get(index) else {
+        return false;
+    };
+    let is_vertex_index = |binding: Option<&naga::Binding>, ty| {
+        matches!(
+            binding,
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::VertexIndex))
+        ) && matches!(
+            module.types[ty].inner,
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
+    };
+    if is_vertex_index(argument.binding.as_ref(), argument.ty) {
+        return true;
+    }
+    let naga::TypeInner::Struct { ref members, .. } = module.types[argument.ty].inner else {
+        return false;
+    };
+    let mut found = false;
+    let mut budget = 65_536;
+    for member in members {
+        if matches!(
+            member.binding.as_ref(),
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::VertexIndex))
+        ) {
+            if !is_vertex_index(member.binding.as_ref(), member.ty) {
+                return false;
+            }
+            found = true;
+        } else if type_may_contain_integer(module, &module.types[member.ty].inner, &mut budget) {
+            return false;
+        }
+    }
+    found
+}
+
 fn expression_is_supported_integer_vertex_argument(
     module: &naga::Module,
     function: &naga::Function,
@@ -1058,6 +1102,55 @@ fn expression_is_supported_instance_index_argument(
     }
 }
 
+fn expression_is_supported_vertex_index_argument(
+    module: &naga::Module,
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    match function.expressions[expression] {
+        naga::Expression::FunctionArgument(index) => {
+            supported_vertex_index_argument(module, function, index as usize)
+        }
+        naga::Expression::Load { pointer } => {
+            expression_is_supported_vertex_index_argument(module, function, pointer)
+        }
+        naga::Expression::AccessIndex { base, index } => {
+            let argument = match function.expressions[base] {
+                naga::Expression::FunctionArgument(argument) => argument,
+                naga::Expression::Load { pointer } => {
+                    let naga::Expression::FunctionArgument(argument) =
+                        function.expressions[pointer]
+                    else {
+                        return false;
+                    };
+                    argument
+                }
+                _ => return false,
+            };
+            let Some(argument) = function.arguments.get(argument as usize) else {
+                return false;
+            };
+            let naga::TypeInner::Struct { ref members, .. } = module.types[argument.ty].inner
+            else {
+                return false;
+            };
+            members.get(index as usize).is_some_and(|member| {
+                matches!(
+                    member.binding.as_ref(),
+                    Some(naga::Binding::BuiltIn(naga::BuiltIn::VertexIndex))
+                ) && matches!(
+                    module.types[member.ty].inner,
+                    naga::TypeInner::Scalar(naga::Scalar {
+                        kind: naga::ScalarKind::Uint,
+                        width: 4,
+                    })
+                )
+            })
+        }
+        _ => false,
+    }
+}
+
 fn expression_may_contain_integer(
     module: &naga::Module,
     function_info: &naga::valid::FunctionInfo,
@@ -1086,7 +1179,8 @@ fn function_uses_unsupported_integer_semantics(
         if type_may_contain_integer(module, &module.types[argument.ty].inner, budget)
             && !(vertex_entry
                 && (supported_integer_vertex_argument(module, function, index)
-                    || supported_instance_index_argument(module, function, index)))
+                    || supported_instance_index_argument(module, function, index)
+                    || supported_vertex_index_argument(module, function, index)))
         {
             return true;
         }
@@ -1120,7 +1214,8 @@ fn function_uses_unsupported_integer_semantics(
                     && kind == naga::ScalarKind::Float
                     && convert == Some(4)
                     && (expression_is_supported_integer_vertex_argument(module, function, expr)
-                        || expression_is_supported_instance_index_argument(module, function, expr));
+                        || expression_is_supported_instance_index_argument(module, function, expr)
+                        || expression_is_supported_vertex_index_argument(module, function, expr));
                 !supported_vertex_conversion
                     && (expression_may_contain_integer(module, function_info, expr, budget)
                         || expression_may_contain_integer(module, function_info, handle, budget))
@@ -1162,6 +1257,9 @@ fn function_uses_unsupported_integer_semantics(
                 && !(vertex_entry
                     && (expression_is_supported_integer_vertex_argument(module, function, handle)
                         || expression_is_supported_instance_index_argument(
+                            module, function, handle,
+                        )
+                        || expression_is_supported_vertex_index_argument(
                             module, function, handle,
                         ))))
     })
@@ -5475,6 +5573,16 @@ mod tests {
             @vertex fn safe_struct_instance_conversion(input: InstanceInput) -> @builtin(position) vec4f {
                 return vec4f(input.position + vec2f(f32(input.index)), 0.0, 1.0);
             }
+            @vertex fn safe_vertex_index_conversion(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(f32(index), 0.0, 0.0, 1.0);
+            }
+            struct VertexIndexInput { @builtin(vertex_index) index: u32 }
+            @vertex fn safe_struct_vertex_index_conversion(input: VertexIndexInput) -> @builtin(position) vec4f {
+                return vec4f(f32(input.index), 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_integer_math(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(f32(index + 1u), 0.0, 0.0, 1.0);
+            }
             @vertex fn bad_instance_integer_math(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
                 return vec4f(f32(index + 1u), 0.0, 0.0, 1.0);
             }
@@ -5507,6 +5615,8 @@ mod tests {
             "safe_vertex_conversion",
             "safe_instance_conversion",
             "safe_struct_instance_conversion",
+            "safe_vertex_index_conversion",
+            "safe_struct_vertex_index_conversion",
         ] {
             assert!(
                 !interface
@@ -5519,6 +5629,13 @@ mod tests {
                 "{entry}"
             );
         }
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "bad_vertex_index_integer_math",
+                &fl91,
+            )
+            .unwrap());
         assert!(interface
             .entry_point_uses_unsupported_runtime_integer_semantics(
                 naga::ShaderStage::Vertex,

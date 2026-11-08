@@ -11,7 +11,7 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
             Direct3D11::{
-                ID3D11Buffer, ID3D11DeviceContext, D3D11_BIND_INDEX_BUFFER,
+                ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, D3D11_BIND_INDEX_BUFFER,
                 D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ,
                 D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SUBRESOURCE_DATA,
                 D3D11_USAGE_DEFAULT, D3D11_USAGE_IMMUTABLE, D3D11_USAGE_STAGING,
@@ -64,6 +64,69 @@ impl NativeDevice {
             format,
         })
     }
+}
+
+fn create_vertex_index_buffer(device: &ID3D11Device, indices: &[u64]) -> Result<ID3D11Buffer> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(indices.len())
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+    for &index in indices {
+        values.push(vertex_index_float_value(index));
+    }
+    create_vertex_index_values_buffer(device, &values)
+}
+
+fn create_vertex_index_window_buffer(
+    device: &ID3D11Device,
+    minimum: u64,
+    indices: &[u8],
+) -> Result<ID3D11Buffer> {
+    let max_relative = indices
+        .chunks_exact(2)
+        .map(|bytes| u16::from_ne_bytes([bytes[0], bytes[1]]))
+        .max()
+        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(usize::from(max_relative) + 1)
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+    for relative in 0..=u64::from(max_relative) {
+        let index = minimum
+            .checked_add(relative)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        values.push(vertex_index_float_value(index));
+    }
+    create_vertex_index_values_buffer(device, &values)
+}
+
+fn vertex_index_float_value(index: u64) -> f32 {
+    (index as u32) as f32
+}
+
+fn create_vertex_index_values_buffer(
+    device: &ID3D11Device,
+    values: &[f32],
+) -> Result<ID3D11Buffer> {
+    let byte_width = values
+        .len()
+        .checked_mul(size_of::<f32>())
+        .and_then(|size| u32::try_from(size).ok())
+        .filter(|&size| size != 0)
+        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+    let desc = D3D11_BUFFER_DESC {
+        ByteWidth: byte_width,
+        Usage: D3D11_USAGE_IMMUTABLE,
+        BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+        ..Default::default()
+    };
+    let data = D3D11_SUBRESOURCE_DATA {
+        pSysMem: values.as_ptr().cast(),
+        ..Default::default()
+    };
+    let mut buffer = None;
+    unsafe { device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))? };
+    buffer.ok_or_else(|| Error::from_hresult(E_FAIL))
 }
 
 impl IndexBinding {
@@ -900,10 +963,11 @@ impl IndexBinding {
         vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
         draw_limits: (u32, u32),
         instance_bindings: &super::command::InstanceBindings,
+        vertex_index: Option<&(u32, ID3D11Buffer)>,
     ) -> Result<()> {
         let (max_vertices, instances) = draw_limits;
         instance_bindings.validate(instances)?;
-        if vertices.is_empty()
+        if (vertices.is_empty() && vertex_index.is_none())
             || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
                 !offset.is_multiple_of(4)
                     || !stride.is_multiple_of(4)
@@ -920,6 +984,12 @@ impl IndexBinding {
         }
         if count == 0 || instances == 0 {
             return Ok(());
+        }
+        let mut effective_values = Vec::new();
+        if vertex_index.is_some() {
+            effective_values
+                .try_reserve_exact(count as usize)
+                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         }
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
@@ -944,23 +1014,40 @@ impl IndexBinding {
             for i in 0..count as usize {
                 let value = read(i);
                 let effective = i64::from(value) + i64::from(base);
-                valid &= multi_u32_index_in_bounds(
-                    value,
-                    base,
-                    vertices.iter().map(|v| (v.3, v.4, v.5)),
-                );
-                native &=
-                    value <= u32::from(self.max_index) && effective <= i64::from(self.max_index);
+                if vertex_index.is_some() {
+                    effective_values.push(effective);
+                    valid &= multi_vertex_index_in_bounds(
+                        effective,
+                        vertices.iter().map(|v| (v.3, v.4, v.5)),
+                    );
+                } else {
+                    valid &= multi_u32_index_in_bounds(
+                        value,
+                        base,
+                        vertices.iter().map(|v| (v.3, v.4, v.5)),
+                    );
+                }
+                native &= value <= u32::from(self.max_index)
+                    && effective <= i64::from(self.max_index)
+                    && (vertex_index.is_none() || effective >= 0);
+                if vertices.is_empty() && vertex_index.is_none() {
+                    valid &= (0..=i64::from(self.max_index)).contains(&effective);
+                }
             }
-            let plan = if valid && !native {
-                let first_vertex = &vertices[0];
+            let signed_vertex_indices =
+                vertex_index.is_some() && effective_values.iter().any(|&effective| effective < 0);
+            let plan = if valid && !native && !signed_vertex_indices {
+                let (vertex_offset, vertex_bytes, stride, extent) = vertices
+                    .first()
+                    .map(|vertex| (vertex.2, vertex.3, vertex.4, vertex.5))
+                    .unwrap_or((0, 4, 0, 4));
                 Some(plan_u32_windows(
                     read,
                     count as usize,
                     base,
                     self.max_index,
-                    first_vertex.2,
-                    (first_vertex.3, first_vertex.4, first_vertex.5),
+                    vertex_offset,
+                    (vertex_bytes, stride, extent),
                     max_vertices,
                 ))
             } else {
@@ -968,6 +1055,52 @@ impl IndexBinding {
             };
             context.Unmap(&self.staging, 0);
             if !valid {
+                return Ok(());
+            }
+            if signed_vertex_indices {
+                let Some((slot, identity_buffer)) = vertex_index else {
+                    return Err(Error::from_hresult(E_FAIL));
+                };
+                let mut ids = Vec::new();
+                ids.try_reserve_exact(effective_values.len())
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                ids.extend(
+                    effective_values
+                        .into_iter()
+                        .map(|effective| u64::from(effective as u32)),
+                );
+                let device = context.GetDevice()?;
+                let index_values = create_vertex_index_buffer(&device, &ids)?;
+                for (vertex_slot, buffer, offset, _, stride, _) in vertices {
+                    context.IASetVertexBuffers(
+                        *vertex_slot,
+                        1,
+                        Some(&Some(buffer.clone())),
+                        Some(stride),
+                        Some(offset),
+                    );
+                }
+                for instance in 0..instances {
+                    instance_bindings.bind(context, instance)?;
+                    super::command::draw_batches(0, count, 1, max_vertices, |first, count| {
+                        let offset = first * 4;
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(index_values.clone())),
+                            Some(&4),
+                            Some(&offset),
+                        );
+                        context.Draw(count, 0);
+                    })?;
+                }
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(identity_buffer.clone())),
+                    Some(&4),
+                    Some(&0),
+                );
                 return Ok(());
             }
             if native {
@@ -978,6 +1111,15 @@ impl IndexBinding {
                         Some(&Some(buffer.clone())),
                         Some(stride),
                         Some(offset),
+                    );
+                }
+                if let Some((slot, buffer)) = vertex_index {
+                    context.IASetVertexBuffers(
+                        *slot,
+                        1,
+                        Some(&Some(buffer.clone())),
+                        Some(&4),
+                        Some(&0),
                     );
                 }
                 context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
@@ -998,9 +1140,11 @@ impl IndexBinding {
                     buffer: ID3D11Buffer,
                     offsets: Vec<u32>,
                     count: u32,
+                    vertex_index_buffer: Option<ID3D11Buffer>,
                 },
                 Gather {
                     streams: Vec<Option<(ID3D11Buffer, [D3D11_BOX; 3])>>,
+                    vertex_index_buffer: Option<ID3D11Buffer>,
                 },
             }
             let device = context.GetDevice()?;
@@ -1038,10 +1182,20 @@ impl IndexBinding {
                         };
                         let mut buffer = None;
                         device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                        let vertex_index_buffer = vertex_index
+                            .map(|_| {
+                                create_vertex_index_window_buffer(
+                                    &device,
+                                    window.minimum,
+                                    &window.data,
+                                )
+                            })
+                            .transpose()?;
                         prepared.push(Segment::Window {
                             buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
                             offsets,
                             count: window.count,
+                            vertex_index_buffer,
                         });
                     }
                     U32Segment::Gather { indices, .. } => {
@@ -1099,12 +1253,18 @@ impl IndexBinding {
                                 sources,
                             )));
                         }
-                        prepared.push(Segment::Gather { streams });
+                        let vertex_index_buffer = vertex_index
+                            .map(|_| create_vertex_index_buffer(&device, &indices))
+                            .transpose()?;
+                        prepared.push(Segment::Gather {
+                            streams,
+                            vertex_index_buffer,
+                        });
                     }
                 }
             }
             for segment in &prepared {
-                if let Segment::Gather { streams } = segment {
+                if let Segment::Gather { streams, .. } = segment {
                     for ((_, source_buffer, _, _, stride, _), stream) in
                         vertices.iter().zip(streams)
                     {
@@ -1134,6 +1294,7 @@ impl IndexBinding {
                             buffer,
                             offsets,
                             count,
+                            vertex_index_buffer,
                         } => {
                             for ((slot, vertex, _, _, stride, _), offset) in
                                 vertices.iter().zip(offsets)
@@ -1146,10 +1307,24 @@ impl IndexBinding {
                                     Some(offset),
                                 );
                             }
+                            if let (Some((slot, _)), Some(vertex_index_buffer)) =
+                                (vertex_index, vertex_index_buffer)
+                            {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(vertex_index_buffer.clone())),
+                                    Some(&4),
+                                    Some(&0),
+                                );
+                            }
                             context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
                             context.DrawIndexed(*count, 0, 0);
                         }
-                        Segment::Gather { streams } => {
+                        Segment::Gather {
+                            streams,
+                            vertex_index_buffer,
+                        } => {
                             for ((slot, vertex, offset, _, stride, _), stream) in
                                 vertices.iter().zip(streams)
                             {
@@ -1165,10 +1340,30 @@ impl IndexBinding {
                                     Some(offset),
                                 );
                             }
+                            if let (Some((slot, _)), Some(buffer)) =
+                                (vertex_index, vertex_index_buffer)
+                            {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(&4),
+                                    Some(&0),
+                                );
+                            }
                             context.Draw(3, 0);
                         }
                     }
                 }
+            }
+            if let Some((slot, buffer)) = vertex_index {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(&4),
+                    Some(&0),
+                );
             }
         }
         Ok(())
@@ -1184,6 +1379,7 @@ impl IndexBinding {
         vertex_binding: (&ID3D11Buffer, u32, u64, u32, u32),
         draw_limits: (u32, u32),
         instance_bindings: &super::command::InstanceBindings,
+        vertex_index: Option<&(u32, ID3D11Buffer)>,
     ) -> Result<()> {
         let (vertex, vertex_offset, vertex_bytes, stride, extent) = vertex_binding;
         let (max_vertices, instances) = draw_limits;
@@ -1249,6 +1445,15 @@ impl IndexBinding {
             let Some(plan) = plan? else { return Ok(()) };
             match plan {
                 IndexPlan::NativeU16 => {
+                    if let Some((slot, buffer)) = vertex_index {
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(buffer.clone())),
+                            Some(&4),
+                            Some(&0),
+                        );
+                    }
                     context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R16_UINT, self.offset);
                     for instance in 0..instances {
                         instance_bindings.bind(context, instance)?;
@@ -1298,16 +1503,30 @@ impl IndexBinding {
                                     ..Default::default()
                                 };
                                 device.CreateBuffer(&desc, Some(&data), Some(&mut buffer))?;
+                                let vertex_index_buffer = vertex_index
+                                    .map(|_| {
+                                        create_vertex_index_window_buffer(
+                                            &device,
+                                            window.minimum,
+                                            &window.data,
+                                        )
+                                    })
+                                    .transpose()?;
                                 windows.push(PreparedU32Segment::Window {
                                     buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
                                     vertex_offset: window.vertex_offset,
                                     count: window.count,
+                                    vertex_index_buffer,
                                 });
                             }
-                            U32Segment::Gather { .. } if stride == 0 => {
-                                windows.push(PreparedU32Segment::Constant);
+                            U32Segment::Gather { indices, .. } if stride == 0 => {
+                                windows.push(PreparedU32Segment::Constant {
+                                    vertex_index_buffer: vertex_index
+                                        .map(|_| create_vertex_index_buffer(&device, &indices))
+                                        .transpose()?,
+                                });
                             }
-                            U32Segment::Gather { sources, .. } => {
+                            U32Segment::Gather { sources, indices } => {
                                 let desc = D3D11_BUFFER_DESC {
                                     ByteWidth: scratch_size,
                                     Usage: D3D11_USAGE_DEFAULT,
@@ -1322,12 +1541,18 @@ impl IndexBinding {
                                 windows.push(PreparedU32Segment::Gather {
                                     buffer: buffer.ok_or_else(|| Error::from_hresult(E_FAIL))?,
                                     sources,
+                                    vertex_index_buffer: vertex_index
+                                        .map(|_| create_vertex_index_buffer(&device, &indices))
+                                        .transpose()?,
                                 });
                             }
                         }
                     }
                     for segment in &windows {
-                        if let PreparedU32Segment::Gather { buffer, sources } = segment {
+                        if let PreparedU32Segment::Gather {
+                            buffer, sources, ..
+                        } = segment
+                        {
                             for (index, source) in sources.iter().enumerate() {
                                 context.CopySubresourceRegion(
                                     buffer,
@@ -1350,6 +1575,7 @@ impl IndexBinding {
                                     buffer,
                                     vertex_offset,
                                     count,
+                                    vertex_index_buffer,
                                 } => {
                                     context.IASetVertexBuffers(
                                         0,
@@ -1358,10 +1584,25 @@ impl IndexBinding {
                                         Some(&stride),
                                         Some(vertex_offset),
                                     );
+                                    if let (Some((slot, _)), Some(vertex_index_buffer)) =
+                                        (vertex_index, vertex_index_buffer)
+                                    {
+                                        context.IASetVertexBuffers(
+                                            *slot,
+                                            1,
+                                            Some(&Some(vertex_index_buffer.clone())),
+                                            Some(&4),
+                                            Some(&0),
+                                        );
+                                    }
                                     context.IASetIndexBuffer(buffer, DXGI_FORMAT_R16_UINT, 0);
                                     context.DrawIndexed(*count, 0, 0);
                                 }
-                                PreparedU32Segment::Gather { buffer, .. } => {
+                                PreparedU32Segment::Gather {
+                                    buffer,
+                                    vertex_index_buffer,
+                                    ..
+                                } => {
                                     context.IASetVertexBuffers(
                                         0,
                                         1,
@@ -1369,9 +1610,22 @@ impl IndexBinding {
                                         Some(&stride),
                                         Some(&0),
                                     );
+                                    if let (Some((slot, _)), Some(buffer)) =
+                                        (vertex_index, vertex_index_buffer)
+                                    {
+                                        context.IASetVertexBuffers(
+                                            *slot,
+                                            1,
+                                            Some(&Some(buffer.clone())),
+                                            Some(&4),
+                                            Some(&0),
+                                        );
+                                    }
                                     context.Draw(3, 0);
                                 }
-                                PreparedU32Segment::Constant => {
+                                PreparedU32Segment::Constant {
+                                    vertex_index_buffer,
+                                } => {
                                     context.IASetVertexBuffers(
                                         0,
                                         1,
@@ -1379,12 +1633,32 @@ impl IndexBinding {
                                         Some(&stride),
                                         Some(&vertex_offset),
                                     );
+                                    if let (Some((slot, _)), Some(buffer)) =
+                                        (vertex_index, vertex_index_buffer)
+                                    {
+                                        context.IASetVertexBuffers(
+                                            *slot,
+                                            1,
+                                            Some(&Some(buffer.clone())),
+                                            Some(&4),
+                                            Some(&0),
+                                        );
+                                    }
                                     context.Draw(3, 0);
                                 }
                             }
                         }
                     }
                 }
+            }
+            if let Some((slot, buffer)) = vertex_index {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(&4),
+                    Some(&0),
+                );
             }
         }
         Ok(())
@@ -1468,6 +1742,25 @@ fn multi_u32_index_in_bounds(
         index
             .checked_mul(u64::from(stride))
             .and_then(|end| end.checked_add(u64::from(extent)))
+            .is_some_and(|end| end <= length)
+    })
+}
+
+fn multi_vertex_index_in_bounds(
+    effective: i64,
+    layouts: impl Iterator<Item = (u64, u32, u32)>,
+) -> bool {
+    layouts.into_iter().all(|(length, stride, extent)| {
+        if stride == 0 {
+            return u64::from(extent) <= length;
+        }
+        u64::try_from(effective)
+            .ok()
+            .and_then(|index| {
+                index
+                    .checked_mul(u64::from(stride))
+                    .and_then(|end| end.checked_add(u64::from(extent)))
+            })
             .is_some_and(|end| end <= length)
     })
 }
@@ -2195,12 +2488,16 @@ enum PreparedU32Segment {
         buffer: ID3D11Buffer,
         vertex_offset: u32,
         count: u32,
+        vertex_index_buffer: Option<ID3D11Buffer>,
     },
     Gather {
         buffer: ID3D11Buffer,
         sources: [D3D11_BOX; 3],
+        vertex_index_buffer: Option<ID3D11Buffer>,
     },
-    Constant,
+    Constant {
+        vertex_index_buffer: Option<ID3D11Buffer>,
+    },
 }
 
 fn plan_u32_windows(
@@ -2337,10 +2634,34 @@ mod tests {
 
     use super::{
         classify_indices, classify_u32_indices, for_each_indexed_triangle_strip_batch,
-        for_each_window, multi_u32_index_in_bounds, plan_indexed_line_strips, plan_indexed_lines,
-        plan_indexed_strip_draw_counts, plan_u16_draw, plan_u32_windows, rebased_vertex_offset,
+        for_each_window, multi_u32_index_in_bounds, multi_vertex_index_in_bounds,
+        plan_indexed_line_strips, plan_indexed_lines, plan_indexed_strip_draw_counts,
+        plan_u16_draw, plan_u32_windows, rebased_vertex_offset, vertex_index_float_value,
         IndexDecision, IndexPlan, IndexedLineSegment, U32Decision, U32Segment,
     };
+
+    #[test]
+    fn vertex_index_emulation_preserves_resolved_unsigned_values() {
+        assert_eq!(vertex_index_float_value(0), 0.0);
+        assert_eq!(vertex_index_float_value(65_534), 65_534.0);
+        assert_eq!(
+            vertex_index_float_value(u64::from(u32::MAX)),
+            4_294_967_296.0
+        );
+        assert_eq!(vertex_index_float_value((-1i64) as u64), 4_294_967_296.0);
+    }
+
+    #[test]
+    fn vertex_index_emulation_respects_vertex_fetch_bounds() {
+        assert!(multi_vertex_index_in_bounds(-1, core::iter::empty()));
+        assert!(multi_vertex_index_in_bounds(-1, [(4, 0, 4)].into_iter()));
+        assert!(!multi_vertex_index_in_bounds(-1, [(4, 4, 4)].into_iter()));
+        assert!(multi_vertex_index_in_bounds(
+            70_000,
+            [(4, 0, 4)].into_iter()
+        ));
+        assert!(!multi_vertex_index_in_bounds(-1, [(3, 0, 4)].into_iter()));
+    }
 
     #[test]
     fn indexed_strip_draw_counts_preserve_restart_runs_and_batch_overlaps() {

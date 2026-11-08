@@ -547,6 +547,10 @@ pub struct Options {
     /// WebGPU instance index in its second register for every emulated draw.
     pub fl9_instance_index_input: bool,
 
+    /// Map the selected vertex entry point's `vertex_index` input to a
+    /// backend-provided `NAGA_VERTEX_INDEX` input semantic.
+    pub fl9_vertex_index_input: bool,
+
     /// Mapping of each bind group's sampler index buffer to a bind target.
     #[cfg_attr(
         feature = "deserialize",
@@ -606,6 +610,7 @@ impl Default for Options {
             fl9_texel_load_proof: None,
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
+            fl9_vertex_index_input: false,
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,
             dynamic_storage_buffer_offsets_targets: alloc::collections::BTreeMap::new(),

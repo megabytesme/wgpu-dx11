@@ -4,7 +4,7 @@
 use super::{
     command::{
         CommandBuffer, DepthAttachment, InstanceBindings, NativeCommand, RenderTarget,
-        ResolveOperation,
+        ResolveOperation, VertexIndexDraw,
     },
     device::NativeDevice,
     Api as Dx11Api,
@@ -55,6 +55,8 @@ struct RenderState {
     viewport_buffer: windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
     viewport_transform: [f32; 4],
     uses_instance_index: bool,
+    uses_vertex_index: bool,
+    vertex_index: Option<(u32, windows::Win32::Graphics::Direct3D11::ID3D11Buffer)>,
     vertices: [Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>;
         MAX_VERTEX_BUFFERS],
     vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; MAX_VERTEX_BUFFERS],
@@ -968,6 +970,8 @@ impl crate::CommandEncoder for CommandEncoder {
             viewport_buffer: viewport_buffer.clone(),
             viewport_transform: [1., 1., 0., 0.],
             uses_instance_index: false,
+            uses_vertex_index: false,
+            vertex_index: None,
             vertices: core::array::from_fn(|_| None),
             vertex_layouts: [None; MAX_VERTEX_BUFFERS],
             vertex_slots: [None; MAX_VERTEX_BUFFERS],
@@ -1033,6 +1037,11 @@ impl crate::CommandEncoder for CommandEncoder {
         render.strip_index_format = pipeline.strip_index_format;
         render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
         render.uses_instance_index = pipeline.uses_instance_index;
+        render.uses_vertex_index = pipeline.uses_vertex_index;
+        render.vertex_index = pipeline
+            .vertex_index_slot
+            .zip(pipeline.vertex_index_buffer.clone());
+        let vertex_index = render.vertex_index.clone();
         let vertex = if render.viewport_remap {
             pipeline
                 .vertex_viewport
@@ -1051,6 +1060,7 @@ impl crate::CommandEncoder for CommandEncoder {
             blend: pipeline.blend.clone(),
             sample_mask: pipeline.sample_mask,
             depth_state: pipeline.depth_state.clone(),
+            vertex_index,
         });
     }
 
@@ -1200,6 +1210,7 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        let uses_vertex_index = render.uses_vertex_index;
         let mut vertices = Vec::new();
         for (slot, layout) in render.vertex_layouts.iter().enumerate() {
             let Some((stride, extent, mode)) = *layout else {
@@ -1243,6 +1254,31 @@ impl crate::CommandEncoder for CommandEncoder {
         let Some(topology) = render.topology else {
             self.reject();
             return;
+        };
+        let vertex_index_draw = if uses_vertex_index && vertex_count != 0 {
+            let max_vertex_index =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
+                    .max_vertex_index;
+            let Some(last) = first_vertex.checked_add(vertex_count - 1) else {
+                self.reject();
+                return;
+            };
+            if last > max_vertex_index {
+                let Some((slot, identity)) = render.vertex_index.as_ref() else {
+                    self.reject();
+                    return;
+                };
+                Some(VertexIndexDraw {
+                    slot: *slot,
+                    identity: identity.clone(),
+                    max_vertex_index,
+                    vertices: vertices.clone(),
+                })
+            } else {
+                None
+            }
+        } else {
+            None
         };
         if !render.pipeline
             || (render.viewport_remap
@@ -1447,7 +1483,8 @@ impl crate::CommandEncoder for CommandEncoder {
             count: vertex_count,
             instances: instance_count,
             max_vertices,
-            zero_input,
+            zero_input: zero_input && !uses_vertex_index,
+            vertex_index: vertex_index_draw,
             instance_bindings,
         });
     }
@@ -1464,6 +1501,8 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        let uses_vertex_index = render.uses_vertex_index;
+        let vertex_index = render.vertex_index.clone();
         if render.topology == Some(wgt::PrimitiveTopology::LineList) {
             let Some(index) = render.index.as_ref() else {
                 self.reject();
@@ -1801,7 +1840,8 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             return;
         }
-        if render.vertex_slots.iter().all(Option::is_none)
+        if render.uses_vertex_index
+            || render.vertex_slots.iter().all(Option::is_none)
             || render
                 .vertex_slots
                 .iter()
@@ -1881,17 +1921,32 @@ impl crate::CommandEncoder for CommandEncoder {
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                     .max_triangle_vertices_per_draw();
             if vertices.is_empty() {
-                self.record(NativeCommand::Draw {
-                    first: 0,
-                    count: index_count,
-                    instances: instance_count,
-                    max_vertices: super::capabilities::HardwareGuarantees::for_level(
-                        self.device.feature_level(),
-                    )
-                    .max_direct_triangle_vertices_per_draw(),
-                    zero_input: true,
-                    instance_bindings,
-                });
+                if uses_vertex_index {
+                    self.record(NativeCommand::DrawIndexedMulti {
+                        binding: index,
+                        vertices,
+                        first: first_index,
+                        count: index_count,
+                        base_vertex,
+                        max_vertices,
+                        instances: instance_count,
+                        instance_bindings,
+                        vertex_index: vertex_index.clone(),
+                    });
+                } else {
+                    self.record(NativeCommand::Draw {
+                        first: 0,
+                        count: index_count,
+                        instances: instance_count,
+                        max_vertices: super::capabilities::HardwareGuarantees::for_level(
+                            self.device.feature_level(),
+                        )
+                        .max_direct_triangle_vertices_per_draw(),
+                        zero_input: true,
+                        vertex_index: None,
+                        instance_bindings,
+                    });
+                }
                 return;
             }
             self.record(NativeCommand::DrawIndexedMulti {
@@ -1903,6 +1958,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 max_vertices,
                 instances: instance_count,
                 instance_bindings,
+                vertex_index: vertex_index.clone(),
             });
             return;
         }
@@ -1979,6 +2035,7 @@ impl crate::CommandEncoder for CommandEncoder {
             max_vertices,
             instances: instance_count,
             instance_bindings,
+            vertex_index,
         });
     }
 
@@ -2409,9 +2466,9 @@ mod tests {
             },
             wgt::ShaderRuntimeChecks::unchecked(),
         );
-        assert!(entry_shader.validate_vertex_index("direct").is_err());
-        assert!(entry_shader.validate_vertex_index("structured").is_err());
-        assert!(entry_shader.validate_vertex_index("safe").is_ok());
+        assert!(entry_shader.uses_vertex_index_input("direct").unwrap());
+        assert!(entry_shader.uses_vertex_index_input("structured").unwrap());
+        assert!(!entry_shader.uses_vertex_index_input("safe").unwrap());
         for entry in ["instance_direct", "instance_structured"] {
             assert!(entry_shader.uses_instance_index_input(entry).unwrap());
         }
