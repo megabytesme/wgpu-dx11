@@ -12,6 +12,8 @@ injected; actual device removal and recovery remain unverified. The public
 queue-present dispatch currently routes through the surface's configured
 device queue, so a wrong receiver queue cannot be tested through this public
 dispatch without changing that API path. See `FL9_1_PROGRESS.md` for details.
+Implementation checkpoint: `a7205baf35fe2799a4eb13b5fca9b129068d55b3`
+(`dx11: release acquired frames after device loss`).
 
 ## Latest public topology-validation checkpoint — 2026-11-08
 

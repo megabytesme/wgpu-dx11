@@ -11130,6 +11130,8 @@ frame alive while a synthetic `DXGI_ERROR_DEVICE_REMOVED` invalidates its
 device, drops that frame, then reconfigures the surface to a healthy device and
 successfully acquires again. This covers the public `SurfaceTexture` drop path;
 the injected HRESULT is not physical device-loss/recovery evidence.
+Implementation checkpoint: `a7205baf35fe2799a4eb13b5fca9b129068d55b3`
+(`dx11: release acquired frames after device loss`).
 
 The strict fixture passed 2/2 on the NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1. The
