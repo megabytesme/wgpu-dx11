@@ -14,7 +14,13 @@ checkpoint is `ede5c299f`, which adds device-query-gated timestamp queries.
 The latest public regression checkpoint is `42414a6f9`, which adds a strict
 nonzero buffer-map slice after GPU copy test.
 
-The latest full strict public D3D11 target passed 90/90; three optional
+The latest contract fix lets combined depth-attachment/sampled textures create
+default views with both native DSV and SRV roles. The strict public regression
+passed for D16, Depth24Plus and D24S8 at requested/actual FL9_1. Full strict
+public tests passed 91/91 and private HAL tests passed 416/416; the new
+checkpoint commit and commands are recorded in `FL9_1_PROGRESS.md`.
+
+The latest full strict public D3D11 target passed 91/91; three optional
 device-specific subcases were logged as skips. The new cases executed on the
 physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
 software=false, requested/actual FL9_1, with GPU readback. The current strict

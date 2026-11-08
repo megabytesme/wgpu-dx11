@@ -738,7 +738,7 @@ impl crate::Device for Device {
             | if is_depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ
                     | wgt::TextureUses::DEPTH_STENCIL_WRITE
-                    | if desc.usage == wgt::TextureUses::RESOURCE {
+                    | if desc.usage.contains(wgt::TextureUses::RESOURCE) {
                         wgt::TextureUses::RESOURCE
                     } else {
                         wgt::TextureUses::empty()

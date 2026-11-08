@@ -785,6 +785,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   filter mismatch and anisotropy
   are rejected before HAL. Historical drivers remain unverified; public
   surface capabilities remain unavailable.
+  Default views of textures created with both depth-attachment and sampled
+  usage now retain both native view roles. The same D16 and Depth24Plus default
+  view was used sequentially for attachment and sampled comparison; D24S8
+  sampling still uses a `DepthOnly` view. Strict public readback covers all
+  three formats.
 - Sampled texture and sampler bindings accept `FRAGMENT` and
   `VERTEX | FRAGMENT` visibility, retained per binding in layout identity.
   Actual vertex-stage sampling remains rejected. Two strict RTX images covered

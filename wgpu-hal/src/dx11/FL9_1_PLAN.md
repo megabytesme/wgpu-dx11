@@ -1,5 +1,14 @@
 # FL9_1 completion plan
 
+The 2026-11-08 contract audit found and fixed one public-valid depth-view
+mismatch: Core permits the default view of a query-enabled texture with both
+`RENDER_ATTACHMENT | TEXTURE_BINDING` usage, but HAL had rejected the inherited
+combined view usage. The HAL now retains both DSV and SRV roles when requested.
+Strict FL9_1 public readback passed for D16 and Depth24Plus using the same
+default view sequentially for depth writes and comparison sampling; D24S8
+default attachment views and its required depth-only sample view also passed.
+The overall contract audit remains open.
+
 The 2026-11-08 independent follow-up audits found no new actionable public
 contract gap in render-bundle replay, selected-entry shader validation,
 texture format/usage gates, or unsupported HAL panic paths. The suggested 3D

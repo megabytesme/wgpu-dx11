@@ -23347,22 +23347,38 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
 
 #[test]
 fn public_dx11_query_gated_fl91_d16_depth_comparison_sampling() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, false, None);
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, false, None, false);
+}
+
+#[test]
+fn public_dx11_fl91_combined_default_depth_views_support_their_roles() {
+    for format in [
+        TextureFormat::Depth16Unorm,
+        TextureFormat::Depth24Plus,
+        TextureFormat::Depth24PlusStencil8,
+    ] {
+        run_public_fl91_depth_comparison_sampling(format, false, None, true);
+    }
 }
 
 #[test]
 fn public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth24PlusStencil8, false, None);
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth24PlusStencil8,
+        false,
+        None,
+        false,
+    );
 }
 
 #[test]
 fn public_dx11_query_gated_fl91_depth24plus_comparison_sampling() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth24Plus, false, None);
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth24Plus, false, None, false);
 }
 
 #[test]
 fn public_dx11_query_gated_fl91_depth_comparison_level_zero() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, true, None);
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, true, None, false);
 }
 
 #[test]
@@ -23371,6 +23387,7 @@ fn public_dx11_query_gated_fl91_comparison_border_sampling() {
         TextureFormat::Depth16Unorm,
         false,
         Some(SamplerBorderColor::OpaqueBlack),
+        false,
     );
 }
 
@@ -23380,6 +23397,7 @@ fn public_dx11_query_gated_fl91_comparison_border_white_sampling() {
         TextureFormat::Depth16Unorm,
         false,
         Some(SamplerBorderColor::OpaqueWhite),
+        false,
     );
 }
 
@@ -23387,6 +23405,7 @@ fn run_public_fl91_depth_comparison_sampling(
     depth_format: TextureFormat,
     level_zero: bool,
     border_color: Option<SamplerBorderColor>,
+    combined_default_view: bool,
 ) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -23582,20 +23601,36 @@ struct VertexOut {
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    let depth_attachment = depth.create_view(&TextureViewDescriptor {
-        usage: Some(TextureUsages::RENDER_ATTACHMENT),
-        aspect: if depth_format == TextureFormat::Depth16Unorm {
-            TextureAspect::DepthOnly
+    let (depth_attachment, depth_sampled) = if combined_default_view {
+        let view = depth.create_view(&TextureViewDescriptor::default());
+        let sampled = if depth_format == TextureFormat::Depth24PlusStencil8 {
+            depth.create_view(&TextureViewDescriptor {
+                usage: Some(TextureUsages::TEXTURE_BINDING),
+                aspect: TextureAspect::DepthOnly,
+                ..Default::default()
+            })
         } else {
-            TextureAspect::All
-        },
-        ..Default::default()
-    });
-    let depth_sampled = depth.create_view(&TextureViewDescriptor {
-        usage: Some(TextureUsages::TEXTURE_BINDING),
-        aspect: TextureAspect::DepthOnly,
-        ..Default::default()
-    });
+            view.clone()
+        };
+        (view, sampled)
+    } else {
+        (
+            depth.create_view(&TextureViewDescriptor {
+                usage: Some(TextureUsages::RENDER_ATTACHMENT),
+                aspect: if depth_format == TextureFormat::Depth16Unorm {
+                    TextureAspect::DepthOnly
+                } else {
+                    TextureAspect::All
+                },
+                ..Default::default()
+            }),
+            depth.create_view(&TextureViewDescriptor {
+                usage: Some(TextureUsages::TEXTURE_BINDING),
+                aspect: TextureAspect::DepthOnly,
+                ..Default::default()
+            }),
+        )
+    };
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 depth comparison bindings"),
         layout: &layout,

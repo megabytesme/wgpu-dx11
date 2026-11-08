@@ -11823,3 +11823,46 @@ with three existing HAL `too_many_arguments` warnings and the existing
 formatting differences elsewhere in that large test file; the newly added
 function was not among the reported diffs. `git diff --check` passed. No HAL
 or core code changed in this test-only increment.
+
+## Combined default depth-view roles — 2026-11-08
+
+An independent public resource audit found that a sampled depth texture could
+be created with `RENDER_ATTACHMENT | TEXTURE_BINDING`, but a default texture
+view inherited both usages and was rejected by HAL. The view creation path
+already constructs an SRV and DSV when the corresponding use bits are present;
+the supported-use mask incorrectly added `RESOURCE` only when it was the
+view's sole usage. It now includes that bit whenever the requested view usage
+contains it, while the texture's own usage and selected-device shadow-support
+checks remain required.
+
+The strict public test reuses one default view sequentially as both the
+depth-write attachment and sampled comparison view for D16 and Depth24Plus.
+For D24S8 it verifies creation and attachment use of the combined default
+view, while sampling retains a separate `DepthOnly` view because core rejects
+sampling an all-aspects D24S8 view. Each format produced 64/64 expected output
+pixels (32 passing and 32 failing comparisons) on the physical NVIDIA RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), with FL9_1
+requested and selected.
+
+Verification with Rust 1.93.1 and Visual Studio 2026 x64:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fl91_combined_default_depth_views_support_their_roles -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib -- --quiet --test-threads=1
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/hal_device.rs wgpu/tests/dx11_public.rs
+cargo +1.93 clippy --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib
+cargo +1.93 clippy --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+```
+
+The focused public test passed 1/1, the full strict public suite passed
+91/91, and the strict private D3D11 HAL suite passed 416/416. The public suite
+logged three optional selected-device subcase skips: Rg8Unorm vertex input,
+Float16x2 vertex input and Rg8Unorm mip support. HAL Clippy and public-test
+Clippy passed with previously observed warnings (`too_many_arguments` in
+unrelated HAL helpers and `std::collections::HashMap` in the existing public
+test file). Rustfmt and `git diff --check` passed. One earlier full HAL run
+reported several failures before its output session ended; a focused rerun of
+the named indexed-triangle case and a complete quiet strict rerun both passed,
+so no failure reproduced.
