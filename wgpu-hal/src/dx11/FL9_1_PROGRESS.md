@@ -12398,3 +12398,5 @@ existing GLSL pattern-type-mismatch warning. The new Naga code adds no Clippy
 warning. DX12 HAL `cargo check` passed and DX12 Core passed 106/106; DX11 Core
 passed 107/107. All Rust formatting and `git diff --check` passed. Historical-
 device/runtime, broad CTS, and physical device-removal coverage remain open.
+
+Implementation checkpoint: `baacde33d` (`dx11: add narrow FL9_1 cube texture dimensions`).
