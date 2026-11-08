@@ -52,6 +52,8 @@ pub(super) struct DepthAttachment {
 pub(super) struct ResolveOperation {
     pub source: ID3D11Resource,
     pub destination: ID3D11Resource,
+    pub source_subresource: u32,
+    pub destination_subresource: u32,
     pub format: DXGI_FORMAT,
 }
 
@@ -1202,9 +1204,9 @@ impl CommandBuffer {
                         if let Some(resolve) = resolve {
                             context.ResolveSubresource(
                                 &resolve.destination,
-                                0,
+                                resolve.destination_subresource,
                                 &resolve.source,
-                                0,
+                                resolve.source_subresource,
                                 resolve.format,
                             );
                         }

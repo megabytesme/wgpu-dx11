@@ -934,6 +934,8 @@ impl crate::CommandEncoder for CommandEncoder {
             Some(ResolveOperation {
                 source,
                 destination,
+                source_subresource: color.map(|color| color.target.view.mip_base()).unwrap_or(0),
+                destination_subresource: attachment.view.mip_base(),
                 format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
             })
         } else {

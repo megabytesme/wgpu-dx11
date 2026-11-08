@@ -7,7 +7,8 @@ use alloc::{borrow::Cow, sync::Arc, vec, vec::Vec};
 use core::time::Duration;
 use windows::Win32::Graphics::{
     Direct3D11::{
-        D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+        D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET,
+        D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
         D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
         D3D11_RENDER_TARGET_VIEW_DESC,
     },
@@ -344,5 +345,262 @@ fn fl91_render_to_individual_mips() -> windows::core::Result<()> {
     std::println!(
         "Mip render formats: executed={executed} passed={executed} failed=0 skipped={skipped}"
     );
+    Ok(())
+}
+
+#[test]
+fn fl91_multisample_resolve_targets_selected_mip() -> windows::core::Result<()> {
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|error| panic!("{error}"))
+    else {
+        std::println!("SKIP: no physical D3D11 adapter");
+        return Ok(());
+    };
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {:?}; requested and actual FL9_1",
+        adapter.identity()
+    );
+    let device = Device::new(native.clone());
+    let queue = Queue::new(native.clone());
+    let flags = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+        | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+        | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+        | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0
+        | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+    let format_support = unsafe {
+        native
+            .raw_device()
+            .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)
+    };
+    if !matches!(&format_support, Ok(bits) if bits & flags == flags) {
+        assert!(
+            !required,
+            "strict mode requires RGBA8 mipmapped MSAA resolve support {flags:#x}: {format_support:?}"
+        );
+        std::println!("SKIP: RGBA8 mipmapped MSAA resolve support unavailable: {format_support:?}");
+        return Ok(());
+    }
+    let sample_count = [2, 4, 8, 16].into_iter().find(|&samples| {
+        unsafe {
+            native
+                .raw_device()
+                .CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, samples)
+        }
+        .is_ok_and(|quality_levels| quality_levels > 0)
+    });
+    let Some(sample_count) = sample_count else {
+        assert!(
+            !required,
+            "strict mode requires an RGBA8 multisample count supported at FL9_1"
+        );
+        std::println!("SKIP: no supported RGBA8 multisample count");
+        return Ok(());
+    };
+
+    let source = unsafe {
+        device.create_texture(&crate::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUses::COLOR_TARGET,
+            memory_flags: crate::MemoryFlags::empty(),
+            view_formats: vec![],
+        })
+    }
+    .expect("FL9_1 multisampled RGBA8 source");
+    let destination = unsafe {
+        device.create_texture(&crate::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+            memory_flags: crate::MemoryFlags::empty(),
+            view_formats: vec![],
+        })
+    }
+    .expect("mipmapped RGBA8 resolve destination");
+    let make_view = |base_mip_level| crate::TextureViewDescriptor {
+        label: None,
+        format: wgt::TextureFormat::Rgba8Unorm,
+        dimension: wgt::TextureViewDimension::D2,
+        usage: wgt::TextureUses::COLOR_TARGET,
+        range: wgt::ImageSubresourceRange {
+            base_mip_level,
+            mip_level_count: Some(1),
+            ..Default::default()
+        },
+    };
+    let source_view = unsafe {
+        device
+            .create_texture_view(&source, &make_view(0))
+            .expect("multisampled source view")
+    };
+    let mip0_view = unsafe {
+        device
+            .create_texture_view(&destination, &make_view(0))
+            .expect("resolve texture mip 0 view")
+    };
+    let mip1_view = unsafe {
+        device
+            .create_texture_view(&destination, &make_view(1))
+            .expect("resolve texture mip 1 view")
+    };
+    let output = unsafe {
+        device
+            .create_buffer(&crate::BufferDescriptor {
+                label: None,
+                size: 1024,
+                usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                memory_flags: crate::MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&output, 0, &vec![0xa5; 1024])?;
+    let mut encoder = unsafe {
+        device
+            .create_command_encoder(&crate::CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        let mip0_attachment = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &mip0_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color::GREEN,
+        })];
+        let mip0_pass = crate::RenderPassDescriptor {
+            label: None,
+            extent: wgt::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            sample_count: 1,
+            color_attachments: &mip0_attachment,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        encoder.begin_render_pass(&mip0_pass).unwrap();
+        encoder.end_render_pass();
+
+        let source_attachment = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &source_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: Some(crate::Attachment {
+                view: &mip1_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            }),
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color::RED,
+        })];
+        let source_pass = crate::RenderPassDescriptor {
+            label: None,
+            extent: wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            sample_count,
+            color_attachments: &source_attachment,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        encoder.begin_render_pass(&source_pass).unwrap();
+        encoder.end_render_pass();
+
+        for (mip, width, height, offset) in [(0, 8, 8, 0), (1, 4, 4, 512)] {
+            encoder.copy_texture_to_buffer(
+                &destination,
+                wgt::TextureUses::COPY_SRC,
+                &output,
+                [BufferTextureCopy {
+                    buffer_layout: wgt::TexelCopyBufferLayout {
+                        offset,
+                        bytes_per_row: Some(width * 4),
+                        rows_per_image: Some(height),
+                    },
+                    texture_base: TextureCopyBase {
+                        mip_level: mip,
+                        array_layer: 0,
+                        origin: wgt::Origin3d::ZERO,
+                        aspect: FormatAspects::COLOR,
+                    },
+                    size: CopyExtent {
+                        width,
+                        height,
+                        depth: 1,
+                    },
+                }]
+                .into_iter(),
+            );
+        }
+        encoder.end_encoding().expect("resolve and mip readback")
+    };
+    unsafe {
+        device.destroy_texture_view(source_view);
+        device.destroy_texture_view(mip0_view);
+        device.destroy_texture_view(mip1_view);
+        device.destroy_texture(source);
+        device.destroy_texture(destination);
+    }
+    let fence = native.create_native_fence();
+    unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
+    assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+    let actual = native.read_byte_buffer(&output, 0, 1024)?;
+    let mut expected = vec![0xa5; 1024];
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let offset = (y * 32) + (x * 4);
+            expected[offset..offset + 4].copy_from_slice(&[0, 255, 0, 255]);
+        }
+    }
+    for y in 0..4usize {
+        for x in 0..4usize {
+            let offset = 512 + (y * 16) + (x * 4);
+            expected[offset..offset + 4].copy_from_slice(&[255, 0, 0, 255]);
+        }
+    }
+    assert_eq!(
+        actual, expected,
+        "resolve must update mip 1 and preserve mip 0"
+    );
+    unsafe {
+        encoder.reset_all([commands].into_iter());
+        device.destroy_buffer(output);
+    }
+    std::println!("PASS: FL9_1 {sample_count}x RGBA8 resolve wrote mip 1 and preserved mip 0");
     Ok(())
 }
