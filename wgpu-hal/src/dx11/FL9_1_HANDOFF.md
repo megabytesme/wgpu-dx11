@@ -30,7 +30,8 @@ software=false, requested/actual FL9_1. Optional selected-device subcases
 logged skips; no required strict hardware test skipped. The last complete
 private HAL run passed 416/416; the core DX11 fixture previously passed
 112/112, DX12 core 101/101 and the strict HWND fixture 2/2. The detailed
-commands and hardware readback evidence are in `FL9_1_PROGRESS.md`.
+commands and hardware readback evidence are in `FL9_1_PROGRESS.md`. The latest
+test checkpoint is `fe0cc897a` (`dx11: test FL9_1 asynchronous write mapping`).
 
 Feature-wise, dynamic offsets, multiple bind groups, multiple sampled
 resources, broad tested vertex/index draw paths, depth/stencil, query-gated

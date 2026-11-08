@@ -11900,3 +11900,5 @@ async write-map case as a missing public regression. These reviews were
 targeted, not an exhaustive audit of every wgpu request. Historical FL9_1
 drivers, actual device removal/recovery, and Lumia/CoreWindow runtime remain
 unverified.
+
+Implementation/test checkpoint: `fe0cc897a` (`dx11: test FL9_1 asynchronous write mapping`).
