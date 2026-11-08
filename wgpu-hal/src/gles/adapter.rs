@@ -997,6 +997,7 @@ impl super::Adapter {
             shader_loops: true,
             shader_dynamic_loops: true,
             vertex_index_input: true,
+            vertex_index_topology_mask: wgt::DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: unsafe {
                 gl.get_parameter_i32(glow::MAX_VERTEX_TEXTURE_IMAGE_UNITS)
