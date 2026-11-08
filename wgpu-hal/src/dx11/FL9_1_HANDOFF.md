@@ -11,7 +11,9 @@ requested and selected FL9_1; optional Float16x2 IA and Rg8Unorm mip subcases
 were explicitly skipped by selected-device capability checks. The private
 strict HAL suite passed 409/409. Historical FL9_1 behavior remains unverified,
 and the backend remains partially complete. See `FL9_1_PROGRESS.md` for the
-checkpoint and reproduction commands.
+checkpoint and reproduction commands. Implementation checkpoint:
+`2e2bd70bb038ea09ca7e6eb5fe60dd5630c18867`; public regression checkpoint:
+`732c629a1788a316512f20097ce450c99d4e9449`.
 
 ## Latest shader increment — host-emulated instance index — 2026-11-07
 

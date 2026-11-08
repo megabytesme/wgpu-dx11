@@ -11180,6 +11180,11 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
 ```
 
+Implementation checkpoint: `2e2bd70bb038ea09ca7e6eb5fe60dd5630c18867`
+(`dx11: validate vertex index topology in core`); public regression checkpoint:
+`732c629a1788a316512f20097ce450c99d4e9449`
+(`dx11: test public vertex index topology validation`).
+
 The new core behavior can be reproduced with:
 
 ```powershell
