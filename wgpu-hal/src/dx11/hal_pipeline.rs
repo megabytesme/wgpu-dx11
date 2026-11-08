@@ -581,6 +581,8 @@ impl crate::DynPipelineLayout for PipelineLayout {}
 #[derive(Clone, Debug)]
 pub(super) struct TexelLoadPipeline {
     pub binding: naga::ResourceBinding,
+    pub kind: super::hal_shader::Fl9TextureEmulationKind,
+    pub mip_level: u32,
     pub sampler: ID3D11SamplerState,
     pub dimensions: ID3D11Buffer,
 }
@@ -589,6 +591,8 @@ impl TexelLoadPipeline {
     fn new(
         owner: &NativeDevice,
         binding: naga::ResourceBinding,
+        kind: super::hal_shader::Fl9TextureEmulationKind,
+        mip_level: u32,
     ) -> Result<Self, crate::PipelineError> {
         let fail = |error: windows::core::Error| {
             if error.code() == windows::Win32::Foundation::E_OUTOFMEMORY {
@@ -639,6 +643,8 @@ impl TexelLoadPipeline {
         .map_err(fail)?;
         Ok(Self {
             binding,
+            kind,
+            mip_level,
             sampler,
             dimensions: dimensions.ok_or_else(|| {
                 crate::PipelineError::Linkage(
@@ -3060,10 +3066,23 @@ impl RenderPipeline {
             .map(|fragment| {
                 fragment
                     .module
-                    .texture_load_binding(fragment.entry_point, fragment.constants)
+                    .texture_emulation_binding(fragment.entry_point, fragment.constants)
             })
             .transpose()?
             .flatten();
+        if texel_load_binding.as_ref().is_some_and(|proof| {
+            matches!(
+                proof.kind,
+                super::hal_shader::Fl9TextureEmulationKind::Load3D
+            )
+        }) && !super::capabilities::Capabilities::query(owner)
+            .private_fl91_fragment_texture_load_3d_float()
+        {
+            return Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 FL9_1 3D textureLoad requires query-supported RGBA8 volume sampling".into(),
+            ));
+        }
         let pixel_code = if let Some(fragment) = fragment {
             if target.is_none() {
                 fragment
@@ -3090,7 +3109,7 @@ impl RenderPipeline {
             .map_err(depth_only_shader_error)?
         };
         let texel_load = texel_load_binding
-            .map(|binding| TexelLoadPipeline::new(owner, binding))
+            .map(|proof| TexelLoadPipeline::new(owner, proof.binding, proof.kind, proof.mip_level))
             .transpose()?;
         let mut input_desc = alloc::vec::Vec::new();
         let mut vertex_layouts = [None; crate::MAX_VERTEX_BUFFERS];

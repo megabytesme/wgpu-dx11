@@ -34,14 +34,16 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
-The current tree also contains a narrowly gated fragment `textureLoad` path:
-one direct single-mip `texture_2d<f32>` load is emulated at FL9_1, with other
-images, helpers, control flow, stages and query/sampling operations rejected
-by selected-entry validation. Strict public readback verified in-bounds,
-out-of-bounds and nonzero-mip results on the RTX 3090 Ti at requested/actual
-FL9_1. Cube texture-to-buffer copies now support query-approved cube formats
-by selecting face subresources into staging resources; the strict six-face
-test verifies texels and padded output. These are narrow tested additions and do not close
+The current tree also contains separate, narrowly gated 2D and 3D fragment
+`textureLoad` paths. Each emulates one direct single-mip float load at FL9_1;
+the 3D path additionally requires a positive selected-device RGBA8 volume
+sampling query. Other images, helpers, control flow, stages and extra
+query/sampling operations are rejected by selected-entry validation. Strict
+public readback verified in-bounds, out-of-bounds and nonzero-mip results for
+both dimensions on the RTX 3090 Ti at requested/actual FL9_1. Cube
+texture-to-buffer copies now support query-approved cube formats by selecting
+face subresources into staging resources; the strict six-face test verifies
+texels and padded output. These are narrow tested additions and do not close
 the public capability audit or establish historical-driver behavior.
 
 The public rasterizer path now has a strict forced-FL9_1 readback test for
@@ -299,10 +301,26 @@ X3548 in both tested 9_1 and 9_3 pixel profiles. The selected-entry
 unused query entries do not block safe siblings. The FL9_1 public projection
 reports this limit unavailable, and `wgpu-info` displays it.
 
-`textureSampleBaseClampToEdge` is gated separately: Naga lowers it through
-`GetDimensions` and `SampleLevel`, which FXC rejects with X4532 in both tested
-10Level9 pixel profiles. The selected-entry limit follows helper calls and
-rejects this operation before HAL; the FL9_1 projection reports it unavailable.
+The projection now has separate narrow limits for direct fragment
+`textureDimensions` and `textureNumLevels` on one group-0
+`texture_2d<f32>`. The latter uses the bound view's host-known mip count in
+the private `b13` constant, including supported multi-mip views. Neither limit
+enables general image queries; the proof rejects helpers, control flow,
+additional bound resources and unrelated image operations. Strict public
+readback and compiler validation are recorded in `TESTING.md`.
+
+`textureSampleBaseClampToEdge` is implemented only through the narrow
+`texture_sample_base_clamp_to_edge_2d_float_fragment` limit; the general
+downlevel limit remains false. Naga supplies selected-view dimensions through host constant
+`b13`, clamps coordinates to half-texel centers and emits implicit `Sample`,
+which FXC accepts for `ps_4_0_level_9_1`. Core's additional narrow limit allows
+only one direct group-0 2D float texture and one group-0 non-comparison sampler
+with no helpers, other resources or image operations. HAL revalidates the
+selected single-mip view at draw preparation and refreshes the dimensions.
+Strict RTX 3090 Ti FL9_1 readback matched all 64 pixels for out-of-range
+coordinates. The public finite repeat-per-primitive limit rejects Repeat and
+MirrorRepeat sampler descriptors, so independence from those sampler modes is
+not established by the public GPU test.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a runnable public-API example that
 selects the physical FL9_1 adapter, renders an indexed textured 3D cube with
@@ -1168,12 +1186,13 @@ ordinary separate shader modules remain valid. DX12's HLSL and Metal's MSL
 projections also disable inverse because their writers do not lower it. This
 remains a compiler limitation and does not add hardware functionality.
 
-The same selected-shader gate now covers `outerProduct`, which Naga's HLSL
-writer also leaves unimplemented. DX11 and DX12 report the operation as
-unsupported, and core rejects it before HAL translation, including occurrences
-in regular module helper functions emitted by the HLSL writer. Regression
-coverage verifies selected and unused-helper GLSL operations remain rejected
-while an ordinary sibling shader still creates a pipeline.
+The HLSL writer now lowers `outerProduct` for validated f32 vectors and square
+or rectangular matrices. DX11 exposes the corresponding downlevel limit, and
+selected-entry validation still rejects occurrences in regular module helper
+functions if a backend does not support them. Strict FL9_1 GLSL rendering
+verified square and rectangular results across all 64 pixels. The GLSL front
+end has no WGSL `outerProduct` builtin; DX12 keeps its limit disabled pending
+separate validation.
 
 Core unmap now skips the HAL call for zero-length mappings. Core represents
 empty mapped ranges with a dangling zero-length pointer and the D3D11 HAL does
@@ -1213,13 +1232,95 @@ so its strict test explicitly skips mip execution while confirming the
 single-mip projection. Synthetic tests cover the positive and negative query
 branches. No physical execution is claimed for the mip path.
 
+## Narrow FL9_1 fragment texture dimensions
+
+The opt-in public projection now exposes a separate
+`texture_dimensions_2d_float_fragment` limit while keeping general
+`texture_query` unavailable. Core proves the selected entry point is a simple
+fragment function with one direct size query on a group-0, non-array
+`texture_2d<f32>`, converted directly to `vec2f`; helper calls, control flow,
+other resource bindings, other image operations and unrelated integer
+semantics remain rejected. HAL reuses the existing host-supplied dimension
+constant and updates it when the bound view changes. The strict RTX 3090 Ti
+test explicitly requested FL9_1 and read back all 64 pixels after switching
+from a 16x8 view to an 8x4 view. Synthetic tests verify the narrow Core limit
+and integer-operation boundary. This does not enable general texture queries.
+
+The same narrow 2D path now also allows exactly one level-less implicit
+`textureSample` of the queried texture with one group-0 non-comparison sampler.
+Both the query and sample must be used directly in the selected fragment entry;
+extra resources, image operations, helpers, control flow, `select` and runtime
+integer work remain rejected. A strict public FL9_1 readback test switched
+between 4x2 and 8x4 views with different texel colors; all 64 pixels matched
+the output that depends on both queried dimensions and sampled contents.
+General `texture_query` remains unavailable.
+
+## Optional timestamp query support
+
+## Narrow FL9_1 fragment `textureNumLevels`
+
+The opt-in projection exposes a separate `texture_num_levels_2d_float_fragment`
+limit for one direct fragment `textureNumLevels` query on a group-0, non-array
+`texture_2d<f32>`, directly converted to `f32`. Core rejects helper calls,
+control flow, additional resources or image operations, other query forms and
+unrelated integer semantics. Naga's lowering proof is independent of the
+texel-load proof. HAL supplies the selected bound view's mip count through
+`b13`, including for supported multi-mip views; the strict public RTX 3090 Ti
+test verified one- and three-level views at requested/actual FL9_1 across all
+64 output pixels. General `texture_query` remains unavailable.
+
+## Constant-mip FL9_1 fragment `textureDimensions`
+
+The existing `texture_dimensions_2d_float_fragment` limit also accepts one
+literal or module-constant mip level on the same narrow 2D float fragment path.
+The level is relative to the current view. Core and HAL reject dynamic,
+override-based and negative levels. The host supplies dimensions computed from
+the current view base size and selected level through `b13`; out-of-range levels
+use a safe value because WGSL leaves the result indeterminate. General
+`texture_query` remains disabled. See `TESTING.md` for the strict readback test.
+
+## Narrow FL9_1 fragment 3D `textureDimensions`
+
+The opt-in projection adds `texture_dimensions_3d_float_fragment` separately
+from the 2D query limit. It is enabled only when the selected FL9_1 device's
+RGBA8 3D sampled-format query succeeds and the backend path is enabled. The
+selected fragment entry must contain one direct `textureDimensions` query on
+one group-0, non-array `texture_3d<f32>`, with no explicit mip level, followed
+by a direct `vec3f` conversion. It may also perform one implicit sample of
+that same volume through one group-0 non-comparison sampler, using `vec3f`
+coordinates. HAL supplies the selected 3D view's width, height and depth
+through the reserved `b13` constant; texture and sampler registers remain
+allocated through the shared logical binding map. The strict public test on
+the RTX 3090 Ti explicitly selected FL9_1 and transitioned between 4x2x8 and
+2x4x1 volumes containing different colors. Both dimensions and sampled
+contents affected the expected 64 pixels. Helpers, extra resources, other
+image operations, explicit levels and additional samples remain rejected;
+this does not enable general texture queries, 3D copies, render attachments or
+readback.
+
+## Narrow FL9_1 fragment 3D `textureLoad`
+
+A separate `texture_load_3d_float_fragment` downlevel limit now covers a
+direct, single-mip RGBA8 volume load in a restricted fragment entry point.
+Naga lowers it to internal point sampling at texel centers; HAL supplies the
+selected D3 view dimensions in `b13` and binds its internal `s15` sampler.
+Core rejects the shape unless the 3D-specific limit is true, independently of
+the existing 2D load limit. A real RTX 3090 Ti at requested/actual FL9_1
+verified two in-bounds colors, zero for an out-of-bounds coordinate and zero
+for a nonzero mip level across all 256 pixels. FXC accepted the generated
+shader under `ps_4_0_level_9_1`. This does not enable general `texture_load`
+or 3D copies, attachments or readback; device support remains gated by the
+selected RGBA8 volume-sampling query.
+
 ## Optional timestamp query support
 
 Native device creation performs one bounded timestamp/disjoint query probe.
 Only a nonzero frequency adds `TIMESTAMP_QUERY` and
 `TIMESTAMP_QUERY_INSIDE_ENCODERS` to the explicit FL9_1 adapter projection.
-Query-set creation supports timestamps only. Encoder writes issue D3D11
-timestamp `End` commands; resolve flushes, waits for `GetData` and updates the
-retained query-resolve buffer in sequence. This is correct but can stall the
-CPU. Pass timestamp writes, occlusion and pipeline-statistics queries stay
+Query-set creation supports timestamps only. Encoder and render/compute pass
+boundary writes issue D3D11 timestamp `End` commands; empty compute passes can
+be bracketed, while compute pipelines and dispatch remain unavailable.
+Resolve flushes, waits for `GetData` and updates the retained query-resolve
+buffer in sequence. This is correct but can stall the CPU. Explicit timestamp
+writes inside passes, occlusion and pipeline-statistics queries stay
 unavailable. See `TESTING.md` for the strict hardware command and result.

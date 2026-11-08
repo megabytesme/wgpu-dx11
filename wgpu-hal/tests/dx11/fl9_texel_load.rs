@@ -29,7 +29,11 @@ fn lower_load(coordinate: &str, mip: &str) -> Result<Vec<u8>, String> {
     } else {
         format!("@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(0) pos: vec2f) -> @location(0) vec4f {{ return textureLoad(image, {coordinate}, {mip}); }}")
     };
-    lower_source(&wgsl)
+    if coordinate == "__dims__" || coordinate == "__npot_dims__" || coordinate == "__wide_dims__" {
+        lower_dimensions_source(&wgsl)
+    } else {
+        lower_source(&wgsl)
+    }
 }
 
 fn lower_source(wgsl: &str) -> Result<Vec<u8>, String> {
@@ -37,6 +41,18 @@ fn lower_source(wgsl: &str) -> Result<Vec<u8>, String> {
 }
 
 fn lower_source_with_slot(wgsl: &str, texture_slot: u32) -> Result<Vec<u8>, String> {
+    lower_source_with_proof(wgsl, texture_slot, false)
+}
+
+fn lower_dimensions_source(wgsl: &str) -> Result<Vec<u8>, String> {
+    lower_source_with_proof(wgsl, 0, true)
+}
+
+fn lower_source_with_proof(
+    wgsl: &str,
+    texture_slot: u32,
+    dimensions: bool,
+) -> Result<Vec<u8>, String> {
     let module = naga::front::wgsl::parse_str(&wgsl).map_err(|e| format!("{e:?}"))?;
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
@@ -52,7 +68,8 @@ fn lower_source_with_slot(wgsl: &str, texture_slot: u32) -> Result<Vec<u8>, Stri
         shader_model: naga::back::hlsl::ShaderModel::V5_0,
         fake_missing_bindings: false,
         direct_sampler_bindings: true,
-        fl9_texel_load_proof: Some(binding),
+        fl9_texel_load_proof: (!dimensions).then_some(binding),
+        fl9_texture_dimensions_proof: dimensions.then_some(binding),
         ..Default::default()
     };
     options.binding_map.insert(

@@ -202,8 +202,11 @@ pub(super) enum NativeCommand {
         texture: ID3D11ShaderResourceView,
         sampler: ID3D11SamplerState,
         dimensions: ID3D11Buffer,
+        kind: super::hal_shader::Fl9TextureEmulationKind,
         width: u32,
         height: u32,
+        depth: u32,
+        mip_levels: u32,
     },
     SetVertex {
         slot: u32,
@@ -796,15 +799,35 @@ impl CommandBuffer {
                         texture,
                         sampler,
                         dimensions,
+                        kind,
                         width,
                         height,
+                        depth,
+                        mip_levels,
                     } => {
-                        let constants = [
-                            *width as f32,
-                            *height as f32,
-                            1.0 / *width as f32,
-                            1.0 / *height as f32,
-                        ];
+                        let constants = match kind {
+                            super::hal_shader::Fl9TextureEmulationKind::Load => [
+                                *width as f32,
+                                *height as f32,
+                                1.0 / *width as f32,
+                                1.0 / *height as f32,
+                            ],
+                            super::hal_shader::Fl9TextureEmulationKind::Load3D => {
+                                [*width as f32, *height as f32, *depth as f32, 0.0]
+                            }
+                            super::hal_shader::Fl9TextureEmulationKind::Dimensions => {
+                                [*width as f32, *height as f32, 0.0, 0.0]
+                            }
+                            super::hal_shader::Fl9TextureEmulationKind::Dimensions3D => {
+                                [*width as f32, *height as f32, *depth as f32, 0.0]
+                            }
+                            super::hal_shader::Fl9TextureEmulationKind::NumLevels => {
+                                [*mip_levels as f32, 0.0, 0.0, 0.0]
+                            }
+                            super::hal_shader::Fl9TextureEmulationKind::BaseClamp => {
+                                [*width as f32, *height as f32, 0.0, 0.0]
+                            }
+                        };
                         context.UpdateSubresource(
                             dimensions,
                             0,
@@ -814,7 +837,13 @@ impl CommandBuffer {
                             0,
                         );
                         context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
-                        context.PSSetSamplers(15, Some(&[Some(sampler.clone())]));
+                        if matches!(
+                            kind,
+                            super::hal_shader::Fl9TextureEmulationKind::Load
+                                | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                        ) {
+                            context.PSSetSamplers(15, Some(&[Some(sampler.clone())]));
+                        }
                         context.PSSetConstantBuffers(13, Some(&[Some(dimensions.clone())]));
                     }
                     NativeCommand::SetVertex {

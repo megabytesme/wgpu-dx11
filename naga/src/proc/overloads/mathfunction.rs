@@ -148,11 +148,14 @@ fn outer() -> List {
             vector_sizes(),
             float_scalars_unimplemented_abstract(),
         )
-        .map(|(cols, rows, scalar)| {
-            let left = ir::TypeInner::Vector { size: cols, scalar };
-            let right = ir::TypeInner::Vector { size: rows, scalar };
+        .map(|(rows, columns, scalar)| {
+            let left = ir::TypeInner::Vector { size: rows, scalar };
+            let right = ir::TypeInner::Vector {
+                size: columns,
+                scalar,
+            };
             let result = ir::TypeInner::Matrix {
-                columns: cols,
+                columns,
                 rows,
                 scalar,
             };

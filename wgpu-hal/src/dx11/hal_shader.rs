@@ -506,6 +506,449 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_dimensions_binding_is_selected_entry_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(4) @binding(42) var image: texture_2d<f32>;
+            @fragment fn dimensions() -> @location(0) vec4f {
+                let size = vec2f(textureDimensions(image));
+                return vec4f(size, 0.0, 1.0);
+            }
+            @fragment fn ordinary() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof = fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("the selected dimensions entry has an emulation proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 4,
+                binding: 42,
+            }
+        );
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::Dimensions));
+        assert_eq!(proof.mip_level, 0);
+        let entry_index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.name == "dimensions")
+            .unwrap();
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                &module.entry_points[entry_index].function,
+                info.get_entry_point(entry_index),
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions {
+                    texture_dimensions_binding: Some(proof.binding),
+                    ..Default::default()
+                },
+                &[],
+            )
+        );
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "ordinary"
+        )
+        .unwrap()
+        .is_none());
+
+        let integer_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @fragment fn dimensions(@location(0) input: vec2f) -> @location(0) vec4f {
+                let size = vec2f(textureDimensions(image));
+                let integer = u32(input.x);
+                return vec4f(size, f32(integer), 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let integer_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&integer_module)
+        .unwrap();
+        let integer_proof = fl9_texture_emulation_binding(
+            &integer_module,
+            &integer_info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("the dimensions operation has an emulation proof");
+        let entry_index = integer_module
+            .entry_points
+            .iter()
+            .position(|entry| entry.name == "dimensions")
+            .unwrap();
+        assert!(
+            has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &integer_module,
+                &integer_info,
+                &integer_module.entry_points[entry_index].function,
+                integer_info.get_entry_point(entry_index),
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions {
+                    texture_dimensions_binding: Some(integer_proof.binding),
+                    ..Default::default()
+                },
+                &[],
+            )
+        );
+    }
+
+    #[test]
+    fn fl9_3d_texture_dimensions_binding_is_distinct_from_2d_emulation() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_3d<f32>;
+            @fragment fn dimensions() -> @location(0) vec4f {
+                return vec4f(vec3f(textureDimensions(image)), 1.0);
+            }
+            @fragment fn ordinary() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof = fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("the 3D dimensions entry has a distinct emulation proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::Dimensions3D));
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "ordinary"
+        )
+        .unwrap()
+        .is_none());
+
+        let sampled_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_3d<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            @fragment fn dimensions() -> @location(0) vec4f {
+                let size = vec3f(textureDimensions(image));
+                return textureSample(image, image_sampler, vec3f(0.5))
+                    * vec4f(size / vec3f(4.0, 2.0, 8.0), 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let sampled_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&sampled_module)
+        .unwrap();
+        let sampled_proof = fl9_texture_emulation_binding(
+            &sampled_module,
+            &sampled_info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("3D dimensions and one implicit sample share an emulation proof");
+        assert!(matches!(
+            sampled_proof.kind,
+            Fl9TextureEmulationKind::Dimensions3D
+        ));
+
+        let helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_3d<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            fn sample_image() -> vec4f {
+                return textureSample(image, image_sampler, vec3f(0.5));
+            }
+            @fragment fn dimensions() -> @location(0) vec4f {
+                return sample_image() * vec4f(vec3f(textureDimensions(image)), 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper_module)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "dimensions"
+        )
+        .is_err());
+
+        let explicit_level = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_3d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(image, 0u)), 1.0); }",
+        )
+        .unwrap();
+        let explicit_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&explicit_level)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &explicit_level,
+            &explicit_info,
+            naga::ShaderStage::Fragment,
+            "fs"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn fl9_3d_texture_load_selects_a_distinct_single_mip_emulation() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @fragment fn load_volume() -> @location(0) vec4f {
+                return textureLoad(volume, vec3i(1, 0, 1), 0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof = fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "load_volume",
+        )
+        .unwrap()
+        .expect("direct 3D textureLoad has an emulation proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::Load3D));
+
+        let module_2d = naga::front::wgsl::parse_str(
+            "@group(0) @binding(7) var image: texture_2d<f32>; @fragment fn load_image() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }",
+        )
+        .unwrap();
+        let info_2d = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module_2d)
+        .unwrap();
+        let proof_2d = fl9_texture_emulation_binding(
+            &module_2d,
+            &info_2d,
+            naga::ShaderStage::Fragment,
+            "load_image",
+        )
+        .unwrap()
+        .expect("the original 2D load path remains available");
+        assert!(matches!(proof_2d.kind, Fl9TextureEmulationKind::Load));
+    }
+
+    #[test]
+    fn fl9_texture_dimensions_requires_a_resolved_mip_level() {
+        for (name, source, expected) in [
+            (
+                "literal level",
+                "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, 2u)), 0.0, 1.0); }",
+                Some(2),
+            ),
+            (
+                "module constant level",
+                "const LEVEL: i32 = 3; @group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, LEVEL)), 0.0, 1.0); }",
+                Some(3),
+            ),
+            (
+                "negative signed level",
+                "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, -1)), 0.0, 1.0); }",
+                None,
+            ),
+            (
+                "runtime level",
+                "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(0) input: vec2f) -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, u32(input.x))), 0.0, 1.0); }",
+                None,
+            ),
+            (
+                "override level",
+                "override LEVEL: u32 = 2u; @group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, LEVEL)), 0.0, 1.0); }",
+                None,
+            ),
+        ] {
+            let module = naga::front::wgsl::parse_str(source)
+                .unwrap_or_else(|error| panic!("{name} should parse: {error}"));
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|error| panic!("{name} should validate: {error}"));
+            let proof = fl9_texture_emulation_binding(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "fs",
+            );
+            match expected {
+                Some(level) => assert_eq!(proof.unwrap().unwrap().mip_level, level, "{name}"),
+                None => assert!(proof.is_err(), "{name} must be rejected"),
+            }
+        }
+    }
+
+    #[test]
+    fn fl9_texture_num_levels_binding_is_selected_entry_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(42) var image: texture_2d<f32>;
+            @fragment fn levels() -> @location(0) vec4f {
+                return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0);
+            }
+            @fragment fn ordinary() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "levels")
+                .unwrap()
+                .expect("the selected levels entry has an emulation proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 42,
+            }
+        );
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::NumLevels));
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "ordinary"
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn fl9_texture_base_clamp_binding_is_direct_and_single_mip() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @fragment fn sampled(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBaseClampToEdge(image, smp, uv);
+            }
+            @fragment fn ordinary() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "sampled")
+                .unwrap()
+                .expect("the selected base-clamp entry has an emulation proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::BaseClamp));
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "ordinary"
+        )
+        .unwrap()
+        .is_none());
+
+        let helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn sample_image(uv: vec2f) -> vec4f {
+                return textureSampleBaseClampToEdge(image, smp, uv);
+            }
+            @fragment fn sampled(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return sample_image(uv);
+            }
+            "#,
+        )
+        .unwrap();
+        let helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper_module)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "sampled"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn checked_uniform_shader_distinguishes_local_vector_indexing() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -1946,12 +2389,52 @@ where
     )
 }
 
-fn fl9_texel_load_binding(
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Fl9TextureEmulationKind {
+    Load,
+    Load3D,
+    Dimensions,
+    Dimensions3D,
+    NumLevels,
+    BaseClamp,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Fl9TextureEmulation {
+    pub binding: naga::ResourceBinding,
+    pub kind: Fl9TextureEmulationKind,
+    pub mip_level: u32,
+}
+
+fn fl9_texture_dimensions_level(
+    module: &naga::Module,
+    function: &naga::Function,
+    level: naga::Handle<naga::Expression>,
+) -> Option<u32> {
+    fn literal(expression: &naga::Expression) -> Option<u32> {
+        match expression {
+            naga::Expression::Literal(naga::Literal::U32(value)) => Some(*value),
+            naga::Expression::Literal(naga::Literal::I32(value)) => u32::try_from(*value).ok(),
+            _ => None,
+        }
+    }
+
+    match function.expressions[level] {
+        naga::Expression::Literal(naga::Literal::U32(value)) => Some(value),
+        naga::Expression::Literal(naga::Literal::I32(value)) => u32::try_from(value).ok(),
+        naga::Expression::Constant(constant) => {
+            literal(&module.global_expressions[module.constants[constant].init])
+        }
+        _ => None,
+    }
+}
+
+fn fl9_texture_emulation_binding(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
     stage: naga::ShaderStage,
     entry: &str,
-) -> Result<Option<naga::ResourceBinding>, crate::PipelineError> {
+) -> Result<Option<Fl9TextureEmulation>, crate::PipelineError> {
     let stages = if stage == naga::ShaderStage::Fragment {
         wgt::ShaderStages::FRAGMENT
     } else {
@@ -1971,63 +2454,381 @@ fn fl9_texel_load_binding(
         function_info,
         |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
     );
-    if !uses_load {
+    let uses_dimensions = reachable_expression(
+        module,
+        info,
+        function,
+        function_info,
+        |_, _, _, expression| {
+            matches!(
+                expression,
+                naga::Expression::ImageQuery {
+                    query: naga::ImageQuery::Size { .. },
+                    ..
+                }
+            )
+        },
+    );
+    let uses_num_levels = reachable_expression(
+        module,
+        info,
+        function,
+        function_info,
+        |_, _, _, expression| {
+            matches!(
+                expression,
+                naga::Expression::ImageQuery {
+                    query: naga::ImageQuery::NumLevels,
+                    ..
+                }
+            )
+        },
+    );
+    let uses_base_clamp = reachable_expression(
+        module,
+        info,
+        function,
+        function_info,
+        |_, _, _, expression| {
+            matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    clamp_to_edge: true,
+                    ..
+                }
+            )
+        },
+    );
+    if !uses_load && !uses_dimensions && !uses_num_levels && !uses_base_clamp {
         return Ok(None);
     }
+    if [uses_load, uses_dimensions, uses_num_levels, uses_base_clamp]
+        .into_iter()
+        .filter(|used| *used)
+        .count()
+        > 1
+    {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 texture emulation operations cannot be combined".into(),
+        ));
+    }
+    if !module.functions.is_empty() {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 texture emulation does not support helper functions".into(),
+        ));
+    }
+    let mut kind = if uses_load {
+        Fl9TextureEmulationKind::Load
+    } else if uses_dimensions {
+        Fl9TextureEmulationKind::Dimensions
+    } else if uses_num_levels {
+        Fl9TextureEmulationKind::NumLevels
+    } else {
+        Fl9TextureEmulationKind::BaseClamp
+    };
     if stage != naga::ShaderStage::Fragment {
         return Err(crate::PipelineError::Linkage(
             stages,
-            "D3D11 FL9 texture loads are fragment-only".into(),
+            "D3D11 FL9 texture emulation is fragment-only".into(),
         ));
     }
     let mut binding = None;
+    let mut sampler_binding = None;
+    let mut sample_count = 0;
+    let mut mip_level = 0;
+    let mut has_explicit_mip_level = false;
     for (handle, expression) in function.expressions.iter() {
         if function_info[handle].ref_count == 0 {
             continue;
         }
-        let naga::Expression::ImageLoad {
-            image,
-            array_index,
-            sample,
-            level,
-            ..
-        } = expression
-        else {
-            continue;
+        let image = match expression {
+            naga::Expression::ImageLoad {
+                image,
+                array_index,
+                sample,
+                level,
+                ..
+            } if matches!(
+                kind,
+                Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
+            ) =>
+            {
+                if array_index.is_some() || sample.is_some() || level.is_none() {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 texture load shape is unsupported".into(),
+                    ));
+                }
+                *image
+            }
+            naga::Expression::ImageQuery {
+                image,
+                query: naga::ImageQuery::Size { level },
+            } if matches!(kind, Fl9TextureEmulationKind::Dimensions) => {
+                has_explicit_mip_level = level.is_some();
+                mip_level = match level {
+                    Some(level) => fl9_texture_dimensions_level(module, function, *level)
+                        .ok_or_else(|| {
+                            crate::PipelineError::Linkage(
+                                stages,
+                                "D3D11 FL9 textureDimensions level must be a constant".into(),
+                            )
+                        })?,
+                    None => 0,
+                };
+                *image
+            }
+            naga::Expression::ImageQuery {
+                image,
+                query: naga::ImageQuery::NumLevels,
+            } if matches!(kind, Fl9TextureEmulationKind::NumLevels) => *image,
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                gather: None,
+                array_index: None,
+                offset: None,
+                level: naga::SampleLevel::Auto,
+                depth_ref: None,
+                clamp_to_edge: false,
+                ..
+            } if matches!(
+                kind,
+                Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::Dimensions3D
+            ) =>
+            {
+                let coordinate_size = match function.expressions[*image] {
+                    naga::Expression::GlobalVariable(image) => {
+                        match module.types[module.global_variables[image].ty].inner {
+                            naga::TypeInner::Image { dim, .. } => match dim {
+                                naga::ImageDimension::D2 => naga::VectorSize::Bi,
+                                naga::ImageDimension::D3 => naga::VectorSize::Tri,
+                                _ => {
+                                    return Err(crate::PipelineError::Linkage(
+                                        stages,
+                                        "D3D11 FL9 textureDimensions sampling requires a 2D or 3D image".into(),
+                                    ));
+                                }
+                            },
+                            _ => {
+                                return Err(crate::PipelineError::Linkage(
+                                    stages,
+                                    "D3D11 FL9 textureDimensions sampling requires an image".into(),
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(crate::PipelineError::Linkage(
+                            stages,
+                            "D3D11 FL9 textureDimensions sampling requires a direct global image"
+                                .into(),
+                        ));
+                    }
+                };
+                if sample_count != 0
+                    || !matches!(
+                        function_info[*coordinate].ty.inner_with(&module.types),
+                        naga::TypeInner::Vector {
+                            size,
+                            scalar: naga::Scalar {
+                                kind: naga::ScalarKind::Float,
+                                width: 4
+                            }
+                        } if *size == coordinate_size
+                    )
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 textureDimensions sampling supports one implicit sample with matching coordinates".into(),
+                    ));
+                }
+                sample_count = 1;
+                let naga::Expression::GlobalVariable(sampler) = function.expressions[*sampler]
+                else {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 textureDimensions sampling requires a direct sampler".into(),
+                    ));
+                };
+                let global = &module.global_variables[sampler];
+                let Some(resource) = global.binding else {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 textureDimensions sampler is not bound".into(),
+                    ));
+                };
+                if global.space != naga::AddressSpace::Handle
+                    || resource.group != 0
+                    || !matches!(
+                        module.types[global.ty].inner,
+                        naga::TypeInner::Sampler { comparison: false }
+                    )
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 textureDimensions requires one group-zero non-comparison sampler"
+                            .into(),
+                    ));
+                }
+                if sampler_binding.replace(resource).is_some() {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 textureDimensions sampling uses multiple samplers".into(),
+                    ));
+                }
+                *image
+            }
+            naga::Expression::ImageSample { .. }
+                if matches!(
+                    kind,
+                    Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::Dimensions3D
+                ) =>
+            {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 textureDimensions sampling shape is unsupported".into(),
+                ));
+            }
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                gather: None,
+                array_index: None,
+                offset: None,
+                level: naga::SampleLevel::Zero,
+                depth_ref: None,
+                clamp_to_edge: true,
+                ..
+            } if matches!(kind, Fl9TextureEmulationKind::BaseClamp) => {
+                let naga::Expression::GlobalVariable(sampler) = function.expressions[*sampler]
+                else {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 base-clamp sampling requires a direct sampler".into(),
+                    ));
+                };
+                let global = &module.global_variables[sampler];
+                let Some(resource) = global.binding else {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 base-clamp sampler is not bound".into(),
+                    ));
+                };
+                if global.space != naga::AddressSpace::Handle
+                    || resource.group != 0
+                    || !matches!(
+                        module.types[global.ty].inner,
+                        naga::TypeInner::Sampler { comparison: false }
+                    )
+                    || sampler_binding
+                        .replace(resource)
+                        .is_some_and(|old| old != resource)
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 base-clamp requires one group-zero non-comparison sampler"
+                            .into(),
+                    ));
+                }
+                *image
+            }
+            naga::Expression::ImageSample { .. } => {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 base-clamp sampling shape is unsupported".into(),
+                ));
+            }
+            naga::Expression::ImageQuery { .. } => {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 texture query shape is unsupported".into(),
+                ));
+            }
+            naga::Expression::ImageLoad { .. } => {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 texture-load shape is unsupported".into(),
+                ));
+            }
+            _ => continue,
         };
-        if array_index.is_some() || sample.is_some() || level.is_none() {
+        let naga::Expression::GlobalVariable(image) = function.expressions[image] else {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 texture load shape is unsupported".into(),
-            ));
-        }
-        let naga::Expression::GlobalVariable(image) = function.expressions[*image] else {
-            return Err(crate::PipelineError::Linkage(
-                stages,
-                "D3D11 FL9 texture loads require a direct global image".into(),
+                "D3D11 FL9 texture emulation requires a direct global image".into(),
             ));
         };
         let global = &module.global_variables[image];
-        if !matches!(
-            module.types[global.ty].inner,
-            naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2,
-                arrayed: false,
-                class: naga::ImageClass::Sampled {
+        let naga::TypeInner::Image {
+            dim,
+            arrayed: false,
+            class:
+                naga::ImageClass::Sampled {
                     kind: naga::ScalarKind::Float,
-                    multi: false
-                }
-            }
-        ) {
+                    multi: false,
+                },
+        } = module.types[global.ty].inner
+        else {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 texture loads support only sampled 2D float textures".into(),
+                "D3D11 FL9 texture emulation supports only sampled 2D or 3D float textures".into(),
             ));
+        };
+        if sample_count != 0
+            && !matches!(
+                (kind, dim),
+                (
+                    Fl9TextureEmulationKind::Dimensions,
+                    naga::ImageDimension::D2 | naga::ImageDimension::D3
+                ) | (
+                    Fl9TextureEmulationKind::Dimensions3D,
+                    naga::ImageDimension::D3
+                )
+            )
+        {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 textureDimensions sampling requires a matching 2D or 3D texture".into(),
+            ));
+        }
+        match (kind, dim) {
+            (Fl9TextureEmulationKind::Load, naga::ImageDimension::D3) => {
+                kind = Fl9TextureEmulationKind::Load3D;
+            }
+            (Fl9TextureEmulationKind::Load3D, naga::ImageDimension::D3) => {}
+            (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::D3) => {
+                if has_explicit_mip_level {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 3D textureDimensions does not support an explicit mip level"
+                            .into(),
+                    ));
+                }
+                kind = Fl9TextureEmulationKind::Dimensions3D;
+            }
+            (Fl9TextureEmulationKind::Dimensions3D, naga::ImageDimension::D3) => {}
+            (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::D2)
+            | (Fl9TextureEmulationKind::NumLevels, naga::ImageDimension::D2)
+            | (Fl9TextureEmulationKind::Load, naga::ImageDimension::D2)
+            | (Fl9TextureEmulationKind::BaseClamp, naga::ImageDimension::D2) => {}
+            _ => {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    format!(
+                        "D3D11 FL9 texture emulation does not support {:?} for {:?}",
+                        dim, kind
+                    ),
+                ));
+            }
         }
         let Some(resource_binding) = global.binding else {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 texture load image is not bound".into(),
+                "D3D11 FL9 texture emulation image is not bound".into(),
             ));
         };
         if binding
@@ -2036,16 +2837,44 @@ fn fl9_texel_load_binding(
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 texture loads use more than one image".into(),
+                "D3D11 FL9 texture emulation uses more than one image".into(),
             ));
         }
     }
-    binding.map(Some).ok_or_else(|| {
-        crate::PipelineError::Linkage(
+    if matches!(kind, Fl9TextureEmulationKind::BaseClamp)
+        || (matches!(
+            kind,
+            Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::Dimensions3D
+        ) && sampler_binding.is_some())
+    {
+        let Some(sampler_binding) = sampler_binding else {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                format!("D3D11 FL9 texture emulation requires one sampler for {entry}"),
+            ));
+        };
+        if module.global_variables.iter().any(|(_, global)| {
+            global
+                .binding
+                .is_some_and(|resource| resource != sampler_binding && Some(resource) != binding)
+        }) {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 base-clamp supports only one texture and one sampler".into(),
+            ));
+        }
+    }
+    match binding {
+        Some(binding) => Ok(Some(Fl9TextureEmulation {
+            binding,
+            kind,
+            mip_level,
+        })),
+        None => Err(crate::PipelineError::Linkage(
             stages,
-            "D3D11 FL9 texture load cannot be resolved to a direct image binding".into(),
-        )
-    })
+            "D3D11 FL9 texture emulation cannot be resolved to a direct image binding".into(),
+        )),
+    }
 }
 
 fn reachable_function<F>(
@@ -2523,6 +3352,115 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
             }
         }
     }
+    let texture_query_conversion = input_options
+        .texel_load_binding
+        .map(|binding| (binding, false, None))
+        .or_else(|| {
+            input_options
+                .texture_dimensions_binding
+                .map(|binding| (binding, false, Some(naga::VectorSize::Bi)))
+        })
+        .or_else(|| {
+            input_options
+                .texture_dimensions_3d_binding
+                .map(|binding| (binding, false, Some(naga::VectorSize::Tri)))
+        })
+        .or_else(|| {
+            input_options
+                .texture_num_levels_binding
+                .map(|binding| (binding, true, None))
+        })
+        .and_then(|(binding, num_levels, dimensions_shape)| {
+            function
+                .expressions
+                .iter()
+                .find_map(|(handle, expression)| {
+                    let (image, query_shape) = match (num_levels, expression) {
+                        (
+                            false,
+                            naga::Expression::ImageQuery {
+                                image,
+                                query: naga::ImageQuery::Size { .. },
+                            },
+                        ) => (*image, dimensions_shape),
+                        (
+                            true,
+                            naga::Expression::ImageQuery {
+                                image,
+                                query: naga::ImageQuery::NumLevels,
+                            },
+                        ) => (*image, None),
+                        _ => return None,
+                    };
+                    let naga::Expression::GlobalVariable(image) = function.expressions[image]
+                    else {
+                        return None;
+                    };
+                    (module.global_variables[image].binding == Some(binding)).then_some((
+                        handle,
+                        image,
+                        query_shape,
+                    ))
+                })
+        })
+        .and_then(|(query, _, shape)| {
+            let expected_size = match (shape, function_info[query].ty.inner_with(&module.types)) {
+                (
+                    None,
+                    naga::TypeInner::Scalar(naga::Scalar {
+                        kind: naga::ScalarKind::Uint,
+                        width: 4,
+                    }),
+                ) => None,
+                (
+                    Some(expected),
+                    naga::TypeInner::Vector {
+                        size,
+                        scalar:
+                            naga::Scalar {
+                                kind: naga::ScalarKind::Uint,
+                                width: 4,
+                            },
+                    },
+                ) if *size == expected => Some(*size),
+                _ => return None,
+            };
+            let has_direct_float_conversion =
+                function.expressions.iter().any(|(handle, expression)| {
+                    matches!(
+                        expression,
+                        naga::Expression::As {
+                            expr,
+                            kind: naga::ScalarKind::Float,
+                            convert: Some(4),
+                        } if *expr == query
+                    ) && match (
+                        expected_size,
+                        function_info[handle].ty.inner_with(&module.types),
+                    ) {
+                        (
+                            None,
+                            naga::TypeInner::Scalar(naga::Scalar {
+                                kind: naga::ScalarKind::Float,
+                                width: 4,
+                            }),
+                        ) => true,
+                        (
+                            Some(expected_size),
+                            naga::TypeInner::Vector {
+                                size,
+                                scalar:
+                                    naga::Scalar {
+                                        kind: naga::ScalarKind::Float,
+                                        width: 4,
+                                    },
+                            },
+                        ) => expected_size == *size,
+                        _ => false,
+                    }
+                });
+            (function_info[query].ref_count == 1 && has_direct_float_conversion).then_some(query)
+        });
     reachable_function(
         module,
         info,
@@ -2606,7 +3544,12 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                                     && is_instance_index_expression(module, function, expr))
                                     || (input_options.vertex_index_input
                                         && is_vertex_index_expression(module, function, expr)));
-                        !supported_vertex_conversion && (integer(expr) || integer(handle))
+                        let supported_texture_query_conversion = texture_query_conversion
+                            == Some(expr)
+                            && kind == naga::ScalarKind::Float
+                            && convert == Some(4);
+                        !(supported_vertex_conversion || supported_texture_query_conversion)
+                            && (integer(expr) || integer(handle))
                     }
                     naga::Expression::Math {
                         arg,
@@ -2637,7 +3580,8 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                 integer_operation
                     || (!kinds.is_const(handle)
                         && integer(handle)
-                        && !supported_vertex_integer_expression)
+                        && !supported_vertex_integer_expression
+                        && texture_query_conversion != Some(handle))
             })
         },
     )
@@ -4212,11 +5156,11 @@ impl ShaderModule {
             None => Err(crate::PipelineError::EntryPoint(naga::ShaderStage::Vertex)),
         }
     }
-    pub(super) fn texture_load_binding(
+    pub(super) fn texture_emulation_binding(
         &self,
         entry: &str,
         constants: &naga::back::PipelineConstants,
-    ) -> Result<Option<naga::ResourceBinding>, crate::PipelineError> {
+    ) -> Result<Option<Fl9TextureEmulation>, crate::PipelineError> {
         let (module, info) = naga::back::pipeline_constants::process_overrides(
             &self.shader.module,
             &self.shader.info,
@@ -4226,7 +5170,7 @@ impl ShaderModule {
         .map_err(|error| {
             crate::PipelineError::PipelineConstants(wgt::ShaderStages::FRAGMENT, error.to_string())
         })?;
-        fl9_texel_load_binding(&module, &info, naga::ShaderStage::Fragment, entry)
+        fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, entry)
     }
     pub(super) fn new(
         owner: Arc<NativeDevice>,
@@ -4437,7 +5381,25 @@ impl ShaderModule {
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
         let entry_info = info.get_entry_point(entry_index);
-        input_options.texel_load_binding = fl9_texel_load_binding(&module, &info, stage, entry)?;
+        if let Some(proof) = fl9_texture_emulation_binding(&module, &info, stage, entry)? {
+            match proof.kind {
+                Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D => {
+                    input_options.texel_load_binding = Some(proof.binding);
+                }
+                Fl9TextureEmulationKind::Dimensions => {
+                    input_options.texture_dimensions_binding = Some(proof.binding);
+                }
+                Fl9TextureEmulationKind::Dimensions3D => {
+                    input_options.texture_dimensions_3d_binding = Some(proof.binding);
+                }
+                Fl9TextureEmulationKind::NumLevels => {
+                    input_options.texture_num_levels_binding = Some(proof.binding);
+                }
+                Fl9TextureEmulationKind::BaseClamp => {
+                    input_options.texture_base_clamp_binding = Some(proof.binding);
+                }
+            }
+        }
         let profile =
             selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
         if stage == naga::ShaderStage::Fragment

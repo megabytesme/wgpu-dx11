@@ -49,6 +49,13 @@ Bottom level categories:
 - Preserve core-validated byte offsets for query-supported FL9_1 D3D11 vertex formats.
 - Permit selected-device-supported FL9_1 cube-face copies and texture-to-buffer readback in the opt-in D3D11 backend.
 - Emulate the proven single-mip 2D float fragment `textureLoad` subset in the opt-in FL9_1 D3D11 backend.
+- Expose a narrowly validated fragment `textureDimensions` subset for one bound 2D float texture, including constant mip levels relative to a view, in the opt-in FL9_1 D3D11 backend.
+- Expose a separate, narrowly validated fragment `textureDimensions` subset for one bound 3D float texture in the opt-in FL9_1 D3D11 backend.
+- Expose a narrowly validated fragment `textureNumLevels` subset for one bound 2D float view in the opt-in FL9_1 D3D11 backend.
+- Emulate a direct, single-mip 2D float fragment `textureSampleBaseClampToEdge` operation in the opt-in FL9_1 D3D11 backend.
+- Allow the narrow FL9_1 fragment `textureDimensions` path to co-use one implicit sample of the same 2D float texture and one compatible sampler.
+- Allow the narrow FL9_1 fragment 3D `textureDimensions` path to co-use one implicit sample of the same volume and one compatible sampler.
+- Emulate a selected-entry single-mip 3D float fragment `textureLoad` on query-supported FL9_1 volume textures in the opt-in D3D11 backend.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.

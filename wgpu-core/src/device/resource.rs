@@ -5598,15 +5598,14 @@ impl Device {
                             .entry_point_uses_unsupported_fl9_texture_load(
                                 stage.to_naga(),
                                 &_vertex_entry_point_name,
+                                &self.downlevel.limits,
                             )
                             .map_err(stage_err)?,
                         None => true,
                     };
                     if uses_texture_load
                         && !self.downlevel.limits.texture_load
-                        && (stage.to_naga() != naga::ShaderStage::Fragment
-                            || !self.downlevel.limits.texture_load_2d_float_fragment
-                            || unsupported_fl9_texture_load)
+                        && unsupported_fl9_texture_load
                     {
                         return Err(
                             pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
@@ -6195,14 +6194,14 @@ impl Device {
                         .entry_point_uses_unsupported_fl9_texture_load(
                             stage.to_naga(),
                             &fragment_entry_point_name,
+                            &self.downlevel.limits,
                         )
                         .map_err(stage_err)?,
                     None => true,
                 };
                 if uses_texture_load
                     && !self.downlevel.limits.texture_load
-                    && (!self.downlevel.limits.texture_load_2d_float_fragment
-                        || unsupported_fl9_texture_load)
+                    && unsupported_fl9_texture_load
                 {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {

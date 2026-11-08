@@ -312,7 +312,11 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             fragment_front_facing,
             fragment_position,
             texture_query,
+            texture_dimensions_2d_float_fragment,
+            texture_dimensions_3d_float_fragment,
+            texture_num_levels_2d_float_fragment,
             texture_sample_base_clamp_to_edge,
+            texture_sample_base_clamp_to_edge_2d_float_fragment,
             texture_sample_level,
             texture_gather,
             texture_load,
@@ -410,7 +414,23 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tTexture image queries: {texture_query}")?;
     writeln!(
         output,
+        "\t\tRestricted fragment 2D float texture dimensions: {texture_dimensions_2d_float_fragment}"
+    )?;
+    writeln!(
+        output,
+        "\t\tRestricted fragment 3D float texture dimensions: {texture_dimensions_3d_float_fragment}"
+    )?;
+    writeln!(
+        output,
+        "\t\tRestricted fragment 2D float texture mip-level count: {texture_num_levels_2d_float_fragment}"
+    )?;
+    writeln!(
+        output,
         "\t\tTexture sample base clamp to edge: {texture_sample_base_clamp_to_edge}"
+    )?;
+    writeln!(
+        output,
+        "\t\tRestricted fragment 2D float base-clamp sampling: {texture_sample_base_clamp_to_edge_2d_float_fragment}"
     )?;
     writeln!(output, "\t\tExplicit texture sample level: {texture_sample_level}")?;
     writeln!(output, "\t\tTexture gather: {texture_gather}")?;

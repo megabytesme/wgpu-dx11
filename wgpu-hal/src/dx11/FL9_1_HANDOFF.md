@@ -14,6 +14,30 @@ checkpoint is `ede5c299f`, which adds device-query-gated timestamp queries.
 The latest public regression checkpoint is `fe0cc897a`, which tests
 asynchronous nonzero-slice buffer writes followed by GPU copies and readback.
 
+The current uncommitted shader increment implements GLSL `outerProduct`
+lowering in Naga's HLSL writer and corrects rectangular GLSL overload
+dimensions. DX11 now exposes the corresponding FL9_1 downlevel limit. Strict
+RTX 3090 Ti rendering passed at requested/actual FL9_1, checking square and
+rectangular results across 64/64 pixels; the full strict public suite passed
+94/94, with three optional capability subcases skipped. Naga GLSL-enabled
+library tests passed 142/142. DX12 keeps the capability withheld. See the
+latest `FL9_1_PROGRESS.md` entry for exact commands. This remains an
+incremental graphics subset, not mission completion.
+
+The newest verified feature checkpoint is `061e2acca` (`dx11: add narrow
+FL9_1 texture loads and cube readback`). It adds selected-entry-only,
+fragment texture-load emulation for one direct single-mip `texture_2d<f32>`
+with in-bounds, out-of-bounds and nonzero-mip readback, plus query-gated
+six-face cube-to-buffer readback. The RTX 3090 Ti reported requested/actual
+FL9_1; the strict private HAL suite passed 419/419 and the public D3D11 suite
+passed 93/93. `wgpu-types` passed 101/101 and DX12 Core passed 102/102. The
+latest full workspace formatting check, `git diff --check`, and affected
+Clippy runs passed with existing warnings. Exact commands are recorded in
+`FL9_1_PROGRESS.md`.
+
+The Lumia Device Portal retry for `/api/os/devicefamily` timed out. CoreWindow
+surface capabilities remain withheld, and no Lumia runtime result is claimed.
+
 The latest contract fix lets combined depth-attachment/sampled textures create
 default views with both native DSV and SRV roles. The strict public regression
 passed for D16, Depth24Plus and D24S8 at requested/actual FL9_1. Full strict
@@ -37,8 +61,8 @@ Feature-wise, dynamic offsets, multiple bind groups, multiple sampled
 resources, broad tested vertex/index draw paths, depth/stencil, query-gated
 MSAA resolve, multiple uniform ranges and a constrained HWND path are present.
 Compute/UAV, geometry/tessellation, indirect draws, occlusion and pipeline
-statistics queries, pass-level timestamps, ordinary texture arrays and
-several shader operations/resource combinations remain unavailable or
+statistics queries, explicit in-pass timestamp methods, ordinary texture
+arrays and several shader operations/resource combinations remain unavailable or
 deliberately rejected. An exhaustive public core/HAL contract audit is
 still open. Historical FL9_1 driver behavior, physical device removal and
 recovery, and Lumia/CoreWindow runtime execution are unverified. The proposed
@@ -2570,7 +2594,133 @@ contract audit and historical hardware/runtime verification.
 
 The current uncommitted increment adds optional timestamp-query support after
 a positive timestamp/disjoint probe on the selected device. A strict public
-FL9_1 test resolved two timestamps on the RTX 3090 Ti and verified a 1 ns/tick
-period. The resolve path waits on the CPU; pass timestamps, occlusion and
-pipeline-statistics queries remain unsupported. Full regressions and a
-checkpoint commit are still pending.
+FL9_1 test now resolves encoder, render-pass and empty-compute-pass boundary
+timestamps on the RTX 3090 Ti and verifies nondecreasing values at 1 ns/tick.
+The strict public suite passed 93/93 and the private HAL suite passed 419/419.
+The resolve path waits on the CPU; occlusion and pipeline-statistics queries,
+as well as explicit timestamp-write methods inside a pass, remain unavailable.
+
+The latest narrow capability increment adds fragment `textureDimensions` for
+one direct group-0 `texture_2d<f32>` query in a simple entry point, directly
+converted to `vec2f`. It uses the existing private `b13` dimensions path,
+keeps general `texture_query` disabled and passed strict RTX FL9_1 readback
+across a bind-group transition. The full private HAL and public D3D11 suites,
+DX11/DX12 Core tests, `wgpu-types` tests, formatting and `wgpu-info` check also
+passed. See `FL9_1_PROGRESS.md` for exact counts and the physical GPU output.
+Historical hardware, CoreWindow runtime and broad API/CTS verification remain
+open.
+
+## Current continuation — narrow FL9_1 base-clamp sampling — 2026-11-08
+
+The opt-in FL9_1 projection now permits the narrow direct fragment
+`textureSampleBaseClampToEdge` form on one single-mip 2D float texture and one
+non-comparison sampler. Naga uses selected-view dimensions from `b13` and an
+implicit `Sample`, avoiding the level-9 profile's rejected `GetDimensions` and
+`SampleLevel` lowering. Core proves the selected shader shape; HAL refreshes
+the dimensions per selected resource before drawing. The physical RTX 3090 Ti
+at requested/actual FL9_1 checked all 64 pixels for out-of-range coordinates.
+Repeat and MirrorRepeat samplers remain rejected by Core's finite repeat limit,
+and the test uses ClampToEdge; independence from those modes remains unverified.
+See `FL9_1_PROGRESS.md` for commands and test counts. The broad Core/HAL
+contract audit, historical FL9_1 drivers, Lumia/CoreWindow runtime and physical
+device-removal/recovery remain open.
+
+## Current continuation — narrow fragment `textureNumLevels` — 2026-11-08
+
+The next narrow query increment adds an independent Core limit and validated
+Naga/HAL proof for a direct fragment `textureNumLevels` on one group-0
+`texture_2d<f32>`, directly converted to `f32`. Runtime metadata is the bound
+view's mip count in the existing host constant. On the RTX 3090 Ti, explicitly
+requested/actual FL9_1, a 1-level/3-level bind-group transition produced the
+expected two red values in all 64 pixels. Verification counts and exact
+commands are in `FL9_1_PROGRESS.md`. Naga HLSL-enabled tests passed 142/142,
+private HAL 424/424, strict public D3D11 96/96, and focused Core/types tests
+passed. DX12 Core `cargo check` passed after its HLSL options explicitly left
+the FL9-only proof disabled; the full DX12 test build and Naga Clippy were
+stopped by Windows memory-allocation failures. Continue the Core/HAL contract
+audit and consider selected-mip `textureDimensions` only after checking the
+host-side view and mip semantics. Historical drivers, Lumia/CoreWindow and
+physical removal/recovery remain open.
+
+## Current continuation — narrow 3D fragment `textureDimensions` — 2026-11-08
+
+Added an independent 3D dimensions proof and capability gate. Only a direct
+fragment query on a group-0 non-array `texture_3d<f32>`, with no explicit mip
+argument and a direct `vec3f` conversion, is accepted. The selected-device
+RGBA8 3D sampled-format query must pass. Strict readback on the RTX 3090 Ti at
+requested/actual FL9_1 verified all 64 pixels for a 4x2x8 volume. Core, HAL,
+types and Naga focused tests passed. The next candidate is a narrow
+`textureSampleBaseClampToEdge` lowering; keep public-contract, historical
+driver, Lumia/CoreWindow and physical device-loss gates open.
+
+## Current continuation — 2D dimensions plus implicit sampling — 2026-11-08
+
+The narrow direct fragment 2D `textureDimensions` capability can now coexist
+with one implicit `textureSample` of the same group-0 `texture_2d<f32>` and one
+group-0 non-comparison sampler. Sampling must be level-less; a constant-mip
+dimensions query remains query-only. The selected-entry proof also rejects
+helpers, extra resources, extra image operations, control flow, `select` and
+unrelated runtime integer operations. General `texture_query` remains false.
+
+An RTX 3090 Ti at forced/requested/actual FL9_1 rendered through a bind-group
+transition between 4x2 and 8x4 sources with different texel colors. Readback
+matched all 64 pixels, including values depending on both view dimensions and
+sampled contents. Naga passed 145/145, Core 106/106, private HAL 430/430; the
+focused public strict GPU test passed 1/1. The full public suite rebuild was
+blocked by Windows commit pressure (346 MiB free during the attempt), despite
+the focused test passing. See `FL9_1_PROGRESS.md` for the exact commands,
+readback values and details of the binding-map regression caught by the HAL
+suite and fixed before its final pass.
+
+Current remaining work is not general WebGPU completeness. Public D3D11 stays
+opt-in and experimental. The full public D3D11 suite now passes 97/97 on the
+physical RTX 3090 Ti at forced FL9_1. There is no public CoreWindow path or
+Lumia ARM32 execution; historical FL9_1 drivers and physical device-removal
+recovery are unverified. The remaining shader/resource contract is deliberately
+narrower than Core WebGPU. See the current plan for next candidate feature
+slices and the full contract audit status.
+
+## Latest continuation — narrow 3D fragment `textureLoad` — 2026-11-08
+
+A separate 3D float fragment texture-load limit and Core/Naga/HAL path are now
+implemented. Naga lowers one single-mip direct 3D load to point sampling at
+texel centers; HAL binds the reserved point sampler and writes width, height
+and depth through the existing `b13` emulation buffer. The actual FL9_1 FXC
+profile accepted it. The RTX 3090 Ti at requested/actual FL9_1 verified two
+different texels, an out-of-bounds result and a nonzero-mip result across 256
+readback pixels. A first GPU run found and fixed a missing host depth value.
+Focused tests pass; the full HAL/public/Core/types regression suites are the
+next verification gate. General texture loading remains disabled, and the
+query-gated 3D limit is distinct from the existing 2D subset. Historical FL9_1
+drivers, Lumia/CoreWindow runtime, exhaustive public-contract review and
+physical device-loss recovery remain open.
+
+## Latest continuation — 3D fragment `textureDimensions` plus implicit sampling — 2026-11-08
+
+The existing `texture_dimensions_3d_float_fragment` capability now permits one
+direct level-less `textureDimensions` query converted to `vec3f` plus one
+implicit sample of the same group-zero `texture_3d<f32>` through one
+non-comparison sampler. Core, Naga and HAL reject helper functions, explicit
+LOD, unrelated image operations and extra resources. The feature remains gated
+by a positive selected-device RGBA8 3D sampled-format query, and general
+`texture_query` remains false.
+
+Strict readback ran on an NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), with requested and actual FL9_1. A bind-group
+transition changed the input from a 4x2x8 volume to a 2x4x1 volume. The shader
+multiplied distinguishable sampled colors by the returned dimensions; all 64
+pixels matched `[200,80,40,255]` and `[40,120,10,255]` respectively. FXC
+accepted the generated pixel shader for `ps_4_0_level_9_1`.
+
+After integration, Naga passed 147/147, DX11 Core 106/106, strict private HAL
+434/434 and the strict public D3D11 target 98/98. The default-enumeration
+isolation test passed. DX12 HAL `cargo check`, affected Clippy, workspace fmt
+and `git diff --check` passed; existing lint and line-ending notices are
+recorded in `FL9_1_PROGRESS.md`. This addition does not provide general 3D
+queries, explicit LOD, 3D copy/attachment/readback or historical-driver proof.
+
+The public Core/HAL contract audit remains broad and incomplete. Other material
+gaps are restricted WGSL semantics and resource usages, historical FL9_1
+hardware, Lumia ARM32/CoreWindow runtime, and physical device removal/recovery.
+The current feature is still an opt-in experimental adapter, not general
+WebGPU-complete support.

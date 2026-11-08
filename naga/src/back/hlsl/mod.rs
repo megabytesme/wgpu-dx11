@@ -537,6 +537,27 @@ pub struct Options {
     /// This restricted proof rejects other resources, inputs and control flow.
     pub fl9_texel_load_proof: Option<crate::ResourceBinding>,
 
+    /// Experimental opt-in proof for one direct fragment `textureDimensions`
+    /// query on a bound 2D float texture. The host supplies the dimensions of
+    /// the selected view-relative mip in the reserved b13 constant.
+    pub fl9_texture_dimensions_proof: Option<crate::ResourceBinding>,
+
+    /// Experimental opt-in proof for one direct fragment `textureDimensions`
+    /// query on a bound 3D float texture without an explicit mip level. The
+    /// host supplies the dimensions of the selected view in the reserved b13
+    /// constant.
+    pub fl9_texture_dimensions_3d_proof: Option<crate::ResourceBinding>,
+
+    /// Experimental opt-in proof for a direct fragment `textureNumLevels`
+    /// query on one bound 2D float texture. The host supplies the bound view's
+    /// mip count in the x component of the reserved b13 constant.
+    pub fl9_texture_num_levels_proof: Option<crate::ResourceBinding>,
+
+    /// Experimental opt-in proof for one direct fragment
+    /// `textureSampleBaseClampToEdge` operation on one bound 2D float texture.
+    /// The host supplies the selected single-mip view dimensions in b13.
+    pub fl9_texture_base_clamp_proof: Option<crate::ResourceBinding>,
+
     /// Apply an FL9 viewport remapping to the selected vertex entry point's
     /// position output. The host must reserve this D3D constant-buffer register
     /// and bind a float4 containing scale_x, scale_y, offset_x and offset_y.
@@ -620,6 +641,10 @@ impl Default for Options {
             sampler_heap_target: SamplerHeapBindTargets::default(),
             direct_sampler_bindings: false,
             fl9_texel_load_proof: None,
+            fl9_texture_dimensions_proof: None,
+            fl9_texture_dimensions_3d_proof: None,
+            fl9_texture_num_levels_proof: None,
+            fl9_texture_base_clamp_proof: None,
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
             fl9_vertex_index_input: false,

@@ -418,7 +418,7 @@ historical-driver behavior remain unsupported or unverified.
 | Shader stages / WGSL | FL9_1 uses `vs_4_0_level_9_1` and `ps_4_0_level_9_1`. These profiles restrict shader instructions, registers and flow control; vertex textures and fragment entries declaring primitive_index are rejected by the private shader path; vertex_index is emulated for TriangleList and PointList pipelines with a host-generated float input because FXC rejects SV_VertexID (X4555); instance_index is supplied through reserved vertex constant register b13 because FXC rejects SV_InstanceID (X4016). Core permits only the tested direct u32-to-f32 use of these builtins; integer arithmetic remains rejected. Core exposes only `TriangleList` and `PointList` in `DownlevelLimits::vertex_index_topology_mask` and rejects other topologies before HAL; the HAL keeps a defensive check. Core checks the selected vertex entry point against `DownlevelLimits::max_sampled_textures_per_vertex_stage`, which the D3D11 fixture sets to zero, and `DownlevelLimits::fragment_front_facing` / `fragment_position`, which are false for the tested FL9_1 profile. A narrow fragment-only `textureLoad` subset is emulated for one directly referenced single-mip `texture_2d<f32>` using the proof point-sampling at texel centers, internal sampler `s15`, dimensions at pixel constant buffer `b13`, and zero output for out-of-bounds or nonzero mip requests. The selected shader must contain no helper functions, control flow, other bound globals, sampling/query operations or other image resources. `DownlevelLimits::texture_load_2d_float_fragment` describes only this exact subset; general `texture_load` and `texture_query` remain false. Strict public GPU readback verifies in-bounds and out-of-bounds behavior. Fragment derivatives and explicit texture gradients are unavailable: selected-entry `fragment_derivatives` is false and core rejects reachable Naga `Derivative` and `ImageSample::Gradient` expressions, including helper calls. Explicit `textureSampleLevel` is separately unavailable below FL10_0: core's `texture_sample_level` downlevel limit rejects reachable `SampleLevel::Exact` operations, while implicit sampling remains supported. FXC reports X4532 (`texlod not supported on this target`) for literal and dynamic explicit LOD at both `ps_4_0_level_9_1` and `ps_4_0_level_9_3`. The pixel profile has 64 arithmetic and 32 texture instructions; the vertex profile has 256 instructions. | Naga/FXC and restricted shader GPU tests, including unused helper operations. The controlled core fixture verifies selected-entry validation before HAL; the strict public test rejects direct and helper-reached explicit LOD while compiling an implicit-sampling sibling. Microsoft [documents the 9.1/9.2 and 9.3 shader-profile limits](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/specifying-compiler-targets). |
 | Texture gather | HLSL `Gather` requires shader model 4.1, which Microsoft identifies as Direct3D 10.1 or higher; FL9_1's 10Level9 profiles do not guarantee it. Because WGSL permits gather in compute as well as graphics entry points while the shared downlevel limit is stage-agnostic, the all-stage hardware guarantee begins at FL11_0: Microsoft lists SM4.1 HLSL Gather for VS/GS/PS and SM5 gather4 for compute. The current D3D11 execution path remains FL9_1-only and reports the implementation limit false. | FXC rejects Naga-lowered gather under the forced level-9_1 profile with X4532 and accepts the fragment shader under `ps_4_1` and `ps_5_0`, and compute gather under `cs_5_0`. Core rejects direct and helper-reached gather in selected render and compute entries before HAL and compiles an implicit-sampling sibling. The public test runs this boundary on the forced-FL9_1 hardware adapter. |
 | Pipeline / raster / blending | Private graphics pipeline supports line lists, line strips, triangle lists, nonindexed triangle strips and point lists with configurable front-face winding and front/back culling for triangles, one color target and one sample by default. `POLYGON_MODE_LINE` is exposed only if selected-device creation of a D3D11 wireframe rasterizer state succeeds; it maps `PolygonMode::Line` to `D3D11_FILL_WIREFRAME`, while point polygon mode remains unavailable. Optional query-gated 2x/4x/8x RGBA8 color render/resolve and matching D16/Depth24Plus/D24S8 depth attachments in matching passes. Blend translation supports the ordinary wgpu factors, including constant and inverse-constant factors, and all five blend operations; `SrcAlphaSaturated` and dual-source factors are rejected at FL9_1. Core reports the FL9_1 restriction through `DownlevelLimits::src_alpha_saturated_blend` and rejects use before HAL. Blend constants are recorded and rebound with pipeline state. A single-sample mask is passed to the output merger; a zero mask maps to `0xffff_fffe`, an equivalent no-coverage mask for the only active sample and the nonzero native value required at FL9_1. 16x on the tested device and multisampled sampling remain unsupported. Alpha-to-coverage is also unsupported even when 4x RGBA8 resolve is available; the selected FL9_1 projection reports `DownlevelLimits::alpha_to_coverage = false`, so core rejects it before HAL. All RGBA channel write masks are supported for the single target. A descriptor whose color and alpha equations differ is rejected when both RGB and alpha are written unless separate-alpha support is explicitly established; the production FL9_1 model does not establish it. The core `SEPARATE_ALPHA_BLEND` flag rejects these descriptors before HAL. Enabled blending requires a positive format query. Out-of-target viewports use a separately compiled vertex position transform when available. A D24S8 attachment supports native Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual and Always depth comparisons; Never retains its emulation; optional depth writes and one-sided stencil comparison/operations are implemented with identical front/back state. FL9_1 rejects differing front/back stencil face states; core now represents this restriction through `DownlevelFlags::TWO_SIDED_STENCIL` and rejects a differing descriptor before HAL. Never with active stencil maps the stencil pass operation to the requested depth-fail operation, forces Always depth comparison, and suppresses color/depth writes. Signed constant and finite slope-scaled depth bias are supported for triangles with selected-entry restrictions. Nonzero clamp is rejected because FL9_1 requires zero; nonzero bias on points and solid lines is rejected because native raster bias does not affect those primitives. | CPU tests cover factor translation and rejection of `SrcAlphaSaturated`/dual-source factors. A controlled FL9_1 core fixture rejects all four source-alpha-saturated source/destination factor positions before HAL. A strict forced-FL9_1 HAL render checked all eight depth comparisons over 128 pixels (64 green, 64 blue), and a blend render checked constant-factor updates and all five operations over 64 pixels; the controlled core fixture checked a custom constant-factor render over 64 pixels. The private strict depth-bias render checks five constant-bias images and two sloped-triangle images (64 pixels each), including positive/negative slope signs, point/line rejection, nonzero clamp rejection and selected-entry `frag_depth` rejection. Separate-alpha rendering is exercised only through an opt-in RTX diagnostic and is not a portability guarantee. The existing strict suite checks premultiplied blending and opaque transitions on RGBA8/BGRA8. Remapped shaders may exceed FL9 compiler limits even when the original compiles; such draws remain rejected. |
-| Render passes / targets | One color target and an optional D16 or Depth24Plus depth-only attachment or D24S8 depth/stencil attachment support load, clear or don't-care and store or discard. Discard retains native contents, which remain undefined to HAL callers. Restricted transient color and depth attachments use ordinary textures without memoryless savings; transient combinations with sampled or copy usage are rejected. Private read-only passes require LOAD and STORE on each present aspect and pipelines without depth or stencil writes; depth sampling aliases remain unsupported. Depth-only clears and draws without a fragment stage are supported. Query-gated 2x/4x/8x RGBA8 render targets can resolve to compatible single-sample targets, and query-gated D16/Depth24Plus/D24S8 depth attachments can join matching passes; depth is not resolved. Alpha-to-coverage, multisampled sampling, 16x on the tested device and other formats remain unavailable. Pass-level timestamps, occlusion, multiview and multiple color attachments are unsupported. | Public forced-FL9_1 tests cover D16 depth ordering and a `DepthOnly` view; D16 `StencilOnly` views and stencil pipeline state are rejected because D16 has no stencil aspect. D24S8 supports the tested symmetric stencil state and depth/stencil LOAD, CLEAR, and DISCARD-then-LOAD transitions; asymmetric front/back state and `StencilOnly` D24S8 views remain rejected. A second pass with LOAD preserves depth, and CLEAR resets it. A discarded D16 depth value followed by LOAD is initialized before use and does not influence the next draw. A public `LoadOp::DontCare` test overwrites all color and depth pixels before reading back all 64 red pixels. A new color texture first used with `LoadOp::Load` is initialized to transparent black before it is stored and read. Public color `StoreOp::Discard` followed by `LoadOp::Load`, copy and SRV sampling reinitializes the texture before the later read; all three paths produce transparent black at all 64 pixels rather than expose the discarded red clear. D24S8 tests cover a depth-only prepass, read-only depth preservation, and separate depth/stencil LOAD, CLEAR, and DISCARD-then-LOAD transitions. A public transient test executes color clear/draw/discard and uses transient D24S8 clear/draw/discard to control a stored color result; core rejects transient sampling, invalid LOAD/STORE, read-only transient depth and passes with no attachments. Query-gated D24S8 sampled usage uses the depth-only sampled view. A DepthOnly view of combined D24S8 can be created but core marks it non-renderable; query-backed Depth24Plus resources and D24S8 combined views are renderable. StencilOnly D24S8 views remain unavailable because Stencil8 is not exposed. Other pass combinations still need validation before public exposure. |
+| Render passes / targets | One color target and an optional D16 or Depth24Plus depth-only attachment or D24S8 depth/stencil attachment support load, clear or don't-care and store or discard. Discard retains native contents, which remain undefined to HAL callers. Restricted transient color and depth attachments use ordinary textures without memoryless savings; transient combinations with sampled or copy usage are rejected. Private read-only passes require LOAD and STORE on each present aspect and pipelines without depth or stencil writes; depth sampling aliases remain unsupported. Depth-only clears and draws without a fragment stage are supported. Query-gated 2x/4x/8x RGBA8 render targets can resolve to compatible single-sample targets, and query-gated D16/Depth24Plus/D24S8 depth attachments can join matching passes; depth is not resolved. Alpha-to-coverage, multisampled sampling, 16x on the tested device and other formats remain unavailable. Occlusion queries, multiview and multiple color attachments are unsupported. Timestamp descriptor writes are covered separately in the query capability row. | Public forced-FL9_1 tests cover D16 depth ordering and a `DepthOnly` view; D16 `StencilOnly` views and stencil pipeline state are rejected because D16 has no stencil aspect. D24S8 supports the tested symmetric stencil state and depth/stencil LOAD, CLEAR, and DISCARD-then-LOAD transitions; asymmetric front/back state and `StencilOnly` D24S8 views remain rejected. A second pass with LOAD preserves depth, and CLEAR resets it. A discarded D16 depth value followed by LOAD is initialized before use and does not influence the next draw. A public `LoadOp::DontCare` test overwrites all color and depth pixels before reading back all 64 red pixels. A new color texture first used with `LoadOp::Load` is initialized to transparent black before it is stored and read. Public color `StoreOp::Discard` followed by `LoadOp::Load`, copy and SRV sampling reinitializes the texture before the later read; all three paths produce transparent black at all 64 pixels rather than expose the discarded red clear. D24S8 tests cover a depth-only prepass, read-only depth preservation, and separate depth/stencil LOAD, CLEAR, and DISCARD-then-LOAD transitions. A public transient test executes color clear/draw/discard and uses transient D24S8 clear/draw/discard to control a stored color result; core rejects transient sampling, invalid LOAD/STORE, read-only transient depth and passes with no attachments. Query-gated D24S8 sampled usage uses the depth-only sampled view. A DepthOnly view of combined D24S8 can be created but core marks it non-renderable; query-backed Depth24Plus resources and D24S8 combined views are renderable. StencilOnly D24S8 views remain unavailable because Stencil8 is not exposed. Other pass combinations still need validation before public exposure. |
 
 When a selected FL9_1 device positively exposes depth sampling, a depth texture
 created with both render-attachment and texture-binding usage may use a default
@@ -504,6 +504,20 @@ results on a physical RTX 3090 Ti explicitly restricted to FL9_1. This does
 not enable general texture-load support or establish compatibility with
 historical 9_1 hardware.
 
+A separate `texture_load_3d_float_fragment` limit covers one direct fragment
+`textureLoad` from a single-mip, non-arrayed `texture_3d<f32>`. It is enabled
+only at FL9_1 when the selected device positively reports RGBA8
+`TEXTURE3D | SHADER_SAMPLE` support and the 3D sampled-upload path is enabled.
+The backend maps the volume to `t0`, uses its internal point sampler at `s15`,
+and supplies `(width, height, depth, 0)` through `b13`; it samples at texel
+centers and returns zero for out-of-bounds coordinates or nonzero mip levels.
+Core rejects helper calls, control flow, other image operations, additional
+resources and unsupported shader forms before HAL. Strict public FL9_1
+readback on the RTX 3090 Ti verified two distinct volume texels plus both zero
+cases across 256 pixels. The 2D and 3D narrow limits are independent, while the
+general `texture_load` limit remains false. This selected modern-driver result
+does not establish historical FL9_1 behavior.
+
 Per-format `SINGLE_MIP_ONLY` metadata reports the current one-mip ceiling for
 R8G8_UNORM, R16G16_SNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and
 D24S8. RGBA8 and BGRA8
@@ -567,7 +581,7 @@ GPU test submits 65,536 points and 65,538 triangle vertices; the visible point
 and triangle are only in the final batch, and readback confirms both. The
 triangle readback contained 32 red and 32 blue pixels. Historical driver
 behavior at large draw boundaries remains unverified.
-| Queries / synchronization / readback | The 10Level9 feature table marks occlusion queries unavailable at FL9_1 and available from FL9_2; they remain rejected. Timestamp support is optional per selected device: creation and execution of timestamp plus disjoint queries are probed, and only a positive nonzero frequency enables `TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS`. Pass timestamp writes and pipeline-statistics queries remain unavailable. Query resolve flushes and waits for D3D11 `GetData`, then writes results to a checked `QUERY_RESOLVE` buffer; this preserves order but can block the CPU. Queue period is derived from the observed disjoint-query frequency. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Strict RTX 3090 Ti tests at requested/actual FL9_1 probe the frequency, write two timestamps, resolve/copy/map results and verify monotonic values; the selected frequency is 1 GHz and period is 1 ns/tick. Public tests reject occlusion and pipeline-statistics sets. Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core tests inject removal from fence wait, GetData, `GetDeviceRemovedReason` and queue-drop `wait_for_idle` paths; callbacks can re-enter polling, and queue destruction completes without panicking. Physical device removal/recovery, remaining lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
+| Queries / synchronization / readback | The 10Level9 feature table marks occlusion queries unavailable at FL9_1 and available from FL9_2; they remain rejected. Timestamp support is optional per selected device: creation and execution of timestamp plus disjoint queries are probed, and only a positive nonzero frequency enables `TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS`. HAL implements `PassTimestampWrites` boundary markers for render passes and empty compute passes; this descriptor requires `TIMESTAMP_QUERY`. Compute pipeline creation and dispatch remain unavailable. `TIMESTAMP_QUERY_INSIDE_PASSES` is not exposed, so the explicit in-pass `write_timestamp` methods remain unavailable. Pipeline-statistics queries remain unavailable. Query resolve flushes and waits for D3D11 `GetData`, then writes results to a checked `QUERY_RESOLVE` buffer; this preserves order but can block the CPU. Queue period is derived from the observed disjoint-query frequency. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Strict RTX 3090 Ti tests at requested/actual FL9_1 probe the frequency, write encoder, render-pass and empty-compute-pass timestamps, resolve/copy/map results and verify monotonic values; observed readback was `[1794147471006991360, 1794147471006996480, 1794147471006997504, 1794147471007002624, 1794147471007002624, 1794147471007002624]` at 1 GHz / 1 ns per tick. Public tests reject occlusion and pipeline-statistics sets. Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core tests inject removal from fence wait, GetData, `GetDeviceRemovedReason` and queue-drop `wait_for_idle` paths; callbacks can re-enter polling, and queue destruction completes without panicking. Physical device removal/recovery, remaining lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
 
 Microsoft's [Direct3D feature-level table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro)
 lists occlusion queries as unavailable at FL9_1 and available at FL9_2 and
@@ -1134,12 +1148,15 @@ unused helper is also rejected; a separate ordinary shader module remains
 valid. DX12's HLSL projection and Metal's MSL projection also disable this
 operation because their current writers do not lower it. This is a compiler
 limitation, not an FL9_1 hardware guarantee.
-Naga's HLSL writer also returns `Error::Unimplemented` for `outerProduct`.
-`DownlevelLimits::matrix_outer_product` therefore keeps it disabled for DX11
-and DX12, and selected-entry validation checks the selected entry plus regular
-module functions emitted by the HLSL writer. This avoids accepting an operation
-from GLSL or SPIR-V that would otherwise fail later during shader translation;
-it does not restrict matrix arithmetic that Naga successfully lowers.
+Naga's HLSL writer now lowers `outerProduct` for validated f32 vectors and
+square or rectangular matrices. The DX11 FL9_1 projection enables
+`DownlevelLimits::matrix_outer_product`; selected-entry validation still
+checks the operation and regular module functions before translation. Strict
+GPU rendering at FL9_1 verified square and rectangular GLSL cases. The GLSL
+front end currently has no WGSL `outerProduct` builtin to expose. DX12 keeps
+the limit disabled pending its own capability decision and regression
+coverage. This is compiler/backend support, not a broader FL9_1 hardware
+guarantee.
 Computed indices, helper-mediated indexing, fragment-stage uniform indexing,
 integer or nested array elements and other general dynamic uniform indexing
 remain unsupported. `DownlevelLimits::vertex_uniform_array_indexing` enables
@@ -1243,15 +1260,72 @@ before HAL. The model treats queries as a feature-level shader guarantee from
 10_0 onward, but the current backend implementation remains false for every
 level. This gate is profile/compiler-driven; it is not a driver format query.
 
-`textureSampleBaseClampToEdge` has a separate selected-entry limit. Naga lowers
-it to a clamped image sample at level zero, and the current HLSL writer emits
-`GetDimensions` plus `SampleLevel`. FXC reports X4532 for this lowering under
-`ps_4_0_level_9_1` and `ps_4_0_level_9_3`; the shader-model 5 control compiles.
-The D3D11 projection enables the limit only when both queried hardware and
-backend support for texture queries and explicit-level sampling are present.
-The current implementation therefore reports it unavailable at every level.
-Core rejects only selected entries that reach the builtin, including through
-helpers; an unused declaration or safe sibling entry is unaffected.
+The D3D11 projection separately enables the narrow
+`texture_dimensions_2d_float_fragment` downlevel limit. It permits only a
+selected fragment entry point containing one direct `textureDimensions` query
+on a group-0, non-array `texture_2d<f32>`, directly converted to `vec2f`. The
+optional mip level must be a non-negative literal or direct module `const`.
+Dimensions are relative to the bound view. A level-less query may share the
+entry point with exactly one implicit `textureSample` of that same texture and
+one group-0 non-comparison sampler. This allows the shader to use queried
+dimensions and sampled texels together without permitting unrelated resources,
+other image operations, helpers, control flow, `select`, or runtime integer
+work. A query with an explicit mip level remains query-only. The HAL supplies
+the selected view mip's dimensions through its existing private `b13`
+emulation path and follows bind-group changes. For a level outside the view's
+mip range, WGSL permits an indeterminate result; the host supplies a safe 1x1
+value. General `texture_query` remains false, and other query forms continue to
+fail Core validation. Strict RTX 3090 Ti readback verified query-plus-sample
+co-use across a bind-group transition for all 64 pixels at requested/actual
+FL9_1. This narrow limit does not imply general WebGPU texture-query support.
+
+A separate `texture_dimensions_3d_float_fragment` limit covers one direct
+fragment `textureDimensions` query on a group-0, non-array
+`texture_3d<f32>`, without an explicit mip level, directly converted to
+`vec3f`. It is exposed only when the selected FL9_1 device passes the existing
+RGBA8 3D sampled-texture format query and the backend path is enabled. Core,
+Naga and HAL keep this proof distinct from the 2D path and from 2D texel-load
+emulation; helpers, additional bound resources, other image operations and
+explicit mip levels are rejected. The selected entry may also perform one
+level-less implicit sample of that same volume through one group-0
+non-comparison sampler; the coordinate must be `vec3f`. HAL supplies width,
+height and depth via `b13`, while the shared binding map assigns the ordinary
+texture and sampler registers. A strict RTX 3090 Ti test switched between
+4x2x8 and 2x4x1 volumes with different texel values; both dimensions and
+sampled data affected the expected 64 readback pixels. Helper functions,
+explicit LOD, extra resources and other image operations remain rejected. 3D
+texture copies, attachments, readback and general texture queries remain
+unavailable.
+
+The opt-in FL9_1 projection also exposes a separate
+`texture_num_levels_2d_float_fragment` limit. It permits one direct
+`textureNumLevels` query on one group-0, non-array `texture_2d<f32>` in a
+simple fragment entry point, directly converted from `u32` to `f32`. The HAL
+supplies the bound view's mip count through the same `b13` emulation resource;
+unlike dimensions and texel-load emulation, this operation accepts a supported
+multi-mip view. The selected entry point cannot use helpers, control flow,
+other bound resources, image operations or unrelated integer values. General
+`texture_query` remains false. This capability is compiler emulation based and
+does not imply native FL9_1 image-query instructions or historical-driver
+coverage.
+
+The general `texture_sample_base_clamp_to_edge` limit remains false. The
+FL9_1 projection exposes only the separate
+`texture_sample_base_clamp_to_edge_2d_float_fragment` restriction.
+`textureSampleBaseClampToEdge` is lowered by Naga using
+the one supported operation to an implicit `Texture2D.Sample` after clamping
+coordinates to half-texel centers using the selected view dimensions supplied
+through `b13`; this avoids FL9_1-incompatible `GetDimensions` and
+`SampleLevel`. Core permits only a direct fragment sample of one group-0,
+non-array `texture_2d<f32>` and one group-0 non-comparison sampler, with no
+helpers, additional resources, other image operations or control flow. HAL
+requires the currently selected view to expose exactly one mip and refreshes
+the host dimensions for each selected bind group before drawing. An unused
+sibling entry remains available when it does not use the builtin. Strict
+RTX 3090 Ti FL9_1 readback checked all 64 pixels for out-of-range coordinates.
+The public repeat-per-primitive limit rejects Repeat and MirrorRepeat samplers
+at creation, so the GPU test uses ClampToEdge; sampler-independent wrapping
+semantics have not been physically distinguished on this adapter.
 
 `wgpu-core/src/device/resource.rs` rejects D3D11 passthrough shader modules
 with `NotCompiledForBackend`; it does not use an unreachable arm. The matching

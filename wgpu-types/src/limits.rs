@@ -1307,12 +1307,40 @@ pub struct DownlevelLimits {
     /// instructions.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_query: bool,
+    /// Whether a fragment entry point may query the size of one direct, non-array
+    /// `texture_2d<f32>` using `textureDimensions` and convert the returned `vec2<u32>` directly
+    /// to `vec2<f32>`.
+    ///
+    /// This restricted form does not imply general texture-query support. The selected entry
+    /// point must also satisfy the backend's other validation requirements for this operation.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_dimensions_2d_float_fragment: bool,
+    /// Whether a fragment entry point may query the size of one direct, non-array
+    /// `texture_3d<f32>` using `textureDimensions` and convert the returned `vec3<u32>` directly
+    /// to `vec3<f32>`.
+    ///
+    /// This restricted form does not imply general texture-query support. The selected entry
+    /// point must also satisfy the backend's other validation requirements for this operation.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_dimensions_3d_float_fragment: bool,
+    /// Whether a fragment entry point may query the mip-level count of one direct, non-array
+    /// `texture_2d<f32>` using `textureNumLevels` and convert the returned `u32` directly to `f32`.
+    ///
+    /// This restricted form does not imply support for other texture queries.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_num_levels_2d_float_fragment: bool,
     /// Whether shader entry points may use `textureSampleBaseClampToEdge`.
     ///
     /// This operation may lower to texture-dimension queries and explicit level sampling even
     /// though the WGSL builtin does not expose either operation directly.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_base_clamp_to_edge: bool,
+    /// Whether the backend only supports `textureSampleBaseClampToEdge` for one direct fragment
+    /// sample from one non-array `texture_2d<f32>` and one non-comparison sampler.
+    ///
+    /// This narrower form is still shader validated before backend compilation.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_sample_base_clamp_to_edge_2d_float_fragment: bool,
     /// Whether sampled texture operations may specify an explicit mip level.
     ///
     /// This models shader-profile support for `textureSampleLevel`; implicit
@@ -1337,6 +1365,12 @@ pub struct DownlevelLimits {
     /// This does not imply support for other texture dimensions, stages, formats or shader forms.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_load_2d_float_fragment: bool,
+    /// Whether fragment entry points may use the restricted single-mip 3D float texture-load
+    /// subset supported by some downlevel backends.
+    ///
+    /// This does not imply support for other texture dimensions, stages, formats or shader forms.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_load_3d_float_fragment: bool,
     /// Whether shader entry points may use runtime integer operations.
     ///
     /// Some downlevel shader profiles have integer type declarations but do not preserve the
@@ -1515,11 +1549,16 @@ impl Default for DownlevelLimits {
             fragment_front_facing: true,
             fragment_position: true,
             texture_query: true,
+            texture_dimensions_2d_float_fragment: false,
+            texture_dimensions_3d_float_fragment: false,
+            texture_num_levels_2d_float_fragment: false,
             texture_sample_base_clamp_to_edge: true,
+            texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: true,
             texture_gather: true,
             texture_load: true,
             texture_load_2d_float_fragment: false,
+            texture_load_3d_float_fragment: false,
             runtime_integer_shader_operations: true,
             matrix_inverse: true,
             matrix_outer_product: true,
@@ -1762,14 +1801,29 @@ impl DownlevelLimits {
             && (!required.fragment_front_facing || self.fragment_front_facing)
             && (!required.fragment_position || self.fragment_position)
             && (!required.texture_query || self.texture_query)
+            && (!required.texture_dimensions_2d_float_fragment
+                || self.texture_query
+                || self.texture_dimensions_2d_float_fragment)
+            && (!required.texture_dimensions_3d_float_fragment
+                || self.texture_query
+                || self.texture_dimensions_3d_float_fragment)
+            && (!required.texture_num_levels_2d_float_fragment
+                || self.texture_query
+                || self.texture_num_levels_2d_float_fragment)
             && (!required.texture_sample_base_clamp_to_edge
                 || self.texture_sample_base_clamp_to_edge)
+            && (!required.texture_sample_base_clamp_to_edge_2d_float_fragment
+                || self.texture_sample_base_clamp_to_edge
+                || self.texture_sample_base_clamp_to_edge_2d_float_fragment)
             && (!required.texture_sample_level || self.texture_sample_level)
             && (!required.texture_gather || self.texture_gather)
             && (!required.texture_load || self.texture_load)
             && (!required.texture_load_2d_float_fragment
                 || self.texture_load
                 || self.texture_load_2d_float_fragment)
+            && (!required.texture_load_3d_float_fragment
+                || self.texture_load
+                || self.texture_load_3d_float_fragment)
             && (!required.runtime_integer_shader_operations
                 || self.runtime_integer_shader_operations)
             && (!required.matrix_inverse || self.matrix_inverse)
@@ -2233,6 +2287,18 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+
+        let restricted = DownlevelLimits {
+            texture_sample_base_clamp_to_edge: false,
+            texture_sample_base_clamp_to_edge_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(restricted.check_limits(&DownlevelLimits {
+            texture_sample_base_clamp_to_edge: false,
+            texture_sample_base_clamp_to_edge_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits::default()));
     }
 
     #[test]
@@ -2447,11 +2513,16 @@ mod tests {
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
+            texture_dimensions_2d_float_fragment: false,
+            texture_dimensions_3d_float_fragment: false,
+            texture_num_levels_2d_float_fragment: true,
             texture_sample_base_clamp_to_edge: false,
+            texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
             texture_gather: false,
             texture_load: true,
             texture_load_2d_float_fragment: true,
+            texture_load_3d_float_fragment: false,
             runtime_integer_shader_operations: false,
             matrix_inverse: false,
             matrix_outer_product: false,
@@ -2515,11 +2586,16 @@ mod tests {
             fragment_front_facing: false,
             fragment_position: false,
             texture_query: false,
+            texture_dimensions_2d_float_fragment: false,
+            texture_dimensions_3d_float_fragment: false,
+            texture_num_levels_2d_float_fragment: true,
             texture_sample_base_clamp_to_edge: false,
+            texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
             texture_gather: false,
             texture_load: true,
             texture_load_2d_float_fragment: true,
+            texture_load_3d_float_fragment: false,
             runtime_integer_shader_operations: false,
             matrix_inverse: false,
             matrix_outer_product: false,
@@ -2823,6 +2899,87 @@ mod tests {
     }
 
     #[test]
+    fn restricted_texture_dimensions_do_not_imply_general_texture_queries() {
+        let restricted = DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(restricted.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits {
+            texture_query: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelLimits::default().check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
+    fn restricted_texture_num_levels_is_independent_of_other_texture_queries() {
+        let restricted = DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: false,
+            texture_num_levels_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(restricted.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits {
+            texture_query: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelLimits::default().check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
+    fn restricted_3d_texture_dimensions_is_independent_of_2d_and_general_queries() {
+        let restricted = DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: false,
+            texture_dimensions_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(restricted.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits {
+            texture_query: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelLimits::default().check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
     fn texture_sample_base_clamp_to_edge_is_a_downlevel_capability() {
         let available = DownlevelLimits {
             texture_sample_base_clamp_to_edge: false,
@@ -2853,6 +3010,7 @@ mod tests {
             "comparison_sampler_independent_filters",
             "max_comparison_sampler_anisotropy",
             "border_addressing_requires_comparison_sampler",
+            "texture_sample_base_clamp_to_edge_2d_float_fragment",
             "sampled_sint_textures",
             "sampled_uint_textures",
             "multisampled_texture_bindings",
@@ -2872,9 +3030,14 @@ mod tests {
             "fragment_point_coord_input",
             "fragment_non_perspective_interpolation",
             "texture_query",
+            "texture_dimensions_2d_float_fragment",
+            "texture_dimensions_3d_float_fragment",
+            "texture_num_levels_2d_float_fragment",
             "texture_sample_base_clamp_to_edge",
             "texture_gather",
             "texture_load",
+            "texture_load_2d_float_fragment",
+            "texture_load_3d_float_fragment",
             "runtime_integer_shader_operations",
             "matrix_inverse",
             "matrix_outer_product",
@@ -2918,9 +3081,14 @@ mod tests {
         assert!(limits.fragment_point_coord_input);
         assert!(limits.fragment_non_perspective_interpolation);
         assert!(limits.texture_query);
+        assert!(!limits.texture_dimensions_2d_float_fragment);
+        assert!(!limits.texture_dimensions_3d_float_fragment);
+        assert!(!limits.texture_num_levels_2d_float_fragment);
         assert!(limits.texture_sample_base_clamp_to_edge);
         assert!(limits.texture_gather);
         assert!(limits.texture_load);
+        assert!(!limits.texture_load_2d_float_fragment);
+        assert!(!limits.texture_load_3d_float_fragment);
         assert!(limits.runtime_integer_shader_operations);
         assert!(limits.matrix_inverse);
         assert!(limits.matrix_outer_product);
@@ -3146,6 +3314,48 @@ mod tests {
         assert!(general.check_limits(&DownlevelLimits {
             texture_load: false,
             texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
+    fn restricted_2d_and_3d_texture_load_limits_are_independent() {
+        let two_d = DownlevelLimits {
+            texture_load: false,
+            texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        let three_d = DownlevelLimits {
+            texture_load: false,
+            texture_load_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+
+        assert!(two_d.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!two_d.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!three_d.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(three_d.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+
+        let unrestricted = DownlevelLimits::default();
+        assert!(unrestricted.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_3d_float_fragment: true,
             ..DownlevelLimits::default()
         }));
     }

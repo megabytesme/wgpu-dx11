@@ -128,6 +128,37 @@ fn version() {
 }
 
 #[test]
+fn outer_product_rectangular_dimensions_follow_glsl_column_row_order() {
+    let mut frontend = Frontend::default();
+    let module = frontend
+        .parse(
+            &Options::from(ShaderStage::Vertex),
+            "#version 450\nmat2x3 rectangular(vec3 c, vec2 r) { return outerProduct(c, r); }\nvoid main() { mat2x3 value = rectangular(vec3(1.0), vec2(1.0)); gl_Position = vec4(value[0], 0.0, 1.0); }",
+        )
+        .unwrap();
+    crate::valid::Validator::new(
+        crate::valid::ValidationFlags::all(),
+        crate::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .unwrap();
+    let (_, function) = module
+        .functions
+        .iter()
+        .find(|(_, function)| function.name.as_deref() == Some("rectangular"))
+        .expect("rectangular helper function");
+    let result = function.result.as_ref().expect("matrix result");
+    assert!(matches!(
+        module.types[result.ty].inner,
+        crate::TypeInner::Matrix {
+            columns: crate::VectorSize::Bi,
+            rows: crate::VectorSize::Tri,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn control_flow() {
     let mut frontend = Frontend::default();
 

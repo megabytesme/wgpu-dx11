@@ -29,6 +29,7 @@ pub struct CommandEncoder {
     recording: Option<Vec<NativeCommand>>,
     render: Option<RenderState>,
     compute: bool,
+    end_compute_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
     failure: Option<DeviceError>,
     viewport_buffer: Option<windows::Win32::Graphics::Direct3D11::ID3D11Buffer>,
 }
@@ -41,6 +42,7 @@ struct RenderState {
     sample_count: u32,
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     resolve: Option<ResolveOperation>,
+    end_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
     target_mip: Option<u32>,
     pipeline: bool,
     // Draw elision requires inert stencil, read-only shader resources, and no queries.
@@ -208,18 +210,45 @@ impl RenderState {
         }
         let texture = bound.resources.textures.get(local)?;
         let info = *bound.resources.sampling.textures.get(local)?;
-        (texture.dimension == wgt::TextureViewDimension::D2
-            && texture.logical_format == Some(wgt::TextureFormat::Rgba8Unorm)
+        let single_mip = matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::Load
+                | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                | super::hal_shader::Fl9TextureEmulationKind::BaseClamp
+        );
+        let rgba8_load = matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::Load
+                | super::hal_shader::Fl9TextureEmulationKind::Load3D
+        );
+        let dimensions_3d = matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
+                | super::hal_shader::Fl9TextureEmulationKind::Load3D
+        );
+        (texture.dimension
+            == if dimensions_3d {
+                wgt::TextureViewDimension::D3
+            } else {
+                wgt::TextureViewDimension::D2
+            }
+            && (!rgba8_load || texture.logical_format == Some(wgt::TextureFormat::Rgba8Unorm))
+            && texture.logical_format.is_some()
             && texture.sample_count == 1
-            && texture.mip_count == 1
+            && (!single_mip || texture.mip_count == 1)
             && !texture.depth
-            && info.mip_levels == 1
+            && info.mip_levels == texture.mip_count
+            && info.mip_levels != 0
             && info.size[0] != 0
             && info.size[1] != 0
             && info.size[0] <= 2048
             && info.size[1] <= 2048
-            && info.size[2] == 1)
-            .then_some((texture, info))
+            && if dimensions_3d {
+                info.size[2] > 0 && info.size[2] <= 256
+            } else {
+                info.size[2] == 1
+            })
+        .then_some((texture, info))
     }
 
     fn bindings_compatible(&self) -> bool {
@@ -308,6 +337,17 @@ impl RenderState {
         }
         if let Some(load) = &self.texel_load {
             let (texture, info) = self.texel_load_resource()?;
+            let (width, height) = if matches!(
+                load.kind,
+                super::hal_shader::Fl9TextureEmulationKind::Dimensions
+            ) {
+                (
+                    dimension_for_mip(info.size[0], load.mip_level),
+                    dimension_for_mip(info.size[1], load.mip_level),
+                )
+            } else {
+                (info.size[0], info.size[1])
+            };
             if let Some(copy) = &texture.refresh {
                 refresh.push(copy.clone());
             }
@@ -315,8 +355,19 @@ impl RenderState {
                 texture: texture.view.clone(),
                 sampler: load.sampler.clone(),
                 dimensions: load.dimensions.clone(),
-                width: info.size[0],
-                height: info.size[1],
+                kind: load.kind,
+                width,
+                height,
+                depth: if matches!(
+                    load.kind,
+                    super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
+                        | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                ) {
+                    info.size[2]
+                } else {
+                    1
+                },
+                mip_levels: info.mip_levels,
             });
         }
         if !refresh.is_empty() {
@@ -348,6 +399,24 @@ fn attachment_needs_clear(ops: AttachmentOps) -> Option<bool> {
     }
 }
 
+fn dimension_for_mip(base_dimension: u32, mip_level: u32) -> u32 {
+    base_dimension.checked_shr(mip_level).unwrap_or(0).max(1)
+}
+
+#[cfg(test)]
+mod texture_dimension_mip_tests {
+    use super::dimension_for_mip;
+
+    #[test]
+    fn dimensions_clamp_to_one_for_out_of_range_mip_levels() {
+        assert_eq!(dimension_for_mip(16, 0), 16);
+        assert_eq!(dimension_for_mip(16, 2), 4);
+        assert_eq!(dimension_for_mip(1, 1), 1);
+        assert_eq!(dimension_for_mip(16, 32), 1);
+        assert_eq!(dimension_for_mip(16, u32::MAX), 1);
+    }
+}
+
 impl CommandEncoder {
     fn reject(&mut self) {
         self.failure.get_or_insert(DeviceError::Unexpected);
@@ -367,6 +436,35 @@ impl CommandEncoder {
         commands.push(command);
     }
 
+    fn pass_timestamp_queries(
+        &self,
+        set: &super::query::QuerySet,
+        beginning_index: Option<u32>,
+        end_index: Option<u32>,
+    ) -> Result<
+        (
+            Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
+            Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
+        ),
+        DeviceError,
+    > {
+        if !set.belongs_to(&self.device)
+            || (beginning_index.is_none() && end_index.is_none())
+            || (beginning_index.is_some() && beginning_index == end_index)
+        {
+            return Err(DeviceError::Unexpected);
+        }
+        let beginning = match beginning_index {
+            Some(index) => Some(set.query(index).ok_or(DeviceError::Unexpected)?),
+            None => None,
+        };
+        let end = match end_index {
+            Some(index) => Some(set.query(index).ok_or(DeviceError::Unexpected)?),
+            None => None,
+        };
+        Ok((beginning, end))
+    }
+
     #[allow(dead_code)]
     pub(super) fn new(device: Arc<NativeDevice>) -> Self {
         Self {
@@ -374,6 +472,7 @@ impl CommandEncoder {
             recording: None,
             render: None,
             compute: false,
+            end_compute_timestamp: None,
             failure: None,
             viewport_buffer: None,
         }
@@ -410,6 +509,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.failure = None;
         self.render = None;
         self.compute = false;
+        self.end_compute_timestamp = None;
         self.recording = Some(Vec::new());
         Ok(())
     }
@@ -418,6 +518,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.recording = None;
         self.render = None;
         self.compute = false;
+        self.end_compute_timestamp = None;
         self.failure = None;
     }
 
@@ -425,6 +526,7 @@ impl crate::CommandEncoder for CommandEncoder {
         let commands = self.recording.take().ok_or(DeviceError::Unexpected)?;
         let render_open = self.render.take().is_some();
         let compute_open = core::mem::take(&mut self.compute);
+        self.end_compute_timestamp = None;
         if render_open || compute_open {
             self.reject();
         }
@@ -834,6 +936,20 @@ impl crate::CommandEncoder for CommandEncoder {
         &mut self,
         desc: &RenderPassDescriptor<<Self::A as Api>::QuerySet, <Self::A as Api>::TextureView>,
     ) -> Result<(), DeviceError> {
+        let (begin_timestamp, end_timestamp) = match &desc.timestamp_writes {
+            Some(writes) => match self.pass_timestamp_queries(
+                writes.query_set,
+                writes.beginning_of_pass_write_index,
+                writes.end_of_pass_write_index,
+            ) {
+                Ok(queries) => queries,
+                Err(error) => {
+                    self.failure = Some(error.clone());
+                    return Err(error);
+                }
+            },
+            None => (None, None),
+        };
         let color = match desc.color_attachments {
             [] | [None] => None,
             [Some(color)] => Some(color),
@@ -864,7 +980,6 @@ impl crate::CommandEncoder for CommandEncoder {
             || self.compute
             || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
             || desc.multiview_mask.is_some()
-            || desc.timestamp_writes.is_some()
             || desc.occlusion_query_set.is_some()
             || color.is_some_and(|color| {
                 color.depth_slice.is_some()
@@ -1055,6 +1170,7 @@ impl crate::CommandEncoder for CommandEncoder {
             sample_count: desc.sample_count,
             target: target.clone(),
             resolve,
+            end_timestamp,
             target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
             depth_never: false,
@@ -1087,6 +1203,9 @@ impl crate::CommandEncoder for CommandEncoder {
                 None => RenderTarget::Owned(target),
             }
         });
+        if let Some(query) = begin_timestamp {
+            self.record(NativeCommand::WriteTimestamp(query));
+        }
         self.record(NativeCommand::BeginRender {
             target,
             clear,
@@ -1109,6 +1228,9 @@ impl crate::CommandEncoder for CommandEncoder {
         self.record(NativeCommand::EndRender {
             resolve: render.resolve,
         });
+        if let Some(query) = render.end_timestamp {
+            self.record(NativeCommand::WriteTimestamp(query));
+        }
     }
 
     unsafe fn set_render_pipeline(&mut self, pipeline: &<Self::A as Api>::RenderPipeline) {
@@ -2232,20 +2354,36 @@ impl crate::CommandEncoder for CommandEncoder {
         &mut self,
         desc: &ComputePassDescriptor<<Self::A as Api>::QuerySet>,
     ) {
-        if self.recording.is_none()
-            || self.render.is_some()
-            || self.compute
-            || desc.timestamp_writes.is_some()
-        {
+        if self.recording.is_none() || self.render.is_some() || self.compute {
             self.reject();
         } else {
+            let (begin_timestamp, end_timestamp) = match &desc.timestamp_writes {
+                Some(writes) => match self.pass_timestamp_queries(
+                    writes.query_set,
+                    writes.beginning_of_pass_write_index,
+                    writes.end_of_pass_write_index,
+                ) {
+                    Ok(queries) => queries,
+                    Err(_) => {
+                        self.reject();
+                        return;
+                    }
+                },
+                None => (None, None),
+            };
+            if let Some(query) = begin_timestamp {
+                self.record(NativeCommand::WriteTimestamp(query));
+            }
             self.compute = true;
+            self.end_compute_timestamp = end_timestamp;
         }
     }
 
     unsafe fn end_compute_pass(&mut self) {
         if !core::mem::take(&mut self.compute) {
             self.reject();
+        } else if let Some(query) = self.end_compute_timestamp.take() {
+            self.record(NativeCommand::WriteTimestamp(query));
         }
     }
 

@@ -514,14 +514,27 @@ entries remain accepted. The D3D11 projection keeps this implementation limit
 false even though the hardware model records query support from feature level
 10_0 onward.
 
-The separate `texture_sample_base_clamp_to_edge` limit covers the WGSL
-`textureSampleBaseClampToEdge` builtin. Its Naga HLSL lowering uses both
-`GetDimensions` and `SampleLevel`; FXC reports X4532 for
-`ps_4_0_level_9_1` and `ps_4_0_level_9_3`, while the shader-model 5 control
-compiles. CPU core tests cover direct use, helper reachability, safe sibling
-entry points and the default-supported projection. The strict public FL9_1
-test verifies that the selected-entry gate produces a validation error before
-HAL for direct and helper-reached use.
+The general `texture_sample_base_clamp_to_edge` limit remains false. The
+`texture_sample_base_clamp_to_edge_2d_float_fragment` limit covers one narrow
+FL9_1 form of `textureSampleBaseClampToEdge`. Core proves one direct
+fragment sample using one group-0 `texture_2d<f32>` and one group-0
+non-comparison sampler; helper calls, extra resources, other image operations
+and control flow are rejected before HAL. HAL requires a single-mip view and
+updates the `b13` width/height constants whenever the selected binding changes.
+Naga's writer emits an implicit level-zero `Sample` with half-texel coordinate
+clamping; the strict public test compiled the shader through FXC for
+`ps_4_0_level_9_1` and verified all 64 readback pixels. It uses an
+ClampToEdge sampler because Core rejects Repeat/MirrorRepeat descriptors under
+the adapter's finite repeat-per-primitive limit. It does not establish
+sampler-independent edge behavior for those unavailable sampler modes.
+
+```powershell
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_base_clamp_uses_host_dimensions_and_implicit_sample
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_base_clamp_binding_is_direct_and_single_mip
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_sample_base_clamp_to_edge_at_fl91 -- --nocapture --test-threads=1
+```
 
 ### Texture gather shader-model boundary
 
@@ -3207,12 +3220,18 @@ cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wg
 
 The native probe creates timestamp and disjoint queries on the selected FL9_1
 device, flushes and reads the disjoint frequency. A positive result enables
-timestamp query sets and encoder writes only. The public test resolves two
-timestamps, copies them to mapped memory, checks monotonic values and confirms
-occlusion and pipeline-statistics sets remain rejected. D3D11 has no native
-query-result copy command here, so resolve waits for `GetData` on the CPU; the
-selected RTX 3090 Ti reports 1 GHz and 1 ns/tick. Pass-level timestamp writes
-remain unsupported.
+timestamp query sets and encoder writes. The public test resolves timestamps
+written outside a pass, at the beginning and end of a render pass, and around
+an empty compute pass; it copies them to mapped memory and checks monotonic
+values. Pass descriptor timestamps require only `TIMESTAMP_QUERY`;
+`TIMESTAMP_QUERY_INSIDE_PASSES` remains unexposed, so explicit `write_timestamp`
+calls from inside a pass are not supported. Compute pipeline creation and
+dispatch remain unsupported. The test also confirms occlusion and
+pipeline-statistics sets remain rejected. D3D11 has no native query-result copy
+command here, so resolve waits for `GetData` on the CPU. The strict RTX 3090 Ti
+run at requested/actual FL9_1 read back `[1794147471006991360,
+1794147471006996480, 1794147471006997504, 1794147471007002624,
+1794147471007002624, 1794147471007002624]` at 1 GHz and 1 ns/tick.
 
 ### Narrow FL9_1 fragment `textureLoad`
 
@@ -3237,3 +3256,140 @@ FL9_1 checked 64 in-bounds green pixels, 64 out-of-bounds zero pixels and 64
 zero pixels for a nonzero mip request against the single-mip view. The broader
 strict public suite also includes this test. This modern driver result does
 not establish behavior on historical FL9_1 hardware.
+
+### FL9_1 GLSL `outerProduct`
+
+Naga's HLSL writer lowers validated f32 outer products to an explicit matrix
+constructor. Run the Naga dimension/lowering regression and strict public
+readback test from a Visual Studio x64 developer environment:
+
+```powershell
+cargo +1.93 test --offline -j16 -p naga --lib --features glsl-in outer_product
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_matrix_outer_product_renders_at_fl91 -- --nocapture --test-threads=1
+```
+
+The GLSL frontend regression checks that `outerProduct(vec3, vec2)` has the
+specified `mat2x3` dimensions; the HLSL writer regression checks square and
+rectangular component order. The strict public test explicitly requests and
+asserts FL9_1 on the physical RTX 3090 Ti, then renders and reads back all 64
+pixels for square and rectangular operations. The observed output was
+`[16, 32, 48, 255]` per pixel. The capability applies to Naga IR accepted by
+the backend; WGSL currently has no `outerProduct` builtin. DX12 exposure remains
+disabled pending a separate projection decision.
+
+### Narrow FL9_1 fragment `textureDimensions`
+
+Run the synthetic capability/proof checks and strict readback test:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-types restricted_texture_dimensions_do_not_imply_general_texture_queries
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib texture_dimensions
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti, the test explicitly requested and selected FL9_1. One
+pipeline sampled the dimensions of two differently sized views across a bind
+group switch; all 64 output pixels matched the expected yellow and half-yellow
+values. The general `texture_query` capability remained false. This validates
+the narrow emulation on a modern GPU restricted to FL9_1, not behavior on
+historical hardware.
+
+### Narrow FL9_1 fragment `textureNumLevels`
+
+Run the selected-entry proof, type-limit and HLSL compilation checks, then the
+strict public readback test:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-types restricted_texture_num_levels_is_independent_of_other_texture_queries
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_accepts_only_direct_fragment_conversion
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib texture_num_levels
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_num_levels_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
+The public test uses one four-mip texture through two views exposing one and
+three levels. A bind-group transition changes the returned count; the 8x8
+readback expects red 85 on the left and 255 on the right, with the other
+channels fixed. General `texture_query` stays disabled. This is a narrow host
+metadata emulation and does not establish historical FL9_1 driver behavior.
+
+### Constant-mip FL9_1 fragment `textureDimensions`
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_dimensions
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_constant_mip_at_fl91 -- --nocapture --test-threads=1
+```
+
+The constant-level test uses a four-mip 16x8 texture and two views with
+different base mips. It queries level `2u` relative to each view and expects
+yellow output for 4x2 dimensions on the left and half-yellow for 2x1 on the
+right. Runtime, override and negative signed levels are rejected by synthetic
+Core/HAL tests. General `texture_query` remains disabled.
+
+### FL9_1 `textureDimensions` with one implicit sample
+
+```powershell
+cargo +1.93 test --offline -j1 -p naga --lib --features hlsl-out fl9_texture_dimensions_can_share_texture_with_one_implicit_sample
+cargo +1.93 test --offline -j1 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_and_sample_at_fl91 -- --nocapture --test-threads=1
+```
+
+The shader may combine one level-less `textureDimensions(image)` with one
+implicit `textureSample(image, sampler, uv)` of the same group-0 2D float
+texture. The selected-entry proof rejects explicit sample/query mip levels,
+helper calls, `select`, extra bound resources and other image operations. The
+strict RTX 3090 Ti run requested and selected FL9_1, switched between 4x2 and
+8x4 views with different texel colors, and matched all 64 readback pixels.
+This is narrow query-plus-sample coverage; general texture queries remain
+disabled.
+
+### Narrow FL9_1 fragment 3D `textureDimensions`
+
+```powershell
+cargo +1.93 test --offline -j1 -p naga --lib --features hlsl-out fl9_3d_texture_dimensions_can_share_texture_with_one_implicit_sample
+cargo +1.93 test --offline -j1 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_3d_texture_dimensions_has_an_independent_narrow_proof
+cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_dimensions_binding_is_distinct_from_2d_emulation
+cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texture_dimensions_and_implicit_sample_compile
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_3d_at_fl91 -- --nocapture --test-threads=1
+```
+
+The selected fragment entry may combine one direct no-level
+`textureDimensions(volume)` converted to `vec3f` with one level-less implicit
+sample of that same non-array `texture_3d<f32>` through one group-0
+non-comparison sampler. Helpers, extra resources, explicit LOD, explicit query
+levels and unrelated image operations remain rejected. The strict test uploads
+two different volumes, transitions bind groups from 4x2x8 to 2x4x1, and
+multiplies the sampled color by the queried dimensions. On the physical RTX
+3090 Ti explicitly requested and selected at FL9_1, all 64 output pixels
+matched `[200, 80, 40, 255]` on the first half and `[40, 120, 10, 255]` on the
+second half. The full private HAL suite passed 434/434, the full strict public
+D3D11 target passed 98/98, Naga passed 147/147 and DX11 Core passed 106/106.
+Optional capability subcases may report SKIP and are not GPU execution passes.
+This result does not establish historical FL9_1 driver behavior.
+
+### Narrow FL9_1 fragment 3D `textureLoad`
+
+```powershell
+cargo +1.93 test --offline -j1 -p wgpu-types texture_load_3d_float_fragment --features serde
+cargo +1.93 test --offline -j1 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_load_selects_a_distinct_single_mip_emulation
+cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texel_load_compiles_with_the_level_9_1_profile
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_3d_texture_load_at_fl91 -- --nocapture --test-threads=1
+```
+
+The FL9_1 HLSL test compiles a `Texture3D.Sample` texel-center lowering with
+the actual level-9_1 pixel profile. The public test uploads an asymmetric 2x2x2
+RGBA8 volume and checks two distinct in-bounds loads, an out-of-bounds depth
+coordinate and a nonzero mip request through GPU readback. The new
+`texture_load_3d_float_fragment` limit is separate from the 2D limit and is
+projected only for positively queried, implemented RGBA8 volume sampling.
+General `texture_load` stays disabled; historical FL9_1 drivers are not
+represented by the RTX result.

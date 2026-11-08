@@ -297,7 +297,10 @@ impl<W: Write> super::Writer<'_, W> {
             "{l1}float3 srcLinearRgb = srcGammaRgb < {params}.src_tf.k * {params}.src_tf.b ?"
         )?;
         writeln!(self.out, "{l2}srcGammaRgb / {params}.src_tf.k :")?;
-        writeln!(self.out, "{l2}pow((srcGammaRgb + {params}.src_tf.a - 1.0) / {params}.src_tf.a, {params}.src_tf.g);")?;
+        writeln!(
+            self.out,
+            "{l2}pow((srcGammaRgb + {params}.src_tf.a - 1.0) / {params}.src_tf.a, {params}.src_tf.g);"
+        )?;
 
         // Multiply by the gamut conversion matrix to convert to linear RGB in
         // the destination color space. We declare our matrices as row_major in
@@ -314,7 +317,10 @@ impl<W: Write> super::Writer<'_, W> {
             "{l1}float3 dstGammaRgb = dstLinearRgb < {params}.dst_tf.b ?"
         )?;
         writeln!(self.out, "{l2}{params}.dst_tf.k * dstLinearRgb :")?;
-        writeln!(self.out, "{l2}{params}.dst_tf.a * pow(dstLinearRgb, 1.0 / {params}.dst_tf.g) - ({params}.dst_tf.a - 1);")?;
+        writeln!(
+            self.out,
+            "{l2}{params}.dst_tf.a * pow(dstLinearRgb, 1.0 / {params}.dst_tf.g) - ({params}.dst_tf.a - 1);"
+        )?;
 
         writeln!(self.out, "{l1}return float4(dstGammaRgb, 1.0);")?;
         Ok(())
@@ -361,7 +367,10 @@ impl<W: Write> super::Writer<'_, W> {
                 writeln!(self.out, "{l2}params.load_transform_1,")?;
                 writeln!(self.out, "{l2}params.load_transform_2")?;
                 writeln!(self.out, "{l1});")?;
-                writeln!(self.out, "{l1}uint2 plane0_coords = uint2(round(mul(float3(coords, 1.0), load_transform)));")?;
+                writeln!(
+                    self.out,
+                    "{l1}uint2 plane0_coords = uint2(round(mul(float3(coords, 1.0), load_transform)));"
+                )?;
                 writeln!(self.out, "{l1}if (params.num_planes == 1u) {{")?;
                 // For single plane, simply read from plane0
                 writeln!(
@@ -376,7 +385,10 @@ impl<W: Write> super::Writer<'_, W> {
                     self.out,
                     "{l2}plane1.GetDimensions(plane1_size.x, plane1_size.y);"
                 )?;
-                writeln!(self.out, "{l2}uint2 plane1_coords = uint2(floor(float2(plane0_coords) * float2(plane1_size) / float2(plane0_size)));")?;
+                writeln!(
+                    self.out,
+                    "{l2}uint2 plane1_coords = uint2(floor(float2(plane0_coords) * float2(plane1_size) / float2(plane0_size)));"
+                )?;
 
                 // For multi-plane, read the Y value from plane 0
                 writeln!(
@@ -398,8 +410,14 @@ impl<W: Write> super::Writer<'_, W> {
                     self.out,
                     "{l3}plane2.GetDimensions(plane2_size.x, plane2_size.y);"
                 )?;
-                writeln!(self.out, "{l3}uint2 plane2_coords = uint2(floor(float2(plane0_coords) * float2(plane2_size) / float2(plane0_size)));")?;
-                writeln!(self.out, "{l3}uv = float2(plane1.Load(uint3(plane1_coords, 0u)).x, plane2.Load(uint3(plane2_coords, 0u)).x);")?;
+                writeln!(
+                    self.out,
+                    "{l3}uint2 plane2_coords = uint2(floor(float2(plane0_coords) * float2(plane2_size) / float2(plane0_size)));"
+                )?;
+                writeln!(
+                    self.out,
+                    "{l3}uv = float2(plane1.Load(uint3(plane1_coords, 0u)).x, plane2.Load(uint3(plane2_coords, 0u)).x);"
+                )?;
                 writeln!(self.out, "{l2}}}")?;
 
                 self.write_convert_yuv_to_rgb_and_return(l2, "y", "uv", "params")?;
@@ -471,7 +489,10 @@ impl<W: Write> super::Writer<'_, W> {
                     self.out,
                     "{l1}float2 bounds_max = mul(float3(1.0, 1.0, 1.0), sample_transform);"
                 )?;
-                writeln!(self.out, "{l1}float4 bounds = float4(min(bounds_min, bounds_max), max(bounds_min, bounds_max));")?;
+                writeln!(
+                    self.out,
+                    "{l1}float4 bounds = float4(min(bounds_min, bounds_max), max(bounds_min, bounds_max));"
+                )?;
                 writeln!(
                     self.out,
                     "{l1}float2 plane0_half_texel = float2(0.5, 0.5) / plane0_size;"
@@ -525,8 +546,14 @@ impl<W: Write> super::Writer<'_, W> {
                     self.out,
                     "{l3}float2 plane2_half_texel = float2(0.5, 0.5) / plane2_size;"
                 )?;
-                writeln!(self.out, "{l3}float2 plane2_coords = clamp(coords, bounds.xy + plane2_half_texel, bounds.zw - plane2_half_texel);")?;
-                writeln!(self.out, "{l3}uv = float2(plane1.SampleLevel(samp, plane1_coords, 0.0f).x, plane2.SampleLevel(samp, plane2_coords, 0.0f).x);")?;
+                writeln!(
+                    self.out,
+                    "{l3}float2 plane2_coords = clamp(coords, bounds.xy + plane2_half_texel, bounds.zw - plane2_half_texel);"
+                )?;
+                writeln!(
+                    self.out,
+                    "{l3}uv = float2(plane1.SampleLevel(samp, plane1_coords, 0.0f).x, plane2.SampleLevel(samp, plane2_coords, 0.0f).x);"
+                )?;
                 writeln!(self.out, "{l2}}}")?;
 
                 self.write_convert_yuv_to_rgb_and_return(l2, "y", "uv", "params")?;
@@ -543,15 +570,30 @@ impl<W: Write> super::Writer<'_, W> {
                     },
                 clamp_to_edge: true,
             } => {
-                writeln!(self.out, "float4 {IMAGE_SAMPLE_BASE_CLAMP_TO_EDGE_FUNCTION}(Texture2D<float4> tex, SamplerState samp, float2 coords) {{")?;
                 let l1 = crate::back::Level(1);
-                writeln!(self.out, "{l1}float2 size;")?;
-                writeln!(self.out, "{l1}tex.GetDimensions(size.x, size.y);")?;
-                writeln!(self.out, "{l1}float2 half_texel = float2(0.5, 0.5) / size;")?;
-                writeln!(
-                    self.out,
-                    "{l1}return tex.SampleLevel(samp, clamp(coords, half_texel, 1.0 - half_texel), 0.0);"
-                )?;
+                if self.options.fl9_texture_base_clamp_proof.is_some() {
+                    writeln!(
+                        self.out,
+                        "float4 {IMAGE_SAMPLE_BASE_CLAMP_TO_EDGE_FUNCTION}(Texture2D<float4> tex, SamplerState samp, float2 coords, float2 size) {{"
+                    )?;
+                    writeln!(self.out, "{l1}float2 half_texel = float2(0.5, 0.5) / size;")?;
+                    writeln!(
+                        self.out,
+                        "{l1}return tex.Sample(samp, clamp(coords, half_texel, 1.0 - half_texel));"
+                    )?;
+                } else {
+                    writeln!(
+                        self.out,
+                        "float4 {IMAGE_SAMPLE_BASE_CLAMP_TO_EDGE_FUNCTION}(Texture2D<float4> tex, SamplerState samp, float2 coords) {{"
+                    )?;
+                    writeln!(self.out, "{l1}float2 size;")?;
+                    writeln!(self.out, "{l1}tex.GetDimensions(size.x, size.y);")?;
+                    writeln!(self.out, "{l1}float2 half_texel = float2(0.5, 0.5) / size;")?;
+                    writeln!(
+                        self.out,
+                        "{l1}return tex.SampleLevel(samp, clamp(coords, half_texel, 1.0 - half_texel), 0.0);"
+                    )?;
+                }
                 writeln!(self.out, "}}")?;
                 writeln!(self.out)?;
             }
@@ -618,7 +660,10 @@ impl<W: Write> super::Writer<'_, W> {
                 // Only plane0 and params are used by this implementation, but it's easier to
                 // always take all of them as arguments so that we can unconditionally expand an
                 // external texture expression each of its parts.
-                writeln!(self.out, "(Texture2D<float4> plane0, Texture2D<float4> plane1, Texture2D<float4> plane2, {params_name} params) {{")?;
+                writeln!(
+                    self.out,
+                    "(Texture2D<float4> plane0, Texture2D<float4> plane1, Texture2D<float4> plane2, {params_name} params) {{"
+                )?;
                 let l1 = crate::back::Level(1);
                 let l2 = l1.next();
                 writeln!(self.out, "{l1}if (any(params.size)) {{")?;
@@ -1870,7 +1915,7 @@ impl<W: Write> super::Writer<'_, W> {
                         ref other => {
                             return Err(super::Error::Unimplemented(format!(
                                 "Array length of base {other:?}"
-                            )))
+                            )));
                         }
                     };
                     let storage_access = match global_var.space {
@@ -1913,7 +1958,12 @@ impl<W: Write> super::Writer<'_, W> {
                     }
                 }
                 crate::Expression::ImageQuery { image, query } => {
-                    if self.options.fl9_texel_load_proof.is_some() {
+                    if self.options.fl9_texel_load_proof.is_some()
+                        || self.options.fl9_texture_dimensions_proof.is_some()
+                        || self.options.fl9_texture_dimensions_3d_proof.is_some()
+                        || self.options.fl9_texture_num_levels_proof.is_some()
+                        || self.options.fl9_texture_base_clamp_proof.is_some()
+                    {
                         // The proof path handles or rejects queries while writing expressions.
                         continue;
                     }
