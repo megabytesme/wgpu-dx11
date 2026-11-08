@@ -307,6 +307,11 @@ impl Queue {
     pub fn present(&self, surface: &Surface) -> Result<Status, SurfaceError> {
         profiling::scope!("Queue::present");
 
+        if let Err(error) = self.device.check_is_valid() {
+            release_consumed_surface_frame(surface);
+            return Err(error.into());
+        }
+
         let Some(raw_surface) = surface.raw(self.device.backend()) else {
             release_consumed_surface_frame(surface);
             return Err(SurfaceError::Invalid);
@@ -496,6 +501,24 @@ impl Global {
             status,
             texture: texture_id,
         })
+    }
+
+    pub fn queue_present(
+        &self,
+        queue_id: id::QueueId,
+        surface_id: id::SurfaceId,
+    ) -> Result<Status, SurfaceError> {
+        let queue = self.hub.queues.get(queue_id);
+        let surface = self.surfaces.get(surface_id);
+
+        #[cfg(feature = "trace")]
+        if let Some(present) = surface.presentation.lock().as_ref() {
+            if let Some(ref mut trace) = *present.device.trace.lock() {
+                trace.add(Action::Present(surface.to_trace()));
+            }
+        }
+
+        queue.present(&surface)
     }
 
     pub fn surface_present(&self, surface_id: id::SurfaceId) -> Result<Status, SurfaceError> {

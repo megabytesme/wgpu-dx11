@@ -312,7 +312,7 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
         .expect("request a device within the FL9_1 projection")
     };
     let (device_a, queue_a) = make_device("outer Present device");
-    let (device_b, _queue_b) = make_device("replacement surface device");
+    let (device_b, queue_b) = make_device("replacement surface device");
     let config = SurfaceConfiguration {
         usage: TextureUsages::RENDER_ATTACHMENT,
         format: TextureFormat::Bgra8Unorm,
@@ -328,6 +328,30 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
     surface_b.configure(&device_a, &config);
     surface_c.configure(&device_a, &config);
 
+    let wrong_queue_frame = match surface_c.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("wrong-queue surface acquisition failed: {result:?}"),
+    };
+    let wrong_queue_error = device_b.push_error_scope(ErrorFilter::Validation);
+    queue_b.present(wrong_queue_frame);
+    let wrong_queue_error = poll_ready(wrong_queue_error.pop()).map(|error| format!("{error:?}"));
+    assert!(
+        wrong_queue_error
+            .as_deref()
+            .is_some_and(|error| error.contains("DeviceMismatch")),
+        "presenting with a queue from another device must report a device mismatch: {wrong_queue_error:?}"
+    );
+    let reconfigure = catch_unwind(AssertUnwindSafe(|| surface_c.configure(&device_a, &config)));
+    assert!(
+        reconfigure.is_ok(),
+        "wrong-device Queue::present must release its consumed frame before reconfiguration"
+    );
+    match surface_c.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+            drop(frame);
+        }
+        result => panic!("surface did not reacquire after wrong-device present: {result:?}"),
+    }
     let frame_c = match surface_c.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
         result => panic!("surface acquisition before device loss failed: {result:?}"),
@@ -392,5 +416,5 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
         }
         result => panic!("surface did not reacquire after lost-device frame drop: {result:?}"),
     }
-    println!("PASS: reentrant present after device loss and dropping an unpresented frame after device loss both released their acquired frames for later reconfiguration and acquisition");
+    println!("PASS: wrong-device present, reentrant present after device loss, and dropping an unpresented frame after device loss all released their acquired frames for later reconfiguration and acquisition");
 }

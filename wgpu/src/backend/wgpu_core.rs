@@ -2159,7 +2159,7 @@ impl dispatch::QueueInterface for CoreQueue {
         let result = {
             let surface_alive = detail.output_lifecycle.lock();
             if *surface_alive {
-                self.context.0.surface_present(detail.surface_id)
+                self.context.0.queue_present(self.id, detail.surface_id)
             } else {
                 Err(wgc::present::SurfaceError::Invalid)
             }
