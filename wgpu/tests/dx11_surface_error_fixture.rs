@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 use wgpu::*;
+use wgpu_hal::{Device as _, Surface as _};
 
 struct ThreadWaker(thread::Thread);
 
@@ -223,7 +224,16 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
         lost_receiver.try_recv().is_err(),
         "callback fired more than once"
     );
-    println!("PASS: injected DXGI_ERROR_DEVICE_REMOVED from Present reached the public device-lost callback exactly once; reentrant poll returned its expected presentation-guard timeout");
+
+    let hal_device = unsafe { device.as_hal::<wgpu_hal::api::Dx11>() }
+        .expect("D3D11 HAL device remains inspectable after synthetic loss");
+    let fence = unsafe { hal_device.create_fence() }.expect("create D3D11 fence");
+    let hal_surface = unsafe { surface.as_hal::<wgpu_hal::api::Dx11>() }
+        .expect("D3D11 HAL surface remains configured after synthetic loss");
+    let reacquired = unsafe { hal_surface.acquire_texture(None, &fence) }
+        .expect("failed Present must release the native acquisition reservation");
+    unsafe { hal_surface.discard_texture(reacquired.texture) };
+    println!("PASS: injected DXGI_ERROR_DEVICE_REMOVED from Present reached the public device-lost callback exactly once, reentrant poll returned its expected presentation-guard timeout, and the HAL swapchain reacquired after the failed frame was consumed");
 }
 
 #[test]
