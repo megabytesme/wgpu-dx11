@@ -245,6 +245,120 @@ fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
 }
 
 #[test]
+fn public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=GPU buffer copy and nonzero mapped slice",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 nonzero map slice test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let source_bytes: Vec<u8> = (0..32).map(|value| (value * 7 + 3) as u8).collect();
+    let source = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 GPU copy source"),
+        size: source_bytes.len() as u64,
+        usage: BufferUsages::COPY_SRC,
+        mapped_at_creation: true,
+    });
+    source
+        .get_mapped_range_mut(..)
+        .expect("map GPU copy source")
+        .copy_from_slice(&source_bytes);
+    source.unmap();
+
+    let destination = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 mapped copy destination"),
+        size: 32,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: true,
+    });
+    destination
+        .get_mapped_range_mut(..)
+        .expect("map readback destination for sentinel initialization")
+        .copy_from_slice(&[0xcd; 32]);
+    destination.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 nonzero destination copy"),
+    });
+    encoder.copy_buffer_to_buffer(&source, 8, &destination, 8, 8);
+    let submission = queue.submit([encoder.finish()]);
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    destination
+        .slice(8..16)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission.clone()),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public FL9_1 buffer copy");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("nonzero map-slice callback")
+        .expect("map the GPU-written nonzero slice");
+    assert_eq!(
+        &destination
+            .slice(8..16)
+            .get_mapped_range()
+            .expect("mapped GPU-written slice")[..],
+        &source_bytes[8..16]
+    );
+    destination.unmap();
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    destination
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for full destination map");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("full destination map callback")
+        .expect("map complete destination after the GPU copy");
+    {
+        let data = destination
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped complete destination");
+        assert_eq!(&data[..8], &[0xcd; 8], "copy changed preceding bytes");
+        assert_eq!(&data[8..16], &source_bytes[8..16]);
+        assert_eq!(&data[16..], &[0xcd; 16], "copy changed following bytes");
+    }
+    destination.unmap();
+    println!(
+        "PASS: GPU copied source bytes 8..16 into destination bytes 8..16; mapping that nonzero slice returned the copy and full readback preserved both neighboring sentinel regions"
+    );
+}
+
+#[test]
 fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     use windows::{
         core::w,
