@@ -9,6 +9,13 @@ gates correctly reject them. Continue auditing other ordinary public-valid
 operations; do not add this unsupported copy path. The timestamp-query
 checkpoint is committed as `ede5c299f`.
 
+The public buffer-map coverage now also verifies a nonzero mapped slice after
+a submitted GPU buffer copy and checks that bytes outside the copied range
+remain unchanged. It passed under strict mode at requested/actual FL9_1 on the
+RTX 3090 Ti. The test-only checkpoint is `42414a6f9`; the complete strict
+public target passed 90/90 with three optional feature subcases explicitly
+skipped. This adds regression evidence without widening the exposed contract.
+
 The next candidate sweep also found no expansion to make: FL9_1 rejects the
 read-only DSV creation probe on the RTX 3090 Ti (`CreateDepthStencilView` with
 read-only flags returned `E_INVALIDARG`), so `READ_ONLY_DEPTH_STENCIL` remains

@@ -11790,3 +11790,36 @@ environment; it emitted the existing four `hal_queue.rs`
 `unused_qualifications` warnings. No source change remains from the failed
 feature experiment. Continue with the independent render-pass and buffer
 mapping audits before selecting another implementation increment.
+
+## Public FL9_1 buffer-map slice regression — 2026-11-08
+
+Checkpoint `42414a6f9f3fd9382c620c0c0629894fd26d580b`
+(`dx11: verify public FL9_1 buffer slice readback`) adds a public wgpu test
+that submits an 8-byte buffer copy into a nonzero destination range, maps that
+exact nonzero slice, then maps the complete buffer and verifies both sentinel
+regions outside the copy were preserved. It passed on the NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) with requested and
+actual feature level FL9_1.
+
+Commands run using Rust 1.93.1 and the Visual Studio 2026 x64 environment:
+
+```powershell
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public --no-run
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public experimental_dx11_is_not_enabled_by_default -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+```
+
+The target compiled, the focused strict test passed 1/1, the default-backend
+isolation test passed 1/1, and the full strict public suite passed 90/90. Three
+optional subcases explicitly logged skips: Rg8Unorm vertex-input support,
+Float16x2 vertex-input support and Rg8Unorm mip support. The suite used the
+physical RTX throughout and reported no hardware-test skips. Clippy passed
+with three existing HAL `too_many_arguments` warnings and the existing
+`std::collections::HashMap` warning in the public test file. The file-level
+`cargo +1.93 fmt --check -- wgpu/tests/dx11_public.rs` reports numerous older
+formatting differences elsewhere in that large test file; the newly added
+function was not among the reported diffs. `git diff --check` passed. No HAL
+or core code changed in this test-only increment.

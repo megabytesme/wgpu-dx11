@@ -11,8 +11,10 @@ reset, and queue-write ordering after command encoding. The two latest
 test-only commits are `9e07459a3eee540c349c9e28cc6a864221c3c01f` and
 `818fee943b117018cae30c813d17fa0e389c7669`. The latest implementation
 checkpoint is `ede5c299f`, which adds device-query-gated timestamp queries.
+The latest public regression checkpoint is `42414a6f9`, which adds a strict
+nonzero buffer-map slice after GPU copy test.
 
-The latest full strict public D3D11 target passed 89/89; three optional
+The latest full strict public D3D11 target passed 90/90; three optional
 device-specific subcases were logged as skips. The new cases executed on the
 physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
 software=false, requested/actual FL9_1, with GPU readback. The current strict
