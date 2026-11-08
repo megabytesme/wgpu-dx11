@@ -18,7 +18,8 @@ The latest contract fix lets combined depth-attachment/sampled textures create
 default views with both native DSV and SRV roles. The strict public regression
 passed for D16, Depth24Plus and D24S8 at requested/actual FL9_1. Full strict
 public tests passed 91/91 and private HAL tests passed 416/416; the new
-checkpoint commit and commands are recorded in `FL9_1_PROGRESS.md`.
+checkpoint is `f3926cf9bf1b5ef61101b0efbc1166b45aeeb6e5`; commands are in
+`FL9_1_PROGRESS.md`.
 
 The latest full strict public D3D11 target passed 91/91; three optional
 device-specific subcases were logged as skips. The new cases executed on the

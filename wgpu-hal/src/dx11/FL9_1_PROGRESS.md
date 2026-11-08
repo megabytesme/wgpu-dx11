@@ -11866,3 +11866,7 @@ test file). Rustfmt and `git diff --check` passed. One earlier full HAL run
 reported several failures before its output session ended; a focused rerun of
 the named indexed-triangle case and a complete quiet strict rerun both passed,
 so no failure reproduced.
+
+Implementation and test checkpoint:
+`f3926cf9bf1b5ef61101b0efbc1166b45aeeb6e5`
+(`dx11: support combined FL9_1 depth views`).

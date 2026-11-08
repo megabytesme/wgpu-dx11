@@ -7,6 +7,7 @@ combined view usage. The HAL now retains both DSV and SRV roles when requested.
 Strict FL9_1 public readback passed for D16 and Depth24Plus using the same
 default view sequentially for depth writes and comparison sampling; D24S8
 default attachment views and its required depth-only sample view also passed.
+Implementation and GPU test checkpoint: `f3926cf9bf1b5ef61101b0efbc1166b45aeeb6e5`.
 The overall contract audit remains open.
 
 The 2026-11-08 independent follow-up audits found no new actionable public
