@@ -16904,6 +16904,43 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         PrimitiveTopology::TriangleList,
     ));
 
+    let full_slot_attributes: [VertexAttribute; 16] =
+        std::array::from_fn(|location| VertexAttribute {
+            format: VertexFormat::Float32,
+            offset: 0,
+            shader_location: location as u32,
+        });
+    let full_slot_buffers: [Option<VertexBufferLayout<'_>>; 16] = std::array::from_fn(|slot| {
+        Some(VertexBufferLayout {
+            array_stride: 4,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &full_slot_attributes[slot..=slot],
+        })
+    });
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline(
+        "vertex_index",
+        &full_slot_buffers,
+        PrimitiveTopology::TriangleList,
+    ));
+    let error = poll_ready(scope.pop())
+        .expect("vertex_index with a full native input layout must fail core validation");
+    assert!(
+        error.to_string().contains("physical slot"),
+        "core must report the emulated input-slot constraint before HAL: {error}"
+    );
+
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline(
+        "safe",
+        &full_slot_buffers,
+        PrimitiveTopology::TriangleList,
+    ));
+    assert!(
+        poll_ready(scope.pop()).is_none(),
+        "the same full layout remains valid without emulated vertex_index"
+    );
+
     let scope = device.push_error_scope(ErrorFilter::Validation);
     drop(create_pipeline(
         "vertex_index",
@@ -16926,7 +16963,7 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         poll_ready(scope.pop()).is_none(),
         "LineList pipelines without vertex_index remain supported"
     );
-    println!("PASS: public core accepted supported TriangleList vertex builtins, rejected LineList vertex_index and retained ordinary LineList pipelines");
+    println!("PASS: public core accepted supported TriangleList vertex builtins, rejected unsupported topology and hidden-slot exhaustion, and retained ordinary pipelines");
 }
 
 #[test]
@@ -23101,5 +23138,291 @@ fn public_dx11_query_gated_wireframe_at_fl91() {
     readback.unmap();
     println!(
         "PASS: query-gated FL9_1 wireframe rasterizer matched explicit triangle edge lines; {pixels} of 256 pixels were green"
+    );
+}
+
+#[test]
+fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.vertex_uniform_array_indexing);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=vertex uniform-array dynamic indexing",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 vertex uniform-array indexing"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex uniform-array indexing shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct VertexOutput {
+                    @builtin(position) position: vec4f,
+                    @location(0) color: vec4f,
+                }
+                @group(0) @binding(17) var<uniform> colors: array<vec4f, 4>;
+
+                @vertex fn vs(@location(0) position: vec2f, @builtin(vertex_index) index: u32) -> VertexOutput {
+                    return VertexOutput(vec4f(position, 0.5, 1.0), colors[index]);
+                }
+                @fragment fn fs(@location(0) color: vec4f) -> @location(0) vec4f {
+                    return color;
+                }
+            "#
+            .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 vertex uniform-array indexing pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::PointList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let bind_group_layout = pipeline.get_bind_group_layout(0);
+    let uniform_values = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0],
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let uniform_bytes = uniform_values
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let uniform = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 vertex uniform-array values"),
+        size: uniform_bytes.len() as u64,
+        usage: BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    uniform
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map vertex uniform array")
+        .copy_from_slice(&uniform_bytes);
+    uniform.unmap();
+    let vertex_values = [
+        -0.625f32, 0.625, 0.625, 0.625, -0.625, -0.625, 0.625, -0.625, 0.625, -0.625,
+    ];
+    let vertex_bytes = vertex_values
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 uniform-array point positions"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map uniform-array positions")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 sparse vertex uniform array"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 17,
+            resource: uniform.as_entire_binding(),
+        }],
+    });
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 vertex uniform-array target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readbacks = ["in-range", "out-of-range"].map(|label| {
+        device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            size: 8 * 256,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        })
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 dynamic uniform-array readback"),
+    });
+    for (draw, readback) in readbacks.iter().enumerate() {
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 dynamic uniform-array pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            if draw == 0 {
+                pass.draw(0..4, 0..1);
+            } else {
+                pass.draw(4..5, 0..1);
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for (index, readback) in readbacks.iter().enumerate() {
+        let sender = sender.clone();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            sender.send((index, result)).unwrap()
+        });
+    }
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for dynamic uniform-array rendering");
+    for _ in &readbacks {
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("uniform-array readback callback")
+            .1
+            .expect("map uniform-array pixels");
+    }
+
+    let expected_points = [
+        ((1usize, 1usize), [255, 0, 0, 255]),
+        ((6, 1), [0, 255, 0, 255]),
+        ((1, 6), [0, 0, 255, 255]),
+        ((6, 6), [255, 255, 0, 255]),
+    ];
+    for (index, readback) in readbacks.iter().enumerate() {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped uniform-array readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected = if index == 0 {
+                    expected_points
+                        .iter()
+                        .find(|((point_x, point_y), _)| (*point_x, *point_y) == (x, y))
+                        .map_or([0, 0, 0, 255], |(_, color)| *color)
+                } else if (x, y) == (6, 6) {
+                    [255, 255, 0, 255]
+                } else {
+                    [0, 0, 0, 255]
+                };
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "{} pixel ({x}, {y})",
+                    if index == 0 {
+                        "in-range"
+                    } else {
+                        "out-of-range"
+                    }
+                );
+            }
+        }
+        drop(data);
+        readback.unmap();
+    }
+    println!(
+        "PASS: sparse vertex uniform array indexed all four entries; index 4 selected the final in-range element"
     );
 }

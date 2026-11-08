@@ -1079,6 +1079,26 @@ to triangle wireframe; polygon point remains unavailable. The strict public
 RTX test matched the full wireframe image to explicit line primitives, with 17
 green pixels on the 16×16 target.
 
+## Direct vertex-stage uniform-array indexing
+
+Core and HAL permit a selected vertex entry point to index a fixed-size uniform
+array of `vec3` or `vec4` directly with `vertex_index` or `instance_index`.
+Computed indices, helper-mediated accesses, fragment-stage accesses, nested
+arrays and other element types remain rejected. Naga emits a signed bounds
+clamp for the FL9_1 profiles because FXC rejects its default unsigned clamp
+form. The strict public RTX 3090 Ti test at requested/actual FL9_1 read four
+distinct elements and confirmed an index equal to the array length uses the
+final in-range value. Historical FL9_1 driver behavior remains unverified.
+
+## Hidden `vertex_index` input-slot validation
+
+The emulated builtin consumes a physical vertex-input slot. Core now mirrors
+the FL9_1 HAL allocator, including spills caused by overlapping attributes,
+and rejects selected `vertex_index` layouts that cannot reserve the hidden
+stream before HAL pipeline creation. The same layout remains available to
+entry points that do not use the builtin. Synthetic allocator boundaries and
+a strict public validation test passed; the validation test issues no draw.
+
 ## Query-gated R8_UNORM mip chains
 
 R8_UNORM now supports mip chains only when the selected device reports

@@ -3076,6 +3076,43 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The second test checks all 128 pixels after a non-indexed draw with
-`first_instance=2` and an indexed draw with `first_instance=4`. `vertex_index`
-remains unavailable. The RTX 3090 Ti at forced FL9_1 verifies this compiler
-and driver path only; it does not represent every historical FL9_1 driver.
+`first_instance=2` and an indexed draw with `first_instance=4`. TriangleList
+and PointList `vertex_index` support is covered by the corresponding tests in
+the public D3D11 suite; other topologies remain rejected. The RTX 3090 Ti at
+forced FL9_1 verifies this compiler and driver path only; it does not represent
+every historical FL9_1 driver.
+
+### Direct vertex uniform-array indexing
+
+The public FL9_1 path accepts direct `vertex_index` or `instance_index`
+indexing of fixed-size `vec3` and `vec4` uniform arrays. The strict test checks
+all four distinct array elements and the clamped out-of-range boundary on a
+physical hardware adapter:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+```
+
+The Naga writer uses signed clamping only when the FL9_1 D3D11 binding map
+opts in; other HLSL backends retain the existing unsigned output. Tests cover
+both emitted forms, FXC compilation for `vs_4_0_level_9_1`, and rejection of
+unsupported shapes in core and HAL.
+
+The hidden input also consumes one of the sixteen physical D3D input slots.
+Core mirrors HAL's FL9_1 overlap-allocation rules and rejects an exhausted
+layout before HAL, only when the selected entry point uses `vertex_index`.
+The strict public test includes a 16-stream rejection and confirms the same
+layout remains valid without the builtin:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib emulated_vertex_index_requires_a_free_physical_input_slot
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91 -- --nocapture --test-threads=1
+```
+
+The core test covers full streams, overlapping and nonoverlapping attributes,
+and the exact boundary for reserving the hidden slot. The public case performs
+validation on the RTX 3090 Ti at requested/actual FL9_1; it does not issue a
+draw. Existing public readback tests remain the execution evidence for the
+emulated builtin itself.

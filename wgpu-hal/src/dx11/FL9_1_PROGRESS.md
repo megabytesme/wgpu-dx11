@@ -11120,6 +11120,48 @@ cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
 ```
 
+## Direct vertex-stage uniform-array indexing — 2026-11-08
+
+Added `DownlevelLimits::vertex_uniform_array_indexing`, defaulting to false and
+enabled only by the opt-in FL9_1 D3D11 projection. Core and HAL analyze the
+selected entry point and permit only direct `vertex_index` or `instance_index`
+access to fixed-size arrays of `vec3` or `vec4` in vertex-stage uniform data.
+Computed indices, helper-mediated indexing, fragment-stage accesses, nested
+arrays, integer elements and unsupported pointer flows remain rejected. Core
+and HAL retain the same narrow acceptance contract.
+
+FXC's `vs_4_0_level_9_1` compiler rejected the default unsigned clamp with
+X3548. Naga's HLSL `BindTarget` now has a serde-defaulted opt-in signed clamp;
+the D3D11 FL9_1 binding map enables it only for uniform resources, while other
+backends preserve their previous output. A raw signed-clamp control and all
+generated `vec3`/`vec4` and `instance_index` shaders compile under FXC. Naga
+writer tests verify signed output, unchanged default unsigned output and the
+signed bound's representable range.
+
+The strict public test requested and selected FL9_1 on the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false).
+It indexed four sparse-bound uniform values with `vertex_index`, checked the
+distinct output for each, and confirmed index 4 selects the final array value.
+This is positive execution on a modern driver constrained to FL9_1; it does not
+establish historical hardware behavior.
+
+Verification with Rust 1.93.1 from the Visual Studio x64 environment:
+
+- Strict public D3D11 suite: 84 test functions passed, 0 failed. Optional
+  Float16x2 IA and RG8_UNORM mip subcases printed capability skips.
+- Strict private D3D11 HAL suite: 411 passed, 0 failed; physical FL9_1 GPU
+  operations executed throughout the suite.
+- Naga library: 139 passed, including both signed-clamp writer tests.
+- Core selected-entry uniform-index tests: 2 passed; D3D11 adapter isolation:
+  1 passed.
+- DX12 core library: 97 passed; DX12 HAL library check passed.
+- Focused strict uniform-array GPU test: 1 passed with all expected values.
+
+The direct indexed-array subset is now implemented and tested. Helper-mediated
+indices, computed index expressions, fragment-stage accesses, unsupported
+array layouts, historical FL9_1 behavior and the broader core/HAL contract
+audit remain open. The code changes are uncommitted in the current worktree.
+
 ## Surface queue identity and frame release — 2026-11-08
 
 Core now releases an acquired frame when `Surface::discard` finds its
@@ -11255,3 +11297,76 @@ cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx1
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
 ```
+
+## Checked dynamic local-array validation — 2026-11-08
+
+Core previously accepted a checked dynamic non-vector local-array access when
+the selected shader entry point also referenced a uniform, then the D3D11 HAL
+rejected it later during shader compilation. Core now retains each shader
+module's `ShaderRuntimeChecks` and applies the same checked-mode predicate as
+the HAL. The selected-entry analysis rejects those local-array accesses before
+HAL only when checks are requested and that entry point uses a uniform; local
+array-only shaders, unchecked modules and safe sibling entry points retain
+their previous core behavior. Uniform-array access remains governed by the
+separate `vertex_uniform_array_indexing` capability check.
+
+CPU tests cover direct and helper-reached local array reads with a uniform,
+local-only reads, unchecked access and selected-entry isolation. The core
+focused tests passed 2/2; the strict public D3D11 suite passed 84/84 on the RTX
+3090 Ti at requested/actual FL9_1, and DX12 core passed 97/97. This is a
+validation-boundary correction, not an increase in supported dynamic indexing.
+
+## FL9_1 emulated vertex input-slot preflight — 2026-11-08
+
+The HAL emulates `vertex_index` through one hidden float IA stream, but core
+previously checked only the logical vertex-buffer count and topology. FL9_1
+also spills overlapping attributes into extra physical slots. Core now uses
+`DownlevelLimits::vertex_index_input_requires_hidden_slot` and mirrors the
+HAL's allocation order: reserve populated logical streams, assign attributes
+by byte-range overlap, then require one free slot for the hidden stream. The
+check runs only for a selected entry point that uses `vertex_index`; normal
+pipelines retain their existing layout allowance. HAL keeps its final
+allocation check as defense in depth.
+
+The production allocator tests cover sixteen populated streams (reject),
+fifteen streams plus one overlap spill (reject), fourteen streams plus one
+spill (accept), sixteen nonoverlapping attributes in one stream (accept), and
+sixteen overlapping attributes in one stream (reject). A strict public
+validation test confirms core rejects the full-slot builtin pipeline with a
+specific validation error, then accepts the identical layout without
+`vertex_index`.
+
+Verification with Rust 1.93.1 and the Visual Studio x64 environment:
+
+- `cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib emulated_vertex_index_requires_a_free_physical_input_slot`: 1 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91 -- --nocapture --test-threads=1`: 1 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, software=false. This test creates pipelines and validates the boundary; it does not submit a draw.
+
+Initial compiles found missing exhaustive limit initializers in Noop and the
+controlled core fixture, plus array-size annotations needed in the new public
+test; these were corrected. The remaining work is broader selected-entry
+shader coverage, resource/render-state audits and historical FL9_1/Lumia
+verification. A read-only contract audit found no additional concrete
+core-valid texture/view/transfer/render-pass mismatch in its scoped review.
+
+Follow-up verification after integrating the capability and core gate:
+
+- Strict public D3D11 suite: 84/84 passed on the same physical adapter; two
+  optional subcases logged explicit skips (Float16x2 IA and RG8_UNORM mips).
+- Strict private D3D11 HAL suite: 411/411 passed. It performed real GPU work
+  throughout; shader-feature diagnostics and intentionally unsupported local
+  indexing cases remained explicit, expected rejections.
+- Core DX11 library: 99/99 passed. The public suite also confirmed that
+  ordinary default backend selection still excludes D3D11.
+- Core DX12 library: 98/98 passed.
+- `wgpu-types` hidden-slot subset test: 1/1 passed; GLES HAL check passed.
+- Focused HAL dynamic-uniform analyzer/FXC test: 1/1 passed after a Clippy
+  cleanup; focused strict public uniform-array GPU test: 1/1 passed after that
+  refactor and verified all four values on the RTX at requested/actual FL9_1.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+- Core Clippy passed. HAL Clippy passed with existing range-literal,
+  argument-count, test-order and needless-borrow warnings; no warning remains
+  for the new shader-analysis helper.
+
+The first HAL test link attempt returned LNK1114 because a temporary linker
+file was momentarily locked; the bounded `-j2` retry passed. No test was
+counted as a hardware skip-success in strict mode.

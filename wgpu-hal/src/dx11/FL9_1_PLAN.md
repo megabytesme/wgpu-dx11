@@ -1,4 +1,11 @@
 # FL9_1 completion plan
+Latest core/HAL validation increment: selected `vertex_index` pipelines now
+preflight the actual FL9_1 vertex-slot allocation, including overlap spills
+and the hidden emulation input. Core rejects exhausted layouts before HAL;
+ordinary pipelines without the builtin retain the full layout. A synthetic
+core allocator boundary test and strict public validation test passed. The
+full dynamic array-index helper gap and wider shader/core/HAL audit remain.
+
 Latest lifecycle increment: public `Queue::present` now preserves the receiver
 queue identity through core validation, rejects a different-device queue and
 releases the consumed frame. Dropping an acquired public `SurfaceTexture`
@@ -9,10 +16,17 @@ and recovery remain unverified. The strict fixture passed 2/2 and the Deno
 workspace check passed; see `FL9_1_PROGRESS.md`. Checkpoint:
 `d890ee6bb15537eddca530c9fd5b25b26836c9fc`.
 
-The next core/HAL audit fixes are selected-entry-aware accounting for the
-hidden vertex-input slot used by emulated `vertex_index`, then a bounded
-vertex-stage dynamic uniform-array indexing experiment. Both must establish
-core validation behavior before relaxing backend rejection.
+The direct vertex-stage uniform-array indexing experiment is implemented and
+verified on the forced-FL9_1 RTX path. It supports only direct builtin indices
+into fixed-size `vec3` and `vec4` uniform arrays; helper-mediated and computed
+indices remain rejected. FXC's level-9 unsigned-index restriction required an
+opt-in signed clamp in Naga's HLSL binding target. See `FL9_1_PROGRESS.md` for
+the strict GPU and regression results. The next audited core/HAL issue is
+selected-entry-aware accounting for the hidden input slot used by emulated
+`vertex_index`. The checked local-array/core-HAL validation mismatch is fixed:
+core retains shader runtime-check settings and rejects affected selected
+entries before HAL compilation. Focused core tests and the strict public suite
+passed; see `FL9_1_PROGRESS.md`.
 
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
 `vertex_index` uses a host-generated float IA stream for TriangleList and

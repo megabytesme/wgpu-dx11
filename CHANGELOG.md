@@ -60,11 +60,14 @@ Bottom level categories:
 - Add query-backed Depth24Plus attachment and shadow-sampling support to the opt-in FL9_1 D3D11 adapter using D24S8 native storage without exposing stencil.
 - Add query-gated FL9_1 black and white border addressing for depth comparison samplers while rejecting ordinary border samplers.
 - Accept proven in-range `textureSampleBias` literals forwarded through helper calls in the opt-in FL9_1 D3D11 backend.
+- Support direct `vertex_index` and `instance_index` reads from fixed-size `vec3` and `vec4` uniform arrays in the opt-in FL9_1 D3D11 backend.
 
 ### Changes
 
 #### Validation
 
+- Add `DownlevelLimits::vertex_uniform_array_indexing` to gate the narrow vertex-stage uniform-array indexing subset supported by a backend.
+- Reject checked dynamic non-vector array accesses with selected-entry uniforms during core pipeline validation when the D3D11 downlevel contract requires it.
 - Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.
 - Add `DownlevelLimits::shader_dynamic_loops` so downlevel backends can reject selected shader entry points with runtime-dependent loop exits while retaining support for statically bounded loops.
 - Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
@@ -99,6 +102,7 @@ Bottom level categories:
 - Add `DownlevelLimits::fragment_position` so adapters can reject fragment `@builtin(position)` use when their shader profile cannot provide it.
 - Add `DownlevelLimits::vertex_index_input` and `instance_index_input` so adapters can reject vertex entry points the backend cannot compile or execute.
 - Add `DownlevelLimits::vertex_index_topology_mask` so adapters can reject `vertex_index` pipelines for primitive topologies their emulation path cannot preserve.
+- Add `DownlevelLimits::vertex_index_input_requires_hidden_slot` so adapters that synthesize `vertex_index` as a vertex input can reject layouts that exhaust native slots before HAL pipeline creation.
 - Add `DownlevelLimits::texture_load` so backends can reject selected shader entry points that use unsupported texel loads.
 - Add downlevel limits for the maximum literal texture sample bias, dynamic bias and texel offsets so backends can reject unsupported sampling forms before HAL compilation.
 - Add a downlevel fragment-derivatives limit so backends can reject unsupported `dpdx`, `dpdy` and explicit texture-gradient operations before HAL compilation.

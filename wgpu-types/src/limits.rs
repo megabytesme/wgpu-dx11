@@ -1172,6 +1172,11 @@ pub struct DownlevelLimits {
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
     pub vertex_index_input: bool,
+    /// Whether emulating `@builtin(vertex_index)` consumes an additional physical vertex-input slot.
+    ///
+    /// This can be true on backends that synthesize the builtin as a hidden vertex attribute.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub vertex_index_input_requires_hidden_slot: bool,
     /// Primitive topologies for which vertex entry points may declare `@builtin(vertex_index)`.
     ///
     /// The bits are returned by [`Self::vertex_index_topology_bit`]. This can be narrower than
@@ -1185,6 +1190,14 @@ pub struct DownlevelLimits {
     ///
     /// This can be unavailable when the backend cannot preserve the input's semantics.
     pub instance_index_input: bool,
+    /// Whether the backend supports its restricted vertex uniform-array indexing path.
+    ///
+    /// When enabled, core permits only direct `vertex_index` or `instance_index` indexing of
+    /// fixed-size arrays of 32-bit floating-point `vec3` or `vec4` elements in the vertex stage.
+    /// Other dynamic pointer accesses remain subject to backend restrictions. This is false by
+    /// default so other backends retain their existing shader-validation behavior.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub vertex_uniform_array_indexing: bool,
     /// Maximum number of sampled texture bindings statically used by a vertex shader.
     ///
     /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
@@ -1442,8 +1455,10 @@ impl Default for DownlevelLimits {
             shader_loops: true,
             shader_dynamic_loops: true,
             vertex_index_input: true,
+            vertex_index_input_requires_hidden_slot: false,
             vertex_index_topology_mask: Self::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: true,
+            vertex_uniform_array_indexing: false,
             max_sampled_textures_per_vertex_stage: 16,
             max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
             max_vertex_shader_uniform_vectors: u32::MAX,
@@ -1669,10 +1684,13 @@ impl DownlevelLimits {
             && (!required.shader_loops || self.shader_loops)
             && (!required.shader_dynamic_loops || self.shader_dynamic_loops)
             && (!required.vertex_index_input || self.vertex_index_input)
+            && (!required.vertex_index_input_requires_hidden_slot
+                || self.vertex_index_input_requires_hidden_slot)
             && (!required.vertex_index_input
                 || self.vertex_index_topology_mask & required.vertex_index_topology_mask
                     == required.vertex_index_topology_mask)
             && (!required.instance_index_input || self.instance_index_input)
+            && (!required.vertex_uniform_array_indexing || self.vertex_uniform_array_indexing)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
             && self.max_sampled_texture_sampler_pairs_per_shader_stage
@@ -1775,6 +1793,7 @@ impl DownlevelCapabilities {
             && self.limits.shader_loops
             && self.limits.shader_dynamic_loops
             && self.limits.vertex_index_input
+            && !self.limits.vertex_index_input_requires_hidden_slot
             && self.limits.vertex_index_topology_mask
                 & DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL
                 == DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL
@@ -2340,8 +2359,10 @@ mod tests {
             shader_loops: false,
             shader_dynamic_loops: false,
             vertex_index_input: false,
+            vertex_index_input_requires_hidden_slot: false,
             vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
+            vertex_uniform_array_indexing: false,
             max_sampled_textures_per_vertex_stage: 4,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 4,
@@ -2398,8 +2419,10 @@ mod tests {
             shader_loops: false,
             shader_dynamic_loops: false,
             vertex_index_input: false,
+            vertex_index_input_requires_hidden_slot: false,
             vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
+            vertex_uniform_array_indexing: false,
             max_sampled_textures_per_vertex_stage: 3,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 3,
@@ -3026,6 +3049,52 @@ mod tests {
         };
         assert!(available.check_limits(&required));
         assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn vertex_uniform_array_indexing_is_a_subset_capability() {
+        let available = DownlevelLimits {
+            vertex_uniform_array_indexing: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            vertex_uniform_array_indexing: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelLimits::default().check_limits(&DownlevelLimits {
+            vertex_uniform_array_indexing: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+        assert!(!DownlevelLimits::default().vertex_uniform_array_indexing);
+    }
+
+    #[test]
+    fn hidden_vertex_index_slot_is_a_subset_capability() {
+        let available = DownlevelLimits {
+            vertex_index_input: true,
+            vertex_index_input_requires_hidden_slot: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            vertex_index_input: true,
+            vertex_index_input_requires_hidden_slot: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelLimits::default().check_limits(&DownlevelLimits {
+            vertex_index_input: true,
+            vertex_index_input_requires_hidden_slot: true,
+            ..DownlevelLimits::default()
+        }));
         assert!(!DownlevelCapabilities {
             limits: available,
             ..DownlevelCapabilities::default()

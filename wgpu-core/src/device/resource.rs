@@ -3148,6 +3148,7 @@ impl Device {
             raw: ManuallyDrop::new(raw),
             device: self.clone(),
             interface: ShaderMetaData::Interface(interface),
+            runtime_checks: desc.runtime_checks,
             label: desc.label.to_string(),
         };
 
@@ -3205,6 +3206,7 @@ impl Device {
                     .map(|e| e.name.to_string())
                     .collect(),
             }),
+            runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
             label: descriptor.label.to_string(),
         };
 
@@ -5514,6 +5516,23 @@ impl Device {
                     }
 
                     let interface = vertex_shader_module.interface.interface();
+                    if match interface {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                                stage.to_naga(),
+                                &_vertex_entry_point_name,
+                                &self.downlevel.limits,
+                                vertex_shader_module.requests_runtime_checks(),
+                            )
+                            .map_err(stage_err)?,
+                        None => self.downlevel.limits.vertex_uniform_array_indexing,
+                    } {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedDynamicUniformArrayIndexing {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
                     let uniform_vectors = match interface {
                         Some(interface) => interface
                             .entry_point_uniform_constant_vectors(
@@ -5634,6 +5653,13 @@ impl Device {
                             desc.primitive.topology,
                             &self.downlevel.limits,
                         )?;
+                        if self
+                            .downlevel
+                            .limits
+                            .vertex_index_input_requires_hidden_slot
+                        {
+                            pipeline::validate_vertex_index_input_slots(&vertex.buffers)?;
+                        }
                     }
                     if !self.downlevel.limits.instance_index_input
                         && match interface {
@@ -5926,6 +5952,24 @@ impl Device {
                 } {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedShaderLoops {
+                            stage: stage_bit,
+                        },
+                    );
+                }
+
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                            shader_module.requests_runtime_checks(),
+                        )
+                        .map_err(stage_err)?,
+                    None => self.downlevel.limits.vertex_uniform_array_indexing,
+                } {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedDynamicUniformArrayIndexing {
                             stage: stage_bit,
                         },
                     );

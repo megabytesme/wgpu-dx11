@@ -1010,10 +1010,13 @@ profile. A strict forced-FL9_1 WGSL render now statically reads vertex c254 and
 pixel c31 from separate uniform arrays. Changing the vertex value moves the
 triangle and changing the pixel value changes its output color in readback.
 This establishes execution of those final tested registers on the RTX, not
-dynamic indexing or historical-driver behavior; the private WGSL path still
-rejects runtime integer indexing. Instruction pressure and compiler packing
-can impose earlier limits on ordinary shaders. FXC errors fail pipeline
-creation. FL9_1's usable profile budget is 255 vertex float4 constants and 32
+historical-driver behavior. A narrow public exception permits direct
+vertex-stage indexing of fixed-size `vec3` and `vec4` uniform arrays using
+`vertex_index` or `instance_index`; other runtime integer indexing remains
+rejected. The level-9 HLSL path emits a signed in-range clamp because FXC
+rejects the unsigned clamp form for these profiles. Instruction pressure and
+compiler packing can impose earlier limits on ordinary shaders. FXC errors
+fail pipeline creation. FL9_1's usable profile budget is 255 vertex float4 constants and 32
 pixel constants; Microsoft documents the selected-feature-level limits for
 `VSSetConstantBuffers` and `PSSetConstantBuffers` in the
 [10Level9 context reference](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context).
@@ -1073,9 +1076,15 @@ float-only matrix reads are allowed. These are backend/compiler limits, not
 feature-level hardware guarantees. The public regression covers fragment
 integer arithmetic and vertex aggregate stores on the forced-FL9_1 path; CPU
 tests cover helper pointer arguments and entry-point selection.
-General dynamic uniform indexing and broad public adapter exposure remain
-unsupported. GPU coverage exercises multiple
-range bindings, pipeline transitions, a matrix and padded structure, and sampled
+Computed indices, helper-mediated indexing, fragment-stage uniform indexing,
+integer or nested array elements and other general dynamic uniform indexing
+remain unsupported. `DownlevelLimits::vertex_uniform_array_indexing` enables
+only the direct vertex builtin subset described above. The RTX 3090 Ti at
+requested/actual FL9_1 rendered all four array elements and verified that an
+index equal to the array length selects the last element. This is selected
+device/compiler evidence, not a historical-driver guarantee. Broad public
+adapter exposure remains unsupported. GPU coverage exercises multiple range
+bindings, pipeline transitions, a matrix and padded structure, and sampled
 texture coexistence. A checked forced-FL9_1 GPU test also verifies nested
 structures, an asymmetric `mat3x2<f32>` and a `vec4<f32>` array with distinct
 stride-sensitive values. This does not establish every WGSL layout or operation.
@@ -1218,10 +1227,14 @@ nonindexed and indexed TriangleList draws, negative base vertex, reindexed
 Uint32 indices, a nonindexed `first_vertex` of 100,000 and a subsequent draw
 after temporary-stream use. Readback red-pixel counts were 32/0/12/32/32/32.
 The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) is the tested
-physical device; historical FL9_1 driver behavior remains unverified. Core
-limits do not express the topology subset, so unsupported topologies currently
-fail at backend pipeline creation and must be rejected by future public
-validation work before ordinary adapter exposure.
+physical device; historical FL9_1 driver behavior remains unverified.
+`DownlevelLimits::vertex_index_input_requires_hidden_slot` also tells core that
+this emulation consumes a native input slot. Core mirrors the FL9_1 slot
+allocator, including overlapping-attribute spills, and rejects selected
+`vertex_index` layouts that leave no slot for the hidden stream before HAL
+pipeline creation. The same full layout remains valid for a shader that does
+not use `vertex_index`. Synthetic allocator boundaries and a strict public
+validation regression cover this rule; the HAL retains its allocation check.
 `primitive_index` is separately gated by optional
 `Features::PRIMITIVE_INDEX`; the public D3D11 projection does not advertise
 that feature while the HAL rejects it. A strict public test confirms the bit

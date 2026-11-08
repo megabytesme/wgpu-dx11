@@ -348,8 +348,10 @@ pub(super) struct BackendCapabilities {
     pub compute: bool,
     pub storage: bool,
     pub vertex_index_input: bool,
+    pub vertex_index_input_requires_hidden_slot: bool,
     pub vertex_index_topology_mask: u8,
     pub instance_index_input: bool,
+    pub vertex_uniform_array_indexing: bool,
     pub vertex_texture_sampling: bool,
     pub fragment_derivatives: bool,
     pub texture_query: bool,
@@ -463,12 +465,14 @@ impl BackendCapabilities {
         compute: false,
         storage: false,
         vertex_index_input: true,
+        vertex_index_input_requires_hidden_slot: true,
         vertex_index_topology_mask: wgt::DownlevelLimits::vertex_index_topology_bit(
             wgt::PrimitiveTopology::TriangleList,
         ) | wgt::DownlevelLimits::vertex_index_topology_bit(
             wgt::PrimitiveTopology::PointList,
         ),
         instance_index_input: true,
+        vertex_uniform_array_indexing: true,
         vertex_texture_sampling: false,
         fragment_derivatives: false,
         texture_query: false,
@@ -695,8 +699,12 @@ impl Capabilities {
                 shader_loops: self.backend.statically_unrolled_shader_loops || shader_dynamic_loops,
                 shader_dynamic_loops,
                 vertex_index_input: self.backend.vertex_index_input,
+                vertex_index_input_requires_hidden_slot: self
+                    .backend
+                    .vertex_index_input_requires_hidden_slot,
                 vertex_index_topology_mask: self.backend.vertex_index_topology_mask,
                 instance_index_input: self.backend.instance_index_input,
+                vertex_uniform_array_indexing: self.backend.vertex_uniform_array_indexing,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
                     self.backend.sampled_textures_per_group
                 } else {
@@ -2225,6 +2233,7 @@ mod tests {
                 .supports_vertex_index_topology(topology));
         }
         assert!(exposed.downlevel.limits.instance_index_input);
+        assert!(exposed.downlevel.limits.vertex_uniform_array_indexing);
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);
         assert!(!exposed.downlevel.limits.texture_sample_level);

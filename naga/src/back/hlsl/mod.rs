@@ -208,6 +208,11 @@ pub struct BindTarget {
     /// If [`Options::restrict_indexing`] is also `true`, we will restrict indexing.
     #[cfg_attr(any(feature = "serialize", feature = "deserialize"), serde(default))]
     pub restrict_indexing: bool,
+    /// Use a signed clamp for restricted indexing when the largest valid index fits in `i32`.
+    ///
+    /// This is disabled by default to preserve the existing generated HLSL.
+    #[cfg_attr(any(feature = "serialize", feature = "deserialize"), serde(default))]
+    pub signed_restrict_indexing: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -333,6 +338,7 @@ impl Default for SamplerHeapBindTargets {
                 binding_array_size: None,
                 dynamic_storage_buffer_offsets_index: None,
                 restrict_indexing: false,
+                signed_restrict_indexing: false,
             },
             comparison_samplers: BindTarget {
                 space: 1,
@@ -340,6 +346,7 @@ impl Default for SamplerHeapBindTargets {
                 binding_array_size: None,
                 dynamic_storage_buffer_offsets_index: None,
                 restrict_indexing: false,
+                signed_restrict_indexing: false,
             },
         }
     }
@@ -638,6 +645,7 @@ impl Options {
                 binding_array_size: None,
                 dynamic_storage_buffer_offsets_index: None,
                 restrict_indexing: false,
+                signed_restrict_indexing: false,
             }),
             None => Err(EntryPointError::MissingBinding(*res_binding)),
         }
@@ -656,6 +664,7 @@ impl Options {
                     binding_array_size: None,
                     dynamic_storage_buffer_offsets_index: None,
                     restrict_indexing: false,
+                    signed_restrict_indexing: false,
                 };
                 Ok(ExternalTextureBindTarget {
                     planes: [fake, fake, fake],

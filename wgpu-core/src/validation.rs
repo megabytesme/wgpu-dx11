@@ -288,6 +288,8 @@ struct EntryPoint {
     fragment_position_used: bool,
     shader_loops_used: bool,
     shader_dynamic_loops_used: bool,
+    unsupported_dynamic_uniform_array_indexing: bool,
+    unsupported_checked_dynamic_access_with_uniform: bool,
     texture_load_used: bool,
     unsupported_runtime_integer_semantics: bool,
     unsupported_matrix_aggregate_store: bool,
@@ -408,6 +410,337 @@ fn collect_called_functions(
             }
         }
     }
+}
+
+fn dynamic_access_has_uniform_origin(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    base: naga::Handle<naga::Expression>,
+) -> bool {
+    let mut pending = alloc::vec![base];
+    let mut visited = Vec::new();
+    while let Some(expression) = pending.pop() {
+        if visited.contains(&expression) {
+            continue;
+        }
+        if visited.len() >= 4096 {
+            return true;
+        }
+        visited.push(expression);
+        if function_info[expression]
+            .ty
+            .inner_with(&module.types)
+            .pointer_space()
+            == Some(naga::AddressSpace::Uniform)
+        {
+            return true;
+        }
+        match function.expressions[expression] {
+            naga::Expression::GlobalVariable(global) => {
+                if module.global_variables[global].space == naga::AddressSpace::Uniform {
+                    return true;
+                }
+            }
+            naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+                pending.push(base)
+            }
+            naga::Expression::Load { pointer } => pending.push(pointer),
+            _ => {}
+        }
+    }
+    false
+}
+
+fn pointer_path_contains(
+    function: &naga::Function,
+    mut expression: naga::Handle<naga::Expression>,
+    target: naga::Handle<naga::Expression>,
+) -> bool {
+    let mut budget = function.expressions.len();
+    loop {
+        if expression == target {
+            return true;
+        }
+        if budget == 0 {
+            return true;
+        }
+        budget -= 1;
+        match function.expressions[expression] {
+            naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+                expression = base
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn block_uses_dynamic_access_as_pointer(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    block: &naga::Block,
+    target: naga::Handle<naga::Expression>,
+) -> bool {
+    block.iter().any(|statement| match statement {
+        naga::Statement::Store { pointer, .. }
+        | naga::Statement::Atomic { pointer, .. }
+        | naga::Statement::WorkGroupUniformLoad { pointer, .. } => {
+            pointer_path_contains(function, *pointer, target)
+        }
+        naga::Statement::Call {
+            function: callee,
+            arguments,
+            ..
+        } => arguments
+            .iter()
+            .zip(&module.functions[*callee].arguments)
+            .any(|(&argument, parameter)| {
+                (matches!(
+                    function_info[argument].ty.inner_with(&module.types),
+                    naga::TypeInner::Pointer { .. } | naga::TypeInner::ValuePointer { .. }
+                ) || matches!(
+                    module.types[parameter.ty].inner,
+                    naga::TypeInner::Pointer { .. }
+                )) && pointer_path_contains(function, argument, target)
+            }),
+        naga::Statement::Block(nested) => {
+            block_uses_dynamic_access_as_pointer(module, function, function_info, nested, target)
+        }
+        naga::Statement::If { accept, reject, .. } => {
+            block_uses_dynamic_access_as_pointer(module, function, function_info, accept, target)
+                || block_uses_dynamic_access_as_pointer(
+                    module,
+                    function,
+                    function_info,
+                    reject,
+                    target,
+                )
+        }
+        naga::Statement::Switch { cases, .. } => cases.iter().any(|case| {
+            block_uses_dynamic_access_as_pointer(
+                module,
+                function,
+                function_info,
+                &case.body,
+                target,
+            )
+        }),
+        naga::Statement::Loop {
+            body, continuing, ..
+        } => {
+            block_uses_dynamic_access_as_pointer(module, function, function_info, body, target)
+                || block_uses_dynamic_access_as_pointer(
+                    module,
+                    function,
+                    function_info,
+                    continuing,
+                    target,
+                )
+        }
+        _ => false,
+    })
+}
+
+fn is_float_array_element(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    let is_float32 =
+        |scalar: naga::Scalar| scalar.kind == naga::ScalarKind::Float && scalar.width == 4;
+    match module.types[ty].inner {
+        naga::TypeInner::Vector { size, scalar } => {
+            matches!(size, naga::VectorSize::Tri | naga::VectorSize::Quad) && is_float32(scalar)
+        }
+        _ => false,
+    }
+}
+
+fn is_fixed_float_uniform_array_pointer(
+    module: &naga::Module,
+    function_info: &naga::valid::FunctionInfo,
+    base: naga::Handle<naga::Expression>,
+) -> bool {
+    let naga::TypeInner::Pointer {
+        base: ty,
+        space: naga::AddressSpace::Uniform,
+    } = function_info[base].ty.inner_with(&module.types)
+    else {
+        return false;
+    };
+    matches!(
+        module.types[*ty].inner,
+        naga::TypeInner::Array {
+            base,
+            size: naga::ArraySize::Constant(_),
+            ..
+        } if is_float_array_element(module, base)
+    )
+}
+
+fn dynamic_access_is_direct_builtin_read(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    block: &naga::Block,
+    access: naga::Handle<naga::Expression>,
+    base: naga::Handle<naga::Expression>,
+    index: naga::Handle<naga::Expression>,
+    stage: naga::ShaderStage,
+    is_entry_point: bool,
+) -> bool {
+    if stage != naga::ShaderStage::Vertex
+        || !is_entry_point
+        || !is_fixed_float_uniform_array_pointer(module, function_info, base)
+        || !(expression_is_supported_vertex_index_argument(module, function, index)
+            || expression_is_supported_instance_index_argument(module, function, index))
+        || block_uses_dynamic_access_as_pointer(module, function, function_info, block, access)
+    {
+        return false;
+    }
+
+    function.expressions.iter().any(|(_, expression)| {
+        matches!(expression, naga::Expression::Load { pointer } if pointer_path_contains(function, *pointer, access))
+    })
+}
+
+fn function_uses_unsupported_dynamic_access(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    stage: naga::ShaderStage,
+    is_entry_point: bool,
+) -> bool {
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    function.expressions.iter().any(|(handle, expression)| {
+        let naga::Expression::Access { base, index } = *expression else {
+            return false;
+        };
+        if function_info[handle].ref_count == 0 || kinds.is_const(index) {
+            return false;
+        }
+
+        if !dynamic_access_has_uniform_origin(module, function, function_info, base) {
+            return false;
+        }
+
+        !dynamic_access_is_direct_builtin_read(
+            module,
+            function,
+            function_info,
+            &function.body,
+            handle,
+            base,
+            index,
+            stage,
+            is_entry_point,
+        )
+    })
+}
+
+fn entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> bool {
+    if function_uses_unsupported_dynamic_access(
+        module,
+        &entry_point.function,
+        entry_point_info,
+        entry_point.stage,
+        true,
+    ) {
+        return true;
+    }
+
+    let mut called = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        if visited.len() > 1024 {
+            return true;
+        }
+        let function = &module.functions[handle];
+        if function_uses_unsupported_dynamic_access(
+            module,
+            function,
+            &module_info[handle],
+            entry_point.stage,
+            false,
+        ) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called);
+    }
+    false
+}
+
+fn function_uses_unsupported_checked_dynamic_access_with_uniform(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+) -> bool {
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    function.expressions.iter().any(|(handle, expression)| {
+        let naga::Expression::Access { base, index } = *expression else {
+            return false;
+        };
+        if function_info[handle].ref_count == 0
+            || kinds.is_const(index)
+            || dynamic_access_has_uniform_origin(module, function, function_info, base)
+        {
+            return false;
+        }
+        !matches!(
+            function_info[base].ty.inner_with(&module.types),
+            naga::TypeInner::Vector { .. }
+        )
+    })
+}
+
+fn entry_point_uses_unsupported_checked_dynamic_access_with_uniform(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> bool {
+    let uses_uniform = module.global_variables.iter().any(|(handle, global)| {
+        !entry_point_info[handle].is_empty() && global.space == naga::AddressSpace::Uniform
+    });
+    if !uses_uniform {
+        return false;
+    }
+
+    if function_uses_unsupported_checked_dynamic_access_with_uniform(
+        module,
+        &entry_point.function,
+        entry_point_info,
+    ) {
+        return true;
+    }
+
+    let mut called = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        if visited.len() > 1024 {
+            return true;
+        }
+        let function = &module.functions[handle];
+        if function_uses_unsupported_checked_dynamic_access_with_uniform(
+            module,
+            function,
+            &module_info[handle],
+        ) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called);
+    }
+    false
 }
 
 fn block_uses_loop(block: &naga::Block) -> bool {
@@ -3097,6 +3430,20 @@ impl Interface {
                 ),
                 shader_loops_used: entry_point_uses_loop(module, entry_point),
                 shader_dynamic_loops_used: entry_point_uses_dynamic_loop(module, entry_point),
+                unsupported_dynamic_uniform_array_indexing:
+                    entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                        module,
+                        module_info,
+                        entry_point,
+                        info,
+                    ),
+                unsupported_checked_dynamic_access_with_uniform:
+                    entry_point_uses_unsupported_checked_dynamic_access_with_uniform(
+                        module,
+                        module_info,
+                        entry_point,
+                        info,
+                    ),
                 texture_load_used: entry_point_uses_texture_load(module, entry_point),
                 unsupported_runtime_integer_semantics:
                     entry_point_uses_unsupported_integer_semantics(
@@ -3258,6 +3605,23 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.uniform_constant_vectors)
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+        requests_checks: bool,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(limits.vertex_uniform_array_indexing
+            && (entry_point.unsupported_dynamic_uniform_array_indexing
+                || (requests_checks
+                    && entry_point.unsupported_checked_dynamic_access_with_uniform)))
     }
 
     pub(crate) fn sampling_pairs_used(
@@ -5664,6 +6028,268 @@ mod tests {
                 &fl91,
             )
             .is_err());
+    }
+
+    #[test]
+    fn restricted_vertex_uniform_array_indexing_is_selected_entry_aware() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Uniforms {
+                values: array<vec4f, 4>,
+                three_component_values: array<vec3f, 4>,
+                index: u32,
+                integer_values: array<vec4u, 4>,
+                nested_values: array<array<vec4f, 4>, 2>,
+            }
+            @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+            fn read_uniform(index: u32) -> vec4f {
+                return uniforms.values[index];
+            }
+
+            @vertex fn vertex_index_read(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return uniforms.values[index];
+            }
+            @vertex fn instance_index_read(
+                @builtin(instance_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return uniforms.values[index];
+            }
+            struct Builtins { @builtin(vertex_index) index: u32 }
+            @vertex fn structured_read(input: Builtins) -> @builtin(position) vec4f {
+                return uniforms.values[input.index];
+            }
+            @vertex fn constant_index_read() -> @builtin(position) vec4f {
+                return uniforms.values[2];
+            }
+            @vertex fn component_read(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(uniforms.values[index].x, 0.0, 0.0, 1.0);
+            }
+            @vertex fn computed_index_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return uniforms.values[index + 1u];
+            }
+            @vertex fn helper_index_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return read_uniform(index);
+            }
+            @vertex fn wrong_array_shape_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(uniforms.integer_values[index]);
+            }
+            @vertex fn nested_array_shape_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return uniforms.nested_values[index][0];
+            }
+            @vertex fn three_component_array_read(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(uniforms.three_component_values[index], 1.0);
+            }
+            @vertex fn local_scalar_array_unaffected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                var values: array<f32, 4>;
+                values[0] = 1.0;
+                return vec4f(values[index], 0.0, 0.0, 1.0);
+            }
+            @vertex fn local_scalar_array_with_uniform_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                var values: array<f32, 4>;
+                values[0] = 1.0;
+                return vec4f(values[index] + uniforms.values[0].x, 0.0, 0.0, 1.0);
+            }
+            fn read_local_array(values: ptr<function, array<f32, 4>>, index: u32) -> f32 {
+                return (*values)[index];
+            }
+            @vertex fn helper_local_array_with_uniform_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                var values: array<f32, 4>;
+                values[0] = 1.0;
+                return vec4f(read_local_array(&values, index) + uniforms.values[0].x, 0.0, 0.0, 1.0);
+            }
+            @fragment fn fragment_index_rejected() -> @location(0) vec4f {
+                return uniforms.values[uniforms.index];
+            }
+            @vertex fn safe_sibling() -> @builtin(position) vec4f {
+                return uniforms.values[0];
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            vertex_uniform_array_indexing: true,
+            ..Default::default()
+        };
+
+        for entry in [
+            "vertex_index_read",
+            "instance_index_read",
+            "structured_read",
+            "component_read",
+            "three_component_array_read",
+            "local_scalar_array_unaffected",
+        ] {
+            assert!(
+                !interface
+                    .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                        naga::ShaderStage::Vertex,
+                        entry,
+                        &restricted,
+                        false,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+        }
+        for entry in [
+            "computed_index_rejected",
+            "helper_index_rejected",
+            "wrong_array_shape_rejected",
+            "nested_array_shape_rejected",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                        naga::ShaderStage::Vertex,
+                        entry,
+                        &restricted,
+                        false,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Fragment,
+                "fragment_index_rejected",
+                &restricted,
+                false,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "constant_index_read",
+                &restricted,
+                false,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "safe_sibling",
+                &restricted,
+                false,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "computed_index_rejected",
+                &wgt::DownlevelLimits::default(),
+                false,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "local_scalar_array_unaffected",
+                &restricted,
+                true,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "safe_sibling",
+                &restricted,
+                true,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "local_scalar_array_with_uniform_rejected",
+                &restricted,
+                false,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "local_scalar_array_with_uniform_rejected",
+                &restricted,
+                true,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "helper_local_array_with_uniform_rejected",
+                &restricted,
+                true,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn restricted_vertex_uniform_array_indexing_leaves_local_pointer_writes_to_existing_validation()
+    {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            fn write_dynamic(values: ptr<function, array<vec4f, 4>>, index: u32) {
+                (*values)[index] = vec4f(1.0);
+            }
+            @vertex fn pointer_write_unaffected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                var values: array<vec4f, 4>;
+                write_dynamic(&values, index);
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            vertex_uniform_array_indexing: true,
+            ..Default::default()
+        };
+
+        // WGSL uniform pointers are read-only, so a valid pointer-write case must use local memory.
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "pointer_write_unaffected",
+                &restricted,
+                false,
+            )
+            .unwrap());
     }
 
     #[test]

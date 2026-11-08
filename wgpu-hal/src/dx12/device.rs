@@ -1184,6 +1184,7 @@ impl crate::Device for super::Device {
                             binding_array_size: None,
                             dynamic_storage_buffer_offsets_index: None,
                             restrict_indexing: false,
+                            signed_restrict_indexing: false,
                         },
                     );
                     sampler_index_within_bind_group += 1;
@@ -1304,6 +1305,7 @@ impl crate::Device for super::Device {
                 binding_array_size: None,
                 dynamic_storage_buffer_offsets_index: None,
                 restrict_indexing: false,
+                signed_restrict_indexing: false,
             },
             comparison_samplers: hlsl::BindTarget {
                 space: 0,
@@ -1311,6 +1313,7 @@ impl crate::Device for super::Device {
                 binding_array_size: None,
                 dynamic_storage_buffer_offsets_index: None,
                 restrict_indexing: false,
+                signed_restrict_indexing: false,
             },
         };
 

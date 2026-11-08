@@ -292,6 +292,27 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs(
     bindings: &[ShaderBinding],
     input_options: Fl9ShaderInputOptions,
 ) -> Result<Vec<u8>, NagaCompileError> {
+    let (source, name) = translate_naga_with_viewport_and_fl9_inputs(
+        module,
+        info,
+        stage,
+        entry,
+        profile,
+        bindings,
+        input_options,
+    )?;
+    compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
+}
+
+fn translate_naga_with_viewport_and_fl9_inputs(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+    profile: ShaderProfile,
+    bindings: &[ShaderBinding],
+    input_options: Fl9ShaderInputOptions,
+) -> Result<(String, String), NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
@@ -382,6 +403,11 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs(
             mapping.binding,
             hlsl::BindTarget {
                 register: mapping.slot,
+                restrict_indexing: mapping.kind == ShaderBindingKind::Uniform,
+                signed_restrict_indexing: matches!(
+                    profile,
+                    ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+                ) && mapping.kind == ShaderBindingKind::Uniform,
                 ..Default::default()
             },
         );
@@ -433,7 +459,7 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs(
             "unexpected extra generated entry point",
         )));
     }
-    compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
+    Ok((source, name))
 }
 
 pub(super) fn compile_naga_with_synthetic_fragment_output(
@@ -2297,6 +2323,95 @@ mod tests {
         )
         .expect("compile distinct uniform slots")
         .starts_with(b"DXBC"));
+    }
+
+    #[test]
+    fn fl91_vertex_uniform_arrays_compile_with_compact_slots_and_clamped_indices() {
+        use naga::{
+            valid::{Capabilities, ValidationFlags, Validator},
+            ShaderStage,
+        };
+
+        let module = naga::front::wgsl::parse_str(
+            r#"
+                struct Uniforms {
+                    vec3_values: array<vec3f, 4>,
+                    vec4_values: array<vec4f, 4>,
+                }
+                @group(0) @binding(17) var<uniform> uniforms: Uniforms;
+
+                @vertex fn vec3_array(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    return vec4f(uniforms.vec3_values[index], 1.0);
+                }
+                @vertex fn vec4_array(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    return uniforms.vec4_values[index];
+                }
+                @vertex fn instance_array(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
+                    return uniforms.vec4_values[index];
+                }
+            "#,
+        )
+        .expect("parse uniform array WGSL");
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .expect("validate uniform array WGSL");
+        let bindings = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 17,
+            },
+            slot: 5,
+            kind: ShaderBindingKind::Uniform,
+        }];
+
+        compile_hlsl(
+            "cbuffer uniforms : register(b5) { float4 values[4]; }; float4 main(float index : NAGA_VERTEX_INDEX) : SV_Position { int bounded = min(max(int(index), 0), 3); return values[bounded]; }",
+            "main",
+            ShaderProfile::VertexLevel9_1,
+        )
+        .expect("FXC accepts signed bounds clamping for FL9_1 constant indexing");
+
+        for (entry, input_options) in [
+            (
+                "vec3_array",
+                Fl9ShaderInputOptions {
+                    vertex_index_input: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "vec4_array",
+                Fl9ShaderInputOptions {
+                    vertex_index_input: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "instance_array",
+                Fl9ShaderInputOptions {
+                    instance_index_input: true,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let (source, name) = translate_naga_with_viewport_and_fl9_inputs(
+                &module,
+                &info,
+                ShaderStage::Vertex,
+                entry,
+                ShaderProfile::VertexLevel9_1,
+                &bindings,
+                input_options,
+            )
+            .unwrap_or_else(|error| panic!("{entry}: {error:?}"));
+            assert!(source.contains("register(b5)"), "{source}");
+            assert!(!source.contains("register(b17)"), "{source}");
+            assert!(source.contains("min(max(int("), "{entry}: {source}");
+            assert!(source.contains("), 0), 3)"), "{entry}: {source}");
+            assert!(compile_hlsl(&source, &name, ShaderProfile::VertexLevel9_1)
+                .unwrap_or_else(|error| panic!("{entry}: {error:?}\n{source}"))
+                .starts_with(b"DXBC"));
+        }
     }
 
     #[test]

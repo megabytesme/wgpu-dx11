@@ -33,6 +33,10 @@ const SPECIAL_OTHER: &str = "other";
 const FL9_VIEWPORT_PARAMS: &str = "naga_fl9_viewport_params";
 const FL9_VIEWPORT_ADJUST: &str = "naga_fl9_viewport_adjust";
 
+fn signed_index_max(length: u32) -> Option<i32> {
+    i32::try_from(length.checked_sub(1)?).ok()
+}
+
 pub(crate) const MODF_FUNCTION: &str = "naga_modf";
 pub(crate) const FREXP_FUNCTION: &str = "naga_frexp";
 pub(crate) const EXTRACT_BITS_FUNCTION: &str = "naga_extractBits";
@@ -4456,6 +4460,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         write!(self.out, "[")?;
                     }
 
+                    let mut signed_restrict_indexing = false;
                     let needs_bound_check = self.options.restrict_indexing
                         && !indexing_binding_array
                         && match resolved.pointer_space() {
@@ -4481,6 +4486,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                             .unwrap(),
                                     )
                                     .unwrap();
+                                signed_restrict_indexing = bind_target.signed_restrict_indexing;
                                 bind_target.restrict_indexing
                             }
                             Some(
@@ -4500,16 +4506,28 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         None
                     };
                     if let Some(limit) = restriction_needed {
-                        write!(self.out, "min(uint(")?;
-                        self.write_expr(module, index, func_ctx)?;
-                        write!(self.out, "), ")?;
-                        match limit {
-                            index::IndexableLength::Known(limit) => {
-                                write!(self.out, "{}u", limit - 1)?;
+                        let signed_max = match &limit {
+                            &index::IndexableLength::Known(length) if signed_restrict_indexing => {
+                                signed_index_max(length)
                             }
-                            index::IndexableLength::Dynamic => unreachable!(),
+                            _ => None,
+                        };
+                        if let Some(max_index) = signed_max {
+                            write!(self.out, "min(max(int(")?;
+                            self.write_expr(module, index, func_ctx)?;
+                            write!(self.out, "), 0), {max_index})")?;
+                        } else {
+                            write!(self.out, "min(uint(")?;
+                            self.write_expr(module, index, func_ctx)?;
+                            write!(self.out, "), ")?;
+                            match limit {
+                                index::IndexableLength::Known(limit) => {
+                                    write!(self.out, "{}u", limit - 1)?;
+                                }
+                                index::IndexableLength::Dynamic => unreachable!(),
+                            }
+                            write!(self.out, ")")?;
                         }
-                        write!(self.out, ")")?;
                     } else {
                         if non_uniform_qualifier {
                             write!(self.out, "NonUniformResourceIndex(")?;
@@ -5697,6 +5715,47 @@ mod fl9_viewport_tests {
             fl9_viewport_transform: Some(13),
             ..Options::default()
         }
+    }
+
+    #[test]
+    fn uniform_index_restriction_can_use_signed_clamping() {
+        let source = "struct Values { data: array<vec4f, 4> } @group(0) @binding(7) var<uniform> values: Values; @vertex fn main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f { return values.data[index]; }";
+        let binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let target = super::super::BindTarget {
+            register: 5,
+            restrict_indexing: true,
+            signed_restrict_indexing: true,
+            ..Default::default()
+        };
+        let mut options = Options {
+            restrict_indexing: true,
+            ..Options::default()
+        };
+        options.binding_map.insert(binding, target);
+        let signed = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(signed.contains("register(b5)"), "{signed}");
+        assert!(signed.contains("min(max(int("), "{signed}");
+        assert!(signed.contains("), 0), 3)"), "{signed}");
+
+        options
+            .binding_map
+            .get_mut(&binding)
+            .unwrap()
+            .signed_restrict_indexing = false;
+        let unsigned = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(unsigned.contains("min(uint("), "{unsigned}");
+        assert!(unsigned.contains("3u)"), "{unsigned}");
+    }
+
+    #[test]
+    fn signed_index_clamp_requires_a_representable_maximum() {
+        assert_eq!(signed_index_max(0), None);
+        assert_eq!(signed_index_max(4), Some(3));
+        assert_eq!(signed_index_max(i32::MAX as u32 + 1), Some(i32::MAX));
+        assert_eq!(signed_index_max(i32::MAX as u32 + 2), None);
     }
 
     #[test]

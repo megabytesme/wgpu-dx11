@@ -70,6 +70,7 @@ pub struct ShaderModule {
     pub(crate) raw: ManuallyDrop<Box<dyn hal::DynShaderModule>>,
     pub(crate) device: Arc<Device>,
     pub(crate) interface: ShaderMetaData,
+    pub(crate) runtime_checks: wgt::ShaderRuntimeChecks,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
 }
@@ -93,6 +94,16 @@ crate::impl_storage_item!(ShaderModule);
 impl ShaderModule {
     pub(crate) fn raw(&self) -> &dyn hal::DynShaderModule {
         self.raw.as_ref()
+    }
+
+    pub(crate) fn requests_runtime_checks(&self) -> bool {
+        let checks = self.runtime_checks;
+        checks.bounds_checks
+            || checks.force_loop_bounding
+            || checks.ray_query_initialization_tracking
+            || checks.task_shader_dispatch_tracking
+            || checks.mesh_shader_primitive_indices_clamp
+            || checks.int_div_checks
     }
 
     pub(crate) fn finalize_entry_point_name(
@@ -813,6 +824,10 @@ pub enum CreateRenderPipelineError {
         "Vertex `@builtin(vertex_index)` is not supported with {topology:?} on this downlevel adapter"
     )]
     UnsupportedVertexIndexTopology { topology: wgt::PrimitiveTopology },
+    #[error(
+        "The vertex input layout leaves no physical slot for emulated `@builtin(vertex_index)`"
+    )]
+    VertexIndexInputSlotsExhausted,
     #[error("Vertex `@builtin(instance_index)` is not supported by this downlevel adapter")]
     UnsupportedInstanceIndexInput,
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
@@ -833,6 +848,8 @@ pub enum CreateRenderPipelineError {
     UnsupportedTextureLoad { stage: wgt::ShaderStages },
     #[error("Runtime integer shader operations are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedRuntimeIntegerShaderOperations { stage: wgt::ShaderStages },
+    #[error("Dynamic uniform-array indexing is not supported in the {stage:?} shader by this downlevel adapter")]
+    UnsupportedDynamicUniformArrayIndexing { stage: wgt::ShaderStages },
     #[error("Stores through aggregates containing matrices are not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedMatrixAggregateStore { stage: wgt::ShaderStages },
     #[error("Texture queries are not supported in the {stage:?} shader by this downlevel adapter")]
@@ -926,6 +943,68 @@ pub(crate) fn validate_vertex_index_topology(
     }
 }
 
+pub(crate) fn validate_vertex_index_input_slots(
+    buffers: &[Option<VertexBufferLayout<'_>>],
+) -> Result<(), CreateRenderPipelineError> {
+    let mut logical_slots = [None; hal::MAX_VERTEX_BUFFERS];
+    let mut occupied = [false; hal::MAX_VERTEX_BUFFERS];
+    let mut ranges: [Vec<(u32, u32)>; hal::MAX_VERTEX_BUFFERS] =
+        core::array::from_fn(|_| Vec::new());
+
+    for (logical, layout) in buffers.iter().enumerate() {
+        if layout
+            .as_ref()
+            .is_some_and(|layout| !layout.attributes.is_empty())
+        {
+            let Some(slot) = logical_slots.get_mut(logical) else {
+                return Err(CreateRenderPipelineError::VertexIndexInputSlotsExhausted);
+            };
+            *slot = Some(logical);
+            occupied[logical] = true;
+        }
+    }
+
+    for (logical, layout) in buffers.iter().enumerate() {
+        let Some(layout) = layout
+            .as_ref()
+            .filter(|layout| !layout.attributes.is_empty())
+        else {
+            continue;
+        };
+
+        for attribute in layout.attributes.iter() {
+            let start = u32::try_from(attribute.offset)
+                .map_err(|_| CreateRenderPipelineError::VertexIndexInputSlotsExhausted)?;
+            let end = attribute
+                .format
+                .size()
+                .try_into()
+                .ok()
+                .and_then(|size: u32| start.checked_add(size))
+                .ok_or(CreateRenderPipelineError::VertexIndexInputSlotsExhausted)?;
+            let range = (start, end);
+            let slot = (0..hal::MAX_VERTEX_BUFFERS)
+                .find(|&physical| {
+                    logical_slots[physical] == Some(logical)
+                        && !ranges[physical]
+                            .iter()
+                            .any(|&(other_start, other_end)| start < other_end && other_start < end)
+                })
+                .or_else(|| occupied.iter().position(|used| !used))
+                .ok_or(CreateRenderPipelineError::VertexIndexInputSlotsExhausted)?;
+            occupied[slot] = true;
+            logical_slots[slot] = Some(logical);
+            ranges[slot].push(range);
+        }
+    }
+
+    if occupied.iter().all(|used| *used) {
+        Err(CreateRenderPipelineError::VertexIndexInputSlotsExhausted)
+    } else {
+        Ok(())
+    }
+}
+
 impl WebGpuError for CreateRenderPipelineError {
     fn webgpu_error_type(&self) -> ErrorType {
         match self {
@@ -952,6 +1031,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManyUniformVectors { .. }
             | Self::UnsupportedVertexIndexInput
             | Self::UnsupportedVertexIndexTopology { .. }
+            | Self::VertexIndexInputSlotsExhausted
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
@@ -961,6 +1041,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedFragmentPosition
             | Self::UnsupportedTextureLoad { .. }
             | Self::UnsupportedRuntimeIntegerShaderOperations { .. }
+            | Self::UnsupportedDynamicUniformArrayIndexing { .. }
             | Self::UnsupportedMatrixAggregateStore { .. }
             | Self::UnsupportedTextureQuery { .. }
             | Self::UnsupportedTextureSampleBaseClampToEdge { .. }
@@ -989,7 +1070,37 @@ impl WebGpuError for CreateRenderPipelineError {
 
 #[cfg(test)]
 mod vertex_index_topology_tests {
+    use alloc::vec;
+
     use super::*;
+
+    fn layout(attributes: &[wgt::VertexAttribute]) -> Option<VertexBufferLayout<'_>> {
+        Some(VertexBufferLayout {
+            array_stride: 64,
+            step_mode: wgt::VertexStepMode::Vertex,
+            attributes: Cow::Borrowed(attributes),
+        })
+    }
+
+    fn separate_streams(count: usize, overlap_first: bool) -> Vec<Vec<wgt::VertexAttribute>> {
+        let mut streams = (0..count)
+            .map(|location| {
+                vec![wgt::VertexAttribute {
+                    format: wgt::VertexFormat::Float32,
+                    offset: 0,
+                    shader_location: location as u32,
+                }]
+            })
+            .collect::<Vec<_>>();
+        if overlap_first {
+            streams[0].push(wgt::VertexAttribute {
+                format: wgt::VertexFormat::Float32,
+                offset: 0,
+                shader_location: count as u32,
+            });
+        }
+        streams
+    }
 
     #[test]
     fn emulated_vertex_index_rejects_unsupported_topology_during_core_validation() {
@@ -1025,6 +1136,57 @@ mod vertex_index_topology_tests {
             validate_vertex_index_topology(wgt::PrimitiveTopology::PointList, &point_limits)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn emulated_vertex_index_requires_a_free_physical_input_slot() {
+        let full_streams = separate_streams(hal::MAX_VERTEX_BUFFERS, false);
+        let full_layouts = full_streams
+            .iter()
+            .map(|attrs| layout(attrs))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            validate_vertex_index_input_slots(&full_layouts),
+            Err(CreateRenderPipelineError::VertexIndexInputSlotsExhausted)
+        ));
+
+        let fifteen_overlapping = separate_streams(hal::MAX_VERTEX_BUFFERS - 1, true);
+        let fifteen_layouts = fifteen_overlapping
+            .iter()
+            .map(|attrs| layout(attrs))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            validate_vertex_index_input_slots(&fifteen_layouts),
+            Err(CreateRenderPipelineError::VertexIndexInputSlotsExhausted)
+        ));
+
+        let fourteen_overlapping = separate_streams(hal::MAX_VERTEX_BUFFERS - 2, true);
+        let fourteen_layouts = fourteen_overlapping
+            .iter()
+            .map(|attrs| layout(attrs))
+            .collect::<Vec<_>>();
+        assert!(validate_vertex_index_input_slots(&fourteen_layouts).is_ok());
+
+        let nonoverlapping = (0..hal::MAX_VERTEX_BUFFERS)
+            .map(|location| wgt::VertexAttribute {
+                format: wgt::VertexFormat::Float32,
+                offset: (location * 4) as u64,
+                shader_location: location as u32,
+            })
+            .collect::<Vec<_>>();
+        assert!(validate_vertex_index_input_slots(&[layout(&nonoverlapping)]).is_ok());
+
+        let overlapping = (0..hal::MAX_VERTEX_BUFFERS)
+            .map(|location| wgt::VertexAttribute {
+                format: wgt::VertexFormat::Float32,
+                offset: 0,
+                shader_location: location as u32,
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            validate_vertex_index_input_slots(&[layout(&overlapping)]),
+            Err(CreateRenderPipelineError::VertexIndexInputSlotsExhausted)
+        ));
     }
 }
 
