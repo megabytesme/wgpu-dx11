@@ -7,12 +7,12 @@ graphics subset, but the completion mission remains partial. It is excluded
 from default backend selection. Recent checkpoints include helper-forwarded
 vertex/instance index reads, core-valid byte offsets, padded `vec2` uniform
 indexing, Present-loss frame-reservation release, empty-render-bundle state
-reset, and queue-write ordering after command encoding. The two latest
-test-only commits are `9e07459a3eee540c349c9e28cc6a864221c3c01f` and
+reset, and queue-write ordering after command encoding. Earlier public
+regression commits include `9e07459a3eee540c349c9e28cc6a864221c3c01f` and
 `818fee943b117018cae30c813d17fa0e389c7669`. The latest implementation
 checkpoint is `ede5c299f`, which adds device-query-gated timestamp queries.
-The latest public regression checkpoint is `42414a6f9`, which adds a strict
-nonzero buffer-map slice after GPU copy test.
+The latest public regression checkpoint is `fe0cc897a`, which tests
+asynchronous nonzero-slice buffer writes followed by GPU copies and readback.
 
 The latest contract fix lets combined depth-attachment/sampled textures create
 default views with both native DSV and SRV roles. The strict public regression

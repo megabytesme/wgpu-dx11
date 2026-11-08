@@ -26,6 +26,13 @@ RTX 3090 Ti. The test-only checkpoint is `42414a6f9`; the complete strict
 public target passed 90/90 with three optional feature subcases explicitly
 skipped. This adds regression evidence without widening the exposed contract.
 
+Follow-up coverage now exercises asynchronous `MapMode::Write` on a nonzero
+slice after a prior GPU use, then verifies subsequent full and partial GPU
+copies observe the update while preserving source and destination sentinels.
+The focused test passed 1/1 and the complete strict public target passed
+92/92 on the RTX 3090 Ti at requested/actual FL9_1. The checkpoint is
+`fe0cc897a`; details and commands are recorded in `FL9_1_PROGRESS.md`.
+
 The next candidate sweep also found no expansion to make: FL9_1 rejects the
 read-only DSV creation probe on the RTX 3090 Ti (`CreateDepthStencilView` with
 read-only flags returned `E_INVALIDARG`), so `READ_ONLY_DEPTH_STENCIL` remains
