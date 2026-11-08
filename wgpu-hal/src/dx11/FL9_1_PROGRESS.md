@@ -12419,4 +12419,4 @@ software=false, requested/actual FL9_1):
 - Public textured perspective cube with D16 depth: 1/1 passed; depth-tested opposite face orders matched all 1,024 pixels while painter-order controls differed at 223 pixels.
 - Public-test Clippy, formatting of the changed Rust file and `git diff --check` passed. Clippy reported only existing D3D11 helper argument-count and public-test `HashMap` warnings.
 
-The copy/draw sequence was tested through public wgpu and exercised real GPU submission and readback. Broader concurrent uniform updates, historical FL9_1 driver behavior and Lumia/CoreWindow execution remain open. Implementation checkpoint: pending commit.
+The copy/draw sequence was tested through public wgpu and exercised real GPU submission and readback. Broader concurrent uniform updates, historical FL9_1 driver behavior and Lumia/CoreWindow execution remain open. Implementation checkpoint: `5951e7a873927bb95731d5ec26608eda4d715102`.
