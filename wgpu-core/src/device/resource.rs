@@ -6198,6 +6198,21 @@ impl Device {
 
                 if match shader_module.interface.interface() {
                     Some(interface) => interface
+                        .entry_point_uses_unsupported_fragment_sample_mask_input(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                } {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedFragmentSampleMaskInput,
+                    );
+                }
+
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
                         .entry_point_uses_unsupported_fragment_sample_mask_output(
                             stage.to_naga(),
                             &fragment_entry_point_name,

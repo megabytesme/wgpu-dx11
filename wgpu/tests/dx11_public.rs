@@ -534,10 +534,43 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     queue.present(frame);
     println!("PASS: wrong-thread present was rejected and released its acquired frame");
 
+    let duplicate_acquire_error = Arc::new(std::sync::Mutex::new(None));
+    let captured_duplicate_acquire_error = Arc::clone(&duplicate_acquire_error);
+    device.on_uncaptured_error(Arc::new(move |error| {
+        *captured_duplicate_acquire_error.lock().unwrap() = Some(error);
+    }));
+    let first_frame = match returned_surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("surface acquisition before duplicate-acquire test failed: {result:?}"),
+    };
+    assert!(matches!(
+        returned_surface.get_current_texture(),
+        CurrentSurfaceTexture::Validation
+    ));
+    let duplicate_acquire_error = duplicate_acquire_error.lock().unwrap().take();
+    assert!(
+        duplicate_acquire_error
+            .as_ref()
+            .is_some_and(|error| format!("{error:?}").contains("AlreadyAcquired")),
+        "a second acquisition should report the outstanding-frame validation error: {duplicate_acquire_error:?}"
+    );
+    queue.present(first_frame);
+    let frame = match returned_surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("surface did not reacquire after duplicate-acquire rejection: {result:?}"),
+    };
+    queue.present(frame);
+    println!("PASS: duplicate acquisition returned validation while preserving the first frame");
+
     let surface = returned_surface;
+    let wrong_thread_acquire_error = Arc::new(std::sync::Mutex::new(None));
+    let captured_wrong_thread_acquire_error = Arc::clone(&wrong_thread_acquire_error);
+    device.on_uncaptured_error(Arc::new(move |error| {
+        *captured_wrong_thread_acquire_error.lock().unwrap() = Some(error);
+    }));
     let (returned_surface, wrong_thread_rejected) = thread::spawn(move || {
         let result = surface.get_current_texture();
-        let rejected = matches!(result, CurrentSurfaceTexture::Lost);
+        let rejected = matches!(result, CurrentSurfaceTexture::Validation);
         drop(result);
         (surface, rejected)
     })
@@ -545,8 +578,16 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     .expect("wrong-thread surface acquisition test");
     assert!(
         wrong_thread_rejected,
-        "acquisition must stay on the HWND thread"
+        "wrong-thread acquisition must report validation, not surface loss"
     );
+    let wrong_thread_acquire_error = wrong_thread_acquire_error.lock().unwrap().take();
+    assert!(
+        wrong_thread_acquire_error
+            .as_ref()
+            .is_some_and(|error| format!("{error:?}").contains("Surface is invalid")),
+        "wrong-thread acquisition should report a surface validation error: {wrong_thread_acquire_error:?}"
+    );
+    println!("PASS: wrong-thread acquisition reported validation without acquiring a native frame");
 
     let frame = match returned_surface.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -1925,6 +1966,22 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             view_formats: &[],
         }));
     });
+    let storage_buffer_validation = device.push_error_scope(ErrorFilter::Validation);
+    let storage_buffer_internal = device.push_error_scope(ErrorFilter::Internal);
+    drop(device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 allocatable but unbindable storage-only buffer"),
+        size: 16,
+        usage: BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    }));
+    assert!(
+        poll_ready(storage_buffer_internal.pop()).is_none(),
+        "storage-only allocation should use the native dummy bind path"
+    );
+    assert!(
+        poll_ready(storage_buffer_validation.pop()).is_none(),
+        "storage-only buffer allocation is core-valid even though shader binding is unavailable"
+    );
     expect_validation_error(&device, "vertex storage-buffer layout", || {
         drop(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("unsupported public FL9_1 vertex storage layout"),
@@ -12138,7 +12195,7 @@ fn public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91() {
 }
 
 #[test]
-fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
+fn public_dx11_rejects_fragment_sample_mask_io_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -12155,7 +12212,7 @@ fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
     let info = adapter.get_info();
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public FL9_1 sample-mask output test"),
+        label: Some("public FL9_1 sample-mask input and output test"),
         required_features: Features::empty(),
         required_limits: adapter.limits(),
         ..Default::default()
@@ -12167,11 +12224,12 @@ fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
     );
 
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 fragment sample-mask output forms"),
+        label: Some("FL9_1 fragment sample-mask input and output forms"),
         source: ShaderSource::Wgsl(
             "struct ColorAndMask { @location(0) color: vec4f, @builtin(sample_mask) mask: u32 };\n\
              @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.5, 1.0); }\n\
              @fragment fn with_mask() -> ColorAndMask { return ColorAndMask(vec4f(1.0, 0.0, 0.0, 1.0), 0xffffffffu); }\n\
+             @fragment fn reads_mask(@builtin(sample_mask) mask: u32) -> @location(0) vec4f { return vec4f(f32(mask), 0.0, 0.0, 1.0); }\n\
              @fragment fn color_only() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
                 .into(),
         ),
@@ -12210,9 +12268,15 @@ fn public_dx11_rejects_fragment_sample_mask_output_at_fl91() {
         "@builtin(sample_mask)",
         || drop(pipeline("with_mask")),
     );
+    expect_validation_error_containing(
+        &device,
+        "fragment sample-mask input",
+        "@builtin(sample_mask)",
+        || drop(pipeline("reads_mask")),
+    );
     drop(pipeline("color_only"));
     println!(
-        "PASS: core rejected fragment sample-mask output before FXC and accepted the color-only sibling"
+        "PASS: core rejected fragment sample-mask input and output before FXC and accepted the color-only sibling"
     );
 }
 

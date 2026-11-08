@@ -373,6 +373,7 @@ pub(super) struct BackendCapabilities {
     pub fragment_depth_with_bias: bool,
     pub fragment_depth_without_color_target_0: bool,
     pub fragment_sample_mask_output: bool,
+    pub fragment_sample_mask_input: bool,
     pub fragment_non_perspective_interpolation: bool,
     pub two_sided_stencil: bool,
     pub instancing: bool,
@@ -494,6 +495,7 @@ impl BackendCapabilities {
         fragment_depth_with_bias: false,
         fragment_depth_without_color_target_0: false,
         fragment_sample_mask_output: false,
+        fragment_sample_mask_input: false,
         fragment_non_perspective_interpolation: false,
         two_sided_stencil: false,
         instancing: false,
@@ -733,6 +735,7 @@ impl Capabilities {
                     .backend
                     .fragment_depth_without_color_target_0,
                 fragment_sample_mask_output: self.backend.fragment_sample_mask_output,
+                fragment_sample_mask_input: self.backend.fragment_sample_mask_input,
                 fragment_non_perspective_interpolation: self
                     .backend
                     .fragment_non_perspective_interpolation,
@@ -2207,6 +2210,7 @@ mod tests {
                 .fragment_depth_without_color_target_0
         );
         assert!(!exposed.downlevel.limits.fragment_sample_mask_output);
+        assert!(!exposed.downlevel.limits.fragment_sample_mask_input);
         assert!(
             !exposed
                 .downlevel
@@ -3076,6 +3080,7 @@ mod tests {
             assert!(!caps.backend.fragment_depth_with_bias);
             assert!(!caps.backend.fragment_depth_without_color_target_0);
             assert!(!caps.backend.fragment_sample_mask_output);
+            assert!(!caps.backend.fragment_sample_mask_input);
             assert!(caps.backend.dynamic_uniform_offsets);
             assert!(caps.backend.uniform_binding_sizes_unaligned_16);
         }

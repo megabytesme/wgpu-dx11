@@ -1268,6 +1268,11 @@ pub struct DownlevelLimits {
     /// single-sample rendering.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub fragment_sample_mask_output: bool,
+    /// Whether fragment entry points may read `@builtin(sample_mask)`.
+    ///
+    /// This depends on the pixel-shader profile independently of sample-mask output support.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub fragment_sample_mask_input: bool,
     /// Whether fragment inputs may use `@interpolate(flat)` or `@interpolate(linear)`.
     ///
     /// These interpolation modes may be unavailable in downlevel pixel-shader profiles even
@@ -1471,6 +1476,7 @@ impl Default for DownlevelLimits {
             depth_bias_with_fragment_depth: true,
             fragment_depth_without_color_target_0: true,
             fragment_sample_mask_output: true,
+            fragment_sample_mask_input: true,
             fragment_non_perspective_interpolation: true,
             fragment_front_facing: true,
             fragment_position: true,
@@ -1709,6 +1715,7 @@ impl DownlevelLimits {
             && (!required.fragment_depth_without_color_target_0
                 || self.fragment_depth_without_color_target_0)
             && (!required.fragment_sample_mask_output || self.fragment_sample_mask_output)
+            && (!required.fragment_sample_mask_input || self.fragment_sample_mask_input)
             && (!required.fragment_non_perspective_interpolation
                 || self.fragment_non_perspective_interpolation)
             && (!required.fragment_front_facing || self.fragment_front_facing)
@@ -1815,6 +1822,7 @@ impl DownlevelCapabilities {
             && self.limits.depth_bias_with_fragment_depth
             && self.limits.fragment_depth_without_color_target_0
             && self.limits.fragment_sample_mask_output
+            && self.limits.fragment_sample_mask_input
             && self.limits.fragment_non_perspective_interpolation
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
@@ -2377,6 +2385,7 @@ mod tests {
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
             fragment_depth_without_color_target_0: false,
+            fragment_sample_mask_input: true,
             fragment_sample_mask_output: false,
             fragment_non_perspective_interpolation: false,
             fragment_front_facing: false,
@@ -2437,6 +2446,7 @@ mod tests {
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
             fragment_depth_without_color_target_0: false,
+            fragment_sample_mask_input: true,
             fragment_sample_mask_output: false,
             fragment_non_perspective_interpolation: false,
             fragment_front_facing: false,
@@ -2785,6 +2795,7 @@ mod tests {
             "max_sampler_anisotropy",
             "fragment_depth_without_color_target_0",
             "fragment_sample_mask_output",
+            "fragment_sample_mask_input",
             "fragment_non_perspective_interpolation",
             "texture_query",
             "texture_sample_base_clamp_to_edge",
@@ -2824,6 +2835,7 @@ mod tests {
         assert_eq!(limits.max_sampler_anisotropy, 16);
         assert!(limits.fragment_depth_without_color_target_0);
         assert!(limits.fragment_sample_mask_output);
+        assert!(limits.fragment_sample_mask_input);
         assert!(limits.fragment_non_perspective_interpolation);
         assert!(limits.texture_query);
         assert!(limits.texture_sample_base_clamp_to_edge);
@@ -2900,6 +2912,24 @@ mod tests {
         };
         assert!(available.check_limits(&DownlevelLimits {
             fragment_sample_mask_output: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn fragment_sample_mask_input_is_a_downlevel_capability() {
+        let available = DownlevelLimits {
+            fragment_sample_mask_input: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            fragment_sample_mask_input: false,
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));

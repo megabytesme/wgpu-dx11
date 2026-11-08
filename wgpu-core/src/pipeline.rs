@@ -838,6 +838,8 @@ pub enum CreateRenderPipelineError {
     UnsupportedFragmentDepthWithoutColorTarget0,
     #[error("Fragment `@builtin(sample_mask)` output is not supported by this downlevel adapter")]
     UnsupportedFragmentSampleMaskOutput,
+    #[error("Fragment `@builtin(sample_mask)` input is not supported by this downlevel adapter")]
+    UnsupportedFragmentSampleMaskInput,
     #[error("Fragment flat and linear interpolation are not supported by this downlevel adapter")]
     UnsupportedFragmentNonPerspectiveInterpolation,
     #[error("Fragment `@builtin(front_facing)` is not supported by this downlevel adapter")]
@@ -1036,6 +1038,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
             | Self::UnsupportedFragmentSampleMaskOutput
+            | Self::UnsupportedFragmentSampleMaskInput
             | Self::UnsupportedFragmentNonPerspectiveInterpolation
             | Self::UnsupportedFragmentFrontFacing
             | Self::UnsupportedFragmentPosition

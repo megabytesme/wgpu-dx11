@@ -257,9 +257,11 @@ two-frame latency hint to the D3D11 surface's supported one-frame range. It
 then verifies that acquisition from a different thread is rejected.
 It also acquires a frame on the owner thread, attempts presentation from a
 worker, checks the reported validation error, then confirms the owner thread
-can acquire and present another frame. A rejected `Queue::present` consumes
-its public `SurfaceTexture`; core must release the acquired native image so the
-surface does not remain stuck.
+can acquire and present another frame. A duplicate acquisition returns a
+validation error before HAL and leaves the first frame presentable; acquisition
+from the wrong thread also returns validation rather than `Lost`. A rejected
+`Queue::present` consumes its public `SurfaceTexture`; core must release the
+acquired native image so the surface does not remain stuck.
 Cloned public `SurfaceTexture` handles share the acquired frame's lifecycle:
 dropping a non-final clone on a worker thread preserves the image, presenting
 one clone prevents later aliases from discarding it, and dropping the final
@@ -1338,12 +1340,36 @@ All 64 readback pixels remain red, proving the structured `SV_Depth` output,
 rather than the vertex depth, controls the depth test at requested/actual
 FL9_1.
 
-`@builtin(sample_mask)` output is another profile boundary. Naga emits HLSL
-`SV_Coverage`, which Microsoft documents as writable only from `ps_4_1`;
-`ps_4_0_level_9_1` rejects it. The HAL test captures the FXC failure and
-compiles a color-only sibling. The strict public test confirms core rejects
-only the selected entry using sample-mask output, before HAL. It does not
-exercise a GPU draw; the device is nevertheless explicitly created at FL9_1.
+`@builtin(sample_mask)` input and output are separate profile boundaries. Naga
+emits HLSL `SV_Coverage`; Microsoft documents pixel-shader input as requiring
+`ps_5_0` and output as requiring `ps_4_1`, while this backend compiles
+`ps_4_0_level_9_1`. HAL compiler tests capture the FXC failure for each
+direction and compile a color-only sibling. Core has separate input and output
+downlevel limits and rejects only the selected fragment entry before HAL.
+These checks validate the profile boundary, not a GPU draw.
+
+The CPU-only selected-entry analysis test is:
+
+```powershell
+cargo +1.93 test --offline -j16 -p wgpu-core --lib fragment_sample_mask_input_follows_selected_entry -- --nocapture
+```
+
+The FL9_1 FXC profile diagnostic test uses a physical adapter and can be made
+mandatory with `WGPU_DX11_REQUIRE_HARDWARE=1`:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_profile_rejects_fragment_sample_mask_input -- --nocapture --test-threads=1
+```
+
+The strict public test verifies both unsupported entry points fail as core
+validation rather than reaching FXC, while a color-only sibling pipeline is
+accepted:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_fragment_sample_mask_io_at_fl91 -- --nocapture --test-threads=1
+```
 
 `cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11
 interpolation_modifiers_require_shader_model_4 -- --nocapture` checks

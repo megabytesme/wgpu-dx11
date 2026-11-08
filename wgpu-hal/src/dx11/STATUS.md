@@ -950,8 +950,10 @@ representative application or a complete contract audit.
   context-backed resource creation against Present; same-thread reentrant work
   is rejected before queue or mapping state changes. The strict public test
   configures, clears, presents, resizes and presents again, then confirms
-  wrong-thread acquisition is rejected. It uses a hidden window; the separate
-  visible example exercises the message pump and desktop presentation.
+  wrong-thread and duplicate acquisitions return validation errors without
+  losing the surface or consuming the first outstanding frame. It uses a
+  hidden window; the separate visible example exercises the message pump and
+  desktop presentation.
 - `wgpu/examples/dx11_fl91_windowed.rs` is a visible public-API example. It
   pumps Win32 messages, handles resize, and presents an animated indexed,
   textured, depth-tested cube. A 60-frame run passed on the RTX 3090 Ti at
@@ -998,11 +1000,13 @@ Outputless fragment shaders now execute in targetless D16 and D24S8 passes.
 Strict FL9_1 readback verifies conditional discard prevents both depth and
 stencil writes; targetless rendering still requires a depth/stencil attachment.
 
-Fragment `@builtin(sample_mask)` output is now represented by
-`DownlevelLimits::fragment_sample_mask_output`. Microsoft documents HLSL
-`SV_Coverage` output as requiring `ps_4_1`; the selected FL9_1 profile is
-`ps_4_0_level_9_1`. FXC rejects the output, while the color-only sibling
-compiles. Core rejects only selected fragment entries that write the mask.
+Fragment `@builtin(sample_mask)` input and output have separate downlevel
+limits. Input lowers to HLSL `SV_Coverage`, which Microsoft documents as
+requiring `ps_5_0`; output requires `ps_4_1`. The selected FL9_1 profile is
+`ps_4_0_level_9_1`. Physical-device-gated FXC tests reject both directions
+while color-only siblings compile. Core rejects only the selected fragment
+entry using the unsupported direction, before HAL compilation. These are
+shader-profile restrictions, not a general FL9_1 hardware guarantee.
 
 The FL9_1 projection also sets
 `DownlevelLimits::fragment_non_perspective_interpolation` to false. FXC rejects

@@ -153,10 +153,7 @@ impl crate::Device for Device {
             | wgt::BufferUses::STORAGE_READ_WRITE
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
-        let storage = wgt::BufferUses::STORAGE_READ_ONLY | wgt::BufferUses::STORAGE_READ_WRITE;
-        let non_storage = supported & !storage;
         if !supported.contains(desc.usage)
-            || (desc.usage.intersects(storage) && !desc.usage.intersects(non_storage))
             || (self.native.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw()
                 && desc
                     .usage
@@ -1976,10 +1973,12 @@ mod tests {
         native.write_byte_buffer(output_native, 0, &[0; 16])?;
         let mut unsupported = desc.clone();
         unsupported.usage = wgt::BufferUses::STORAGE_READ_ONLY;
-        assert!(matches!(
-            unsafe { dynamic.create_buffer(&unsupported) },
-            Err(DeviceError::Unexpected)
-        ));
+        let storage_only = unsafe { dynamic.create_buffer(&unsupported).unwrap() };
+        let storage_only_native = storage_only
+            .as_any()
+            .downcast_ref::<super::super::buffer::NativeBuffer>()
+            .unwrap();
+        assert!(native.vertex_buffer(storage_only_native, 0, None).is_err());
         assert!(matches!(
             unsafe { dynamic.map_buffer(source.as_ref(), 0..16) },
             Err(DeviceError::Unexpected)
@@ -2103,6 +2102,7 @@ mod tests {
             dynamic.destroy_buffer(source);
             dynamic.destroy_buffer(output);
             dynamic.destroy_buffer(index);
+            dynamic.destroy_buffer(storage_only);
         }
         Ok(())
     }

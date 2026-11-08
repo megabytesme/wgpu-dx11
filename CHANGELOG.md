@@ -100,6 +100,7 @@ Bottom level categories:
 - Add `DownlevelLimits::depth_bias_with_fragment_depth` so adapters can reject depth-biased pipelines only when the selected fragment entry point writes fragment depth.
 - Add `DownlevelLimits::fragment_depth_without_color_target_0` so adapters can reject fragment-depth outputs that omit the color target required by their shader profile.
 - Add `DownlevelLimits::fragment_sample_mask_output` so adapters can reject fragment coverage-mask outputs unsupported by their pixel-shader profile.
+- Add `DownlevelLimits::fragment_sample_mask_input` so adapters can separately reject fragment coverage-mask inputs unsupported by their pixel-shader profile.
 - Add `DownlevelLimits::fragment_position` so adapters can reject fragment `@builtin(position)` use when their shader profile cannot provide it.
 - Add `DownlevelLimits::vertex_index_input` and `instance_index_input` so adapters can reject vertex entry points the backend cannot compile or execute.
 - Add `DownlevelLimits::vertex_index_topology_mask` so adapters can reject `vertex_index` pipelines for primitive topologies their emulation path cannot preserve.
@@ -147,10 +148,12 @@ Bottom level categories:
 - Report an invalid surface when presenting a retained frame after its owning
   `Surface` has been dropped.
 - Keep acquired surface backbuffers alive while derived views remain in use, and preserve the public configuration cache after a failed reconfiguration.
+- Report wrong-thread and duplicate surface acquisitions as validation errors instead of misclassifying them as surface loss.
 
 #### Hal
 
 - Allow opt-in D3D11 GPU copies between matching RGBA8/BGRA8 linear and sRGB formats while preserving the stored texel bits.
+- Allow allocation of storage-only D3D11 buffers while keeping FL9_1 shader storage bindings unavailable.
 
 #### naga
 

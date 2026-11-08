@@ -170,14 +170,23 @@ impl Surface {
     pub fn get_current_texture(&self) -> Result<ResolvedSurfaceOutput, SurfaceError> {
         profiling::scope!("Surface::get_current_texture");
 
-        let (device, config) = if let Some(ref present) = *self.presentation.lock() {
-            present.device.check_is_valid()?;
-            (present.device.clone(), present.config.clone())
-        } else {
-            return Err(SurfaceError::NotConfigured);
+        let mut presentation = self.presentation.lock();
+        let (device, config) = match presentation.as_ref() {
+            Some(present) => {
+                present.device.check_is_valid()?;
+                if present.acquired_texture.is_some() {
+                    return Err(SurfaceError::AlreadyAcquired);
+                }
+                (Arc::clone(&present.device), present.config.clone())
+            }
+            None => return Err(SurfaceError::NotConfigured),
         };
 
         let suf = self.raw(device.backend()).unwrap();
+        if !suf.is_present_on_current_thread() {
+            return Err(SurfaceError::Invalid);
+        }
+
         let (texture, status) = match unsafe {
             suf.acquire_texture(
                 Some(core::time::Duration::from_millis(FRAME_TIMEOUT_MS as u64)),
@@ -222,15 +231,22 @@ impl Surface {
                     usage: wgt::TextureUses::COLOR_TARGET,
                     range: wgt::ImageSubresourceRange::default(),
                 };
-                let clear_view = unsafe {
+                let clear_view = match unsafe {
                     device
                         .raw()
                         .create_texture_view(ast.texture.as_ref().borrow(), &clear_view_desc)
-                }
-                .map_err(|e| device.handle_hal_error(e))?;
+                } {
+                    Ok(view) => view,
+                    Err(error) => {
+                        drop(ast);
+                        drop(presentation);
+                        return Err(device.handle_hal_error(error).into());
+                    }
+                };
 
-                let mut presentation = self.presentation.lock();
-                let present = presentation.as_mut().unwrap();
+                let Some(present) = presentation.as_mut() else {
+                    return Err(SurfaceError::NotConfigured);
+                };
                 let texture = resource::Texture::new(
                     &device,
                     resource::TextureInner::Surface { raw: ast.texture },
@@ -258,9 +274,6 @@ impl Surface {
                     .textures
                     .insert_single(&texture, wgt::TextureUses::UNINITIALIZED);
 
-                if present.acquired_texture.is_some() {
-                    return Err(SurfaceError::AlreadyAcquired);
-                }
                 present.acquired_texture = Some(texture.clone());
 
                 let status = if ast.suboptimal {
@@ -277,6 +290,7 @@ impl Surface {
                     hal::SurfaceError::Occluded => Status::Occluded,
                     hal::SurfaceError::Lost => Status::Lost,
                     hal::SurfaceError::Device(err) => {
+                        drop(presentation);
                         return Err(device.handle_hal_error(err).into());
                     }
                     hal::SurfaceError::Outdated => Status::Outdated,

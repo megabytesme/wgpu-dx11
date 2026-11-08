@@ -1694,6 +1694,72 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn fl91_profile_rejects_fragment_sample_mask_input() -> windows::core::Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            assert!(!required, "strict mode requires a physical D3D11 adapter");
+            std::println!("SKIP: no physical D3D11 adapter for the FL9_1 FXC profile test");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested FL9_1; actual {:?}",
+            adapter.identity(),
+            native.feature_level()
+        );
+
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @fragment fn reads_mask(
+                @builtin(sample_mask) mask: u32,
+            ) -> @location(0) vec4f {
+                return vec4f(f32(mask));
+            }
+            @fragment fn color_only() -> @location(0) vec4f {
+                return vec4f(1.0, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "color_only",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+        )
+        .is_ok());
+        let error = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "reads_mask",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+        )
+        .expect_err("ps_4_0_level_9_1 cannot read SV_Coverage");
+        let NagaCompileError::Compilation(error) = error else {
+            panic!("expected an FXC shader compilation diagnostic, got {error:?}");
+        };
+        std::println!(
+            "Observed FL9_1 sample-mask input FXC rejection (HRESULT {:#x}): {}",
+            error.code,
+            error.message
+        );
+        Ok(())
+    }
 }
 
 crate::impl_dyn_resource!(ShaderModule);
@@ -4105,6 +4171,19 @@ impl ShaderModule {
         let entry_info = info.get_entry_point(entry_index);
         let profile =
             selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
+        if stage == naga::ShaderStage::Fragment
+            && entry_has_builtin(
+                &module,
+                naga::ShaderStage::Fragment,
+                entry,
+                naga::BuiltIn::SampleMask,
+            ) != Some(false)
+        {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9_1 fragment sample_mask input is not implemented".into(),
+            ));
+        }
         if has_unsupported_sample_bias(&module, &module.entry_points[entry_index].function, profile)
         {
             return Err(crate::PipelineError::Linkage(
