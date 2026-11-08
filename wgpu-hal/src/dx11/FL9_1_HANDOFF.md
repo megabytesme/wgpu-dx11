@@ -37,6 +37,15 @@ unsupported-operation panic paths. Continue the broad audit for ordinary
 public-valid operations; do not treat the hardware/runtime verification gaps
 as resolved.
 
+The 2026-11-08 candidate sweep also rejected read-only depth sampling as an
+RTX FL9_1 increment: a native D16 read-only DSV probe returned
+`E_INVALIDARG`, and Core's combined read-only-plus-sampled use is not yet
+handled by HAL render-pass validation. The flag remains absent. BC1/2/3
+texture-to-buffer readback and 3D render-target views are likewise not
+FL9_1-public expansion candidates under the documented 10Level9 restrictions
+and current wgpu feature gates. These audit results and commands are in
+`FL9_1_PROGRESS.md`.
+
 ## Latest surface lifecycle checkpoint — 2026-11-08
 
 The public D3D11 HWND error fixture passed 2/2 on the RTX 3090 Ti at requested

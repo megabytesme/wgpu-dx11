@@ -9,6 +9,19 @@ gates correctly reject them. Continue auditing other ordinary public-valid
 operations; do not add this unsupported copy path. The timestamp-query
 checkpoint is committed as `ede5c299f`.
 
+The next candidate sweep also found no expansion to make: FL9_1 rejects the
+read-only DSV creation probe on the RTX 3090 Ti (`CreateDepthStencilView` with
+read-only flags returned `E_INVALIDARG`), so `READ_ONLY_DEPTH_STENCIL` remains
+unexposed. A same-pass path would additionally need HAL render-pass support for
+Core's combined `DEPTH_STENCIL_READ | RESOURCE` use and positive GPU readback
+on a device that accepts the DSV. BC1/2/3 texture-to-buffer readback remains
+blocked by the 10Level9 SRV-only readback restriction and by wgpu's all-family
+BC feature gate; 3D render-target views are also excluded by the FL9_1 device
+contract. Keep these cases rejected and continue the broader public-valid
+contract audit. References: [10Level9 device methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device),
+[10Level9 context methods](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context),
+[CopySubresourceRegion](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copysubresourceregion).
+
 Latest verified increment: timestamp query sets and command-encoder writes are
 now supported only when a selected device positively executes timestamp and
 disjoint queries and reports a nonzero frequency. The public feature projection

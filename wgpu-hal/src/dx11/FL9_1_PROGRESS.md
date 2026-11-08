@@ -11761,3 +11761,32 @@ support, so they do not provide a safe optional depth-format expansion on this
 device. The selected device also reported no `TEXTURE2D` support for the
 probed optional float formats; no new sampled format candidate was found.
 Existing `hal_queue.rs` unnecessary-qualification compiler warnings remain.
+
+## FL9_1 capability-boundary candidate sweep — 2026-11-08
+
+A one-off native probe ran on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, software=false) with requested and selected feature
+level L9_1. D16 read-only DSV creation with both depth-stencil and shader
+resource binding failed at `CreateDepthStencilView` with `E_INVALIDARG`
+(`0x80070057`). No read-only-depth capability is exposed. The supporting
+experimental probe and view code were removed because the selected device
+cannot execute the path, and Core's combined
+`DEPTH_STENCIL_READ | RESOURCE` attachment use also needs a separate HAL
+render-pass implementation plus positive GPU readback on a capable device.
+This was a capability-boundary investigation, not a feature addition.
+
+Independent audits also rejected two tempting expansions: BC1/2/3 readback
+conflicts with 10Level9's restriction on copying shader-resource-only sources
+to CPU-visible memory, and public wgpu gates the compressed format family as a
+whole; 3D render-target views are not permitted by the FL9_1 `CreateRenderTargetView`
+contract. Existing per-format and 3D usage gates remain unchanged. Neither
+case was exercised as a new GPU operation.
+
+Verification during the probe: the synthetic readonly-capability projection
+test passed 1/1, and the strict selected-device capability diagnostic passed
+1/1 on the RTX at requested/actual FL9_1 while reporting the DSV failure.
+The diagnostic run used Rust 1.93.1 and the Visual Studio 2026 x64 developer
+environment; it emitted the existing four `hal_queue.rs`
+`unused_qualifications` warnings. No source change remains from the failed
+feature experiment. Continue with the independent render-pass and buffer
+mapping audits before selecting another implementation increment.
