@@ -1,5 +1,18 @@
 # FL9_1 handoff
 
+## Latest surface lifecycle checkpoint — 2026-11-08
+
+The public D3D11 HWND error fixture passed 2/2 on the RTX 3090 Ti at requested
+and actual FL9_1. It covers a synthetic `DXGI_ERROR_DEVICE_REMOVED` during
+Present, a reentrant poll in the lost callback, and dropping a second acquired
+frame after its configured device becomes invalid. The invalid-device discard
+path now releases the retained frame, after which the surface can be
+reconfigured to a healthy device and acquire another frame. The HRESULT is
+injected; actual device removal and recovery remain unverified. The public
+queue-present dispatch currently routes through the surface's configured
+device queue, so a wrong receiver queue cannot be tested through this public
+dispatch without changing that API path. See `FL9_1_PROGRESS.md` for details.
+
 ## Latest public topology-validation checkpoint — 2026-11-08
 
 The opt-in public projection reports that emulated `vertex_index` is valid for

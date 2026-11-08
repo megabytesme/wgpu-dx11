@@ -1,4 +1,10 @@
 # FL9_1 completion plan
+Latest lifecycle increment: discarding an acquired public `SurfaceTexture`
+after its configured device becomes invalid now releases the retained HAL
+frame. The strict HWND fixture exercises synthetic device removal, drop,
+reconfiguration and reacquisition at forced FL9_1. Actual device removal and
+recovery remain unverified. See `FL9_1_PROGRESS.md`.
+
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
 `vertex_index` uses a host-generated float IA stream for TriangleList and
 PointList pipelines. `DownlevelLimits::vertex_index_topology_mask` communicates

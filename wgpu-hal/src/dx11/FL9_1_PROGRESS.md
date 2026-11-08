@@ -11120,6 +11120,26 @@ cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
 ```
 
+## Surface-frame release after device loss — 2026-11-08
+
+Core now releases an acquired frame when `Surface::discard` finds its
+configured device invalid. The `Queue::present` early-error paths also use a
+shared cleanup helper that drops the presentation lock before attempting
+discard/release. The public D3D11 HWND fixture now keeps a second acquired
+frame alive while a synthetic `DXGI_ERROR_DEVICE_REMOVED` invalidates its
+device, drops that frame, then reconfigures the surface to a healthy device and
+successfully acquires again. This covers the public `SurfaceTexture` drop path;
+the injected HRESULT is not physical device-loss/recovery evidence.
+
+The strict fixture passed 2/2 on the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1. The
+existing synthetic Present-loss callback/reentrant-poll test still passes,
+and the new drop-after-loss case proves later reconfiguration and acquisition
+work. One experimental wrong-queue assertion was removed after inspection
+showed that the public wgpu-core dispatch currently routes `Queue::present`
+through `Surface::present` and selects the configured device's queue; the
+public call does not pass the receiver queue ID to core.
+
 ## PointList `vertex_index` support — 2026-11-08
 
 The earlier TriangleList-only implementation now supports PointList as well.

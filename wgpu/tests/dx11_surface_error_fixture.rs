@@ -200,7 +200,7 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
         },
     };
 
-    struct WindowGuard([HWND; 2]);
+    struct WindowGuard([HWND; 3]);
 
     impl Drop for WindowGuard {
         fn drop(&mut self) {
@@ -248,7 +248,19 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
             return;
         }
     };
-    let _windows = WindowGuard([hwnd_a, hwnd_b]);
+    let hwnd_c = match create_window(w!("wgpu D3D11 discarded frame after device loss")) {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            unsafe {
+                let _ = DestroyWindow(hwnd_a);
+                let _ = DestroyWindow(hwnd_b);
+            }
+            assert!(!required, "strict mode requires test HWNDs: {error}");
+            println!("SKIP: could not create discarded-frame test HWND: {error}");
+            return;
+        }
+    };
+    let _windows = WindowGuard([hwnd_a, hwnd_b, hwnd_c]);
 
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -264,6 +276,7 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
     };
     let surface_a = make_surface(hwnd_a).expect("create outer D3D11 HWND surface");
     let surface_b = make_surface(hwnd_b).expect("create reentrant D3D11 HWND surface");
+    let surface_c = make_surface(hwnd_c).expect("create discarded-frame D3D11 HWND surface");
     let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
         power_preference: PowerPreference::HighPerformance,
         force_fallback_adapter: false,
@@ -313,6 +326,12 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
     };
     surface_a.configure(&device_a, &config);
     surface_b.configure(&device_a, &config);
+    surface_c.configure(&device_a, &config);
+
+    let frame_c = match surface_c.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("surface acquisition before device loss failed: {result:?}"),
+    };
 
     let hal_surface_a =
         unsafe { surface_a.as_hal::<wgpu_hal::api::Dx11>() }.expect("outer D3D11 HAL surface");
@@ -349,6 +368,8 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
     assert_eq!(reason, DeviceLostReason::Unknown);
     assert!(message.contains("Device is lost"), "{message}");
 
+    drop(frame_c);
+
     let reconfigure = catch_unwind(AssertUnwindSafe(|| surface_b.configure(&device_b, &config)));
     assert!(
         reconfigure.is_ok(),
@@ -360,5 +381,16 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
         }
         result => panic!("reconfigured surface did not reacquire a frame: {result:?}"),
     }
-    println!("PASS: reentrant Queue::present consumed and released the second surface frame; a healthy device reconfigured and reacquired that surface");
+    let reconfigure = catch_unwind(AssertUnwindSafe(|| surface_c.configure(&device_b, &config)));
+    assert!(
+        reconfigure.is_ok(),
+        "dropping an unpresented frame after device loss must release it before reconfiguration"
+    );
+    match surface_c.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+            drop(frame);
+        }
+        result => panic!("surface did not reacquire after lost-device frame drop: {result:?}"),
+    }
+    println!("PASS: reentrant present after device loss and dropping an unpresented frame after device loss both released their acquired frames for later reconfiguration and acquisition");
 }

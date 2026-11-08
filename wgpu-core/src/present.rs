@@ -307,21 +307,18 @@ impl Queue {
     pub fn present(&self, surface: &Surface) -> Result<Status, SurfaceError> {
         profiling::scope!("Queue::present");
 
-        let raw_surface = surface
-            .raw(self.device.backend())
-            .ok_or(SurfaceError::Invalid)?;
+        let Some(raw_surface) = surface.raw(self.device.backend()) else {
+            release_consumed_surface_frame(surface);
+            return Err(SurfaceError::Invalid);
+        };
         if !raw_surface.is_present_on_current_thread() {
             // Queue::present consumes the public frame even when this check fails.
-            if matches!(surface.discard(), Err(SurfaceError::Device(_))) {
-                let _ = surface.release();
-            }
+            release_consumed_surface_frame(surface);
             return Err(SurfaceError::Invalid);
         }
         let Some(_present_guard) = self.begin_present() else {
             // Queue::present consumes the public frame even when reentrant presentation is rejected.
-            if matches!(surface.discard(), Err(SurfaceError::Device(_))) {
-                let _ = surface.release();
-            }
+            release_consumed_surface_frame(surface);
             return Err(SurfaceError::Invalid);
         };
 
@@ -336,14 +333,17 @@ impl Queue {
 
             // Check the surface is configured for this device.
             if !Arc::ptr_eq(&present.device, device) {
-                return Err(SurfaceError::Device(DeviceError::DeviceMismatch(Box::new(
+                let error = SurfaceError::Device(DeviceError::DeviceMismatch(Box::new(
                     crate::device::DeviceMismatch {
                         res: self.error_ident(),
                         res_device: device.error_ident(),
                         target: None,
                         target_device: present.device.error_ident(),
                     },
-                ))));
+                )));
+                drop(presentation);
+                release_consumed_surface_frame(surface);
+                return Err(error);
             }
 
             present
@@ -394,6 +394,12 @@ impl Queue {
     }
 }
 
+fn release_consumed_surface_frame(surface: &Surface) {
+    if matches!(surface.discard(), Err(SurfaceError::Device(_))) {
+        let _ = surface.release();
+    }
+}
+
 impl Surface {
     pub fn discard(&self) -> Result<(), SurfaceError> {
         profiling::scope!("Surface::discard");
@@ -406,7 +412,11 @@ impl Surface {
 
         let device = &present.device;
 
-        device.check_is_valid()?;
+        if let Err(error) = device.check_is_valid() {
+            drop(presentation);
+            let _ = self.release();
+            return Err(error.into());
+        }
 
         let texture = present
             .acquired_texture
