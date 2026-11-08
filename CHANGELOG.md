@@ -67,6 +67,7 @@ Bottom level categories:
 
 #### Validation
 
+- Add downlevel limits for legacy vertex base-index inputs, vertex point size output, and fragment point coordinates.
 - Add `DownlevelLimits::vertex_uniform_array_indexing` to gate the narrow vertex-stage uniform-array indexing subset supported by a backend.
 - Reject checked dynamic non-vector array accesses with selected-entry uniforms during core pipeline validation when the D3D11 downlevel contract requires it.
 - Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.

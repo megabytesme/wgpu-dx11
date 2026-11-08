@@ -348,6 +348,9 @@ pub(super) struct BackendCapabilities {
     pub compute: bool,
     pub storage: bool,
     pub vertex_index_input: bool,
+    pub vertex_base_vertex_input: bool,
+    pub vertex_base_instance_input: bool,
+    pub vertex_point_size_output: bool,
     pub vertex_index_input_requires_hidden_slot: bool,
     pub vertex_index_topology_mask: u8,
     pub instance_index_input: bool,
@@ -374,6 +377,7 @@ pub(super) struct BackendCapabilities {
     pub fragment_depth_without_color_target_0: bool,
     pub fragment_sample_mask_output: bool,
     pub fragment_sample_mask_input: bool,
+    pub fragment_point_coord_input: bool,
     pub fragment_non_perspective_interpolation: bool,
     pub two_sided_stencil: bool,
     pub instancing: bool,
@@ -466,6 +470,9 @@ impl BackendCapabilities {
         compute: false,
         storage: false,
         vertex_index_input: true,
+        vertex_base_vertex_input: false,
+        vertex_base_instance_input: false,
+        vertex_point_size_output: false,
         vertex_index_input_requires_hidden_slot: true,
         vertex_index_topology_mask: wgt::DownlevelLimits::vertex_index_topology_bit(
             wgt::PrimitiveTopology::TriangleList,
@@ -496,6 +503,7 @@ impl BackendCapabilities {
         fragment_depth_without_color_target_0: false,
         fragment_sample_mask_output: false,
         fragment_sample_mask_input: false,
+        fragment_point_coord_input: false,
         fragment_non_perspective_interpolation: false,
         two_sided_stencil: false,
         instancing: false,
@@ -701,6 +709,9 @@ impl Capabilities {
                 shader_loops: self.backend.statically_unrolled_shader_loops || shader_dynamic_loops,
                 shader_dynamic_loops,
                 vertex_index_input: self.backend.vertex_index_input,
+                vertex_base_vertex_input: self.backend.vertex_base_vertex_input,
+                vertex_base_instance_input: self.backend.vertex_base_instance_input,
+                vertex_point_size_output: self.backend.vertex_point_size_output,
                 vertex_index_input_requires_hidden_slot: self
                     .backend
                     .vertex_index_input_requires_hidden_slot,
@@ -736,6 +747,7 @@ impl Capabilities {
                     .fragment_depth_without_color_target_0,
                 fragment_sample_mask_output: self.backend.fragment_sample_mask_output,
                 fragment_sample_mask_input: self.backend.fragment_sample_mask_input,
+                fragment_point_coord_input: self.backend.fragment_point_coord_input,
                 fragment_non_perspective_interpolation: self
                     .backend
                     .fragment_non_perspective_interpolation,
@@ -2211,6 +2223,10 @@ mod tests {
         );
         assert!(!exposed.downlevel.limits.fragment_sample_mask_output);
         assert!(!exposed.downlevel.limits.fragment_sample_mask_input);
+        assert!(!exposed.downlevel.limits.vertex_base_vertex_input);
+        assert!(!exposed.downlevel.limits.vertex_base_instance_input);
+        assert!(!exposed.downlevel.limits.vertex_point_size_output);
+        assert!(!exposed.downlevel.limits.fragment_point_coord_input);
         assert!(
             !exposed
                 .downlevel
@@ -3081,6 +3097,10 @@ mod tests {
             assert!(!caps.backend.fragment_depth_without_color_target_0);
             assert!(!caps.backend.fragment_sample_mask_output);
             assert!(!caps.backend.fragment_sample_mask_input);
+            assert!(!caps.backend.vertex_base_vertex_input);
+            assert!(!caps.backend.vertex_base_instance_input);
+            assert!(!caps.backend.vertex_point_size_output);
+            assert!(!caps.backend.fragment_point_coord_input);
             assert!(caps.backend.dynamic_uniform_offsets);
             assert!(caps.backend.uniform_binding_sizes_unaligned_16);
         }

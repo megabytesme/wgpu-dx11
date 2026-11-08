@@ -12280,6 +12280,137 @@ fn public_dx11_rejects_fragment_sample_mask_io_at_fl91() {
     );
 }
 
+#[cfg(feature = "glsl")]
+#[test]
+fn public_dx11_rejects_unimplemented_legacy_shader_builtins_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 legacy shader builtin validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let vertex_source = |shader: &str| ShaderSource::Glsl {
+        shader: std::borrow::Cow::Owned(shader.to_owned()),
+        stage: naga::ShaderStage::Vertex,
+        defines: &[],
+    };
+    let fragment_source = |shader: &str| ShaderSource::Glsl {
+        shader: std::borrow::Cow::Owned(shader.to_owned()),
+        stage: naga::ShaderStage::Fragment,
+        defines: &[],
+    };
+    let vertex = |label, source| {
+        device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: vertex_source(source),
+        })
+    };
+    let fragment = |label, source| {
+        device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: fragment_source(source),
+        })
+    };
+    let ordinary_vertex = vertex(
+        "ordinary GLSL vertex sibling",
+        "#version 450\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
+    );
+    let ordinary_fragment = fragment(
+        "ordinary GLSL fragment sibling",
+        "#version 450\nlayout(location = 0) out vec4 color;\nvoid main() { color = vec4(1.0); }",
+    );
+    let target = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = |vertex_module: &ShaderModule, fragment_module: &ShaderModule| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 legacy builtin validation pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: vertex_module,
+                entry_point: Some("main"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::PointList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: fragment_module,
+                entry_point: Some("main"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &target,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    for (builtin, source) in [
+        (
+            "base_vertex",
+            "#version 450\nvoid main() { gl_Position = vec4(float(gl_BaseVertex) * 0.0, 0.0, 0.0, 1.0); }",
+        ),
+        (
+            "base_instance",
+            "#version 450\nvoid main() { gl_Position = vec4(float(gl_BaseInstance) * 0.0, 0.0, 0.0, 1.0); }",
+        ),
+        (
+            "point_size",
+            "#version 450\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); gl_PointSize = 1.0; }",
+        ),
+    ] {
+        let shader = vertex("unsupported FL9_1 GLSL vertex builtin", source);
+        expect_validation_error_containing(
+            &device,
+            "unsupported legacy vertex builtin",
+            builtin,
+            || drop(pipeline(&shader, &ordinary_fragment)),
+        );
+    }
+
+    let point_coord = fragment(
+        "unsupported FL9_1 GLSL point coordinate input",
+        "#version 450\nlayout(location = 0) out vec4 color;\nvoid main() { color = vec4(gl_PointCoord, 0.0, 1.0); }",
+    );
+    expect_validation_error_containing(
+        &device,
+        "unsupported legacy fragment builtin",
+        "point_coord",
+        || drop(pipeline(&ordinary_vertex, &point_coord)),
+    );
+    drop(pipeline(&ordinary_vertex, &ordinary_fragment));
+    println!(
+        "PASS: core rejected BaseVertex, BaseInstance, PointSize and PointCoord before HAL while accepting ordinary GLSL sibling shaders"
+    );
+}
+
 #[test]
 fn public_dx11_rejects_sample_index_without_multisampled_shading() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");

@@ -4163,6 +4163,50 @@ impl Interface {
         )
     }
 
+    pub(crate) fn entry_point_uses_base_vertex(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        self.entry_point_uses_input_builtin(
+            naga::ShaderStage::Vertex,
+            entry_point_name,
+            BuiltIn::BaseVertex,
+        )
+    }
+
+    pub(crate) fn entry_point_uses_base_instance(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        self.entry_point_uses_input_builtin(
+            naga::ShaderStage::Vertex,
+            entry_point_name,
+            BuiltIn::BaseInstance,
+        )
+    }
+
+    pub(crate) fn entry_point_writes_point_size(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        self.entry_point_uses_output_builtin(
+            naga::ShaderStage::Vertex,
+            entry_point_name,
+            BuiltIn::PointSize,
+        )
+    }
+
+    pub(crate) fn entry_point_uses_point_coord(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        self.entry_point_uses_input_builtin(
+            naga::ShaderStage::Fragment,
+            entry_point_name,
+            BuiltIn::PointCoord,
+        )
+    }
+
     fn entry_point_uses_input_builtin(
         &self,
         stage: naga::ShaderStage,
@@ -4174,6 +4218,19 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.inputs.contains(&Varying::BuiltIn(builtin)))
+    }
+
+    fn entry_point_uses_output_builtin(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        builtin: BuiltIn,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.outputs.contains(&Varying::BuiltIn(builtin)))
     }
 
     pub(crate) fn entry_point_uses_fragment_position(
@@ -5041,7 +5098,7 @@ impl ShaderStageForValidation {
 mod tests {
     use alloc::{string::ToString, vec::Vec};
 
-    use super::{Interface, InterfaceVar, SamplingPair, StageError};
+    use super::{BuiltIn, EntryPoint, Interface, InterfaceVar, SamplingPair, StageError, Varying};
 
     #[test]
     fn fragment_location_error_formats_zero_limit() {
@@ -6285,6 +6342,55 @@ mod tests {
         assert!(interface
             .entry_point_uses_instance_index("missing")
             .is_err());
+    }
+
+    #[test]
+    fn legacy_shader_builtins_follow_selected_entry_and_direction() {
+        fn entry_point(inputs: &[BuiltIn], outputs: &[BuiltIn]) -> EntryPoint {
+            EntryPoint {
+                inputs: inputs.iter().cloned().map(Varying::BuiltIn).collect(),
+                outputs: outputs.iter().cloned().map(Varying::BuiltIn).collect(),
+                ..Default::default()
+            }
+        }
+
+        let mut interface = Interface {
+            limits: wgt::Limits::default(),
+            resources: naga::Arena::new(),
+            entry_points: crate::FastHashMap::default(),
+            immediate_size: 0,
+        };
+        interface.entry_points.insert(
+            (naga::ShaderStage::Vertex, "legacy".to_string()),
+            entry_point(
+                &[BuiltIn::BaseVertex, BuiltIn::BaseInstance],
+                &[BuiltIn::PointSize],
+            ),
+        );
+        interface.entry_points.insert(
+            (naga::ShaderStage::Vertex, "ordinary".to_string()),
+            entry_point(&[], &[]),
+        );
+        interface.entry_points.insert(
+            (naga::ShaderStage::Fragment, "point".to_string()),
+            entry_point(&[BuiltIn::PointCoord], &[]),
+        );
+        interface.entry_points.insert(
+            (naga::ShaderStage::Fragment, "ordinary".to_string()),
+            entry_point(&[], &[]),
+        );
+
+        assert!(interface.entry_point_uses_base_vertex("legacy").unwrap());
+        assert!(interface.entry_point_uses_base_instance("legacy").unwrap());
+        assert!(interface.entry_point_writes_point_size("legacy").unwrap());
+        assert!(!interface.entry_point_uses_base_vertex("ordinary").unwrap());
+        assert!(!interface
+            .entry_point_uses_base_instance("ordinary")
+            .unwrap());
+        assert!(!interface.entry_point_writes_point_size("ordinary").unwrap());
+        assert!(interface.entry_point_uses_point_coord("point").unwrap());
+        assert!(!interface.entry_point_uses_point_coord("ordinary").unwrap());
+        assert!(interface.entry_point_uses_base_vertex("missing").is_err());
     }
 
     #[test]

@@ -1115,6 +1115,16 @@ stream before HAL pipeline creation. The same layout remains available to
 entry points that do not use the builtin. Synthetic allocator boundaries and
 a strict public validation test passed; the validation test issues no draw.
 
+## Legacy GLSL/SPIR-V shader built-in validation
+
+Core now represents the FL9_1 restrictions on `BaseVertex`, `BaseInstance`,
+`PointSize`, and `PointCoord` as downlevel limits. It checks the selected
+vertex or fragment entry point before asking HAL to compile a shader, while
+ordinary sibling entry points remain available. A strict public test on the
+RTX 3090 Ti at requested and actual FL9_1 verifies the four validation errors
+and successful pipeline creation for ordinary GLSL shaders. This closes a
+core/HAL validation mismatch; it does not add shader functionality.
+
 ## Query-gated R8_UNORM mip chains
 
 R8_UNORM now supports mip chains only when the selected device reports

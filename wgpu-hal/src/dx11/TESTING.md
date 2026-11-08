@@ -3156,3 +3156,21 @@ and the exact boundary for reserving the hidden slot. The public case performs
 validation on the RTX 3090 Ti at requested/actual FL9_1; it does not issue a
 draw. Existing public readback tests remain the execution evidence for the
 emulated builtin itself.
+
+### Legacy GLSL built-in validation
+
+Run the selected-entry validation test with GLSL enabled in a Visual Studio x64
+developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib legacy_shader_builtins_follow_selected_entry_and_direction
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_rejects_unimplemented_legacy_shader_builtins_at_fl91 -- --nocapture --test-threads=1
+```
+
+The CPU test covers stage, direction, missing names, and selected-entry
+isolation. The public test rejects `BaseVertex`, `BaseInstance`, `PointSize`,
+and `PointCoord` before HAL and confirms ordinary GLSL vertex/fragment
+pipelines remain valid. On the RTX 3090 Ti the selected adapter is reported
+as physical hardware at requested and actual FL9_1; rejected-pipeline cases
+exercise validation and do not submit draws.

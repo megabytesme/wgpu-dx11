@@ -95,6 +95,20 @@ Microsoft references: [10Level9 device constraints](https://learn.microsoft.com/
 [feature-level capability table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro), and
 [format support queries](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-checkformatsupport).
 
+## Legacy shader built-ins
+
+The level-9 HLSL profiles used by this backend cannot compile the legacy
+`BaseVertex`, `BaseInstance`, and `PointSize` vertex interface semantics or the
+`PointCoord` fragment input. Some GLSL and SPIR-V inputs express these
+built-ins even though the equivalent WGSL/downlevel path has no support. The
+public FL9_1 projection keeps `vertex_base_vertex_input`,
+`vertex_base_instance_input`, `vertex_point_size_output`, and
+`fragment_point_coord_input` false. Core checks the selected entry point's
+validated interface and rejects only a pipeline that uses one of them, before
+HAL shader compilation. Ordinary entry points in the same module remain
+eligible. This is a shader-profile implementation restriction; it does not
+change the feature-level guarantees or enable additional shader operations.
+
 ## Feature-level and driver facts
 
 The selected device level, not the adapter's maximum, determines the guaranteed

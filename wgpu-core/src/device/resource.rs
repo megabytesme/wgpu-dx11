@@ -5673,6 +5673,48 @@ impl Device {
                             pipeline::CreateRenderPipelineError::UnsupportedInstanceIndexInput,
                         );
                     }
+                    if !self.downlevel.limits.vertex_base_vertex_input
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_base_vertex(&_vertex_entry_point_name)
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedDownlevelBuiltin {
+                                builtin: "base_vertex",
+                            },
+                        );
+                    }
+                    if !self.downlevel.limits.vertex_base_instance_input
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_base_instance(&_vertex_entry_point_name)
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedDownlevelBuiltin {
+                                builtin: "base_instance",
+                            },
+                        );
+                    }
+                    if !self.downlevel.limits.vertex_point_size_output
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_writes_point_size(&_vertex_entry_point_name)
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedDownlevelBuiltin {
+                                builtin: "point_size",
+                            },
+                        );
+                    }
                     if !self.downlevel.limits.runtime_integer_shader_operations
                         && match interface {
                             Some(interface) => interface
@@ -6181,6 +6223,21 @@ impl Device {
                             pipeline::CreateRenderPipelineError::UnsupportedFragmentPosition,
                         );
                     }
+                }
+
+                if !self.downlevel.limits.fragment_point_coord_input
+                    && match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_point_coord(&fragment_entry_point_name)
+                            .map_err(stage_err)?,
+                        None => true,
+                    }
+                {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedDownlevelBuiltin {
+                            builtin: "point_coord",
+                        },
+                    );
                 }
 
                 if match shader_module.interface.interface() {

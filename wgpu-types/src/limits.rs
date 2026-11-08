@@ -1172,6 +1172,15 @@ pub struct DownlevelLimits {
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
     pub vertex_index_input: bool,
+    /// Whether vertex entry points may declare the legacy `base_vertex` input.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub vertex_base_vertex_input: bool,
+    /// Whether vertex entry points may declare the legacy `base_instance` input.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub vertex_base_instance_input: bool,
+    /// Whether vertex entry points may write the legacy `point_size` output.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub vertex_point_size_output: bool,
     /// Whether emulating `@builtin(vertex_index)` consumes an additional physical vertex-input slot.
     ///
     /// This can be true on backends that synthesize the builtin as a hidden vertex attribute.
@@ -1273,6 +1282,9 @@ pub struct DownlevelLimits {
     /// This depends on the pixel-shader profile independently of sample-mask output support.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub fragment_sample_mask_input: bool,
+    /// Whether fragment entry points may read the legacy `point_coord` input.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub fragment_point_coord_input: bool,
     /// Whether fragment inputs may use `@interpolate(flat)` or `@interpolate(linear)`.
     ///
     /// These interpolation modes may be unavailable in downlevel pixel-shader profiles even
@@ -1460,6 +1472,9 @@ impl Default for DownlevelLimits {
             shader_loops: true,
             shader_dynamic_loops: true,
             vertex_index_input: true,
+            vertex_base_vertex_input: true,
+            vertex_base_instance_input: true,
+            vertex_point_size_output: true,
             vertex_index_input_requires_hidden_slot: false,
             vertex_index_topology_mask: Self::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: true,
@@ -1477,6 +1492,7 @@ impl Default for DownlevelLimits {
             fragment_depth_without_color_target_0: true,
             fragment_sample_mask_output: true,
             fragment_sample_mask_input: true,
+            fragment_point_coord_input: true,
             fragment_non_perspective_interpolation: true,
             fragment_front_facing: true,
             fragment_position: true,
@@ -1690,6 +1706,9 @@ impl DownlevelLimits {
             && (!required.shader_loops || self.shader_loops)
             && (!required.shader_dynamic_loops || self.shader_dynamic_loops)
             && (!required.vertex_index_input || self.vertex_index_input)
+            && (!required.vertex_base_vertex_input || self.vertex_base_vertex_input)
+            && (!required.vertex_base_instance_input || self.vertex_base_instance_input)
+            && (!required.vertex_point_size_output || self.vertex_point_size_output)
             && (!required.vertex_index_input_requires_hidden_slot
                 || self.vertex_index_input_requires_hidden_slot)
             && (!required.vertex_index_input
@@ -1716,6 +1735,7 @@ impl DownlevelLimits {
                 || self.fragment_depth_without_color_target_0)
             && (!required.fragment_sample_mask_output || self.fragment_sample_mask_output)
             && (!required.fragment_sample_mask_input || self.fragment_sample_mask_input)
+            && (!required.fragment_point_coord_input || self.fragment_point_coord_input)
             && (!required.fragment_non_perspective_interpolation
                 || self.fragment_non_perspective_interpolation)
             && (!required.fragment_front_facing || self.fragment_front_facing)
@@ -1800,6 +1820,9 @@ impl DownlevelCapabilities {
             && self.limits.shader_loops
             && self.limits.shader_dynamic_loops
             && self.limits.vertex_index_input
+            && self.limits.vertex_base_vertex_input
+            && self.limits.vertex_base_instance_input
+            && self.limits.vertex_point_size_output
             && !self.limits.vertex_index_input_requires_hidden_slot
             && self.limits.vertex_index_topology_mask
                 & DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL
@@ -1823,6 +1846,7 @@ impl DownlevelCapabilities {
             && self.limits.fragment_depth_without_color_target_0
             && self.limits.fragment_sample_mask_output
             && self.limits.fragment_sample_mask_input
+            && self.limits.fragment_point_coord_input
             && self.limits.fragment_non_perspective_interpolation
             && self.limits.fragment_front_facing
             && self.limits.fragment_position
@@ -2367,6 +2391,9 @@ mod tests {
             shader_loops: false,
             shader_dynamic_loops: false,
             vertex_index_input: false,
+            vertex_base_vertex_input: true,
+            vertex_base_instance_input: true,
+            vertex_point_size_output: true,
             vertex_index_input_requires_hidden_slot: false,
             vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
@@ -2385,6 +2412,7 @@ mod tests {
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
             fragment_depth_without_color_target_0: false,
+            fragment_point_coord_input: true,
             fragment_sample_mask_input: true,
             fragment_sample_mask_output: false,
             fragment_non_perspective_interpolation: false,
@@ -2428,6 +2456,9 @@ mod tests {
             shader_loops: false,
             shader_dynamic_loops: false,
             vertex_index_input: false,
+            vertex_base_vertex_input: true,
+            vertex_base_instance_input: true,
+            vertex_point_size_output: true,
             vertex_index_input_requires_hidden_slot: false,
             vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
@@ -2446,6 +2477,7 @@ mod tests {
             viewport_rectangles_outside_target: false,
             depth_bias_with_fragment_depth: false,
             fragment_depth_without_color_target_0: false,
+            fragment_point_coord_input: true,
             fragment_sample_mask_input: true,
             fragment_sample_mask_output: false,
             fragment_non_perspective_interpolation: false,
@@ -2796,6 +2828,10 @@ mod tests {
             "fragment_depth_without_color_target_0",
             "fragment_sample_mask_output",
             "fragment_sample_mask_input",
+            "vertex_base_vertex_input",
+            "vertex_base_instance_input",
+            "vertex_point_size_output",
+            "fragment_point_coord_input",
             "fragment_non_perspective_interpolation",
             "texture_query",
             "texture_sample_base_clamp_to_edge",
@@ -2836,6 +2872,10 @@ mod tests {
         assert!(limits.fragment_depth_without_color_target_0);
         assert!(limits.fragment_sample_mask_output);
         assert!(limits.fragment_sample_mask_input);
+        assert!(limits.vertex_base_vertex_input);
+        assert!(limits.vertex_base_instance_input);
+        assert!(limits.vertex_point_size_output);
+        assert!(limits.fragment_point_coord_input);
         assert!(limits.fragment_non_perspective_interpolation);
         assert!(limits.texture_query);
         assert!(limits.texture_sample_base_clamp_to_edge);
@@ -2938,6 +2978,37 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn legacy_shader_builtins_are_downlevel_capabilities() {
+        for unsupported_field in 0..4 {
+            let limits = match unsupported_field {
+                0 => DownlevelLimits {
+                    vertex_base_vertex_input: false,
+                    ..DownlevelLimits::default()
+                },
+                1 => DownlevelLimits {
+                    vertex_base_instance_input: false,
+                    ..DownlevelLimits::default()
+                },
+                2 => DownlevelLimits {
+                    vertex_point_size_output: false,
+                    ..DownlevelLimits::default()
+                },
+                _ => DownlevelLimits {
+                    fragment_point_coord_input: false,
+                    ..DownlevelLimits::default()
+                },
+            };
+            assert!(limits.check_limits(&limits));
+            assert!(!limits.check_limits(&DownlevelLimits::default()));
+            assert!(!DownlevelCapabilities {
+                limits,
+                ..DownlevelCapabilities::default()
+            }
+            .is_webgpu_compliant());
+        }
     }
 
     #[test]

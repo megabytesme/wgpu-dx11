@@ -830,6 +830,8 @@ pub enum CreateRenderPipelineError {
     VertexIndexInputSlotsExhausted,
     #[error("Vertex `@builtin(instance_index)` is not supported by this downlevel adapter")]
     UnsupportedInstanceIndexInput,
+    #[error("Shader `@builtin({builtin})` is not supported by this downlevel adapter")]
+    UnsupportedDownlevelBuiltin { builtin: &'static str },
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
     UnsupportedDepthBiasWithFragmentDepth,
     #[error(
@@ -1035,6 +1037,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedVertexIndexTopology { .. }
             | Self::VertexIndexInputSlotsExhausted
             | Self::UnsupportedInstanceIndexInput
+            | Self::UnsupportedDownlevelBuiltin { .. }
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
             | Self::UnsupportedFragmentSampleMaskOutput
