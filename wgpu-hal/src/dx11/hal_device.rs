@@ -1673,10 +1673,15 @@ mod tests {
     #[test]
     fn mapped_shadow_remains_valid_across_gpu_copies() -> windows::core::Result<()> {
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
             return Ok(());
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
         let device = Device::new(native.clone());
         let dynamic: &dyn DynDevice = &device;
         let source = unsafe {
@@ -1739,6 +1744,7 @@ mod tests {
                 .invalidate_mapped_ranges(dest.as_ref(), &[8..24])
                 .unwrap();
         }
+        assert_eq!(dst.last_readback_staging_size(), 16);
         let first = unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) };
         assert_eq!(
             first,
@@ -1759,6 +1765,7 @@ mod tests {
                 .invalidate_mapped_ranges(dest.as_ref(), &[12..20])
                 .unwrap();
         }
+        assert_eq!(dst.last_readback_staging_size(), 8);
         let second = unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) };
         assert_eq!(&second[4..12], &[0x33; 8]);
         assert_eq!(&second[..4], &[0x11; 4]);
@@ -1775,6 +1782,7 @@ mod tests {
                 .invalidate_mapped_ranges(dest.as_ref(), &[0..32])
                 .unwrap();
         }
+        assert_eq!(dst.last_readback_staging_size(), 16);
         assert_eq!(
             unsafe { core::slice::from_raw_parts(dst_map.ptr.as_ptr(), 16) },
             &[0xab; 16]

@@ -32,6 +32,8 @@ pub struct NativeBuffer {
     fail_next_invalidate: core::sync::atomic::AtomicBool,
     #[cfg(feature = "dx11-test-fixture")]
     fail_next_flush: core::sync::atomic::AtomicBool,
+    #[cfg(test)]
+    last_readback_staging_size: core::sync::atomic::AtomicU32,
 }
 
 impl NativeBuffer {
@@ -57,6 +59,12 @@ impl NativeBuffer {
     #[doc(hidden)]
     pub fn test_fixture_shadow_is_mapped(&self) -> bool {
         self.mapping.lock().is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) fn last_readback_staging_size(&self) -> u32 {
+        self.last_readback_staging_size
+            .load(core::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -219,6 +227,8 @@ impl NativeDevice {
             fail_next_invalidate: core::sync::atomic::AtomicBool::new(false),
             #[cfg(feature = "dx11-test-fixture")]
             fail_next_flush: core::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            last_readback_staging_size: core::sync::atomic::AtomicU32::new(0),
         })
     }
 
@@ -526,7 +536,7 @@ impl NativeDevice {
         }
         let mut bytes = zeroed_readback(len)?;
         let desc = D3D11_BUFFER_DESC {
-            ByteWidth: buffer.size,
+            ByteWidth: end - start,
             Usage: D3D11_USAGE_STAGING,
             CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
             ..Default::default()
@@ -537,20 +547,36 @@ impl NativeDevice {
                 .CreateBuffer(&desc, None, Some(&mut staging))?;
         }
         let staging = staging.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        #[cfg(test)]
+        buffer
+            .last_readback_staging_size
+            .store(desc.ByteWidth, core::sync::atomic::Ordering::Relaxed);
         let context = self.immediate_context();
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
-            context.CopyResource(&staging, &buffer.raw);
+            context.CopySubresourceRegion(
+                &staging,
+                0,
+                0,
+                0,
+                0,
+                &buffer.raw,
+                0,
+                Some(&D3D11_BOX {
+                    left: start,
+                    right: end,
+                    top: 0,
+                    bottom: 1,
+                    front: 0,
+                    back: 1,
+                }),
+            );
             context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
             if mapped.pData.is_null() {
                 context.Unmap(&staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
-            core::ptr::copy_nonoverlapping(
-                mapped.pData.cast::<u8>().add(start as usize),
-                bytes.as_mut_ptr(),
-                len,
-            );
+            core::ptr::copy_nonoverlapping(mapped.pData.cast::<u8>(), bytes.as_mut_ptr(), len);
             context.Unmap(&staging, 0);
             Ok(bytes)
         }

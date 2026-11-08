@@ -156,6 +156,7 @@ Bottom level categories:
 
 - Allow opt-in D3D11 GPU copies between matching RGBA8/BGRA8 linear and sRGB formats while preserving the stored texel bits.
 - Allow allocation of storage-only D3D11 buffers while keeping FL9_1 shader storage bindings unavailable.
+- Stage and copy only the requested byte range during D3D11 buffer readback instead of allocating a staging buffer the size of the source.
 
 #### naga
 
