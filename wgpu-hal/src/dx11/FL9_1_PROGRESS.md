@@ -11751,3 +11751,13 @@ before unsupported HAL panic paths. These were source audits, not new test
 runs. The broad audit of less-common public states and external verification
 remain open. Historical FL9_1 driver behavior, Lumia/CoreWindow runtime, and
 physical device-removal/recovery remain unverified.
+
+The selected-device optional-format diagnostic was rerun under the Visual
+Studio 2026 x64 developer environment after the initial shell lacked
+`link.exe`. `fl91_wgpu_projection_matches_the_selected_physical_device`
+passed 1/1 on the RTX 3090 Ti at requested/actual FL9_1. D32_FLOAT and
+D32_FLOAT_S8X24 format queries returned `E_NOINTERFACE` rather than positive
+support, so they do not provide a safe optional depth-format expansion on this
+device. The selected device also reported no `TEXTURE2D` support for the
+probed optional float formats; no new sampled format candidate was found.
+Existing `hal_queue.rs` unnecessary-qualification compiler warnings remain.
