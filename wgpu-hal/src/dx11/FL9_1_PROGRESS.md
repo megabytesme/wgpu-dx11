@@ -11473,3 +11473,30 @@ input remains unsupported at this shader profile. Historical 9_1 drivers,
 physical device removal/recovery and Lumia/CoreWindow runtime remain
 unverified. Continue with independently reproduced public-valid requests and
 selected-entry shader/render-state coverage.
+
+## Selected legacy shader built-in gates — 2026-11-08
+
+The core/HAL audit found four legacy interface built-ins that optional GLSL or
+SPIR-V frontends can express, but the selected FL9_1 HLSL writer cannot lower:
+vertex `BaseVertex`, `BaseInstance`, `PointSize`, and fragment `PointCoord`.
+Core previously accepted those selected pipelines and deferred failure to HAL.
+`DownlevelLimits` now models each restriction; the D3D11 FL9_1 projection sets
+them false, and core rejects only selected entry points whose validated
+interfaces contain them. Ordinary sibling GLSL entries remain pipeline-valid.
+No shader behavior is emulated or promoted.
+
+Verification with Rust 1.93.1 and the Visual Studio x64 environment:
+
+- `cargo +1.93 test --offline -j16 -p wgpu-types --lib`: 98 passed.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib`: 110 passed, including the selected-entry/direction test.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 101 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1`: 86 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical adapter, requested/actual FL9_1. Three optional selected-device subcases skipped: `Unorm8x2` IA, `Float16x2` IA, and `Rg8Unorm` mip support. The new test performs validation and ordinary pipeline creation; other tests in this run perform real GPU rendering/readback.
+- Focused strict GLSL test passed 1/1. The complete strict private HAL suite passed 412/412 with `WGPU_DX11_REQUIRE_HARDWARE=1`.
+- Clippy passed for `wgpu-types`, `wgpu-core` tests, `wgpu-hal` tests, and the public test target. Existing warnings remain: unused serde imports and qualifications in `wgpu-types`, existing test-style warnings in core, D3D11 too-many-arguments/single-range warnings in HAL, and a disallowed standard HashMap in an older public test.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+The shader audit finding is closed for these four selected-entry inputs. It
+does not increase the supported FL9_1 shader subset. Public D3D11 remains
+opt-in. The broader API contract audit, historical-driver validation,
+physical device-removal recovery, and Lumia/CoreWindow runtime verification
+remain open; independent shader, resource, and adapter audits are continuing.

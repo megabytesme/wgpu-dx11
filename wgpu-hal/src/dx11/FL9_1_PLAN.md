@@ -1,15 +1,13 @@
 # FL9_1 completion plan
-Latest verified code checkpoint: `3f3fd4fd0f9855ebbd8a4c6e47f77636307b092a`
-(`dx11: close FL9_1 validation contract gaps`). It adds selected-entry core
-validation for unsupported fragment sample-mask input, correct public surface
-acquisition error classification for duplicate/wrong-thread calls, and
-core-valid storage-only buffer allocation without exposing storage bindings.
-The full strict private HAL suite passed 412/412; the public strict D3D11 suite
-passed 85/85 on the RTX 3090 Ti at requested/actual FL9_1, with three
-optional selected-device skips. Core DX11, core DX12 and `wgpu-types` suites
-passed 109/109, 100/100 and 97/97. See `FL9_1_PROGRESS.md` for commands and
-diagnostics. D3D11 remains explicit opt-in and excluded from default backend
-selection.
+Latest verified code checkpoint: `695c888f4a10c4a58b51757324a0b099d1b367e2`
+(`dx11: gate unsupported FL9_1 shader builtins in core`). The selected-entry
+core contract now gates legacy `BaseVertex`, `BaseInstance`, `PointSize`, and
+`PointCoord` built-ins that the FL9_1 HLSL profile cannot compile. Strict public
+validation passed on the RTX 3090 Ti at requested/actual FL9_1. The full strict
+public suite passed 86/86 (three optional device subcases skipped), the private
+HAL suite 412/412, core DX11 110/110, core DX12 101/101, and `wgpu-types`
+98/98. See `FL9_1_PROGRESS.md` for commands and diagnostics. D3D11 remains
+explicit opt-in and excluded from default backend selection.
 
 The next work is to continue the public core/HAL contract audit across shader
 semantics, render state, resource descriptors and lifetime paths, addressing
