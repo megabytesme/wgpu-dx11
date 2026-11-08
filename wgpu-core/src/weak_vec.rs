@@ -42,6 +42,10 @@ impl<T> WeakVec<T> {
 
         self.inner.push(value);
     }
+
+    pub(crate) fn has_live(&self) -> bool {
+        self.inner.iter().any(|value| value.strong_count() != 0)
+    }
 }
 
 pub(crate) struct WeakVecIter<T> {

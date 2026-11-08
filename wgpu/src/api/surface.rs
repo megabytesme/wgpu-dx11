@@ -111,16 +111,21 @@ impl Surface<'_> {
     ///
     /// # Panics
     ///
-    /// - An old [`SurfaceTexture`] is still alive referencing an old surface.
+    /// - An old [`SurfaceTexture`] or one of its derived views is still alive.
     /// - Texture format requested is unsupported on the surface.
     /// - The requested color space is unsupported for the requested format
     ///   (see [`SurfaceCapabilities::format_capabilities`]).
     /// - `config.width` or `config.height` is zero.
     pub fn configure(&self, device: &Device, config: &SurfaceConfiguration) {
-        self.inner.configure(&device.inner, config);
-
-        let mut conf = self.config.lock();
-        *conf = Some(config.clone());
+        let outcome = self.inner.configure(&device.inner, config);
+        let mut cached_config = self.config.lock();
+        match outcome {
+            dispatch::SurfaceConfigureOutcome::Success => {
+                *cached_config = Some(config.clone());
+            }
+            dispatch::SurfaceConfigureOutcome::FailedPreservingPrevious => {}
+            dispatch::SurfaceConfigureOutcome::FailedUnconfigured => *cached_config = None,
+        }
     }
 
     /// Returns the current configuration of [`Surface`], if configured.
@@ -140,8 +145,8 @@ impl Surface<'_> {
     /// After rendering to the returned [`SurfaceTexture`], submit work via [`Queue::submit`]
     /// and then call [`Queue::present`] to display it.
     ///
-    /// If a [`SurfaceTexture`] referencing this surface is alive when [`Surface::configure()`]
-    /// is called, the configure call will panic.
+    /// If a [`SurfaceTexture`] referencing this surface, or one of its derived views, is alive
+    /// when [`Surface::configure()`] is called, the configure call will panic.
     ///
     /// See the documentation of [`CurrentSurfaceTexture`] for how each possible result
     /// should be handled.

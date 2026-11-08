@@ -145,6 +145,7 @@ Bottom level categories:
 - Make dropping an unpresented `SurfaceTexture` safe after its `Surface` has been dropped.
 - Report an invalid surface when presenting a retained frame after its owning
   `Surface` has been dropped.
+- Keep acquired surface backbuffers alive while derived views remain in use, and preserve the public configuration cache after a failed reconfiguration.
 
 #### Hal
 

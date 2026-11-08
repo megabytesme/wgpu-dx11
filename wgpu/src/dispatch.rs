@@ -606,7 +606,11 @@ pub trait SurfaceInterface: CommonTraits {
         crate::DisplayHdrInfo::default()
     }
 
-    fn configure(&self, device: &DispatchDevice, config: &crate::SurfaceConfiguration);
+    fn configure(
+        &self,
+        device: &DispatchDevice,
+        config: &crate::SurfaceConfiguration,
+    ) -> SurfaceConfigureOutcome;
     fn get_current_texture(
         &self,
     ) -> (
@@ -614,6 +618,13 @@ pub trait SurfaceInterface: CommonTraits {
         crate::SurfaceStatus,
         DispatchSurfaceOutputDetail,
     );
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SurfaceConfigureOutcome {
+    Success,
+    FailedPreservingPrevious,
+    FailedUnconfigured,
 }
 
 pub trait SurfaceOutputDetailInterface: CommonTraits {

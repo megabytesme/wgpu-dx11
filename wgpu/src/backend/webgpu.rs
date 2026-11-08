@@ -4205,19 +4205,12 @@ impl dispatch::SurfaceInterface for WebSurface {
         }
     }
 
-    fn configure(&self, device: &dispatch::DispatchDevice, config: &crate::SurfaceConfiguration) {
+    fn configure(
+        &self,
+        device: &dispatch::DispatchDevice,
+        config: &crate::SurfaceConfiguration,
+    ) -> dispatch::SurfaceConfigureOutcome {
         let device = device.as_webgpu();
-
-        match self.canvas {
-            Canvas::Canvas(ref canvas) => {
-                canvas.set_width(config.width);
-                canvas.set_height(config.height);
-            }
-            Canvas::Offscreen(ref canvas) => {
-                canvas.set_width(config.width);
-                canvas.set_height(config.height);
-            }
-        }
 
         if let wgt::PresentMode::Mailbox | wgt::PresentMode::Immediate = config.present_mode {
             panic!("Only FIFO/Auto* is supported on web");
@@ -4294,7 +4287,7 @@ impl dispatch::SurfaceInterface for WebSurface {
                      the surface will report as lost. Check `get_capabilities` before \
                      configuring."
                 );
-                return;
+                return dispatch::SurfaceConfigureOutcome::FailedPreservingPrevious;
             }
         }
         let mapped_view_formats = config
@@ -4318,7 +4311,20 @@ impl dispatch::SurfaceInterface for WebSurface {
         // (current Firefox) list a context format and then reject it from
         // `configure`. Once they stop doing that, this handling can go away.
         match self.context.configure(&mapped) {
-            Ok(()) => self.configure_failed.set(false),
+            Ok(()) => {
+                self.configure_failed.set(false);
+                match self.canvas {
+                    Canvas::Canvas(ref canvas) => {
+                        canvas.set_width(config.width);
+                        canvas.set_height(config.height);
+                    }
+                    Canvas::Offscreen(ref canvas) => {
+                        canvas.set_width(config.width);
+                        canvas.set_height(config.height);
+                    }
+                }
+                dispatch::SurfaceConfigureOutcome::Success
+            }
             Err(err) => {
                 self.configure_failed.set(true);
                 log::error!(
@@ -4327,6 +4333,7 @@ impl dispatch::SurfaceInterface for WebSurface {
                      `rgba16float` canvases). The surface will report as lost until it \
                      is successfully reconfigured."
                 );
+                dispatch::SurfaceConfigureOutcome::FailedPreservingPrevious
             }
         }
     }

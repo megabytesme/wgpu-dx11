@@ -6738,7 +6738,7 @@ impl Device {
         self: &Arc<Self>,
         surface: &crate::instance::Surface,
         config: &wgt::SurfaceConfiguration<Vec<TextureFormat>>,
-    ) -> Option<present::ConfigureSurfaceError> {
+    ) -> (Option<present::ConfigureSurfaceError>, bool) {
         use present::ConfigureSurfaceError as E;
         profiling::scope!("surface_configure");
 
@@ -6823,8 +6823,29 @@ impl Device {
 
                 // Wait for all work to finish before configuring the surface.
                 let queue = self.get_queue().unwrap();
-                let _submission_guard = queue.lock_submission();
-                if queue.is_presenting_on_current_thread() {
+                let previous_device = surface
+                    .presentation
+                    .lock()
+                    .as_ref()
+                    .map(|present| Arc::clone(&present.device))
+                    .filter(|device| !Arc::ptr_eq(device, self));
+                let previous_queue = previous_device
+                    .as_ref()
+                    .and_then(|device| device.get_queue());
+                let mut queues_to_lock = vec![Arc::clone(&queue)];
+                if let Some(previous_queue) = previous_queue.as_ref() {
+                    queues_to_lock.push(Arc::clone(previous_queue));
+                }
+                queues_to_lock.sort_by_key(|queue| Arc::as_ptr(queue) as usize);
+                let _submission_guards = queues_to_lock
+                    .iter()
+                    .map(|queue| queue.lock_submission())
+                    .collect::<Vec<_>>();
+                if queue.is_presenting_on_current_thread()
+                    || previous_queue
+                        .as_ref()
+                        .is_some_and(|queue| queue.is_presenting_on_current_thread())
+                {
                     break 'error E::GpuWaitTimeout;
                 }
                 let snatch_guard = self.snatchable_lock.read();
@@ -6855,22 +6876,55 @@ impl Device {
                     }
                 }
 
+                if let (Some(previous_device), Some(_)) =
+                    (previous_device.as_ref(), previous_queue.as_ref())
+                {
+                    if previous_device.check_is_valid().is_ok() {
+                        let previous_snatch_guard = previous_device.snatchable_lock.read();
+                        let (closures, maintain_result) = previous_device
+                            .maintain(wgt::PollType::wait_indefinitely(), previous_snatch_guard);
+                        user_callbacks.extend(closures);
+                        match maintain_result {
+                            Ok(wgt::PollStatus::QueueEmpty) => {}
+                            Ok(wgt::PollStatus::WaitSucceeded) => {
+                                break 'error E::GpuWaitTimeout;
+                            }
+                            Ok(wgt::PollStatus::Poll) => {
+                                unreachable!("Cannot get a Poll result from a Wait action.")
+                            }
+                            Err(WaitIdleError::Timeout) if cfg!(target_arch = "wasm32") => {}
+                            Err(WaitIdleError::Device(DeviceError::Lost)) => {}
+                            Err(e) => break 'error e.into(),
+                        }
+                    }
+                }
+
                 if let Err(error) = self.check_is_valid() {
                     break 'error error.into();
                 }
 
-                // All textures must be destroyed before the surface can be re-configured.
-                if let Some(present) = surface.presentation.lock().take() {
-                    if present.acquired_texture.is_some() {
+                // All textures and views must be released before the surface can be re-configured.
+                let mut presentation = surface.presentation.lock();
+                if let Some(present) = presentation.as_ref() {
+                    if present.acquired_texture.is_some()
+                        || present
+                            .surface_textures
+                            .iter()
+                            .filter_map(Weak::upgrade)
+                            .any(|texture| texture.views.lock().has_live())
+                    {
                         break 'error E::PreviousOutputExists;
                     }
                 }
+                if previous_device.is_some() {
+                    presentation.take();
+                }
+                drop(presentation);
 
-                // TODO: Texture views may still be alive that point to the texture.
-                // this will allow the user to render to the surface texture, long after
-                // it has been removed.
-                //
-                // https://github.com/gfx-rs/wgpu/issues/4105
+                if let Some(previous_device) = previous_device.as_ref() {
+                    let surface_raw = surface.raw(previous_device.backend()).unwrap();
+                    unsafe { surface_raw.unconfigure(previous_device.raw()) };
+                }
 
                 match unsafe { surface_raw.configure(self.raw(), &hal_config) } {
                     Ok(()) => (),
@@ -6896,15 +6950,17 @@ impl Device {
                     device: Arc::clone(self),
                     config: config.clone(),
                     acquired_texture: None,
+                    surface_textures: Vec::new(),
                 });
             }
 
             user_callbacks.fire();
-            return None;
+            return (None, true);
         };
 
+        let configured = surface.presentation.lock().is_some();
         user_callbacks.fire();
-        Some(error)
+        (Some(error), configured)
     }
 
     fn lose(&self, message: &str) {

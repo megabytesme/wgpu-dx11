@@ -9,7 +9,11 @@ When this texture is presented, we remove it from the device tracker as well as
 extract it from the hub.
 !*/
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{
+    boxed::Box,
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::mem::ManuallyDrop;
 
 #[cfg(feature = "trace")]
@@ -36,6 +40,7 @@ pub(crate) struct Presentation {
     pub(crate) device: Arc<Device>,
     pub(crate) config: wgt::SurfaceConfiguration<Vec<wgt::TextureFormat>>,
     pub(crate) acquired_texture: Option<Arc<resource::Texture>>,
+    pub(crate) surface_textures: Vec<Weak<resource::Texture>>,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -79,7 +84,7 @@ pub enum ConfigureSurfaceError {
     InvalidViewFormat(wgt::TextureFormat, wgt::TextureFormat),
     #[error(transparent)]
     MissingDownlevelFlags(#[from] MissingDownlevelFlags),
-    #[error("The `SurfaceOutput` returned by `get_current_texture` must be dropped before re-configuring via `configure` or  retrieving a new texture via `get_current_texture`.")]
+    #[error("Drop a previously acquired `SurfaceOutput` before acquiring another; reconfiguring also requires dropping all derived views from the current surface configuration.")]
     PreviousOutputExists,
     #[error("Failed to wait for GPU to come idle before reconfiguring the Surface")]
     GpuWaitTimeout,
@@ -239,6 +244,13 @@ impl Surface {
                 );
 
                 let texture = Arc::new(texture);
+
+                present.surface_textures.retain(|previous| {
+                    previous
+                        .upgrade()
+                        .is_some_and(|texture| texture.views.lock().has_live())
+                });
+                present.surface_textures.push(Arc::downgrade(&texture));
 
                 device
                     .trackers

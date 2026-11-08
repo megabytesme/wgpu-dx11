@@ -1776,6 +1776,16 @@ impl Global {
         device_id: DeviceId,
         config: &wgt::SurfaceConfiguration<Vec<TextureFormat>>,
     ) -> Option<present::ConfigureSurfaceError> {
+        self.surface_configure_with_state(surface_id, device_id, config)
+            .0
+    }
+
+    pub fn surface_configure_with_state(
+        &self,
+        surface_id: SurfaceId,
+        device_id: DeviceId,
+        config: &wgt::SurfaceConfiguration<Vec<TextureFormat>>,
+    ) -> (Option<present::ConfigureSurfaceError>, bool) {
         let device = self.hub.devices.get(device_id);
         let surface = self.surfaces.get(surface_id);
 

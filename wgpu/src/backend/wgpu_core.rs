@@ -3983,16 +3983,30 @@ impl dispatch::SurfaceInterface for CoreSurface {
         self.context.0.surface_display_hdr_info(self.id, adapter.id)
     }
 
-    fn configure(&self, device: &dispatch::DispatchDevice, config: &crate::SurfaceConfiguration) {
+    fn configure(
+        &self,
+        device: &dispatch::DispatchDevice,
+        config: &crate::SurfaceConfiguration,
+    ) -> dispatch::SurfaceConfigureOutcome {
         let device = device.as_core();
 
-        let error = self.context.0.surface_configure(self.id, device.id, config);
+        let (error, configured) = self
+            .context
+            .0
+            .surface_configure_with_state(self.id, device.id, config);
         if let Some(e) = error {
             self.context
                 .handle_error_nolabel(&device.error_sink, e, "Surface::configure");
+            if configured {
+                dispatch::SurfaceConfigureOutcome::FailedPreservingPrevious
+            } else {
+                *self.configured_device.lock() = None;
+                dispatch::SurfaceConfigureOutcome::FailedUnconfigured
+            }
         } else {
             *self.configured_device.lock() = Some(device.id);
             *self.error_sink.lock() = Some(device.error_sink.clone());
+            dispatch::SurfaceConfigureOutcome::Success
         }
     }
 

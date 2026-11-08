@@ -128,20 +128,60 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
         ..Default::default()
     }))
     .expect("request a device within the FL9_1 projection");
-    surface.configure(
-        &device,
-        &SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: TextureFormat::Bgra8Unorm,
-            width: 16,
-            height: 16,
-            present_mode: PresentMode::Fifo,
-            desired_maximum_frame_latency: 1,
-            alpha_mode: CompositeAlphaMode::Opaque,
-            view_formats: vec![],
-            color_space: SurfaceColorSpace::Srgb,
-        },
+    let config = SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: TextureFormat::Bgra8Unorm,
+        width: 16,
+        height: 16,
+        present_mode: PresentMode::Fifo,
+        desired_maximum_frame_latency: 1,
+        alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![],
+        color_space: SurfaceColorSpace::Srgb,
+    };
+    surface.configure(&device, &config);
+
+    let retained_view_frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("public D3D11 HWND acquisition for retained-view test failed: {result:?}"),
+    };
+    let retained_view = retained_view_frame
+        .texture
+        .create_view(&TextureViewDescriptor::default());
+    drop(retained_view_frame);
+    let mut resized_config = config.clone();
+    resized_config.width = 24;
+    resized_config.height = 20;
+    let error_scope = device.push_error_scope(ErrorFilter::Validation);
+    surface.configure(&device, &resized_config);
+    let error =
+        poll_ready(error_scope.pop()).expect("retained surface view blocks reconfiguration");
+    assert!(
+        format!("{error:?}").contains("SurfaceOutput"),
+        "reconfiguration with a retained derived view must report the surface-output lifetime error: {error:?}"
     );
+    drop(retained_view);
+    let error_scope = device.push_error_scope(ErrorFilter::Validation);
+    surface.configure(&device, &resized_config);
+    assert!(
+        poll_ready(error_scope.pop()).is_none(),
+        "reconfiguration should succeed after the retained view is dropped"
+    );
+    let resized_frame = match surface.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => {
+            panic!("public D3D11 HWND acquisition after retained-view resize failed: {result:?}")
+        }
+    };
+    assert_eq!(
+        (
+            resized_frame.texture.width(),
+            resized_frame.texture.height()
+        ),
+        (24, 20)
+    );
+    queue.present(resized_frame);
+    println!("PASS: a derived view kept the discarded surface backbuffer alive, core rejected reconfiguration before ResizeBuffers, and retry succeeded after the view was dropped");
 
     let hal_surface =
         unsafe { surface.as_hal::<wgpu_hal::api::Dx11>() }.expect("D3D11 HAL surface");
@@ -327,6 +367,44 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
     surface_a.configure(&device_a, &config);
     surface_b.configure(&device_a, &config);
     surface_c.configure(&device_a, &config);
+
+    let mut invalid_config = config.clone();
+    invalid_config.width = 0;
+    let error_scope = device_a.push_error_scope(ErrorFilter::Validation);
+    surface_b.configure(&device_a, &invalid_config);
+    let error =
+        poll_ready(error_scope.pop()).expect("zero-width surface configuration is rejected");
+    assert!(
+        format!("{error:?}").contains("ZeroArea"),
+        "invalid reconfiguration should report the zero-area validation error: {error:?}"
+    );
+    assert_eq!(
+        surface_b.get_configuration(),
+        Some(config.clone()),
+        "failed configuration must not replace the cached public configuration"
+    );
+
+    let mut config_b = config.clone();
+    config_b.width = 20;
+    surface_b.configure(&device_b, &config_b);
+    assert_eq!(surface_b.get_configuration(), Some(config_b.clone()));
+    let frame_b = match surface_b.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("surface acquisition after device handoff failed: {result:?}"),
+    };
+    assert_eq!(
+        (frame_b.texture.width(), frame_b.texture.height()),
+        (20, 16)
+    );
+    queue_b.present(frame_b);
+
+    surface_b.configure(&device_a, &config);
+    let frame_b = match surface_b.get_current_texture() {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        result => panic!("surface acquisition after handing back to device A failed: {result:?}"),
+    };
+    queue_a.present(frame_b);
+    println!("PASS: failed configuration preserved the public cache, and an idle HWND surface handed off A→B→A with successful acquire/present");
 
     let wrong_queue_frame = match surface_c.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
