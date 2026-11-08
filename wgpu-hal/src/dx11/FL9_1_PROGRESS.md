@@ -11067,9 +11067,10 @@ vertex streams are rebound at the matching absolute byte offset. Existing
 indexed translation also carries the resolved unsigned vertex IDs through
 rebased Uint16 windows and wide-triangle gather paths. Negative resolved IDs
 retain their u32 bit-pattern value for the supported conversion semantics.
-The emulation is accepted only for TriangleList pipelines; other topologies
-fail at HAL pipeline creation because current core limits cannot express this
-restriction. Direct integer arithmetic remains rejected. Temporary buffers
+The emulation is accepted only for TriangleList pipelines; at this checkpoint
+other topologies failed at HAL pipeline creation because core limits could not
+express the restriction. A later change adds a topology mask and core gate.
+Direct integer arithmetic remains rejected. Temporary buffers
 are created during command replay and retained through each draw; this adds
 per-draw CPU allocation and native resource creation for remapped IDs.
 
@@ -11104,8 +11105,8 @@ item-order and needless-borrow warnings; the public test reports its existing
 `std::HashMap` warning. No warning was introduced by this increment. Rustfmt
 and `git diff --check` passed. The forced modern RTX driver cannot establish
 behavior on historical FL9_1 hardware. Public topology-specific core
-validation remains a gap, so this capability must not be treated as a complete
-public contract.
+validation remained a gap at this checkpoint and was closed by the later
+topology-mask change recorded below.
 
 Reproduction from Visual Studio 2022 x64 with Rust 1.93.1:
 
@@ -11158,6 +11159,11 @@ Additional verification for this increment:
   mode enabled. The suite exercised the RTX 3090 Ti under explicitly requested
   FL9_1; optional format and shader-negative cases retained their existing
   explicit skip output.
+- Complete strict public D3D11 suite: 82 passed, 0 failed on the same adapter
+  at requested/actual FL9_1. Two optional subcases explicitly skipped: the
+  Float16x2 IA format query and Rg8Unorm mip support. The public validation
+  test accepted TriangleList vertex builtins, rejected LineList `vertex_index`
+  through a wgpu validation error, and accepted ordinary LineList pipelines.
 - DX12 core regression: 95 passed, 0 failed.
 - Public D3D11 library feature check and strict TriangleList readback: passed;
   the readback checked six indexed/non-indexed and remapping cases on hardware.
@@ -11166,6 +11172,13 @@ Additional verification for this increment:
   are existing serde imports/qualifications, helper argument counts and test
   style warnings outside this change.
 - Rustfmt check and `git diff --check` passed.
+
+The strict public regression can be reproduced with:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
 
 The new core behavior can be reproduced with:
 

@@ -16606,7 +16606,7 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         blend: None,
         write_mask: ColorWrites::ALL,
     })];
-    let create_pipeline = |entry_point, buffers| {
+    let create_pipeline = |entry_point, buffers, topology| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some(entry_point),
             layout: None,
@@ -16616,7 +16616,10 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
                 compilation_options: PipelineCompilationOptions::default(),
                 buffers,
             },
-            primitive: PrimitiveState::default(),
+            primitive: PrimitiveState {
+                topology,
+                ..Default::default()
+            },
             depth_stencil: None,
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
@@ -16631,13 +16634,21 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
     };
     let no_buffers = [];
     let scope = device.push_error_scope(ErrorFilter::Validation);
-    drop(create_pipeline("vertex_index", &no_buffers));
+    drop(create_pipeline(
+        "vertex_index",
+        &no_buffers,
+        PrimitiveTopology::TriangleList,
+    ));
     assert!(
         poll_ready(scope.pop()).is_none(),
         "the emulated vertex_index input must pass core and HAL pipeline creation"
     );
     let scope = device.push_error_scope(ErrorFilter::Validation);
-    drop(create_pipeline("instance_index", &no_buffers));
+    drop(create_pipeline(
+        "instance_index",
+        &no_buffers,
+        PrimitiveTopology::TriangleList,
+    ));
     assert!(
         poll_ready(scope.pop()).is_none(),
         "the supported instance_index input must pass core and HAL validation"
@@ -16652,8 +16663,35 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
-    drop(create_pipeline("safe", &safe_buffers));
-    println!("PASS: public core and HAL accepted emulated vertex_index and instance_index inputs and a safe sibling entry");
+    drop(create_pipeline(
+        "safe",
+        &safe_buffers,
+        PrimitiveTopology::TriangleList,
+    ));
+
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline(
+        "vertex_index",
+        &no_buffers,
+        PrimitiveTopology::LineList,
+    ));
+    let error = poll_ready(scope.pop()).expect("LineList vertex_index must fail core validation");
+    assert!(
+        error.to_string().contains("LineList"),
+        "validation must identify the unsupported topology: {error}"
+    );
+
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline(
+        "safe",
+        &safe_buffers,
+        PrimitiveTopology::LineList,
+    ));
+    assert!(
+        poll_ready(scope.pop()).is_none(),
+        "LineList pipelines without vertex_index remain supported"
+    );
+    println!("PASS: public core accepted supported TriangleList vertex builtins, rejected LineList vertex_index and retained ordinary LineList pipelines");
 }
 
 #[test]

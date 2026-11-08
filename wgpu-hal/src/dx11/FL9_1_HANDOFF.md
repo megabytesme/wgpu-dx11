@@ -1,5 +1,18 @@
 # FL9_1 handoff
 
+## Latest public topology-validation checkpoint — 2026-11-08
+
+The opt-in public projection reports that emulated `vertex_index` is valid only
+for `TriangleList`. A strict public error-scope regression confirms core accepts
+the supported TriangleList builtin pipeline, rejects the same builtin on
+LineList before HAL, and still accepts an ordinary LineList pipeline. The full
+strict public D3D11 suite passed 82/82 on the RTX 3090 Ti at explicitly
+requested and selected FL9_1; optional Float16x2 IA and Rg8Unorm mip subcases
+were explicitly skipped by selected-device capability checks. The private
+strict HAL suite passed 409/409. Historical FL9_1 behavior remains unverified,
+and the backend remains partially complete. See `FL9_1_PROGRESS.md` for the
+checkpoint and reproduction commands.
+
 ## Latest shader increment — host-emulated instance index — 2026-11-07
 
 The backend supports the selected vertex entry point's instance_index input
@@ -11,7 +24,9 @@ draws. Core allows the supported builtin-to-f32 usage and keeps unrelated
 integer operations gated. On the RTX 3090 Ti at requested/actual FL9_1, the
 per-instance stream test and the indexed/non-indexed test passed; all 128
 pixels in the latter matched. FXC accepted direct, struct-only and mixed input
-forms. vertex_index and historical-device verification remain open.
+forms. The later TriangleList-only `vertex_index` implementation and its core
+topology gate are documented in the latest checkpoint above; historical-device
+verification remains open.
 ## Latest format increment — query-gated R8G8_SNORM mip chain — 2026-11-07
 
 Sampled/upload R8G8_SNORM textures may now use mip chains when the selected
