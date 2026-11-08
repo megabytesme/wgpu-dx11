@@ -117,6 +117,57 @@ impl InstanceBindings {
     }
 }
 
+pub(super) struct VertexBufferRestore<'a> {
+    context: &'a ID3D11DeviceContext,
+    bindings: Vec<(u32, ID3D11Buffer, u32, u32)>,
+}
+
+impl<'a> VertexBufferRestore<'a> {
+    pub(super) fn new(context: &'a ID3D11DeviceContext) -> Self {
+        Self {
+            context,
+            bindings: Vec::new(),
+        }
+    }
+
+    pub(super) fn add(
+        &mut self,
+        slot: u32,
+        buffer: ID3D11Buffer,
+        stride: u32,
+        offset: u32,
+    ) -> Result<()> {
+        if self
+            .bindings
+            .iter()
+            .any(|(bound_slot, ..)| *bound_slot == slot)
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.bindings
+            .try_reserve(1)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        self.bindings.push((slot, buffer, stride, offset));
+        Ok(())
+    }
+}
+
+impl Drop for VertexBufferRestore<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            for (slot, buffer, stride, offset) in &self.bindings {
+                self.context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(stride),
+                    Some(offset),
+                );
+            }
+        }
+    }
+}
+
 pub(super) fn instance_vertex_offset(
     offset: u32,
     stride: u32,
@@ -242,8 +293,11 @@ pub(super) enum NativeCommand {
     },
     DrawLines {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        first_vertex: u32,
         count: u32,
         max_vertices: u32,
+        max_vertex_index: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -305,6 +359,7 @@ pub(super) enum NativeCommand {
         count: u32,
         base_vertex: i32,
         max_indices: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -1083,28 +1138,83 @@ impl CommandBuffer {
                     }
                     NativeCommand::DrawLines {
                         vertices,
+                        first_vertex,
                         count,
                         max_vertices,
+                        max_vertex_index,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => {
                         instance_bindings.validate(*instances)?;
-                        line_list_batches(*count, *max_vertices, 1, |first, _| {
+                        first_vertex
+                            .checked_add(count.saturating_sub(1))
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        let mut restore = VertexBufferRestore::new(context);
+                        for (slot, buffer, offset, stride) in vertices {
+                            restore.add(*slot, buffer.clone(), *stride, *offset)?;
+                        }
+                        if let Some((slot, identity)) = vertex_index {
+                            restore.add(*slot, identity.clone(), 4, 0)?;
+                        }
+                        line_list_batches(*count, *max_vertices, 1, |first, batch_count| {
+                            let absolute_first = first_vertex
+                                .checked_add(first)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            absolute_first
+                                .checked_add(batch_count.saturating_sub(1))
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                             for (_, _, offset, stride) in vertices {
-                                strip_vertex_offset(*offset, *stride, first)?;
+                                strip_vertex_offset(*offset, *stride, absolute_first)?;
                             }
                             Ok(())
                         })?;
                         for instance in 0..*instances {
                             instance_bindings.bind(context, instance)?;
                             line_list_batches(*count, *max_vertices, 1, |first, count| {
+                                let absolute_first = first_vertex
+                                    .checked_add(first)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                                 for (slot, buffer, base, stride) in vertices {
-                                    let offset = strip_vertex_offset(*base, *stride, first)?;
+                                    let offset =
+                                        strip_vertex_offset(*base, *stride, absolute_first)?;
                                     context.IASetVertexBuffers(
                                         *slot,
                                         1,
                                         Some(&Some(buffer.clone())),
                                         Some(stride),
+                                        Some(&offset),
+                                    );
+                                }
+                                if let Some((slot, identity)) = vertex_index {
+                                    let last = absolute_first
+                                        .checked_add(count - 1)
+                                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                    let (buffer, offset) = if last <= *max_vertex_index {
+                                        let offset = absolute_first
+                                            .checked_mul(4)
+                                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                        (identity.clone(), offset)
+                                    } else {
+                                        let mut ids = Vec::new();
+                                        ids.try_reserve_exact(count as usize)
+                                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                                        ids.extend(
+                                            (0..count).map(|i| u64::from(absolute_first + i)),
+                                        );
+                                        let device = context.GetDevice()?;
+                                        (
+                                            super::hal_index::create_vertex_index_buffer(
+                                                &device, &ids,
+                                            )?,
+                                            0,
+                                        )
+                                    };
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer)),
+                                        Some(&4),
                                         Some(&offset),
                                     );
                                 }
@@ -1251,6 +1361,7 @@ impl CommandBuffer {
                         count,
                         base_vertex,
                         max_indices,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => binding.draw_lines(
@@ -1261,6 +1372,7 @@ impl CommandBuffer {
                         vertices,
                         (*max_indices, *instances),
                         instance_bindings,
+                        vertex_index.as_ref(),
                     )?,
                     NativeCommand::DrawIndexedLineStrips {
                         binding,

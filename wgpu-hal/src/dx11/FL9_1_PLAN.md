@@ -1,5 +1,33 @@
 # FL9_1 completion plan
 
+## Latest verified increment — `vertex_index` with LineList — 2026-11-08
+
+The selected FL9_1 projection and defensive HAL gate now permit emulated
+`vertex_index` for LineList in addition to TriangleList and PointList. Direct
+draw replay applies `first_vertex` once to user streams and the hidden identity
+stream. Indexed Uint16 and Uint32 lists preserve line pairs, resolve effective
+IDs after `base_vertex`, and use Window or Gather remapping when the native
+FL9_1 index range is exceeded. Replay restores regular and hidden IA vertex
+bindings after temporary rebasing/gathering. LineStrip and TriangleStrip
+`vertex_index` remain rejected.
+
+Strict public GPU tests on the RTX 3090 Ti at requested/actual FL9_1 verified
+direct, Uint16 and Uint32 LineList output, plus a direct nonzero-`first_vertex`
+draw and an indexed Uint32 Gather draw with nonempty vertex data followed by
+distinct triangle output in the same pass. The full private HAL suite passed
+437/437, the strict public D3D11 target passed 102/102, and the Core fixture
+suite passed 115/115. Formatting and `git diff --check` passed. One stale Core
+fixture feature expectation was updated to account for the already query-gated
+timestamp features being present on this RTX. Historical FL9_1 behavior is
+not established by forced-level execution on this modern device.
+
+The adjacent D16-to-buffer experiment was withdrawn. Core intentionally
+excludes depth formats from its texture-to-buffer copy mask, and forced-FL9_1
+native probes rejected every tested R16-family CPU-readable staging texture.
+That is not a currently exposed public-valid request; a future implementation
+would need a separate depth-sampling/color-pack emulation, not a permissive
+copy flag. See `FL9_1_PROGRESS.md` for the hardware evidence.
+
 ## Latest verified regression — ordered uniform GPU updates — 2026-11-08
 
 The public path now tests two GPU copies into one uniform buffer interleaved

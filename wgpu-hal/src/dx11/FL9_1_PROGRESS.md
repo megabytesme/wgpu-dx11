@@ -1,5 +1,48 @@
 # FL9_1 progress
 
+## `vertex_index` on LineList — 2026-11-08
+
+Core's selected-topology projection and the HAL now permit LineList in the
+existing emulated `vertex_index` subset; LineStrip and TriangleStrip remain
+rejected. Direct replay applies `first_vertex` once to ordinary vertex streams
+and generated IDs. Indexed Uint16/Uint32 replay keeps complete line pairs,
+uses effective indices after `base_vertex`, and selects compact Window or
+Gather remapping when needed. A scoped restore guard returns ordinary and
+hidden IA vertex slots to their original buffer, stride and offset after
+replay, including early errors.
+
+Strict public GPU execution used the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested/selected
+FL9_1, and software=false. The direct, Uint16 and Uint32 cases read back both
+expected line rows. A second same-pass test exercised a nonzero `first_vertex`
+stream and an indexed Uint32 Gather pair using vertex IDs 3 and 70,000; each
+was followed by a triangle without an explicit vertex-buffer rebind, and
+distinct readback regions/colors verified both outputs. The full strict public
+D3D11 target passed 102/102. The full strict private HAL suite passed 437/437.
+The Core fixture suite passed 115/115, including LineList acceptance and strip
+rejection. A first test shader was rejected before GPU execution because it
+used unsupported FL9_1 integer bitwise arithmetic; the shader was narrowed to
+the supported conversion-only builtin use and the rerun passed. The Core
+fixture suite also exposed an outdated expected feature mask; its expectation
+now includes the query-gated timestamp feature pair when present.
+
+## D16 CPU-readback staging boundary — 2026-11-08
+
+A forced FL9_1 RTX 3090 Ti capability diagnostic confirmed that D16 depth
+readback is not currently part of the public contract: Core's selected-device
+copy-format mask deliberately excludes depth formats, so this is not a
+Core-valid request that the HAL mishandles. An exploratory native probe found
+that creating a CPU-readable staging texture in each tested D16-compatible
+16-bit format (`R16_TYPELESS`, `R16_UNORM`, `R16_UINT`, `R16_SINT`,
+`R16_SNORM`, `R16_FLOAT`) returns `E_INVALIDARG` at requested/actual FL9_1.
+An earlier typed-D16 staging attempt also failed during map/copy and reported a
+driver internal error. No D16 readback was validated and no capability was
+exposed. A future implementation would require a separate shader conversion
+path that samples depth and packs the exact 16-bit value into a CPU-readable
+color texture; that is a materially larger emulation, not a staging-format
+substitution. The experiment was removed from the working tree. No D16
+readback capability was exposed.
+
 ## Query-gated R8G8_SNORM sampled mip chains — 2026-11-07
 
 The R8G8_SNORM path now accepts multiple mips for the existing sampled/upload

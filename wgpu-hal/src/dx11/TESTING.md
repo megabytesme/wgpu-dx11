@@ -761,12 +761,13 @@ itself occurs before GPU work.
 ### FL9_1 vertex shader system-value emulation
 
 The selected FL9_1 projection supports a bounded `vertex_index` subset for
-TriangleList and PointList pipelines. The backend does not emit `SV_VertexID`: FXC rejects
-that native semantic with X4555. Naga maps the selected input to a custom float
-IA semantic, and command replay binds identity or temporary remapping buffers.
-Core permits direct `u32`-to-`f32` use and rejects integer arithmetic. The
-`DownlevelLimits::vertex_index_topology_mask` reports TriangleList and
-PointList as supported; core rejects other topologies before HAL pipeline creation.
+TriangleList, PointList and LineList pipelines. The backend does not emit
+`SV_VertexID`: FXC rejects that native semantic with X4555. Naga maps the
+selected input to a custom float IA semantic, and command replay binds identity
+or temporary remapping buffers. Core permits direct `u32`-to-`f32` use and
+rejects integer arithmetic. The
+`DownlevelLimits::vertex_index_topology_mask` reports TriangleList, PointList
+and LineList as supported; core rejects strips before HAL pipeline creation.
 
 The same private shader path also emulates `instance_index` from a host-updated
 constant at b13. CPU tests cover selected-entry detection and restricted integer
@@ -779,6 +780,8 @@ Run the strict hardware test from a Visual Studio x64 developer environment:
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_triangle_list_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_point_list_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_line_list_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_line_list_restores_user_vertex_stream_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
@@ -786,8 +789,10 @@ The test requires a physical adapter, explicitly requests and verifies FL9_1,
 and checks complete 8x8 readbacks. On the RTX 3090 Ti, the red-pixel counts
 were 32 for a normal nonindexed draw, 0 for a degenerate indexed draw, 12 for
 a negative base-vertex draw, 32 for reindexed Uint32 indices, 32 for
-`first_vertex=100000`, and 32 after temporary-stream use. The tested driver is
-`32.0.16.2101`; historical FL9_1 driver behavior remains unverified.
+`first_vertex=100000`, and 32 after temporary-stream use. LineList tests
+additionally verify direct, Uint16 and Uint32 indexed output and a same-pass
+indexed Gather transition with a nonempty user vertex stream. The tested driver
+is `32.0.16.2101`; historical FL9_1 driver behavior remains unverified.
 ### Out-of-target viewport validation
 
 The FL9_1 fixture reports

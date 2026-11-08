@@ -353,9 +353,16 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             .flags
             .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS));
     }
-    let query_gated_features =
-        wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER | wgt::Features::POLYGON_MODE_LINE;
+    let query_gated_features = wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER
+        | wgt::Features::POLYGON_MODE_LINE
+        | wgt::Features::TIMESTAMP_QUERY
+        | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
     assert_eq!(features & !query_gated_features, expected_features);
+    assert_eq!(
+        features.contains(wgt::Features::TIMESTAMP_QUERY),
+        features.contains(wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS),
+        "the device projection exposes timestamp features together"
+    );
     if capabilities
         .downlevel
         .limits
@@ -5790,18 +5797,32 @@ fn render_triangle(
         vertex_builtin_descriptor.fragment = None;
         vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("vertex_index"));
         vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::LineList;
-        let (invalid_pipeline, error) =
+        let (line_pipeline, error) =
             global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
         assert!(
-            matches!(
-                error.as_ref(),
-                Some(pipeline::CreateRenderPipelineError::UnsupportedVertexIndexTopology {
-                    topology: wgt::PrimitiveTopology::LineList
-                })
-            ),
-            "FL9_1 core validation must reject unsupported vertex_index topology before HAL: {error:?}"
+            error.is_none(),
+            "FL9_1 core and HAL must accept LineList vertex_index: {error:?}"
         );
-        global.render_pipeline_drop(invalid_pipeline);
+        global.render_pipeline_drop(line_pipeline);
+
+        for topology in [
+            wgt::PrimitiveTopology::LineStrip,
+            wgt::PrimitiveTopology::TriangleStrip,
+        ] {
+            vertex_builtin_descriptor.primitive.topology = topology;
+            let (invalid_pipeline, error) =
+                global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+            assert!(
+                matches!(
+                    error.as_ref(),
+                    Some(pipeline::CreateRenderPipelineError::UnsupportedVertexIndexTopology {
+                        topology: rejected
+                    }) if *rejected == topology
+                ),
+                "FL9_1 core validation must reject unsupported {topology:?} vertex_index before HAL: {error:?}"
+            );
+            global.render_pipeline_drop(invalid_pipeline);
+        }
 
         vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::TriangleList;
         let (valid_pipeline, error) =

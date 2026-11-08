@@ -2,12 +2,14 @@
 Latest shader-input status: `instance_index` and a restricted `vertex_index`
 subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
 IA semantic with direct identity IDs up to 65,534 and temporary remapped streams
-for larger IDs, including nonindexed `first_vertex`. It is limited to
-TriangleList pipelines and direct `u32`-to-`f32` use. `DownlevelLimits` now
-reports the supported topology mask, and core rejects other topologies before
-HAL pipeline creation. The strict RTX 3090 Ti test verified nonindexed,
-indexed, negative-base, wide-index, large-firstVertex and transition output.
-See `TESTING.md` for the core validation fixture and public GPU test.
+for larger IDs, including nonindexed `first_vertex`. It is supported for
+TriangleList, PointList and LineList, with direct `u32`-to-`f32` use only.
+LineList preserves pairs and effective indexed IDs across Window/Gather
+remapping and restores changed IA vertex slots. `DownlevelLimits` reports this
+topology mask; core and HAL continue to reject LineStrip and TriangleStrip.
+Strict RTX 3090 Ti readback covers direct, Uint16 and Uint32 LineList and
+same-pass vertex-stream transitions. See `TESTING.md` for exact commands and
+results.
 # Direct3D 11 backend status
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an
@@ -243,7 +245,8 @@ query and backend path are available.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels). A later
 strict test verifies WGSL `instance_index` through the host-updated FL9_1
-constant path; strict tests verify TriangleList and PointList `vertex_index` emulation.
+constant path; strict tests now verify TriangleList, PointList and LineList
+`vertex_index` emulation.
 
 A twelfth strict public test verifies the FL9_1 aggregate fragment uniform
 budget across two sparse bindings: all 32 float4 vectors contribute to the
@@ -951,8 +954,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   split effective restart runs and issue one direct strip draw for each
   bounded run. Strict private HAL and public wgpu readback cover Uint16 and
   Uint32, instance-only and empty layouts. The existing PointList instance-only
-  path remains covered separately. Pipelines using `instance_index` remain
-  unsupported; general instancing is not advertised.
+  path remains covered separately. Direct supported `instance_index` input is
+  emulated through a host-updated constant and has strict public GPU coverage;
+  native instancing remains restricted to the tested instance-rate streams
+  and entry-point subset.
 - Restricted index-dependent draws support signed base vertices and validate GPU
   index contents at replay. Uint32 triangle lists and Uint16 values beyond native
   limits convert to ordered native 16-bit windows, with wide triangles gathered

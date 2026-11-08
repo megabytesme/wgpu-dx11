@@ -18375,6 +18375,542 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
 }
 
 #[test]
+fn public_dx11_vertex_index_line_list_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=direct/u16/u32 LineList vertex_index emulation",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 LineList vertex-index emulation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 LineList vertex-index shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                @vertex fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let relative = f32(index) - 65534.0;
+                    let left = relative == 0.0 || relative == 2.0;
+                    let y = select(0.375, -0.375, relative < 2.0);
+                    let x = select(0.875, -0.875, left);
+                    return vec4f(x, y, 0.5, 1.0);
+                }
+                @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }
+            "#
+            .into(),
+        ),
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 LineList vertex-index pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::LineList,
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 LineList vertex-index target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readbacks: Vec<_> = (0..3)
+        .map(|case| {
+            device.create_buffer(&BufferDescriptor {
+                label: Some(match case {
+                    0 => "FL9_1 direct LineList readback",
+                    1 => "FL9_1 u16-indexed LineList readback",
+                    _ => "FL9_1 u32-indexed LineList readback",
+                }),
+                size: 8 * 256,
+                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
+        })
+        .collect();
+    let u16_indices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 u16 LineList indices"),
+        size: 8,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    u16_indices
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped u16 indices")
+        .copy_from_slice(
+            &[14u16, 15, 16, 17]
+                .into_iter()
+                .flat_map(u16::to_ne_bytes)
+                .collect::<Vec<_>>(),
+        );
+    u16_indices.unmap();
+    let u32_indices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 u32 LineList indices"),
+        size: 16,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    u32_indices
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped u32 indices")
+        .copy_from_slice(
+            &[14u32, 15, 16, 17]
+                .into_iter()
+                .flat_map(u32::to_ne_bytes)
+                .collect::<Vec<_>>(),
+        );
+    u32_indices.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 LineList vertex-index encoder"),
+    });
+    for (case, readback) in readbacks.iter().enumerate() {
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 LineList vertex-index pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            match case {
+                0 => pass.draw(65_534..65_538, 0..1),
+                1 => {
+                    pass.set_index_buffer(u16_indices.slice(..), IndexFormat::Uint16);
+                    pass.draw_indexed(0..4, 65_520, 0..1);
+                }
+                _ => {
+                    pass.set_index_buffer(u32_indices.slice(..), IndexFormat::Uint32);
+                    pass.draw_indexed(0..4, 65_520, 0..1);
+                }
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for (case, readback) in readbacks.iter().enumerate() {
+        let sender = sender.clone();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            sender.send((case, result)).unwrap()
+        });
+    }
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 LineList vertex-index execution");
+    for _ in 0..3 {
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("LineList vertex-index map callback")
+            .1
+            .expect("map LineList vertex-index output");
+    }
+    let mut images = Vec::<Vec<u8>>::new();
+    for (case, readback) in readbacks.iter().enumerate() {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped pixels");
+        let mut image = Vec::with_capacity(8 * 8 * 4);
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &data[offset..offset + 4];
+                assert!(
+                    pixel == [255, 0, 0, 255] || pixel == [0, 0, 0, 255],
+                    "case {case} produced an unexpected pixel at ({x}, {y}): {pixel:?}"
+                );
+                image.extend_from_slice(pixel);
+            }
+        }
+        let red_rows: Vec<_> = (0..8)
+            .map(|y| {
+                (0..8)
+                    .filter(|x| {
+                        let offset = y * 256 + x * 4;
+                        data[offset] > 200 && data[offset + 1] < 8 && data[offset + 2] < 8
+                    })
+                    .count()
+            })
+            .filter(|&count| count >= 4)
+            .collect();
+        assert_eq!(
+            red_rows.len(),
+            2,
+            "case {case} must render both vertex-index-selected lines; row counts={red_rows:?}"
+        );
+        assert!(
+            red_rows.iter().all(|&count| (6..=8).contains(&count)),
+            "case {case} line coverage should match a full-width 1px line: {red_rows:?}"
+        );
+        images.push(image);
+    }
+    assert_eq!(
+        images[0], images[1],
+        "Uint16 output must match direct output"
+    );
+    assert_eq!(
+        images[0], images[2],
+        "Uint32 output must match direct output"
+    );
+    println!(
+        "PASS: direct, u16-indexed and u32-indexed LineList draws produced both expected vertex-index-selected rows at forced FL9_1"
+    );
+}
+
+#[test]
+fn public_dx11_line_list_restores_user_vertex_stream_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 LineList vertex-stream restoration"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=LineList then TriangleList with unchanged vertex binding",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 LineList vertex-stream shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct Output { @builtin(position) position: vec4f, };
+                @vertex fn vs_indexed(
+                    @location(0) position: vec2f,
+                    @builtin(vertex_index) index: u32,
+                ) -> Output {
+                    let offset = f32(index) * 0.00000001;
+                    return Output(vec4f(position.x + offset, position.y, 0.5, 1.0));
+                }
+                @vertex fn vs_plain(@location(0) position: vec2f) -> Output {
+                    return Output(vec4f(position, 0.5, 1.0));
+                }
+                @fragment fn fs_line() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }
+                @fragment fn fs_triangle() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }
+                @fragment fn fs_triangle_after_gather() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); }
+            "#
+            .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let make_pipeline = |topology, vertex_entry, fragment_entry| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 vertex-stream preservation pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_buffers,
+            },
+            primitive: PrimitiveState {
+                topology,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let line_pipeline = make_pipeline(PrimitiveTopology::LineList, "vs_indexed", "fs_line");
+    let triangle_pipeline =
+        make_pipeline(PrimitiveTopology::TriangleList, "vs_plain", "fs_triangle");
+    let triangle_after_gather_pipeline = make_pipeline(
+        PrimitiveTopology::TriangleList,
+        "vs_plain",
+        "fs_triangle_after_gather",
+    );
+    const LAST_VERTEX: usize = 70_000;
+    let vertices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 LineList vertex-stream source"),
+        size: (LAST_VERTEX + 1) as u64 * 8,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    let mut vertex_data = vec![0.0f32; (LAST_VERTEX + 1) * 2];
+    let mut set_position = |index: usize, x: f32, y: f32| {
+        vertex_data[index * 2] = x;
+        vertex_data[index * 2 + 1] = y;
+    };
+    set_position(0, -0.25, -0.25);
+    set_position(1, 0.25, -0.25);
+    set_position(2, 0.0, 0.25);
+    set_position(3, -0.8125, -0.6875);
+    set_position(5, -0.8125, -0.4375);
+    set_position(6, 0.8125, -0.4375);
+    set_position(7, 0.25, -0.25);
+    set_position(8, 0.75, -0.25);
+    set_position(9, 0.5, 0.25);
+    set_position(LAST_VERTEX, 0.8125, -0.6875);
+    vertices
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped vertex data")
+        .copy_from_slice(bytemuck::cast_slice(&vertex_data));
+    vertices.unmap();
+    let indices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 u32 indices forcing the LineList gather path"),
+        size: 2 * 4,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    indices
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped gather indices")
+        .copy_from_slice(bytemuck::cast_slice(&[3u32, LAST_VERTEX as u32]));
+    indices.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 vertex-stream restoration target"),
+        size: Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 vertex-stream restoration readback"),
+        size: 16 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 vertex-stream restoration encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 LineList then TriangleList pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertices.slice(..));
+        pass.set_pipeline(&line_pipeline);
+        pass.draw(5..7, 0..1);
+        pass.set_pipeline(&triangle_pipeline);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&line_pipeline);
+        pass.set_index_buffer(indices.slice(..), IndexFormat::Uint32);
+        pass.draw_indexed(0..2, 0, 0..1);
+        pass.set_pipeline(&triangle_after_gather_pipeline);
+        pass.draw(7..10, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(16),
+            },
+        },
+        Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 vertex-stream restoration");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("vertex-stream restoration map callback")
+        .expect("map vertex-stream restoration output");
+    let data = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped pixels");
+    let red_pixels_by_row: Vec<_> = [11usize, 13]
+        .into_iter()
+        .map(|row| {
+            (0..16)
+                .filter(|x| {
+                    let offset = row * 256 + x * 4;
+                    data[offset] > 200 && data[offset + 1] < 8 && data[offset + 2] < 8
+                })
+                .count()
+        })
+        .collect();
+    let left_triangle_center = 8 * 256 + 8 * 4;
+    let right_triangle_center = 8 * 256 + 12 * 4;
+    assert!(
+        red_pixels_by_row.iter().all(|&pixels| pixels >= 13),
+        "direct LineList and indexed Gather draws must both render after their nonzero/large vertex addressing: {red_pixels_by_row:?}"
+    );
+    assert!(
+        data[left_triangle_center] < 8 && data[left_triangle_center + 1] > 200,
+        "the TriangleList following the direct LineList must read its original vertex binding"
+    );
+    assert!(
+        data[right_triangle_center] < 8
+            && data[right_triangle_center + 1] < 8
+            && data[right_triangle_center + 2] > 200,
+        "the distinct TriangleList following indexed Gather must read its original vertex binding"
+    );
+    println!(
+        "PASS: direct and indexed-Gather LineList draws preserved the vertex binding; distinct following triangles verified both transitions"
+    );
+}
+
+#[test]
 fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -18532,17 +19068,24 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         "the same full layout remains valid without emulated vertex_index"
     );
 
-    let scope = device.push_error_scope(ErrorFilter::Validation);
     drop(create_pipeline(
         "vertex_index",
         &no_buffers,
         PrimitiveTopology::LineList,
     ));
-    let error = poll_ready(scope.pop()).expect("LineList vertex_index must fail core validation");
-    assert!(
-        error.to_string().contains("LineList"),
-        "validation must identify the unsupported topology: {error}"
-    );
+
+    for topology in [
+        PrimitiveTopology::LineStrip,
+        PrimitiveTopology::TriangleStrip,
+    ] {
+        let scope = device.push_error_scope(ErrorFilter::Validation);
+        drop(create_pipeline("vertex_index", &no_buffers, topology));
+        let error = poll_ready(scope.pop()).expect("strip vertex_index must fail core validation");
+        assert!(
+            error.to_string().contains(&format!("{topology:?}")),
+            "validation must identify the unsupported topology: {error}"
+        );
+    }
 
     let scope = device.push_error_scope(ErrorFilter::Validation);
     drop(create_pipeline(
@@ -18555,7 +19098,7 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         "LineList pipelines without vertex_index remain supported"
     );
     println!(
-        "PASS: public core accepted supported TriangleList vertex builtins, rejected unsupported topology and hidden-slot exhaustion, and retained ordinary pipelines"
+        "PASS: public core accepted TriangleList, LineList and PointList vertex builtins, rejected strips and hidden-slot exhaustion, and retained ordinary pipelines"
     );
 }
 

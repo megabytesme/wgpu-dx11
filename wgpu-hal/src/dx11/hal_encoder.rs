@@ -1665,16 +1665,19 @@ impl crate::CommandEncoder for CommandEncoder {
             if vertex_count < 2 {
                 return;
             }
-            for (_, _, offset, stride) in &mut vertices {
+            if uses_vertex_index && vertex_index.is_none() {
+                self.reject();
+                return;
+            }
+            for (_, _, offset, stride) in &vertices {
                 let start = super::command::strip_vertex_offset(*offset, *stride, first_vertex);
                 let last = first_vertex.checked_add(vertex_count - 1).and_then(|last| {
                     super::command::strip_vertex_offset(*offset, *stride, last).ok()
                 });
-                let (Ok(start), Some(_)) = (start, last) else {
+                let (Ok(_), Some(_)) = (start, last) else {
                     self.reject();
                     return;
                 };
-                *offset = start;
             }
             if render.depth_never {
                 if !render.depth_never_elision_safe {
@@ -1687,8 +1690,15 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             self.record(NativeCommand::DrawLines {
                 vertices,
+                first_vertex,
                 count: vertex_count,
                 max_vertices,
+                max_vertex_index: hardware.max_vertex_index,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instances: instance_count,
                 instance_bindings,
             });
@@ -1744,6 +1754,10 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
+            if uses_vertex_index && vertex_index.is_none() {
+                self.reject();
+                return;
+            }
             if !render.pipeline
                 || (render.viewport_remap
                     && render
@@ -1803,14 +1817,20 @@ impl crate::CommandEncoder for CommandEncoder {
             let max_indices =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                     .max_indexed_line_list_indices_per_draw();
-            if vertices.is_empty() {
+            if vertices.is_empty() && !uses_vertex_index {
                 let max_vertices =
                     super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
                         .max_direct_line_list_vertices_per_draw();
                 self.record(NativeCommand::DrawLines {
                     vertices: Vec::new(),
+                    first_vertex: 0,
                     count: index_count,
                     max_vertices,
+                    max_vertex_index: super::capabilities::HardwareGuarantees::for_level(
+                        self.device.feature_level(),
+                    )
+                    .max_vertex_index,
+                    vertex_index: None,
                     instances: instance_count,
                     instance_bindings,
                 });
@@ -1823,6 +1843,11 @@ impl crate::CommandEncoder for CommandEncoder {
                 count: index_count,
                 base_vertex,
                 max_indices,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instances: instance_count,
                 instance_bindings,
             });

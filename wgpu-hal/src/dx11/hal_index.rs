@@ -756,10 +756,11 @@ impl IndexBinding {
         vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
         draw_limits: (u32, u32),
         instance_bindings: &super::command::InstanceBindings,
+        vertex_index: Option<&(u32, ID3D11Buffer)>,
     ) -> Result<()> {
         let (max_indices, instances) = draw_limits;
         instance_bindings.validate(instances)?;
-        if vertices.is_empty()
+        if (vertices.is_empty() && vertex_index.is_none())
             || vertices.iter().any(|(_, _, offset, _, stride, extent)| {
                 !offset.is_multiple_of(4)
                     || !stride.is_multiple_of(4)
@@ -790,9 +791,11 @@ impl IndexBinding {
                 index: ID3D11Buffer,
                 offsets: Vec<u32>,
                 count: u32,
+                vertex_index: Option<ID3D11Buffer>,
             },
             Gather {
                 streams: Vec<Option<(ID3D11Buffer, [D3D11_BOX; 2])>>,
+                vertex_index: Option<ID3D11Buffer>,
             },
         }
 
@@ -868,10 +871,14 @@ impl IndexBinding {
                         };
                         let mut index = None;
                         device.CreateBuffer(&desc, Some(&data), Some(&mut index))?;
+                        let vertex_index_buffer = vertex_index
+                            .map(|_| create_vertex_index_window_buffer(&device, minimum, &indices))
+                            .transpose()?;
                         prepared.push(Prepared::Window {
                             index: index.ok_or_else(|| Error::from_hresult(E_FAIL))?,
                             offsets,
                             count,
+                            vertex_index: vertex_index_buffer,
                         });
                     }
                     IndexedLineSegment::Gather { indices } => {
@@ -929,13 +936,19 @@ impl IndexBinding {
                                 sources,
                             )));
                         }
-                        prepared.push(Prepared::Gather { streams });
+                        let vertex_index_buffer = vertex_index
+                            .map(|_| create_vertex_index_buffer(&device, &indices))
+                            .transpose()?;
+                        prepared.push(Prepared::Gather {
+                            streams,
+                            vertex_index: vertex_index_buffer,
+                        });
                     }
                 }
             }
 
             for segment in &prepared {
-                if let Prepared::Gather { streams } = segment {
+                if let Prepared::Gather { streams, .. } = segment {
                     for ((_, source_buffer, _, _, stride, _), stream) in
                         vertices.iter().zip(streams)
                     {
@@ -958,6 +971,14 @@ impl IndexBinding {
                 }
             }
 
+            let mut restore = super::command::VertexBufferRestore::new(context);
+            for (slot, buffer, offset, _, stride, _) in vertices {
+                restore.add(*slot, buffer.clone(), *stride, *offset)?;
+            }
+            if let Some((slot, identity)) = vertex_index {
+                restore.add(*slot, identity.clone(), 4, 0)?;
+            }
+
             for instance in 0..instances {
                 instance_bindings.bind(context, instance)?;
                 for segment in &prepared {
@@ -966,6 +987,7 @@ impl IndexBinding {
                             index,
                             offsets,
                             count,
+                            vertex_index: vertex_index_buffer,
                         } => {
                             for ((slot, buffer, _, _, stride, _), offset) in
                                 vertices.iter().zip(offsets)
@@ -978,10 +1000,24 @@ impl IndexBinding {
                                     Some(offset),
                                 );
                             }
+                            if let (Some((slot, _)), Some(buffer)) =
+                                (vertex_index, vertex_index_buffer)
+                            {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(&4),
+                                    Some(&0),
+                                );
+                            }
                             context.IASetIndexBuffer(index, DXGI_FORMAT_R16_UINT, 0);
                             context.DrawIndexed(*count, 0, 0);
                         }
-                        Prepared::Gather { streams } => {
+                        Prepared::Gather {
+                            streams,
+                            vertex_index: vertex_index_buffer,
+                        } => {
                             for ((slot, buffer, offset, _, stride, _), stream) in
                                 vertices.iter().zip(streams)
                             {
@@ -995,6 +1031,17 @@ impl IndexBinding {
                                     Some(&Some(buffer.clone())),
                                     Some(stride),
                                     Some(offset),
+                                );
+                            }
+                            if let (Some((slot, _)), Some(buffer)) =
+                                (vertex_index, vertex_index_buffer)
+                            {
+                                context.IASetVertexBuffers(
+                                    *slot,
+                                    1,
+                                    Some(&Some(buffer.clone())),
+                                    Some(&4),
+                                    Some(&0),
                                 );
                             }
                             context.Draw(2, 0);
@@ -2191,8 +2238,7 @@ fn plan_indexed_lines(
     max_indices: u32,
     layouts: &[(u64, u32, u32)],
 ) -> Result<Option<Vec<IndexedLineSegment>>> {
-    if layouts.is_empty()
-        || max_indices < 2
+    if max_indices < 2
         || !max_indices.is_multiple_of(2)
         || layouts.iter().any(|&(length, stride, extent)| {
             length < u64::from(extent)
@@ -3097,6 +3143,29 @@ mod tests {
             ),
             "{plan:?}"
         );
+    }
+
+    #[test]
+    fn indexed_line_vertex_index_plans_keep_effective_ids_and_allow_no_vertex_streams() {
+        let indices = [14, 15, 0, 65_535, 9];
+        let plan = plan_indexed_lines(|i| indices[i], indices.len(), 65_520, 65_534, 131_070, &[])
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan.len(), 2);
+        assert!(matches!(
+            &plan[0],
+            IndexedLineSegment::Window {
+                minimum: 65_534,
+                count: 2,
+                indices,
+            } if indices == &[0, 0, 1, 0]
+        ));
+        assert!(matches!(
+            &plan[1],
+            IndexedLineSegment::Gather {
+                indices: [65_520, 131_055]
+            }
+        ));
     }
 
     #[test]
