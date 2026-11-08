@@ -1122,3 +1122,15 @@ behavior and conditionally allows creation. The fixture also now matches the
 already implemented query-gated BC2/BC3 support and clears the NPOT mip
 downlevel flag in its restrictive validation case. See `FL9_1_PROGRESS.md` for
 the exact run results.
+
+## Public queue ordering and empty render-bundle state — 2026-11-08
+
+Strict public regressions now verify that an empty render bundle resets pass
+state and that `Queue::write_buffer` after command encoding but before submit
+supplies the values observed by the draws. Both readback tests ran at explicitly
+requested and selected FL9_1 on the RTX 3090 Ti. The complete strict public
+D3D11 target passed 88/88 with three optional device-specific skips. No new
+backend functionality was added; the core/HAL contract audit and historical
+hardware/runtime verification remain open. See `FL9_1_PROGRESS.md`. Commits:
+`9e07459a3eee540c349c9e28cc6a864221c3c01f` and
+`818fee943b117018cae30c813d17fa0e389c7669`.

@@ -11672,3 +11672,29 @@ The native error is injected while the test still uses the physical D3D11
 device; it is a lifecycle regression, not evidence of real removal/recovery.
 The test is checkpointed as
 `535ea4f098d046e0ed8d700dbde3cca544914025`.
+
+## Public command-state and queue-write ordering — 2026-11-08
+
+Two public regressions now cover command and resource state at the wgpu API
+boundary. An empty render bundle invalidates the pass's pipeline, bind group
+and vertex-buffer state; the strict test explicitly restores those bindings,
+draws and verifies all 64 readback pixels. A separate uniform-boundary test
+encodes draws, finishes the command buffer, then calls `Queue::write_buffer`
+before submitting. Readback confirmed the execution-time update changed the
+first draw from blue to green while the c254 vertex uniform still shifted the
+second draw red; core continued to reject a 256-vector request before HAL.
+
+Both ran on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), with FL9_1 explicitly requested and selected. The focused
+strict tests each passed 1/1. The complete strict public D3D11 target passed
+88/88, with three optional device-specific subcases reported as skips. The
+full target included actual GPU readback for both new cases. Formatting,
+Clippy for the public test target and `git diff --check` passed; Clippy emitted
+only previously observed warning classes. The queue-ordering test and its
+reproduction command are checkpointed in
+`818fee943b117018cae30c813d17fa0e389c7669`; the empty-bundle state test is in
+`9e07459a3eee540c349c9e28cc6a864221c3c01f`.
+
+These cases add regression evidence, not new backend capabilities. The broad
+public core/HAL contract audit, historical FL9_1 hardware, physical device
+removal/recovery and Lumia/CoreWindow runtime execution remain open.
