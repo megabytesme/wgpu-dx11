@@ -3088,6 +3088,7 @@ fn entry_point_supports_fl9_texture_num_levels(
     function_info: &naga::valid::FunctionInfo,
 ) -> bool {
     if entry_point.stage != naga::ShaderStage::Fragment
+        || !module.functions.is_empty()
         || entry_point.function.arguments.len() > 1
         || entry_point.function.body.iter().any(|statement| {
             !matches!(
@@ -3333,6 +3334,7 @@ fn entry_point_supports_fl9_texture_sample_base_clamp_to_edge(
     function_info: &naga::valid::FunctionInfo,
 ) -> bool {
     if entry_point.stage != naga::ShaderStage::Fragment
+        || !module.functions.is_empty()
         || entry_point.function.arguments.len() > 1
         || entry_point.function.body.iter().any(|statement| {
             !matches!(
@@ -7411,6 +7413,39 @@ mod tests {
                 &narrow,
             )
             .unwrap());
+
+        let unused_helper = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            fn unused() -> f32 { return 1.0; }
+            @fragment fn levels() -> @location(0) vec4f {
+                return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        );
+        assert!(unused_helper
+            .entry_point_uses_unsupported_texture_num_levels(
+                naga::ShaderStage::Fragment,
+                "levels",
+                &narrow,
+            )
+            .unwrap());
+        assert!(unused_helper
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "levels",
+                &narrow,
+            )
+            .unwrap());
+        assert!(!unused_helper
+            .entry_point_uses_unsupported_texture_num_levels(
+                naga::ShaderStage::Fragment,
+                "safe",
+                &narrow,
+            )
+            .unwrap());
+
         assert!(supported
             .entry_point_uses_unsupported_texture_num_levels(
                 naga::ShaderStage::Fragment,
@@ -7641,7 +7676,7 @@ mod tests {
                     &restricted_fl91,
                 )
                 .unwrap();
-            assert_eq!(unsupported, entry == "helper", "{entry}");
+            assert!(unsupported, "{entry}");
         }
         assert!(!interface
             .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
@@ -7680,6 +7715,44 @@ mod tests {
             .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
                 naga::ShaderStage::Fragment,
                 "main",
+                &restricted_fl91,
+            )
+            .unwrap());
+
+        let unused_helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn unused() -> f32 { return 1.0; }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBaseClampToEdge(image, smp, uv);
+            }
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let unused_helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&unused_helper_module)
+        .unwrap();
+        let unused_helper_interface = Interface::new(
+            &unused_helper_module,
+            &unused_helper_info,
+            wgt::Limits::defaults(),
+        );
+        assert!(unused_helper_interface
+            .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &restricted_fl91,
+            )
+            .unwrap());
+        assert!(!unused_helper_interface
+            .entry_point_uses_unsupported_texture_sample_base_clamp_to_edge(
+                naga::ShaderStage::Fragment,
+                "safe",
                 &restricted_fl91,
             )
             .unwrap());

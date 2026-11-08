@@ -43,13 +43,15 @@ Compute/UAV, geometry/tessellation, indirect draws, occlusion and pipeline
 statistics queries, explicit in-pass timestamp methods, ordinary texture
 arrays and several shader operations/resource combinations remain unavailable or
 deliberately rejected. An exhaustive public core/HAL contract audit is
-still open. Historical FL9_1 driver behavior, physical device removal and
-recovery, and Lumia/CoreWindow runtime execution are unverified. The proposed
+still open. A selected-entry audit found and closed a Core/HAL mismatch for
+the emulated `textureNumLevels` and base-clamp paths: Core now rejects those
+entries when the module declares regular helper functions, matching HAL's
+current restriction. Historical FL9_1 driver behavior, physical device removal
+and recovery, and Lumia/CoreWindow runtime execution are unverified. The proposed
 3D copy expansion has been rejected: Microsoft's 10Level9 rules disallow 3D
 GPU texture copies at FL9_1, and current public/HAL gates correctly omit them.
-Recent independent audits found no new actionable issue in render bundles,
-shader selected-entry validation, texture format/usage gates, or the examined
-unsupported-operation panic paths. Continue the broad audit for ordinary
+Recent independent audits found no confirmed texture or runtime request
+mismatch in the examined paths. Continue the broad audit for ordinary
 public-valid operations; do not treat the hardware/runtime verification gaps
 as resolved.
 

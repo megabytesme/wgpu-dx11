@@ -12331,3 +12331,20 @@ Windows 10 Mobile ARM32/Lumia and public CoreWindow runtime verification, and
 physical device-removal/recovery tests. The next shader slice should follow an
 independent profile and contract review; do not treat this addition as broad
 3D query or general texture-query support.
+
+## Core/HAL shader-emulation validation alignment — 2026-11-08
+
+A selected-entry audit found that the `textureNumLevels` and
+`textureSampleBaseClampToEdge` Core proofs accepted an emulated entry point in
+a module containing an otherwise unused regular helper, while the HAL's
+emulation linker rejects any module with helper functions. Core now rejects
+those emulated entries before HAL in that module shape. Regression tests retain
+acceptance for the helper-free direct forms and acceptance for unrelated safe
+sibling entry points; the synthetic Core fixture also initializes the newer
+independent 3D texture-load limit explicitly.
+
+The complete DX11 `wgpu-core` library suite passed 106/106 on Rust 1.93.1 in the
+Visual Studio x64 environment. This was CPU-only validation; no GPU work was
+needed for the rejection boundary. `git diff --check` passed. Historical
+driver/runtime verification and the broader Core/HAL contract audit remain
+open.
