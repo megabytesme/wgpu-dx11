@@ -11870,3 +11870,33 @@ so no failure reproduced.
 Implementation and test checkpoint:
 `f3926cf9bf1b5ef61101b0efbc1166b45aeeb6e5`
 (`dx11: support combined FL9_1 depth views`).
+
+## Async write-map public regression — 2026-11-08
+
+Added `public_dx11_async_write_map_updates_nonzero_slice_at_fl91`. It submits
+a GPU copy using a `MAP_WRITE | COPY_SRC` buffer, requests an asynchronous
+write map of bytes 8..16, updates that range, then submits full and partial
+GPU copies and maps both readbacks. The test verifies that the new bytes are
+visible to later GPU work and that source and destination sentinel bytes
+outside the written/copied region remain unchanged.
+
+The focused strict test passed 1/1 and the complete strict public D3D11 target
+passed 92/92 on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), with requested and actual feature level
+FL9_1. Selected-device optional subcases logged skips; the strict hardware
+test itself executed and passed. The first invocation outside a Visual Studio
+developer shell could not find `link.exe`; rerunning through Visual Studio
+2026 `VsDevCmd.bat` built and ran successfully.
+
+`cargo +1.93 clippy --offline -j4 -p wgpu --no-default-features --features
+dx11,wgsl,glsl,std --test dx11_public`, `cargo +1.93 fmt --all -- --check`
+and `git diff --check` passed. Clippy reported existing warnings in HAL
+helpers and an existing `std::collections::HashMap` use in the public test.
+
+Three concurrent source-only reviews found no confirmed public-valid mismatch
+in the audited selected-entry shader gates, capability/format projection, or
+buffer/queue ordering and lifetime paths. The buffer audit identified this
+async write-map case as a missing public regression. These reviews were
+targeted, not an exhaustive audit of every wgpu request. Historical FL9_1
+drivers, actual device removal/recovery, and Lumia/CoreWindow runtime remain
+unverified.

@@ -17,17 +17,20 @@ nonzero buffer-map slice after GPU copy test.
 The latest contract fix lets combined depth-attachment/sampled textures create
 default views with both native DSV and SRV roles. The strict public regression
 passed for D16, Depth24Plus and D24S8 at requested/actual FL9_1. Full strict
-public tests passed 91/91 and private HAL tests passed 416/416; the new
+public tests passed 91/91 and private HAL tests passed 416/416 at that
+checkpoint; the new
 checkpoint is `f3926cf9bf1b5ef61101b0efbc1166b45aeeb6e5`; commands are in
 `FL9_1_PROGRESS.md`.
 
-The latest full strict public D3D11 target passed 91/91; three optional
-device-specific subcases were logged as skips. The new cases executed on the
-physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
-software=false, requested/actual FL9_1, with GPU readback. The current strict
+The latest test-only increment adds async `MapMode::Write` coverage for a
+nonzero buffer slice followed by GPU copies and readback. The focused test
+passed 1/1 and the full strict public D3D11 target passed 92/92 on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
+software=false, requested/actual FL9_1. Optional selected-device subcases
+logged skips; no required strict hardware test skipped. The last complete
 private HAL run passed 416/416; the core DX11 fixture previously passed
-112/112, DX12 core 101/101 and the strict HWND fixture 2/2. The
-detailed commands and hardware readback evidence are in `FL9_1_PROGRESS.md`.
+112/112, DX12 core 101/101 and the strict HWND fixture 2/2. The detailed
+commands and hardware readback evidence are in `FL9_1_PROGRESS.md`.
 
 Feature-wise, dynamic offsets, multiple bind groups, multiple sampled
 resources, broad tested vertex/index draw paths, depth/stencil, query-gated

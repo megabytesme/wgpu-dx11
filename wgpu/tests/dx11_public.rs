@@ -359,6 +359,156 @@ fn public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91() {
 }
 
 #[test]
+fn public_dx11_async_write_map_updates_nonzero_slice_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=asynchronous MAP_WRITE of a nonzero buffer slice followed by GPU copies and readback",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 async write-map test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let initial: Vec<u8> = (0..32).map(|value| (value * 5 + 9) as u8).collect();
+    let source = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 asynchronous write-map source"),
+        size: 32,
+        usage: BufferUsages::MAP_WRITE | BufferUsages::COPY_SRC,
+        mapped_at_creation: true,
+    });
+    source
+        .get_mapped_range_mut(..)
+        .expect("map initial source contents")
+        .copy_from_slice(&initial);
+    source.unmap();
+
+    let prior_use = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 prior source-use destination"),
+        size: 32,
+        usage: BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut prior_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 prior source-use copy"),
+    });
+    prior_encoder.copy_buffer_to_buffer(&source, 0, &prior_use, 0, 32);
+    let prior_submission = queue.submit([prior_encoder.finish()]);
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    source
+        .slice(8..16)
+        .map_async(MapMode::Write, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(prior_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for prior GPU source use before write mapping");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("asynchronous write-map callback")
+        .expect("map nonzero source slice for writing");
+
+    let updated = [0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87, 0x78];
+    source
+        .slice(8..16)
+        .get_mapped_range_mut()
+        .expect("mapped nonzero write range")
+        .copy_from_slice(&updated);
+    source.unmap();
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 partial-copy sentinel readback"),
+        size: 32,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: true,
+    });
+    readback
+        .get_mapped_range_mut(..)
+        .expect("map destination to initialize sentinels")
+        .copy_from_slice(&[0xcd; 32]);
+    readback.unmap();
+    let source_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 full-source readback"),
+        size: 32,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 async write-map verification copies"),
+    });
+    encoder.copy_buffer_to_buffer(&source, 0, &source_readback, 0, 32);
+    encoder.copy_buffer_to_buffer(&source, 8, &readback, 8, 8);
+    let submission = queue.submit([encoder.finish()]);
+
+    let (source_sender, source_receiver) = std::sync::mpsc::channel();
+    source_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            source_sender.send(result).unwrap()
+        });
+    let (readback_sender, readback_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        readback_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for asynchronous write-map verification copies");
+    source_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("full source readback callback")
+        .expect("map full source readback");
+    readback_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("partial-copy readback callback")
+        .expect("map partial-copy readback");
+
+    let mut expected_source = initial;
+    expected_source[8..16].copy_from_slice(&updated);
+    assert_eq!(
+        &source_readback.slice(..).get_mapped_range().unwrap()[..],
+        expected_source.as_slice(),
+        "async write mapping changed bytes outside its mapped slice"
+    );
+    let mut expected_copy = [0xcd; 32];
+    expected_copy[8..16].copy_from_slice(&updated);
+    assert_eq!(
+        &readback.slice(..).get_mapped_range().unwrap()[..],
+        &expected_copy,
+        "subsequent GPU copy did not observe the async mapped write or changed sentinels"
+    );
+    source_readback.unmap();
+    readback.unmap();
+    println!(
+        "PASS: async MapMode::Write updated bytes 8..16 after a prior GPU use; a later GPU copy observed the update and full readback preserved source and destination sentinels"
+    );
+}
+
+#[test]
 fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     use windows::{
         core::w,
