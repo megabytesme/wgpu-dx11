@@ -23932,7 +23932,9 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                     @builtin(position) position: vec4f,
                     @location(0) color: vec4f,
                 }
+                struct Vec2Slot { @size(16) value: vec2f }
                 @group(0) @binding(17) var<uniform> colors: array<vec4f, 4>;
+                @group(0) @binding(18) var<uniform> padded_vec2: array<Vec2Slot, 4>;
                 fn color_for(index: u32) -> vec4f { return colors[index]; }
                 fn color_for_two_hops(index: u32) -> vec4f { return color_for(index); }
 
@@ -23944,6 +23946,10 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                 }
                 @vertex fn vs_instance_helper(@location(0) position: vec2f, @builtin(instance_index) index: u32) -> VertexOutput {
                     return VertexOutput(vec4f(position, 0.5, 1.0), color_for_two_hops(index));
+                }
+                @vertex fn vs_padded_vec2(@location(0) position: vec2f, @builtin(vertex_index) index: u32) -> VertexOutput {
+                    let value = padded_vec2[index].value;
+                    return VertexOutput(vec4f(position, 0.5, 1.0), vec4f(value, 1.0 - value.x, 1.0));
                 }
                 @fragment fn fs(@location(0) color: vec4f) -> @location(0) vec4f {
                     return color;
@@ -23964,16 +23970,28 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
     })];
     let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 vertex uniform-array layout"),
-        entries: &[BindGroupLayoutEntry {
-            binding: 17,
-            visibility: ShaderStages::VERTEX,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 17,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            BindGroupLayoutEntry {
+                binding: 18,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 vertex uniform-array pipeline layout"),
@@ -24017,6 +24035,8 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         "FL9_1 helper instance uniform-array pipeline",
         "vs_instance_helper",
     );
+    let padded_vec2_pipeline =
+        create_pipeline("FL9_1 padded vec2 uniform-array pipeline", "vs_padded_vec2");
     let uniform_values = [
         [1.0, 0.0, 0.0, 1.0],
         [0.0, 1.0, 0.0, 1.0],
@@ -24042,6 +24062,31 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         .expect("map vertex uniform array")
         .copy_from_slice(&uniform_bytes);
     uniform.unmap();
+    let padded_vec2_values = [
+        [1.0f32, 0.0, 91.0, 92.0],
+        [0.0, 1.0, 93.0, 94.0],
+        [0.2, 0.6, 95.0, 96.0],
+        [0.8, 0.25, 97.0, 98.0],
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let padded_vec2_bytes = padded_vec2_values
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let padded_vec2_uniform = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 padded vec2 uniform-array values"),
+        size: padded_vec2_bytes.len() as u64,
+        usage: BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    padded_vec2_uniform
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map padded vec2 uniform array")
+        .copy_from_slice(&padded_vec2_bytes);
+    padded_vec2_uniform.unmap();
     let vertex_values = [
         -0.625f32, 0.625, 0.625, 0.625, -0.625, -0.625, 0.625, -0.625, 0.625, -0.625,
     ];
@@ -24064,10 +24109,16 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 sparse vertex uniform array"),
         layout: &bind_group_layout,
-        entries: &[BindGroupEntry {
-            binding: 17,
-            resource: uniform.as_entire_binding(),
-        }],
+        entries: &[
+            BindGroupEntry {
+                binding: 17,
+                resource: uniform.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 18,
+                resource: padded_vec2_uniform.as_entire_binding(),
+            },
+        ],
     });
 
     let target = device.create_texture(&TextureDescriptor {
@@ -24090,6 +24141,8 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         "out-of-range",
         "helper-chain",
         "instance-helper",
+        "padded-vec2",
+        "padded-vec2-out-of-range",
     ]
     .map(|label| {
         device.create_buffer(&BufferDescriptor {
@@ -24123,6 +24176,7 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
             pass.set_pipeline(match draw {
                 2 => &helper_pipeline,
                 3 => &instance_helper_pipeline,
+                4 | 5 => &padded_vec2_pipeline,
                 _ => &pipeline,
             });
             pass.set_bind_group(0, &bind_group, &[]);
@@ -24131,6 +24185,8 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                 0 | 2 => pass.draw(0..4, 0..1),
                 1 => pass.draw(4..5, 0..1),
                 3 => pass.draw(0..4, 2..3),
+                4 => pass.draw(0..4, 0..1),
+                5 => pass.draw(4..5, 0..1),
                 _ => unreachable!(),
             }
         }
@@ -24184,6 +24240,12 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         ((1, 6), [0, 0, 255, 255]),
         ((6, 6), [255, 255, 0, 255]),
     ];
+    let expected_padded_vec2_points = [
+        ((1usize, 1usize), [255, 0, 0, 255]),
+        ((6, 1), [0, 255, 255, 255]),
+        ((1, 6), [51, 153, 204, 255]),
+        ((6, 6), [204, 64, 51, 255]),
+    ];
     for (index, readback) in readbacks.iter().enumerate() {
         let data = readback
             .slice(..)
@@ -24191,7 +24253,18 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
             .expect("mapped uniform-array readback");
         for y in 0..8 {
             for x in 0..8 {
-                let expected = if index == 3 {
+                let expected = if index == 4 {
+                    expected_padded_vec2_points
+                        .iter()
+                        .find(|((point_x, point_y), _)| (*point_x, *point_y) == (x, y))
+                        .map_or([0, 0, 0, 255], |(_, color)| *color)
+                } else if index == 5 {
+                    if (x, y) == (6, 6) {
+                        [204, 64, 51, 255]
+                    } else {
+                        [0, 0, 0, 255]
+                    }
+                } else if index == 3 {
                     expected_points
                         .iter()
                         .find(|((point_x, point_y), _)| (*point_x, *point_y) == (x, y))
@@ -24215,7 +24288,9 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
                         "in-range",
                         "out-of-range",
                         "helper-chain",
-                        "instance-helper"
+                        "instance-helper",
+                        "padded-vec2",
+                        "padded-vec2-out-of-range"
                     ][index]
                 );
             }
@@ -24224,6 +24299,6 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
         readback.unmap();
     }
     println!(
-        "PASS: direct and two-helper vertex uniform-array reads, including instance_index, selected the expected values; vertex index 4 selected the final in-range element"
+        "PASS: direct and helper vertex uniform-array reads plus padded vec2 slots selected expected GPU pixels; padded vec2 vertex index 4 selected the final array element"
     );
 }

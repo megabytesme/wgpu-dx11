@@ -554,6 +554,18 @@ fn is_float_array_element(module: &naga::Module, ty: naga::Handle<naga::Type>) -
         naga::TypeInner::Vector { size, scalar } => {
             matches!(size, naga::VectorSize::Tri | naga::VectorSize::Quad) && is_float32(scalar)
         }
+        naga::TypeInner::Struct { ref members, span } => {
+            span == 16
+                && members.len() == 1
+                && members[0].offset == 0
+                && matches!(
+                    module.types[members[0].ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Bi,
+                        scalar,
+                    } if is_float32(scalar)
+                )
+        }
         _ => false,
     }
 }
@@ -575,7 +587,7 @@ fn is_fixed_float_uniform_array_pointer(
         naga::TypeInner::Array {
             base,
             size: naga::ArraySize::Constant(_),
-            ..
+            stride: 16,
         } if is_float_array_element(module, base)
     )
 }
@@ -7053,8 +7065,12 @@ mod tests {
     fn restricted_vertex_uniform_array_indexing_is_selected_entry_aware() {
         let module = naga::front::wgsl::parse_str(
             r#"
+            struct Vec2Slot { @size(16) value: vec2f }
+            struct WideVec2Slot { @size(32) value: vec2f }
             struct Uniforms {
                 values: array<vec4f, 4>,
+                vec2_slots: array<Vec2Slot, 4>,
+                wide_vec2_slots: array<WideVec2Slot, 4>,
                 three_component_values: array<vec3f, 4>,
                 index: u32,
                 integer_values: array<vec4u, 4>,
@@ -7064,6 +7080,9 @@ mod tests {
 
             fn read_uniform(index: u32) -> vec4f {
                 return uniforms.values[index];
+            }
+            fn read_vec2_slot(index: u32) -> vec2f {
+                return uniforms.vec2_slots[index].value;
             }
             fn read_uniform_nested(index: u32) -> vec4f {
                 return read_uniform(index);
@@ -7088,6 +7107,21 @@ mod tests {
                 @builtin(instance_index) index: u32,
             ) -> @builtin(position) vec4f {
                 return uniforms.values[index];
+            }
+            @vertex fn padded_vec2_index_read(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(uniforms.vec2_slots[index].value, 0.5, 1.0);
+            }
+            @vertex fn padded_vec2_helper_index_read(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(read_vec2_slot(index), 0.5, 1.0);
+            }
+            @vertex fn oversized_vec2_slot_rejected(
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(uniforms.wide_vec2_slots[index].value, 0.5, 1.0);
             }
             struct Builtins { @builtin(vertex_index) index: u32 }
             @vertex fn structured_read(input: Builtins) -> @builtin(position) vec4f {
@@ -7207,6 +7241,8 @@ mod tests {
         for entry in [
             "vertex_index_read",
             "instance_index_read",
+            "padded_vec2_index_read",
+            "padded_vec2_helper_index_read",
             "structured_read",
             "component_read",
             "three_component_array_read",
@@ -7236,6 +7272,7 @@ mod tests {
             "unsafe_helper_sibling_rejected",
             "wrong_array_shape_rejected",
             "nested_array_shape_rejected",
+            "oversized_vec2_slot_rejected",
         ] {
             assert!(
                 interface
@@ -7248,6 +7285,15 @@ mod tests {
                     .unwrap(),
                 "{entry}"
             );
+        }
+        for entry in ["padded_vec2_index_read", "padded_vec2_helper_index_read"] {
+            assert!(!interface
+                .entry_point_uses_unsupported_runtime_integer_semantics(
+                    naga::ShaderStage::Vertex,
+                    entry,
+                    &restricted,
+                )
+                .unwrap());
         }
         assert!(interface
             .entry_point_uses_unsupported_dynamic_uniform_array_indexing(

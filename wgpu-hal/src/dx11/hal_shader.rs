@@ -606,7 +606,11 @@ mod tests {
     fn dynamic_uniform_array_reads_allow_direct_vertex_builtins() {
         let module = naga::front::wgsl::parse_str(
             r#"
+            struct Vec2Slot { @size(16) value: vec2f }
+            struct WideVec2Slot { @size(32) value: vec2f }
             struct Uniforms {
+                vec2_slots: array<Vec2Slot, 4>,
+                wide_vec2_slots: array<WideVec2Slot, 4>,
                 vec3_values: array<vec3f, 4>,
                 vec4_values: array<vec4f, 4>,
                 integer_values: array<vec4u, 4>,
@@ -614,6 +618,7 @@ mod tests {
             }
             @group(0) @binding(7) var<uniform> uniforms: Uniforms;
             @group(0) @binding(42) var<uniform> color: vec4f;
+            fn choose_vec2(index: u32) -> vec2f { return uniforms.vec2_slots[index].value; }
             fn choose(index: u32) -> vec4f { return uniforms.vec4_values[index]; }
             fn choose_twice(index: u32) -> vec4f { return choose(index); }
             fn choose_and_compare(index: u32) -> vec4f {
@@ -631,6 +636,15 @@ mod tests {
             }
             @vertex fn vec3_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
                 return vec4f(uniforms.vec3_values[index], 1.0);
+            }
+            @vertex fn padded_vec2_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(uniforms.vec2_slots[index].value, 0.5, 1.0);
+            }
+            @vertex fn padded_vec2_helper_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(choose_vec2(index), 0.5, 1.0);
+            }
+            @vertex fn oversized_vec2_slot_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(uniforms.wide_vec2_slots[index].value, 0.5, 1.0);
             }
             @vertex fn helper_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
                 return choose(index);
@@ -709,6 +723,8 @@ mod tests {
             ("instance_index", instance_options),
             ("component_index", vertex_options),
             ("vec3_index", vertex_options),
+            ("padded_vec2_index", vertex_options),
+            ("padded_vec2_helper_index", vertex_options),
             ("helper_index", vertex_options),
             ("helper_index_two_hops", vertex_options),
             ("helper_instance_index_two_hops", instance_options),
@@ -738,6 +754,7 @@ mod tests {
             "uniform_vector_index",
             "integer_array_index",
             "nested_array_index",
+            "oversized_vec2_slot_index",
         ] {
             let index = selected(naga::ShaderStage::Vertex, name);
             for requests_checks in [false, true] {
@@ -796,6 +813,34 @@ mod tests {
                 "{name} compilation failed: {compilation:?}"
             );
         }
+
+        let padded_vec2_helper = selected(naga::ShaderStage::Vertex, "padded_vec2_helper_index");
+        let padded_vec2_helper_indices = fl9_uniform_index_helper_arguments(
+            &module,
+            &info,
+            &module.entry_points[padded_vec2_helper].function,
+            info.get_entry_point(padded_vec2_helper),
+            DynamicAccessMode::new(naga::ShaderStage::Vertex, vertex_options, true, true),
+        )
+        .expect("padded vec2 helper index has direct builtin provenance");
+        assert_eq!(padded_vec2_helper_indices.len(), 1);
+        let padded_vec2_helper_compilation =
+            compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                naga::ShaderStage::Vertex,
+                "padded_vec2_helper_index",
+                ShaderProfile::VertexLevel9_1,
+                &uniform_binding,
+                vertex_options,
+                &padded_vec2_helper_indices,
+            );
+        assert!(
+            padded_vec2_helper_compilation
+                .as_ref()
+                .is_ok_and(|code| code.starts_with(b"DXBC")),
+            "padded vec2 helper FL9_1 FXC compilation failed: {padded_vec2_helper_compilation:?}"
+        );
 
         for name in ["helper_index_mixed_calls", "helper_index_non_index_use"] {
             let entry = selected(naga::ShaderStage::Vertex, name);
@@ -883,6 +928,99 @@ mod tests {
             info.get_entry_point(unchecked_local_write),
             DynamicAccessMode::new(naga::ShaderStage::Vertex, vertex_options, false, true),
         ));
+    }
+
+    #[test]
+    fn fl91_padded_vec2_uniform_array_shape_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Vec2Slot {
+                @size(16) value: vec2f,
+            }
+            struct Uniforms {
+                values: array<Vec2Slot, 4>,
+            }
+            @group(0) @binding(7) var<uniform> uniforms: Uniforms;
+            @vertex fn main(
+                @location(0) position: vec2f,
+                @builtin(vertex_index) index: u32,
+            ) -> @builtin(position) vec4f {
+                return vec4f(position + uniforms.values[index].value, 0.5, 1.0);
+            }
+            "#,
+        )
+        .expect("parse padded vec2 uniform array WGSL");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("padded vec2 uniform array is valid WGSL");
+
+        let array_stride = module.types.iter().find_map(|(_, ty)| match ty.inner {
+            naga::TypeInner::Array {
+                size: naga::ArraySize::Constant(size),
+                stride,
+                ..
+            } if size.get() == 4 => Some(stride),
+            _ => None,
+        });
+        assert_eq!(array_stride, Some(16));
+
+        let binding = ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        };
+        let mut hlsl_options = naga::back::hlsl::Options {
+            shader_model: naga::back::hlsl::ShaderModel::V5_0,
+            fl9_vertex_index_input: true,
+            restrict_indexing: true,
+            ..Default::default()
+        };
+        hlsl_options.binding_map.insert(
+            binding.binding,
+            naga::back::hlsl::BindTarget {
+                register: binding.slot,
+                restrict_indexing: true,
+                signed_restrict_indexing: true,
+                ..Default::default()
+            },
+        );
+        let hlsl_pipeline = naga::back::hlsl::PipelineOptions {
+            entry_point: Some((naga::ShaderStage::Vertex, "main".into())),
+        };
+        let mut hlsl_source = alloc::string::String::new();
+        naga::back::hlsl::Writer::new(&mut hlsl_source, &hlsl_options, &hlsl_pipeline)
+            .write(&module, &info, None)
+            .expect("Naga lowers padded vec2 uniform indexing");
+        assert!(hlsl_source.contains("float2"), "{hlsl_source}");
+        assert!(hlsl_source.contains("[4]"), "{hlsl_source}");
+        assert!(hlsl_source.contains("min(max(int("), "{hlsl_source}");
+        assert!(hlsl_source.contains("), 0), 3)"), "{hlsl_source}");
+
+        let compiled = compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &[binding],
+            Fl9ShaderInputOptions {
+                vertex_index_input: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert!(
+            compiled
+                .as_ref()
+                .is_ok_and(|code| code.starts_with(b"DXBC")),
+            "padded vec2 FL9_1 FXC compilation failed: {compiled:?}"
+        );
     }
 
     fn matrix_store_module() -> (naga::Module, naga::valid::ModuleInfo) {
@@ -3437,6 +3575,18 @@ fn is_float_array_element(module: &naga::Module, ty: naga::Handle<naga::Type>) -
             size: naga::VectorSize::Tri | naga::VectorSize::Quad,
             scalar,
         } => is_float32(scalar),
+        naga::TypeInner::Struct { ref members, span } => {
+            span == 16
+                && members.len() == 1
+                && members[0].offset == 0
+                && matches!(
+                    module.types[members[0].ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Bi,
+                        scalar,
+                    } if is_float32(scalar)
+                )
+        }
         _ => false,
     }
 }
@@ -3476,7 +3626,7 @@ fn is_supported_dynamic_uniform_array_read(
                 naga::TypeInner::Array {
                     base,
                     size: naga::ArraySize::Constant(_),
-                    ..
+                    stride: 16,
                 } if is_float_array_element(module, base)
             )
         )
