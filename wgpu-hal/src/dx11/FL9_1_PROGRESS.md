@@ -11399,3 +11399,46 @@ reaching an unsupported HAL path; broader format-matrix coverage and
 historical hardware remain open. The next shader candidate is one-hop direct
 builtin forwarding through helper parameters, pending the independent shader
 audit. This checkpoint does not close the public contract or platform audit.
+
+## Follow-up — helper-index, surface lifetime and input-offset checkpoints — 2026-11-08
+
+Three focused code checkpoints followed the earlier report:
+
+- `e211639de` supports unchanged forwarding of `vertex_index` and
+  `instance_index` through reachable helper parameters when each proven value
+  is used only to index a fixed-size `vec3` or `vec4` vertex uniform array.
+  Naga receives an explicit function/argument rewrite map; core and HAL derive
+  matching selected-entry provenance. Computed indices, integer arithmetic,
+  other array element types and fragment-stage indexing remain rejected.
+- `bd024d74e` keeps surface backbuffers alive while derived views remain,
+  rejects reconfiguration until those views are released, waits the previous
+  device queue before same-adapter A→B surface handoff, and updates the public
+  configuration cache according to whether the old configuration survived.
+  Synthetic device loss is exercised; physical device removal/recovery is not.
+- `473d14d9f` removes the HAL's extra four-byte attribute-offset rejection.
+  Core continues enforcing its `min(format.size(), 4)` alignment; optional
+  formats still require the selected device's `IA_VERTEX_BUFFER` query. The
+  new public test rejects a one-byte-misaligned `Unorm8x2` attribute and draws
+  from `Unorm8x2` at byte offset two when supported. The RTX forced to FL9_1
+  reports no supported sub-four-byte vertex formats, so only the positive
+  draw was skipped; no native offset-2 GPU success is claimed.
+
+Latest-tree verification used Rust 1.93.1 with the Visual Studio 2022 x64
+environment and bounded Cargo parallelism:
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -q -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 411 passed, 0 failed. The strict suite includes real FL9_1 GPU work as well as synthetic and CPU-only tests.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 85 passed, 0 failed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, software=false, requested/actual FL9_1. Three optional subcases logged skips: `Unorm8x2` IA support, `Float16x2` IA support and `Rg8Unorm` mip support. The final test readback validates helper-forwarded vertex/instance indices; the new offset test's core rejection passes but its positive offset render skips on the selected-device query.
+- Strict HWND lifecycle fixture: 2/2 passed on the same adapter, including retained-view reconfigure blocking and queue handoff. Device-loss behavior in this fixture is injected/synthetic.
+- Core DX11 library: 100/100; core DX12 library: 99/99; Naga library: 140/140.
+- Focused Naga rewrite, HAL analyzer/FXC and core provenance tests each passed 1/1. The focused strict helper-index GPU readback passed 1/1 and validated direct plus two-helper paths.
+- HAL and public-test Clippy passed. Existing warnings remain for HAL argument counts and the public test's `std::collections::HashMap` lint; no new warning was reported for this change. `rustfmt --check` passed for the complete HAL pipeline file and the new public test function snippet; `git diff --check` passed. The repository-wide format check was not rerun for this checkpoint.
+
+Independent read-only audits found that most pipeline gates are deliberate and
+core-checked; one cross-layer mismatch, the vertex-offset gate, is now fixed.
+The shader audit recommends testing `array<vec2f, N>` vertex uniform indexing
+only after FXC confirms its level-9 packing and clamp behavior. Remaining
+mission blockers are the exhaustive public core/HAL acceptance audit, shader
+subset gaps, optional format coverage, historical FL9_1 drivers, actual
+device-loss recovery and Lumia/CoreWindow runtime verification. Ordinary
+backend defaults still omit D3D11; explicit `Backends::DX11` is experimental
+and opt-in, with a constrained HWND presentation path.

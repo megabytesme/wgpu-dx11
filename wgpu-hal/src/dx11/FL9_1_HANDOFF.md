@@ -1,5 +1,35 @@
 # FL9_1 handoff
 
+## Mission status — 2026-11-08
+
+The opt-in public D3D11 path is substantially usable for a restricted FL9_1
+graphics subset, but the completion mission remains partial. It is excluded
+from default backend selection. Current verified checkpoints are
+`e211639de` (helper-forwarded vertex/instance index reads from fixed-size
+`vec3`/`vec4` uniforms), `bd024d74e` (surface-view lifetime and configuration
+cache handling) and `473d14d9f` (core-valid byte offsets preserved by HAL).
+The RTX 3090 Ti at requested/actual FL9_1 reports no sub-four-byte vertex IA
+formats, so the new offset-2 positive render is skipped; its core rejection
+boundary passes.
+
+Latest regressions: strict private HAL 411/411, strict public D3D11 85/85 with
+three optional selected-device skips, strict HWND fixture 2/2, core DX11
+100/100, core DX12 99/99 and Naga 140/140. The physical adapter is NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, software=false.
+The detailed commands and hardware readback evidence are in
+`FL9_1_PROGRESS.md`.
+
+Feature-wise, dynamic offsets, multiple bind groups, multiple sampled
+resources, broad tested vertex/index draw paths, depth/stencil, query-gated
+MSAA resolve, multiple uniform ranges and a constrained HWND path are present.
+Compute/UAV, geometry/tessellation, indirect draws, queries, ordinary texture
+arrays and several shader operations/resource combinations remain unavailable
+or deliberately rejected. An exhaustive public core/HAL contract audit is
+still open. Historical FL9_1 driver behavior, physical device removal and
+recovery, and Lumia/CoreWindow runtime execution are unverified. The next
+narrow shader candidate is fixed-size `vec2f` vertex uniform indexing, gated
+on FXC/constant-layout evidence.
+
 ## Latest surface lifecycle checkpoint — 2026-11-08
 
 The public D3D11 HWND error fixture passed 2/2 on the RTX 3090 Ti at requested

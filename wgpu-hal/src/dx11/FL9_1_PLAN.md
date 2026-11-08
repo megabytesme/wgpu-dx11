@@ -1,40 +1,25 @@
 # FL9_1 completion plan
-Latest checkpoint `1fd14a6eac95d88204ef56106ae423d59ba3200f` extends the
-direct vertex-uniform-array path and adds selected-entry core preflight for
-both dynamic local-array checks and the hidden IA slot used by `vertex_index`.
-Focused production, FXC and strict GPU tests passed; see the progress journal.
-The next small shader increment under review is unchanged direct-builtin index
-forwarding through helper parameters. The public core/HAL, platform and legacy
-hardware audits remain open.
+Latest verified code checkpoints are `e211639de` (helper-forwarded
+`vertex_index`/`instance_index` indexing into fixed-size vertex uniform arrays),
+`bd024d74e` (surface output-view lifetime and configuration-cache handling),
+and `473d14d9f` (preserve core-valid vertex attribute byte offsets in the HAL).
+The last code slice's positive offset-2 render is capability-gated and was
+skipped on the RTX because no sub-four-byte IA format is reported at FL9_1;
+the core misalignment rejection passed. Exact results and commands are in
+`FL9_1_PROGRESS.md`.
 
-Latest core/HAL validation increment: selected `vertex_index` pipelines now
-preflight the actual FL9_1 vertex-slot allocation, including overlap spills
-and the hidden emulation input. Core rejects exhausted layouts before HAL;
-ordinary pipelines without the builtin retain the full layout. A synthetic
-core allocator boundary test and strict public validation test passed. The
-full dynamic array-index helper gap and wider shader/core/HAL audit remain.
+The latest full strict private HAL suite passed 411/411 and public D3D11 suite
+85/85 on the RTX 3090 Ti at requested/actual FL9_1. The public suite logged
+three selected-device optional skips. Core DX11/DX12 and Naga suites passed
+100/100, 99/99 and 140/140; the HWND surface fixture passed 2/2. D3D11 remains
+opt-in through explicit backend selection and is excluded from defaults.
 
-Latest lifecycle increment: public `Queue::present` now preserves the receiver
-queue identity through core validation, rejects a different-device queue and
-releases the consumed frame. Dropping an acquired public `SurfaceTexture`
-after its configured device becomes invalid also releases the retained HAL
-frame. The strict HWND fixture exercises mismatch, synthetic device removal,
-drop, reconfiguration and reacquisition at forced FL9_1. Actual device removal
-and recovery remain unverified. The strict fixture passed 2/2 and the Deno
-workspace check passed; see `FL9_1_PROGRESS.md`. Checkpoint:
-`d890ee6bb15537eddca530c9fd5b25b26836c9fc`.
-
-The direct vertex-stage uniform-array indexing experiment is implemented and
-verified on the forced-FL9_1 RTX path. It supports only direct builtin indices
-into fixed-size `vec3` and `vec4` uniform arrays; helper-mediated and computed
-indices remain rejected. FXC's level-9 unsigned-index restriction required an
-opt-in signed clamp in Naga's HLSL binding target. See `FL9_1_PROGRESS.md` for
-the strict GPU and regression results. The next audited core/HAL issue is
-selected-entry-aware accounting for the hidden input slot used by emulated
-`vertex_index`. The checked local-array/core-HAL validation mismatch is fixed:
-core retains shader runtime-check settings and rejects affected selected
-entries before HAL compilation. Focused core tests and the strict public suite
-passed; see `FL9_1_PROGRESS.md`.
+The next narrow shader candidate is testing fixed-size vertex uniform arrays
+of `vec2f` with proven builtin indices. It first needs independent FXC/layout
+evidence; scalar arrays and general computed indices stay out of scope until
+constant-buffer packing is demonstrated. The exhaustive core/HAL contract
+audit, historical FL9_1 behavior, physical device-loss recovery and Lumia /
+CoreWindow execution remain open.
 
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
 `vertex_index` uses a host-generated float IA stream for TriangleList and
