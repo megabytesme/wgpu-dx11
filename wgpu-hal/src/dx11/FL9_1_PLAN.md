@@ -1,25 +1,23 @@
 # FL9_1 completion plan
-Latest verified code checkpoints are `e211639de` (helper-forwarded
-`vertex_index`/`instance_index` indexing into fixed-size vertex uniform arrays),
-`bd024d74e` (surface output-view lifetime and configuration-cache handling),
-and `473d14d9f` (preserve core-valid vertex attribute byte offsets in the HAL).
-The last code slice's positive offset-2 render is capability-gated and was
-skipped on the RTX because no sub-four-byte IA format is reported at FL9_1;
-the core misalignment rejection passed. Exact results and commands are in
-`FL9_1_PROGRESS.md`.
+Latest verified code checkpoint: `3f3fd4fd0f9855ebbd8a4c6e47f77636307b092a`
+(`dx11: close FL9_1 validation contract gaps`). It adds selected-entry core
+validation for unsupported fragment sample-mask input, correct public surface
+acquisition error classification for duplicate/wrong-thread calls, and
+core-valid storage-only buffer allocation without exposing storage bindings.
+The full strict private HAL suite passed 412/412; the public strict D3D11 suite
+passed 85/85 on the RTX 3090 Ti at requested/actual FL9_1, with three
+optional selected-device skips. Core DX11, core DX12 and `wgpu-types` suites
+passed 109/109, 100/100 and 97/97. See `FL9_1_PROGRESS.md` for commands and
+diagnostics. D3D11 remains explicit opt-in and excluded from default backend
+selection.
 
-The latest full strict private HAL suite passed 411/411 and public D3D11 suite
-85/85 on the RTX 3090 Ti at requested/actual FL9_1. The public suite logged
-three selected-device optional skips. Core DX11/DX12 and Naga suites passed
-100/100, 99/99 and 140/140; the HWND surface fixture passed 2/2. D3D11 remains
-opt-in through explicit backend selection and is excluded from defaults.
-
-The next narrow shader candidate is testing fixed-size vertex uniform arrays
-of `vec2f` with proven builtin indices. It first needs independent FXC/layout
-evidence; scalar arrays and general computed indices stay out of scope until
-constant-buffer packing is demonstrated. The exhaustive core/HAL contract
-audit, historical FL9_1 behavior, physical device-loss recovery and Lumia /
-CoreWindow execution remain open.
+The next work is to continue the public core/HAL contract audit across shader
+semantics, render state, resource descriptors and lifetime paths, addressing
+only independently reproduced mismatches. Historical FL9_1 behavior, physical
+device-loss recovery, and Lumia/CoreWindow runtime remain unverified. The
+public backend is a useful experimental restricted FL9_1 implementation, not
+a complete WebGPU implementation; ordinary application integration should
+remain opt-in with the documented capability limits.
 
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
 `vertex_index` uses a host-generated float IA stream for TriangleList and

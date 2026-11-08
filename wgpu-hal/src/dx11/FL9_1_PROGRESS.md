@@ -11442,3 +11442,34 @@ subset gaps, optional format coverage, historical FL9_1 drivers, actual
 device-loss recovery and Lumia/CoreWindow runtime verification. Ordinary
 backend defaults still omit D3D11; explicit `Backends::DX11` is experimental
 and opt-in, with a constrained HWND presentation path.
+
+## FL9_1 validation and lifecycle corrections — 2026-11-08
+
+Commit `3f3fd4fd0f9855ebbd8a4c6e47f77636307b092a` closes three reproduced
+core/HAL contract gaps. Core now has a separate selected-entry capability gate
+for fragment `@builtin(sample_mask)` input; the `ps_4_0_level_9_1` FXC test
+reports `X4502: invalid ... input semantic 'SV_Coverage'`. The existing output
+gate remains independent. Public HWND acquisition now returns validation for
+duplicate and wrong-thread use, leaves an outstanding first frame usable, and
+does not misreport these caller errors as surface loss. Storage-only buffers,
+which core can validly allocate even though this FL9_1 backend has no storage
+binding, now use the existing native dummy-bind path rather than failing
+allocation.
+
+Verification used Rust 1.93.1, the Visual Studio x64 environment and bounded
+Cargo parallelism:
+
+- `cargo +1.93 test --offline -j8 -p wgpu-types --lib`: 97 passed.
+- `cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib`: 109 passed.
+- `cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 100 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 412 passed, with strict hardware required.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 85 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, software=false, requested/actual FL9_1. Three optional selected-device subcases logged skips: `Unorm8x2` IA, `Float16x2` IA and `Rg8Unorm` mip support.
+- Focused `wgpu-types` sample-mask, core selected-entry, and strict HAL FXC tests passed 1/1 each; the public sample-mask input/output validation and HWND lifecycle tests passed within the full public run. The strict suite's rendering/readback cases exercised the physical GPU; the FXC failure case validates compilation diagnostics rather than a draw.
+- HAL, core and public-test Clippy completed successfully with existing warnings documented in the preceding audit; changed Rust files passed `rustfmt --check`, and `git diff --check` passed.
+
+This increment fixes specific mismatches; it does not close the broader public
+contract audit. Storage shader access remains unavailable, and sample-mask
+input remains unsupported at this shader profile. Historical 9_1 drivers,
+physical device removal/recovery and Lumia/CoreWindow runtime remain
+unverified. Continue with independently reproduced public-valid requests and
+selected-entry shader/render-state coverage.
