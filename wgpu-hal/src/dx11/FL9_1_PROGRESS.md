@@ -11698,3 +11698,37 @@ reproduction command are checkpointed in
 These cases add regression evidence, not new backend capabilities. The broad
 public core/HAL contract audit, historical FL9_1 hardware, physical device
 removal/recovery and Lumia/CoreWindow runtime execution remain open.
+
+## Optional timestamp query support — 2026-11-08
+
+The backend now probes timestamp/disjoint query creation and execution once
+when opening a native D3D11 device. A positive, nonzero frequency gates
+`TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS`; timestamp query sets,
+encoder writes and checked resolves are implemented. Resolve flushes and waits
+on the CPU for `GetData`, then writes each result into the destination buffer.
+Pass-level timestamp writes, occlusion queries and pipeline statistics remain
+unavailable.
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false),
+requested and selected FL9_1, the strict public test resolved timestamps
+`1794135670929055744` and `1794135670929060864`, confirmed their order and
+reported `1 ns/tick`. The selected adapter advertised only the timestamp and
+encoder-write features; public validation rejected occlusion and pipeline
+statistics query sets.
+
+Commands run with Rust 1.93.1 and the Visual Studio 2026 x64 environment:
+
+```powershell
+cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public --no-run
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+```
+
+The HAL check and public test-target compilation passed. Strict tests passed:
+private D3D11 HAL 416/416, public D3D11 89/89, and DX12 core 101/101. The
+public run reported three optional device-specific skips; the timestamp query
+test itself executed and read back both results. HAL and public-target Clippy
+passed with existing warning classes in unrelated D3D11 helpers and an older
+public-test `HashMap`. Formatting and `git diff --check` passed. This increment
+is verified and ready for a checkpoint commit.

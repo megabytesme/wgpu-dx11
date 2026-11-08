@@ -143,6 +143,28 @@ impl NativeBufferCopy {
 }
 
 impl NativeDevice {
+    pub(super) fn prepare_query_result_target(
+        &self,
+        buffer: &NativeBuffer,
+        offset: u64,
+        query_count: u32,
+    ) -> Result<ID3D11Buffer> {
+        let length = u64::from(query_count)
+            .checked_mul(u64::from(wgt::QUERY_SIZE))
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        if !buffer.usage.contains(wgt::BufferUses::QUERY_RESOLVE)
+            || self.raw_device().as_raw() != buffer.owner.as_raw()
+        {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.checked_buffer_range(
+            buffer,
+            offset,
+            usize::try_from(length).map_err(|_| Error::from_hresult(E_INVALIDARG))?,
+        )?;
+        Ok(buffer.raw.clone())
+    }
+
     #[allow(dead_code)] // Used when recording buffer initialization clears.
     pub(super) fn prepare_buffer_clear(
         &self,

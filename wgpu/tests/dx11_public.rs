@@ -15453,7 +15453,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
 }
 
 #[test]
-fn public_dx11_rejects_unavailable_query_types_at_fl91() {
+fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -15478,7 +15478,7 @@ fn public_dx11_rejects_unavailable_query_types_at_fl91() {
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public DX11 FL9_1 occlusion query validation test"),
+        label: Some("public DX11 FL9_1 query feature validation test"),
         required_features: Features::empty(),
         required_limits: adapter.limits(),
         ..Default::default()
@@ -15498,11 +15498,11 @@ fn public_dx11_rejects_unavailable_query_types_at_fl91() {
     );
     expect_validation_error_containing(
         &device,
-        "FL9_1 timestamp query set",
+        "FL9_1 timestamp query set without requested feature",
         "TIMESTAMP_QUERY",
         || {
             drop(device.create_query_set(&QuerySetDescriptor {
-                label: Some("unsupported FL9_1 timestamp queries"),
+                label: Some("timestamp queries without the required feature"),
                 ty: QueryType::Timestamp,
                 count: 1,
             }));
@@ -15521,7 +15521,7 @@ fn public_dx11_rejects_unavailable_query_types_at_fl91() {
         },
     );
     println!(
-        "PASS: public core rejected occlusion, timestamp and pipeline-statistics query sets before unsupported D3D11 query creation"
+        "PASS: public core requires explicit timestamp features and rejects occlusion and pipeline-statistics query sets; the separate strict timestamp test verifies execution"
     );
 }
 
@@ -24615,5 +24615,134 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
     }
     println!(
         "PASS: direct and helper vertex uniform-array reads plus padded vec2 slots selected expected GPU pixels; padded vec2 vertex index 4 selected the final array element"
+    );
+}
+
+#[test]
+fn public_dx11_timestamp_queries_resolve_on_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter with timestamp support"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    let timestamp_features = Features::TIMESTAMP_QUERY | Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+    if !adapter.features().contains(timestamp_features) {
+        assert!(
+            !required,
+            "strict mode requires timestamp and encoder timestamp features; adapter reported {:?}",
+            adapter.features()
+        );
+        println!("SKIP: selected FL9_1 adapter has no timestamp query support");
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false timestamp_features={timestamp_features:?}",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 timestamp query test"),
+        required_features: timestamp_features,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected timestamp-capable FL9_1 device");
+    let period = queue.get_timestamp_period();
+    assert!(
+        period.is_finite() && period > 0.0,
+        "invalid timestamp period {period}"
+    );
+
+    expect_validation_error(&device, "FL9_1 occlusion query set", || {
+        let _ = device.create_query_set(&QuerySetDescriptor {
+            label: Some("unsupported occlusion query set"),
+            ty: QueryType::Occlusion,
+            count: 1,
+        });
+    });
+    expect_validation_error(&device, "FL9_1 pipeline statistics query set", || {
+        let _ = device.create_query_set(&QuerySetDescriptor {
+            label: Some("unsupported pipeline statistics query set"),
+            ty: QueryType::PipelineStatistics(PipelineStatisticsTypes::VERTEX_SHADER_INVOCATIONS),
+            count: 1,
+        });
+    });
+
+    let query_set = device.create_query_set(&QuerySetDescriptor {
+        label: Some("two FL9_1 timestamp queries"),
+        ty: QueryType::Timestamp,
+        count: 2,
+    });
+    let workload = device.create_buffer(&BufferDescriptor {
+        label: Some("timestamp ordering workload"),
+        size: 256,
+        usage: BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let query_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("timestamp query result buffer"),
+        size: 256,
+        usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("timestamp query readback"),
+        size: 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("record timestamp writes and resolve"),
+    });
+    encoder.write_timestamp(&query_set, 0);
+    for _ in 0..32 {
+        encoder.clear_buffer(&workload, 0, None);
+    }
+    encoder.write_timestamp(&query_set, 1);
+    encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
+    encoder.copy_buffer_to_buffer(&query_buffer, 0, &readback, 0, 16);
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..16)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for timestamp query resolve");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("timestamp readback map callback")
+        .expect("map timestamp query readback");
+    let values = {
+        let mapped = readback
+            .slice(..16)
+            .get_mapped_range()
+            .expect("mapped timestamp data");
+        let mut values = [0u64; 2];
+        for (index, value) in values.iter_mut().enumerate() {
+            let start = index * 8;
+            *value = u64::from_le_bytes(mapped[start..start + 8].try_into().unwrap());
+        }
+        values
+    };
+    readback.unmap();
+    assert!(values[0] > 0, "first timestamp must be written: {values:?}");
+    assert!(
+        values[1] >= values[0],
+        "timestamps must be ordered: {values:?}"
+    );
+    println!(
+        "PASS: forced FL9_1 timestamp queries resolved and read back {values:?}; period={period} ns/tick; occlusion and pipeline-statistics query sets were rejected"
     );
 }

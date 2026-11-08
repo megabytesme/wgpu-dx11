@@ -162,6 +162,8 @@ impl NativeAdapter {
             .find(|level| level.as_raw() == selected.0 as u32)
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let immediate = context.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let timestamp_frequency = super::query::probe_timestamp_frequency(&raw, &immediate);
         let debug_info_queue = if debug_layer {
             Some(raw.cast::<ID3D11InfoQueue>()?)
         } else {
@@ -169,8 +171,9 @@ impl NativeAdapter {
         };
         Ok(NativeDevice {
             raw,
-            immediate: Mutex::new(context.ok_or_else(|| Error::from_hresult(E_FAIL))?),
+            immediate: Mutex::new(immediate),
             level,
+            timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
             injected_oom_check_status: Mutex::new(None),
@@ -188,6 +191,7 @@ pub struct NativeDevice {
     raw: ID3D11Device,
     immediate: Mutex<ID3D11DeviceContext>,
     level: FeatureLevel,
+    timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
     #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -267,6 +271,10 @@ impl NativeDevice {
     /// The feature level selected when creating this native device.
     pub fn feature_level(&self) -> FeatureLevel {
         self.level
+    }
+
+    pub(super) fn timestamp_frequency(&self) -> Option<u64> {
+        self.timestamp_frequency
     }
 
     #[cfg(any(test, feature = "dx11-test-fixture"))]

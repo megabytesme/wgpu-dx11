@@ -214,6 +214,7 @@ impl<T> Query<T> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct DriverCapabilities {
+    pub timestamp_frequency: Query<u64>,
     pub rgba8: Query<u32>,
     pub bgra8: Query<u32>,
     pub rgba8_srgb: Query<u32>,
@@ -387,6 +388,7 @@ pub(super) struct BackendCapabilities {
     /// Restricted stream emulation; excludes `vertex_index` and `instance_index`.
     pub restricted_instance_rate_streams: bool,
     pub queries: bool,
+    pub timestamp_queries: bool,
 }
 
 impl BackendCapabilities {
@@ -514,6 +516,7 @@ impl BackendCapabilities {
         instancing_without_instance_inputs: true,
         restricted_instance_rate_streams: true,
         queries: false,
+        timestamp_queries: true,
     };
 }
 
@@ -798,6 +801,12 @@ impl Capabilities {
         if self.wireframe_rasterizer_supported() {
             features |= wgt::Features::POLYGON_MODE_LINE;
         }
+        if self.backend.timestamp_queries
+            && matches!(self.driver.timestamp_frequency, Query::Value(frequency) if frequency > 0)
+        {
+            features |=
+                wgt::Features::TIMESTAMP_QUERY | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        }
         if self
             .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
             .contains(crate::TextureFormatCapabilities::SAMPLED)
@@ -985,6 +994,9 @@ impl Capabilities {
         Self {
             hardware: HardwareGuarantees::for_level(device.feature_level()),
             driver: DriverCapabilities {
+                timestamp_frequency: device
+                    .timestamp_frequency()
+                    .map_or(Query::Unavailable(-1), Query::Value),
                 rgba8: format(DXGI_FORMAT_R8G8B8A8_UNORM),
                 bgra8: format(DXGI_FORMAT_B8G8R8A8_UNORM),
                 rgba8_srgb: format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
@@ -1686,6 +1698,7 @@ mod tests {
         Capabilities {
             hardware: HardwareGuarantees::for_level(level),
             driver: DriverCapabilities {
+                timestamp_frequency: Query::Value(1_000_000_000),
                 rgba8: Query::Value(u32::MAX),
                 bgra8: Query::Value(u32::MAX),
                 rgba8_srgb: Query::Value(u32::MAX),
@@ -1750,6 +1763,39 @@ mod tests {
             .unwrap()
             .features
             .contains(wgt::Features::POLYGON_MODE_LINE));
+    }
+
+    #[test]
+    fn timestamp_query_features_require_a_positive_frequency_probe_and_backend_path() {
+        let timestamp_features =
+            wgt::Features::TIMESTAMP_QUERY | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        let mut caps = model(FeatureLevel::L9_1);
+        assert!(caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(timestamp_features));
+
+        caps.driver.timestamp_frequency = Query::Value(0);
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .intersects(timestamp_features));
+        caps.driver.timestamp_frequency = Query::Unavailable(-1);
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .intersects(timestamp_features));
+
+        caps.driver.timestamp_frequency = Query::Value(1_000_000_000);
+        caps.backend.timestamp_queries = false;
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .intersects(timestamp_features));
     }
 
     #[test]

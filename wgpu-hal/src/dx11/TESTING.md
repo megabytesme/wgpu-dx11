@@ -2670,13 +2670,10 @@ selected adapter omits `DownlevelFlags::COMPUTE_SHADERS` and verifies that core
 rejects compute-pipeline creation with that named validation gate before HAL.
 It also passed 1/1 on the forced-FL9_1 physical device.
 
-The `public_dx11_rejects_unavailable_query_types_at_fl91` test asserts the
-selected adapter omits `DownlevelFlags::OCCLUSION_QUERY` and the
-`TIMESTAMP_QUERY` and `PIPELINE_STATISTICS_QUERY` features. Core rejects all
-three query-set types before the private HAL's unsupported query creation
-method. The focused checks passed on the forced-FL9_1 physical device. The
-full strict public suite at that historical checkpoint passed 36/36; only the
-optional Float16x2 vertex-input branch was skipped for missing device support.
+The `public_dx11_enforces_query_type_feature_gates_at_fl91` test confirms that
+timestamps still require the caller to request the advertised feature, while
+occlusion and pipeline-statistics queries remain unsupported. The focused
+timestamp execution test and current command are recorded below.
 
 ### FL9_1 line topologies
 
@@ -3191,3 +3188,24 @@ verifies that the FL9_1 projection rejects selected inverse operations and
 inverse-bearing helper functions before the HLSL writer while an ordinary
 separate shader module remains valid; pipeline validation does not issue a
 draw.
+
+### Optional FL9_1 timestamp queries
+
+Run the capability projection test, native probe and public resolve test from
+an x64 Visual Studio developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib timestamp_query_features_require_a_positive_frequency_probe_and_backend_path
+cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl91_timestamp_and_disjoint_queries_execute_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+```
+
+The native probe creates timestamp and disjoint queries on the selected FL9_1
+device, flushes and reads the disjoint frequency. A positive result enables
+timestamp query sets and encoder writes only. The public test resolves two
+timestamps, copies them to mapped memory, checks monotonic values and confirms
+occlusion and pipeline-statistics sets remain rejected. D3D11 has no native
+query-result copy command here, so resolve waits for `GetData` on the CPU; the
+selected RTX 3090 Ti reports 1 GHz and 1 ns/tick. Pass-level timestamp writes
+remain unsupported.

@@ -743,9 +743,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   methods are unreachable through this public capability contract.
 - Public core rejects compute-pipeline creation through its missing
   `COMPUTE_SHADERS` downlevel gate before invoking the unsupported HAL path.
-- Public core rejects occlusion, timestamp and pipeline-statistics
-  query-set creation through their missing downlevel flag or features before
-  invoking unsupported HAL query creation.
+- Public core rejects occlusion and pipeline-statistics query sets. Timestamp
+  query sets and encoder writes are exposed only when selected-device
+  timestamp/disjoint execution reports a positive frequency; query resolve is
+  ordered but waits for `GetData` before writing the result buffer. Timestamp
+  writes inside render/compute passes remain unavailable.
 - Negative and out-of-target viewports use a separately compiled vertex shader
   and a reserved constant buffer. If FXC cannot compile that variant, draws
   needing remapping are rejected; the original shader remains usable.
@@ -1192,3 +1194,14 @@ unrestricted-NPOT capability. The RTX 3090 Ti query (`0x0002c320`) omits MIP,
 so its strict test explicitly skips mip execution while confirming the
 single-mip projection. Synthetic tests cover the positive and negative query
 branches. No physical execution is claimed for the mip path.
+
+## Optional timestamp query support
+
+Native device creation performs one bounded timestamp/disjoint query probe.
+Only a nonzero frequency adds `TIMESTAMP_QUERY` and
+`TIMESTAMP_QUERY_INSIDE_ENCODERS` to the explicit FL9_1 adapter projection.
+Query-set creation supports timestamps only. Encoder writes issue D3D11
+timestamp `End` commands; resolve flushes, waits for `GetData` and updates the
+retained query-resolve buffer in sequence. This is correct but can stall the
+CPU. Pass timestamp writes, occlusion and pipeline-statistics queries stay
+unavailable. See `TESTING.md` for the strict hardware command and result.

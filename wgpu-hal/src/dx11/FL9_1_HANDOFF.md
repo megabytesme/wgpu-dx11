@@ -11,24 +11,25 @@ reset, and queue-write ordering after command encoding. The two latest
 test-only commits are `9e07459a3eee540c349c9e28cc6a864221c3c01f` and
 `818fee943b117018cae30c813d17fa0e389c7669`.
 
-The latest full strict public D3D11 target passed 88/88; three optional
+The latest full strict public D3D11 target passed 89/89; three optional
 device-specific subcases were logged as skips. The new cases executed on the
 physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
-software=false, requested/actual FL9_1, with GPU readback. The immediately
-preceding verified regression checkpoint includes strict private HAL 414/414,
-core DX11 fixture 112/112, core DX12 101/101 and strict HWND fixture 2/2. The
+software=false, requested/actual FL9_1, with GPU readback. The current strict
+private HAL run passed 416/416; the core DX11 fixture previously passed
+112/112, DX12 core 101/101 and the strict HWND fixture 2/2. The
 detailed commands and hardware readback evidence are in `FL9_1_PROGRESS.md`.
 
 Feature-wise, dynamic offsets, multiple bind groups, multiple sampled
 resources, broad tested vertex/index draw paths, depth/stencil, query-gated
 MSAA resolve, multiple uniform ranges and a constrained HWND path are present.
-Compute/UAV, geometry/tessellation, indirect draws, queries, ordinary texture
-arrays and several shader operations/resource combinations remain unavailable
-or deliberately rejected. An exhaustive public core/HAL contract audit is
+Compute/UAV, geometry/tessellation, indirect draws, occlusion and pipeline
+statistics queries, pass-level timestamps, ordinary texture arrays and
+several shader operations/resource combinations remain unavailable or
+deliberately rejected. An exhaustive public core/HAL contract audit is
 still open. Historical FL9_1 driver behavior, physical device removal and
 recovery, and Lumia/CoreWindow runtime execution are unverified. The next
-narrow shader candidate is fixed-size `vec2f` vertex uniform indexing, gated
-on FXC/constant-layout evidence.
+narrow implementation candidate is same-format 3D texture copies, with readback
+and render attachments remaining deferred.
 
 ## Latest surface lifecycle checkpoint — 2026-11-08
 
@@ -2538,3 +2539,10 @@ test explicitly skips this optional operation. Synthetic capability checks
 pass, and the controlled core fixture confirms the restricted projection.
 The positive mip path has not run on hardware. Continue the wider public
 contract audit and historical hardware/runtime verification.
+
+The current uncommitted increment adds optional timestamp-query support after
+a positive timestamp/disjoint probe on the selected device. A strict public
+FL9_1 test resolved two timestamps on the RTX 3090 Ti and verified a 1 ns/tick
+period. The resolve path waits on the CPU; pass timestamps, occlusion and
+pipeline-statistics queries remain unsupported. Full regressions and a
+checkpoint commit are still pending.

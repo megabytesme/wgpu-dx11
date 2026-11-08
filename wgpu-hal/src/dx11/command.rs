@@ -21,9 +21,9 @@ use windows::{
                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
             },
             Direct3D11::{
-                ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
-                ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
+                ID3D11Asynchronous, ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView,
+                ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader,
+                ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
                 ID3D11ShaderResourceView, ID3D11VertexShader, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX,
                 D3D11_BUFFER_DESC, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, D3D11_SUBRESOURCE_DATA,
                 D3D11_USAGE_IMMUTABLE, D3D11_VIEWPORT,
@@ -146,6 +146,12 @@ impl RenderTarget {
 pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
+    WriteTimestamp(ID3D11Asynchronous),
+    CopyQueryResults {
+        queries: Vec<ID3D11Asynchronous>,
+        buffer: ID3D11Buffer,
+        offset: u32,
+    },
     BufferToTexture(BufferToTexture),
     BufferToTexture3D(BufferToTexture3D),
     TextureToBuffer(TextureToBuffer),
@@ -553,6 +559,44 @@ impl CommandBuffer {
                                 0,
                             );
                             start = end;
+                        }
+                    }
+                    NativeCommand::WriteTimestamp(query) => context.End(query),
+                    NativeCommand::CopyQueryResults {
+                        queries,
+                        buffer,
+                        offset,
+                    } => {
+                        context.Flush();
+                        for (index, query) in queries.iter().enumerate() {
+                            let mut value = 0u64;
+                            super::query::wait_for_query_data(context, query, &mut value)?;
+                            let byte_offset = offset
+                                .checked_add(
+                                    u32::try_from(index)
+                                        .ok()
+                                        .and_then(|index| index.checked_mul(wgt::QUERY_SIZE))
+                                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                                )
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            let region = D3D11_BOX {
+                                left: byte_offset,
+                                right: byte_offset
+                                    .checked_add(wgt::QUERY_SIZE)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                                top: 0,
+                                bottom: 1,
+                                front: 0,
+                                back: 1,
+                            };
+                            context.UpdateSubresource(
+                                buffer,
+                                0,
+                                Some(&region),
+                                core::ptr::from_ref(&value).cast(),
+                                0,
+                                0,
+                            );
                         }
                     }
 

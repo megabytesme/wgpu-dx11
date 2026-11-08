@@ -712,14 +712,21 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        if let Some(render) = self.render.as_mut() {
-            render.depth_never_elision_safe = false;
+        if self.render.is_some() || self.compute || !set.belongs_to(&self.device) {
+            self.reject();
+            return;
         }
-        self.reject()
+        let Some(query) = set.query(index) else {
+            self.reject();
+            return;
+        };
+        self.record(NativeCommand::WriteTimestamp(query));
     }
 
     unsafe fn reset_queries(&mut self, set: &<Self::A as Api>::QuerySet, range: Range<u32>) {
-        self.reject()
+        if !set.belongs_to(&self.device) || !set.contains_range(&range) {
+            self.reject();
+        }
     }
 
     unsafe fn copy_query_results(
@@ -730,7 +737,41 @@ impl crate::CommandEncoder for CommandEncoder {
         offset: wgt::BufferAddress,
         stride: wgt::BufferSize,
     ) {
-        self.reject()
+        if !set.belongs_to(&self.device)
+            || !set.contains_range(&range)
+            || stride.get() != u64::from(wgt::QUERY_SIZE)
+            || !offset.is_multiple_of(u64::from(wgt::QUERY_SIZE))
+        {
+            self.reject();
+            return;
+        }
+        let queries = match set.query_range(range.clone()) {
+            Ok(queries) => queries,
+            Err(error) => {
+                self.failure = Some(super::hal_device::device_error(error));
+                return;
+            }
+        };
+        let Some(buffer_offset) = u32::try_from(offset).ok() else {
+            self.reject();
+            return;
+        };
+        let buffer =
+            match self
+                .device
+                .prepare_query_result_target(buffer, offset, range.end - range.start)
+            {
+                Ok(buffer) => buffer,
+                Err(error) => {
+                    self.failure = Some(super::hal_device::device_error(error));
+                    return;
+                }
+            };
+        self.record(NativeCommand::CopyQueryResults {
+            queries,
+            buffer,
+            offset: buffer_offset,
+        });
     }
 
     unsafe fn begin_render_pass(

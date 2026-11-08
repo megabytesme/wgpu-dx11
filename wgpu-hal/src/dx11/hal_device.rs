@@ -151,6 +151,7 @@ impl crate::Device for Device {
             | wgt::BufferUses::UNIFORM
             | wgt::BufferUses::STORAGE_READ_ONLY
             | wgt::BufferUses::STORAGE_READ_WRITE
+            | wgt::BufferUses::QUERY_RESOLVE
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
         if !supported.contains(desc.usage)
@@ -1021,11 +1022,14 @@ impl crate::Device for Device {
         &self,
         desc: &wgt::QuerySetDescriptor<Label>,
     ) -> Result<<Self::A as Api>::QuerySet, DeviceError> {
-        Err(DeviceError::Unexpected)
+        if !matches!(desc.ty, wgt::QueryType::Timestamp) {
+            return Err(DeviceError::Unexpected);
+        }
+        super::query::QuerySet::new(&self.native, desc.count).map_err(device_error)
     }
 
     unsafe fn destroy_query_set(&self, set: <Self::A as Api>::QuerySet) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(set)
     }
 
     unsafe fn create_fence(&self) -> Result<<Self::A as Api>::Fence, DeviceError> {

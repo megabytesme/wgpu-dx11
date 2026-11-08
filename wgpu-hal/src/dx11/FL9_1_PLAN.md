@@ -1,20 +1,16 @@
 # FL9_1 completion plan
 
-Latest verified code increment (HEAD `535ea4f098d046e0ed8d700dbde3cca544914025`): core now
-rejects unsupported matrix `outerProduct` shaders before HAL translation,
-zero-length core mappings no longer call a HAL unmap without a native map, and
-D3D11 resolves honor the source and destination view mip indices. The selected
-vertex-uniform indexing subset now also supports valid fixed arrays of
-explicitly padded single-`vec2<f32>` structs. Strict Rust 1.93.1 verification
-passed the DX11 core fixture 112/112, private D3D11 HAL 414/414, public D3D11
-87/87 on the RTX 3090 Ti at requested/actual FL9_1, and DX12 core 101/101;
-three optional public device subcases skipped. Exact commands and compiler
-warnings are recorded in `FL9_1_PROGRESS.md`. Five scoped code checkpoints
-are `04fa504a9`, `7979fd3d8`, `f306faae8`, `4737d5f55` and `535ea4f09`.
-Public D3D11 remains explicit opt-in and excluded from default backend
-selection. A strict HWND fixture also injects device loss from `Present`,
-verifies the public callback fires once, and reacquires the same HAL swapchain
-to prove failed-frame reservation cleanup.
+Latest verified increment: timestamp query sets and command-encoder writes are
+now supported only when a selected device positively executes timestamp and
+disjoint queries and reports a nonzero frequency. The public feature projection
+does not include pass-level timestamps, occlusion queries or pipeline
+statistics. Resolving timestamps waits for D3D11 `GetData` and can stall the
+CPU. On the RTX 3090 Ti at explicitly requested/selected FL9_1, two query values
+were read back in order and the reported period was 1 ns/tick. Strict Rust
+1.93.1 runs passed private D3D11 HAL 416/416, public D3D11 89/89, and DX12 core
+101/101; three optional public device-specific subcases skipped. Exact commands
+and warnings are recorded in `FL9_1_PROGRESS.md`. Public D3D11 remains explicit
+opt-in and excluded from default backend selection.
 
 The mission remains partially complete. Continue the core/HAL contract audit
 and prioritize remaining feasible public FL9_1 work based on independent

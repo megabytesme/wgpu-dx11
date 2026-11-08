@@ -55,7 +55,7 @@ impl crate::Api for Api {
     type SurfaceTexture = super::surface::SurfaceTexture;
     type TextureView = super::texture::NativeTextureView;
     type Sampler = super::hal_sampler::Sampler;
-    type QuerySet = Unavailable;
+    type QuerySet = super::query::QuerySet;
     type Fence = super::fence::NativeFence;
     type BindGroupLayout = super::hal_bind_group::BindGroupLayout;
     type BindGroup = super::hal_bind_group::BindGroup;
