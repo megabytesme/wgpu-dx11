@@ -1,11 +1,12 @@
 # FL9_1 completion plan
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
-`vertex_index` uses a host-generated float IA stream for restricted TriangleList
-pipelines. Core permits direct u32-to-f32 use; integer arithmetic and other
-topologies remain unsupported. Strict FL9_1 RTX readback verified indexed and
-nonindexed IDs, negative base vertex, wide indices, `first_vertex=100000` and
-post-remap state. Historical-driver compatibility and topology validation
-remain open. See FL9_1_PROGRESS.md.
+`vertex_index` uses a host-generated float IA stream for TriangleList pipelines.
+`DownlevelLimits::vertex_index_topology_mask` now communicates that subset to
+core, which rejects other topologies before HAL pipeline creation. Core and HAL
+acceptance/rejection were exercised in the strict RTX fixture; the public
+TriangleList readback still verifies indexed and nonindexed IDs, negative base
+vertex, wide indices, `first_vertex=100000` and post-remap state. Historical-
+driver compatibility remains open. See FL9_1_PROGRESS.md.
 Latest format increment: the internal FL9_1 sampled/upload mip path now also
 covers R8G8B8A8_SNORM. Microsoft lists its `TEXTURE2D`, `SHADER_SAMPLE` and
 `MIP` guarantees at FL9_1; the selected device's `TEXTURE2D | MIP` query and

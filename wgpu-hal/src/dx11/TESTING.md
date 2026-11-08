@@ -749,9 +749,9 @@ The selected FL9_1 projection supports a bounded `vertex_index` subset for
 TriangleList pipelines. The backend does not emit `SV_VertexID`: FXC rejects
 that native semantic with X4555. Naga maps the selected input to a custom float
 IA semantic, and command replay binds identity or temporary remapping buffers.
-Core permits direct `u32`-to-`f32` use and rejects integer arithmetic. Other
-primitive topologies fail at backend pipeline creation because current core
-limits cannot express the topology-specific restriction.
+Core permits direct `u32`-to-`f32` use and rejects integer arithmetic. The
+`DownlevelLimits::vertex_index_topology_mask` reports TriangleList as the
+supported topology; core rejects other topologies before HAL pipeline creation.
 
 The same private shader path also emulates `instance_index` from a host-updated
 constant at b13. CPU tests cover selected-entry detection and restricted integer
@@ -763,6 +763,7 @@ Run the strict hardware test from a Visual Studio x64 developer environment:
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_triangle_list_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
 The test requires a physical adapter, explicitly requests and verifies FL9_1,

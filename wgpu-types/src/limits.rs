@@ -1172,6 +1172,15 @@ pub struct DownlevelLimits {
     ///
     /// This can be unavailable when the selected shader profile cannot compile the input.
     pub vertex_index_input: bool,
+    /// Primitive topologies for which vertex entry points may declare `@builtin(vertex_index)`.
+    ///
+    /// The bits are returned by [`Self::vertex_index_topology_bit`]. This can be narrower than
+    /// the adapter's supported primitive topologies when the backend emulates the input.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_vertex_index_topology_mask")
+    )]
+    pub vertex_index_topology_mask: u8,
     /// Whether vertex entry points may declare `@builtin(instance_index)`.
     ///
     /// This can be unavailable when the backend cannot preserve the input's semantics.
@@ -1394,6 +1403,11 @@ fn default_max_texture_to_buffer_copy_layers() -> u32 {
 }
 
 #[cfg(feature = "serde")]
+fn default_vertex_index_topology_mask() -> u8 {
+    0b1_1111
+}
+
+#[cfg(feature = "serde")]
 fn default_max_sampled_texture_sampler_pairs() -> u32 {
     u32::MAX
 }
@@ -1428,6 +1442,7 @@ impl Default for DownlevelLimits {
             shader_loops: true,
             shader_dynamic_loops: true,
             vertex_index_input: true,
+            vertex_index_topology_mask: Self::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: true,
             max_sampled_textures_per_vertex_stage: 16,
             max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
@@ -1461,6 +1476,27 @@ impl Default for DownlevelLimits {
 }
 
 impl DownlevelLimits {
+    /// Bit mask containing every primitive topology supported by `vertex_index_topology_bit`.
+    pub const VERTEX_INDEX_TOPOLOGY_MASK_ALL: u8 = 0b1_1111;
+
+    /// Returns the bit assigned to a primitive topology for `vertex_index_topology_mask`.
+    #[must_use]
+    pub const fn vertex_index_topology_bit(topology: crate::PrimitiveTopology) -> u8 {
+        match topology {
+            crate::PrimitiveTopology::PointList => 1 << 0,
+            crate::PrimitiveTopology::LineList => 1 << 1,
+            crate::PrimitiveTopology::LineStrip => 1 << 2,
+            crate::PrimitiveTopology::TriangleList => 1 << 3,
+            crate::PrimitiveTopology::TriangleStrip => 1 << 4,
+        }
+    }
+
+    /// Returns whether `vertex_index` is supported for the selected primitive topology.
+    #[must_use]
+    pub const fn supports_vertex_index_topology(&self, topology: crate::PrimitiveTopology) -> bool {
+        self.vertex_index_topology_mask & Self::vertex_index_topology_bit(topology) != 0
+    }
+
     /// Returns the bit assigned to a comparison function in
     /// [`DownlevelLimits::comparison_sampler_function_mask`].
     #[must_use]
@@ -1633,6 +1669,9 @@ impl DownlevelLimits {
             && (!required.shader_loops || self.shader_loops)
             && (!required.shader_dynamic_loops || self.shader_dynamic_loops)
             && (!required.vertex_index_input || self.vertex_index_input)
+            && (!required.vertex_index_input
+                || self.vertex_index_topology_mask & required.vertex_index_topology_mask
+                    == required.vertex_index_topology_mask)
             && (!required.instance_index_input || self.instance_index_input)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
@@ -1736,6 +1775,9 @@ impl DownlevelCapabilities {
             && self.limits.shader_loops
             && self.limits.shader_dynamic_loops
             && self.limits.vertex_index_input
+            && self.limits.vertex_index_topology_mask
+                & DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL
+                == DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL
             && self.limits.instance_index_input
             && self.limits.max_sampled_textures_per_vertex_stage
                 >= DownlevelLimits::default().max_sampled_textures_per_vertex_stage
@@ -2177,9 +2219,8 @@ mod tests {
     #[test]
     fn three_dimensional_texture_limits_are_checked_as_a_shape_contract() {
         let rgba8 = DownlevelLimits::texture_3d_format_bit(crate::TextureFormat::Rgba8Unorm);
-        let supported_usage = (crate::TextureUsages::TEXTURE_BINDING
-            | crate::TextureUsages::COPY_DST)
-            .bits();
+        let supported_usage =
+            (crate::TextureUsages::TEXTURE_BINDING | crate::TextureUsages::COPY_DST).bits();
         let available = DownlevelLimits {
             texture_3d: true,
             texture_3d_usage_mask: supported_usage,
@@ -2299,6 +2340,7 @@ mod tests {
             shader_loops: false,
             shader_dynamic_loops: false,
             vertex_index_input: false,
+            vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 4,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
@@ -2356,6 +2398,7 @@ mod tests {
             shader_loops: false,
             shader_dynamic_loops: false,
             vertex_index_input: false,
+            vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
             max_sampled_textures_per_vertex_stage: 3,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
@@ -3033,6 +3076,34 @@ mod tests {
         assert!(!compliant
             .limits
             .supports_vertex_format(crate::VertexFormat::Unorm8x4));
+    }
+
+    #[test]
+    fn vertex_index_topology_masks_are_subset_capabilities() {
+        let triangle_list =
+            DownlevelLimits::vertex_index_topology_bit(crate::PrimitiveTopology::TriangleList);
+        let line_list =
+            DownlevelLimits::vertex_index_topology_bit(crate::PrimitiveTopology::LineList);
+        let available = DownlevelLimits {
+            vertex_index_input: true,
+            vertex_index_topology_mask: triangle_list,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.supports_vertex_index_topology(crate::PrimitiveTopology::TriangleList));
+        assert!(!available.supports_vertex_index_topology(crate::PrimitiveTopology::LineList));
+        assert!(available.check_limits(&DownlevelLimits {
+            vertex_index_topology_mask: triangle_list,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            vertex_index_topology_mask: line_list,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
     }
 
     #[test]

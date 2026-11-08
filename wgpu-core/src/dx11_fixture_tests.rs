@@ -109,6 +109,7 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
                     shader_loops: false,
                     shader_dynamic_loops: false,
                     vertex_index_input: false,
+                    vertex_index_topology_mask: 0,
                     instance_index_input: false,
                     max_sampled_textures_per_vertex_stage: 0,
                     max_sampled_texture_sampler_pairs_per_shader_stage: 16,
@@ -516,7 +517,10 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             depth_or_array_layers: 4,
         };
         let (volume, error) = global.device_create_texture(device, &volume_desc, None);
-        assert!(error.is_none(), "queried FL9_1 3D texture creation: {error:?}");
+        assert!(
+            error.is_none(),
+            "queried FL9_1 3D texture creation: {error:?}"
+        );
         let (view, error) = global.texture_create_view(
             volume,
             &crate::resource::TextureViewDescriptor {
@@ -532,21 +536,32 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         invalid.size.depth_or_array_layers = 3;
         let (_, error) = global.device_create_texture(device, &invalid, None);
         assert!(
-            matches!(error, Some(crate::resource::CreateTextureError::InvalidTexture3DSize { .. })),
+            matches!(
+                error,
+                Some(crate::resource::CreateTextureError::InvalidTexture3DSize { .. })
+            ),
             "NPOT volume dimensions must be rejected in core: {error:?}"
         );
         invalid = volume_desc.clone();
         invalid.format = wgt::TextureFormat::Bgra8Unorm;
         let (_, error) = global.device_create_texture(device, &invalid, None);
         assert!(
-            matches!(error, Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(_))),
+            matches!(
+                error,
+                Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(_))
+            ),
             "unqueried volume formats must be rejected in core: {error:?}"
         );
         invalid = volume_desc.clone();
         invalid.usage |= wgt::TextureUsages::RENDER_ATTACHMENT;
         let (_, error) = global.device_create_texture(device, &invalid, None);
         assert!(
-            matches!(error, Some(crate::resource::CreateTextureError::InvalidDimensionUsages(..))),
+            matches!(
+                error,
+                Some(crate::resource::CreateTextureError::InvalidDimensionUsages(
+                    ..
+                ))
+            ),
             "unsupported volume attachment usage must be rejected in core: {error:?}"
         );
         invalid = volume_desc.clone();
@@ -610,10 +625,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
 
         let (source_2d, error) = global.device_create_texture(
             device,
-            &texture_desc(
-                wgt::TextureFormat::Rgba8Unorm,
-                wgt::TextureUsages::COPY_SRC,
-            ),
+            &texture_desc(wgt::TextureFormat::Rgba8Unorm, wgt::TextureUsages::COPY_SRC),
             None,
         );
         assert!(error.is_none(), "2D copy source texture: {error:?}");
@@ -645,17 +657,17 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
                 },
             )
             .unwrap();
-        let (command, error) = global.command_encoder_finish(
-            encoder,
-            &wgt::CommandBufferDescriptor::default(),
-            None,
-        );
+        let (command, error) =
+            global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
         assert!(
             matches!(
                 error,
-                Some((_, crate::command::CommandEncoderError::Transfer(
-                    crate::command::TransferError::UnsupportedTexture3DCopy
-                )))
+                Some((
+                    _,
+                    crate::command::CommandEncoderError::Transfer(
+                        crate::command::TransferError::UnsupportedTexture3DCopy
+                    )
+                ))
             ),
             "2D-to-3D texture copies must fail before HAL replay: {error:?}"
         );
@@ -5691,26 +5703,35 @@ fn render_triangle(
         vertex_builtin_descriptor.vertex.stage.module = vertex_builtin_shader;
         vertex_builtin_descriptor.fragment = None;
         vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("vertex_index"));
+        vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::LineList;
         let (invalid_pipeline, error) =
             global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
         assert!(
             matches!(
                 error.as_ref(),
-                Some(pipeline::CreateRenderPipelineError::UnsupportedVertexIndexInput)
+                Some(pipeline::CreateRenderPipelineError::UnsupportedVertexIndexTopology {
+                    topology: wgt::PrimitiveTopology::LineList
+                })
             ),
-            "FL9_1 core validation must reject vertex_index before HAL: {error:?}"
+            "FL9_1 core validation must reject unsupported vertex_index topology before HAL: {error:?}"
         );
         global.render_pipeline_drop(invalid_pipeline);
+
+        vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::TriangleList;
+        let (valid_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            error.is_none(),
+            "FL9_1 core and HAL must accept the supported vertex_index topology: {error:?}"
+        );
+        global.render_pipeline_drop(valid_pipeline);
 
         vertex_builtin_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("instance_index"));
         let (invalid_pipeline, error) =
             global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
         assert!(
-            matches!(
-                error.as_ref(),
-                Some(pipeline::CreateRenderPipelineError::UnsupportedInstanceIndexInput)
-            ),
-            "FL9_1 core validation must reject instance_index before HAL: {error:?}"
+            error.is_none(),
+            "FL9_1 core and HAL must accept the implemented instance_index input: {error:?}"
         );
         global.render_pipeline_drop(invalid_pipeline);
 
@@ -5723,7 +5744,7 @@ fn render_triangle(
         );
         global.render_pipeline_drop(safe_pipeline);
         global.shader_module_drop(vertex_builtin_shader);
-        std::println!("PASS: unsupported vertex builtins are selected-entry gated");
+        std::println!("PASS: emulated vertex builtins are selected-entry and topology gated");
 
         let (vertex_texture_shader, shader_error) = global.device_create_shader_module(
             device,

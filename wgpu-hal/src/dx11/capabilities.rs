@@ -348,6 +348,7 @@ pub(super) struct BackendCapabilities {
     pub compute: bool,
     pub storage: bool,
     pub vertex_index_input: bool,
+    pub vertex_index_topology_mask: u8,
     pub instance_index_input: bool,
     pub vertex_texture_sampling: bool,
     pub fragment_derivatives: bool,
@@ -457,6 +458,9 @@ impl BackendCapabilities {
         compute: false,
         storage: false,
         vertex_index_input: true,
+        vertex_index_topology_mask: wgt::DownlevelLimits::vertex_index_topology_bit(
+            wgt::PrimitiveTopology::TriangleList,
+        ),
         instance_index_input: true,
         vertex_texture_sampling: false,
         fragment_derivatives: false,
@@ -684,6 +688,7 @@ impl Capabilities {
                 shader_loops: self.backend.statically_unrolled_shader_loops || shader_dynamic_loops,
                 shader_dynamic_loops,
                 vertex_index_input: self.backend.vertex_index_input,
+                vertex_index_topology_mask: self.backend.vertex_index_topology_mask,
                 instance_index_input: self.backend.instance_index_input,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
                     self.backend.sampled_textures_per_group
@@ -2194,6 +2199,21 @@ mod tests {
                 .fragment_non_perspective_interpolation
         );
         assert!(exposed.downlevel.limits.vertex_index_input);
+        assert!(exposed
+            .downlevel
+            .limits
+            .supports_vertex_index_topology(wgt::PrimitiveTopology::TriangleList));
+        for topology in [
+            wgt::PrimitiveTopology::PointList,
+            wgt::PrimitiveTopology::LineList,
+            wgt::PrimitiveTopology::LineStrip,
+            wgt::PrimitiveTopology::TriangleStrip,
+        ] {
+            assert!(!exposed
+                .downlevel
+                .limits
+                .supports_vertex_index_topology(topology));
+        }
         assert!(exposed.downlevel.limits.instance_index_input);
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);

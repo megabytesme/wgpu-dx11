@@ -809,6 +809,10 @@ pub enum CreateRenderPipelineError {
     },
     #[error("Vertex `@builtin(vertex_index)` is not supported by this downlevel adapter")]
     UnsupportedVertexIndexInput,
+    #[error(
+        "Vertex `@builtin(vertex_index)` is not supported with {topology:?} on this downlevel adapter"
+    )]
+    UnsupportedVertexIndexTopology { topology: wgt::PrimitiveTopology },
     #[error("Vertex `@builtin(instance_index)` is not supported by this downlevel adapter")]
     UnsupportedInstanceIndexInput,
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
@@ -911,6 +915,17 @@ pub enum CreateRenderPipelineError {
     InvalidResource(#[from] InvalidResourceError),
 }
 
+pub(crate) fn validate_vertex_index_topology(
+    topology: wgt::PrimitiveTopology,
+    limits: &wgt::DownlevelLimits,
+) -> Result<(), CreateRenderPipelineError> {
+    if limits.supports_vertex_index_topology(topology) {
+        Ok(())
+    } else {
+        Err(CreateRenderPipelineError::UnsupportedVertexIndexTopology { topology })
+    }
+}
+
 impl WebGpuError for CreateRenderPipelineError {
     fn webgpu_error_type(&self) -> ErrorType {
         match self {
@@ -936,6 +951,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::TooManySampledTextureSamplerPairs { .. }
             | Self::TooManyUniformVectors { .. }
             | Self::UnsupportedVertexIndexInput
+            | Self::UnsupportedVertexIndexTopology { .. }
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
@@ -968,6 +984,32 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::PipelineConstants { .. }
             | Self::VertexAttributeStrideTooLarge { .. } => ErrorType::Validation,
         }
+    }
+}
+
+#[cfg(test)]
+mod vertex_index_topology_tests {
+    use super::*;
+
+    #[test]
+    fn emulated_vertex_index_rejects_unsupported_topology_during_core_validation() {
+        let limits = wgt::DownlevelLimits {
+            vertex_index_input: true,
+            vertex_index_topology_mask: wgt::DownlevelLimits::vertex_index_topology_bit(
+                wgt::PrimitiveTopology::TriangleList,
+            ),
+            ..wgt::DownlevelLimits::default()
+        };
+
+        assert!(
+            validate_vertex_index_topology(wgt::PrimitiveTopology::TriangleList, &limits).is_ok()
+        );
+        assert!(matches!(
+            validate_vertex_index_topology(wgt::PrimitiveTopology::LineList, &limits),
+            Err(CreateRenderPipelineError::UnsupportedVertexIndexTopology {
+                topology: wgt::PrimitiveTopology::LineList
+            })
+        ));
     }
 }
 

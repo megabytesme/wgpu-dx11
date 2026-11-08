@@ -11118,3 +11118,63 @@ cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib requesting_dx11_exposes_only_fl91_hardware_adapters
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
 ```
+
+## Core validation for TriangleList-only `vertex_index` — 2026-11-08
+
+The public capability projection now carries a topology mask in
+`DownlevelLimits`. D3D11 FL9_1 exposes `vertex_index` only for TriangleList,
+matching the backend's custom float IA semantic and indexed replay paths. Core
+uses the selected vertex entry point to detect the builtin, then rejects an
+unsupported topology with a validation error before HAL pipeline creation. The
+HAL's TriangleList check remains as a defensive boundary. Other backends retain
+their full default topology mask; old serialized limits default to all known
+topologies.
+
+Verification on the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, software=false), with requested and actual FL9_1:
+
+- `wgpu-types` library: 94 passed, including topology-mask subset and default
+  compliance checks.
+- Core topology-validation unit test: 1 passed.
+- D3D11 capability-projection unit test: 1 passed.
+- Strict core hardware fixture: 1 passed. It rejected a LineList pipeline using
+  `vertex_index` at core validation, accepted TriangleList `vertex_index` and
+  `instance_index` pipelines through HAL, and completed its existing textured,
+  depth, buffer, mip and draw cases. One optional RG8_UNORM mip case was
+  explicitly skipped because the selected device reported no MIP support.
+- Existing public TriangleList readback remains the GPU evidence for
+  vertex-index-dependent output; this fixture increment adds validation-boundary
+  evidence, not a new draw result.
+
+The initial compile identified exhaustive `DownlevelLimits` literals in tests
+and the Noop backend that needed the new field; those were updated. The
+`wgpu-types` test build continues to report its pre-existing unused serde-import
+and qualification warnings. Historical FL9_1 topology behavior remains
+unverified.
+
+Additional verification for this increment:
+
+- Strict private D3D11 HAL suite: 409 passed, 0 failed, with strict hardware
+  mode enabled. The suite exercised the RTX 3090 Ti under explicitly requested
+  FL9_1; optional format and shader-negative cases retained their existing
+  explicit skip output.
+- DX12 core regression: 95 passed, 0 failed.
+- Public D3D11 library feature check and strict TriangleList readback: passed;
+  the readback checked six indexed/non-indexed and remapping cases on hardware.
+- Core D3D11 zero-adapter isolation test: 1 passed.
+- `wgpu-types` Clippy, DX11 core Clippy and DX11 HAL Clippy completed. Warnings
+  are existing serde imports/qualifications, helper argument counts and test
+  style warnings outside this change.
+- Rustfmt check and `git diff --check` passed.
+
+The new core behavior can be reproduced with:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-types --lib vertex_index_topology_masks_are_subset_capabilities
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib emulated_vertex_index_rejects_unsupported_topology_during_core_validation
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_wgpu_projection_is_conservative_and_uses_only_implemented_paths
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+```

@@ -1857,9 +1857,8 @@ impl Device {
         }
 
         if desc.dimension == wgt::TextureDimension::D3 {
-            let supported_usage = wgt::TextureUsages::from_bits_retain(
-                self.downlevel.limits.texture_3d_usage_mask,
-            );
+            let supported_usage =
+                wgt::TextureUsages::from_bits_retain(self.downlevel.limits.texture_3d_usage_mask);
             let unsupported_usage = desc.usage - supported_usage;
             if !unsupported_usage.is_empty() {
                 return Err(CreateTextureError::InvalidDimensionUsages(
@@ -5619,17 +5618,22 @@ impl Device {
                             },
                         );
                     }
-                    if !self.downlevel.limits.vertex_index_input
-                        && match interface {
-                            Some(interface) => interface
-                                .entry_point_uses_vertex_index(&_vertex_entry_point_name)
-                                .map_err(stage_err)?,
-                            None => true,
+                    let uses_vertex_index = match interface {
+                        Some(interface) => interface
+                            .entry_point_uses_vertex_index(&_vertex_entry_point_name)
+                            .map_err(stage_err)?,
+                        None => true,
+                    };
+                    if uses_vertex_index {
+                        if !self.downlevel.limits.vertex_index_input {
+                            return Err(
+                                pipeline::CreateRenderPipelineError::UnsupportedVertexIndexInput,
+                            );
                         }
-                    {
-                        return Err(
-                            pipeline::CreateRenderPipelineError::UnsupportedVertexIndexInput,
-                        );
+                        pipeline::validate_vertex_index_topology(
+                            desc.primitive.topology,
+                            &self.downlevel.limits,
+                        )?;
                     }
                     if !self.downlevel.limits.instance_index_input
                         && match interface {

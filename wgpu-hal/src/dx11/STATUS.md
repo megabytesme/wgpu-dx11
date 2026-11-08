@@ -3,9 +3,11 @@ Latest shader-input status: `instance_index` and a restricted `vertex_index`
 subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
 IA semantic with direct identity IDs up to 65,534 and temporary remapped streams
 for larger IDs, including nonindexed `first_vertex`. It is limited to
-TriangleList pipelines and direct `u32`-to-`f32` use. The strict RTX 3090 Ti
-test verified nonindexed, indexed, negative-base, wide-index, large-firstVertex
-and transition output. See `TESTING.md`; topology validation remains a core gap.
+TriangleList pipelines and direct `u32`-to-`f32` use. `DownlevelLimits` now
+reports the supported topology mask, and core rejects other topologies before
+HAL pipeline creation. The strict RTX 3090 Ti test verified nonindexed,
+indexed, negative-base, wide-index, large-firstVertex and transition output.
+See `TESTING.md` for the core validation fixture and public GPU test.
 # Direct3D 11 backend status
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an
@@ -400,10 +402,12 @@ The selected FL9_1 projection enables `DownlevelLimits::vertex_index_input` for
 a constrained host-stream emulation. FXC rejects native `SV_VertexID` with
 X4555, so Naga emits a custom float IA semantic and command replay supplies
 identity or temporary remapping streams. This path supports TriangleList only
-and core permits direct `u32`-to-`f32` use; integer arithmetic remains
-rejected. `instance_index` is emulated through reserved vertex constant b13,
-updated to `first_instance + instance` before each draw. Neither emulation is
-proof of compatibility with historical FL9_1 drivers.
+and `DownlevelLimits::vertex_index_topology_mask` now limits core validation to
+that topology; the HAL retains its own defensive check. Core permits direct
+`u32`-to-`f32` use; integer arithmetic remains rejected. `instance_index` is
+emulated through reserved vertex constant b13, updated to
+`first_instance + instance` before each draw. Neither emulation is proof of
+compatibility with historical FL9_1 drivers.
 
 Strict RTX tests at requested/actual FL9_1 cover both builtins. The latest
 vertex-index public readback checks normal and degenerate draws, negative base

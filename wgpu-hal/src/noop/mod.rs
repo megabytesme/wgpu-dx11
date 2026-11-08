@@ -215,6 +215,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 shader_loops: true,
                 shader_dynamic_loops: true,
                 vertex_index_input: true,
+                vertex_index_topology_mask: wgt::DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
                 instance_index_input: true,
                 max_sampled_textures_per_vertex_stage: 16,
                 max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
