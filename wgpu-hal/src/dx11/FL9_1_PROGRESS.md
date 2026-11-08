@@ -11500,3 +11500,175 @@ does not increase the supported FL9_1 shader subset. Public D3D11 remains
 opt-in. The broader API contract audit, historical-driver validation,
 physical device-removal recovery, and Lumia/CoreWindow runtime verification
 remain open; independent shader, resource, and adapter audits are continuing.
+
+## Matrix-inverse validation and bounded buffer readback — 2026-11-08
+
+Commit `41c161fd255b4062094c8ed986994abd76ba1e73` adds `DownlevelLimits::matrix_inverse` and selected shader
+validation for an operation Naga accepts from GLSL/SPIR-V but its current HLSL
+and MSL writers do not lower. Core checks the selected entry point and regular
+module functions; the HLSL writer emits every regular function, so an otherwise
+unused helper containing inverse must also be rejected. DX11, DX12 and Metal
+project the operation as unsupported. The public regression rejects both a
+selected inverse operation and an inverse-bearing unused helper before HAL,
+while a separate ordinary shader module still creates a pipeline. CPU coverage
+includes helper reachability, stages and a backend projection that permits the
+operation.
+
+Commit `98e1c2bbf27e2732ed0948e119c35f2fd658bbf8` changes D3D11 mapped-buffer readback to allocate a staging
+buffer for the validated map/invalidation range, copy that non-null source box
+from the default buffer into staging offset zero, and read back only those
+bytes. The strict mapping test observes 16-, 8- and 16-byte staging allocations
+for the tested mapped ranges and validates returned data. Microsoft documents
+buffer copy-box coordinates in bytes and the FL9_x copy corruption warning for
+staging-to-default copies under specific conditions; this path is default to
+staging with a bounded explicit box. This reduces transient staging allocation
+for small maps; no throughput benchmark was run.
+
+Verification with Rust 1.93.1 and the Visual Studio x64 environment:
+
+- `cargo +1.93 test --offline -j16 -p wgpu-types --lib`: 99 passed.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib`: 111 passed.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 101 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 412 passed, including the bounded-range readback test.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1`: 87 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical adapter, requested/actual FL9_1. Three optional device-specific subcases logged skips; those are not counted as GPU feature passes. Public rendering/readback tests in the suite executed real hardware work; the matrix-inverse cases exercise core validation only.
+- `cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx12`: passed.
+- Clippy passed for `wgpu-types`, core tests, HAL tests and the public D3D11 target. Existing warnings include serde imports/qualifications in `wgpu-types`, core fixture style warnings, HAL argument-count/single-range/item-order warnings, and an older public-test `std::collections::HashMap` warning. No new matrix-inverse lint warning was reported.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check`: passed.
+
+The two code commits are followed by a documentation checkpoint recording this
+evidence. This closes only the two scoped findings, not the completion mission.
+Public DX11 remains explicit opt-in; no Core WebGPU conformance, historical
+driver compatibility, Lumia runtime or physical device-removal recovery is
+claimed. Continue with separate hardware/shader/core audits and prioritize
+unimplemented ordinary graphics functionality over expanding test counts.
+
+## Follow-up — selected shader operation, empty unmap and resolve mip contracts — 2026-11-08
+
+Three reproduced gaps were closed. Naga's HLSL writer does not lower
+`MathFunction::Outer` (`outerProduct`), although WGSL/GLSL validation can
+accept it. `DownlevelLimits::matrix_outer_product` now represents that writer
+restriction; DX11 and DX12 disable it, and core rejects it in the selected
+entry point plus regular module functions emitted by the HLSL writer. Public
+GLSL regressions cover a selected operation, an otherwise unused helper and a
+valid ordinary sibling pipeline. The shared HLSL writer limitation is also
+projected by DX12 downlevel limits; Metal's MSL writer can lower the operation
+and retains its positive projection.
+
+Core empty buffer mappings use a zero-length dangling pointer and never
+establish a native HAL mapping. `Buffer::unmap` now omits the HAL unmap call for
+empty ranges. Strict core fixtures cover both a zero-sized mapped-at-creation
+buffer and an empty asynchronous map of a nonempty buffer. The D3D11 render
+resolve command now records both native subresource indices from the selected
+views instead of assuming mip zero. A strict FL9_1 HAL test resolves a
+multisampled clear into mip 1, reads back mip 0 and mip 1, and verifies that
+the red mip-1 result is correct while the green mip-0 contents remain intact.
+
+Verification used Rust 1.93.1, the Visual Studio x64 environment, offline
+dependencies and bounded Cargo parallelism:
+
+- `cargo +1.93 test --offline -j16 -p wgpu-types --lib matrix_outer_product_is_a_downlevel_shader_capability`: 1/1 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib -- --test-threads=1`: 112/112 passed, including selected-entry shader validation and strict physical-device mapping fixtures.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 413/413 passed, including actual FL9_1 resolve-to-mip-1 execution and readback.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1`: 87/87 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical hardware, requested/actual FL9_1. Three optional device-specific subcases logged skips (R8G8Unorm mip, R8G8Unorm vertex IA and Float16x2 vertex IA); those are not feature passes.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 101/101 passed. `cargo +1.93 check --offline -j16 -p wgpu-hal --no-default-features --features dx12` and the corresponding `--features gles` check passed. `cargo +1.93 check --offline -j16 -p wgpu-test --no-default-features --features dx11 --lib` passed.
+- Clippy passed for `wgpu-types`, affected core tests, D3D11 HAL tests, the public D3D11 target, and `wgpu-test` with `dx11`. Existing warning classes include HAL argument counts, older test-style lints and the public test's standard `HashMap`; no new warning was emitted for the operation gate or fixes.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+These fixes close specific implementation and core/HAL agreement defects; they
+do not add broad FL9_1 functionality or complete the public contract audit.
+The hardware results are from a modern GPU explicitly restricted to FL9_1,
+not a historical FL9_1 device. Physical device-removal recovery, historical
+driver behavior, Lumia/CoreWindow execution and full CTS integration remain
+unverified.
+The fixes are checkpointed in `04fa504a9434e6616d30a662dcc319725b4be004`
+(`outerProduct` gate), `7979fd3d8f36a021283fa25c4fe8dfa85aa72eb5`
+(empty mapping unmap) and `f306faae805b9d809e5a943b9e48524c784e15d6`
+(selected-mip resolve). The follow-up documentation is being recorded in this
+checkpoint.
+
+## Independent contract follow-up — 2026-11-08
+
+Three focused specialist passes ran against the current tree. The shader/HLSL
+audit found no additional vertex or fragment math operation reaching an
+unimplemented writer arm beyond the inverse and `outerProduct` gates now in
+core. It found a separate GLSL/SPIR-V compute `WorkGroupSize` lowering gap,
+but this is outside the FL9_1 graphics contract and D3D11 compute is disabled;
+no change was made. A public texture/view/copy audit found no further confirmed
+core-valid mismatch: 3D `COPY_SRC` is not projected, overlapping self-copies
+are rejected by core and HAL, ordinary arrays are not exposed, and cube usages
+match the sampled/copy-only HAL path. The previously found selected-mip resolve
+was the only concrete defect in that pass and is covered above.
+
+The opt-in `wgpu-test` harness is already strict-capable: its DX11 feature is
+explicit, `WGPU_DX11_REQUIRE_HARDWARE=1` requires `WGPU_BACKEND=dx11` and a
+physical FL9_1 device in `.gpuconfig`, and selected tests report `[Executed]`.
+The Deno CTS runner is not wired to compile `wgpu-core/dx11`; a future explicit
+DX11 CTS feature chain would also need a strict physical-hardware preflight.
+Current `dx11_public` integration coverage remains the targeted public GPU
+regression path, not CTS conformance.
+
+Next bounded investigation is proving whether vertex uniform arrays of
+explicitly padded structs containing `vec2<f32>` fields can use the existing
+builtin-index emulation without changing WGSL/HLSL layout semantics. A direct
+uniform `array<vec2f, N>` is invalid WGSL because its native 8-byte array stride
+does not meet the required 16-byte uniform stride. The `StencilOnly` feasibility
+review found that an aspect-only render attachment is invalid under core's
+renderable-view contract.
+Sampling a stencil-only D24S8 view would require a queried
+`X24_TYPELESS_G8_UINT` SRV, uint texture bindings and `textureLoad`; the current
+FL9_1 profile gates texture loads, and D24S8 SRV support is not a required
+9_1 format guarantee. Defer that feature until an isolated FXC proof and
+selected-device query establish a correct path. Intrinsic FL9_1 restrictions
+and historical/Lumia verification gaps remain separately tracked.
+
+## Padded `vec2<f32>` vertex-uniform arrays — 2026-11-08
+
+Extended the selected vertex-uniform array indexing proof to accept the valid
+WGSL wrapper shape `array<Vec2Slot, N>`, where `Vec2Slot` is a 16-byte struct
+with one `vec2<f32>` member at offset zero. A plain `array<vec2<f32>, N>` is
+still rejected by WGSL validation because its 8-byte element stride does not
+meet the 16-byte uniform-address-space alignment. Core and HAL require the
+same exact wrapper layout; the HAL verifies Naga's HLSL output and compiles it
+with the FL9_1 FXC profile. The public strict readback test uses distinctive
+padding bytes, checks all four uniform values and verifies the existing
+out-of-range clamp selects the final element.
+
+Verification on Rust 1.93.1, the Visual Studio x64 environment and the
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false,
+requested/actual FL9_1):
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib -- --test-threads=1`: 112/112 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 414/414 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1`: 87/87 passed. Three optional device subcases skipped: R8G8Unorm mip support, R8G8Unorm vertex IA and Float16x2 vertex IA. The new public readback case executed on the GPU and matched `[255,0,0,255]`, `[0,255,255,255]`, `[51,153,204,255]` and `[204,64,51,255]`; vertex index 4 matched the clamped final value `[204,64,51,255]`.
+- `cargo +1.93 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 101/101 passed.
+- `cargo +1.93 fmt --all -- --check`, Clippy for the affected core tests, D3D11 HAL tests and public D3D11 test target, and `git diff --check`: passed. Clippy reports existing warning classes in D3D11 draw/view helpers, core fixture style, HAL tests and an older public test's `std::collections::HashMap`; no new warning was reported for this addition.
+
+This adds one constrained shader-data shape. Other dynamic indexing forms,
+plain `vec2` arrays, fragment-stage uniform-array indexing and general
+WGSL/HLSL layout equivalence remain outside the verified subset. The selected
+hardware is a modern RTX explicitly restricted to FL9_1, not historical
+FL9_1 hardware. The implementation is checkpointed as
+`4737d5f55e63411ddd647111ff1256d683fc94f2`.
+
+## Present-time device-loss reservation regression — 2026-11-08
+
+Extended the existing public HWND error fixture to cover the native swapchain
+reservation after an injected `DXGI_ERROR_DEVICE_REMOVED` from `Present`. After
+the public device-lost callback fires exactly once, the test accesses the
+test-only HAL surface, reacquires from the same swapchain, and discards the
+frame. This verifies that the failed public frame releases its acquisition
+token. The error is synthetic; this does not emulate physical device removal
+or recovery.
+
+Strict verification used the Visual Studio 2026 x64 developer environment,
+Rust 1.93.1, and the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false, requested/actual FL9_1):
+
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,std --test dx11_surface_error_fixture -- --nocapture --test-threads=1`: 2/2 passed, including the Present device-loss callback and reentrant Present cleanup cases.
+- `cargo +1.93 clippy --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,std --test dx11_surface_error_fixture`: passed; three existing D3D11 HAL argument-count warnings were emitted.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check`: passed.
+
+The native error is injected while the test still uses the physical D3D11
+device; it is a lifecycle regression, not evidence of real removal/recovery.
+The test is checkpointed as
+`535ea4f098d046e0ed8d700dbde3cca544914025`.

@@ -959,6 +959,11 @@ representative application or a complete contract audit.
   textured, depth-tested cube. A 60-frame run passed on the RTX 3090 Ti at
   forced FL9_1. A live client-area capture was visually inspected; strict
   offscreen tests provide deterministic readback.
+- The public surface error fixture injects device removal from `Present`,
+  checks one public device-lost callback, and reacquires/discards the same HAL
+  swapchain to verify the failed frame released its acquisition reservation.
+  This is synthetic HRESULT coverage on real FL9_1 hardware, not physical
+  removal or recovery testing.
 - The public capability projection and core/HAL audit still need independent
 review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
@@ -1106,6 +1111,13 @@ requested/actual FL9_1 read distinct entries through direct and two-helper
 paths and confirmed an index equal to the array length uses the final
 in-range value. Historical FL9_1 driver behavior remains unverified.
 
+The same restricted indexing path also accepts explicitly padded uniform
+arrays of one-member, 16-byte structs containing `vec2<f32>` at offset zero.
+Core and HAL reject other `vec2` array layouts; the public strict readback test
+verified four distinct values and the clamped final index on the RTX 3090 Ti.
+The unpadded `array<vec2<f32>, N>` form is invalid WGSL in uniform address
+space and is not a supported workaround.
+
 ## Hidden `vertex_index` input-slot validation
 
 The emulated builtin consumes a physical vertex-input slot. Core now mirrors
@@ -1135,6 +1147,21 @@ regular function, so even an unused helper containing inverse is rejected;
 ordinary separate shader modules remain valid. DX12's HLSL and Metal's MSL
 projections also disable inverse because their writers do not lower it. This
 remains a compiler limitation and does not add hardware functionality.
+
+The same selected-shader gate now covers `outerProduct`, which Naga's HLSL
+writer also leaves unimplemented. DX11 and DX12 report the operation as
+unsupported, and core rejects it before HAL translation, including occurrences
+in regular module helper functions emitted by the HLSL writer. Regression
+coverage verifies selected and unused-helper GLSL operations remain rejected
+while an ordinary sibling shader still creates a pipeline.
+
+Core unmap now skips the HAL call for zero-length mappings. Core represents
+empty mapped ranges with a dangling zero-length pointer and the D3D11 HAL does
+not own a native mapping for them. Strict core fixtures cover zero-size
+mapped-at-creation and empty asynchronous mappings before unmap. The D3D11
+resolve command now retains the source and destination view mip indices; a
+strict forced-FL9_1 HAL test resolves into mip 1 and verifies mip 0 remains
+unchanged.
 
 ## Query-gated R8_UNORM mip chains
 

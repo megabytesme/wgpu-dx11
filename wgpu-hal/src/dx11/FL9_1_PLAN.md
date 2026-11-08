@@ -1,21 +1,34 @@
 # FL9_1 completion plan
-Latest verified code checkpoint: `695c888f4a10c4a58b51757324a0b099d1b367e2`
-(`dx11: gate unsupported FL9_1 shader builtins in core`). The selected-entry
-core contract now gates legacy `BaseVertex`, `BaseInstance`, `PointSize`, and
-`PointCoord` built-ins that the FL9_1 HLSL profile cannot compile. Strict public
-validation passed on the RTX 3090 Ti at requested/actual FL9_1. The full strict
-public suite passed 86/86 (three optional device subcases skipped), the private
-HAL suite 412/412, core DX11 110/110, core DX12 101/101, and `wgpu-types`
-98/98. See `FL9_1_PROGRESS.md` for commands and diagnostics. D3D11 remains
-explicit opt-in and excluded from default backend selection.
 
-The next work is to continue the public core/HAL contract audit across shader
-semantics, render state, resource descriptors and lifetime paths, addressing
-only independently reproduced mismatches. Historical FL9_1 behavior, physical
-device-loss recovery, and Lumia/CoreWindow runtime remain unverified. The
-public backend is a useful experimental restricted FL9_1 implementation, not
-a complete WebGPU implementation; ordinary application integration should
-remain opt-in with the documented capability limits.
+Latest verified code increment (HEAD `535ea4f098d046e0ed8d700dbde3cca544914025`): core now
+rejects unsupported matrix `outerProduct` shaders before HAL translation,
+zero-length core mappings no longer call a HAL unmap without a native map, and
+D3D11 resolves honor the source and destination view mip indices. The selected
+vertex-uniform indexing subset now also supports valid fixed arrays of
+explicitly padded single-`vec2<f32>` structs. Strict Rust 1.93.1 verification
+passed the DX11 core fixture 112/112, private D3D11 HAL 414/414, public D3D11
+87/87 on the RTX 3090 Ti at requested/actual FL9_1, and DX12 core 101/101;
+three optional public device subcases skipped. Exact commands and compiler
+warnings are recorded in `FL9_1_PROGRESS.md`. Five scoped code checkpoints
+are `04fa504a9`, `7979fd3d8`, `f306faae8`, `4737d5f55` and `535ea4f09`.
+Public D3D11 remains explicit opt-in and excluded from default backend
+selection. A strict HWND fixture also injects device loss from `Present`,
+verifies the public callback fires once, and reacquires the same HAL swapchain
+to prove failed-frame reservation cleanup.
+
+The mission remains partially complete. Continue the core/HAL contract audit
+and prioritize remaining feasible public FL9_1 work based on independent
+hardware, shader and validation reviews. No historical FL9_1 driver, Lumia
+ARM32 runtime or physical device-removal recovery has been verified. The
+backend is restricted and experimental, not a complete WebGPU implementation;
+applications must opt in explicitly and stay within the documented contract.
+The latest focused shader and texture/view audits found no further confirmed
+graphics mismatch in those scanned paths. A valid padded `vec2<f32>` uniform
+array wrapper is now supported and verified; a plain uniform
+`array<vec2f, N>` remains invalid WGSL. A `StencilOnly` render attachment is
+invalid under core's renderable-view contract; stencil sampling would need an
+unimplemented uint texture-load path and a positive selected format query, so
+it remains deferred rather than exposed through the current DSV.
 
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
 `vertex_index` uses a host-generated float IA stream for TriangleList and
