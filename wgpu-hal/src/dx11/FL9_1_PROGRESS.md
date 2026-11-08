@@ -11731,4 +11731,23 @@ public run reported three optional device-specific skips; the timestamp query
 test itself executed and read back both results. HAL and public-target Clippy
 passed with existing warning classes in unrelated D3D11 helpers and an older
 public-test `HashMap`. Formatting and `git diff --check` passed. This increment
-is verified and ready for a checkpoint commit.
+was committed as `ede5c299f`.
+
+## Independent public-contract audits — 2026-11-08
+
+A follow-up audit corrected the next candidate: FL9_1 does not permit 3D GPU
+texture copies under Microsoft's 10Level9 context rules, so the existing
+core/HAL rejection is correct and no copy implementation should be added. The
+audit verified that the public 3D usage projection is
+`TEXTURE_BINDING | COPY_DST`, with no `COPY_SRC`.
+
+Independent render-bundle, selected-entry shader, texture format/usage, and
+HAL unsupported-operation audits found no concrete public-valid D3D11 mismatch
+in their scopes. Render bundles replay through the ordinary validated render
+command path; format/readback masks are separately gated; shader operations
+are checked for the selected entry point; and compute, pipeline-cache,
+ray-tracing/acceleration-structure and occlusion-query operations are rejected
+before unsupported HAL panic paths. These were source audits, not new test
+runs. The broad audit of less-common public states and external verification
+remain open. Historical FL9_1 driver behavior, Lumia/CoreWindow runtime, and
+physical device-removal/recovery remain unverified.

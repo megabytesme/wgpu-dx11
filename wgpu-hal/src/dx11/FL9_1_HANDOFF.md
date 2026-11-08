@@ -9,7 +9,8 @@ vertex/instance index reads, core-valid byte offsets, padded `vec2` uniform
 indexing, Present-loss frame-reservation release, empty-render-bundle state
 reset, and queue-write ordering after command encoding. The two latest
 test-only commits are `9e07459a3eee540c349c9e28cc6a864221c3c01f` and
-`818fee943b117018cae30c813d17fa0e389c7669`.
+`818fee943b117018cae30c813d17fa0e389c7669`. The latest implementation
+checkpoint is `ede5c299f`, which adds device-query-gated timestamp queries.
 
 The latest full strict public D3D11 target passed 89/89; three optional
 device-specific subcases were logged as skips. The new cases executed on the
@@ -27,9 +28,14 @@ statistics queries, pass-level timestamps, ordinary texture arrays and
 several shader operations/resource combinations remain unavailable or
 deliberately rejected. An exhaustive public core/HAL contract audit is
 still open. Historical FL9_1 driver behavior, physical device removal and
-recovery, and Lumia/CoreWindow runtime execution are unverified. The next
-narrow implementation candidate is same-format 3D texture copies, with readback
-and render attachments remaining deferred.
+recovery, and Lumia/CoreWindow runtime execution are unverified. The proposed
+3D copy expansion has been rejected: Microsoft's 10Level9 rules disallow 3D
+GPU texture copies at FL9_1, and current public/HAL gates correctly omit them.
+Recent independent audits found no new actionable issue in render bundles,
+shader selected-entry validation, texture format/usage gates, or the examined
+unsupported-operation panic paths. Continue the broad audit for ordinary
+public-valid operations; do not treat the hardware/runtime verification gaps
+as resolved.
 
 ## Latest surface lifecycle checkpoint — 2026-11-08
 

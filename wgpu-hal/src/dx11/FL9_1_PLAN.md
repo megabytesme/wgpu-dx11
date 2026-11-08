@@ -1,5 +1,14 @@
 # FL9_1 completion plan
 
+The 2026-11-08 independent follow-up audits found no new actionable public
+contract gap in render-bundle replay, selected-entry shader validation,
+texture format/usage gates, or unsupported HAL panic paths. The suggested 3D
+texture-copy expansion was withdrawn: Microsoft's 10Level9 context contract
+does not permit 3D GPU texture copies at FL9_1, and the current public/HAL
+gates correctly reject them. Continue auditing other ordinary public-valid
+operations; do not add this unsupported copy path. The timestamp-query
+checkpoint is committed as `ede5c299f`.
+
 Latest verified increment: timestamp query sets and command-encoder writes are
 now supported only when a selected device positively executes timestamp and
 disjoint queries and reports a nonzero frequency. The public feature projection
