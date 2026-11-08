@@ -740,6 +740,7 @@ impl super::Adapter {
 
         let mut downlevel = wgt::DownlevelCapabilities::default();
         downlevel.limits.matrix_inverse = false;
+        downlevel.limits.matrix_outer_product = false;
 
         // Limits that must share D3D12's root signature size of
         // D3D12_MAX_ROOT_COST 64 DWORDS (256 bytes).

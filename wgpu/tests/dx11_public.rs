@@ -12471,6 +12471,14 @@ fn public_dx11_rejects_unimplemented_matrix_inverse_at_fl91() {
         "unused FL9_1 matrix inverse GLSL helper",
         "#version 450\nmat2 invert(mat2 m) { return inverse(m); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
     );
+    let outer_product = vertex(
+        "unsupported FL9_1 matrix outer-product GLSL shader",
+        "#version 450\nvoid main() { mat2 m = outerProduct(vec2(1.0, 0.0), vec2(0.0, 1.0)); gl_Position = vec4(m * vec2(1.0), 0.0, 1.0); }",
+    );
+    let outer_product_helper = vertex(
+        "unused FL9_1 matrix outer-product GLSL helper",
+        "#version 450\nmat2 make_outer(vec2 a, vec2 b) { return outerProduct(a, b); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
+    );
     let ordinary = vertex(
         "ordinary FL9_1 GLSL vertex sibling",
         "#version 450\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
@@ -12523,9 +12531,21 @@ fn public_dx11_rejects_unimplemented_matrix_inverse_at_fl91() {
         "Matrix inverse",
         || drop(pipeline(&inverse_helper)),
     );
+    expect_validation_error_containing(
+        &device,
+        "unsupported FL9_1 matrix outer product",
+        "Matrix outer product",
+        || drop(pipeline(&outer_product)),
+    );
+    expect_validation_error_containing(
+        &device,
+        "unused FL9_1 matrix outer-product helper",
+        "Matrix outer product",
+        || drop(pipeline(&outer_product_helper)),
+    );
     drop(pipeline(&ordinary));
     println!(
-        "PASS: core rejected GLSL matrix inverse before HAL and accepted an ordinary sibling shader"
+        "PASS: core rejected unsupported GLSL matrix operations before HAL and accepted an ordinary sibling shader"
     );
 }
 

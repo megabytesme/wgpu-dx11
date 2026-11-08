@@ -1343,6 +1343,12 @@ pub struct DownlevelLimits {
     /// the operation.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub matrix_inverse: bool,
+    /// Whether shader entry points may use floating-point matrix outer-product operations.
+    ///
+    /// This can be unavailable when the selected shader translator has no implementation for
+    /// the operation.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub matrix_outer_product: bool,
     /// Whether stores through structs or arrays containing matrices are supported.
     ///
     /// This can be unavailable when a backend's shader translator cannot preserve aggregate
@@ -1509,6 +1515,7 @@ impl Default for DownlevelLimits {
             texture_load: true,
             runtime_integer_shader_operations: true,
             matrix_inverse: true,
+            matrix_outer_product: true,
             matrix_aggregate_stores: true,
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
@@ -1756,6 +1763,7 @@ impl DownlevelLimits {
             && (!required.runtime_integer_shader_operations
                 || self.runtime_integer_shader_operations)
             && (!required.matrix_inverse || self.matrix_inverse)
+            && (!required.matrix_outer_product || self.matrix_outer_product)
             && (!required.matrix_aggregate_stores || self.matrix_aggregate_stores)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
             && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
@@ -1865,6 +1873,7 @@ impl DownlevelCapabilities {
             && self.limits.texture_load
             && self.limits.runtime_integer_shader_operations
             && self.limits.matrix_inverse
+            && self.limits.matrix_outer_product
             && self.limits.matrix_aggregate_stores
             && self.limits.max_texture_sample_bias
                 >= DownlevelLimits::default().max_texture_sample_bias
@@ -2434,6 +2443,7 @@ mod tests {
             texture_load: true,
             runtime_integer_shader_operations: false,
             matrix_inverse: false,
+            matrix_outer_product: false,
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
@@ -2500,6 +2510,7 @@ mod tests {
             texture_load: true,
             runtime_integer_shader_operations: false,
             matrix_inverse: false,
+            matrix_outer_product: false,
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
@@ -2854,6 +2865,7 @@ mod tests {
             "texture_load",
             "runtime_integer_shader_operations",
             "matrix_inverse",
+            "matrix_outer_product",
             "matrix_aggregate_stores",
             "texture_sample_level",
             "max_texture_sample_bias",
@@ -2899,6 +2911,7 @@ mod tests {
         assert!(limits.texture_load);
         assert!(limits.runtime_integer_shader_operations);
         assert!(limits.matrix_inverse);
+        assert!(limits.matrix_outer_product);
         assert!(limits.matrix_aggregate_stores);
         assert!(limits.texture_sample_level);
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);
@@ -3116,6 +3129,21 @@ mod tests {
     }
 
     #[test]
+    fn matrix_outer_product_is_a_downlevel_shader_capability() {
+        let available = DownlevelLimits {
+            matrix_outer_product: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&available));
+        assert!(!available.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: available,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn unsupported_fl9_shader_semantics_are_downlevel_capabilities() {
         for available in [
             DownlevelLimits {
@@ -3124,6 +3152,10 @@ mod tests {
             },
             DownlevelLimits {
                 matrix_inverse: false,
+                ..DownlevelLimits::default()
+            },
+            DownlevelLimits {
+                matrix_outer_product: false,
                 ..DownlevelLimits::default()
             },
             DownlevelLimits {

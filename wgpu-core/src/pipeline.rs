@@ -295,6 +295,10 @@ pub enum CreateComputePipelineError {
     MissingDownlevelFlags(#[from] MissingDownlevelFlags),
     #[error("Texture gather is not supported in the {stage:?} shader by this downlevel adapter")]
     UnsupportedTextureGather { stage: wgt::ShaderStages },
+    #[error(
+        "Matrix outer product is not supported in the {stage:?} shader by this downlevel adapter"
+    )]
+    UnsupportedMatrixOuterProduct { stage: wgt::ShaderStages },
     #[error("The number of distinct sampled texture/sampler pairs used by the compute stage {given} exceeds the downlevel limit {limit}")]
     TooManySampledTextureSamplerPairs { given: u32, limit: u32 },
     #[error(transparent)]
@@ -312,6 +316,7 @@ impl WebGpuError for CreateComputePipelineError {
             Self::Internal(_) => ErrorType::Internal,
             Self::PipelineConstants(_) => ErrorType::Validation,
             Self::UnsupportedTextureGather { .. } => ErrorType::Validation,
+            Self::UnsupportedMatrixOuterProduct { .. } => ErrorType::Validation,
             Self::TooManySampledTextureSamplerPairs { .. } => ErrorType::Validation,
         }
     }
@@ -834,6 +839,10 @@ pub enum CreateRenderPipelineError {
     UnsupportedDownlevelBuiltin { builtin: &'static str },
     #[error("Matrix inverse is not supported in {stage:?} shaders by this downlevel adapter")]
     UnsupportedMatrixInverse { stage: wgt::ShaderStages },
+    #[error(
+        "Matrix outer product is not supported in {stage:?} shaders by this downlevel adapter"
+    )]
+    UnsupportedMatrixOuterProduct { stage: wgt::ShaderStages },
     #[error("Depth bias cannot be combined with a fragment entry point that writes depth on this downlevel adapter")]
     UnsupportedDepthBiasWithFragmentDepth,
     #[error(
@@ -1041,6 +1050,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedInstanceIndexInput
             | Self::UnsupportedDownlevelBuiltin { .. }
             | Self::UnsupportedMatrixInverse { .. }
+            | Self::UnsupportedMatrixOuterProduct { .. }
             | Self::UnsupportedDepthBiasWithFragmentDepth
             | Self::UnsupportedFragmentDepthWithoutColorTarget0
             | Self::UnsupportedFragmentSampleMaskOutput

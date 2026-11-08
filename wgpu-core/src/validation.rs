@@ -294,6 +294,7 @@ struct EntryPoint {
     texture_load_used: bool,
     unsupported_runtime_integer_semantics: bool,
     matrix_inverse_used: bool,
+    matrix_outer_product_used: bool,
     unsupported_matrix_aggregate_store: bool,
     texture_query_used: bool,
     texture_sample_base_clamp_to_edge_used: bool,
@@ -334,6 +335,7 @@ pub struct Interface {
     resources: naga::Arena<Resource>,
     entry_points: FastHashMap<(naga::ShaderStage, String), EntryPoint>,
     matrix_inverse_in_regular_function: bool,
+    matrix_outer_product_in_regular_function: bool,
     pub(crate) immediate_size: u32,
 }
 
@@ -2679,6 +2681,42 @@ fn entry_point_uses_matrix_inverse(module: &naga::Module, entry_point: &naga::En
     false
 }
 
+fn function_uses_matrix_outer_product(function: &naga::Function) -> bool {
+    function.expressions.iter().any(|(_, expression)| {
+        matches!(
+            *expression,
+            naga::Expression::Math {
+                fun: naga::MathFunction::Outer,
+                ..
+            }
+        )
+    })
+}
+
+fn entry_point_uses_matrix_outer_product(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> bool {
+    if function_uses_matrix_outer_product(&entry_point.function) {
+        return true;
+    }
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function_uses_matrix_outer_product(function) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
+}
+
 fn entry_point_uses_texture_sample_base_clamp_to_edge(
     module: &naga::Module,
     entry_point: &naga::EntryPoint,
@@ -3868,6 +3906,10 @@ impl Interface {
                         info,
                     ),
                 matrix_inverse_used: entry_point_uses_matrix_inverse(module, entry_point),
+                matrix_outer_product_used: entry_point_uses_matrix_outer_product(
+                    module,
+                    entry_point,
+                ),
                 unsupported_matrix_aggregate_store:
                     entry_point_uses_unsupported_matrix_aggregate_store(
                         module,
@@ -3976,6 +4018,10 @@ impl Interface {
                 .functions
                 .iter()
                 .any(|(_, function)| function_uses_matrix_inverse(function)),
+            matrix_outer_product_in_regular_function: module
+                .functions
+                .iter()
+                .any(|(_, function)| function_uses_matrix_outer_product(function)),
             immediate_size,
         }
     }
@@ -4352,6 +4398,21 @@ impl Interface {
         };
         Ok(!limits.matrix_inverse
             && (entry_point.matrix_inverse_used || self.matrix_inverse_in_regular_function))
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_matrix_outer_product(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(!limits.matrix_outer_product
+            && (entry_point.matrix_outer_product_used
+                || self.matrix_outer_product_in_regular_function))
     }
 
     pub(crate) fn entry_point_uses_unsupported_texture_query(
@@ -6413,6 +6474,7 @@ mod tests {
             resources: naga::Arena::new(),
             entry_points: crate::FastHashMap::default(),
             matrix_inverse_in_regular_function: false,
+            matrix_outer_product_in_regular_function: false,
             immediate_size: 0,
         };
         interface.entry_points.insert(
@@ -6529,6 +6591,125 @@ mod tests {
                 &limits,
             )
             .is_err());
+    }
+
+    #[cfg(feature = "glsl")]
+    #[test]
+    fn unsupported_matrix_outer_product_tracks_entries_and_compiled_helpers() {
+        fn interface(source: &str, stage: naga::ShaderStage) -> Interface {
+            let mut parser = naga::front::glsl::Frontend::default();
+            let module = parser
+                .parse(&naga::front::glsl::Options::from(stage), source)
+                .unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            Interface::new(&module, &info, wgt::Limits::defaults())
+        }
+
+        let restricted = wgt::DownlevelLimits {
+            matrix_outer_product: false,
+            ..Default::default()
+        };
+        let mut direct = interface(
+            "#version 450\nvoid main() { mat2 m = outerProduct(vec2(1.0, 0.0), vec2(0.0, 1.0)); gl_Position = vec4(m * vec2(1.0), 0.0, 1.0); }",
+            naga::ShaderStage::Vertex,
+        );
+        assert!(direct
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "main",
+                &restricted,
+            )
+            .unwrap());
+        assert!(!direct
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "main",
+                &wgt::DownlevelLimits::default(),
+            )
+            .unwrap());
+
+        let reachable_helper = interface(
+            "#version 450\nmat2 make_outer(vec2 a, vec2 b) { return outerProduct(a, b); }\nvoid main() { gl_Position = vec4(make_outer(vec2(1.0, 0.0), vec2(0.0, 1.0)) * vec2(1.0), 0.0, 1.0); }",
+            naga::ShaderStage::Vertex,
+        );
+        assert!(reachable_helper
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "main",
+                &restricted,
+            )
+            .unwrap());
+
+        let unused_helper = interface(
+            "#version 450\nmat2 make_outer(vec2 a, vec2 b) { return outerProduct(a, b); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
+            naga::ShaderStage::Vertex,
+        );
+        assert!(unused_helper
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "main",
+                &restricted,
+            )
+            .unwrap());
+
+        let mut ordinary = interface(
+            "#version 450\nvoid main() { gl_Position = vec4(1.0); }",
+            naga::ShaderStage::Vertex,
+        );
+        assert!(!ordinary
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "main",
+                &restricted,
+            )
+            .unwrap());
+        assert!(ordinary
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "missing",
+                &restricted,
+            )
+            .is_err());
+
+        let outer_entry = direct
+            .entry_points
+            .remove(&(naga::ShaderStage::Vertex, "main".to_string()))
+            .unwrap();
+        ordinary.entry_points.insert(
+            (naga::ShaderStage::Vertex, "outer_entry".to_string()),
+            outer_entry,
+        );
+        assert!(!ordinary
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "main",
+                &restricted,
+            )
+            .unwrap());
+        assert!(ordinary
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Vertex,
+                "outer_entry",
+                &restricted,
+            )
+            .unwrap());
+
+        let compute = interface(
+            "#version 450\nlayout(local_size_x = 1) in;\nvoid main() { mat2 m = outerProduct(vec2(1.0, 0.0), vec2(0.0, 1.0)); }",
+            naga::ShaderStage::Compute,
+        );
+        assert!(compute
+            .entry_point_uses_unsupported_matrix_outer_product(
+                naga::ShaderStage::Compute,
+                "main",
+                &restricted,
+            )
+            .unwrap());
     }
 
     #[test]

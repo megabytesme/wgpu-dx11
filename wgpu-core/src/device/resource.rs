@@ -4825,6 +4825,24 @@ impl Device {
                 desc.stage.entry_point.as_ref().map(|ep| ep.as_ref()),
             )?;
 
+            if !self.downlevel.limits.matrix_outer_product
+                && match shader_module.interface.interface() {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_matrix_outer_product(
+                            naga::ShaderStage::Compute,
+                            &final_entry_point_name,
+                            &self.downlevel.limits,
+                        )?,
+                    None => true,
+                }
+            {
+                return Err(
+                    pipeline::CreateComputePipelineError::UnsupportedMatrixOuterProduct {
+                        stage: wgt::ShaderStages::COMPUTE,
+                    },
+                );
+            }
+
             if let Some(interface) = shader_module.interface.interface() {
                 let _ = interface.check_stage(
                     &mut binding_layout_source,
@@ -5601,6 +5619,24 @@ impl Device {
                             },
                         );
                     }
+                    if !self.downlevel.limits.matrix_outer_product
+                        && match interface {
+                            Some(interface) => interface
+                                .entry_point_uses_unsupported_matrix_outer_product(
+                                    stage.to_naga(),
+                                    &_vertex_entry_point_name,
+                                    &self.downlevel.limits,
+                                )
+                                .map_err(stage_err)?,
+                            None => true,
+                        }
+                    {
+                        return Err(
+                            pipeline::CreateRenderPipelineError::UnsupportedMatrixOuterProduct {
+                                stage: stage_bit,
+                            },
+                        );
+                    }
                     if !self.downlevel.limits.matrix_aggregate_stores
                         && match interface {
                             Some(interface) => interface
@@ -6166,6 +6202,25 @@ impl Device {
                 {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedMatrixInverse {
+                            stage: stage_bit,
+                        },
+                    );
+                }
+
+                if !self.downlevel.limits.matrix_outer_product
+                    && match shader_module.interface.interface() {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_matrix_outer_product(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                                &self.downlevel.limits,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    }
+                {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedMatrixOuterProduct {
                             stage: stage_bit,
                         },
                     );
