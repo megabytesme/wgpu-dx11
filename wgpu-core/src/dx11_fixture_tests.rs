@@ -136,6 +136,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     texture_query: false,
                     texture_dimensions_2d_float_fragment: false,
                     texture_dimensions_3d_float_fragment: false,
+                    texture_dimensions_cube_float_fragment: false,
                     texture_num_levels_2d_float_fragment: false,
                     texture_sample_base_clamp_to_edge: false,
                     texture_sample_base_clamp_to_edge_2d_float_fragment: false,

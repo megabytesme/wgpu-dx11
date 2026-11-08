@@ -754,7 +754,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             };
             let is_3d_texel_load = self.options.fl9_texel_load_proof.is_some()
                 && texture_dimension == Some(crate::ImageDimension::D3);
-            if texture_dimension != Some(expected_dimension) && !is_3d_texel_load {
+            let is_cube_dimensions = self.options.fl9_texture_dimensions_proof.is_some()
+                && texture_dimension == Some(crate::ImageDimension::Cube);
+            let dimension_supported = texture_dimension == Some(expected_dimension)
+                || is_3d_texel_load
+                || is_cube_dimensions;
+            if !dimension_supported {
                 return Err(Error::Custom(
                     "FL9 texture emulation supports only its proven sampled float texture dimension"
                         .into(),
@@ -909,7 +914,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     )
                 });
                 let sample_coordinate_size =
-                    if self.options.fl9_texture_dimensions_3d_proof.is_some() {
+                    if self.options.fl9_texture_dimensions_3d_proof.is_some() || is_cube_dimensions
+                    {
                         crate::VectorSize::Tri
                     } else {
                         crate::VectorSize::Bi
@@ -954,7 +960,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         query,
                     ) {
                         (Some(_), None, None, None, crate::ImageQuery::Size { level }) => {
-                            if implicit_sample_count != 0 {
+                            if is_cube_dimensions || implicit_sample_count != 0 {
                                 level.is_none()
                             } else {
                                 level.is_none_or(|level| {
@@ -6490,6 +6496,52 @@ mod fl9_viewport_tests {
         );
         let extra_sampler = "@group(0) @binding(7) var volume: texture_3d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(43) var other: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(volume, smp, vec3f(0.5)) * vec4f(vec3f(textureDimensions(volume)) / vec3f(4.0, 2.0, 8.0), 1.0); }";
         assert!(translate(extra_sampler, &options, ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn fl9_cube_texture_dimensions_uses_face_size_metadata() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let source = "@group(0) @binding(7) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube)); return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0); }";
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_dimensions_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("TextureCube<float4>"), "{output}");
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("int2(naga_fl9_load_size.xy)"), "{output}");
+        assert!(output.contains(".Sample("), "{output}");
+        assert!(!output.contains("GetDimensions"), "{output}");
+
+        let helper = "@group(0) @binding(7) var cube: texture_cube<f32>; fn unused() -> f32 { return 1.0; } @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube)), 0.0, 1.0); }";
+        assert!(translate(helper, &options, ShaderStage::Fragment).is_err());
+
+        let wrong_dimension = "@group(0) @binding(7) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume)), 1.0); }";
+        assert!(translate(wrong_dimension, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]

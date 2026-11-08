@@ -1514,3 +1514,22 @@ test proves this specific shader, binding, indexed draw, depth and readback
 combination through public wgpu. It does not establish broader shader or
 format coverage, historical FL9_1 compatibility, or application-level
 performance.
+
+## Narrow FL9_1 fragment cube `textureDimensions`
+
+The separate `texture_dimensions_cube_float_fragment` limit permits one direct
+no-level `textureDimensions` query on one group-0 `texture_cube<f32>` in the
+selected fragment entry point, followed by direct conversion of its `vec2u`
+result to `vec2f`. The result is the dimensions of a cube face, not the layer
+count. Core, Naga and HAL reject helper use, explicit query levels, unrelated
+image operations, extra resources and runtime integer operations for this
+proof. Naga emits the cube SRV with the shared resource mapping; FXC accepts
+the resulting `ps_4_0_level_9_1` shader. Since FXC's level-9 profile rejects
+`GetDimensions`, HAL supplies the current view's width and height through the
+existing `b13` emulation constant. The limit is separate from the 2D and 3D
+dimension limits and from general `texture_query`, which remains false. It is
+projected only when the selected FL9_1 device's RGBA8 cube sampling query and
+the backend implementation both permit the resource. Strict forced-FL9_1
+readback on the RTX 3090 Ti transitioned between initialized 8x8 and 4x4 cube
+views and matched all 64 expected pixels. Historical FL9_1 driver behavior is
+not established by this result.

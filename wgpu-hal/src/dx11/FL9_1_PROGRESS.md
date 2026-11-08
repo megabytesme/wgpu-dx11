@@ -12348,3 +12348,53 @@ Visual Studio x64 environment. This was CPU-only validation; no GPU work was
 needed for the rejection boundary. `git diff --check` passed. Historical
 driver/runtime verification and the broader Core/HAL contract audit remain
 open.
+
+## Narrow FL9_1 fragment cube `textureDimensions` — 2026-11-08
+
+Added an independent `texture_dimensions_cube_float_fragment` capability,
+projected only when the selected FL9_1 device reports the implemented RGBA8
+cube sampling path. Core's selected-entry proof, Naga's HLSL proof and HAL's
+emulation proof agree on one direct no-level query of a group-0
+`texture_cube<f32>`, converted from `vec2u` to `vec2f`. Explicit query levels,
+helper calls, extra resources and unrelated image operations remain rejected.
+The shared logical binding plan is unchanged; FXC compiled the actual shader
+under `ps_4_0_level_9_1`, and HAL supplied the bound cube view's face dimensions
+through the existing `b13` metadata constant.
+
+The strict public test ran on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), with requested and
+actual FL9_1. It uploaded deterministic contents to two RGBA8 cubes, switched
+views from 8x8 to 4x4 during one render pass, and checked all 64 readback
+pixels: `[255,255,0,255]` on the left and `[128,128,0,255]` on the right.
+Both query sizes affected output. An initial strict run exposed that the test
+must initialize cube contents before submission on this driver; adding the
+uploads removed device loss, and the real query path then passed.
+
+Verification commands and results:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-types --features serde
+cargo +1.93 test --offline -j8 -p naga --lib --features hlsl-out
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+Results: `wgpu-types` 108/108 unit and 14/14 doc tests (21 ignored); Naga
+148/148; Core 107/107; private HAL 436/436; full public strict D3D11 99/99.
+The public default-enumeration isolation test passed. Public optional subcases
+logged capability skips and are not counted as executed GPU cases. Physical
+GPU results came from the strict HAL and public suites. The full public run
+also caught a stale regression test after the preceding Core/HAL safety fix:
+its direct base-clamp entry lived in a module with an unrelated helper. The
+test now uses a helper-free direct shader and separately retains helper
+rejection; the focused public test and full suite pass. Existing warnings are
+six `wgpu-types` unnecessary qualifications and four `hal_queue.rs`
+unnecessary qualifications. Clippy also reports existing HAL argument-count,
+single-range test, item-order and one test-borrow warning; the wgpu public test
+target reports an existing disallowed `std::collections::HashMap`; Naga has an
+existing GLSL pattern-type-mismatch warning. The new Naga code adds no Clippy
+warning. DX12 HAL `cargo check` passed and DX12 Core passed 106/106; DX11 Core
+passed 107/107. All Rust formatting and `git diff --check` passed. Historical-
+device/runtime, broad CTS, and physical device-removal coverage remain open.

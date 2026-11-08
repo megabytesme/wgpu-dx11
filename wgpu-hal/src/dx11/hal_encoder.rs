@@ -226,12 +226,17 @@ impl RenderState {
             super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
         );
-        (texture.dimension
-            == if dimensions_3d {
-                wgt::TextureViewDimension::D3
-            } else {
-                wgt::TextureViewDimension::D2
-            }
+        let expected_dimension = if dimensions_3d {
+            wgt::TextureViewDimension::D3
+        } else if matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::DimensionsCube
+        ) {
+            wgt::TextureViewDimension::Cube
+        } else {
+            wgt::TextureViewDimension::D2
+        };
+        (texture.dimension == expected_dimension
             && (!rgba8_load || texture.logical_format == Some(wgt::TextureFormat::Rgba8Unorm))
             && texture.logical_format.is_some()
             && texture.sample_count == 1

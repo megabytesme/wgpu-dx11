@@ -51,6 +51,7 @@ Bottom level categories:
 - Emulate the proven single-mip 2D float fragment `textureLoad` subset in the opt-in FL9_1 D3D11 backend.
 - Expose a narrowly validated fragment `textureDimensions` subset for one bound 2D float texture, including constant mip levels relative to a view, in the opt-in FL9_1 D3D11 backend.
 - Expose a separate, narrowly validated fragment `textureDimensions` subset for one bound 3D float texture in the opt-in FL9_1 D3D11 backend.
+- Expose a separately gated, narrowly validated fragment `textureDimensions` subset for one bound cube float texture in the opt-in FL9_1 D3D11 backend.
 - Expose a narrowly validated fragment `textureNumLevels` subset for one bound 2D float view in the opt-in FL9_1 D3D11 backend.
 - Emulate a direct, single-mip 2D float fragment `textureSampleBaseClampToEdge` operation in the opt-in FL9_1 D3D11 backend.
 - Allow the narrow FL9_1 fragment `textureDimensions` path to co-use one implicit sample of the same 2D float texture and one compatible sampler.
@@ -82,6 +83,7 @@ Bottom level categories:
 - Reject checked dynamic non-vector array accesses with selected-entry uniforms during core pipeline validation when the D3D11 downlevel contract requires it.
 - Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.
 - Add `DownlevelLimits::shader_dynamic_loops` so downlevel backends can reject selected shader entry points with runtime-dependent loop exits while retaining support for statically bounded loops.
+- Add `DownlevelLimits::texture_dimensions_cube_float_fragment` for narrowly validated cube face-size queries when general texture queries are unavailable.
 - Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
 - Gate bind-group layouts with empty shader visibility on downlevel support.
 - Gate unsupported sampled texture types and vertex-only visibility on downlevel support.

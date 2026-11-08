@@ -304,6 +304,7 @@ struct EntryPoint {
     texture_num_levels_used: bool,
     fl9_texture_dimensions_supported: bool,
     fl9_texture_dimensions_3d_supported: bool,
+    fl9_texture_dimensions_cube_supported: bool,
     fl9_texture_num_levels_supported: bool,
     texture_sample_base_clamp_to_edge_used: bool,
     fl9_texture_sample_base_clamp_to_edge_supported: bool,
@@ -2825,7 +2826,7 @@ fn entry_point_supports_fl9_texture_dimensions(
     dimension: naga::ImageDimension,
 ) -> bool {
     let vector_size = match dimension {
-        naga::ImageDimension::D2 => naga::VectorSize::Bi,
+        naga::ImageDimension::D2 | naga::ImageDimension::Cube => naga::VectorSize::Bi,
         naga::ImageDimension::D3 => naga::VectorSize::Tri,
         _ => return false,
     };
@@ -2905,7 +2906,7 @@ fn entry_point_supports_fl9_texture_dimensions(
                 ..
             } if matches!(
                 dimension,
-                naga::ImageDimension::D2 | naga::ImageDimension::D3
+                naga::ImageDimension::D2 | naga::ImageDimension::D3 | naga::ImageDimension::Cube
             ) =>
             {
                 if function_info[handle].ref_count == 0 || sample_image.is_some() {
@@ -2923,7 +2924,7 @@ fn entry_point_supports_fl9_texture_dimensions(
                 };
                 let coordinate_size = match dimension {
                     naga::ImageDimension::D2 => naga::VectorSize::Bi,
-                    naga::ImageDimension::D3 => naga::VectorSize::Tri,
+                    naga::ImageDimension::D3 | naga::ImageDimension::Cube => naga::VectorSize::Tri,
                     _ => return false,
                 };
                 if !matches!(
@@ -2952,7 +2953,11 @@ fn entry_point_supports_fl9_texture_dimensions(
         return false;
     };
     if let Some(level) = query_level {
-        if dimension == naga::ImageDimension::D3 || sample_image.is_some() {
+        if matches!(
+            dimension,
+            naga::ImageDimension::D3 | naga::ImageDimension::Cube
+        ) || sample_image.is_some()
+        {
             return false;
         }
         if !matches!(
@@ -3023,7 +3028,11 @@ fn entry_point_supports_fl9_texture_dimensions(
         return false;
     }
 
-    if (dimension == naga::ImageDimension::D3 && sample_image.is_some() && query_level.is_some())
+    if (matches!(
+        dimension,
+        naga::ImageDimension::D3 | naga::ImageDimension::Cube
+    ) && sample_image.is_some()
+        && query_level.is_some())
         || sample_image.is_some_and(|image| image != image_binding)
         || module.global_variables.iter().any(|(handle, global)| {
             global.binding.is_some() && handle != image_binding && Some(handle) != sample_sampler
@@ -4638,6 +4647,12 @@ impl Interface {
                     info,
                     naga::ImageDimension::D3,
                 ),
+                fl9_texture_dimensions_cube_supported: entry_point_supports_fl9_texture_dimensions(
+                    module,
+                    entry_point,
+                    info,
+                    naga::ImageDimension::Cube,
+                ),
                 fl9_texture_num_levels_supported: entry_point_supports_fl9_texture_num_levels(
                     module,
                     entry_point,
@@ -5119,6 +5134,7 @@ impl Interface {
             && ((entry_point.unsupported_runtime_integer_semantics
                 && !entry_point.fl9_texture_dimensions_supported
                 && !entry_point.fl9_texture_dimensions_3d_supported
+                && !entry_point.fl9_texture_dimensions_cube_supported
                 && !entry_point.fl9_texture_num_levels_supported)
                 || (entry_point.dynamic_uniform_array_indexing_used
                     && !limits.vertex_uniform_array_indexing)))
@@ -5180,6 +5196,8 @@ impl Interface {
             && entry_point.fl9_texture_dimensions_supported)
             || (limits.texture_dimensions_3d_float_fragment
                 && entry_point.fl9_texture_dimensions_3d_supported)
+            || (limits.texture_dimensions_cube_float_fragment
+                && entry_point.fl9_texture_dimensions_cube_supported)
             || (limits.texture_num_levels_2d_float_fragment
                 && entry_point.fl9_texture_num_levels_supported);
         Ok(entry_point.texture_query_used && !limits.texture_query && !supported_restricted_query)
@@ -7360,6 +7378,95 @@ mod tests {
                 naga::ShaderStage::Fragment,
                 "main",
                 &three_d_only,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn fl9_cube_texture_dimensions_has_an_independent_narrow_proof() {
+        fn make_interface(source: &str) -> Interface {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            Interface::new(&module, &info, wgt::Limits::defaults())
+        }
+
+        let cube_only = wgt::DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: false,
+            texture_dimensions_3d_float_fragment: false,
+            texture_dimensions_cube_float_fragment: true,
+            ..Default::default()
+        };
+        let cube = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(!cube
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        let cube_with_sample = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            @fragment fn main() -> @location(0) vec4f {
+                let size = vec2f(textureDimensions(image));
+                return textureSample(image, image_sampler, vec3f(1.0, 0.0, 0.0))
+                    * vec4f(size / vec2f(8.0), 1.0, 1.0);
+            }
+            "#,
+        );
+        assert!(!cube_with_sample
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        let cube_helper = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            fn unused() -> f32 { return 1.0; }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(cube_helper
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        let two_d = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(two_d
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
             )
             .unwrap());
     }

@@ -1027,6 +1027,7 @@ impl super::Adapter {
             texture_query: true,
             texture_dimensions_2d_float_fragment: false,
             texture_dimensions_3d_float_fragment: false,
+            texture_dimensions_cube_float_fragment: false,
             texture_num_levels_2d_float_fragment: false,
             texture_sample_base_clamp_to_edge: true,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,

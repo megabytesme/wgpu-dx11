@@ -1324,3 +1324,16 @@ Resolve flushes, waits for `GetData` and updates the retained query-resolve
 buffer in sequence. This is correct but can stall the CPU. Explicit timestamp
 writes inside passes, occlusion and pipeline-statistics queries stay
 unavailable. See `TESTING.md` for the strict hardware command and result.
+
+## Narrow FL9_1 fragment cube `textureDimensions`
+
+The opt-in projection adds `texture_dimensions_cube_float_fragment`, gated by
+the selected device's cube-format sampling query and the backend path. Core,
+Naga and HAL permit only a direct, no-level cube face-size query converted
+from `vec2u` to `vec2f` in the selected fragment entry. The HAL supplies the
+current cube view's width and height through `b13`; ordinary cube resource
+binding continues through the existing mapping. FXC accepted the shader under
+`ps_4_0_level_9_1`. The strict public RTX 3090 Ti test initialized and
+transitioned between 8x8 and 4x4 cube views and matched all 64 readback pixels.
+Helpers, explicit levels, unrelated image operations and general texture
+queries remain unsupported.

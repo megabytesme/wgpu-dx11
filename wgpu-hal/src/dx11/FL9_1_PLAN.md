@@ -1,5 +1,25 @@
 # FL9_1 completion plan
 
+## Latest verified increment — cube fragment `textureDimensions` — 2026-11-08
+
+The opt-in projection now has an independent `texture_dimensions_cube_float_fragment`
+limit gated by the selected FL9_1 device's cube-format sampling query. Core,
+Naga and HAL accept a direct no-level face-size query on one group-0
+`texture_cube<f32>`, converted from `vec2u` to `vec2f`; helpers, explicit query
+levels, unrelated image operations, extra resources and runtime integer work
+remain rejected. Naga uses the shared logical-to-native binding map. FXC
+accepted the generated shader under `ps_4_0_level_9_1`; HAL supplies the bound
+view's width and height in the existing `b13` metadata constant because the
+profile rejects `GetDimensions`. The strict public GPU test selected the RTX
+3090 Ti at requested/actual FL9_1, initialized and switched between 8x8 and
+4x4 cube views, and matched `[255,255,0,255]` and `[128,128,0,255]` across all
+64 output pixels. Full suites passed: Naga 148/148, Core 107/107, private HAL
+436/436, public strict D3D11 99/99, and `wgpu-types` 108/108 plus 14 doc tests.
+The public suite included the default zero-adapter isolation test; optional
+device-specific subcases logged skips. Broad contract/CTS coverage, historical
+FL9_1 drivers, Lumia/CoreWindow execution and physical device-removal recovery
+remain open. See `FL9_1_PROGRESS.md` for exact commands and warnings.
+
 ## Latest verified increment — 3D fragment `textureDimensions` plus implicit sampling — 2026-11-08
 
 The separate `texture_dimensions_3d_float_fragment` proof now permits one

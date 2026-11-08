@@ -63,6 +63,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         texture_query: false,
         texture_dimensions_2d_float_fragment: false,
         texture_dimensions_3d_float_fragment: false,
+        texture_dimensions_cube_float_fragment: false,
         texture_num_levels_2d_float_fragment: false,
         texture_sample_base_clamp_to_edge: false,
         texture_sample_base_clamp_to_edge_2d_float_fragment: false,

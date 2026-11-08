@@ -3083,6 +3083,20 @@ impl RenderPipeline {
                 "D3D11 FL9_1 3D textureLoad requires query-supported RGBA8 volume sampling".into(),
             ));
         }
+        if texel_load_binding.as_ref().is_some_and(|proof| {
+            matches!(
+                proof.kind,
+                super::hal_shader::Fl9TextureEmulationKind::DimensionsCube
+            )
+        }) && !super::capabilities::Capabilities::query(owner)
+            .private_fl91_fragment_texture_dimensions_cube_float()
+        {
+            return Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 FL9_1 cube textureDimensions requires query-supported RGBA8 cube sampling"
+                    .into(),
+            ));
+        }
         let pixel_code = if let Some(fragment) = fragment {
             if target.is_none() {
                 fragment

@@ -538,8 +538,9 @@ pub struct Options {
     pub fl9_texel_load_proof: Option<crate::ResourceBinding>,
 
     /// Experimental opt-in proof for one direct fragment `textureDimensions`
-    /// query on a bound 2D float texture. The host supplies the dimensions of
-    /// the selected view-relative mip in the reserved b13 constant.
+    /// query on a bound 2D or cube float texture. The host supplies the
+    /// dimensions of the selected view-relative mip in the reserved b13
+    /// constant; cube dimensions report the face size.
     pub fl9_texture_dimensions_proof: Option<crate::ResourceBinding>,
 
     /// Experimental opt-in proof for one direct fragment `textureDimensions`

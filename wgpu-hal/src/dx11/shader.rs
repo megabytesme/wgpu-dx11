@@ -3137,6 +3137,61 @@ mod tests {
     }
 
     #[test]
+    fn fl91_cube_texture_dimensions_and_implicit_sample_compile() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(7) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube)); return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 6,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texture_dimensions_binding: Some(texture_binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate cube dimensions with an implicit sample");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(s3)"), "{source}");
+        assert!(source.contains("int2(naga_fl9_load_size.xy)"), "{source}");
+        assert!(source.contains(".Sample("), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 cube dimensions/sample failed FXC: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn fl91_texture_dimensions_uses_constant_mip_level() {
         let module = naga::front::wgsl::parse_str(
             "const LEVEL: u32 = 2u; @group(0) @binding(42) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(image, LEVEL)); return vec4f(dimensions, 0.0, 1.0); }",

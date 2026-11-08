@@ -736,6 +736,99 @@ mod tests {
     }
 
     #[test]
+    fn fl9_cube_texture_dimensions_selects_face_metadata_emulation() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn dimensions() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof = fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("cube textureDimensions uses host-provided face dimensions");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(
+            proof.kind,
+            Fl9TextureEmulationKind::DimensionsCube
+        ));
+
+        let sampled_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            @fragment fn dimensions() -> @location(0) vec4f {
+                let size = vec2f(textureDimensions(image));
+                return textureSample(image, image_sampler, vec3f(1.0, 0.0, 0.0))
+                    * vec4f(size / vec2f(8.0), 1.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let sampled_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&sampled_module)
+        .unwrap();
+        let sampled_proof = fl9_texture_emulation_binding(
+            &sampled_module,
+            &sampled_info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("cube dimensions can share one implicit sample");
+        assert!(matches!(
+            sampled_proof.kind,
+            Fl9TextureEmulationKind::DimensionsCube
+        ));
+
+        let helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            fn unused() -> f32 { return 1.0; }
+            @fragment fn dimensions() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper_module)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "dimensions"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn fl9_3d_texture_load_selects_a_distinct_single_mip_emulation() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -2395,6 +2488,7 @@ pub(super) enum Fl9TextureEmulationKind {
     Load3D,
     Dimensions,
     Dimensions3D,
+    DimensionsCube,
     NumLevels,
     BaseClamp,
 }
@@ -2597,7 +2691,9 @@ fn fl9_texture_emulation_binding(
                 ..
             } if matches!(
                 kind,
-                Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::Dimensions3D
+                Fl9TextureEmulationKind::Dimensions
+                    | Fl9TextureEmulationKind::Dimensions3D
+                    | Fl9TextureEmulationKind::DimensionsCube
             ) =>
             {
                 let coordinate_size = match function.expressions[*image] {
@@ -2605,11 +2701,13 @@ fn fl9_texture_emulation_binding(
                         match module.types[module.global_variables[image].ty].inner {
                             naga::TypeInner::Image { dim, .. } => match dim {
                                 naga::ImageDimension::D2 => naga::VectorSize::Bi,
-                                naga::ImageDimension::D3 => naga::VectorSize::Tri,
+                                naga::ImageDimension::D3 | naga::ImageDimension::Cube => {
+                                    naga::VectorSize::Tri
+                                }
                                 _ => {
                                     return Err(crate::PipelineError::Linkage(
                                         stages,
-                                        "D3D11 FL9 textureDimensions sampling requires a 2D or 3D image".into(),
+                                        "D3D11 FL9 textureDimensions sampling requires a 2D, 3D or cube image".into(),
                                     ));
                                 }
                             },
@@ -2685,7 +2783,9 @@ fn fl9_texture_emulation_binding(
             naga::Expression::ImageSample { .. }
                 if matches!(
                     kind,
-                    Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::Dimensions3D
+                    Fl9TextureEmulationKind::Dimensions
+                        | Fl9TextureEmulationKind::Dimensions3D
+                        | Fl9TextureEmulationKind::DimensionsCube
                 ) =>
             {
                 return Err(crate::PipelineError::Linkage(
@@ -2775,7 +2875,8 @@ fn fl9_texture_emulation_binding(
         else {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 texture emulation supports only sampled 2D or 3D float textures".into(),
+                "D3D11 FL9 texture emulation supports only sampled 2D, 3D or cube float textures"
+                    .into(),
             ));
         };
         if sample_count != 0
@@ -2783,16 +2884,22 @@ fn fl9_texture_emulation_binding(
                 (kind, dim),
                 (
                     Fl9TextureEmulationKind::Dimensions,
-                    naga::ImageDimension::D2 | naga::ImageDimension::D3
+                    naga::ImageDimension::D2
+                        | naga::ImageDimension::D3
+                        | naga::ImageDimension::Cube
                 ) | (
                     Fl9TextureEmulationKind::Dimensions3D,
                     naga::ImageDimension::D3
+                ) | (
+                    Fl9TextureEmulationKind::DimensionsCube,
+                    naga::ImageDimension::Cube
                 )
             )
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 textureDimensions sampling requires a matching 2D or 3D texture".into(),
+                "D3D11 FL9 textureDimensions sampling requires a matching 2D, 3D or cube texture"
+                    .into(),
             ));
         }
         match (kind, dim) {
@@ -2811,6 +2918,17 @@ fn fl9_texture_emulation_binding(
                 kind = Fl9TextureEmulationKind::Dimensions3D;
             }
             (Fl9TextureEmulationKind::Dimensions3D, naga::ImageDimension::D3) => {}
+            (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::Cube) => {
+                if has_explicit_mip_level {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 cube textureDimensions does not support an explicit mip level"
+                            .into(),
+                    ));
+                }
+                kind = Fl9TextureEmulationKind::DimensionsCube;
+            }
+            (Fl9TextureEmulationKind::DimensionsCube, naga::ImageDimension::Cube) => {}
             (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::D2)
             | (Fl9TextureEmulationKind::NumLevels, naga::ImageDimension::D2)
             | (Fl9TextureEmulationKind::Load, naga::ImageDimension::D2)
@@ -2844,7 +2962,9 @@ fn fl9_texture_emulation_binding(
     if matches!(kind, Fl9TextureEmulationKind::BaseClamp)
         || (matches!(
             kind,
-            Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::Dimensions3D
+            Fl9TextureEmulationKind::Dimensions
+                | Fl9TextureEmulationKind::Dimensions3D
+                | Fl9TextureEmulationKind::DimensionsCube
         ) && sampler_binding.is_some())
     {
         let Some(sampler_binding) = sampler_binding else {
@@ -5391,6 +5511,9 @@ impl ShaderModule {
                 }
                 Fl9TextureEmulationKind::Dimensions3D => {
                     input_options.texture_dimensions_3d_binding = Some(proof.binding);
+                }
+                Fl9TextureEmulationKind::DimensionsCube => {
+                    input_options.texture_dimensions_binding = Some(proof.binding);
                 }
                 Fl9TextureEmulationKind::NumLevels => {
                     input_options.texture_num_levels_binding = Some(proof.binding);

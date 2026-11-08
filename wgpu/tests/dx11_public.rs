@@ -2169,7 +2169,38 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             || drop(create_texture_query_pipeline(entry)),
         );
     }
-    drop(create_texture_query_pipeline("base_clamp_direct"));
+    let base_clamp_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 direct base-clamp shader without helpers"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(23) var smp: sampler;\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0), vec2f(0.5)); }\n\
+             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }"
+                .into(),
+        ),
+    });
+    drop(device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 direct base-clamp pipeline without helpers"),
+        layout: Some(&texture_query_pipeline_layout),
+        vertex: VertexState {
+            module: &base_clamp_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &base_clamp_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &texture_query_targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    }));
     expect_validation_error_containing(
         &device,
         "helper-reached textureSampleBaseClampToEdge",
@@ -27426,6 +27457,324 @@ fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
         }
         println!(
             "PASS: forced FL9_1 3D textureDimensions plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels"
+        );
+    }
+    readback.unmap();
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for cube texture dimensions");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    if !downlevel.limits.texture_dimensions_cube_float_fragment {
+        assert!(
+            !required,
+            "strict mode requires queried cube sampling and the FL9_1 cube dimensions path"
+        );
+        println!("SKIP: selected FL9_1 device lacks cube texture dimensions support");
+        return;
+    }
+    assert!(downlevel.flags.contains(DownlevelFlags::CUBE_TEXTURES));
+    assert!(!downlevel.limits.texture_query);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment cube textureDimensions host emulation",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 cube textureDimensions test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    let vertices = [
+        [-1.0_f32, -1.0],
+        [0.0, -1.0],
+        [-1.0, 1.0],
+        [-1.0, 1.0],
+        [0.0, -1.0],
+        [0.0, 1.0],
+        [0.0, -1.0],
+        [1.0, -1.0],
+        [0.0, 1.0],
+        [0.0, 1.0],
+        [1.0, -1.0],
+        [1.0, 1.0],
+    ];
+    let vertex_bytes: Vec<_> = vertices
+        .into_iter()
+        .flatten()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 cube dimensions geometry"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertex_bytes);
+
+    let cube_texture = |label, size| {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some(label),
+            size: Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &vec![0; (size * size * 6 * 4) as usize],
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size * 4),
+                rows_per_image: Some(size),
+            },
+            Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 6,
+            },
+        );
+        texture
+    };
+    let large_cube = cube_texture("FL9_1 8x8 cube dimensions source", 8);
+    let small_cube = cube_texture("FL9_1 4x4 cube dimensions source", 4);
+    let cube_view = |texture: &Texture| {
+        texture.create_view(&TextureViewDescriptor {
+            label: Some("single-mip FL9_1 cube dimensions view"),
+            format: Some(TextureFormat::Rgba8Unorm),
+            dimension: Some(TextureViewDimension::Cube),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(6),
+        })
+    };
+    let large_view = cube_view(&large_cube);
+    let small_view = cube_view(&small_cube);
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 cube dimensions layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::Cube,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let bind_group = |label, view: &TextureView| {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some(label),
+            layout: &layout,
+            entries: &[BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(view),
+            }],
+        })
+    };
+    let large_bind_group = bind_group("FL9_1 8x8 cube dimensions binding", &large_view);
+    let small_bind_group = bind_group("FL9_1 4x4 cube dimensions binding", &small_view);
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 cube dimensions pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 cube dimensions vertex shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 cube dimensions fragment shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_cube<f32>; @fragment fn fs() -> @location(0) vec4f { let size = vec2f(textureDimensions(image)); return vec4f(size / vec2f(8.0), 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 cube dimensions pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &vertex_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &fragment_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 cube dimensions output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 cube dimensions readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 cube dimensions render and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 cube dimensions pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_bind_group(0, &large_bind_group, &[]);
+        pass.draw(0..6, 0..1);
+        pass.set_bind_group(0, &small_bind_group, &[]);
+        pass.draw(6..12, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 cube textureDimensions rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("cube textureDimensions map callback")
+        .expect("map FL9_1 cube textureDimensions output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped FL9_1 cube textureDimensions pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    [255_u8, 255, 0, 255]
+                } else {
+                    [128_u8, 128, 0, 255]
+                };
+                for channel in 0..4 {
+                    let actual = pixels[offset + channel] as i16;
+                    let expected = expected[channel] as i16;
+                    assert!(
+                        (actual - expected).abs() <= 1,
+                        "cube textureDimensions pixel ({x}, {y}) channel {channel}: actual={actual}, expected={expected}"
+                    );
+                }
+            }
+        }
+        println!(
+            "PASS: forced FL9_1 cube textureDimensions followed a view transition from 8x8 to 4x4; all 64 pixels matched"
         );
     }
     readback.unmap();

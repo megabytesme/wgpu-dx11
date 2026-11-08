@@ -3393,3 +3393,22 @@ coordinate and a nonzero mip request through GPU readback. The new
 projected only for positively queried, implemented RGBA8 volume sampling.
 General `texture_load` stays disabled; historical FL9_1 drivers are not
 represented by the RTX result.
+
+### Narrow FL9_1 fragment cube `textureDimensions`
+
+```powershell
+cargo +1.93 test --offline -j8 -p naga --lib --features hlsl-out fl9_cube_texture_dimensions_uses_face_size_metadata
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_cube_texture_dimensions_has_an_independent_narrow_proof
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_cube_texture_dimensions_selects_face_metadata_emulation
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_cube_texture_dimensions_and_implicit_sample_compile
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_cube_at_fl91 -- --nocapture --test-threads=1
+```
+
+The strict public test explicitly selected the physical RTX 3090 Ti at
+requested/actual FL9_1, initialized two RGBA8 cube resources, and rendered
+through one 8x8 then one 4x4 view. The shader directly converted each
+`textureDimensions` result to `vec2f`; the padded readback matched the expected
+yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]` across all 64
+pixels. This is cube face-size emulation only; general texture queries,
+explicit-mip cube queries and historical-driver behavior remain unverified.

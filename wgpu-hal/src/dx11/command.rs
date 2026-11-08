@@ -818,6 +818,9 @@ impl CommandBuffer {
                             super::hal_shader::Fl9TextureEmulationKind::Dimensions => {
                                 [*width as f32, *height as f32, 0.0, 0.0]
                             }
+                            super::hal_shader::Fl9TextureEmulationKind::DimensionsCube => {
+                                [*width as f32, *height as f32, 0.0, 0.0]
+                            }
                             super::hal_shader::Fl9TextureEmulationKind::Dimensions3D => {
                                 [*width as f32, *height as f32, *depth as f32, 0.0]
                             }
