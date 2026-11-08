@@ -1076,6 +1076,7 @@ impl Buffer {
                 range,
                 host,
             } => {
+                let has_native_mapping = range.start != range.end;
                 if host == HostMap::Write {
                     #[cfg(feature = "trace")]
                     if let Some(ref mut trace) = *device.trace.lock() {
@@ -1098,12 +1099,14 @@ impl Buffer {
                     } else {
                         Ok(())
                     };
-                    unsafe { device.raw().unmap_buffer(raw_buf) };
+                    if has_native_mapping {
+                        unsafe { device.raw().unmap_buffer(raw_buf) };
+                    }
                     if let Err(error) = result {
                         drop(snatch_guard);
                         return Err(device.handle_hal_error(error).into());
                     }
-                } else {
+                } else if has_native_mapping {
                     unsafe { device.raw().unmap_buffer(raw_buf) };
                 }
             }

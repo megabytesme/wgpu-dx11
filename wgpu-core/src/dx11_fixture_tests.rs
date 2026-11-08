@@ -4,7 +4,7 @@ use core::{num::NonZeroU64, time::Duration};
 use crate::{binding_model, device::HostMap, global::Global, resource::BufferMapOperation};
 
 #[test]
-fn fl91_core_mapped_write_flush_failure_cleans_up() {
+fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
     let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
@@ -161,6 +161,69 @@ fn fl91_core_mapped_write_flush_failure_cleans_up() {
     let (device, queue) =
         unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
             .expect("controlled core device initialization");
+    let (empty_mapped, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("zero-sized mapped-at-creation buffer")),
+            size: 0,
+            usage: wgt::BufferUsages::MAP_WRITE | wgt::BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "zero-sized mapped buffer creation: {error:?}"
+    );
+    global
+        .buffer_unmap(empty_mapped)
+        .expect("unmap zero-sized mapped-at-creation buffer");
+    global.buffer_drop(empty_mapped);
+
+    let (empty_async, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: Some(Cow::Borrowed("empty async mapping buffer")),
+            size: 64,
+            usage: wgt::BufferUsages::MAP_READ | wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "async mapping buffer creation: {error:?}");
+    let (empty_map_sender, empty_map_receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            empty_async,
+            0,
+            Some(0),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| {
+                    empty_map_sender.send(result).unwrap();
+                })),
+            },
+        )
+        .expect("request empty mapping on nonempty buffer");
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .expect("poll empty buffer mapping");
+    empty_map_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("empty map callback")
+        .expect("empty map result");
+    global
+        .buffer_unmap(empty_async)
+        .expect("unmap empty async mapping");
+    global.buffer_drop(empty_async);
+    std::println!("PASS: zero-sized and empty async mappings unmap without HAL unmap");
+
     let (buffer_id, error) = global.device_create_buffer(
         device,
         &wgt::BufferDescriptor {
