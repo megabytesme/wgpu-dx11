@@ -198,6 +198,13 @@ pub(super) enum NativeCommand {
         slot: u32,
         sampler: ID3D11SamplerState,
     },
+    SetTexelLoad {
+        texture: ID3D11ShaderResourceView,
+        sampler: ID3D11SamplerState,
+        dimensions: ID3D11Buffer,
+        width: u32,
+        height: u32,
+    },
     SetVertex {
         slot: u32,
         buffer: ID3D11Buffer,
@@ -784,6 +791,31 @@ impl CommandBuffer {
                     }
                     NativeCommand::SetSampler { slot, sampler } => {
                         context.PSSetSamplers(*slot, Some(&[Some(sampler.clone())]));
+                    }
+                    NativeCommand::SetTexelLoad {
+                        texture,
+                        sampler,
+                        dimensions,
+                        width,
+                        height,
+                    } => {
+                        let constants = [
+                            *width as f32,
+                            *height as f32,
+                            1.0 / *width as f32,
+                            1.0 / *height as f32,
+                        ];
+                        context.UpdateSubresource(
+                            dimensions,
+                            0,
+                            None,
+                            constants.as_ptr().cast(),
+                            0,
+                            0,
+                        );
+                        context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
+                        context.PSSetSamplers(15, Some(&[Some(sampler.clone())]));
+                        context.PSSetConstantBuffers(13, Some(&[Some(dimensions.clone())]));
                     }
                     NativeCommand::SetVertex {
                         slot,

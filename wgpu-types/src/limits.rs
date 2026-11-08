@@ -1331,6 +1331,12 @@ pub struct DownlevelLimits {
     /// selected shader model or resource subset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_load: bool,
+    /// Whether fragment entry points may use the restricted single-mip 2D float texture-load
+    /// subset supported by some downlevel backends.
+    ///
+    /// This does not imply support for other texture dimensions, stages, formats or shader forms.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_load_2d_float_fragment: bool,
     /// Whether shader entry points may use runtime integer operations.
     ///
     /// Some downlevel shader profiles have integer type declarations but do not preserve the
@@ -1513,6 +1519,7 @@ impl Default for DownlevelLimits {
             texture_sample_level: true,
             texture_gather: true,
             texture_load: true,
+            texture_load_2d_float_fragment: false,
             runtime_integer_shader_operations: true,
             matrix_inverse: true,
             matrix_outer_product: true,
@@ -1760,6 +1767,9 @@ impl DownlevelLimits {
             && (!required.texture_sample_level || self.texture_sample_level)
             && (!required.texture_gather || self.texture_gather)
             && (!required.texture_load || self.texture_load)
+            && (!required.texture_load_2d_float_fragment
+                || self.texture_load
+                || self.texture_load_2d_float_fragment)
             && (!required.runtime_integer_shader_operations
                 || self.runtime_integer_shader_operations)
             && (!required.matrix_inverse || self.matrix_inverse)
@@ -2441,6 +2451,7 @@ mod tests {
             texture_sample_level: false,
             texture_gather: false,
             texture_load: true,
+            texture_load_2d_float_fragment: true,
             runtime_integer_shader_operations: false,
             matrix_inverse: false,
             matrix_outer_product: false,
@@ -2508,6 +2519,7 @@ mod tests {
             texture_sample_level: false,
             texture_gather: false,
             texture_load: true,
+            texture_load_2d_float_fragment: true,
             runtime_integer_shader_operations: false,
             matrix_inverse: false,
             matrix_outer_product: false,
@@ -3111,6 +3123,31 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn restricted_texture_load_does_not_imply_general_texture_load() {
+        let available = DownlevelLimits {
+            texture_load: false,
+            texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_load: true,
+            ..DownlevelLimits::default()
+        }));
+
+        let general = DownlevelLimits::default();
+        assert!(general.check_limits(&DownlevelLimits {
+            texture_load: false,
+            texture_load_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
     }
 
     #[test]

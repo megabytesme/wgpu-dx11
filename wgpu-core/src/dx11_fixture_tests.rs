@@ -138,6 +138,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     texture_sample_level: false,
                     texture_gather: false,
                     texture_load: false,
+                    texture_load_2d_float_fragment: true,
                     runtime_integer_shader_operations: false,
                     matrix_inverse: false,
                     matrix_outer_product: false,
@@ -2953,10 +2954,17 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         None,
     );
     global.query_set_drop(query_set);
-    assert!(matches!(
-        error,
-        Some(crate::resource::CreateQuerySetError::MissingFeatures(_))
-    ));
+    if fixture_features.contains(wgt::Features::TIMESTAMP_QUERY) {
+        assert!(
+            error.is_none(),
+            "selected-device timestamp support should permit query-set creation: {error:?}"
+        );
+    } else {
+        assert!(matches!(
+            error,
+            Some(crate::resource::CreateQuerySetError::MissingFeatures(_))
+        ));
+    }
     let create = |usage| {
         let (id, error) = global.device_create_buffer(
             device,
@@ -5922,8 +5930,45 @@ fn render_triangle(
             "safe sibling entry should remain usable: {error:?}"
         );
         global.render_pipeline_drop(safe_pipeline);
+
+        let (direct_load_shader, shader_error) = global.device_create_shader_module(
+            device,
+            &pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+            },
+            pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                "@group(0) @binding(7) var image: texture_2d<f32>; @fragment fn direct() -> @location(0) vec4f { return textureLoad(image, vec2i(0), 0); }",
+            )),
+            None,
+        );
+        assert!(
+            shader_error.is_none(),
+            "direct texture-load shader: {shader_error:?}"
+        );
+        let mut direct_load_descriptor = texture_load_descriptor.clone();
+        direct_load_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .module = direct_load_shader;
+        direct_load_descriptor
+            .fragment
+            .as_mut()
+            .unwrap()
+            .stage
+            .entry_point = Some(Cow::Borrowed("direct"));
+        let (direct_pipeline, error) =
+            global.device_create_render_pipeline(device, &direct_load_descriptor, None);
+        assert!(
+            error.is_none(),
+            "narrow fragment textureLoad subset should reach HAL: {error:?}"
+        );
+        global.render_pipeline_drop(direct_pipeline);
+        global.shader_module_drop(direct_load_shader);
         global.shader_module_drop(texture_load_shader);
-        std::println!("PASS: textureLoad is selected-entry gated before the D3D11 HAL");
+        std::println!("PASS: helper textureLoad rejected and direct narrow fragment textureLoad accepted by selected-entry validation");
 
         let mut alpha_target = targets[0].clone().unwrap();
         alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);

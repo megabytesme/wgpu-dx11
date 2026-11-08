@@ -352,6 +352,185 @@ fn fl91_texture_transfer_chain_readback_and_lifetime() -> windows::core::Result<
 }
 
 #[test]
+fn fl91_cube_texture_to_buffer_readback_uses_padded_faces() -> windows::core::Result<()> {
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|e| panic!("{e}"))
+    else {
+        std::println!("SKIP: no hardware adapter");
+        return Ok(());
+    };
+    let identity = adapter.identity();
+    let driver = adapter.driver_version();
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    let support = unsafe {
+        native.raw_device().CheckFormatSupport(
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        )?
+    };
+    assert_ne!(
+        support & windows::Win32::Graphics::Direct3D11::D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32,
+        0,
+        "cube readback requires queried RGBA8 render-target support"
+    );
+    std::println!(
+        "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual FL9_1; RGBA8 format support={:#010x}",
+        identity.name,
+        identity.vendor_id,
+        identity.device_id,
+        identity.software,
+        support,
+    );
+
+    let device = Device::new(native.clone());
+    let queue = Queue::new(native.clone());
+    let cube = unsafe {
+        device
+            .create_texture(&TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Rgba8Unorm,
+                usage: wgt::TextureUses::RESOURCE
+                    | wgt::TextureUses::COPY_DST
+                    | wgt::TextureUses::COPY_SRC,
+                memory_flags: MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+            .unwrap()
+    };
+    let input_offset = 20usize;
+    let input_row_pitch = 256usize;
+    let input_rows_per_image = 9usize;
+    let input_image_pitch = input_row_pitch * input_rows_per_image;
+    let mut upload_data = vec![0x6d; input_offset + 6 * input_image_pitch];
+    for face in 0..6usize {
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let pixel = [
+                    10 + face as u8 * 30 + x as u8,
+                    20 + y as u8 * 17,
+                    5 + face as u8 * 7 + y as u8 * 3 + x as u8,
+                    255,
+                ];
+                let offset = input_offset + face * input_image_pitch + y * input_row_pitch + x * 4;
+                upload_data[offset..offset + 4].copy_from_slice(&pixel);
+            }
+        }
+    }
+    let input = unsafe {
+        device
+            .create_buffer(&BufferDescriptor {
+                label: None,
+                size: upload_data.len() as u64,
+                usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                memory_flags: MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&input, 0, &upload_data)?;
+
+    let output_offset = 16usize;
+    let output_row_pitch = 256usize;
+    let output_rows_per_image = 9usize;
+    let output_image_pitch = output_row_pitch * output_rows_per_image;
+    let output_size = output_offset + 6 * output_image_pitch;
+    let output = unsafe {
+        device
+            .create_buffer(&BufferDescriptor {
+                label: None,
+                size: output_size as u64,
+                usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                memory_flags: MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&output, 0, &vec![0xa5; output_size])?;
+
+    let layer_base = |layer| TextureCopyBase {
+        mip_level: 0,
+        array_layer: layer,
+        origin: wgt::Origin3d { x: 0, y: 0, z: 0 },
+        aspect: FormatAspects::COLOR,
+    };
+    let uploads = (0..6).map(|layer| BufferTextureCopy {
+        buffer_layout: wgt::TexelCopyBufferLayout {
+            offset: (input_offset + layer as usize * input_image_pitch) as u64,
+            bytes_per_row: Some(input_row_pitch as u32),
+            rows_per_image: Some(input_rows_per_image as u32),
+        },
+        texture_base: layer_base(layer),
+        size: extent(8, 8),
+    });
+    let readbacks = (0..6).map(|layer| BufferTextureCopy {
+        buffer_layout: wgt::TexelCopyBufferLayout {
+            offset: (output_offset + layer as usize * output_image_pitch) as u64,
+            bytes_per_row: Some(output_row_pitch as u32),
+            rows_per_image: Some(output_rows_per_image as u32),
+        },
+        texture_base: layer_base(layer),
+        size: extent(8, 8),
+    });
+    let mut encoder = unsafe {
+        device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.copy_buffer_to_texture(&input, &cube, uploads);
+        encoder.copy_texture_to_buffer(&cube, wgt::TextureUses::COPY_SRC, &output, readbacks);
+        encoder.end_encoding().unwrap()
+    };
+    let fence = native.create_native_fence();
+    unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
+    assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(10)))?);
+
+    let actual = native.read_byte_buffer(&output, 0, output_size)?;
+    let mut expected = vec![0xa5; output_size];
+    for face in 0..6usize {
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let pixel = [
+                    10 + face as u8 * 30 + x as u8,
+                    20 + y as u8 * 17,
+                    5 + face as u8 * 7 + y as u8 * 3 + x as u8,
+                    255,
+                ];
+                let offset =
+                    output_offset + face * output_image_pitch + y * output_row_pitch + x * 4;
+                expected[offset..offset + 4].copy_from_slice(&pixel);
+            }
+        }
+    }
+    assert_eq!(
+        actual, expected,
+        "cube face bytes or readback padding differed"
+    );
+    std::println!(
+        "PASS: six cube faces copied to padded CPU buffer; 384 texels and every row/image padding byte matched"
+    );
+    unsafe {
+        encoder.reset_all([commands].into_iter());
+        device.destroy_buffer(input);
+        device.destroy_buffer(output);
+        device.destroy_texture(cube);
+    }
+    Ok(())
+}
+
+#[test]
 fn fl91_bgra_upload_copy_and_readback() -> windows::core::Result<()> {
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");

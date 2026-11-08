@@ -50,6 +50,7 @@ struct RenderState {
     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
     bound_groups: Vec<Option<BoundGroup>>,
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
+    texel_load: Option<super::hal_pipeline::TexelLoadPipeline>,
     full_npot: super::capabilities::Query<bool>,
     required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     viewport_buffer: windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
@@ -156,6 +157,9 @@ impl RenderState {
         if !self.bindings_compatible() {
             return false;
         }
+        if self.texel_load.is_some() && self.texel_load_resource().is_none() {
+            return false;
+        }
         if self.sampling_pairs.is_empty() {
             return true;
         }
@@ -177,6 +181,45 @@ impl RenderState {
             resources.append(&group.resources.sampling);
         }
         super::sampling::compatible(&self.sampling_pairs, &resources, level, self.full_npot)
+    }
+
+    fn texel_load_resource(
+        &self,
+    ) -> Option<(
+        &super::texture::SampledBinding,
+        super::sampling::TextureInfo,
+    )> {
+        let load = self.texel_load.as_ref()?;
+        let plan = self.active_plan.as_ref()?;
+        let group_index = load.binding.group as usize;
+        let expected = plan.groups().get(group_index).copied().flatten()?;
+        let mut texture_slots = expected
+            .textures
+            .iter()
+            .enumerate()
+            .filter(|(_, binding)| **binding == Some(load.binding.binding));
+        let (local, _) = texture_slots.next()?;
+        if texture_slots.next().is_some() {
+            return None;
+        }
+        let bound = self.bound_groups.get(group_index)?.as_ref()?;
+        if bound.kind != expected {
+            return None;
+        }
+        let texture = bound.resources.textures.get(local)?;
+        let info = *bound.resources.sampling.textures.get(local)?;
+        (texture.dimension == wgt::TextureViewDimension::D2
+            && texture.logical_format == Some(wgt::TextureFormat::Rgba8Unorm)
+            && texture.sample_count == 1
+            && texture.mip_count == 1
+            && !texture.depth
+            && info.mip_levels == 1
+            && info.size[0] != 0
+            && info.size[1] != 0
+            && info.size[0] <= 2048
+            && info.size[1] <= 2048
+            && info.size[2] == 1)
+            .then_some((texture, info))
     }
 
     fn bindings_compatible(&self) -> bool {
@@ -262,6 +305,19 @@ impl RenderState {
                     sampler: sampler.clone(),
                 });
             }
+        }
+        if let Some(load) = &self.texel_load {
+            let (texture, info) = self.texel_load_resource()?;
+            if let Some(copy) = &texture.refresh {
+                refresh.push(copy.clone());
+            }
+            commands.push(NativeCommand::SetTexelLoad {
+                texture: texture.view.clone(),
+                sampler: load.sampler.clone(),
+                dimensions: load.dimensions.clone(),
+                width: info.size[0],
+                height: info.size[1],
+            });
         }
         if !refresh.is_empty() {
             commands.insert(
@@ -1008,6 +1064,7 @@ impl crate::CommandEncoder for CommandEncoder {
             last_layout: None,
             bound_groups: (0..MAX_BIND_GROUPS).map(|_| None).collect(),
             sampling_pairs: Arc::new(Vec::new()),
+            texel_load: None,
             full_npot: super::capabilities::Query::Unavailable(0),
             required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
             viewport_buffer: viewport_buffer.clone(),
@@ -1072,6 +1129,7 @@ impl crate::CommandEncoder for CommandEncoder {
         render.depth_never = pipeline.depth_never;
         render.active_plan = Some(pipeline.bindings.clone());
         render.sampling_pairs = pipeline.sampling_pairs.clone();
+        render.texel_load = pipeline.texel_load.clone();
         render.full_npot = pipeline.full_npot;
         render.required_uniform_sizes = pipeline.required_uniform_sizes;
         render.vertex_layouts = pipeline.vertex_layouts;

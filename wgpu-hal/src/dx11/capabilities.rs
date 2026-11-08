@@ -309,6 +309,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
     pub fl91_depth_comparison_sampling: bool,
+    pub fl91_fragment_texture_load_2d_float: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -434,6 +435,7 @@ impl BackendCapabilities {
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
         fl91_depth_comparison_sampling: true,
+        fl91_fragment_texture_load_2d_float: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -542,6 +544,11 @@ impl Capabilities {
         self.hardware.level == FeatureLevel::L9_1
             && self.backend.fl91_depth_comparison_sampling
             && self.driver.comparison_shadow == Query::Value(true)
+    }
+
+    pub fn private_fl91_fragment_texture_load_2d_float(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1
+            && self.backend.fl91_fragment_texture_load_2d_float
     }
 
     pub fn texture_3d_format_mask(&self) -> u32 {
@@ -688,7 +695,7 @@ impl Capabilities {
                     | wgt::TextureUsages::TRANSIENT_ATTACHMENT)
                     .bits(),
                 texture_to_buffer_copy_format_mask: self.texture_to_buffer_copy_format_mask(),
-                max_texture_to_buffer_copy_layers: 1,
+                max_texture_to_buffer_copy_layers: if cube_texture_sampling { 6 } else { 1 },
                 texture_3d_texture_copies: false,
                 npot_texture_3d: false,
                 max_texture_cube_dimension: if cube_texture_sampling {
@@ -761,6 +768,7 @@ impl Capabilities {
                 fragment_front_facing: false,
                 fragment_position: false,
                 texture_load: false,
+                texture_load_2d_float_fragment: self.private_fl91_fragment_texture_load_2d_float(),
                 texture_query: self.hardware.texture_query && self.backend.texture_query,
                 texture_sample_base_clamp_to_edge: self.hardware.texture_query
                     && self.hardware.texture_sample_level
@@ -850,6 +858,19 @@ pub(super) fn supported_mip_texture_usage(usage: wgt::TextureUses) -> bool {
         | wgt::TextureUses::RESOURCE
         | wgt::TextureUses::COLOR_TARGET;
     !usage.is_empty() && supported.contains(usage)
+}
+
+pub(super) const fn cube_readback_requires_render_target_bind(format: wgt::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgt::TextureFormat::Rgba8Unorm
+            | wgt::TextureFormat::Bgra8Unorm
+            | wgt::TextureFormat::Rgba8UnormSrgb
+            | wgt::TextureFormat::Bgra8UnormSrgb
+            | wgt::TextureFormat::R8Unorm
+            | wgt::TextureFormat::Rg8Unorm
+            | wgt::TextureFormat::Rgb5g6b5Unorm
+    )
 }
 
 pub(super) fn query_full_npot(device: &NativeDevice) -> Query<bool> {
@@ -1362,8 +1383,15 @@ impl Capabilities {
         let Query::Value(bits) = query else {
             return Err(DriverQueryUnavailable);
         };
-        let required =
-            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0) as u32;
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0
+            | if usage.contains(wgt::TextureUses::COPY_SRC)
+                && cube_readback_requires_render_target_bind(format)
+            {
+                D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            } else {
+                0
+            }) as u32;
         if bits & required != required {
             return Err(DriverFormatUnsupported);
         }
@@ -1763,6 +1791,42 @@ mod tests {
             .unwrap()
             .features
             .contains(wgt::Features::POLYGON_MODE_LINE));
+    }
+
+    #[test]
+    fn fragment_texture_load_projection_is_narrow_and_feature_level_scoped() {
+        let fl91 = model(FeatureLevel::L9_1);
+        let projection = fl91
+            .wgpu_projection()
+            .expect("FL9_1 projection")
+            .capabilities;
+        assert!(projection.downlevel.limits.texture_load_2d_float_fragment);
+        assert!(!projection.downlevel.limits.texture_load);
+        assert!(!projection.downlevel.limits.texture_query);
+
+        let mut disabled = fl91;
+        disabled.backend.fl91_fragment_texture_load_2d_float = false;
+        assert!(
+            !disabled
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .texture_load_2d_float_fragment
+        );
+
+        for level in [
+            FeatureLevel::L9_2,
+            FeatureLevel::L9_3,
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            assert!(!model(level).private_fl91_fragment_texture_load_2d_float());
+            assert!(model(level).wgpu_projection().is_none());
+        }
     }
 
     #[test]
@@ -2425,8 +2489,16 @@ mod tests {
                 .downlevel
                 .limits
                 .max_texture_to_buffer_copy_layers,
-            1
+            6
         );
+        assert!(projection
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::CUBE_TEXTURES));
+        assert!(!projection
+            .downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::TEXTURE_2D_ARRAYS));
         assert!(!projection
             .downlevel
             .limits
@@ -2469,6 +2541,49 @@ mod tests {
             )
             .is_ok()
         );
+        let cube_sampled_without_render_target = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0)
+            as u32;
+        let mut no_cube_readback = caps;
+        no_cube_readback.driver.rgba8 = Query::Value(cube_sampled_without_render_target);
+        assert_eq!(
+            no_cube_readback.check_private_cube_texture(
+                wgt::TextureFormat::Rgba8Unorm,
+                copy_usage,
+                [8, 8],
+                6,
+                1,
+                1,
+            ),
+            Err(TextureRejection::DriverFormatUnsupported)
+        );
+        let mut unavailable_cube_readback = caps;
+        unavailable_cube_readback.driver.rgba8 = Query::Unavailable(-1);
+        assert_eq!(
+            unavailable_cube_readback.check_private_cube_texture(
+                wgt::TextureFormat::Rgba8Unorm,
+                copy_usage,
+                [8, 8],
+                6,
+                1,
+                1,
+            ),
+            Err(TextureRejection::DriverQueryUnavailable)
+        );
+        let mut bc_gpu_copy_without_render_target = caps;
+        bc_gpu_copy_without_render_target.driver.bc1_unorm =
+            Query::Value(cube_sampled_without_render_target);
+        assert!(bc_gpu_copy_without_render_target
+            .check_private_cube_texture(
+                wgt::TextureFormat::Bc1RgbaUnorm,
+                copy_usage,
+                [8, 8],
+                6,
+                1,
+                1,
+            )
+            .is_ok());
         for (extent, layers, mips, samples) in [
             ([7, 7], 6, 1, 1),
             ([6, 6], 6, 2, 1),

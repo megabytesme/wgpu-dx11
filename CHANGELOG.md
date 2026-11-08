@@ -47,7 +47,8 @@ Bottom level categories:
 #### Hal
 
 - Preserve core-validated byte offsets for query-supported FL9_1 D3D11 vertex formats.
-- Permit selected-device-supported FL9_1 cube-face copies between GPU textures in the opt-in D3D11 backend; cube readback remains restricted.
+- Permit selected-device-supported FL9_1 cube-face copies and texture-to-buffer readback in the opt-in D3D11 backend.
+- Emulate the proven single-mip 2D float fragment `textureLoad` subset in the opt-in FL9_1 D3D11 backend.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
@@ -67,6 +68,7 @@ Bottom level categories:
 
 #### Validation
 
+- Add a downlevel limit for the restricted fragment-stage 2D float `textureLoad` subset without implying general texture-load support.
 - Add `DownlevelLimits::matrix_inverse` so backends can reject selected shaders when their translator cannot lower matrix inverse.
 - Add downlevel limits for legacy vertex base-index inputs, vertex point size output, and fragment point coordinates.
 - Add `DownlevelLimits::vertex_uniform_array_indexing` to gate the narrow vertex-stage uniform-array indexing subset supported by a backend.

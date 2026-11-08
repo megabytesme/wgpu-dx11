@@ -316,6 +316,7 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             texture_sample_level,
             texture_gather,
             texture_load,
+            texture_load_2d_float_fragment,
             runtime_integer_shader_operations,
             matrix_aggregate_stores,
             max_texture_sample_bias,
@@ -414,6 +415,10 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(output, "\t\tExplicit texture sample level: {texture_sample_level}")?;
     writeln!(output, "\t\tTexture gather: {texture_gather}")?;
     writeln!(output, "\t\tTexture loads: {texture_load}")?;
+    writeln!(
+        output,
+        "\t\tRestricted fragment 2D float texture loads: {texture_load_2d_float_fragment}"
+    )?;
     writeln!(output, "\t\tMaximum absolute texture sample bias: {max_texture_sample_bias}")?;
     writeln!(output, "\t\tDynamic texture sample bias: {texture_sample_bias_dynamic}")?;
     writeln!(output, "\t\tTexture sample bias offsets: {texture_sample_bias_offset}")?;

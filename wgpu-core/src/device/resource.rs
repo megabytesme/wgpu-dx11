@@ -5584,16 +5584,29 @@ impl Device {
                             },
                         );
                     }
-                    if !self.downlevel.limits.texture_load
-                        && match interface {
-                            Some(interface) => interface
-                                .entry_point_uses_texture_load(
-                                    stage.to_naga(),
-                                    &_vertex_entry_point_name,
-                                )
-                                .map_err(stage_err)?,
-                            None => true,
-                        }
+                    let uses_texture_load = match interface {
+                        Some(interface) => interface
+                            .entry_point_uses_texture_load(
+                                stage.to_naga(),
+                                &_vertex_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    };
+                    let unsupported_fl9_texture_load = match interface {
+                        Some(interface) => interface
+                            .entry_point_uses_unsupported_fl9_texture_load(
+                                stage.to_naga(),
+                                &_vertex_entry_point_name,
+                            )
+                            .map_err(stage_err)?,
+                        None => true,
+                    };
+                    if uses_texture_load
+                        && !self.downlevel.limits.texture_load
+                        && (stage.to_naga() != naga::ShaderStage::Fragment
+                            || !self.downlevel.limits.texture_load_2d_float_fragment
+                            || unsupported_fl9_texture_load)
                     {
                         return Err(
                             pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
@@ -6170,16 +6183,26 @@ impl Device {
                     );
                 }
 
-                if !self.downlevel.limits.texture_load
-                    && match shader_module.interface.interface() {
-                        Some(interface) => interface
-                            .entry_point_uses_texture_load(
-                                stage.to_naga(),
-                                &fragment_entry_point_name,
-                            )
-                            .map_err(stage_err)?,
-                        None => true,
-                    }
+                let interface = shader_module.interface.interface();
+                let uses_texture_load = match interface {
+                    Some(interface) => interface
+                        .entry_point_uses_texture_load(stage.to_naga(), &fragment_entry_point_name)
+                        .map_err(stage_err)?,
+                    None => true,
+                };
+                let unsupported_fl9_texture_load = match interface {
+                    Some(interface) => interface
+                        .entry_point_uses_unsupported_fl9_texture_load(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                };
+                if uses_texture_load
+                    && !self.downlevel.limits.texture_load
+                    && (!self.downlevel.limits.texture_load_2d_float_fragment
+                        || unsupported_fl9_texture_load)
                 {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {

@@ -34,6 +34,16 @@ auditing. Feature level 9_1 is a tested target, not evidence of
 historical-driver compatibility. See [CAPABILITIES.md](CAPABILITIES.md) for
 the capability matrix and validation gaps.
 
+The current tree also contains a narrowly gated fragment `textureLoad` path:
+one direct single-mip `texture_2d<f32>` load is emulated at FL9_1, with other
+images, helpers, control flow, stages and query/sampling operations rejected
+by selected-entry validation. Strict public readback verified in-bounds,
+out-of-bounds and nonzero-mip results on the RTX 3090 Ti at requested/actual
+FL9_1. Cube texture-to-buffer copies now support query-approved cube formats
+by selecting face subresources into staging resources; the strict six-face
+test verifies texels and padded output. These are narrow tested additions and do not close
+the public capability audit or establish historical-driver behavior.
+
 The public rasterizer path now has a strict forced-FL9_1 readback test for
 opposite triangle windings under `FrontFace::Ccw` and `FrontFace::Cw` with
 back-face culling. The test verified 10 red CCW pixels, 10 green CW pixels and
@@ -422,12 +432,15 @@ the strict fixture confirms the rejection is a core validation error. This
 prevents unsupported D3D11 vertex texture access from becoming a HAL device
 error if a future adapter reports the current private shader subset.
 
-The selected-entry shader audit also covers `textureLoad`. The D3D11 public
-projection sets `DownlevelLimits::texture_load` to false, and core follows
-validated entry-point calls, including helper functions, to reject only the
-selected stages that use texel loads before HAL pipeline creation. Safe sibling
-entries remain usable. The opt-in native texel-load proof remains separate and
-does not relax the production shader subset.
+The selected-entry shader audit also covers `textureLoad`. General
+`DownlevelLimits::texture_load` remains false, but the D3D11 public projection
+sets `texture_load_2d_float_fragment` when the private FL9_1 emulation path is
+available. Core accepts only a direct fragment load from one single-mip 2D
+float image and rejects helper functions, control flow, other resources or
+image operations, additional images and vertex-stage use before HAL. The
+private path reserves t0, s15 and b13; strict public rendering verifies
+in-bounds, out-of-bounds and nonzero-mip behavior. Safe sibling entry points
+remain usable when they satisfy the ordinary shader restrictions.
 
 Core now also applies the FL9_x conditional-NPOT addressing rule to the actual
 texture/sampler pairs used by the selected render-pipeline entry points. Naga's

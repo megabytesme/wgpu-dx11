@@ -11,25 +11,27 @@ use windows::{
     Win32::Graphics::{
         Direct3D11::{
             ID3D11BlendState, ID3D11Buffer, ID3D11ClassLinkage, ID3D11DepthStencilState,
-            ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11VertexShader,
-            D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND, D3D11_BLEND_BLEND_FACTOR, D3D11_BLEND_DESC,
-            D3D11_BLEND_DEST_ALPHA, D3D11_BLEND_DEST_COLOR, D3D11_BLEND_INV_BLEND_FACTOR,
-            D3D11_BLEND_INV_DEST_ALPHA, D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_INV_SRC_COLOR, D3D11_BLEND_ONE, D3D11_BLEND_OP, D3D11_BLEND_OP_ADD,
-            D3D11_BLEND_OP_MAX, D3D11_BLEND_OP_MIN, D3D11_BLEND_OP_REV_SUBTRACT,
-            D3D11_BLEND_OP_SUBTRACT, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_SRC_COLOR,
-            D3D11_BLEND_ZERO, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALPHA,
-            D3D11_COLOR_WRITE_ENABLE_BLUE, D3D11_COLOR_WRITE_ENABLE_GREEN,
-            D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_FUNC,
-            D3D11_COMPARISON_LESS_EQUAL, D3D11_CULL_BACK, D3D11_CULL_FRONT, D3D11_CULL_NONE,
-            D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
-            D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_FILL_WIREFRAME,
+            ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11SamplerState,
+            ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND,
+            D3D11_BLEND_BLEND_FACTOR, D3D11_BLEND_DESC, D3D11_BLEND_DEST_ALPHA,
+            D3D11_BLEND_DEST_COLOR, D3D11_BLEND_INV_BLEND_FACTOR, D3D11_BLEND_INV_DEST_ALPHA,
+            D3D11_BLEND_INV_DEST_COLOR, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_INV_SRC_COLOR,
+            D3D11_BLEND_ONE, D3D11_BLEND_OP, D3D11_BLEND_OP_ADD, D3D11_BLEND_OP_MAX,
+            D3D11_BLEND_OP_MIN, D3D11_BLEND_OP_REV_SUBTRACT, D3D11_BLEND_OP_SUBTRACT,
+            D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_SRC_COLOR, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC,
+            D3D11_COLOR_WRITE_ENABLE_ALPHA, D3D11_COLOR_WRITE_ENABLE_BLUE,
+            D3D11_COLOR_WRITE_ENABLE_GREEN, D3D11_COLOR_WRITE_ENABLE_RED, D3D11_COMPARISON_ALWAYS,
+            D3D11_COMPARISON_FUNC, D3D11_COMPARISON_LESS_EQUAL, D3D11_COMPARISON_NEVER,
+            D3D11_CULL_BACK, D3D11_CULL_FRONT, D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC,
+            D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO,
+            D3D11_FILL_SOLID, D3D11_FILL_WIREFRAME, D3D11_FILTER_MIN_MAG_MIP_POINT,
             D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
             D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR,
-            D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT,
-            D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE,
-            D3D11_STENCIL_OP_ZERO, D3D11_SUBRESOURCE_DATA, D3D11_USAGE_IMMUTABLE,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_STENCIL_OP,
+            D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR,
+            D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP,
+            D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO, D3D11_SUBRESOURCE_DATA,
+            D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT, D3D11_USAGE_IMMUTABLE,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -193,7 +195,7 @@ fn depth_comparison(compare: Option<wgt::CompareFunction>) -> (D3D11_COMPARISON_
 
 fn stencil_comparison(compare: wgt::CompareFunction) -> D3D11_COMPARISON_FUNC {
     match compare {
-        wgt::CompareFunction::Never => windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NEVER,
+        wgt::CompareFunction::Never => D3D11_COMPARISON_NEVER,
         wgt::CompareFunction::Less => windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_LESS,
         wgt::CompareFunction::Equal => windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_EQUAL,
         wgt::CompareFunction::LessEqual => D3D11_COMPARISON_LESS_EQUAL,
@@ -576,6 +578,78 @@ pub struct PipelineLayout {
 crate::impl_dyn_resource!(PipelineLayout);
 impl crate::DynPipelineLayout for PipelineLayout {}
 
+#[derive(Clone, Debug)]
+pub(super) struct TexelLoadPipeline {
+    pub binding: naga::ResourceBinding,
+    pub sampler: ID3D11SamplerState,
+    pub dimensions: ID3D11Buffer,
+}
+
+impl TexelLoadPipeline {
+    fn new(
+        owner: &NativeDevice,
+        binding: naga::ResourceBinding,
+    ) -> Result<Self, crate::PipelineError> {
+        let fail = |error: windows::core::Error| {
+            if error.code() == windows::Win32::Foundation::E_OUTOFMEMORY {
+                crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
+            } else {
+                crate::PipelineError::Linkage(
+                    wgt::ShaderStages::FRAGMENT,
+                    format!("D3D11 FL9 texture-load resource creation failed: {error}"),
+                )
+            }
+        };
+        let sampler_desc = D3D11_SAMPLER_DESC {
+            Filter: D3D11_FILTER_MIN_MAG_MIP_POINT,
+            AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+            MaxAnisotropy: 1,
+            ComparisonFunc: D3D11_COMPARISON_NEVER,
+            MinLOD: 0.0,
+            MaxLOD: f32::MAX,
+            ..Default::default()
+        };
+        let mut sampler = None;
+        unsafe {
+            owner
+                .raw_device()
+                .CreateSamplerState(&sampler_desc, Some(&mut sampler))
+        }
+        .map_err(fail)?;
+        let sampler = sampler.ok_or_else(|| {
+            crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 returned no FL9 texture-load sampler".into(),
+            )
+        })?;
+        let dimensions_desc = D3D11_BUFFER_DESC {
+            ByteWidth: 16,
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            ..Default::default()
+        };
+        let mut dimensions = None;
+        unsafe {
+            owner
+                .raw_device()
+                .CreateBuffer(&dimensions_desc, None, Some(&mut dimensions))
+        }
+        .map_err(fail)?;
+        Ok(Self {
+            binding,
+            sampler,
+            dimensions: dimensions.ok_or_else(|| {
+                crate::PipelineError::Linkage(
+                    wgt::ShaderStages::FRAGMENT,
+                    "D3D11 returned no FL9 texture-load constants".into(),
+                )
+            })?,
+        })
+    }
+}
+
 #[doc(hidden)]
 #[derive(Clone, Debug)]
 #[allow(dead_code)] // The render encoder consumes these state objects.
@@ -597,6 +671,7 @@ pub struct RenderPipeline {
     pub(super) target_format: Option<wgt::TextureFormat>,
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
+    pub(super) texel_load: Option<TexelLoadPipeline>,
     pub(super) full_npot: super::capabilities::Query<bool>,
     pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
     pub(super) vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; crate::MAX_VERTEX_BUFFERS],
@@ -1088,10 +1163,7 @@ mod tests {
         use wgt::{CompareFunction as C, StencilFaceState, StencilOperation as O, StencilState};
 
         for (compare, native) in [
-            (
-                C::Never,
-                windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_NEVER,
-            ),
+            (C::Never, D3D11_COMPARISON_NEVER),
             (
                 C::Less,
                 windows::Win32::Graphics::Direct3D11::D3D11_COMPARISON_LESS,
@@ -2971,6 +3043,7 @@ impl RenderPipeline {
                 viewport_transform: true,
                 instance_index_input: uses_instance_index,
                 vertex_index_input: uses_vertex_index,
+                ..Default::default()
             },
             vertex_stage.constants,
         ) {
@@ -2983,6 +3056,14 @@ impl RenderPipeline {
                 None
             }
         };
+        let texel_load_binding = fragment
+            .map(|fragment| {
+                fragment
+                    .module
+                    .texture_load_binding(fragment.entry_point, fragment.constants)
+            })
+            .transpose()?
+            .flatten();
         let pixel_code = if let Some(fragment) = fragment {
             if target.is_none() {
                 fragment
@@ -3008,6 +3089,9 @@ impl RenderPipeline {
             )
             .map_err(depth_only_shader_error)?
         };
+        let texel_load = texel_load_binding
+            .map(|binding| TexelLoadPipeline::new(owner, binding))
+            .transpose()?;
         let mut input_desc = alloc::vec::Vec::new();
         let mut vertex_layouts = [None; crate::MAX_VERTEX_BUFFERS];
         let mut vertex_slots = VertexSlotAllocator::new(
@@ -3222,6 +3306,7 @@ impl RenderPipeline {
             target_format: target.map(|target| target.format),
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),
+            texel_load,
             full_npot,
             required_uniform_sizes,
             vertex_layouts,

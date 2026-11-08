@@ -2886,16 +2886,19 @@ second cube into face 1 of the sampled cube at every mip, then checks that
 face's changed color in the render readback. It also copies a regular 2D image
 into cube face 2 and cube face 3 back to an ordinary 2D texture. The
 2D-to-cube copy is observed through sampling; the cube-to-2D copy is verified
-by reading back all 64 texels. Core rejects cube-to-buffer readback before the
-FL9_1 HAL path, which cannot stage an SRV-only resource for CPU access.
+by reading back all 64 texels. Cube-to-buffer readback is now allowed for the
+selected device's query-supported copy formats. Core projects six copy layers
+while ordinary 2D arrays remain disabled by `TEXTURE_2D_ARRAYS`.
 
 The RTX 3090 Ti at requested/actual FL9_1 reported format mask `0x1f1f`,
 vendor/device `0x10de:0x2203`, driver `32.0.16.2101`, and software=false.
 Its RGBA8 format query reported mip support. Cube sampling and GPU face copies
 passed with all 960 pixels matching expected face and mip colors, including
 the cross-shape copied face and non-suffix view. Cube-to-2D readback matched
-all 64 texels. The public adapter reports a maximum of one layer for
-texture-to-buffer copies and rejected cube readback in core.
+all 64 texels. Cube texture-to-buffer readback is separately exercised by
+`fl91_cube_texture_to_buffer_readback_uses_padded_faces` below; it requires a
+positive RGBA8 render-target query so the native cube resource is not
+shader-resource-only. No cube RTV is created.
 The RG8_UNORM cube request was rejected by core from the selected format mask.
 These per-format `CheckFormatSupport` results do not imply historical FL9_1
 drivers support the same optional formats.
@@ -2903,6 +2906,7 @@ drivers support the same optional formats.
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib cube_ -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_cube_texture_to_buffer_readback_uses_padded_faces -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_cube_texture_sampling_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
@@ -3209,3 +3213,27 @@ occlusion and pipeline-statistics sets remain rejected. D3D11 has no native
 query-result copy command here, so resolve waits for `GetData` on the CPU; the
 selected RTX 3090 Ti reports 1 GHz and 1 ns/tick. Pass-level timestamp writes
 remain unsupported.
+
+### Narrow FL9_1 fragment `textureLoad`
+
+Run the selected-entry proof and limit-projection tests, then execute the strict
+public GPU case:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+cargo +1.93 test --offline -j8 -p wgpu-types --lib restricted_texture_load_does_not_imply_general_texture_load
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
+This is not general `textureLoad` support. It covers one directly referenced,
+single-mip `texture_2d<f32>` in a fragment entry point with no helper functions,
+control flow, other bound globals, sampling/query operations or additional
+image resources. The selected-entry proof maps the texture to `t0`; private
+shader emulation point-samples at texel centers using `s15`, reads dimensions
+from `b13`, and yields zero for out-of-bounds coordinates and nonzero mip
+requests. The public test on the physical RTX 3090 Ti at requested/actual
+FL9_1 checked 64 in-bounds green pixels, 64 out-of-bounds zero pixels and 64
+zero pixels for a nonzero mip request against the single-mip view. The broader
+strict public suite also includes this test. This modern driver result does
+not establish behavior on historical FL9_1 hardware.

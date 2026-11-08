@@ -158,6 +158,7 @@ pub struct NativeTextureView {
     depth_stencil: Option<ID3D11DepthStencilView>,
     depth_sampled: bool,
     logical_format: Option<wgt::TextureFormat>,
+    dimension: wgt::TextureViewDimension,
     usage: wgt::TextureUses,
     owner: ID3D11Device,
     texture: NativeTextureResource,
@@ -209,6 +210,9 @@ pub(super) struct SampledBinding {
     pub refresh: Option<Arc<SampledRefresh>>,
     pub mip_base: u32,
     pub mip_count: u32,
+    pub dimension: wgt::TextureViewDimension,
+    pub logical_format: Option<wgt::TextureFormat>,
+    pub sample_count: u32,
     pub filterable: bool,
     pub depth: bool,
 }
@@ -802,6 +806,14 @@ impl NativeDevice {
         view: &NativeTextureView,
     ) -> Result<(SampledBinding, [u32; 3], u32)> {
         let (resource, size, levels, filterable) = self.sampled_view(view)?;
+        let sample_count = match &view.texture {
+            NativeTextureResource::Texture2D(texture) => {
+                let mut desc = D3D11_TEXTURE2D_DESC::default();
+                unsafe { texture.GetDesc(&mut desc) };
+                desc.SampleDesc.Count
+            }
+            NativeTextureResource::Texture3D(_) => 1,
+        };
         Ok((
             SampledBinding {
                 view: resource,
@@ -809,6 +821,9 @@ impl NativeDevice {
                 refresh: view.refresh.clone(),
                 mip_base: view.mip_base,
                 mip_count: view.mip_count,
+                dimension: view.dimension,
+                logical_format: view.logical_format,
+                sample_count,
                 filterable,
                 depth: view.depth_sampled,
             },
@@ -974,9 +989,17 @@ impl NativeDevice {
         height: u32,
         mip_levels: u32,
         format: DXGI_FORMAT,
+        render_target_bind: bool,
     ) -> Result<NativeTexture> {
         self.create_color_texture_inner_with_samples_and_cube(
-            width, height, mip_levels, 6, false, format, 1, true,
+            width,
+            height,
+            mip_levels,
+            6,
+            render_target_bind,
+            format,
+            1,
+            true,
         )
     }
 
@@ -1052,8 +1075,7 @@ impl NativeDevice {
                     || width
                         > super::capabilities::HardwareGuarantees::for_level(self.feature_level())
                             .texture_cube_dimension
-                    || sample_count != 1
-                    || render_target))
+                    || sample_count != 1))
             || (sample_count != 1
                 && !(matches!(sample_count, 2 | 4 | 8 | 16)
                     && mip_levels == 1
@@ -1133,7 +1155,11 @@ impl NativeDevice {
                     | wgt::TextureUses::COPY_DST
                     | wgt::TextureUses::RESOURCE
                     | if render_target {
-                        wgt::TextureUses::COLOR_TARGET
+                        if cube {
+                            wgt::TextureUses::empty()
+                        } else {
+                            wgt::TextureUses::COLOR_TARGET
+                        }
                     } else {
                         wgt::TextureUses::empty()
                     }
@@ -1223,6 +1249,13 @@ impl NativeDevice {
             depth_stencil: None,
             depth_sampled: false,
             logical_format: texture.logical_format,
+            dimension: if texture.dimension == wgt::TextureDimension::D3 {
+                wgt::TextureViewDimension::D3
+            } else if texture.layers == 6 {
+                wgt::TextureViewDimension::Cube
+            } else {
+                wgt::TextureViewDimension::D2
+            },
             usage: wgt::TextureUses::RESOURCE,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),
@@ -1308,6 +1341,7 @@ impl NativeDevice {
                 depth_stencil: None,
                 depth_sampled: false,
                 logical_format: texture.logical_format,
+                dimension,
                 usage,
                 owner: self.raw_device().clone(),
                 texture: texture.raw.clone(),
@@ -1368,6 +1402,7 @@ impl NativeDevice {
                             height,
                             mip_count,
                             texture_desc.Format,
+                            false,
                         )?
                     } else {
                         self.create_color_texture_inner(
@@ -1533,6 +1568,7 @@ impl NativeDevice {
             depth_stencil: depth,
             depth_sampled,
             logical_format: texture.logical_format,
+            dimension,
             usage,
             owner: self.raw_device().clone(),
             texture: texture.raw.clone(),

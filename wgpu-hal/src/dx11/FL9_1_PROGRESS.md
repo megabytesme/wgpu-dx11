@@ -11902,3 +11902,77 @@ drivers, actual device removal/recovery, and Lumia/CoreWindow runtime remain
 unverified.
 
 Implementation/test checkpoint: `fe0cc897a` (`dx11: test FL9_1 asynchronous write mapping`).
+
+## Narrow fragment texture-load emulation and cube readback — 2026-11-08
+
+The internal capability projection now exposes a distinct
+`texture_load_2d_float_fragment` limit. It permits only a selected fragment
+entry point with one direct `textureLoad` image: single-mip, non-arrayed
+`texture_2d<f32>`, with no helper functions, control flow, additional bound
+globals, sampling/query operations or extra image resources. Core stores the
+proof per entry point and rejects unsupported variants before HAL. The private
+shader path remaps that image to `t0`, then emulates point sampling at texel
+centers using an internal `s15` sampler and a `b13` dimensions buffer; out of
+bounds coordinates and nonzero mip requests return zero. General texture-load
+support remains false. A strict public render/readback test passed all 64
+in-bounds green pixels and 64 out-of-bounds zero pixels on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), with FL9_1
+explicitly requested and selected. It checked 64 in-bounds green pixels, 64
+out-of-bounds zero pixels and 64 zero pixels for nonzero mip requests.
+
+Cube texture-to-buffer readback now stages each requested face subresource.
+The selected format must report the required render-target capability because
+FL9_x disallows CPU copies from shader-resource-only textures; no RTV is
+created. The downlevel layer-copy limit is six for the implemented cube path,
+while ordinary texture arrays remain disabled. The strict HAL test checked
+all 384 texels from six asymmetric faces and all buffer/row padding. The strict
+public cube test also validated all six face readbacks and the existing cube
+sampling/copy behavior on that same physical adapter and feature level.
+
+Verification with Rust 1.93.1 and Visual Studio 2026 x64:
+
+```powershell
+cargo +1.93 check --offline -j8 -p wgpu-hal --no-default-features --features dx11
+cargo +1.93 test --offline -j8 -p wgpu-types --lib restricted_texture_load_does_not_imply_general_texture_load
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+cargo +1.93 test --offline -j8 -p wgpu-types --lib
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+cargo +1.93 check --offline -j8 -p wgpu-info --features dx11
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --quiet -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_cube_texture_sampling_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+The strict private HAL suite passed 419/419 and the strict public suite passed
+93/93. Three optional selected-device subcases logged capability skips
+(Rg8Unorm vertex input, Float16x2 vertex input, and Rg8Unorm mip support); no
+mandatory hardware path skipped. The selected-entry Core fixture passed 1/1
+and exercised its broader FL9_1 matrix, including acceptance of the restricted
+texture-load contract. `wgpu-types`' limit-intersection test and the Core
+entry-point proof test each passed 1/1. The full workspace format check and
+`git diff --check` passed. The public test suite also verified default
+backend isolation (`experimental_dx11_is_not_enabled_by_default`).
+
+The RTX result validates this compiler/driver combination only; forced FL9_1
+on modern hardware is not a substitute for historical FL9_1 devices. No
+general Core exposure has been enabled: D3D11 remains explicit opt-in, and
+the new capability describes only the tested shape.
+
+The shared downlevel-limit addition initially exposed one exhaustive GLES
+initializer at compile time. GLES now explicitly reports the narrow
+texture-load flag as false while retaining its existing general
+`texture_load=true`; its general capability satisfies the narrower requested
+limit. `cargo +1.93 check --offline -j8 -p wgpu-info --features dx11` passed
+after the fix, compiling the reporting path and enabled backends. The full
+`wgpu-types` unit suite passed 101/101 and the DX12-configured Core unit suite
+passed 102/102. HAL, Core-test and public-test Clippy completed successfully;
+they emitted existing argument-count, fixture-style, and HashMap warnings. The
+full workspace `cargo +1.93 fmt --all -- --check` and `git diff --check` both
+passed.

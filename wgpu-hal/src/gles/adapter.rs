@@ -1030,6 +1030,7 @@ impl super::Adapter {
             texture_gather: supported((3, 1), (4, 0))
                 || extensions.contains("GL_ARB_texture_gather"),
             texture_load: true,
+            texture_load_2d_float_fragment: false,
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
             texture_sample_bias_offset: true,

@@ -1,5 +1,18 @@
 # FL9_1 completion plan
 
+## Latest verified increment — cube readback and narrow fragment texture loads
+
+Cube-to-buffer copies are now query-gated for the supported cube shape and
+copy format, using per-face staging readback. A strict HAL test checked all six
+faces and padded output; the public cube test verified all 384 face texels.
+The opt-in FL9_1 public projection also has a separate narrow limit for a
+single direct fragment `textureLoad` from one single-mip `texture_2d<f32>`;
+the shader path uses internal point sampling and dimensions, with strict
+in-bounds and out-of-bounds readback. The physical RTX 3090 Ti passed at
+requested/actual FL9_1. This remains deliberately short of general texture
+load support. Historical FL9_1 compatibility and the broader public contract
+audit remain open.
+
 The 2026-11-08 contract audit found and fixed one public-valid depth-view
 mismatch: Core permits the default view of a query-enabled texture with both
 `RENDER_ATTACHMENT | TEXTURE_BINDING` usage, but HAL had rejected the inherited

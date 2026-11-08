@@ -21973,7 +21973,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     assert!(downlevel.flags.contains(DownlevelFlags::CUBE_TEXTURES));
     assert!(!downlevel.flags.contains(DownlevelFlags::TEXTURE_2D_ARRAYS));
     assert_eq!(downlevel.limits.max_texture_cube_dimension, 512);
-    assert_eq!(downlevel.limits.max_texture_to_buffer_copy_layers, 1);
+    assert_eq!(downlevel.limits.max_texture_to_buffer_copy_layers, 6);
     assert!(downlevel
         .limits
         .supports_texture_cube_format(TextureFormat::Rgba8Unorm));
@@ -22331,38 +22331,69 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     }
     copied_face_readback.unmap();
     let copy_readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 cube copy readback rejection"),
-        size: u64::from(SIDE) * 256,
+        label: Some("FL9_1 cube copy readback"),
+        size: u64::from(SIDE) * 6 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    expect_validation_error(&device, "FL9_1 cube texture-to-buffer readback", || {
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
-        encoder.copy_texture_to_buffer(
-            TexelCopyTextureInfo {
-                texture: &cube_copy_source,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
+    let mut readback_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    readback_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &cube_copy_source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &copy_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(SIDE),
             },
-            TexelCopyBufferInfo {
-                buffer: &copy_readback,
-                layout: TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(256),
-                    rows_per_image: Some(SIDE),
-                },
-            },
-            Extent3d {
-                width: SIDE,
-                height: SIDE,
-                depth_or_array_layers: 1,
-            },
-        );
-        drop(encoder.finish());
-    });
+        },
+        Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 6,
+        },
+    );
+    let readback_submission = queue.submit([readback_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    copy_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(readback_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 cube texture readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("FL9_1 cube texture readback callback")
+        .expect("map all FL9_1 cube faces");
+    {
+        let pixels = copy_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped FL9_1 cube texture");
+        for (face, expected) in colors[0].iter().enumerate() {
+            for y in 0..SIDE as usize {
+                for x in 0..SIDE as usize {
+                    let offset = face * SIDE as usize * 256 + y * 256 + x * 4;
+                    assert_eq!(
+                        &pixels[offset..offset + 4],
+                        expected,
+                        "cube face {face} texel ({x}, {y})"
+                    );
+                }
+            }
+        }
+    }
+    copy_readback.unmap();
     println!(
-        "PASS: cube face copies across all {mip_levels} mips, 2D-to-cube and cube-to-2D copies; 64/64 copied pixels matched and core rejected FL9_1 cube-to-buffer readback before HAL"
+        "PASS: cube face copies across all {mip_levels} mips, 2D-to-cube and cube-to-2D copies; 64/64 copied pixels and 384/384 cube readback pixels matched"
     );
     let cube_view = cube.create_view(&TextureViewDescriptor {
         label: Some("six-face FL9_1 cube SRV"),
@@ -25044,4 +25075,330 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
     println!(
         "PASS: forced FL9_1 timestamp queries resolved and read back {values:?}; period={period} ns/tick; occlusion and pipeline-statistics query sets were rejected"
     );
+}
+
+#[test]
+fn public_dx11_fragment_texture_load_emulation_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires physical FL9_1 D3D11 hardware"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for textureLoad test");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(!downlevel.limits.texture_load);
+    assert!(downlevel.limits.texture_load_2d_float_fragment);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 fragment textureLoad emulation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the FL9_1 capability projection");
+    let submit_errors = Arc::new(std::sync::Mutex::new(Vec::new()));
+    device.on_uncaptured_error({
+        let submit_errors = submit_errors.clone();
+        Arc::new(move |error| submit_errors.lock().unwrap().push(format!("{error:?}")))
+    });
+
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 textureLoad source"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &[
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
+        ],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(8),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    let source_view = texture.create_view(&TextureViewDescriptor::default());
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 textureLoad layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 textureLoad binding"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&source_view),
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 textureLoad pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 direct fragment textureLoad shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
+             @fragment fn inside() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
+             @fragment fn outside() -> @location(0) vec4f { return textureLoad(image, vec2i(2, 0), 0); }\n\
+             @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }"
+                .into(),
+        ),
+    });
+    let make_pipeline = |fragment_entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 textureLoad pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipelines = [
+        make_pipeline("inside"),
+        make_pipeline("outside"),
+        make_pipeline("invalid_level"),
+    ];
+    let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
+    let vertex_bytes: Vec<u8> = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 textureLoad fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("mapped textureLoad triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+
+    let targets = [
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 in-bounds textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 out-of-bounds textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 nonzero-mip textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
+    ];
+    let target_views = [
+        targets[0].create_view(&TextureViewDescriptor::default()),
+        targets[1].create_view(&TextureViewDescriptor::default()),
+        targets[2].create_view(&TextureViewDescriptor::default()),
+    ];
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 textureLoad readback"),
+        size: 3 * 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 textureLoad render and readback"),
+    });
+    for index in 0..3 {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 textureLoad pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_views[index],
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipelines[index]);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+        drop(pass);
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &targets[index],
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: index as u64 * 8 * 256,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    assert!(
+        submit_errors.lock().unwrap().is_empty(),
+        "textureLoad command submission reported errors: {:?}",
+        *submit_errors.lock().unwrap()
+    );
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 textureLoad draws");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("FL9_1 textureLoad map callback")
+        .expect("map textureLoad results");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped textureLoad pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let inside = y * 256 + x * 4;
+                let outside = 8 * 256 + inside;
+                assert_eq!(
+                    &pixels[inside..inside + 4],
+                    &[0, 255, 0, 255],
+                    "in-bounds textureLoad output ({x}, {y})"
+                );
+                assert_eq!(
+                    &pixels[outside..outside + 4],
+                    &[0, 0, 0, 0],
+                    "out-of-bounds textureLoad output ({x}, {y})"
+                );
+                let invalid_level = 16 * 256 + inside;
+                assert_eq!(
+                    &pixels[invalid_level..invalid_level + 4],
+                    &[0, 0, 0, 0],
+                    "nonzero-mip textureLoad output ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: direct FL9_1 fragment textureLoad produced green in-bounds texels and zero out-of-bounds/nonzero-mip texels across 192 readback pixels");
 }

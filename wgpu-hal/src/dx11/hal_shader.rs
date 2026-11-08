@@ -1410,9 +1410,10 @@ mod tests {
             },
             wgt::ShaderRuntimeChecks::checked(),
         );
-        assert!(
-            matches!(checked_resource.compile(naga::ShaderStage::Fragment, "fs"), Err(crate::PipelineError::Linkage(_, message)) if message == "D3D11 texture loads are not implemented")
-        );
+        assert!(matches!(
+            checked_resource.compile(naga::ShaderStage::Fragment, "fs"),
+            Err(crate::PipelineError::Linkage(..))
+        ));
         assert!(checked_resource
             .compile(naga::ShaderStage::Fragment, "safe")
             .is_ok());
@@ -1427,8 +1428,7 @@ mod tests {
         );
         assert!(matches!(
             unchecked_resource.compile(naga::ShaderStage::Fragment, "fs"),
-            Err(crate::PipelineError::Linkage(_, message))
-                if message == "D3D11 texture loads are not implemented"
+            Err(crate::PipelineError::Linkage(..))
         ));
         assert!(unchecked_resource
             .compile(naga::ShaderStage::Fragment, "safe")
@@ -1944,6 +1944,108 @@ where
                 .any(|(_, expression)| predicate(module, function, info, expression))
         },
     )
+}
+
+fn fl9_texel_load_binding(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+) -> Result<Option<naga::ResourceBinding>, crate::PipelineError> {
+    let stages = if stage == naga::ShaderStage::Fragment {
+        wgt::ShaderStages::FRAGMENT
+    } else {
+        wgt::ShaderStages::VERTEX
+    };
+    let entry_index = module
+        .entry_points
+        .iter()
+        .position(|candidate| candidate.stage == stage && candidate.name == entry)
+        .ok_or(crate::PipelineError::EntryPoint(stage))?;
+    let function = &module.entry_points[entry_index].function;
+    let function_info = info.get_entry_point(entry_index);
+    let uses_load = reachable_expression(
+        module,
+        info,
+        function,
+        function_info,
+        |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
+    );
+    if !uses_load {
+        return Ok(None);
+    }
+    if stage != naga::ShaderStage::Fragment {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 texture loads are fragment-only".into(),
+        ));
+    }
+    let mut binding = None;
+    for (handle, expression) in function.expressions.iter() {
+        if function_info[handle].ref_count == 0 {
+            continue;
+        }
+        let naga::Expression::ImageLoad {
+            image,
+            array_index,
+            sample,
+            level,
+            ..
+        } = expression
+        else {
+            continue;
+        };
+        if array_index.is_some() || sample.is_some() || level.is_none() {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture load shape is unsupported".into(),
+            ));
+        }
+        let naga::Expression::GlobalVariable(image) = function.expressions[*image] else {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture loads require a direct global image".into(),
+            ));
+        };
+        let global = &module.global_variables[image];
+        if !matches!(
+            module.types[global.ty].inner,
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class: naga::ImageClass::Sampled {
+                    kind: naga::ScalarKind::Float,
+                    multi: false
+                }
+            }
+        ) {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture loads support only sampled 2D float textures".into(),
+            ));
+        }
+        let Some(resource_binding) = global.binding else {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture load image is not bound".into(),
+            ));
+        };
+        if binding
+            .replace(resource_binding)
+            .is_some_and(|old| old != resource_binding)
+        {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture loads use more than one image".into(),
+            ));
+        }
+    }
+    binding.map(Some).ok_or_else(|| {
+        crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 texture load cannot be resolved to a direct image binding".into(),
+        )
+    })
 }
 
 fn reachable_function<F>(
@@ -4110,6 +4212,22 @@ impl ShaderModule {
             None => Err(crate::PipelineError::EntryPoint(naga::ShaderStage::Vertex)),
         }
     }
+    pub(super) fn texture_load_binding(
+        &self,
+        entry: &str,
+        constants: &naga::back::PipelineConstants,
+    ) -> Result<Option<naga::ResourceBinding>, crate::PipelineError> {
+        let (module, info) = naga::back::pipeline_constants::process_overrides(
+            &self.shader.module,
+            &self.shader.info,
+            Some((naga::ShaderStage::Fragment, entry)),
+            constants,
+        )
+        .map_err(|error| {
+            crate::PipelineError::PipelineConstants(wgt::ShaderStages::FRAGMENT, error.to_string())
+        })?;
+        fl9_texel_load_binding(&module, &info, naga::ShaderStage::Fragment, entry)
+    }
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         shader: crate::NagaShader,
@@ -4292,7 +4410,7 @@ impl ShaderModule {
         entry: &str,
         bindings: &[ShaderBinding],
         targetless_fragment: bool,
-        input_options: Fl9ShaderInputOptions,
+        mut input_options: Fl9ShaderInputOptions,
         constants: &naga::back::PipelineConstants,
     ) -> Result<Vec<u8>, crate::PipelineError> {
         let stages = match stage {
@@ -4319,6 +4437,7 @@ impl ShaderModule {
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
         let entry_info = info.get_entry_point(entry_index);
+        input_options.texel_load_binding = fl9_texel_load_binding(&module, &info, stage, entry)?;
         let profile =
             selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
         if stage == naga::ShaderStage::Fragment
@@ -4429,22 +4548,7 @@ impl ShaderModule {
                 "unsupported D3D11 dynamic pointer or uniform indexing".into(),
             ));
         }
-        // Sampled views are checked single-mip RGBA8 2D resources and sampler
-        // address modes are checked against used pairs before drawing.
-        // Keep explicit texel loads fail-closed until their FL9 bounds behavior
-        // is independently tested; include helpers reachable from this entry.
-        if reachable_expression(
-            &module,
-            &info,
-            &module.entry_points[entry_index].function,
-            entry_info,
-            |_, _, _, expression| matches!(expression, naga::Expression::ImageLoad { .. }),
-        ) {
-            return Err(crate::PipelineError::Linkage(
-                stages,
-                "D3D11 texture loads are not implemented".into(),
-            ));
-        }
+        // Sampling and the narrow FL9 texel-load path both use the selected entry's mappings.
         let present = used_shader_bindings(&module, entry_info, bindings);
         let compiled = if targetless_fragment {
             super::shader::compile_naga_with_synthetic_fragment_output(

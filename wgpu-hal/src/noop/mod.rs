@@ -244,6 +244,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_sample_level: true,
                 texture_gather: true,
                 texture_load: true,
+                texture_load_2d_float_fragment: true,
                 runtime_integer_shader_operations: true,
                 matrix_inverse: true,
                 matrix_outer_product: true,

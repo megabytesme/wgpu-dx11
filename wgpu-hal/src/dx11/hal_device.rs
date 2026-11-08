@@ -265,6 +265,7 @@ impl crate::Device for Device {
                     desc.mip_level_count,
                 )
                 .map_err(device_error)?;
+            texture.logical_format = Some(desc.format);
             for mip in 0..desc.mip_level_count {
                 let width = (desc.size.width >> mip).max(1);
                 let height = (desc.size.height >> mip).max(1);
@@ -521,6 +522,9 @@ impl crate::Device for Device {
         }
         let support =
             unsafe { self.native.raw_device().CheckFormatSupport(format) }.map_err(device_error)?;
+        let cube_readback = cube
+            && desc.usage.contains(wgt::TextureUses::COPY_SRC)
+            && super::capabilities::cube_readback_requires_render_target_bind(desc.format);
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
             | if sampled_upload {
                 0
@@ -540,7 +544,7 @@ impl crate::Device for Device {
                             | wgt::TextureFormat::Bc2RgbaUnorm
                             | wgt::TextureFormat::Bc3RgbaUnorm
                     )
-                    && !cube)
+                    && (!cube || cube_readback))
             {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
@@ -561,6 +565,7 @@ impl crate::Device for Device {
                     desc.size.height,
                     desc.mip_level_count,
                     format,
+                    cube_readback,
                 )
                 .map_err(device_error)?
         } else {
@@ -583,6 +588,7 @@ impl crate::Device for Device {
                 )
                 .map_err(device_error)?
         };
+        texture.logical_format = Some(desc.format);
         if desc.sample_count > 1 {
             self.native
                 .clear_multisampled_color_texture(&texture)

@@ -43,6 +43,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub viewport_transform: bool,
     pub instance_index_input: bool,
     pub vertex_index_input: bool,
+    pub texel_load_binding: Option<naga::ResourceBinding>,
 }
 
 /// The compiler HRESULT and any diagnostic text returned by FXC.
@@ -379,6 +380,19 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         .position(|candidate| candidate.stage == stage && candidate.name == entry)
         .ok_or_else(|| NagaCompileError::Translation(String::from("entry point not found")))?;
     let entry_info = info.get_entry_point(entry_index);
+    let mut remapped_bindings = bindings.to_vec();
+    if let Some(binding) = input_options.texel_load_binding {
+        if stage != naga::ShaderStage::Fragment {
+            return Err(NagaCompileError::InvalidBindingMapping);
+        }
+        let Some(texture) = remapped_bindings.iter_mut().find(|mapping| {
+            mapping.binding == binding && mapping.kind == ShaderBindingKind::TextureFloat
+        }) else {
+            return Err(NagaCompileError::InvalidBindingMapping);
+        };
+        texture.slot = 0;
+    }
+    let bindings = remapped_bindings.as_slice();
     let level_9 = matches!(
         profile,
         ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3
@@ -398,6 +412,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
             && stage == naga::ShaderStage::Vertex,
         fl9_vertex_index_input: input_options.vertex_index_input
             && stage == naga::ShaderStage::Vertex,
+        fl9_texel_load_proof: input_options.texel_load_binding,
         fl9_uniform_index_arguments: uniform_index_arguments.to_vec(),
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
@@ -2904,6 +2919,48 @@ mod tests {
         .unwrap();
         assert!(hlsl.contains("register(t0)"), "{hlsl}");
         assert!(hlsl.contains("register(s0)"), "{hlsl}");
+    }
+
+    #[test]
+    fn fl91_texel_load_uses_the_reserved_shader_registers() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(4) @binding(42) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let binding = naga::ResourceBinding {
+            group: 4,
+            binding: 42,
+        };
+        let bindings = [ShaderBinding {
+            binding,
+            slot: 7,
+            kind: ShaderBindingKind::TextureFloat,
+        }];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texel_load_binding: Some(binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate the narrow FL9_1 texture-load shader");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(s15)"), "{source}");
+        assert!(source.contains("register(b13)"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1)
+            .unwrap_or_else(|error| panic!("FL9_1 texel-load HLSL failed: {error:?}\n{source}"));
     }
 
     #[test]
