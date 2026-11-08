@@ -2978,6 +2978,272 @@ fn public_dx11_fl91_optional_float16_vertex_input() {
 }
 
 #[test]
+fn public_dx11_byte_aligned_vertex_attribute_offset_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let limits = adapter.get_downlevel_capabilities().limits;
+    let small_formats = [
+        VertexFormat::Uint8,
+        VertexFormat::Uint8x2,
+        VertexFormat::Sint8,
+        VertexFormat::Sint8x2,
+        VertexFormat::Sint8x4,
+        VertexFormat::Unorm8,
+        VertexFormat::Unorm8x2,
+        VertexFormat::Snorm8,
+        VertexFormat::Snorm8x2,
+        VertexFormat::Snorm8x4,
+        VertexFormat::Uint16,
+        VertexFormat::Sint16,
+        VertexFormat::Unorm16,
+        VertexFormat::Snorm16,
+        VertexFormat::Float16,
+    ];
+    let supported_small_formats: Vec<_> = small_formats
+        .into_iter()
+        .filter(|format| limits.supports_vertex_format(*format))
+        .collect();
+    let format_supported = limits.supports_vertex_format(VertexFormat::Unorm8x2);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Unorm8x2={format_supported} supported sub-4-byte formats={supported_small_formats:?}",
+        info.name, info.vendor, info.device, info.driver_info,
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 byte-aligned vertex attribute offset"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("byte-aligned vertex attribute offset shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p * 2.0 - vec2f(1.0), 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.125, 0.5, 0.875, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Unorm8x2,
+        offset: 2,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let invalid_attributes = [VertexAttribute {
+        format: VertexFormat::Unorm8x2,
+        offset: 1,
+        shader_location: 0,
+    }];
+    let invalid_vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &invalid_attributes,
+    })];
+    let invalid_pipeline_descriptor = RenderPipelineDescriptor {
+        label: Some("byte-aligned vertex attribute offset pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &invalid_vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    };
+    expect_validation_error_containing(
+        &device,
+        "misaligned Unorm8x2 offset",
+        "invalid offset",
+        || {
+            drop(device.create_render_pipeline(&invalid_pipeline_descriptor));
+        },
+    );
+    if !format_supported {
+        println!("SKIP: selected FL9_1 device does not report IA support for R8G8_UNORM; the core offset rejection passed");
+        return;
+    }
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("byte-aligned vertex attribute offset pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let positions: [(u8, u8); 6] = [(0, 0), (255, 0), (0, 255), (0, 255), (255, 0), (255, 255)];
+    let vertex_data: Vec<u8> = positions
+        .into_iter()
+        .flat_map(|(x, y)| [0xA5, 0x5A, x, y, 0xC3, 0x3C, 0x96, 0x69])
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("byte-aligned vertex input buffer"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("mapped byte-aligned vertex buffer")
+        .copy_from_slice(&vertex_data);
+    vertex.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("byte-aligned vertex input target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("byte-aligned vertex input readback"),
+        size: 256 * 8,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("byte-aligned vertex input encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("byte-aligned vertex input pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..6, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for byte-aligned vertex input render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("byte-aligned vertex input readback callback")
+        .expect("map byte-aligned vertex input readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped byte-aligned vertex input pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[32, 128, 223, 255],
+                    "byte-aligned vertex input pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: FL9_1 Unorm8x2 at byte offset 2 rendered the full target; 64/64 pixels matched [32, 128, 223, 255]");
+}
+
+#[test]
 fn public_dx11_r8_sampled_upload_renders_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();

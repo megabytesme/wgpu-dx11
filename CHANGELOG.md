@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### Hal
 
+- Preserve core-validated byte offsets for query-supported FL9_1 D3D11 vertex formats.
 - Permit selected-device-supported FL9_1 cube-face copies between GPU textures in the opt-in D3D11 backend; cube readback remains restricted.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.

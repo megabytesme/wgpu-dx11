@@ -1022,6 +1022,16 @@ formats and no optional format. The strict public Float16x2 readback test logs
 that case as a skip. Synthetic capability tests cover positive optional
 queries, unavailable queries and missing backend mappings.
 
+Core accepts vertex attribute offsets aligned to `min(format.size(), 4)`.
+The HAL now preserves those validated byte offsets in
+`D3D11_INPUT_ELEMENT_DESC::AlignedByteOffset` instead of imposing a blanket
+four-byte alignment. The public regression rejects an offset of one for
+`Unorm8x2`; it renders all 64 pixels from `Unorm8x2` at offset two when the
+selected device reports `R8G8_UNORM` input support. The RTX 3090 Ti forced to
+FL9_1 reports no IA format smaller than four bytes, so the positive render
+case explicitly skips on this machine; no hardware execution is claimed for
+the byte-offset path yet.
+
 The required FL9_x packed B5G6R5, B5G5R5A1 and B4G4R4A4 formats are now
 implemented as `Rgb5g6b5Unorm`, `Rgb5a1Unorm` and `Rgba4Unorm` with a shared
 native-only feature and individual selected-device format queries. All three

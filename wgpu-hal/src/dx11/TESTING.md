@@ -934,6 +934,20 @@ optional formats are not hardware-verified on this adapter; a driver-positive
 format should receive a GPU readback case before broad claims are made about
 legacy devices.
 
+Vertex attribute offsets retain core's `min(format.size(), 4)` alignment and
+the HAL passes the byte offset unchanged to the D3D11 input layout. The public
+`public_dx11_byte_aligned_vertex_attribute_offset_at_fl91` test rejects a
+misaligned offset of one and attempts a full readback render using
+`Unorm8x2` at offset two. On the RTX 3090 Ti forced to FL9_1, no sub-four-byte
+IA format is reported, so the positive case logs a capability skip after the
+core rejection assertion. A suitable format-positive FL9_1 adapter is still
+needed to verify native execution.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_byte_aligned_vertex_attribute_offset_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Public FL9_1 sRGB texture formats
 
 The public integration test checks the selected adapter's usage and filter
