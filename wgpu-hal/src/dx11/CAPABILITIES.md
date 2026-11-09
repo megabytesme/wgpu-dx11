@@ -1,5 +1,13 @@
 # D3D11 capability and public-adapter contract
 
+Recent strict public execution checks covered partial initialization and
+sampling of BC1/BC2/BC3 unorm textures, plus WGSL matrix `determinant` for
+mat2/mat3/mat4 in vertex and fragment stages. All seven focused tests passed
+on the physical RTX 3090 Ti at requested/actual FL9_1. This is device-specific
+execution evidence for paths already present in the restricted projection;
+it does not imply support on every historical FL9_1 driver or change the
+capability contract. See `TESTING.md` and `FL9_1_PROGRESS.md`.
+
 The opt-in `dx11` feature now enumerates physical DXGI adapters that can create
 the explicitly requested FL9_1 device and exposes the selected-device
 capability projection for public wgpu rendering. Its constrained Win32 HWND

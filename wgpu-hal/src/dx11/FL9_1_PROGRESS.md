@@ -1,5 +1,22 @@
 # FL9_1 progress
 
+## BC partial-initialization and matrix determinant execution — 2026-11-09
+
+Two public strict-hardware regression targets now verify additional existing
+paths without changing the advertised capability projection. The BC test
+uploads one compressed block to each 8x4 BC1/BC2/BC3 texture, samples the
+uploaded and untouched regions, and matched all 96 pixels including
+format-correct zero initialization. The determinant test executes WGSL
+`determinant` for mat2, mat3 and mat4 in both vertex and fragment stages; each
+case changes the uniform matrix between draws and validates two complete 8x8
+readbacks. All seven tests passed on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) at requested/actual FL9_1, software=false. The tests
+confirm this device/driver/compiler combination only; historical FL9_1 remains
+unverified. New-test Clippy is clean; five pre-existing D3D11 HAL Clippy
+warnings remain.
+
+Commands and result are recorded in `TESTING.md`.
+
 ## Strict CTS default-limit boundary and combined-limit correction — 2026-11-09
 
 The pinned CTS checkout was made available and a strict DX11 run of

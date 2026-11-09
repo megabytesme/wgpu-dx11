@@ -22,6 +22,13 @@ translation and FXC path without adding a backend capability or broadening the
 shader contract.
 # Direct3D 11 backend status
 
+Recent public strict-hardware checks verified partial initialization of BC1,
+BC2 and BC3 textures (all 96 sampled pixels) and WGSL `determinant` for mat2,
+mat3 and mat4 in both vertex and fragment stages (768 readback pixels). All
+seven tests passed on the RTX 3090 Ti at explicitly requested/actual FL9_1.
+These checks add execution evidence for the current restricted projection;
+they do not broaden it. See `TESTING.md`.
+
 The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
 for offscreen rendering and a constrained Win32 HWND surface through the public

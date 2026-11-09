@@ -1,5 +1,17 @@
 # FL9_1 completion plan
 
+## Latest execution evidence — 2026-11-09
+
+The strict public test matrix now includes BC1/BC2/BC3 partial initialization
+and WGSL matrix determinant execution for mat2/mat3/mat4 in vertex and fragment
+stages. All 7 focused hardware tests passed on the RTX 3090 Ti at explicitly
+requested/actual FL9_1. These are verification of already projected paths, not
+new capability claims. See `FL9_1_PROGRESS.md` and `TESTING.md` for the exact
+operations and commands. Remaining work is broad Core/HAL contract auditing,
+additional public workload coverage, and external verification on historical
+FL9_1 hardware and Lumia ARM32; the adapter remains experimental and does not
+meet Core WebGPU defaults.
+
 ## Current coordination checkpoint — 2026-11-09
 
 Test readiness now includes opt-in Deno/xtask DX11 routing and a strict

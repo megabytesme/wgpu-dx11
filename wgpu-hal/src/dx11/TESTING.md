@@ -1,5 +1,27 @@
 # Direct3D 11 validation plan
 
+## Strict BC partial-initialization and matrix determinant checks
+
+Run from a Visual Studio developer shell with the DX11 strict hardware gate
+enabled. Both are public wgpu tests and fail instead of skipping when the
+physical FL9_1 adapter or required format capability is absent.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_partial_init -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_determinant -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_determinant --test dx11_bc_partial_init
+```
+
+On 2026-11-09, both targets passed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with requested and actual FL9_1 and
+`software=false`. The BC test checked all 96 pixels after partial BC1/BC2/BC3
+uploads, including untouched zero-initialized blocks. The determinant target
+ran six cases (mat2/mat3/mat4 in vertex and fragment stages), changed each
+uniform between draws, and checked 12 complete 8x8 readbacks (768 pixels).
+Clippy passed with the five existing D3D11 HAL warnings and no warning from
+the new tests. These results are not evidence for historical FL9_1 devices.
+
 The `dx11` feature enumerates only physical adapters that create the explicitly
 requested FL9_1 device and pass the selected-device capability projection.
 Only selected-device-gated features are exposed: the implemented 16-bit

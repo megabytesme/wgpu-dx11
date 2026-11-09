@@ -1,5 +1,16 @@
 # FL9_1 handoff
 
+## Latest execution evidence — 2026-11-09
+
+Strict public GPU tests now cover BC1/BC2/BC3 partial initialization and
+WGSL `determinant` for mat2/mat3/mat4 in vertex and fragment stages. All 7
+focused tests passed on the physical RTX 3090 Ti at requested/actual FL9_1;
+96 BC pixels and 768 determinant pixels were checked. No public capability
+changed. Exact commands are in `TESTING.md`, with context in
+`FL9_1_PROGRESS.md`. The capability audit, broad public workload coverage,
+historical FL9_1 device testing and Lumia ARM32/CoreWindow execution remain
+open.
+
 ## Current coordinator checkpoint — strict CTS preflight and blend audit — 2026-11-09
 
 The Deno/xtask DX11 CTS path is opt-in. With
