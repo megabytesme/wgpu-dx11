@@ -32250,7 +32250,7 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
 }
 
 #[test]
-fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
+fn public_dx11_executes_combined_texture_format_usages_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -32280,26 +32280,34 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
         .union(TextureUsages::TEXTURE_BINDING)
         .union(TextureUsages::RENDER_ATTACHMENT);
     let formats = [
+        TextureFormat::R8Unorm,
+        TextureFormat::Rg8Unorm,
+        TextureFormat::Rgb5g6b5Unorm,
         TextureFormat::Rgba8Unorm,
         TextureFormat::Bgra8Unorm,
         TextureFormat::Rgba8UnormSrgb,
         TextureFormat::Bgra8UnormSrgb,
     ];
+    let packed_format_supported = adapter
+        .features()
+        .contains(Features::TEXTURE_FORMAT_16BIT_PACKED);
     let mut supported_formats = Vec::new();
     for format in formats {
-        let features = adapter.get_texture_format_features(format);
-        if !features.allowed_usages.contains(USAGE)
-            || !features
-                .flags
-                .contains(TextureFormatFeatureFlags::FILTERABLE)
-        {
+        if format == TextureFormat::Rgb5g6b5Unorm && !packed_format_supported {
             assert!(
                 !required,
-                "strict FL9_1 hardware must support combined {format:?} usage {USAGE:?} and filtered sampling; reported {features:?}"
+                "strict FL9_1 hardware must expose queried TEXTURE_FORMAT_16BIT_PACKED"
             );
-            println!(
-                "SKIP: {format:?} lacks the combined operation usage {USAGE:?} or FILTERABLE: {features:?}"
+            println!("SKIP: TEXTURE_FORMAT_16BIT_PACKED is unavailable for {format:?}");
+            continue;
+        }
+        let features = adapter.get_texture_format_features(format);
+        if !features.allowed_usages.contains(USAGE) {
+            assert!(
+                !required,
+                "strict FL9_1 hardware must support combined {format:?} usage {USAGE:?}; reported {features:?}"
             );
+            println!("SKIP: {format:?} lacks the combined operation usage {USAGE:?}: {features:?}");
             continue;
         }
         println!(
@@ -32312,7 +32320,7 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
         assert_eq!(
             supported_formats.len(),
             formats.len(),
-            "strict hardware requires all four RGBA8/BGRA8 linear and sRGB format paths"
+            "strict hardware requires all seven queried narrow, linear and sRGB format paths"
         );
     }
     if supported_formats.is_empty() {
@@ -32321,8 +32329,12 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
     }
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public FL9_1 combined RGBA8/BGRA8 usage execution"),
-        required_features: Features::empty(),
+        label: Some("public FL9_1 combined texture-format usage execution"),
+        required_features: if supported_formats.contains(&TextureFormat::Rgb5g6b5Unorm) {
+            Features::TEXTURE_FORMAT_16BIT_PACKED
+        } else {
+            Features::empty()
+        },
         required_limits: adapter.limits(),
         ..Default::default()
     }))
@@ -32357,7 +32369,7 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
         attributes: &attributes,
     })];
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("combined usage sampled render shader"),
+        label: Some("combined texture-format sampled render shader"),
         source: ShaderSource::Wgsl(
             "struct Out { @builtin(position) position: vec4f, }\n\
              @vertex fn vs(@location(0) position: vec2f) -> Out { var out: Out; out.position = vec4f(position, 0.0, 1.0); return out; }\n\
@@ -32377,6 +32389,15 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
     });
 
     for format in supported_formats {
+        let bytes_per_pixel = match format {
+            TextureFormat::R8Unorm => 1usize,
+            TextureFormat::Rg8Unorm | TextureFormat::Rgb5g6b5Unorm => 2,
+            TextureFormat::Rgba8Unorm
+            | TextureFormat::Bgra8Unorm
+            | TextureFormat::Rgba8UnormSrgb
+            | TextureFormat::Bgra8UnormSrgb => 4,
+            _ => unreachable!("test format list is exhaustive"),
+        };
         let source = device.create_texture(&TextureDescriptor {
             label: Some("combined usage upload source"),
             size: Extent3d {
@@ -32420,27 +32441,34 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
             view_formats: &[],
         });
 
-        let storage_pixel = |x: u32, y: u32| {
+        let storage_pixel = |x: u32, y: u32| -> Vec<u8> {
             let rgba = [
                 (13 + 31 * x + 5 * y) as u8,
                 (7 + 3 * x + 29 * y) as u8,
                 (23 + 17 * x + 11 * y) as u8,
                 255,
             ];
-            if matches!(
-                format,
-                TextureFormat::Bgra8Unorm | TextureFormat::Bgra8UnormSrgb
-            ) {
-                [rgba[2], rgba[1], rgba[0], rgba[3]]
-            } else {
-                rgba
+            match format {
+                TextureFormat::R8Unorm => vec![(13 + 31 * x + 5 * y) as u8],
+                TextureFormat::Rg8Unorm => {
+                    vec![(13 + 31 * x + 5 * y) as u8, (7 + 3 * x + 29 * y) as u8]
+                }
+                TextureFormat::Rgb5g6b5Unorm => (0x3127u16
+                    .wrapping_add((x * 0x0711 + y * 0x1923) as u16))
+                .to_le_bytes()
+                .to_vec(),
+                TextureFormat::Bgra8Unorm | TextureFormat::Bgra8UnormSrgb => {
+                    vec![rgba[2], rgba[1], rgba[0], rgba[3]]
+                }
+                TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb => rgba.to_vec(),
+                _ => unreachable!("test format list is exhaustive"),
             }
         };
         let mut upload = vec![0; (ROW_PITCH * HEIGHT) as usize];
         for y in 0..HEIGHT {
             for x in 0..WIDTH {
-                let offset = (y * ROW_PITCH + x * 4) as usize;
-                upload[offset..offset + 4].copy_from_slice(&storage_pixel(x, y));
+                let offset = (y * ROW_PITCH) as usize + x as usize * bytes_per_pixel;
+                upload[offset..offset + bytes_per_pixel].copy_from_slice(&storage_pixel(x, y));
             }
         }
         queue.write_texture(
@@ -32618,16 +32646,16 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
                 .expect("mapped combined usage readback");
             for y in 0..HEIGHT {
                 for x in 0..WIDTH {
-                    let offset = (y * ROW_PITCH + x * 4) as usize;
+                    let offset = (y * ROW_PITCH) as usize + x as usize * bytes_per_pixel;
                     let expected = storage_pixel(x, y);
                     assert_eq!(
-                        &data[offset..offset + 4],
+                        &data[offset..offset + bytes_per_pixel],
                         expected,
                         "{format:?} copied source pixel ({x}, {y})"
                     );
                     let sample_offset = IMAGE_BYTES as usize + offset;
                     let expected_sample = storage_pixel(4, 3);
-                    for channel in 0..4 {
+                    for channel in 0..bytes_per_pixel {
                         let actual = data[sample_offset + channel] as i16;
                         let expected = expected_sample[channel] as i16;
                         assert!(
