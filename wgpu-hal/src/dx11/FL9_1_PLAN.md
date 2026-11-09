@@ -1,5 +1,37 @@
 # FL9_1 completion plan
 
+## Latest shader-query increment — constant-mip cube dimensions — 2026-11-09
+
+Checkpoint: `1e8407af6` (`dx11: extend FL9_1 cube queries and SNORM copies`).
+The existing selected-entry cube `textureDimensions` proof now accepts a
+nonnegative literal or module-constant mip level when the entry point does not
+also sample that cube. Core, Naga and HAL retain matching restrictions for
+dynamic/negative levels, explicit-level-plus-sampling, helper use and unrelated
+image operations. HAL supplies the selected view's face size at the requested
+mip through `b13`; multi-mip resources still require the selected format query.
+
+The strict public test on the RTX 3090 Ti explicitly requested/selected FL9_1
+and queried mip 1 of a populated four-level 8x8 RGBA8 cube. All 64 pixels
+matched `[128,128,0,255]` within one byte. The preexisting 8x8-to-4x4 cube view
+transition still passed. Exact Core/Naga/HAL and full regression results are
+in `FL9_1_PROGRESS.md`. This does not enable general texture queries or prove
+historical-driver behavior.
+
+## Latest format increment — RGBA8_SNORM GPU copies — 2026-11-09
+
+The same checkpoint adds a selected-device `TEXTURE2D` query and backend-path
+gate for same-format RGBA8_SNORM texture-to-texture copies. `COPY_SRC` no longer
+implies CPU readback: the format remains absent from
+`texture_to_buffer_copy_format_mask`, and the HAL explicitly rejects SNORM
+texture-to-buffer readback. The synthetic capability test verifies that a
+missing query or disabled path withholds `COPY_SRC`.
+
+The strict public RTX 3090 Ti test explicitly requested/selected FL9_1, uploaded
+`[127,-127,127,-127]` signed texels, copied RGBA8_SNORM to a second texture,
+sampled it, and verified all 64 RGBA8 output pixels as `[255,0,255,0]`. The
+selected format query returned `0x000213a0`. This confirms one modern driver
+forced to FL9_1, not historical 9_1 hardware.
+
 ## Latest query increment — explicit in-pass timestamps — 2026-11-09
 
 The selected-device timestamp/disjoint probe now gates

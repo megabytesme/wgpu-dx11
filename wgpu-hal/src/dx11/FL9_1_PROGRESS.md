@@ -1,5 +1,56 @@
 # FL9_1 progress
 
+## Constant-mip cube query and RGBA8_SNORM copy — 2026-11-09
+
+Checkpoint: `1e8407af6` (`dx11: extend FL9_1 cube queries and SNORM copies`).
+The cube `textureDimensions` path now accepts a nonnegative literal or
+module-constant mip only when the selected entry point does not also sample the
+cube. Core, Naga, HAL and command replay share the same mip/view restrictions
+and use the reserved `b13` dimensions value. The format extension permits
+same-format RGBA8_SNORM GPU copy sources only after a positive selected-device
+`TEXTURE2D` query and an enabled backend path. It does not enable color-target
+use or texture-to-buffer readback; the CPU-readback format mask remains clear.
+
+Strict hardware execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+and confirmed FL9_1. The cube test queried mip 1 of an initialized four-level
+8x8 RGBA8 cube and validated 64 pixels against `[128,128,0,255]` within one
+byte. A first assertion required exact 128 and observed 127 for the 0.5 channel;
+the one-byte conversion tolerance was applied and the strict rerun passed. The
+SNORM support query returned `0x000213a0`; upload, GPU copy, sample and RGBA8
+readback yielded `[255,0,255,0]` in all 64 pixels. No hardware skip was used
+for either focused execution.
+
+Verification used Rust 1.93.1 (`rustc +1.93 --version` reports
+`1.93.1 (01f6ddf75 2026-02-11)`) and the Visual Studio 2026 x64 developer
+environment. The explicitly named `+1.93.1` rustup alias has a missing
+toolchain manifest, so commands used the working `+1.93` alias. Cargo ran
+offline with `-j32`:
+
+- Naga targeted cube proof: 1/1; complete Naga library: 152/152.
+- Core targeted cube proof: 1/1; strict DX11 fixture library: 121/121.
+- HAL targeted cube proof and synthetic SNORM gate: 1/1 each; strict private
+  HAL suite: 451/451.
+- Strict public cube test: 1/1; strict public `dx11_public` target: 110/110,
+  including default-backend isolation; strict `dx11_snorm_copy`: 1/1.
+- Core DX12 regression: 109/109; `wgpu-types`: 108/108.
+- Clippy passed for Naga, Core tests, HAL tests and both public D3D11 targets.
+  Existing warnings remain in HAL queue/index/shader/texture and fixture code;
+  none point to these changes. `cargo +1.93 fmt --all -- --check` and
+  `git diff --check` passed.
+
+The first strict full HAL run caught two stale test expectations that still
+rejected RGBA8_SNORM `COPY_SRC`: the format-projection matrix and generic
+sample-upload test. Both now expect query-gated texture-to-texture support;
+the strict readback test continues to reject CPU readback. The rerun passed
+451/451. The full public suite logged optional format-mip skips; they were not
+counted as execution evidence for either new feature. Historical FL9_1 drivers,
+Lumia/CoreWindow runtime, and physical device-loss recovery remain unverified.
+
+Next contained shader candidate: permit one same-image implicit sample in the
+existing restricted `textureNumLevels` fragment emulation, after matching
+Core/Naga/HAL identity proofs. Keep general texture queries disabled.
+
 ## Explicit timestamps inside FL9_1 passes — 2026-11-09
 
 Checkpoint: `af1f5d7ac` (`dx11: support FL9_1 timestamps inside passes`).
