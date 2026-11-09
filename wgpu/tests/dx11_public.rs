@@ -6556,6 +6556,242 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
 }
 
 #[test]
+fn public_dx11_color_write_masks_preserve_disabled_channels_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let rgba_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    let required_usages = TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC;
+    if !rgba_features.allowed_usages.contains(required_usages) {
+        assert!(
+            !required,
+            "strict mode requires RGBA8Unorm render and copy-source support: {rgba_features:?}"
+        );
+        println!("SKIP: RGBA8Unorm render and copy-source usages are unavailable");
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=public color-write-mask transitions",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 color-write-mask test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 color-write-mask shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.75, 0.25, 0.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let masks = [
+        ("ALL", ColorWrites::ALL),
+        ("RED", ColorWrites::RED),
+        ("GREEN", ColorWrites::GREEN),
+        ("BLUE", ColorWrites::BLUE),
+        ("ALPHA", ColorWrites::ALPHA),
+        ("empty", ColorWrites::empty()),
+    ];
+    let pipelines: Vec<_> = masks
+        .iter()
+        .map(|(name, write_mask)| {
+            device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some(*name),
+                layout: None,
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some("vs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    buffers: &vertex_buffers,
+                },
+                primitive: PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    targets: &[Some(ColorTargetState {
+                        format: TextureFormat::Rgba8Unorm,
+                        blend: None,
+                        write_mask: *write_mask,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        })
+        .collect();
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 color-write-mask fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map color-write-mask triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 color-write-mask target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: required_usages,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 color-write-mask readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 color-write-mask commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 color-write-mask transitions"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 32.0 / 255.0,
+                        g: 64.0 / 255.0,
+                        b: 96.0 / 255.0,
+                        a: 128.0 / 255.0,
+                    }),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        for (column, pipeline) in pipelines.iter().enumerate() {
+            pass.set_scissor_rect(column as u32, 0, 1, 8);
+            pass.set_pipeline(pipeline);
+            pass.draw(0..3, 0..1);
+        }
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public FL9_1 color-write-mask readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("color-write-mask readback callback")
+        .expect("map color-write-mask readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        let expected_by_column: [[u8; 4]; 8] = [
+            [255, 191, 64, 0],
+            [255, 64, 96, 128],
+            [32, 191, 96, 128],
+            [32, 64, 64, 128],
+            [32, 64, 96, 0],
+            [32, 64, 96, 128],
+            [32, 64, 96, 128],
+            [32, 64, 96, 128],
+        ];
+        for y in 0..8 {
+            for (x, expected) in expected_by_column.iter().enumerate() {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "color-write-mask pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: public FL9_1 ALL/RED/GREEN/BLUE/ALPHA/empty write-mask transitions preserved disabled channels and matched all 64 pixels"
+    );
+}
+
+#[test]
 fn public_dx11_scissor_and_viewport_validation_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
