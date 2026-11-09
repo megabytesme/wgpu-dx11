@@ -5,15 +5,16 @@
 The opt-in public D3D11 path is substantially usable for a restricted FL9_1
 graphics subset, but the completion mission remains partial. It is excluded
 from default backend selection. The latest verified code checkpoint is
-`b93747fb4` (`dx11: emulate FL9_1 vertex_index for line strips`). The emulated
-`vertex_index` subset now includes TriangleList, PointList, LineList and
-LineStrip; TriangleStrip remains rejected. Strict RTX 3090 Ti readback passed
-at requested/actual FL9_1 for direct and restart-separated indexed LineStrip,
-including positive and negative base vertices and wide-index Gather. The
-private HAL suite passed 438/438, strict public D3D11 passed 103/103, Core
-fixtures passed 115/115 and DX12 Core regression passed 106/106. Full commands
-and warnings are recorded in `FL9_1_PROGRESS.md`. This remains a restricted
-incremental graphics subset, not mission completion.
+`90026ebf3` (`dx11: validate indexed extents and padded volume uploads`). The
+HAL index remap planners no longer impose an extra four-byte copied-extent
+rule, while retaining offset, stride and bounds checks. A strict private test
+verified a padded nonzero-offset partial 3D volume upload by sampling the
+whole target at forced FL9_1. The private HAL suite passed 441/441 and strict
+public D3D11 passed 103/103. The preceding checkpoint `b93747fb4` added
+LineStrip to the emulated `vertex_index` subset; TriangleList, PointList,
+LineList and LineStrip are supported, while TriangleStrip remains rejected.
+Full commands and warnings are recorded in `FL9_1_PROGRESS.md`. This remains
+a restricted incremental graphics subset, not mission completion.
 
 The Lumia Device Portal retry for `/api/os/devicefamily` timed out. CoreWindow
 surface capabilities remain withheld, and no Lumia runtime result is claimed.

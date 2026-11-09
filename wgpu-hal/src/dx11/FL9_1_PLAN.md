@@ -1,5 +1,23 @@
 # FL9_1 completion plan
 
+## Latest verified increment — indexed byte extents and padded volume upload — 2026-11-09 — `90026ebf3`
+
+Indexed rebase, gather, point and strip planners now accept a two-byte copied
+vertex extent without adding a four-byte size-alignment assumption. Offset,
+stride, nonzero extent, bounds and checked arithmetic validation remain.
+Synthetic planner coverage exercises native Uint16, Window, Gather, indexed
+lines and strips. The RTX 3090 Ti does not report optional sub-four-byte IA
+formats at forced FL9_1, so positive hardware execution of that format path
+remains unavailable.
+
+A strict private HAL test uploads an offset and padded 2×2×2 RGBA8 region into
+a 4×4×4 volume at a nonzero origin, samples all four slices to an 8×8 target,
+and checks eight written voxels, 56 initialized untouched voxels and padding.
+It passed on the RTX 3090 Ti at requested/actual FL9_1. The HAL suite passed
+441/441 and strict public D3D11 passed 103/103. See `FL9_1_PROGRESS.md` for
+commands, Clippy warnings and exact output. 3D copy and readback remain
+unavailable under the FL9_1 contract.
+
 ## Latest verified implementation — `vertex_index` with LineStrip — 2026-11-08 — `b93747fb4`
 
 The working tree adds LineStrip to the existing emulated `vertex_index`

@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## Two-byte indexed vertex extents and padded 3D upload — 2026-11-09 — pending checkpoint
+## Two-byte indexed vertex extents and padded 3D upload — 2026-11-09 — `90026ebf3`
 
 Removed an unjustified four-byte copied-extent requirement from indexed
 rebase, line/strip, point and triangle-strip planner paths. The planners still
