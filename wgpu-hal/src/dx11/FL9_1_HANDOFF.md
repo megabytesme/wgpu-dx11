@@ -1,6 +1,6 @@
 # FL9_1 handoff
 
-## Latest verified test coverage — indexed LineStrip restart render bundles — 2026-11-09
+## Latest verified test coverage — indexed LineStrip restart render bundles — 2026-11-09 — `42cecc33690e20c789e1aa59bdb0dcf28283fa86`
 
 The public strict test `public_dx11_indexed_line_strip_restart_render_bundle_at_fl91`
 now checks two consecutive restart-separated indexed LineStrip bundles (Uint16

@@ -1,6 +1,6 @@
 # FL9_1 completion plan
 
-## Latest verified coverage increment — indexed LineStrip restart bundles — 2026-11-09
+## Latest verified coverage increment — indexed LineStrip restart bundles — 2026-11-09 — `42cecc33690e20c789e1aa59bdb0dcf28283fa86`
 
 Added a strict public regression that executes consecutive indexed LineStrip
 render bundles at forced FL9_1. The first bundle uses Uint16 indices and draws

@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## Indexed LineStrip restart in public render bundles — 2026-11-09
+## Indexed LineStrip restart in public render bundles — 2026-11-09 — `42cecc33690e20c789e1aa59bdb0dcf28283fa86`
 
 Added `public_dx11_indexed_line_strip_restart_render_bundle_at_fl91`. It
 submits consecutive render bundles using Uint16 and Uint32 indexed LineStrip
@@ -31,6 +31,9 @@ git diff --check
 This is a targeted lifecycle/command coverage increment. The broader
 operation-by-operation Core/HAL audit, historical FL9_1 drivers, Lumia ARM32/
 CoreWindow execution and physical device-removal recovery remain unverified.
+Next task: verify the already implemented constant/slope depth-bias path through
+public Core pipeline creation and render/readback, including rejection of the
+unsupported nonzero clamp descriptor.
 
 ## Depth-only multisample pipelines — 2026-11-09 — `dbfb26b41`
 
