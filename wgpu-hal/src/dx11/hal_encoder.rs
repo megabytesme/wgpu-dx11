@@ -1535,8 +1535,12 @@ impl crate::CommandEncoder for CommandEncoder {
             if vertex_count < 2 {
                 return;
             }
+            if uses_vertex_index && vertex_index.is_none() {
+                self.reject();
+                return;
+            }
             let max_vertices = hardware.max_direct_line_strip_vertices_per_draw();
-            for (_, _, offset, stride) in &mut vertices {
+            for (_, _, offset, stride) in &vertices {
                 let byte_offset =
                     |index: u32| super::command::strip_vertex_offset(*offset, *stride, index).ok();
                 let start = byte_offset(first_vertex);
@@ -1547,7 +1551,6 @@ impl crate::CommandEncoder for CommandEncoder {
                     self.reject();
                     return;
                 };
-                *offset = start;
             }
             let Some(binding_commands) = render.binding_commands() else {
                 self.reject();
@@ -1564,8 +1567,15 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             self.record(NativeCommand::DrawLineStrip {
                 vertices,
+                first_vertex,
                 count: vertex_count,
                 max_vertices,
+                max_vertex_index: hardware.max_vertex_index,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instances: instance_count,
                 instance_bindings,
             });
@@ -1858,6 +1868,10 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
+            if uses_vertex_index && vertex_index.is_none() {
+                self.reject();
+                return;
+            }
             if !render.pipeline
                 || render.strip_index_format != Some(index.format())
                 || (render.viewport_remap
@@ -1925,6 +1939,11 @@ impl crate::CommandEncoder for CommandEncoder {
                 count: index_count,
                 base_vertex,
                 max_indices,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instances: instance_count,
                 instance_bindings,
             });

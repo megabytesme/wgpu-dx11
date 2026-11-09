@@ -11496,6 +11496,10 @@ fn public_dx11_vertex_index_point_list_at_fl91() {
         .get_downlevel_capabilities()
         .limits
         .supports_vertex_index_topology(PrimitiveTopology::PointList));
+    assert!(adapter
+        .get_downlevel_capabilities()
+        .limits
+        .supports_vertex_index_topology(PrimitiveTopology::LineStrip));
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=vertex_index point-list emulation",
         info.name, info.vendor, info.device, info.driver_info
@@ -18645,6 +18649,297 @@ fn public_dx11_vertex_index_line_list_at_fl91() {
 }
 
 #[test]
+fn public_dx11_vertex_index_line_strip_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=direct batched and indexed restart-separated LineStrip vertex_index",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 LineStrip vertex-index emulation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 LineStrip vertex-index shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                @vertex fn vs_direct(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let id = f32(index);
+                    let left = id <= 165534.0;
+                    return vec4f(select(0.875, -0.875, left), -0.6875, 0.5, 1.0);
+                }
+                @vertex fn vs_u16(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let id = f32(index);
+                    let first = id >= 100.0 && id <= 102.0;
+                    let second = id >= 200.0 && id <= 202.0;
+                    let start = id == 100.0 || id == 200.0;
+                    let end = id == 102.0 || id == 202.0;
+                    let x = select(select(0.0, 0.875, end), -0.875, start);
+                    let y = select(2.0, select(-0.4375, -0.1875, second), first || second);
+                    return vec4f(x, y, 0.5, 1.0);
+                }
+                @vertex fn vs_u32(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let id = f32(index);
+                    let first = id >= 300.0 && id <= 302.0;
+                    let second = id >= 400.0 && id <= 402.0;
+                    let third = id >= 500.0 && id <= 502.0;
+                    let start = id == 300.0 || id == 400.0 || id == 500.0;
+                    let end = id == 302.0 || id == 402.0 || id == 502.0;
+                    let x = select(select(0.0, 0.875, end), -0.875, start);
+                    let y = select(2.0, select(0.3125, 0.0625, second), first || second);
+                    let y_with_third = select(y, 0.5625, third);
+                    return vec4f(x, y_with_third, 0.5, 1.0);
+                }
+                @vertex fn vs_gather(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let id = f32(index);
+                    let low = id == 3.0;
+                    let high = id == 70000.0;
+                    let x = select(2.0, select(0.875, -0.875, low), low || high);
+                    let y = select(2.0, 0.6875, low || high);
+                    return vec4f(x, y, 0.5, 1.0);
+                }
+                @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }
+            "#
+            .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let make_pipeline = |entry_point, strip_index_format| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 LineStrip vertex-index pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::LineStrip,
+                strip_index_format,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let direct_pipeline = make_pipeline("vs_direct", None);
+    let u16_pipeline = make_pipeline("vs_u16", Some(IndexFormat::Uint16));
+    let u32_pipeline = make_pipeline("vs_u32", Some(IndexFormat::Uint32));
+    let gather_pipeline = make_pipeline("vs_gather", Some(IndexFormat::Uint32));
+
+    let u16_indices = [90u16, 91, 92, u16::MAX - 10, 190, 191, 192, 0];
+    let u16_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 u16 LineStrip indices with restart"),
+        size: std::mem::size_of_val(&u16_indices) as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    u16_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped u16 LineStrip indices")
+        .copy_from_slice(bytemuck::cast_slice(&u16_indices));
+    u16_buffer.unmap();
+
+    let u32_indices = [
+        290u32,
+        291,
+        292,
+        u32::MAX - 10,
+        390,
+        391,
+        392,
+        510,
+        511,
+        512,
+    ];
+    let u32_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 u32 LineStrip indices with restart and signed base"),
+        size: std::mem::size_of_val(&u32_indices) as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    u32_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped u32 LineStrip indices")
+        .copy_from_slice(bytemuck::cast_slice(&u32_indices));
+    u32_buffer.unmap();
+
+    let gather_indices = [70_000u32, 3];
+    let gather_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 u32 LineStrip indices forcing Gather remapping"),
+        size: std::mem::size_of_val(&gather_indices) as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    gather_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped LineStrip Gather indices")
+        .copy_from_slice(bytemuck::cast_slice(&gather_indices));
+    gather_buffer.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 LineStrip vertex-index target"),
+        size: Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 LineStrip vertex-index readback"),
+        size: 16 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 LineStrip vertex-index encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 direct and indexed LineStrip pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&direct_pipeline);
+        pass.draw(100_000..165_537, 0..1);
+
+        pass.set_pipeline(&u16_pipeline);
+        pass.set_index_buffer(u16_buffer.slice(..), IndexFormat::Uint16);
+        pass.draw_indexed(0..7, 10, 0..1);
+
+        pass.set_pipeline(&u32_pipeline);
+        pass.set_index_buffer(u32_buffer.slice(..), IndexFormat::Uint32);
+        pass.draw_indexed(0..7, 10, 0..1);
+        pass.draw_indexed(7..10, -10, 0..1);
+
+        pass.set_pipeline(&gather_pipeline);
+        pass.set_index_buffer(gather_buffer.slice(..), IndexFormat::Uint32);
+        pass.draw_indexed(0..2, 0, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(16),
+            },
+        },
+        Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 LineStrip vertex-index execution");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("LineStrip vertex-index map callback")
+        .expect("map LineStrip vertex-index output");
+    let data = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped LineStrip pixels");
+    let expected_rows = [13usize, 11, 9, 7, 5, 3, 2];
+    for row in expected_rows {
+        let line_pixels = (0..16)
+            .filter(|x| {
+                let offset = row * 256 + x * 4;
+                data[offset] > 200 && data[offset + 1] < 8 && data[offset + 2] < 8
+            })
+            .count();
+        assert!(
+            line_pixels >= 12,
+            "LineStrip vertex_index output on row {row} should cover the expected line, found {line_pixels} red pixels"
+        );
+    }
+    for row in [0usize, 1, 4, 6, 8, 10, 12, 14, 15] {
+        for x in 0..16 {
+            let offset = row * 256 + x * 4;
+            assert_eq!(
+                &data[offset..offset + 4],
+                &[0, 0, 0, 255],
+                "unexpected line on unclaimed row {row}, column {x}"
+            );
+        }
+    }
+    println!(
+        "PASS: direct batched LineStrip first_vertex=100000, Uint16/Uint32 restart-separated strips with signed base_vertex, and a wide-index Gather pair produced all seven independent vertex_index-driven readback lines at forced FL9_1"
+    );
+}
+
+#[test]
 fn public_dx11_line_list_restores_user_vertex_stream_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -19073,19 +19368,21 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         &no_buffers,
         PrimitiveTopology::LineList,
     ));
-
-    for topology in [
+    drop(create_pipeline(
+        "vertex_index",
+        &no_buffers,
         PrimitiveTopology::LineStrip,
-        PrimitiveTopology::TriangleStrip,
-    ] {
-        let scope = device.push_error_scope(ErrorFilter::Validation);
-        drop(create_pipeline("vertex_index", &no_buffers, topology));
-        let error = poll_ready(scope.pop()).expect("strip vertex_index must fail core validation");
-        assert!(
-            error.to_string().contains(&format!("{topology:?}")),
-            "validation must identify the unsupported topology: {error}"
-        );
-    }
+    ));
+
+    let topology = PrimitiveTopology::TriangleStrip;
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    drop(create_pipeline("vertex_index", &no_buffers, topology));
+    let error =
+        poll_ready(scope.pop()).expect("TriangleStrip vertex_index must fail core validation");
+    assert!(
+        error.to_string().contains(&format!("{topology:?}")),
+        "validation must identify the unsupported topology: {error}"
+    );
 
     let scope = device.push_error_scope(ErrorFilter::Validation);
     drop(create_pipeline(
@@ -19098,7 +19395,7 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         "LineList pipelines without vertex_index remain supported"
     );
     println!(
-        "PASS: public core accepted TriangleList, LineList and PointList vertex builtins, rejected strips and hidden-slot exhaustion, and retained ordinary pipelines"
+        "PASS: public core accepted TriangleList, PointList, LineList and LineStrip vertex builtins, rejected TriangleStrip and hidden-slot exhaustion, and retained ordinary pipelines"
     );
 }
 

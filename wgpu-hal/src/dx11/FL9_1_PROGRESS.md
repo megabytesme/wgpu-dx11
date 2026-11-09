@@ -1,5 +1,31 @@
 # FL9_1 progress
 
+## `vertex_index` on LineStrip — 2026-11-08 — pending checkpoint
+
+The selected FL9_1 projection and HAL now permit LineStrip in the existing
+emulated `vertex_index` subset. Direct draw replay preserves `first_vertex`
+through native strip batching; indexed Uint16/Uint32 strips split restart runs
+after signed `base_vertex` resolution and attach matching IDs to compact
+Window or wide-pair Gather segments. Temporary and hidden input-assembler
+streams are restored after replay. TriangleStrip remains rejected because its
+expansion must preserve strip winding and is a separate implementation task.
+
+The strict public GPU test used the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1 and
+software=false. Direct batched `first_vertex=100000`, Uint16 and Uint32
+restart-separated strips with positive and negative base vertices, and a wide
+Gather pair produced seven independently checked red readback lines. The
+private HAL suite passed 438/438; the strict public D3D11 target passed
+103/103; the Core fixture suite passed 115/115; and the DX12 Core suite passed
+106/106. The DX12 build emitted three unused-variable warnings in
+`validation.rs`. Formatting and non-denying Clippy checks passed. Clippy
+reported existing HAL warnings (including queue qualifications, test range
+literals and argument counts), plus one single-element loop from this
+increment; the loop was corrected. The public test target retains one existing
+`std::collections::HashMap` lint. The full strict public run reports some
+optional capability probes as SKIP; those do not count as hardware passes.
+Historical FL9_1 hardware is not simulated by this modern adapter.
+
 ## `vertex_index` on LineList — 2026-11-08 — `0835c23cf`
 
 Core's selected-topology projection and the HAL now permit LineList in the

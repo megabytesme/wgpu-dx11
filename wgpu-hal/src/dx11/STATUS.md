@@ -3,13 +3,14 @@ Latest shader-input status: `instance_index` and a restricted `vertex_index`
 subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
 IA semantic with direct identity IDs up to 65,534 and temporary remapped streams
 for larger IDs, including nonindexed `first_vertex`. It is supported for
-TriangleList, PointList and LineList, with direct `u32`-to-`f32` use only.
-LineList preserves pairs and effective indexed IDs across Window/Gather
-remapping and restores changed IA vertex slots. `DownlevelLimits` reports this
-topology mask; core and HAL continue to reject LineStrip and TriangleStrip.
-Strict RTX 3090 Ti readback covers direct, Uint16 and Uint32 LineList and
-same-pass vertex-stream transitions. See `TESTING.md` for exact commands and
-results.
+TriangleList, PointList, LineList and LineStrip, with direct `u32`-to-`f32`
+use only. LineList preserves pairs and effective indexed IDs across
+Window/Gather remapping and restores changed IA vertex slots. LineStrip keeps
+`first_vertex` through direct batching and maps indexed restart runs and wide
+Gather pairs to the same hidden ID stream. `DownlevelLimits` reports these four
+topologies; TriangleStrip remains rejected by core and HAL. Strict RTX 3090 Ti
+readback covers direct and indexed strips, signed base vertex, primitive
+restart and wide-span Gather. See `TESTING.md` for exact commands and results.
 # Direct3D 11 backend status
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an
@@ -245,8 +246,9 @@ query and backend path are available.
 An eleventh strict test verifies emulated per-instance vertex streams and a
 nonzero first-instance range (20 green, 20 yellow and 472 blue pixels). A later
 strict test verifies WGSL `instance_index` through the host-updated FL9_1
-constant path; strict tests now verify TriangleList, PointList and LineList
-`vertex_index` emulation.
+constant path; strict tests now verify TriangleList, PointList, LineList and
+LineStrip `vertex_index` emulation, including signed-base and wide-span restart
+handling.
 
 A twelfth strict public test verifies the FL9_1 aggregate fragment uniform
 budget across two sparse bindings: all 32 float4 vectors contribute to the

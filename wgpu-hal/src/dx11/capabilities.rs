@@ -498,6 +498,8 @@ impl BackendCapabilities {
             wgt::PrimitiveTopology::PointList,
         ) | wgt::DownlevelLimits::vertex_index_topology_bit(
             wgt::PrimitiveTopology::LineList,
+        ) | wgt::DownlevelLimits::vertex_index_topology_bit(
+            wgt::PrimitiveTopology::LineStrip,
         ),
         instance_index_input: true,
         vertex_uniform_array_indexing: true,
@@ -2612,15 +2614,14 @@ mod tests {
             .downlevel
             .limits
             .supports_vertex_index_topology(wgt::PrimitiveTopology::LineList));
-        for topology in [
-            wgt::PrimitiveTopology::LineStrip,
-            wgt::PrimitiveTopology::TriangleStrip,
-        ] {
-            assert!(!exposed
-                .downlevel
-                .limits
-                .supports_vertex_index_topology(topology));
-        }
+        assert!(exposed
+            .downlevel
+            .limits
+            .supports_vertex_index_topology(wgt::PrimitiveTopology::LineStrip));
+        assert!(!exposed
+            .downlevel
+            .limits
+            .supports_vertex_index_topology(wgt::PrimitiveTopology::TriangleStrip));
         assert!(exposed.downlevel.limits.instance_index_input);
         assert!(exposed.downlevel.limits.vertex_uniform_array_indexing);
         assert!(!exposed.downlevel.limits.texture_query);

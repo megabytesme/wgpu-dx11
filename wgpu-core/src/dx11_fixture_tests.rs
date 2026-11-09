@@ -5805,10 +5805,16 @@ fn render_triangle(
         );
         global.render_pipeline_drop(line_pipeline);
 
-        for topology in [
-            wgt::PrimitiveTopology::LineStrip,
-            wgt::PrimitiveTopology::TriangleStrip,
-        ] {
+        vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::LineStrip;
+        let (line_strip_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            error.is_none(),
+            "FL9_1 core and HAL must accept LineStrip vertex_index: {error:?}"
+        );
+        global.render_pipeline_drop(line_strip_pipeline);
+
+        for topology in [wgt::PrimitiveTopology::TriangleStrip] {
             vertex_builtin_descriptor.primitive.topology = topology;
             let (invalid_pipeline, error) =
                 global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);

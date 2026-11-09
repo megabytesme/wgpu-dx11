@@ -1,6 +1,19 @@
 # FL9_1 completion plan
 
-## Latest verified increment — `vertex_index` with LineList — 2026-11-08 — `0835c23cf`
+## Latest implementation — `vertex_index` with LineStrip — 2026-11-08
+
+The working tree adds LineStrip to the existing emulated `vertex_index`
+subset. Direct draws preserve `first_vertex` through native strip batching;
+indexed Uint16/Uint32 draws split restart runs after signed base-vertex
+resolution and attach corresponding IDs to compact Window or wide-pair Gather
+segments. Temporary and hidden IA streams are restored after replay. A strict
+RTX 3090 Ti test passes direct batching, both index widths, restart, positive
+and negative base vertex, and a wide-index Gather pair at requested/actual
+FL9_1. The private HAL suite passed 438/438, the strict public D3D11 target
+passed 103/103, the Core fixture suite passed 115/115, and the DX12 Core suite
+passed 106/106. TriangleStrip remains rejected.
+
+## Previous verified increment — `vertex_index` with LineList — 2026-11-08 — `0835c23cf`
 
 The selected FL9_1 projection and defensive HAL gate now permit emulated
 `vertex_index` for LineList in addition to TriangleList and PointList. Direct
@@ -263,8 +276,8 @@ unimplemented uint texture-load path and a positive selected format query, so
 it remains deferred rather than exposed through the current DSV.
 
 Latest shader increment: `instance_index` uses a host-updated b13 value, and
-`vertex_index` uses a host-generated float IA stream for TriangleList and
-PointList pipelines. `DownlevelLimits::vertex_index_topology_mask` communicates
+`vertex_index` uses a host-generated float IA stream for TriangleList,
+PointList, LineList and LineStrip pipelines. `DownlevelLimits::vertex_index_topology_mask` communicates
 that subset to core, which rejects other topologies before HAL pipeline
 creation. Core and HAL acceptance/rejection were exercised in the strict RTX
 fixture and public error-scope tests. Public readback verifies indexed and
@@ -742,9 +755,11 @@ entry-point selection are covered by a strict public test.
    direct draws. Indexed LineStrip and TriangleStrip now read the execution-time
    index contents, split effective restart runs, and replay matching per-run
    nonindexed strips when no vertex-rate inputs exist. Strict tests cover both
-   index widths, layouts and strip topologies. PointList retains its separately
-   tested instance-only path. `vertex_index` and `instance_index` remain
-   unsupported.
+    index widths, layouts and strip topologies. PointList retains its separately
+    tested instance-only path. Emulated `vertex_index` covers TriangleList,
+    PointList, LineList and LineStrip; TriangleStrip remains rejected.
+    `instance_index` is limited to direct `u32`-to-`f32` use, with general
+    integer semantics still unavailable.
    Broader instance semantics and indirect draws remain unavailable. Microsoft
    marks native `DrawInstancedIndirect` and `DrawIndexedInstancedIndirect` as
    unsupported at 9_1; wgpu-core's `INDIRECT_EXECUTION` flag is also coupled to

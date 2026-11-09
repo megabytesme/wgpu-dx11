@@ -303,8 +303,11 @@ pub(super) enum NativeCommand {
     },
     DrawLineStrip {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        first_vertex: u32,
         count: u32,
         max_vertices: u32,
+        max_vertex_index: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -370,6 +373,7 @@ pub(super) enum NativeCommand {
         count: u32,
         base_vertex: i32,
         max_indices: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -1225,28 +1229,83 @@ impl CommandBuffer {
                     }
                     NativeCommand::DrawLineStrip {
                         vertices,
+                        first_vertex,
                         count,
                         max_vertices,
+                        max_vertex_index,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => {
                         instance_bindings.validate(*instances)?;
-                        line_strip_batches(*count, *max_vertices, 1, |first, _| {
+                        first_vertex
+                            .checked_add(count.saturating_sub(1))
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        let mut restore = VertexBufferRestore::new(context);
+                        for (slot, buffer, offset, stride) in vertices {
+                            restore.add(*slot, buffer.clone(), *stride, *offset)?;
+                        }
+                        if let Some((slot, identity)) = vertex_index {
+                            restore.add(*slot, identity.clone(), 4, 0)?;
+                        }
+                        line_strip_batches(*count, *max_vertices, 1, |first, count| {
+                            let absolute_first = first_vertex
+                                .checked_add(first)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            absolute_first
+                                .checked_add(count - 1)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                             for (_, _, offset, stride) in vertices {
-                                strip_vertex_offset(*offset, *stride, first)?;
+                                strip_vertex_offset(*offset, *stride, absolute_first)?;
                             }
                             Ok(())
                         })?;
                         for instance in 0..*instances {
                             instance_bindings.bind(context, instance)?;
                             line_strip_batches(*count, *max_vertices, 1, |first, count| {
+                                let absolute_first = first_vertex
+                                    .checked_add(first)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                let last = absolute_first
+                                    .checked_add(count - 1)
+                                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                                 for (slot, buffer, base, stride) in vertices {
-                                    let offset = strip_vertex_offset(*base, *stride, first)?;
+                                    let offset =
+                                        strip_vertex_offset(*base, *stride, absolute_first)?;
                                     context.IASetVertexBuffers(
                                         *slot,
                                         1,
                                         Some(&Some(buffer.clone())),
                                         Some(stride),
+                                        Some(&offset),
+                                    );
+                                }
+                                if let Some((slot, identity)) = vertex_index {
+                                    let (buffer, offset) = if last <= *max_vertex_index {
+                                        let offset = absolute_first
+                                            .checked_mul(4)
+                                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                                        (identity.clone(), offset)
+                                    } else {
+                                        let mut ids = Vec::new();
+                                        ids.try_reserve_exact(count as usize)
+                                            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                                        ids.extend(
+                                            (0..count).map(|i| u64::from(absolute_first + i)),
+                                        );
+                                        (
+                                            super::hal_index::create_vertex_index_buffer(
+                                                &context.GetDevice()?,
+                                                &ids,
+                                            )?,
+                                            0,
+                                        )
+                                    };
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer)),
+                                        Some(&4),
                                         Some(&offset),
                                     );
                                 }
@@ -1381,6 +1440,7 @@ impl CommandBuffer {
                         count,
                         base_vertex,
                         max_indices,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => binding.draw_line_strips(
@@ -1391,6 +1451,7 @@ impl CommandBuffer {
                         vertices,
                         (*max_indices, *instances),
                         instance_bindings,
+                        vertex_index.as_ref(),
                     )?,
                     NativeCommand::DrawIndexedTriangleStrips {
                         binding,
