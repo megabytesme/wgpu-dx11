@@ -6208,6 +6208,17 @@ fn render_triangle(
         );
         global.render_pipeline_drop(rgb_only_pipeline);
 
+        alpha_target.write_mask = wgt::ColorWrites::ALPHA;
+        pipeline_descriptor.fragment.as_mut().unwrap().targets =
+            Cow::Owned(vec![Some(alpha_target.clone())]);
+        let (alpha_only_pipeline, alpha_only_error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            alpha_only_error.is_none(),
+            "alpha-only blending must not require separate alpha: {alpha_only_error:?}"
+        );
+        global.render_pipeline_drop(alpha_only_pipeline);
+
         alpha_target.write_mask = wgt::ColorWrites::ALL;
         pipeline_descriptor.fragment.as_mut().unwrap().targets =
             Cow::Owned(vec![Some(alpha_target)]);
