@@ -1,5 +1,27 @@
 # FL9_1 completion plan
 
+## Latest verified shader-query increment — selected 2D dimensions helper plus sample — 2026-11-09
+
+The selected 2D fragment `textureDimensions` helper path now permits one
+level-less implicit sample of the same texture in the entry point. Naga, Core
+and private HAL use entry-point-specific proofs; FXC compiles the resulting
+shader for `ps_4_0_level_9_1`. The helper remains one no-argument,
+straight-line call returning dimensions for direct conversion to `vec2f`.
+Only one same-image sample with a group-zero non-comparison sampler is added;
+explicit LOD, helper sampling, extra resources, control flow, `select` and
+other image operations remain rejected. General `texture_query` stays false.
+
+Strict public execution on the physical RTX 3090 Ti requested and selected
+FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false). It switched
+between 4x2 and 8x4 views and verified all 64 output pixels, with expected
+colors `[50,40,80,255]` and `[40,60,160,255]`. The complete private HAL suite
+passed 460/460, full public D3D11 passed 116/116, Naga passed 155/155, Core
+passed 124/124, and Core DX12 passed 115/115. See `FL9_1_PROGRESS.md` for the
+exact commands. The next bounded shader candidate is the analogous selected
+2D `textureNumLevels` helper plus same-image sample; continue auditing broader
+public contract and resource/format coverage in parallel. Historical FL9_1
+drivers and Lumia/CoreWindow execution remain unverified.
+
 ## Latest verified shader-query helper increment — 2026-11-09
 
 The narrow 2D fragment `textureNumLevels` path now permits one selected,

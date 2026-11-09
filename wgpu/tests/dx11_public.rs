@@ -29185,6 +29185,15 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_and_sample_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true);
+}
+
+fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bool) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -29205,8 +29214,13 @@ fn public_dx11_fragment_texture_dimensions_and_sample_at_fl91() {
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(downlevel.limits.texture_dimensions_2d_float_fragment);
     assert!(!downlevel.limits.texture_query);
+    let operation = if use_helper {
+        "fragment textureDimensions helper plus implicit textureSample"
+    } else {
+        "fragment textureDimensions plus implicit textureSample"
+    };
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions plus implicit textureSample",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation={operation}",
         info.name, info.vendor, info.device, info.driver_info
     );
 
@@ -29238,10 +29252,21 @@ fn public_dx11_fragment_texture_dimensions_and_sample_at_fl91() {
             .into(),
         ),
     });
-    let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 dimensions and sample fragment shader"),
-        source: ShaderSource::Wgsl(
-            r#"
+    let fragment_source = if use_helper {
+        r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn query_dimensions() -> vec2u {
+                return textureDimensions(image);
+            }
+            @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                let sampled = textureSample(image, smp, uv);
+                return sampled * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
+            }
+        "#
+    } else {
+        r#"
             @group(0) @binding(7) var image: texture_2d<f32>;
             @group(0) @binding(42) var smp: sampler;
             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -29249,9 +29274,11 @@ fn public_dx11_fragment_texture_dimensions_and_sample_at_fl91() {
                 let sampled = textureSample(image, smp, uv);
                 return sampled * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
             }
-            "#
-            .into(),
-        ),
+        "#
+    };
+    let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 dimensions and sample fragment shader"),
+        source: ShaderSource::Wgsl(fragment_source.into()),
     });
     let make_texture = |label, width, height, color: [u8; 4]| {
         let texture = device.create_texture(&TextureDescriptor {

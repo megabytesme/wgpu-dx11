@@ -3269,6 +3269,71 @@ mod tests {
     }
 
     #[test]
+    fn fl91_texture_dimensions_helper_with_implicit_sample_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn dimensions_helper() -> vec2u { return textureDimensions(image); }
+            @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(dimensions_helper());
+                return textureSample(image, smp, uv) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 6,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texture_dimensions_binding: Some(texture_binding),
+                texture_dimensions_helper: true,
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate dimensions helper with one implicit sample");
+        assert!(source.contains("dimensions_helper("), "{source}");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(s3)"), "{source}");
+        assert!(source.contains("int2(naga_fl9_load_size.xy)"), "{source}");
+        assert!(source.contains(".Sample("), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 textureDimensions helper/sample HLSL failed FXC: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn fl91_3d_texture_dimensions_and_implicit_sample_compile() {
         let module = naga::front::wgsl::parse_str(
             "@group(0) @binding(7) var volume: texture_3d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(volume)); return textureSample(volume, smp, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 2.0, 8.0), 1.0); }",

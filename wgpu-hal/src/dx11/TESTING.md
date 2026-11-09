@@ -3534,12 +3534,30 @@ cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgs
 
 The shader may combine one level-less `textureDimensions(image)` with one
 implicit `textureSample(image, sampler, uv)` of the same group-0 2D float
-texture. The selected-entry proof rejects explicit sample/query mip levels,
-helper calls, `select`, extra bound resources and other image operations. The
-strict RTX 3090 Ti run requested and selected FL9_1, switched between 4x2 and
-8x4 views with different texel colors, and matched all 64 readback pixels.
-This is narrow query-plus-sample coverage; general texture queries remain
-disabled.
+texture. The direct selected-entry form rejects explicit sample/query mip
+levels, helper calls, `select`, extra bound resources and other image
+operations. A separate helper form permits one no-argument, straight-line
+helper returning the dimensions for direct `vec2f` conversion, alongside one
+direct implicit sample of that same image with one group-0 non-comparison
+sampler. The helper cannot sample, call other functions or use control flow;
+extra resources and other image operations remain rejected.
+
+Run the Naga, Core, HAL and FXC proofs, then require the physical GPU test:
+
+```powershell
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_dimensions_helper_can_sample_same_texture
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib fl9_texture_dimensions_helper_allows_one_matching_implicit_sample
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions_helper_accepts_one_same_texture_sample
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_dimensions_helper_with_implicit_sample_compiles_with_fxc -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91 -- --nocapture --test-threads=1
+```
+
+The strict RTX 3090 Ti run requested and selected FL9_1, switched between 4x2
+and 8x4 views with different texel colors, and matched all 64 readback pixels:
+`[50,40,80,255]` and `[40,60,160,255]`. The complete strict public target
+passed 116/116; its optional query-gated subcases are not counted as hardware
+evidence. General texture queries remain disabled.
 
 ### Narrow FL9_1 fragment 3D `textureDimensions`
 

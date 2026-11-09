@@ -1,5 +1,28 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — selected dimensions helper plus sample — 2026-11-09
+
+The narrow selected-entry 2D fragment `textureDimensions` helper may now
+coexist with one direct level-less implicit sample of the same texture. Naga,
+Core and HAL proofs agree on the one-helper/one-sample/resource shape, and FXC
+accepts the result under the FL9_1 pixel profile. Strict public readback on the
+RTX 3090 Ti (requested/actual FL9_1) verified all 64 pixels across a 4x2 to
+8x4 bind-group transition. Full private HAL passed 460/460, strict public
+D3D11 116/116, Naga 155/155, Core 124/124 and DX12 Core 115/115. The exact
+commands and limitations are recorded in `FL9_1_PROGRESS.md` and
+`TESTING.md`. The selected query limit remains narrow; general `texture_query`
+is disabled.
+
+The backend is useful for controlled opt-in prototypes but is not a general
+drop-in wgpu backend. Remaining work includes a systematic review/test matrix
+for public Core acceptance versus HAL execution, broader shader/resource edge
+coverage, unsupported-operation error quality, and real Lumia/CoreWindow and
+historical FL9_1 validation. Compute/UAV, ordinary arrays, 1D resources, MRT,
+occlusion queries and native 3D copy/readback remain FL9_1 hardware boundaries.
+The lead agent should continue owning cross-layer implementation, testing and
+commits; specialists are best used for parallel read-only audits and narrowly
+owned proof/test changes.
+
 ## Current coordinator checkpoint — slope bias, 3D load helpers and `mat2` inverse — 2026-11-09
 
 The public D16 depth test now verifies positive and negative slope-scaled bias

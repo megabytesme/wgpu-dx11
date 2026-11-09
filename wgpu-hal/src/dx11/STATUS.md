@@ -1278,11 +1278,15 @@ may be direct or returned by exactly one reachable, argument-free, straight-
 line helper called once. The helper cannot query a mip, use other resources or
 image operations, or call another function. Unreachable sibling helpers and
 resources are pruned from emitted HLSL. Direct query behavior, including its
-existing optional constant-mip and query-plus-one-sample forms, is unchanged;
-the helper form is level-less and query-only. HAL reuses the host-supplied
+existing optional constant-mip and query-plus-one-sample forms, is unchanged.
+The helper may now coexist with exactly one level-less implicit sample of the
+same 2D float texture in the selected entry point, using one group-0
+non-comparison sampler and a `vec2f` coordinate. The helper itself remains
+query-only; helper sampling, explicit LOD, extra resources, control flow,
+`select` and other image operations are rejected. HAL reuses the host-supplied
 dimension constant and updates it when the bound view changes. The strict RTX
-3090 Ti test exercises the helper and reads back all 64 pixels after switching
-between texture views sized 16x8 and 8x4. General texture queries remain
+3090 Ti test exercises the helper and sample after switching 4x2 and 8x4 views;
+all 64 pixels matched expected output. General texture queries remain
 unavailable.
 
 The same narrow 2D path now also allows exactly one level-less implicit

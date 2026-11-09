@@ -280,7 +280,6 @@ fn fl9_texture_dimensions_functions(
                 expression,
                 crate::Expression::Select { .. }
                     | crate::Expression::ImageQuery { .. }
-                    | crate::Expression::ImageSample { .. }
                     | crate::Expression::ImageLoad { .. }
             )
         })
@@ -382,9 +381,82 @@ fn fl9_texture_dimensions_functions(
                 multi: false
             }
         }
-    ) || module.global_variables.iter().any(|(global, variable)| {
+    ) {
+        return None;
+    }
+    let mut sampled_sampler = None;
+    for (handle, expression) in entry.function.expressions.iter() {
+        let (image, sampler, coordinate) = match *expression {
+            crate::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                level: crate::SampleLevel::Auto,
+                gather: None,
+                array_index: None,
+                offset: None,
+                depth_ref: None,
+                clamp_to_edge: false,
+            } => (image, sampler, coordinate),
+            crate::Expression::ImageSample { .. } => return None,
+            _ => continue,
+        };
+        if sampled_sampler.is_some()
+            || entry_info[handle].ref_count == 0
+            || !matches!(
+                entry_info[handle].ty.inner_with(&module.types),
+                TypeInner::Vector {
+                    size: crate::VectorSize::Quad,
+                    scalar: Scalar {
+                        kind: ScalarKind::Float,
+                        width: 4
+                    }
+                }
+            )
+            || !matches!(
+                entry.function.expressions[image],
+                crate::Expression::GlobalVariable(global) if global == image_handle
+            )
+            || !matches!(
+                entry.function.expressions[sampler],
+                crate::Expression::GlobalVariable(_)
+            )
+            || !matches!(
+                entry_info[coordinate].ty.inner_with(&module.types),
+                TypeInner::Vector {
+                    size: crate::VectorSize::Bi,
+                    scalar: Scalar {
+                        kind: ScalarKind::Float,
+                        width: 4
+                    }
+                }
+            )
+        {
+            return None;
+        }
+        let crate::Expression::GlobalVariable(sampler_handle) = entry.function.expressions[sampler]
+        else {
+            unreachable!()
+        };
+        let sampler_global = &module.global_variables[sampler_handle];
+        if sampler_global.space != crate::AddressSpace::Handle
+            || !matches!(
+                sampler_global.binding,
+                Some(crate::ResourceBinding { group: 0, .. })
+            )
+            || !matches!(
+                module.types[sampler_global.ty].inner,
+                TypeInner::Sampler { comparison: false }
+            )
+        {
+            return None;
+        }
+        sampled_sampler = Some(sampler_handle);
+    }
+    if module.global_variables.iter().any(|(global, variable)| {
         variable.binding.is_some()
             && global != image_handle
+            && Some(global) != sampled_sampler
             && (!entry_info[global].is_empty() || !helper_info[global].is_empty())
     }) {
         return None;
@@ -7547,6 +7619,157 @@ mod fl9_viewport_tests {
                 "{unsupported}"
             );
         }
+    }
+
+    #[test]
+    fn fl9_texture_dimensions_helper_can_sample_same_texture() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let sibling_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 2,
+        };
+        let other_texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 8,
+        };
+        let other_sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 43,
+        };
+        let extra_uniform_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 9,
+        };
+        let source = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(2) var sibling_image: texture_2d<f32>;
+            fn query_dimensions() -> vec2u { return textureDimensions(image); }
+            fn sibling_query() -> vec2u { return textureDimensions(sibling_image); }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                let sampled = textureSample(image, smp, uv);
+                return sampled * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return vec4f(vec2f(sibling_query()), 0.0, 1.0);
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_dimensions_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sibling_binding,
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("query_dimensions("), "{output}");
+        assert!(output.contains("image.Sample(smp, uv)"), "{output}");
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("int2(naga_fl9_load_size.xy)"), "{output}");
+        assert!(!output.contains("sibling_query"), "{output}");
+        assert!(!output.contains("sibling_image"), "{output}");
+        assert!(!output.contains("register(t1)"), "{output}");
+
+        let different_texture = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var other: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn query_dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                return textureSample(other, smp, uv) * vec4f(dimensions, 1.0, 1.0);
+            }
+        "#;
+        options.binding_map.insert(
+            other_texture_binding,
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+        assert!(translate(different_texture, &options, ShaderStage::Fragment).is_err());
+        options.binding_map.remove(&other_texture_binding);
+
+        let multiple_samples = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(43) var other_smp: sampler;
+            fn query_dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                let first = textureSample(image, smp, uv);
+                let second = textureSample(image, other_smp, uv);
+                return (first + second) * vec4f(dimensions, 1.0, 1.0);
+            }
+        "#;
+        options.binding_map.insert(
+            other_sampler_binding,
+            super::super::BindTarget {
+                register: 4,
+                ..Default::default()
+            },
+        );
+        assert!(translate(multiple_samples, &options, ShaderStage::Fragment).is_err());
+        options.binding_map.remove(&other_sampler_binding);
+
+        let explicit_level = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn query_dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                return textureSampleLevel(image, smp, uv, 0.0) * vec4f(dimensions, 1.0, 1.0);
+            }
+        "#;
+        assert!(translate(explicit_level, &options, ShaderStage::Fragment).is_err());
+
+        let extra_resource = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            fn query_dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                return textureSample(image, smp, uv) * tint * vec4f(dimensions, 1.0, 1.0);
+            }
+        "#;
+        options.binding_map.insert(
+            extra_uniform_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        assert!(translate(extra_resource, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]

@@ -1299,17 +1299,21 @@ level must be a non-negative literal or direct module `const`; the helper form
 is level-less only. Dimensions are relative to the bound view. A direct
 level-less query may share the entry point with exactly one implicit
 `textureSample` of that same texture and one group-0 non-comparison sampler.
-The helper form remains query-only. This permits the proven operations without
-permitting unrelated selected resources, other image operations, control
-flow, `select`, or runtime integer work. A direct query with an explicit mip
-level remains query-only. The HAL supplies
+The helper itself remains query-only, but it may coexist with exactly one
+level-less implicit sample of the same image in the selected entry point, using
+one group-0 non-comparison sampler and a `vec2f` coordinate. This permits the
+proven operations without permitting unrelated selected resources, other image
+operations, control flow, `select`, or runtime integer work. A direct query
+with an explicit mip level remains query-only. The HAL supplies
 the selected view mip's dimensions through its existing private `b13`
 emulation path and follows bind-group changes. For a level outside the view's
 mip range, WGSL permits an indeterminate result; the host supplies a safe 1x1
 value. General `texture_query` remains false, and other query forms continue to
-fail Core validation. Strict RTX 3090 Ti readback verified query-plus-sample
-co-use across a bind-group transition for all 64 pixels at requested/actual
-FL9_1. This narrow limit does not imply general WebGPU texture-query support.
+fail Core validation. Strict RTX 3090 Ti readback verified direct and helper
+query-plus-sample co-use across bind-group transitions for all 64 pixels at
+requested/actual FL9_1. Naga, Core and HAL reject helper sampling, explicit LOD,
+extra resources and additional image operations. This narrow limit does not
+imply general WebGPU texture-query support.
 
 A separate `texture_dimensions_3d_float_fragment` limit covers one direct
 fragment `textureDimensions` query on a group-0, non-array

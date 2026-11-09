@@ -1,5 +1,45 @@
 # FL9_1 progress
 
+## Selected 2D dimensions helper plus implicit sample — 2026-11-09
+
+The selected-entry 2D fragment `textureDimensions` helper path now permits
+exactly one direct level-less implicit sample of the same image. The helper
+remains one no-argument straight-line call, and its `vec2u` result must be
+directly converted to `vec2f`. Core, Naga HLSL generation and HAL enforce
+matching selected-entry resource and operation restrictions; FXC accepts the
+generated pixel shader at `ps_4_0_level_9_1`. Helper sampling, explicit LOD,
+extra bound resources, control flow, `select`, additional image operations and
+unresolved identities remain rejected. General `texture_query` stays false.
+
+Strict hardware execution selected the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+FL9_1 and verified actual FL9_1. The public WGSL shader used dimensions returned
+from the helper and the sampled texel in its color result, then changed the
+bound view from 4x2 to 8x4. Readback checked all 64 pixels against
+`[50,40,80,255]` and `[40,60,160,255]` for the two halves. This is modern
+NVIDIA evidence under a forced profile, not historical-driver evidence.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64 and offline Cargo:
+
+- New Naga, Core, HAL proof tests and FXC compilation: 1/1 each.
+- Focused strict public GPU test: 1/1; full strict public D3D11 target: 116/116.
+- Full strict private D3D11 HAL suite: 460/460.
+- Full Naga library: 155/155; full Core library: 124/124.
+- Core DX12 regression: 115/115; D3D11 HAL `cargo check` passed.
+- Clippy passed for Naga, Core, HAL and the public D3D11 test target. Existing
+  warnings remain in Naga test style, HAL style and fixture/test helpers; no
+  warning was introduced in the new proofs.
+
+The first HAL regression run caught an overbroad resource allowance that also
+accepted an unused sampler in the existing `textureNumLevels` helper case.
+The relaxation was scoped to helper-backed 2D `textureDimensions`; the
+`textureNumLevels` negative test and full HAL suite then passed. Formatting and
+`git diff --check` passed. Public default D3D11 adapter enumeration remains
+disabled. Next, audit the remaining public Core/HAL operation matrix and choose
+the next narrow, evidence-backed shader or rendering gap. Historical FL9_1
+hardware, Lumia/CoreWindow runtime and physical device-removal recovery remain
+unverified.
+
 ## Constant-mip cube query and RGBA8_SNORM copy — 2026-11-09
 
 Checkpoint: `1e8407af6` (`dx11: extend FL9_1 cube queries and SNORM copies`).
