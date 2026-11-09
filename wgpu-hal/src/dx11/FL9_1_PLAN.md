@@ -10,8 +10,9 @@ adds explicit writes in an empty compute pass, resolves ten values and checks
 them in execution order. The focused test passed 1/1 on the RTX 3090 Ti at
 requested/actual FL9_1; full strict HAL passed 450/450 and public D3D11 passed
 113/113. The optional timestamp feature remains absent if the selected-device
-probe fails. Next, consider constant-mip 3D `textureDimensions`; do not enable
-3D GPU texture copies, which the current 10Level9 audit records as unavailable.
+probe fails. Checkpoint: `af1f5d7ac` (`dx11: support FL9_1 timestamps inside
+passes`). Next, consider constant-mip 3D `textureDimensions`; do not enable 3D
+GPU texture copies, which the current 10Level9 audit records as unavailable.
 
 ## Latest shape-aware texture-query extension — 2026-11-09
 

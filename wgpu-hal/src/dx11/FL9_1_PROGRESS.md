@@ -2,6 +2,8 @@
 
 ## Explicit timestamps inside FL9_1 passes — 2026-11-09
 
+Checkpoint: `af1f5d7ac` (`dx11: support FL9_1 timestamps inside passes`).
+
 The selected-device timestamp/disjoint probe now enables
 `TIMESTAMP_QUERY_INSIDE_PASSES` along with `TIMESTAMP_QUERY` and
 `TIMESTAMP_QUERY_INSIDE_ENCODERS`. HAL records explicit timestamp writes
