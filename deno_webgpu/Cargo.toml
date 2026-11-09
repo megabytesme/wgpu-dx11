@@ -14,6 +14,9 @@ publish = false
 [lib]
 path = "lib.rs"
 
+[features]
+dx11 = ["wgpu-core/dx11"]
+
 # We make all dependencies conditional on not being wasm,
 # so the whole workspace can built as wasm.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

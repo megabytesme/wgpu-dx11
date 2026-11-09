@@ -51,6 +51,18 @@ const CTS_GIT_URL: &str = "https://github.com/gpuweb/cts.git";
 /// Path to default CTS test list.
 const CTS_DEFAULT_TEST_LIST: &str = "cts_runner/test.lst";
 
+fn append_backend_features(cargo_opts: &mut Vec<OsString>, backend: Option<&str>) {
+    let enables_dx11 = backend.is_some_and(|backend| {
+        backend.split(',').any(|name| {
+            name.trim().eq_ignore_ascii_case("dx11") || name.trim().eq_ignore_ascii_case("d3d11")
+        })
+    });
+    if enables_dx11 {
+        cargo_opts.push("--features".into());
+        cargo_opts.push("deno_webgpu/dx11".into());
+    }
+}
+
 #[derive(Default)]
 struct TestLine {
     pub selector: OsString,
@@ -339,6 +351,7 @@ pub fn run_cts(
         "--bin".into(),
         "cts_runner".into(),
     ];
+    append_backend_features(&mut cargo_opts, running_on_backend.as_deref());
     if release {
         cargo_opts.push("--release".into());
     }
@@ -469,4 +482,34 @@ pub fn run_cts(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod backend_feature_tests {
+    use super::append_backend_features;
+    use std::ffi::OsString;
+
+    #[test]
+    fn cts_runner_enables_dx11_only_when_requested() {
+        let mut args = Vec::new();
+        append_backend_features(&mut args, Some("dx11"));
+        assert_eq!(
+            args,
+            [
+                OsString::from("--features"),
+                OsString::from("deno_webgpu/dx11")
+            ]
+        );
+
+        for (backend, expected_len) in [
+            (None, 0),
+            (Some("dx12"), 0),
+            (Some("dx11,dx12"), 2),
+            (Some("D3D11"), 2),
+        ] {
+            let mut args = Vec::new();
+            append_backend_features(&mut args, backend);
+            assert_eq!(args.len(), expected_len);
+        }
+    }
 }

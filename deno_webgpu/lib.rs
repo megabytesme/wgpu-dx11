@@ -47,6 +47,13 @@ pub const UNSTABLE_FEATURE_NAME: &str = "webgpu";
 
 pub const DX12_COMPILER_ENV_VAR: &str = "DENO_WEBGPU_DX12_COMPILER";
 
+fn backends_from_env(value: Option<&str>) -> wgpu_types::Backends {
+  value.map_or_else(
+    wgpu_types::Backends::default,
+    wgpu_types::Backends::from_comma_list,
+  )
+}
+
 #[allow(clippy::print_stdout)]
 pub fn print_linker_flags(name: &str) {
   if cfg!(windows) {
@@ -177,10 +184,8 @@ impl GPU {
     let dx12_compiler = std::env::var(DX12_COMPILER_ENV_VAR)
       .ok()
       .and_then(|s| s.parse().ok());
-    let backends = std::env::var("DENO_WEBGPU_BACKEND").map_or_else(
-      |_| wgpu_types::Backends::all(),
-      |s| wgpu_types::Backends::from_comma_list(&s),
-    );
+    let backends =
+      backends_from_env(std::env::var("DENO_WEBGPU_BACKEND").ok().as_deref());
     let instance = if let Some(instance) = state.try_borrow::<Instance>() {
       instance
     } else {
@@ -267,6 +272,28 @@ impl GPU {
     self
       .wgsl_language_features
       .get(scope, WGSLLanguageFeatures::new)
+  }
+}
+
+#[cfg(test)]
+mod backend_selection_tests {
+  use super::backends_from_env;
+  use wgpu_types::Backends;
+
+  #[test]
+  fn default_backend_mask_excludes_experimental_dx11() {
+    let backends = backends_from_env(None);
+    assert_eq!(backends, Backends::default());
+    assert!(!backends.contains(Backends::DX11));
+  }
+
+  #[test]
+  fn explicit_dx11_backend_is_preserved() {
+    assert_eq!(backends_from_env(Some("dx11")), Backends::DX11);
+    assert_eq!(
+      backends_from_env(Some("dx11, dx12")),
+      Backends::DX11 | Backends::DX12
+    );
   }
 }
 
