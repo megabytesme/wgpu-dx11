@@ -24189,8 +24189,22 @@ fn public_dx11_resolves_optional_fl91_sample_counts() {
         ..Default::default()
     }))
     .expect("request a device within its FL9_1 capability projection");
-    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
-    let vertex_bytes: Vec<_> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
+    let vertices = [
+        [-1.0f32, -1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [3.0, -1.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [-1.0, 3.0, 0.25, 1.0, 0.0, 0.0, 1.0],
+        [-1.0, -1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [3.0, -1.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [-1.0, 3.0, 0.75, 0.0, 1.0, 0.0, 1.0],
+        [-1.0, -1.0, 0.75, 0.0, 0.0, 1.0, 1.0],
+        [3.0, -1.0, 0.75, 0.0, 0.0, 1.0, 1.0],
+        [-1.0, 3.0, 0.75, 0.0, 0.0, 1.0, 1.0],
+    ];
+    let vertex_bytes: Vec<_> = vertices
+        .into_iter()
+        .flatten()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
     let vertex_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 optional MSAA fullscreen triangle"),
         size: vertex_bytes.len() as u64,
@@ -24206,19 +24220,26 @@ fn public_dx11_resolves_optional_fl91_sample_counts() {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 optional MSAA shader"),
         source: ShaderSource::Wgsl(
-            "struct Out { @builtin(position) position: vec4f, }\n\
-             @vertex fn vs(@location(0) position: vec2f) -> Out { var out: Out; out.position = vec4f(position, 0.0, 1.0); return out; }\n\
-             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+            "struct Out { @builtin(position) position: vec4f, @location(0) color: vec4f, }\n\
+             @vertex fn vs(@location(0) position: vec3f, @location(1) color: vec4f) -> Out { var out: Out; out.position = vec4f(position, 1.0); out.color = color; return out; }\n\
+             @fragment fn fs(input: Out) -> @location(0) vec4f { return input.color; }"
                 .into(),
         ),
     });
-    let attributes = [VertexAttribute {
-        format: VertexFormat::Float32x2,
-        offset: 0,
-        shader_location: 0,
-    }];
+    let attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 12,
+            shader_location: 1,
+        },
+    ];
     let vertex_layout = [Some(VertexBufferLayout {
-        array_stride: 8,
+        array_stride: 28,
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
@@ -24228,11 +24249,6 @@ fn public_dx11_resolves_optional_fl91_sample_counts() {
         write_mask: ColorWrites::ALL,
     })];
     for sample_count in supported_counts {
-        let depth_format = TextureFormat::Depth24Plus;
-        let depth_supported = adapter
-            .get_texture_format_features(depth_format)
-            .flags
-            .sample_count_supported(sample_count);
         let multisampled = device.create_texture(&TextureDescriptor {
             label: Some("FL9_1 optional multisample target"),
             size: Extent3d {
@@ -24263,155 +24279,312 @@ fn public_dx11_resolves_optional_fl91_sample_counts() {
         });
         let multisampled_view = multisampled.create_view(&TextureViewDescriptor::default());
         let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
-        let depth = depth_supported.then(|| {
-            device.create_texture(&TextureDescriptor {
-                label: Some("FL9_1 optional multisample depth target"),
-                size: Extent3d {
-                    width: 8,
-                    height: 8,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count,
-                dimension: TextureDimension::D2,
-                format: depth_format,
-                usage: TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            })
-        });
-        let depth_view = depth
-            .as_ref()
-            .map(|texture| texture.create_view(&TextureViewDescriptor::default()));
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("FL9_1 optional multisample pipeline"),
-            layout: None,
-            vertex: VertexState {
-                module: &shader,
-                entry_point: Some("vs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                buffers: &vertex_layout,
-            },
-            primitive: PrimitiveState::default(),
-            depth_stencil: depth_supported.then_some(DepthStencilState {
-                format: depth_format,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(CompareFunction::Less),
-                stencil: StencilState::default(),
-                bias: DepthBiasState::default(),
-            }),
-            multisample: MultisampleState {
-                count: sample_count,
-                ..Default::default()
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                targets: &targets,
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("FL9_1 optional multisample commands"),
-        });
-        {
-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("FL9_1 optional multisample pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &multisampled_view,
-                    depth_slice: None,
-                    resolve_target: Some(&resolved_view),
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::BLACK),
-                        store: StoreOp::Discard,
-                    },
-                })],
-                depth_stencil_attachment: depth_view.as_ref().map(|view| {
-                    RenderPassDepthStencilAttachment {
-                        view,
-                        depth_ops: Some(Operations {
-                            load: LoadOp::Clear(1.0),
-                            store: StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&pipeline);
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.draw(0..3, 0..1);
+        let mut depth_formats: Vec<_> = [
+            TextureFormat::Depth24PlusStencil8,
+            TextureFormat::Depth24Plus,
+            TextureFormat::Depth16Unorm,
+        ]
+        .into_iter()
+        .filter(|format| {
+            adapter
+                .get_texture_format_features(*format)
+                .flags
+                .sample_count_supported(sample_count)
+        })
+        .map(Some)
+        .collect();
+        if depth_formats.is_empty() {
+            println!(
+                "SKIP: selected FL9_1 device reports no depth format for {sample_count}x MSAA"
+            );
+            depth_formats.push(None);
         }
-        let readback = device.create_buffer(&BufferDescriptor {
-            label: Some("FL9_1 optional multisample readback"),
-            size: 8 * 256,
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        encoder.copy_texture_to_buffer(
-            TexelCopyTextureInfo {
-                texture: &resolved,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            TexelCopyBufferInfo {
-                buffer: &readback,
-                layout: TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(256),
-                    rows_per_image: Some(8),
-                },
-            },
-            Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-        );
-        let submission = queue.submit([encoder.finish()]);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        readback
-            .slice(..)
-            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
-        device
-            .poll(PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(Duration::from_secs(10)),
-            })
-            .expect("wait for optional FL9_1 multisample resolve");
-        receiver
-            .recv_timeout(Duration::from_secs(10))
-            .expect("optional FL9_1 resolve callback")
-            .expect("map optional FL9_1 resolved image");
-        {
-            let data = readback
-                .slice(..)
-                .get_mapped_range()
-                .expect("mapped optional FL9_1 resolved image");
-            for y in 0..8 {
-                for x in 0..8 {
-                    let offset = y * 256 + x * 4;
-                    assert_eq!(
-                        &data[offset..offset + 4],
-                        &[0, 255, 0, 255],
-                        "{sample_count}x resolved pixel ({x}, {y})"
-                    );
+        for depth_format in depth_formats {
+            let depth = depth_format.map(|format| {
+                device.create_texture(&TextureDescriptor {
+                    label: Some("FL9_1 optional multisample depth target"),
+                    size: Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count,
+                    dimension: TextureDimension::D2,
+                    format,
+                    usage: TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                })
+            });
+            let depth_view = depth
+                .as_ref()
+                .map(|texture| texture.create_view(&TextureViewDescriptor::default()));
+            let has_stencil = depth_format == Some(TextureFormat::Depth24PlusStencil8);
+            let stencil_face = |compare, pass_op| StencilFaceState {
+                compare,
+                pass_op,
+                ..StencilFaceState::IGNORE
+            };
+            let make_stencil = |compare, pass_op, write_mask| StencilState {
+                front: stencil_face(compare, pass_op),
+                back: stencil_face(compare, pass_op),
+                read_mask: 0xff,
+                write_mask,
+            };
+            let make_pipeline = |label: &str,
+                                 depth_compare: CompareFunction,
+                                 depth_write: bool,
+                                 stencil: Option<StencilState>| {
+                device.create_render_pipeline(&RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: None,
+                    vertex: VertexState {
+                        module: &shader,
+                        entry_point: Some("vs"),
+                        compilation_options: PipelineCompilationOptions::default(),
+                        buffers: &vertex_layout,
+                    },
+                    primitive: PrimitiveState::default(),
+                    depth_stencil: depth_format.map(|format| DepthStencilState {
+                        format,
+                        depth_write_enabled: Some(depth_write),
+                        depth_compare: Some(depth_compare),
+                        stencil: stencil.unwrap_or_default(),
+                        bias: DepthBiasState::default(),
+                    }),
+                    multisample: MultisampleState {
+                        count: sample_count,
+                        ..Default::default()
+                    },
+                    fragment: Some(FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs"),
+                        compilation_options: PipelineCompilationOptions::default(),
+                        targets: &targets,
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+            let initial_stencil_test = has_stencil.then(|| {
+                make_pipeline(
+                    "FL9_1 optional MSAA initial stencil test",
+                    CompareFunction::Always,
+                    false,
+                    Some(make_stencil(
+                        CompareFunction::Equal,
+                        StencilOperation::Keep,
+                        0,
+                    )),
+                )
+            });
+            let near_pipeline = make_pipeline(
+                "FL9_1 optional MSAA near depth draw",
+                CompareFunction::Less,
+                true,
+                has_stencil.then(|| {
+                    make_stencil(CompareFunction::Always, StencilOperation::Replace, 0xff)
+                }),
+            );
+            let matching_stencil_pipeline = has_stencil.then(|| {
+                make_pipeline(
+                    "FL9_1 optional MSAA matching stencil compare",
+                    CompareFunction::Always,
+                    false,
+                    Some(make_stencil(
+                        CompareFunction::Equal,
+                        StencilOperation::Keep,
+                        0,
+                    )),
+                )
+            });
+            let mismatched_stencil_pipeline = has_stencil.then(|| {
+                make_pipeline(
+                    "FL9_1 optional MSAA mismatched stencil compare",
+                    CompareFunction::Always,
+                    false,
+                    Some(make_stencil(
+                        CompareFunction::Equal,
+                        StencilOperation::Keep,
+                        0,
+                    )),
+                )
+            });
+            let far_pipeline = make_pipeline(
+                "FL9_1 optional MSAA far depth draw",
+                CompareFunction::Less,
+                false,
+                has_stencil
+                    .then(|| make_stencil(CompareFunction::Equal, StencilOperation::Keep, 0)),
+            );
+            let readback = device.create_buffer(&BufferDescriptor {
+                label: Some("FL9_1 optional multisample readback"),
+                size: 2 * 8 * 256,
+                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("FL9_1 optional multisample commands"),
+            });
+            macro_rules! begin_render_pass {
+                ($encoder:expr, $clear_color:expr, $label:expr $(,)?) => {
+                    $encoder.begin_render_pass(&RenderPassDescriptor {
+                        label: Some($label),
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view: &multisampled_view,
+                            depth_slice: None,
+                            resolve_target: Some(&resolved_view),
+                            ops: Operations {
+                                load: LoadOp::Clear($clear_color),
+                                store: StoreOp::Discard,
+                            },
+                        })],
+                        depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                            RenderPassDepthStencilAttachment {
+                                view,
+                                depth_ops: Some(Operations {
+                                    load: LoadOp::Clear(1.0),
+                                    store: StoreOp::Store,
+                                }),
+                                stencil_ops: has_stencil.then_some(Operations {
+                                    load: LoadOp::Clear(0),
+                                    store: StoreOp::Store,
+                                }),
+                            }
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    })
+                };
+            }
+            let copy_resolve = |encoder: &mut CommandEncoder, offset| {
+                encoder.copy_texture_to_buffer(
+                    TexelCopyTextureInfo {
+                        texture: &resolved,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    TexelCopyBufferInfo {
+                        buffer: &readback,
+                        layout: TexelCopyBufferLayout {
+                            offset,
+                            bytes_per_row: Some(256),
+                            rows_per_image: Some(8),
+                        },
+                    },
+                    Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            };
+            if let Some(pipeline) = &initial_stencil_test {
+                let mut pass = begin_render_pass!(
+                    &mut encoder,
+                    Color::BLACK,
+                    "FL9_1 optional MSAA initial stencil value test",
+                );
+                pass.set_pipeline(pipeline);
+                pass.set_stencil_reference(0);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.draw(3..6, 0..1);
+                drop(pass);
+                copy_resolve(&mut encoder, 0);
+            }
+            {
+                let mut pass = begin_render_pass!(
+                    &mut encoder,
+                    Color::BLACK,
+                    "FL9_1 optional MSAA depth and stencil pass",
+                );
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.set_pipeline(&near_pipeline);
+                if has_stencil {
+                    pass.set_stencil_reference(1);
+                }
+                pass.draw(0..3, 0..1);
+                if let Some(pipeline) = &matching_stencil_pipeline {
+                    pass.set_pipeline(pipeline);
+                    pass.set_stencil_reference(1);
+                    pass.draw(3..6, 0..1);
+                }
+                if let Some(pipeline) = &mismatched_stencil_pipeline {
+                    pass.set_pipeline(pipeline);
+                    pass.set_stencil_reference(0);
+                    pass.draw(6..9, 0..1);
+                }
+                if depth_format.is_some() {
+                    pass.set_pipeline(&far_pipeline);
+                    if has_stencil {
+                        pass.set_stencil_reference(1);
+                    }
+                    pass.draw(6..9, 0..1);
                 }
             }
-        }
-        readback.unmap();
-        println!(
-            "PASS: FL9_1 {sample_count}x RGBA8 draw/resolve{} matched all 64 pixels",
-            if depth_supported {
-                " with Depth24Plus attachment"
-            } else {
-                ""
+            copy_resolve(&mut encoder, 8 * 256);
+            let submission = queue.submit([encoder.finish()]);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            readback
+                .slice(..)
+                .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+            device
+                .poll(PollType::Wait {
+                    submission_index: Some(submission),
+                    timeout: Some(Duration::from_secs(10)),
+                })
+                .expect("wait for optional FL9_1 multisample resolve");
+            receiver
+                .recv_timeout(Duration::from_secs(10))
+                .expect("optional FL9_1 resolve callback")
+                .expect("map optional FL9_1 resolved image");
+            {
+                let data = readback
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("mapped optional FL9_1 resolved image");
+                if has_stencil {
+                    for y in 0..8 {
+                        for x in 0..8 {
+                            let offset = y * 256 + x * 4;
+                            assert_eq!(
+                                &data[offset..offset + 4],
+                                &[0, 255, 0, 255],
+                                "{sample_count}x initial stencil-equal-zero pixel ({x}, {y})"
+                            );
+                        }
+                    }
+                }
+                for y in 0..8 {
+                    for x in 0..8 {
+                        let offset = 8 * 256 + y * 256 + x * 4;
+                        let expected = if has_stencil {
+                            [0, 255, 0, 255]
+                        } else {
+                            [255, 0, 0, 255]
+                        };
+                        assert_eq!(
+                            &data[offset..offset + 4],
+                            expected,
+                            "{sample_count}x {depth_format:?} resolved near/far pixel ({x}, {y})"
+                        );
+                    }
+                }
             }
-        );
+            readback.unmap();
+            if let Some(depth_format) = depth_format {
+                println!(
+                    "PASS: FL9_1 {sample_count}x RGBA8 {depth_format:?} resolved all pixels; near draw survived and farther draw failed{}",
+                    if has_stencil { "; matching and mismatched stencil comparisons passed" } else { "" }
+                );
+            } else {
+                println!(
+                    "PASS: FL9_1 {sample_count}x RGBA8 color-only draw/resolve matched all 64 pixels; depth and stencil checks were skipped"
+                );
+            }
+        }
     }
 }
 
