@@ -1,6 +1,6 @@
 # FL9_1 completion plan
 
-## Current continuation — depth-only MSAA and public-contract audits — 2026-11-09 — working tree
+## Latest verified increment — depth-only MSAA and public-contract audits — 2026-11-09 — `dbfb26b41`
 
 The HAL now accepts query-supported multisample pipelines with depth-only
 attachments, while still rejecting attachment-free multisample pipelines and
@@ -18,8 +18,8 @@ surface/query, buffer/command, capability, panic/error and unsafe-contract
 reviews found no additional confirmed Core/HAL mismatch or public-path safety
 issue. The broad operation-by-operation audit
 is still open; historical FL9_1 devices, Lumia/CoreWindow runtime and actual
-device removal/recovery remain unverified. These changes are ready for a
-focused checkpoint. Continue with the next independent audit slice and
+device removal/recovery remain unverified. The changes are recorded in
+checkpoint `dbfb26b41`. Continue with the next independent audit slice and
 implement only a concrete, tested mismatch or a useful bounded feature gap.
 
 ## Latest verified increment — public buffer lifetime before submit — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`

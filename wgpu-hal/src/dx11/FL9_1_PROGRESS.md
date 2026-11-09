@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## Depth-only multisample pipelines — 2026-11-09 — working tree
+## Depth-only multisample pipelines — 2026-11-09 — `dbfb26b41`
 
 The HAL no longer rejects a multisample pipeline solely because it has no
 color target. A depth-only pipeline still requires positive support for its
@@ -38,9 +38,9 @@ An additional public panic-path audit found the HAL stubs and unwraps gated by
 unadvertised features or Core mapping state; no legal public path to a panic
 was confirmed. A separate unsafe-contract audit found no concrete public-path
 memory-safety, ownership, mapping, or submission-lifetime issue. The
-implementation and test changes are ready for a focused checkpoint.
+implementation and test changes are recorded in checkpoint `dbfb26b41`.
 
-## Viewport-remap fail-fast and shader feature gates — 2026-11-09 — working tree
+## Viewport-remap fail-fast and shader feature gates — 2026-11-09 — `dbfb26b41`
 
 Render-pipeline creation now requires the FL9_1 viewport-remapped vertex
 variant. A shader can no longer leave a usable-looking pipeline whose later

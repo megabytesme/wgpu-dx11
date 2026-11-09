@@ -1,6 +1,6 @@
 # FL9_1 handoff
 
-## Latest verified working-tree checkpoint — depth-only MSAA, viewport remap, and shader gates — 2026-11-09
+## Latest verified checkpoint — depth-only MSAA, viewport remap, and shader gates — 2026-11-09 — `dbfb26b41`
 
 The HAL permits a multisample pipeline without a color target when it has a
 depth attachment whose selected format/sample count passed the capability
