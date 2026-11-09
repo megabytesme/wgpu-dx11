@@ -17564,6 +17564,7 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         source: ShaderSource::Wgsl(
             "@vertex fn vs_near(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.25, 1.0); }\n\
              @vertex fn vs_far(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.75, 1.0); }\n\
+             @vertex fn vs_sloped(@location(0) p: vec3f) -> @builtin(position) vec4f { return vec4f(p, 1.0); }\n\
              @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
              @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
                 .into(),
@@ -17829,6 +17830,166 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         }
     }
     readback.unmap();
+
+    let slope_vertices: Vec<u8> = [-1.0f32, -1.0, 0.25, 3.0, -1.0, 0.75, -1.0, 3.0, 0.25]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let slope_vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 D16 sloped triangle"),
+        size: slope_vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    slope_vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map D16 sloped triangle vertices")
+        .copy_from_slice(&slope_vertices);
+    slope_vertex_buffer.unmap();
+    let slope_attributes = [VertexAttribute {
+        format: VertexFormat::Float32x3,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let slope_vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 12,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &slope_attributes,
+    })];
+    let make_slope_pipeline = |fragment_entry, slope_scale| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 D16 slope depth-bias pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_sloped"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &slope_vertex_buffers,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth16Unorm,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
+                stencil: StencilState::default(),
+                bias: DepthBiasState {
+                    slope_scale,
+                    ..Default::default()
+                },
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let slope_base = make_slope_pipeline("red", 0.0);
+    let slope_positive = make_slope_pipeline("green", 1.0);
+    let slope_negative = make_slope_pipeline("green", -1.0);
+
+    for (slope_scale, pipeline, expected) in [
+        (1.0, &slope_positive, [255, 0, 0, 255]),
+        (-1.0, &slope_negative, [0, 255, 0, 255]),
+    ] {
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 D16 public slope depth bias"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 D16 public slope depth-bias pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_vertex_buffer(0, slope_vertex_buffer.slice(..));
+            pass.set_pipeline(&slope_base);
+            pass.draw(0..3, 0..1);
+            pass.set_pipeline(pipeline);
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &color,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for public FL9_1 slope depth-bias render");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("public D16 slope depth-bias map callback")
+            .expect("map public D16 slope depth-bias output");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped public D16 slope depth-bias output");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "public D16 slope depth-bias {slope_scale} pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+    }
 
     for far_first in [false, true] {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -18160,7 +18321,7 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: public FL9_1 D16 depth attachment and constant bias; unbiased depth won both draw orders, positive bias failed and negative bias passed across 64/64 pixels, LOAD preserved depth, CLEAR reset depth and post-discard LOAD initialized depth; core rejected mips, stencil view/state and nonzero bias clamp"
+        "PASS: public FL9_1 D16 depth attachment and constant/slope bias; unbiased depth won both draw orders, positive and negative constant/slope biases produced the expected 64/64 pixels, LOAD preserved depth, CLEAR reset depth and post-discard LOAD initialized depth; core rejected mips, stencil view/state and nonzero bias clamp"
     );
 }
 
