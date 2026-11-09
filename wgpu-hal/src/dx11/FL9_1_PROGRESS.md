@@ -63,7 +63,17 @@ cargo +1.93 fmt --all -- --check
 git diff --check
 ```
 
-Implementation and test changes are pending a focused checkpoint commit.
+Checkpoint: `3ceba7844` (`dx11: support FL9_1 3D and cube textureNumLevels`).
+
+Three read-only specialist audits found no confirmed unguarded Core-to-HAL
+mismatch in the reviewed texture paths. The highest-ranked small rendering/API
+extension is timestamp writes inside render/compute passes, gated by the
+existing positive timestamp query. Additional bounded candidates are constant
+mip-level 3D texture dimensions and selected-entry helper support for
+texture queries. Do not pursue 3D GPU texture copies; the existing FL9_1
+10Level9 audit records them as unavailable. Continue the broader public
+capability audit; historical devices, Lumia/CoreWindow runtime and physical
+device-removal recovery remain unverified.
 
 ## Public slope-scaled depth-bias execution — 2026-11-09
 

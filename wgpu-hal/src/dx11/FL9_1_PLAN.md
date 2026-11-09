@@ -15,8 +15,13 @@ verified 3D and cube views with visible mip counts 1 and 4, checking all 256
 pixels. Full strict private HAL passed 450/450; strict public D3D11 passed
 113/113; Core DX11 passed 110/110; DX12 Core passed 109/109; Naga passed
 152/152; wgpu-types passed 108/108. Historical FL9_1 behavior remains
-unverified. Continue the independent Core/HAL, rendering/resource and shader
-audits before selecting another bounded implementation slice.
+unverified. Checkpoint: `3ceba7844` (`dx11: support FL9_1 3D and cube
+textureNumLevels`). Independent Core/HAL, rendering/resource and shader audits
+found no confirmed unguarded texture-route mismatch. A useful small follow-up
+is enabling timestamp writes inside passes under the existing positive device
+query; constant-mip 3D dimensions and more selected-entry helper shapes are
+also bounded shader candidates. Keep 3D GPU copies disabled: the current
+10Level9 audit identifies that operation as unavailable.
 
 ## Latest public raster coverage — slope-scaled depth bias — 2026-11-09
 
