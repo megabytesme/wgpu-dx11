@@ -60,6 +60,105 @@ fn fl9_literal_mip_level(
     }
 }
 
+fn fl9_collect_called_functions(block: &crate::Block, called: &mut Vec<Handle<crate::Function>>) {
+    for statement in block.iter() {
+        match *statement {
+            crate::Statement::Call { function, .. } => called.push(function),
+            crate::Statement::Block(ref block) => fl9_collect_called_functions(block, called),
+            crate::Statement::If {
+                ref accept,
+                ref reject,
+                ..
+            } => {
+                fl9_collect_called_functions(accept, called);
+                fl9_collect_called_functions(reject, called);
+            }
+            crate::Statement::Switch { ref cases, .. } => {
+                for case in cases {
+                    fl9_collect_called_functions(&case.body, called);
+                }
+            }
+            crate::Statement::Loop {
+                ref body,
+                ref continuing,
+                ..
+            } => {
+                fl9_collect_called_functions(body, called);
+                fl9_collect_called_functions(continuing, called);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn fl9_reachable_functions(
+    module: &Module,
+    function: &crate::Function,
+) -> Vec<Handle<crate::Function>> {
+    let mut pending = Vec::new();
+    fl9_collect_called_functions(&function.body, &mut pending);
+    let mut reachable = Vec::new();
+    while let Some(handle) = pending.pop() {
+        if reachable.contains(&handle) {
+            continue;
+        }
+        reachable.push(handle);
+        fl9_collect_called_functions(&module.functions[handle].body, &mut pending);
+    }
+    reachable
+}
+
+fn fl9_has_resource_handle_type(module: &Module, ty: Handle<crate::Type>) -> bool {
+    matches!(
+        module.types[ty].inner,
+        TypeInner::Image { .. } | TypeInner::Sampler { .. } | TypeInner::BindingArray { .. }
+    )
+}
+
+fn fl9_texture_load_function_is_supported(
+    module: &Module,
+    function: &crate::Function,
+    texture: Handle<crate::GlobalVariable>,
+) -> bool {
+    if function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            crate::Statement::Emit(_)
+                | crate::Statement::Return { .. }
+                | crate::Statement::Call { .. }
+        )
+    }) || function
+        .arguments
+        .iter()
+        .any(|argument| fl9_has_resource_handle_type(module, argument.ty))
+        || function
+            .result
+            .as_ref()
+            .is_some_and(|result| fl9_has_resource_handle_type(module, result.ty))
+    {
+        return false;
+    }
+
+    for (_, expression) in function.expressions.iter() {
+        match *expression {
+            crate::Expression::ImageLoad {
+                image,
+                array_index: None,
+                sample: None,
+                level: Some(_),
+                ..
+            } if matches!(function.expressions[image], crate::Expression::GlobalVariable(global) if global == texture) =>
+                {}
+            crate::Expression::ImageLoad { .. }
+            | crate::Expression::ImageQuery { .. }
+            | crate::Expression::ImageSample { .. }
+            | crate::Expression::Select { .. } => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
 pub(crate) const MODF_FUNCTION: &str = "naga_modf";
 pub(crate) const FREXP_FUNCTION: &str = "naga_frexp";
 pub(crate) const EXTRACT_BITS_FUNCTION: &str = "naga_extractBits";
@@ -392,6 +491,47 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         fragment_entry_point: Option<&FragmentEntryPoint<'_>>,
     ) -> Result<super::ReflectionInfo, Error> {
         self.reset(module);
+        let (fl9_texel_load_reachable_functions, fl9_texel_load_used_globals) =
+            if self.options.fl9_texel_load_proof.is_some() {
+                let Some(&(ShaderStage::Fragment, ref name)) =
+                    self.pipeline_options.entry_point.as_ref()
+                else {
+                    return Err(Error::Custom(
+                        "FL9 texel-load proof requires a selected fragment entry point".into(),
+                    ));
+                };
+                let Some(index) = module
+                    .entry_points
+                    .iter()
+                    .position(|entry| entry.stage == ShaderStage::Fragment && entry.name == *name)
+                else {
+                    return Err(Error::Custom(
+                        "FL9 texel-load proof entry point not found".into(),
+                    ));
+                };
+                let entry = &module.entry_points[index];
+                let info = module_info.get_entry_point(index);
+                let mut used_globals = module
+                    .global_variables
+                    .iter()
+                    .filter_map(|(global, _)| (!info[global].is_empty()).then_some(global))
+                    .collect::<Vec<_>>();
+                if let Some((target, _)) = module
+                    .global_variables
+                    .iter()
+                    .find(|&(_, global)| global.binding == self.options.fl9_texel_load_proof)
+                {
+                    if !used_globals.contains(&target) {
+                        used_globals.push(target);
+                    }
+                }
+                (
+                    Some(fl9_reachable_functions(module, &entry.function)),
+                    Some(used_globals),
+                )
+            } else {
+                (None, None)
+            };
 
         if self.options.fl9_instance_index_input {
             let entry = match self.pipeline_options.entry_point.as_ref() {
@@ -664,6 +804,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
 
         // Write all globals
         for (global, _) in module.global_variables.iter() {
+            if fl9_texel_load_used_globals
+                .as_ref()
+                .is_some_and(|used| !used.contains(&global))
+            {
+                continue;
+            }
             self.write_global(module, global)?;
         }
 
@@ -778,8 +924,22 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let sampler_allowed = sampler_required
                 || self.options.fl9_texture_dimensions_proof.is_some()
                 || self.options.fl9_texture_dimensions_3d_proof.is_some();
-            let mut bound_resources = module.global_variables.iter().filter(|&(_, global)| {
+            let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
+                unreachable!()
+            };
+            let Some(entry_index) = module.entry_points.iter().position(|entry| {
+                entry.stage == ShaderStage::Fragment && entry.name == *entry_name
+            }) else {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof entry point not found".into(),
+                ));
+            };
+            let entry = &module.entry_points[entry_index];
+            let entry_info = module_info.get_entry_point(entry_index);
+            let mut bound_resources = module.global_variables.iter().filter(|&(handle, global)| {
                 global.binding.is_some_and(|candidate| candidate != binding)
+                    && (self.options.fl9_texel_load_proof.is_none()
+                        || !entry_info[handle].is_empty())
             });
             let sample_sampler = if sampler_allowed {
                 match bound_resources.next() {
@@ -828,18 +988,6 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 }
                 None
             };
-            let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
-                unreachable!()
-            };
-            let Some(entry_index) = module.entry_points.iter().position(|entry| {
-                entry.stage == ShaderStage::Fragment && entry.name == *entry_name
-            }) else {
-                return Err(Error::Custom(
-                    "FL9 texel-load proof entry point not found".into(),
-                ));
-            };
-            let entry = &module.entry_points[entry_index];
-            let entry_info = module_info.get_entry_point(entry_index);
             let mut query_count = 0;
             let mut base_clamp_count = 0;
             let mut implicit_sample_count = 0;
@@ -1084,7 +1232,30 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     "FL9 texel-load proof supports only one location-0 vec2 input".into(),
                 ));
             }
-            if !module.functions.is_empty()
+            if self.options.fl9_texel_load_proof.is_some() {
+                let reachable = fl9_reachable_functions(module, &entry.function);
+                if (is_3d_texel_load && !module.functions.is_empty())
+                    || !fl9_texture_load_function_is_supported(module, &entry.function, handle)
+                    || reachable.iter().any(|function| {
+                        !fl9_texture_load_function_is_supported(
+                            module,
+                            &module.functions[*function],
+                            handle,
+                        )
+                    })
+                {
+                    return Err(Error::Custom(
+                        "FL9 texel-load proof rejects unsupported helpers and control flow".into(),
+                    ));
+                }
+                if module.global_variables.iter().any(|(global, variable)| {
+                    global != handle && variable.binding.is_some() && !entry_info[global].is_empty()
+                }) {
+                    return Err(Error::Custom(
+                        "FL9 texel-load proof supports only one selected texture resource".into(),
+                    ));
+                }
+            } else if !module.functions.is_empty()
                 || entry.function.body.iter().any(|statement| {
                     !matches!(
                         statement,
@@ -1098,7 +1269,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     .any(|(_, expression)| matches!(expression, crate::Expression::Select { .. }))
             {
                 return Err(Error::Custom(
-                    "FL9 texel-load proof rejects helper functions and control flow".into(),
+                    "FL9 texture emulation rejects helper functions and control flow".into(),
                 ));
             }
             writeln!(
@@ -1162,6 +1333,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
 
         // Write all regular functions
         for (handle, function) in module.functions.iter() {
+            if fl9_texel_load_reachable_functions
+                .as_ref()
+                .is_some_and(|reachable| !reachable.contains(&handle))
+            {
+                continue;
+            }
             let info = &module_info[handle];
 
             // Check if all of the globals are accessible
@@ -6617,6 +6794,104 @@ mod fl9_viewport_tests {
             two_dimensional_output.contains("(safe_p + 0.5) * naga_fl9_load_size.zw"),
             "{two_dimensional_output}"
         );
+    }
+
+    #[test]
+    fn fl9_2d_texel_load_emits_only_proven_reachable_helpers() {
+        let binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texel_load_proof: Some(binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        let nested = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var sibling_image: texture_2d<f32>;
+            fn leaf(coord: vec2i) -> vec4f {
+                return textureLoad(image, coord, 0);
+            }
+            fn middle(coord: vec2f) -> vec4f {
+                return leaf(vec2i(coord));
+            }
+            fn sibling_only() -> vec4f {
+                return textureLoad(sibling_image, vec2i(0), 0);
+            }
+            @fragment fn main(@location(0) coord: vec2f) -> @location(0) vec4f {
+                return middle(coord);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return sibling_only();
+            }
+        "#;
+        let output = translate(nested, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("leaf("), "{output}");
+        assert!(output.contains("middle("), "{output}");
+        assert!(!output.contains("sibling_only"), "{output}");
+        assert!(!output.contains("sibling_image"), "{output}");
+        assert!(output.contains("naga_fl9_load(float2("), "{output}");
+
+        let second_identity = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var other: texture_2d<f32>;
+            fn load_image() -> vec4f { return textureLoad(image, vec2i(0), 0); }
+            fn load_other() -> vec4f { return textureLoad(other, vec2i(0), 0); }
+            @fragment fn main() -> @location(0) vec4f {
+                return load_image() + load_other();
+            }
+        "#;
+        assert!(translate(second_identity, &options, ShaderStage::Fragment).is_err());
+
+        let unsupported_helper = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var sibling_image: texture_2d<f32>;
+            @group(0) @binding(9) var sibling_sampler: sampler;
+            fn load_image() -> vec4f { return textureLoad(image, vec2i(0), 0); }
+            fn sample_sibling() -> vec4f {
+                return textureSample(sibling_image, sibling_sampler, vec2f(0.5));
+            }
+            @fragment fn main() -> @location(0) vec4f {
+                return load_image() + sample_sibling();
+            }
+        "#;
+        assert!(translate(unsupported_helper, &options, ShaderStage::Fragment).is_err());
+
+        let control_flow = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            fn branch_load(coord: vec2i) -> vec4f {
+                if coord.x == 0 { return textureLoad(image, coord, 0); }
+                return vec4f(0.0);
+            }
+            @fragment fn main() -> @location(0) vec4f {
+                return branch_load(vec2i(0));
+            }
+        "#;
+        assert!(translate(control_flow, &options, ShaderStage::Fragment).is_err());
+
+        let texture_parameter = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            fn load_texture(texture: texture_2d<f32>) -> vec4f {
+                return textureLoad(texture, vec2i(0), 0);
+            }
+            @fragment fn main() -> @location(0) vec4f { return load_texture(image); }
+        "#;
+        if let Ok(module) = crate::front::wgsl::parse_str(texture_parameter) {
+            if Validator::new(ValidationFlags::all(), Capabilities::empty())
+                .validate(&module)
+                .is_ok()
+            {
+                assert!(translate(texture_parameter, &options, ShaderStage::Fragment).is_err());
+            }
+        }
     }
 
     #[test]

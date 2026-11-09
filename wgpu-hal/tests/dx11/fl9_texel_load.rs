@@ -125,8 +125,8 @@ fn naga_fl9_texel_proof_rejects_unsupported_resources_and_control_flow() {
     assert!(lower_source(extra).is_err());
     let branch = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(0) p: vec2f) -> @location(0) vec4f { if p.x > 0.0 { return textureLoad(image, vec2i(p), 0); } return vec4f(0.0); }";
     assert!(lower_source(branch).is_err());
-    let helper = "@group(0) @binding(0) var image: texture_2d<f32>; fn fetch() -> vec4f { return textureLoad(image, vec2i(0), 0); } @fragment fn fs() -> @location(0) vec4f { return fetch(); }";
-    assert!(lower_source(helper).is_err());
+    let helper = "@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var sibling_image: texture_2d<f32>; fn leaf() -> vec4f { return textureLoad(image, vec2i(0), 0); } fn fetch() -> vec4f { return leaf(); } fn unused_sibling() -> vec4f { if true { return textureLoad(sibling_image, vec2i(0), 0); } return vec4f(0.0); } @fragment fn fs() -> @location(0) vec4f { return fetch(); } @fragment fn sibling() -> @location(0) vec4f { return unused_sibling(); }";
+    assert!(lower_source(helper).is_ok());
     let levels = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(f32(textureNumLevels(image))); }";
     assert!(lower_source(levels).is_err());
     let explicit_level = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, 1)), 0.0, 1.0); }";

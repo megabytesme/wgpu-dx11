@@ -1,5 +1,33 @@
 # FL9_1 completion plan
 
+## Latest bounded shader increment — selected-entry helper `textureLoad` — 2026-11-09
+
+Extended the restricted 2D fragment `textureLoad` proof through reachable
+straight-line helper calls. Core validation, the D3D11 HAL proof and Naga HLSL
+generation now agree on the selected entry point and its reachable call
+closure. Helpers must reference the same image global directly and cannot
+pass resource handles, use control flow or add other image operations. Naga
+emits only the selected entry's reachable functions and used globals, so
+unreachable helpers and sibling-entry-only resources do not constrain or
+pollute the compiled shader. The 3D helper restriction remains unchanged.
+
+Final-tree verification: Naga 149/149, Core D3D11 fixture 119/119, strict
+private HAL 447/447, strict public D3D11 110/110, and DX12 Core 110/110. The
+focused strict public readback passed 1/1 on the RTX 3090 Ti at explicitly
+requested/actual FL9_1; all 256 pixels across direct/helper and in-bounds,
+out-of-bounds and nonzero-mip cases matched. An initial regression run exposed
+three stale tests that still expected helper loads to be rejected; those tests
+now accept only the proven helper shape and continue rejecting control flow.
+The independent selected-entry proof review found no concrete correctness
+issue. Implementation checkpoint will be recorded in the progress journal.
+
+Next, finish the public capability-to-HAL projection audit, beginning with a
+data-driven matrix for query-gated format usages and transfer paths. Continue
+to keep ordinary D3D11 enumeration isolated until every Core-legal operation
+has a truthful implementation or a tested rejection. Shader breadth, full
+public integration, desktop presentation and historical-device verification
+remain substantial mission work.
+
 ## Latest bounded format increment — RGB5A1 and RGBA4 GPU copies — 2026-11-09
 
 The opt-in FL9_1 path now supports same-format GPU texture copies from

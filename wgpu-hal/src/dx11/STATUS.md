@@ -471,9 +471,7 @@ error if a future adapter reports the current private shader subset.
 The selected-entry shader audit also covers `textureLoad`. General
 `DownlevelLimits::texture_load` remains false, but the D3D11 public projection
 sets `texture_load_2d_float_fragment` when the private FL9_1 emulation path is
-available. Core accepts only a direct fragment load from one single-mip 2D
-float image and rejects helper functions, control flow, other resources or
-image operations, additional images and vertex-stage use before HAL. The
+available. Core accepts one fragment load identity from a single-mip 2D float image. The selected entry point and reachable straight-line helper functions may directly use that global; resource handles passed as parameters or results, control flow, other reachable resources or image operations, additional image identities and vertex-stage use are rejected before HAL. Unreachable helpers and helpers belonging only to sibling entry points are excluded. The
 private path reserves t0, s15 and b13; strict public rendering verifies
 in-bounds, out-of-bounds and nonzero-mip behavior. Safe sibling entry points
 remain usable when they satisfy the ordinary shader restrictions.

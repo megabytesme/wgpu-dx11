@@ -506,6 +506,76 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_load_emulation_accepts_direct_global_nested_helpers() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var sibling_image: texture_2d<f32>;
+            fn leaf() -> vec4f { return textureLoad(image, vec2i(0), 0); }
+            fn middle() -> vec4f { return leaf(); }
+            fn sibling() -> vec4f {
+                if true { return textureLoad(sibling_image, vec2i(0), 0); }
+                return vec4f(0.0);
+            }
+            @fragment fn selected() -> @location(0) vec4f { return middle(); }
+            @fragment fn unsupported() -> @location(0) vec4f { return sibling(); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "selected")
+                .unwrap()
+                .expect("the selected entry should resolve the direct global texture");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::Load));
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "unsupported"
+        )
+        .is_err());
+
+        let mixed = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var first: texture_2d<f32>;
+            @group(0) @binding(8) var second: texture_2d<f32>;
+            fn load_first() -> vec4f { return textureLoad(first, vec2i(0), 0); }
+            fn load_second() -> vec4f { return textureLoad(second, vec2i(0), 0); }
+            @fragment fn mixed() -> @location(0) vec4f {
+                return load_first() + load_second();
+            }
+            "#,
+        )
+        .unwrap();
+        let mixed_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&mixed)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &mixed,
+            &mixed_info,
+            naga::ShaderStage::Fragment,
+            "mixed"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn fl9_texture_dimensions_binding_is_selected_entry_specific() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -2482,6 +2552,60 @@ where
     )
 }
 
+fn fl9_collect_called_functions(
+    block: &naga::Block,
+    called: &mut Vec<naga::Handle<naga::Function>>,
+) {
+    for statement in block.iter() {
+        match statement {
+            naga::Statement::Call { function, .. } => called.push(*function),
+            naga::Statement::Block(block) => fl9_collect_called_functions(block, called),
+            naga::Statement::If { accept, reject, .. } => {
+                fl9_collect_called_functions(accept, called);
+                fl9_collect_called_functions(reject, called);
+            }
+            naga::Statement::Switch { cases, .. } => {
+                for case in cases {
+                    fl9_collect_called_functions(&case.body, called);
+                }
+            }
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => {
+                fl9_collect_called_functions(body, called);
+                fl9_collect_called_functions(continuing, called);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn fl9_reachable_functions(
+    module: &naga::Module,
+    function: &naga::Function,
+) -> Vec<naga::Handle<naga::Function>> {
+    let mut pending = Vec::new();
+    fl9_collect_called_functions(&function.body, &mut pending);
+    let mut reachable = Vec::new();
+    while let Some(handle) = pending.pop() {
+        if reachable.contains(&handle) {
+            continue;
+        }
+        reachable.push(handle);
+        fl9_collect_called_functions(&module.functions[handle].body, &mut pending);
+    }
+    reachable
+}
+
+fn fl9_has_resource_handle_type(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    matches!(
+        module.types[ty].inner,
+        naga::TypeInner::Image { .. }
+            | naga::TypeInner::Sampler { .. }
+            | naga::TypeInner::BindingArray { .. }
+    )
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Fl9TextureEmulationKind {
     Load,
@@ -2607,12 +2731,6 @@ fn fl9_texture_emulation_binding(
             "D3D11 FL9 texture emulation operations cannot be combined".into(),
         ));
     }
-    if !module.functions.is_empty() {
-        return Err(crate::PipelineError::Linkage(
-            stages,
-            "D3D11 FL9 texture emulation does not support helper functions".into(),
-        ));
-    }
     let mut kind = if uses_load {
         Fl9TextureEmulationKind::Load
     } else if uses_dimensions {
@@ -2622,6 +2740,47 @@ fn fl9_texture_emulation_binding(
     } else {
         Fl9TextureEmulationKind::BaseClamp
     };
+    let reachable_functions = if matches!(kind, Fl9TextureEmulationKind::Load) {
+        fl9_reachable_functions(module, function)
+    } else {
+        Vec::new()
+    };
+    if (!matches!(kind, Fl9TextureEmulationKind::Load) && !module.functions.is_empty())
+        || (matches!(kind, Fl9TextureEmulationKind::Load)
+            && (function.body.iter().any(|statement| {
+                !matches!(
+                    statement,
+                    naga::Statement::Emit(_)
+                        | naga::Statement::Return { .. }
+                        | naga::Statement::Call { .. }
+                )
+            }) || reachable_functions.iter().any(|handle| {
+                let function = &module.functions[*handle];
+                function.body.iter().any(|statement| {
+                    !matches!(
+                        statement,
+                        naga::Statement::Emit(_)
+                            | naga::Statement::Return { .. }
+                            | naga::Statement::Call { .. }
+                    )
+                }) || function
+                    .arguments
+                    .iter()
+                    .any(|argument| fl9_has_resource_handle_type(module, argument.ty))
+                    || function
+                        .result
+                        .as_ref()
+                        .is_some_and(|result| fl9_has_resource_handle_type(module, result.ty))
+            }) || function
+                .expressions
+                .iter()
+                .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))))
+    {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 texture emulation rejects unsupported helpers and control flow".into(),
+        ));
+    }
     if stage != naga::ShaderStage::Fragment {
         return Err(crate::PipelineError::Linkage(
             stages,
@@ -2633,7 +2792,23 @@ fn fl9_texture_emulation_binding(
     let mut sample_count = 0;
     let mut mip_level = 0;
     let mut has_explicit_mip_level = false;
-    for (handle, expression) in function.expressions.iter() {
+    let mut image_identity = None;
+    let mut functions_to_check = alloc::vec![(function, function_info)];
+    functions_to_check.extend(
+        reachable_functions
+            .iter()
+            .map(|handle| (&module.functions[*handle], &info[*handle])),
+    );
+    for (function, function_info, handle, expression) in
+        functions_to_check
+            .into_iter()
+            .flat_map(|(function, function_info)| {
+                function
+                    .expressions
+                    .iter()
+                    .map(move |(handle, expression)| (function, function_info, handle, expression))
+            })
+    {
         if function_info[handle].ref_count == 0 {
             continue;
         }
@@ -2854,6 +3029,17 @@ fn fl9_texture_emulation_binding(
                     "D3D11 FL9 texture-load shape is unsupported".into(),
                 ));
             }
+            naga::Expression::Select { .. }
+                if matches!(
+                    kind,
+                    Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
+                ) =>
+            {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 textureLoad helper selection is unsupported".into(),
+                ));
+            }
             _ => continue,
         };
         let naga::Expression::GlobalVariable(image) = function.expressions[image] else {
@@ -2862,6 +3048,15 @@ fn fl9_texture_emulation_binding(
                 "D3D11 FL9 texture emulation requires a direct global image".into(),
             ));
         };
+        if image_identity
+            .replace(image)
+            .is_some_and(|previous| previous != image)
+        {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture emulation uses more than one image identity".into(),
+            ));
+        }
         let global = &module.global_variables[image];
         let naga::TypeInner::Image {
             dim,
@@ -2958,6 +3153,28 @@ fn fl9_texture_emulation_binding(
                 "D3D11 FL9 texture emulation uses more than one image".into(),
             ));
         }
+    }
+    if matches!(kind, Fl9TextureEmulationKind::Load3D) && !module.functions.is_empty() {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 3D textureLoad does not support helper functions".into(),
+        ));
+    }
+    if matches!(
+        kind,
+        Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
+    ) && module.global_variables.iter().any(|(global, variable)| {
+        Some(global) != image_identity
+            && variable.binding.is_some()
+            && (!function_info[global].is_empty()
+                || reachable_functions
+                    .iter()
+                    .any(|function| !info[*function][global].is_empty()))
+    }) {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 textureLoad supports only one selected texture resource".into(),
+        ));
     }
     if matches!(kind, Fl9TextureEmulationKind::BaseClamp)
         || (matches!(

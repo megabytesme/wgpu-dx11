@@ -3324,20 +3324,18 @@ public GPU case:
 
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+cargo +1.93 test --offline -j8 -p naga --lib fl9_2d_texel_load_emits_only_proven_reachable_helpers
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_load_emulation_accepts_direct_global_nested_helpers
 cargo +1.93 test --offline -j8 -p wgpu-types --lib restricted_texture_load_does_not_imply_general_texture_load
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
-This is not general `textureLoad` support. It covers one directly referenced,
-single-mip `texture_2d<f32>` in a fragment entry point with no helper functions,
-control flow, other bound globals, sampling/query operations or additional
-image resources. The selected-entry proof maps the texture to `t0`; private
+This is not general `textureLoad` support. It covers one single-mip, non-arrayed `texture_2d<f32>` in a fragment entry point. The selected entry point and its reachable straight-line helpers may directly reference the same global image; helpers cannot receive or return resource handles. Other reachable bound globals, additional image identities, sampling/query operations and control flow are rejected. Unreachable helper functions and helpers used only by sibling entry points do not constrain this shader. Naga emits only the selected entry point reachable helpers and used globals for this proof. The selected-entry proof maps the texture to `t0`; private
 shader emulation point-samples at texel centers using `s15`, reads dimensions
 from `b13`, and yields zero for out-of-bounds coordinates and nonzero mip
 requests. The public test on the physical RTX 3090 Ti at requested/actual
-FL9_1 checked 64 in-bounds green pixels, 64 out-of-bounds zero pixels and 64
-zero pixels for a nonzero mip request against the single-mip view. The broader
+FL9_1 checked four 8×8 outputs: 64 direct-helper in-bounds green pixels, 64 out-of-bounds zero pixels, 64 zero pixels for a nonzero mip request and 64 nested-helper in-bounds green pixels. The broader
 strict public suite also includes this test. This modern driver result does
 not establish behavior on historical FL9_1 hardware.
 

@@ -2645,18 +2645,21 @@ fn entry_point_uses_texture_load(module: &naga::Module, entry_point: &naga::Entr
 
 fn entry_point_fl9_texture_load_support(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
 ) -> (bool, bool) {
     if !entry_point_uses_texture_load(module, entry_point) {
         return (false, false);
     }
     if entry_point.stage != naga::ShaderStage::Fragment
-        || !module.functions.is_empty()
         || entry_point.function.arguments.len() > 1
         || entry_point.function.body.iter().any(|statement| {
             !matches!(
                 statement,
-                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+                naga::Statement::Emit(_)
+                    | naga::Statement::Return { .. }
+                    | naga::Statement::Call { .. }
             )
         })
     {
@@ -2686,49 +2689,110 @@ fn entry_point_fl9_texture_load_support(
         return (false, false);
     }
 
-    let mut image_binding = None;
-    for (_, expression) in entry_point.function.expressions.iter() {
-        match expression {
-            naga::Expression::ImageLoad {
-                image,
-                array_index,
-                sample,
-                ..
-            } => {
-                if array_index.is_some() || sample.is_some() {
-                    return (false, false);
-                }
-                let naga::Expression::GlobalVariable(global) =
-                    entry_point.function.expressions[*image]
-                else {
-                    return (false, false);
-                };
-                if image_binding
-                    .replace(global)
-                    .is_some_and(|old| old != global)
-                {
-                    return (false, false);
-                }
-            }
-            naga::Expression::ImageQuery { .. }
-            | naga::Expression::ImageSample { .. }
-            | naga::Expression::Select { .. } => return (false, false),
-            _ => {}
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut reachable_functions = Vec::new();
+    while let Some(handle) = called_functions.pop() {
+        if reachable_functions.contains(&handle) {
+            continue;
         }
+        let function = &module.functions[handle];
+        if function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_)
+                    | naga::Statement::Return { .. }
+                    | naga::Statement::Call { .. }
+            )
+        }) || function.arguments.iter().any(|argument| {
+            matches!(
+                module.types[argument.ty].inner,
+                naga::TypeInner::Image { .. }
+                    | naga::TypeInner::Sampler { .. }
+                    | naga::TypeInner::BindingArray { .. }
+            )
+        }) || function.result.as_ref().is_some_and(|result| {
+            matches!(
+                module.types[result.ty].inner,
+                naga::TypeInner::Image { .. }
+                    | naga::TypeInner::Sampler { .. }
+                    | naga::TypeInner::BindingArray { .. }
+            )
+        }) {
+            return (false, false);
+        }
+        reachable_functions.push(handle);
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+
+    let mut image_binding = None;
+    let mut check_function = |function: &naga::Function| -> bool {
+        for (_, expression) in function.expressions.iter() {
+            match expression {
+                naga::Expression::ImageLoad {
+                    image,
+                    array_index,
+                    sample,
+                    level,
+                    ..
+                } => {
+                    if array_index.is_some() || sample.is_some() || level.is_none() {
+                        return false;
+                    }
+                    let naga::Expression::GlobalVariable(global) = function.expressions[*image]
+                    else {
+                        return false;
+                    };
+                    if image_binding
+                        .replace(global)
+                        .is_some_and(|old| old != global)
+                    {
+                        return false;
+                    }
+                }
+                naga::Expression::ImageQuery { .. }
+                | naga::Expression::ImageSample { .. }
+                | naga::Expression::Select { .. } => return false,
+                _ => {}
+            }
+        }
+        true
+    };
+    if !check_function(&entry_point.function)
+        || reachable_functions
+            .iter()
+            .any(|handle| !check_function(&module.functions[*handle]))
+    {
+        return (false, false);
     }
 
     let Some(image_binding) = image_binding else {
         return (false, false);
     };
-    if module
-        .global_variables
-        .iter()
-        .any(|(handle, global)| global.binding.is_some() && handle != image_binding)
-    {
+    let uses_other_bound_resource = module.global_variables.iter().any(|(handle, global)| {
+        global.binding.is_some()
+            && handle != image_binding
+            && (!entry_point_info[handle].is_empty()
+                || reachable_functions
+                    .iter()
+                    .any(|function| !module_info[*function][handle].is_empty()))
+    });
+    if uses_other_bound_resource {
         return (false, false);
     }
     let image = &module.global_variables[image_binding];
     if image.space != naga::AddressSpace::Handle || image.binding.is_none() {
+        return (false, false);
+    }
+    if !reachable_functions.is_empty()
+        && matches!(
+            module.types[image.ty].inner,
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D3,
+                ..
+            }
+        )
+    {
         return (false, false);
     }
     match module.types[image.ty].inner {
@@ -4586,7 +4650,7 @@ impl Interface {
                 );
             let texture_load_used = entry_point_uses_texture_load(module, entry_point);
             let (fl9_texture_load_2d_supported, fl9_texture_load_3d_supported) =
-                entry_point_fl9_texture_load_support(module, entry_point);
+                entry_point_fl9_texture_load_support(module, module_info, entry_point, info);
             let mut ep = EntryPoint {
                 fragment_position_used: entry_point_uses_fragment_position(
                     module,
@@ -6178,11 +6242,14 @@ mod tests {
         let helper_module = naga::front::wgsl::parse_str(
             r#"
             @group(0) @binding(0) var image: texture_2d<f32>;
-            fn helper() -> vec4f {
-                return textureLoad(image, vec2i(0), 0);
+            fn inner_helper(coord: vec2i) -> vec4f {
+                return textureLoad(image, coord, 0);
+            }
+            fn helper(coord: vec2f) -> vec4f {
+                return inner_helper(vec2i(coord));
             }
             @fragment fn calls_helper() -> @location(0) vec4f {
-                return helper();
+                return helper(vec2f(0.0));
             }
             "#,
         )
@@ -6195,13 +6262,114 @@ mod tests {
         .unwrap();
         let helper_interface =
             Interface::new(&helper_module, &helper_info, wgt::Limits::defaults());
-        assert!(helper_interface
+        assert!(!helper_interface
             .entry_point_uses_unsupported_fl9_texture_load(
                 naga::ShaderStage::Fragment,
                 "calls_helper",
                 &load_2d_limits,
             )
             .unwrap());
+
+        let sibling_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var other: texture_2d<f32>;
+            fn load_image() -> vec4f { return textureLoad(image, vec2i(0), 0); }
+            fn unsupported_sibling() -> vec4f {
+                if true { return textureLoad(other, vec2i(0), 0); }
+                return vec4f(0.0);
+            }
+            @fragment fn selected() -> @location(0) vec4f { return load_image(); }
+            @fragment fn sibling() -> @location(0) vec4f { return unsupported_sibling(); }
+            "#,
+        )
+        .unwrap();
+        let sibling_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&sibling_module)
+        .unwrap();
+        let sibling_interface =
+            Interface::new(&sibling_module, &sibling_info, wgt::Limits::defaults());
+        assert!(!sibling_interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "selected",
+                &load_2d_limits,
+            )
+            .unwrap());
+        assert!(sibling_interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "sibling",
+                &load_2d_limits,
+            )
+            .unwrap());
+
+        let multiple_images = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var first: texture_2d<f32>;
+            @group(0) @binding(1) var second: texture_2d<f32>;
+            fn load_first() -> vec4f { return textureLoad(first, vec2i(0), 0); }
+            fn load_second() -> vec4f { return textureLoad(second, vec2i(0), 0); }
+            @fragment fn mixed() -> @location(0) vec4f {
+                return load_first() + load_second();
+            }
+            "#,
+        )
+        .unwrap();
+        let multiple_images_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&multiple_images)
+        .unwrap();
+        let multiple_images_interface = Interface::new(
+            &multiple_images,
+            &multiple_images_info,
+            wgt::Limits::defaults(),
+        );
+        assert!(multiple_images_interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "mixed",
+                &load_2d_limits,
+            )
+            .unwrap());
+
+        let handle_parameter = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            fn load_texture(texture: texture_2d<f32>) -> vec4f {
+                return textureLoad(texture, vec2i(0), 0);
+            }
+            @fragment fn passed() -> @location(0) vec4f {
+                return load_texture(image);
+            }
+            "#,
+        );
+        if let Ok(handle_parameter) = handle_parameter {
+            if let Ok(handle_parameter_info) = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&handle_parameter)
+            {
+                let handle_parameter_interface = Interface::new(
+                    &handle_parameter,
+                    &handle_parameter_info,
+                    wgt::Limits::defaults(),
+                );
+                assert!(handle_parameter_interface
+                    .entry_point_uses_unsupported_fl9_texture_load(
+                        naga::ShaderStage::Fragment,
+                        "passed",
+                        &load_2d_limits,
+                    )
+                    .unwrap());
+            }
+        }
 
         let module_3d = naga::front::wgsl::parse_str(
             r#"

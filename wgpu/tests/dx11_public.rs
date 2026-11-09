@@ -2251,6 +2251,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
              @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }\n\
              fn load_helper() -> vec4f { return textureLoad(image, vec2i(0), 0); }\n\
              @fragment fn loaded() -> @location(0) vec4f { return load_helper(); }\n\
+             @fragment fn invalid() -> @location(0) vec4f { if true { return textureLoad(image, vec2i(0), 0); } return vec4f(0.0); }\n\
              @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }"
                 .into(),
         ),
@@ -2283,11 +2284,12 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             cache: None,
         })
     };
-    expect_validation_error(&device, "reachable fragment textureLoad", || {
-        drop(create_texel_load_pipeline("loaded"));
+    drop(create_texel_load_pipeline("loaded"));
+    expect_validation_error(&device, "control-flow fragment textureLoad", || {
+        drop(create_texel_load_pipeline("invalid"));
     });
     drop(create_texel_load_pipeline("safe"));
-    println!("PASS: public core rejected selected textureLoad and accepted its safe sibling entry");
+    println!("PASS: public core accepted a proven helper textureLoad, rejected its control-flow sibling and accepted the safe entry");
 
     let integer_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 runtime integer validation layout"),
@@ -28178,11 +28180,16 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 direct fragment textureLoad shader"),
+        label: Some("FL9_1 fragment textureLoad shader"),
         source: ShaderSource::Wgsl(
             "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(8) var sibling_image: texture_2d<f32>;\n\
+             fn inner_load() -> vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
+             fn nested_load() -> vec4f { return inner_load(); }\n\
+             fn unused_sibling() -> vec4f { if true { return textureLoad(sibling_image, vec2i(0), 0); } return vec4f(0.0); }\n\
              @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
              @fragment fn inside() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
+             @fragment fn through_nested_helper() -> @location(0) vec4f { return nested_load(); }\n\
              @fragment fn outside() -> @location(0) vec4f { return textureLoad(image, vec2i(2, 0), 0); }\n\
              @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }"
                 .into(),
@@ -28230,6 +28237,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         make_pipeline("inside"),
         make_pipeline("outside"),
         make_pipeline("invalid_level"),
+        make_pipeline("through_nested_helper"),
     ];
     let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
     let vertex_bytes: Vec<u8> = vertices
@@ -28291,22 +28299,37 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         }),
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 nested-helper textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
     ];
     let target_views = [
         targets[0].create_view(&TextureViewDescriptor::default()),
         targets[1].create_view(&TextureViewDescriptor::default()),
         targets[2].create_view(&TextureViewDescriptor::default()),
+        targets[3].create_view(&TextureViewDescriptor::default()),
     ];
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 textureLoad readback"),
-        size: 3 * 8 * 256,
+        size: 4 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 textureLoad render and readback"),
     });
-    for index in 0..3 {
+    for index in 0..4 {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("FL9_1 textureLoad pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
@@ -28379,17 +28402,23 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             for x in 0..8 {
                 let inside = y * 256 + x * 4;
                 let outside = 8 * 256 + inside;
+                let invalid_level = 16 * 256 + inside;
+                let nested = 24 * 256 + inside;
                 assert_eq!(
                     &pixels[inside..inside + 4],
                     &[0, 255, 0, 255],
                     "in-bounds textureLoad output ({x}, {y})"
                 );
                 assert_eq!(
+                    &pixels[nested..nested + 4],
+                    &[0, 255, 0, 255],
+                    "nested-helper textureLoad output ({x}, {y})"
+                );
+                assert_eq!(
                     &pixels[outside..outside + 4],
                     &[0, 0, 0, 0],
                     "out-of-bounds textureLoad output ({x}, {y})"
                 );
-                let invalid_level = 16 * 256 + inside;
                 assert_eq!(
                     &pixels[invalid_level..invalid_level + 4],
                     &[0, 0, 0, 0],
@@ -28399,7 +28428,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: direct FL9_1 fragment textureLoad produced green in-bounds texels and zero out-of-bounds/nonzero-mip texels across 192 readback pixels");
+    println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced green in-bounds texels and zero out-of-bounds/nonzero-mip texels across 256 readback pixels");
 }
 
 #[cfg(feature = "glsl")]

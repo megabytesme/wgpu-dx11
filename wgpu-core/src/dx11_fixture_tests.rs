@@ -5955,20 +5955,13 @@ fn render_triangle(
             .unwrap()
             .stage
             .entry_point = Some(Cow::Borrowed("loaded"));
-        let (invalid_pipeline, error) =
+        let (helper_pipeline, error) =
             global.device_create_render_pipeline(device, &texture_load_descriptor, None);
         assert!(
-            matches!(
-                error.as_ref(),
-                Some(
-                    pipeline::CreateRenderPipelineError::UnsupportedTextureLoad {
-                        stage: wgt::ShaderStages::FRAGMENT,
-                    }
-                )
-            ),
-            "FL9_1 core validation must reject a reachable textureLoad before HAL: {error:?}"
+            error.is_none(),
+            "proven helper textureLoad should pass selected-entry validation: {error:?}"
         );
-        global.render_pipeline_drop(invalid_pipeline);
+        global.render_pipeline_drop(helper_pipeline);
 
         texture_load_descriptor
             .fragment
@@ -6021,7 +6014,7 @@ fn render_triangle(
         global.render_pipeline_drop(direct_pipeline);
         global.shader_module_drop(direct_load_shader);
         global.shader_module_drop(texture_load_shader);
-        std::println!("PASS: helper textureLoad rejected and direct narrow fragment textureLoad accepted by selected-entry validation");
+        std::println!("PASS: helper and direct narrow fragment textureLoad accepted by selected-entry validation");
 
         let mut alpha_target = targets[0].clone().unwrap();
         alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
