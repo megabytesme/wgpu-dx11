@@ -6792,6 +6792,333 @@ fn public_dx11_color_write_masks_preserve_disabled_channels_at_fl91() {
 }
 
 #[test]
+fn public_dx11_fragment_discard_preserves_color_and_depth_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let rgba_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    let depth_features = adapter.get_texture_format_features(TextureFormat::Depth24Plus);
+    let required_rgba_usages = TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC;
+    let required_depth_usages = TextureUsages::RENDER_ATTACHMENT;
+    if !rgba_features.allowed_usages.contains(required_rgba_usages)
+        || !depth_features
+            .allowed_usages
+            .contains(required_depth_usages)
+    {
+        assert!(
+            !required,
+            "strict mode requires RGBA8 color readback and Depth24Plus attachment support: RGBA8={rgba_features:?}, depth={depth_features:?}"
+        );
+        println!("SKIP: required color or depth attachment usages are unavailable");
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=fragment discard color/depth preservation",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 fragment discard test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 interpolated fragment discard shader"),
+        source: ShaderSource::Wgsl(
+            "struct VertexOutput { @builtin(position) position: vec4f, @location(0) alpha: f32, }\n\
+             @vertex fn cutout_vs(@location(0) position: vec2f, @location(1) alpha: f32) -> VertexOutput { var output: VertexOutput; output.position = vec4f(position, 0.25, 1.0); output.alpha = alpha; return output; }\n\
+             @vertex fn later_vs(@location(0) position: vec2f, @location(1) alpha: f32) -> VertexOutput { var output: VertexOutput; output.position = vec4f(position, 0.4, 1.0); output.alpha = alpha; return output; }\n\
+             @fragment fn cutout_fs(@location(0) alpha: f32) -> @location(0) vec4f { if alpha < 0.25 { discard; } return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn later_fs() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32,
+            offset: 8,
+            shader_location: 1,
+        },
+    ];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 12,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let color_targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let depth_state = |depth_write_enabled| DepthStencilState {
+        format: TextureFormat::Depth24Plus,
+        depth_write_enabled: Some(depth_write_enabled),
+        depth_compare: Some(CompareFunction::LessEqual),
+        stencil: StencilState::default(),
+        bias: DepthBiasState::default(),
+    };
+    let make_pipeline = |label, vertex_entry, fragment_entry, depth_write_enabled| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_buffers,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(depth_state(depth_write_enabled)),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &color_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let cutout_pipeline = make_pipeline("FL9_1 discard pipeline", "cutout_vs", "cutout_fs", true);
+    let later_pipeline = make_pipeline(
+        "FL9_1 post-discard depth pipeline",
+        "later_vs",
+        "later_fs",
+        false,
+    );
+
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 0.0, 3.0, -1.0, 1.0, -1.0, 3.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 interpolated discard triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map discard triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 discard color target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: required_rgba_usages,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let depth = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 discard depth target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24Plus,
+        usage: required_depth_usages,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 discard readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let read_pixels = |label: &'static str| {
+        let mut encoder =
+            device.create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for public FL9_1 discard readback");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("discard readback callback")
+            .expect("map discard readback");
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        let mut pixels = [[0; 4]; 64];
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                pixels[y * 8 + x].copy_from_slice(&data[offset..offset + 4]);
+            }
+        }
+        drop(data);
+        readback.unmap();
+        pixels
+    };
+
+    let background = [16, 32, 64, 255];
+    let red = [255, 0, 0, 255];
+    let green = [0, 255, 0, 255];
+    let mut first_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 discard color/depth pass"),
+    });
+    {
+        let mut pass = first_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 interpolated discard draw"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 16.0 / 255.0,
+                        g: 32.0 / 255.0,
+                        b: 64.0 / 255.0,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(0.5),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&cutout_pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit([first_encoder.finish()]);
+    let first_pixels = read_pixels("FL9_1 first discard readback");
+    for y in 0..8 {
+        for x in 0..8 {
+            let expected = if x < 4 { background } else { red };
+            assert_eq!(
+                first_pixels[y * 8 + x],
+                expected,
+                "discard color pixel ({x}, {y})"
+            );
+        }
+    }
+
+    let mut second_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 post-discard depth pass"),
+    });
+    {
+        let mut pass = second_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 post-discard occlusion draw"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&later_pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit([second_encoder.finish()]);
+    let second_pixels = read_pixels("FL9_1 post-discard readback");
+    for y in 0..8 {
+        for x in 0..8 {
+            let expected = if x < 4 { green } else { red };
+            assert_eq!(
+                second_pixels[y * 8 + x],
+                expected,
+                "post-discard depth pixel ({x}, {y})"
+            );
+        }
+    }
+    println!(
+        "PASS: interpolated discard preserved the clear color for 32 pixels, wrote red for 32 pixels, and only the discarded half passed a later depth-tested green draw; all 128 readback pixels matched"
+    );
+}
+
+#[test]
 fn public_dx11_scissor_and_viewport_validation_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
