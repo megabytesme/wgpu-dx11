@@ -1,5 +1,31 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — query-gated MSAA depth/stencil proof — 2026-11-09
+
+The public 2x/8x RGBA8 resolve test now checks near/far depth rejection for
+each query-positive depth format. Strict physical RTX 3090 Ti execution at
+requested/actual FL9_1 ran six cases (2x/8x × D24S8, Depth24Plus and D16),
+validated all 64 pixels per case and skipped none. D24S8 additionally proved
+stencil clear, replacement and matching/mismatching reference comparisons.
+This adds evidence for existing optional capability paths, not new support.
+The test and its exact command are in `FL9_1_PROGRESS.md`.
+
+The latest Core/HAL format audit found no confirmed mismatch in inspected
+transfer, attachment or resolve paths. Its table checks every reported usage
+combination at texture creation, but not operation execution. The next
+coordinator task is a compact public usage-operation matrix for common combined
+RGBA8/BGRA8 usages. No low-risk neighboring FL9_1 shader feature was identified;
+the remaining nearby operations are profile-limited. The inspected HAL panic
+stubs are gated from valid public object creation, though a full malformed
+unsafe-HAL audit remains open.
+
+At this checkpoint the backend remains appropriate for controlled applications
+whose requested operations match `CAPABILITIES.md`; it is not a drop-in
+general-purpose implementation. The main gap is systematic proof and closure
+of the public capability contract, alongside unverified historical FL9_1 and
+Lumia/CoreWindow runtime behavior.
+Checkpoint: `fa15bc6f8` (`dx11: verify FL9_1 multisample depth and stencil`).
+
 ## Current coordinator checkpoint — selected `textureNumLevels` helper plus sample — 2026-11-09
 
 The selected 2D fragment `textureNumLevels` helper may coexist with one direct

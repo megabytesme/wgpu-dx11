@@ -1,5 +1,31 @@
 # FL9_1 completion plan
 
+## Latest verified MSAA depth/stencil execution coverage — 2026-11-09
+
+The existing query-gated 2x/8x RGBA8 multisample resolve test now checks
+depth rejection for each supported depth format (D24S8, Depth24Plus and
+Depth16Unorm) at each selected sample count. The D24S8 path checks stencil
+clear-to-zero, Replace(1), equal-reference success, mismatched-reference
+rejection, and depth rejection with distinct output colors. Strict public
+execution on the RTX 3090 Ti requested and selected FL9_1; the adapter
+reported 2x and 8x support. Six depth/sample cases each validated all 64
+resolved pixels, with no skipped subcases. This strengthens verification of
+existing capability-gated behavior and does not expose new formats or sample
+counts.
+
+Next: extend the public format/usage projection test from descriptor creation
+to actual operation sequences for a compact set of combined usages, starting
+with the common RGBA8/BGRA8 paths. The current 21-format table checks 189
+advertised usage combinations, 136 rejected combinations, 21 mip rules and
+40 sample-count rules, but drops every texture without executing it. A fresh
+Core/HAL audit found no confirmed mismatch in the inspected formats, transfer,
+attachment or resolve paths; this remains a proof-coverage gap. The panic
+reachability audit found no valid public path to the existing compute,
+pipeline-cache, ray-tracing or acceleration-structure panic stubs. The shader
+audit found no low-risk adjacent FL9_1 WGSL feature; explicit LOD, derivatives,
+gather, front-facing and fragment position remain profile restrictions.
+Checkpoint: `fa15bc6f8` (`dx11: verify FL9_1 multisample depth and stencil`).
+
 ## Latest verified shader-query increment — selected `textureNumLevels` helper plus sample — 2026-11-09
 
 The selected 2D fragment `textureNumLevels` helper may now coexist with one

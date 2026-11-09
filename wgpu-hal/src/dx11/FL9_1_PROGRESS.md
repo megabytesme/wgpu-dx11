@@ -1,5 +1,60 @@
 # FL9_1 progress
 
+## Optional 2x/8x MSAA depth and stencil readback — 2026-11-09
+
+Extended the public optional FL9_1 resolve test to run real depth ordering at
+every selected-device-supported depth format for 2x and 8x RGBA8 MSAA. On the
+RTX 3090 Ti all six pairs (2x/8x × Depth24PlusStencil8, Depth24Plus and
+Depth16Unorm) were supported and executed. Each case rendered a near triangle
+followed by a farther triangle with a distinct color, resolved and checked all
+64 pixels; the near color survived, proving the later depth test rejected the
+far draw. D24S8 also verified clear-to-zero, `Equal` with reference 0,
+`Replace` with reference 1, successful `Equal` at reference 1, and rejection
+at reference 0 after replacement. The test reports a color-only result rather
+than claiming depth coverage if no query-positive depth format is available.
+
+The strict public test selected NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+FL9_1 and asserted actual FL9_1. Queried RGBA8 sample counts were `[2, 8]`;
+no depth/stencil subcases skipped. Focused run: 1 Rust test passed, 0 failed,
+with six depth cases and two additional D24S8 stencil readbacks.
+
+Verification:
+
+- Focused strict run (from the Visual Studio x64 developer environment):
+
+  ```powershell
+  cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_optional_fl91_sample_counts -- --nocapture --test-threads=1'
+  ```
+
+- The full strict public target passed 116/116:
+
+  ```powershell
+  cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1'
+  ```
+
+- `rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs` and
+  `git diff --check` passed.
+- Targeted `cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public` passed. Existing HAL warnings remain for argument counts and one boolean expression; no new warning was reported for this test.
+
+The independent Core/HAL projection audit confirmed that the 21-format table
+currently verifies 189 advertised usage combinations, 136 rejected
+combinations, 21 mip rules and 40 sample-count rules through creation only.
+It did not find a confirmed execution mismatch in the inspected transfer,
+attachment or resolve paths. The next task is a compact public operation matrix
+for a few combined usages, beginning with RGBA8/BGRA8, so advertised
+capabilities are exercised rather than only instantiated.
+
+The panic reachability review found no valid public path to the current
+compute, pipeline-cache, ray-tracing or acceleration-structure panic stubs;
+Core/capability gates prevent successful object creation. This was a static
+review, not a malformed unsafe-HAL audit. The shader review found no obvious
+low-risk adjacent feature to expose: explicit LOD, derivatives, gather,
+front-facing and fragment position remain profile restrictions. Avoid
+expanding shader coverage before closing operation-proof gaps.
+
+Checkpoint: `fa15bc6f8` (`dx11: verify FL9_1 multisample depth and stencil`).
+
 ## Selected-entry `textureNumLevels` helper plus sample — 2026-11-09
 
 The narrow selected 2D fragment `textureNumLevels` helper may now coexist
