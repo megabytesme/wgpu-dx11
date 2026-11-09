@@ -12717,3 +12717,61 @@ software=false, requested/actual FL9_1):
 - Public-test Clippy, formatting of the changed Rust file and `git diff --check` passed. Clippy reported only existing D3D11 helper argument-count and public-test `HashMap` warnings.
 
 The copy/draw sequence was tested through public wgpu and exercised real GPU submission and readback. Broader concurrent uniform updates, historical FL9_1 driver behavior and Lumia/CoreWindow execution remain open. Implementation checkpoint: `5951e7a873927bb95731d5ec26608eda4d715102`.
+
+# Public BC1/BC2/BC3 unorm feature — 2026-11-09
+
+Added the native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature. DX11
+advertises it only when the selected FL9_1 device and backend support sampled
+uploads for BC1, BC2 and BC3 unorm. Core permits those three exact formats via
+the feature while retaining the standard BC feature requirement for BC sRGB
+and BC4–BC7. Adapter format usage queries remain authoritative, GPU BC copies
+stay query-gated, and the FL9_x texture-to-buffer readback mask remains clear.
+
+The strict public wgpu test explicitly requested/selected FL9_1 on the NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false).
+It uploaded BC1 red, BC2 green and BC3 blue blocks, copied the three resources,
+sampled each in one fragment shader, and verified all 64 pixels were white.
+The narrow feature was present, `TEXTURE_COMPRESSION_BC` was absent, and a BC4
+texture request was rejected. A strict Core hardware fixture confirmed the
+same projected feature and retained BC1 copy/readback boundaries; it passed
+1/1, with the unrelated optional RG8 mip subcase skipped by the selected
+device query. The HAL synthetic projection test passed 1/1, and the Core
+synthetic exact-format feature test passed 1/1.
+
+An initial Core fixture run failed because its legacy assertion expected
+unsupported BC formats to fail only as invalid usages; Core now rejects them
+earlier with the correct missing-feature validation error. The assertion was
+updated to accept that precise earlier rejection, and the strict fixture then
+passed. An initial public-test compile also exposed outdated pipeline-layout
+and error-scope API field names; these were corrected before GPU execution.
+
+The broad completion mission remains incomplete. Continue the full public
+Core/HAL contract audit and practical shader/resource expansion. Historical
+FL9_1 hardware, Lumia/CoreWindow runtime and real device-removal recovery remain
+external verification gaps.
+
+## BC feature regression verification — 2026-11-09
+
+Final Rust 1.93.1 validation used the Visual Studio 2026 x64 developer
+environment and bounded Cargo parallelism:
+
+- `cargo +1.93 test --offline -j8 -p wgpu-types --lib`: 106 passed. Existing
+  serde-import and unused-qualification warnings remain.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 444 passed,
+  including selected-device D3D11 execution. The RTX 3090 Ti selected physical
+  hardware at requested/actual FL9_1; BC1/2/3 format queries returned
+  `0x000213a0`, BC4–7 queries were unavailable, the narrow feature was present
+  and the broad BC feature was absent. Four existing HAL qualification
+  warnings were reported.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib -- --test-threads=1`: 118 passed. This includes the production
+  projection fixture and strict private-core hardware rendering.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1`: 1 passed on the physical RTX. BC1 red, BC2 green and BC3 blue uploads, texture copies and sampling yielded 64 white pixels; BC4 and BC3 3D creation were rejected by Core.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: 106 passed. This includes the public zero-default-enumeration isolation test. Three optional subcases logged skips: R8G8_UNORM vertex input, Float16x2 vertex input and the R8G8_UNORM mip chain. They did not count as executed GPU cases.
+- `cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1`: 107 passed.
+- D3D11 HAL `cargo check`, Clippy for `wgpu-types`, Core, HAL tests and the new public integration target, `cargo +1.93 fmt --all -- --check`, and `git diff --check` passed. Clippy emitted only existing backend/test warnings; no warning points to the BC changes.
+
+The first full Core run exposed an outdated exact-feature assertion in the
+selected-device fixture. It was updated to include the newly projected narrow
+feature while continuing to assert that broad BC support is absent; the full
+Core suite then passed. No public enumeration default or backend priority was
+changed.

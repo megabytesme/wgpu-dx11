@@ -684,9 +684,10 @@ support.
 explicitly selected physical adapter. It returns a snapshot only for an
 actually created FL9_1 device. Both ordinary opt-in D3D11 enumeration and the
 core fixture consume the projected limits, alignments and downlevel gates. The
-fixture locally opts into aggregate BC support only to test the private BC1
-path; the production projection withholds `TEXTURE_COMPRESSION_BC` because the
-backend does not implement the complete BCn format family.
+fixture uses the production projection's narrow
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature when all three selected-device
+sampled-upload paths are available. The broad `TEXTURE_COMPRESSION_BC` feature
+remains withheld because BC4–BC7 are not implemented.
 
 ```powershell
 cargo +1.93 test --offline -j 16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
@@ -2004,6 +2005,21 @@ blocks are 16 bytes. Each test replaces the block at [4,0] using an aligned
 32-byte pitch, copies the result to a second sampled texture, and checks all
 256 output pixels. The forced-FL9_1 RTX reports `0x000213a0` and filtered
 sampling for all three formats.
+The native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature is available
+only when every format passes its selected-device sampled-upload query and
+backend check. A separate public wgpu test requested and confirmed FL9_1,
+uploaded BC1 red, BC2 green and BC3 blue blocks, copied each texture on the
+RTX 3090 Ti, sampled all three in one fragment shader and verified 64 white
+pixels. The same device did not advertise the full BC feature, and the test
+confirmed a BC4 texture descriptor is rejected. BC sRGB variants and
+texture-to-buffer readback remain unavailable.
+
+Run the public strict execution test with:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
+```
 BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
 texture-to-buffer attempt fails core validation because FL9_x cannot safely
 copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM,
@@ -2711,7 +2727,7 @@ mapped readback and explicit teardown. It checks all 64 copied bytes and all
 unsupported transient formats and usages and creates transient textures and
 views. Its restricted numeric limits and format capabilities do not constitute
 a safe general adapter contract. The fixture verifies that core's format-feature
-query preserves the HAL's RGBA8, D24S8, BC1-only synthetic and unsupported-BC results. It
+query preserves the HAL's RGBA8, D24S8, narrow BC1/2/3 and unsupported-BC results. It
 also verifies that core rejects asymmetric stencil state with the missing
 `TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL. Full-channel
 straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`, while the

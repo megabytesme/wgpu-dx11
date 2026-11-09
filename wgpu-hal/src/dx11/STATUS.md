@@ -988,9 +988,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
 
 The selected-device projection now supplies conservative limits, alignments,
 downlevel gates, features and per-format reports to both ordinary adapter
-enumeration and the controlled core fixture. It withholds the aggregate BC
-compression feature because BC4 through BC7 remain unimplemented; isolated
-private core BC tests opt into the aggregate feature only for coverage.
+enumeration and the controlled core fixture. It exposes the narrow BC1/2/3
+unorm feature when all three queried sampled-upload paths are available, while
+withholding the aggregate BC feature because BC4 through BC7 remain
+unimplemented.
 
 ## Remaining public contract and completion gates
 
@@ -1356,3 +1357,20 @@ binding continues through the existing mapping. FXC accepted the shader under
 transitioned between 8x8 and 4x4 cube views and matched all 64 readback pixels.
 Helpers, explicit levels, unrelated image operations and general texture
 queries remain unsupported.
+
+## Narrow public BC1/BC2/BC3 unorm feature — 2026-11-09
+
+The D3D11 projection now reports the native-only
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature only when the selected device
+and backend implement sampled upload for all three formats. Core accepts these
+unorm formats through that feature while keeping the standard BC1–BC7 feature
+requirement for sRGB BC, BC4, BC5, BC6 and BC7. Per-format queries continue to
+report copy-source capability independently, and the FL9_x texture-to-buffer
+readback mask remains clear.
+
+A strict public wgpu test on the RTX 3090 Ti at requested/actual FL9_1 uploads
+BC1 red, BC2 green and BC3 blue data, copies each to a second texture, samples
+all three in one fragment shader and verifies 64 white pixels. A BC4 texture
+request is rejected. The Core fixture uses the same projected feature; the
+broad aggregate BC feature remains absent. The feature does not add BC sRGB,
+BC4–BC7, mip, render-target or CPU-readback support.

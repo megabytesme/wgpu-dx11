@@ -1,5 +1,25 @@
 # FL9_1 handoff
 
+## Narrow public BC1/BC2/BC3 unorm feature — 2026-11-09
+
+The opt-in public D3D11 adapter now exposes the native-only
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature when all three selected-device
+sampled-upload paths are available. Core accepts BC1/2/3 unorm through this
+narrow feature without reporting the standard BC1–BC7 feature. BC sRGB,
+BC4–BC7 and BC texture-to-buffer readback remain unavailable. Per-format
+queries govern optional GPU copy-source usage.
+
+The strict public forced-FL9_1 test on an NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) uploaded distinct BC1 red, BC2 green
+and BC3 blue blocks, copied all three textures, sampled all three in one
+fragment shader and verified all 64 output pixels were white. The same test
+confirmed the full BC feature was absent and BC4 plus BC3 3D creation were
+rejected by Core. The
+strict Core fixture and CPU-only Core/HAL capability gates passed. This is a
+restricted format addition only; it does not resolve the outstanding full
+Core/HAL audit, shader subset, legacy hardware, Lumia/CoreWindow or physical
+device-removal coverage.
+
 ## Latest verified public rendering — depth bias — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
 
 The public D16 depth test exercises zero-, positive- and negative-constant-bias

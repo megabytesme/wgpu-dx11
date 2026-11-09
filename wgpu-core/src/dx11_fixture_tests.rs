@@ -341,8 +341,9 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (features, capabilities) = fixture
         .test_fixture_wgpu_capabilities()
         .expect("selected FL9_1 device capability projection");
-    let expected_features =
-        wgt::Features::TEXTURE_FORMAT_16BIT_NORM | wgt::Features::TEXTURE_FORMAT_16BIT_PACKED;
+    let expected_features = wgt::Features::TEXTURE_FORMAT_16BIT_NORM
+        | wgt::Features::TEXTURE_FORMAT_16BIT_PACKED
+        | wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM;
     if capabilities
         .downlevel
         .limits
@@ -1777,10 +1778,24 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     let bc3_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc3RgbaUnorm)
     };
+    let bc123_supported = [bc1_caps, bc2_caps, bc3_caps].into_iter().all(|caps| {
+        caps.contains(
+            hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST,
+        )
+    });
+    assert_eq!(
+        projected_features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM),
+        bc123_supported,
+        "the narrow BC feature must match all three selected-device sampled-upload paths"
+    );
+    assert!(
+        !projected_features.contains(wgt::Features::TEXTURE_COMPRESSION_BC),
+        "the FL9_1 projection must not claim complete BC4-BC7 support"
+    );
     if required {
         assert!(
-            bc1_supported,
-            "strict mode requires BC1 sampled upload support"
+            bc123_supported,
+            "strict mode requires BC1/BC2/BC3 sampled upload support"
         );
     }
     for unsupported_bc in [
@@ -1799,17 +1814,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         assert!(
             unsafe { hal::Adapter::texture_format_capabilities(&fixture, unsupported_bc) }
                 .is_empty(),
-            "the BC1-only fixture must not expose {unsupported_bc:?}"
+            "the narrow BC fixture must not expose {unsupported_bc:?}"
         );
     }
     if !bc1_supported {
         std::println!("SKIP: BC1 sampled upload format support unavailable");
     }
-    let mut fixture_features = projected_features;
-    if bc1_supported {
-        // This fixture opt-in is limited to BC1 testing; production withholds the BCn feature.
-        fixture_features |= wgt::Features::TEXTURE_COMPRESSION_BC;
-    }
+    let fixture_features = projected_features;
     let optional_sampled_format_caps = [
         wgt::TextureFormat::R8Unorm,
         wgt::TextureFormat::Rg8Unorm,
@@ -2819,9 +2830,10 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             assert!(
                 matches!(
                     error.as_ref(),
-                    Some(crate::resource::CreateTextureError::InvalidFormatUsages(..))
+                    Some(crate::resource::CreateTextureError::MissingFeatures(..))
+                        | Some(crate::resource::CreateTextureError::InvalidFormatUsages(..))
                 ),
-                "the BC1-only fixture must reject {format:?}: {error:?}"
+                "the narrow BC fixture must reject {format:?}: {error:?}"
             );
             global.texture_drop(texture);
         }

@@ -92,6 +92,69 @@ fn unique_sampling_pairs(
     (pairs, count)
 }
 
+fn missing_texture_format_features(
+    format: TextureFormat,
+    features: wgt::Features,
+) -> wgt::Features {
+    let missing = format.required_features() - features;
+    if missing == wgt::Features::TEXTURE_COMPRESSION_BC
+        && features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM)
+        && matches!(
+            format,
+            TextureFormat::Bc1RgbaUnorm | TextureFormat::Bc2RgbaUnorm | TextureFormat::Bc3RgbaUnorm
+        )
+    {
+        wgt::Features::empty()
+    } else {
+        missing
+    }
+}
+
+#[cfg(test)]
+mod texture_format_feature_tests {
+    use super::missing_texture_format_features;
+    use wgt::{Features, TextureFormat};
+
+    #[test]
+    fn narrow_bc_feature_enables_only_bc1_to_bc3_unorm_formats() {
+        let subset = Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM;
+        for format in [
+            TextureFormat::Bc1RgbaUnorm,
+            TextureFormat::Bc2RgbaUnorm,
+            TextureFormat::Bc3RgbaUnorm,
+        ] {
+            assert_eq!(
+                missing_texture_format_features(format, subset),
+                Features::empty()
+            );
+            assert_eq!(
+                missing_texture_format_features(format, Features::TEXTURE_COMPRESSION_BC),
+                Features::empty()
+            );
+            assert_eq!(
+                missing_texture_format_features(format, Features::empty()),
+                Features::TEXTURE_COMPRESSION_BC
+            );
+        }
+
+        for format in [
+            TextureFormat::Bc1RgbaUnormSrgb,
+            TextureFormat::Bc2RgbaUnormSrgb,
+            TextureFormat::Bc3RgbaUnormSrgb,
+            TextureFormat::Bc4RUnorm,
+            TextureFormat::Bc5RgUnorm,
+            TextureFormat::Bc6hRgbUfloat,
+            TextureFormat::Bc7RgbaUnorm,
+        ] {
+            assert_eq!(
+                missing_texture_format_features(format, subset),
+                Features::TEXTURE_COMPRESSION_BC,
+                "{format:?} must remain behind the complete BC feature"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod sampling_pair_limit_tests {
     use alloc::vec;
@@ -6821,7 +6884,10 @@ impl Device {
         &self,
         format: TextureFormat,
     ) -> Result<wgt::TextureFormatFeatures, MissingFeatures> {
-        self.require_features(format.required_features())?;
+        let missing_features = missing_texture_format_features(format, self.features);
+        if !missing_features.is_empty() {
+            return Err(MissingFeatures(missing_features));
+        }
 
         let using_device_features = self
             .features

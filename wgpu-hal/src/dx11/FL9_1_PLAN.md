@@ -1,5 +1,20 @@
 # FL9_1 completion plan
 
+## Latest bounded format increment — public BC1/BC2/BC3 unorm feature — 2026-11-09
+
+Added the native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature for the
+existing BC1/2/3 unorm sampled-upload path. The selected-device projection
+requires every format's queried sampled-upload capability and backend path;
+Core accepts only those three unorm formats through the narrow feature. The
+standard BC feature remains withheld, BC sRGB and BC4–BC7 remain rejected, and
+the FL9_x texture-to-buffer readback mask remains clear. A strict public
+forced-FL9_1 test on the RTX 3090 Ti uploaded and copied three differently
+colored compressed textures, sampled each in one shader and verified 64 white
+pixels; it also confirmed BC4 rejection. Synthetic capability and Core feature
+gate tests cover partial/failed queries and the exact supported format set.
+The full mission remains partially complete; proceed with another bounded
+public-contract or graphics gap after recording complete regressions.
+
 ## Latest verified public rendering increment — depth bias — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
 
 The public D16 depth test now creates and executes zero-, positive- and

@@ -880,6 +880,9 @@ impl Capabilities {
         {
             features |= wgt::Features::TEXTURE_FORMAT_16BIT_NORM;
         }
+        if self.bc1_bc2_bc3_unorm_supported() {
+            features |= wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM;
+        }
         if comparison_sampling {
             features |= wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
         }
@@ -1722,6 +1725,18 @@ impl Capabilities {
             }
         }
         result
+    }
+
+    fn bc1_bc2_bc3_unorm_supported(&self) -> bool {
+        use crate::TextureFormatCapabilities as Caps;
+        let required = Caps::SAMPLED | Caps::COPY_DST;
+        [
+            wgt::TextureFormat::Bc1RgbaUnorm,
+            wgt::TextureFormat::Bc2RgbaUnorm,
+            wgt::TextureFormat::Bc3RgbaUnorm,
+        ]
+        .into_iter()
+        .all(|format| self.texture_format_capabilities(format).contains(required))
     }
 }
 
@@ -3119,11 +3134,15 @@ mod tests {
     fn fl91_wgpu_projection_matches_the_selected_physical_device() -> windows::core::Result<()> {
         use windows::Win32::Graphics::Dxgi::Common::{
             DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B5G6R5_UNORM,
-            DXGI_FORMAT_D32_FLOAT, DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
-            DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SNORM,
-            DXGI_FORMAT_R16G16B16A16_UNORM, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SNORM,
-            DXGI_FORMAT_R16G16_UNORM, DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16_SNORM,
-            DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32_FLOAT,
+            DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM_SRGB,
+            DXGI_FORMAT_BC4_SNORM, DXGI_FORMAT_BC4_UNORM, DXGI_FORMAT_BC5_SNORM,
+            DXGI_FORMAT_BC5_UNORM, DXGI_FORMAT_BC6H_SF16, DXGI_FORMAT_BC6H_UF16,
+            DXGI_FORMAT_BC7_UNORM, DXGI_FORMAT_BC7_UNORM_SRGB, DXGI_FORMAT_D32_FLOAT,
+            DXGI_FORMAT_D32_FLOAT_S8X24_UINT, DXGI_FORMAT_R16G16B16A16_FLOAT,
+            DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16B16A16_UNORM,
+            DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16G16_UNORM,
+            DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16_SNORM, DXGI_FORMAT_R16_UNORM,
+            DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32_FLOAT,
         };
 
         let required =
@@ -3188,6 +3207,29 @@ mod tests {
             )
         });
         std::println!("FL9_1 cube format queries: {cube_queries:?}");
+        let bc_queries = [
+            ("BC1_UNORM", DXGI_FORMAT_BC1_UNORM),
+            ("BC1_SRGB", DXGI_FORMAT_BC1_UNORM_SRGB),
+            ("BC2_UNORM", DXGI_FORMAT_BC2_UNORM),
+            ("BC2_SRGB", DXGI_FORMAT_BC2_UNORM_SRGB),
+            ("BC3_UNORM", DXGI_FORMAT_BC3_UNORM),
+            ("BC3_SRGB", DXGI_FORMAT_BC3_UNORM_SRGB),
+            ("BC4_UNORM", DXGI_FORMAT_BC4_UNORM),
+            ("BC4_SNORM", DXGI_FORMAT_BC4_SNORM),
+            ("BC5_UNORM", DXGI_FORMAT_BC5_UNORM),
+            ("BC5_SNORM", DXGI_FORMAT_BC5_SNORM),
+            ("BC6H_UF16", DXGI_FORMAT_BC6H_UF16),
+            ("BC6H_SF16", DXGI_FORMAT_BC6H_SF16),
+            ("BC7_UNORM", DXGI_FORMAT_BC7_UNORM),
+            ("BC7_SRGB", DXGI_FORMAT_BC7_UNORM_SRGB),
+        ]
+        .map(|(name, format)| {
+            (
+                name,
+                Query::from_result(unsafe { native.raw_device().CheckFormatSupport(format) }),
+            )
+        });
+        std::println!("FL9_1 BC format support queries: {bc_queries:?}");
         let optional_float_formats = [
             ("R32_FLOAT", DXGI_FORMAT_R32_FLOAT),
             ("R32G32B32A32_FLOAT", DXGI_FORMAT_R32G32B32A32_FLOAT),
@@ -3231,6 +3273,18 @@ mod tests {
         let projection = caps
             .wgpu_projection()
             .expect("the selected FL9_1 path has a wgpu capability projection");
+        std::println!(
+            "FL9_1 BC projection: queries={bc_queries:?}; BC1/BC2/BC3_UNORM feature={}; full BC feature={}",
+            projection
+                .features
+                .contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM),
+            projection
+                .features
+                .contains(wgt::Features::TEXTURE_COMPRESSION_BC)
+        );
+        assert!(!projection
+            .features
+            .contains(wgt::Features::TEXTURE_COMPRESSION_BC));
         assert_eq!(
             projection.capabilities.limits.max_texture_dimension_2d,
             2048
@@ -5818,6 +5872,48 @@ mod tests {
             query.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1),
             Err(UnsupportedUsage)
         );
+    }
+
+    #[test]
+    fn bc_subset_feature_requires_all_three_unorm_sampled_upload_paths() {
+        let feature = wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM;
+        let mut caps = model(FeatureLevel::L9_1);
+        let projection = caps.wgpu_projection().unwrap();
+        assert!(projection.features.contains(feature));
+        assert!(!projection
+            .features
+            .contains(wgt::Features::TEXTURE_COMPRESSION_BC));
+
+        caps.driver.bc1_unorm = Query::Unavailable(-1);
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+
+        caps = model(FeatureLevel::L9_1);
+        caps.driver.bc2_unorm = Query::Unavailable(-1);
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+
+        caps = model(FeatureLevel::L9_1);
+        caps.driver.bc3_unorm = Query::Unavailable(-1);
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+
+        caps = model(FeatureLevel::L9_1);
+        caps.backend.bc1_sampled_upload = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+        caps.backend.bc1_sampled_upload = true;
+        caps.backend.bc2_sampled_upload = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+        caps.backend.bc2_sampled_upload = true;
+        caps.backend.bc3_sampled_upload = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+
+        caps = model(FeatureLevel::L9_1);
+        caps.hardware.bc1_unorm_sampled_texture = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+        caps.hardware.bc1_unorm_sampled_texture = true;
+        caps.hardware.bc2_unorm_sampled_texture = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+        caps.hardware.bc2_unorm_sampled_texture = true;
+        caps.hardware.bc3_unorm_sampled_texture = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
     }
 
     #[test]

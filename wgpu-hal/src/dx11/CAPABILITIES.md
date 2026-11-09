@@ -359,8 +359,11 @@ permit FL9_1 copies within GPU-accessible Texture2D resources and prohibit
 GPU-to-CPU copies from resources carrying only the shader-resource bind flag.
 
 The implementation also supports BC2_UNORM and BC3_UNORM sampled uploads and
-same-format GPU texture copies. All three formats use independently queried
-`CheckFormatSupport` results and share the 4×4, one-mip, one-layer,
+same-format GPU texture copies. The public adapter exposes these implemented
+unorm formats through the native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM`
+feature when all three queried sampled-upload paths are available. This does
+not expose the broader `TEXTURE_COMPRESSION_BC` feature. All three formats use
+independently queried `CheckFormatSupport` results and share the 4×4, one-mip, one-layer,
 block-aligned rules; block row pitches and source offsets must be multiples of
 the format's 8-byte (BC1) or 16-byte (BC2/BC3) block size. Strict forced-FL9_1
 tests uploaded a patterned image, replaced one block at a nonzero origin,
@@ -368,8 +371,10 @@ copied the result to a second resource and sampled all 256 output pixels. On
 the RTX 3090 Ti, BC2 and BC3 each returned support mask `0x000213a0` with
 linear-filter support. Texture-to-buffer readback, render targets, mip chains,
 non-block-aligned dimensions, sRGB views and cross-format BC copies remain
-unavailable. `TEXTURE_COMPRESSION_BC` remains withheld because it also promises
-formats not implemented here, including BC4 through BC7.
+unavailable. BC sRGB variants and BC4 through BC7 remain withheld. A public
+strict test samples BC1, BC2 and BC3 after upload and texture-to-texture copy;
+its 64 readback pixels confirm the red, green and blue compressed inputs all
+contribute to white output. Core's BC readback mask remains clear.
 
 On 2026-11-05, the same adapter returned `CheckFormatSupport` mask
 `0x112ef3e0` for both `R8G8B8A8_UNORM_SRGB` and
@@ -1462,12 +1467,13 @@ rejected when the separate vertex sampled-texture limit is zero;
 fragment-visible layouts remain valid, and actual vertex shader sampling
 remains rejected at pipeline validation.
 
-The projection withholds `Features::TEXTURE_COMPRESSION_BC`: wgpu's BC feature
-covers BC1 through BC7, while this backend currently implements only BC1, BC2
-and BC3. Isolated private core BC tests add the aggregate feature locally for
-coverage. BC4 through BC7 remain unsupported, so the production adapter cannot
-advertise the aggregate feature without implementing the rest of the family or
-adding a narrower core capability contract.
+The projection withholds `Features::TEXTURE_COMPRESSION_BC`: that feature
+covers BC1 through BC7, while this backend implements only BC1, BC2 and BC3
+unorm. The native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature unlocks
+only those three formats, and only when the selected device and backend report
+their sampled-upload paths. Format usages remain query-specific; BC sRGB,
+BC4–BC7 and CPU readback are not exposed. Strict public GPU coverage verifies
+all three formats together, including GPU copies on the RTX 3090 Ti.
 
 ## Public render bundles
 
