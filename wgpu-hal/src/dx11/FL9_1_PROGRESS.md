@@ -13685,3 +13685,41 @@ historical FL9_1 hardware.
 
 Checkpoint: `8ba3f0f6418afedde998b3b615f0d30e1b21420c`
 (`dx11: support selected-entry texture emulation helpers`).
+
+## Public color-write-mask transitions — 2026-11-09
+
+Added `public_dx11_color_write_masks_preserve_disabled_channels_at_fl91` in
+`wgpu/tests/dx11_public.rs`. One render pass draws to six scissored columns
+using `ALL`, `RED`, `GREEN`, `BLUE`, `ALPHA` and empty write masks; two more
+columns remain untouched. The attachment begins with a distinct RGBA clear,
+and all 64 output pixels are checked. The results prove that enabled channels
+receive the fragment color, disabled channels preserve the clear value, and an
+empty mask leaves the pixel unchanged. An independent read-only review found
+the expectations and strict hardware gate consistent with the public API.
+
+The focused test passed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), with requested and
+actual FL9_1. The full strict public D3D11 target passed 114/114, including
+`experimental_dx11_is_not_enabled_by_default`. No backend capability changed.
+
+Rustup's pinned `1.93.1-x86_64-pc-windows-msvc` installation was incomplete
+(missing manifest), so tests, formatting and Clippy used the installed Rust
+1.93 MSVC toolchain. Exact test commands:
+
+```text
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test -p wgpu --features dx11-test-fixture --test dx11_public public_dx11_color_write_masks_preserve_disabled_channels_at_fl91 -- --exact --nocapture'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test -p wgpu --features dx11-test-fixture --test dx11_public -j2 -- --nocapture'
+cargo +1.93 fmt --all -- --check
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cargo +1.93 clippy -p wgpu --features dx11-test-fixture --test dx11_public -j8'
+git diff --check
+```
+
+All commands passed. Clippy reported five pre-existing D3D11 HAL style warnings
+and three pre-existing `wgpu-core` unused-variable warnings; the new test
+introduced no warning. Visual Studio's developer prompt printed
+`vError: Unknown error` in its banner, but initialized successfully and all
+build/test commands completed. Formatting and diff checks passed. The result
+adds public execution evidence only; it does not close the broad operation
+matrix, historical FL9_1/Lumia verification or public exposure gates.
+
+Checkpoint: `f71993b7c` (`dx11: verify FL9_1 color write masks`).

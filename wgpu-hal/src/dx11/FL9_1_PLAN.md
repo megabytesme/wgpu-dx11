@@ -1,5 +1,29 @@
 # FL9_1 completion plan
 
+## Latest public render-state verification — color write masks — 2026-11-09
+
+The public FL9_1 rendering test now transitions through `ALL`, `RED`,
+`GREEN`, `BLUE`, `ALPHA` and empty color write masks in one render pass. Each
+scissored column begins from a distinctive clear color; readback checks all 64
+pixels, including untouched columns. Disabled channels retain their previous
+values, and an empty mask writes nothing. This is public API execution
+coverage, not a capability expansion.
+
+Strict execution selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and confirmed FL9_1. The focused
+test passed 1/1 and the complete strict public D3D11 target passed 114/114.
+Formatting, diff checks and targeted Clippy passed. The installed Rust 1.93
+toolchain was used because the pinned 1.93.1 installation is incomplete.
+See `FL9_1_PROGRESS.md` for exact commands and diagnostics.
+
+No public capability changed. The execution matrix and Core/HAL acceptance
+audit remain incomplete; historical FL9_1 hardware, Lumia ARM32/CoreWindow and
+physical device-loss recovery remain unverified. Continue with bounded
+query-gated public operations and audits, preserving default adapter
+enumeration isolation.
+
+Checkpoint: `f71993b7c` (`dx11: verify FL9_1 color write masks`).
+
 ## Latest verified multi-mip SNORM copy operation — 2026-11-09
 
 The public FL9_1 path now executes a partial same-format RGBA8_SNORM copy at

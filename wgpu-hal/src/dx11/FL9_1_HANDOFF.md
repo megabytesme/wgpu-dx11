@@ -1,5 +1,24 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — public color write masks — 2026-11-09
+
+The public API test now proves the advertised per-channel `ColorWrites`
+behavior at forced FL9_1: `ALL`, each single-channel mask and an empty mask
+are applied across scissored columns, then all 64 pixels are read back. The
+focused strict test and complete strict public D3D11 target passed on the RTX
+3090 Ti, requested/actual FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false). The full target passed 114/114. A read-only review found no
+correctness blocker. The test adds evidence only; no capability or backend
+implementation changed.
+
+Rust 1.93 was used because rustup reports the pinned 1.93.1 MSVC toolchain
+installation incomplete. Formatting and targeted Clippy passed; existing HAL
+and Core warnings are recorded in `FL9_1_PROGRESS.md`. Continue the public
+Core/HAL execution matrix, while keeping public D3D11 opt-in and historical
+FL9_1/Lumia execution requirements open.
+
+Checkpoint: `f71993b7c` (`dx11: verify FL9_1 color write masks`).
+
 ## Current coordinator checkpoint — RGBA8_SNORM multi-mip GPU copy — 2026-11-09
 
 The public FL9_1 path now combines query-gated RGBA8_SNORM mips with GPU
