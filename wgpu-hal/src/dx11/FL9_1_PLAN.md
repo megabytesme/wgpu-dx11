@@ -1,18 +1,22 @@
 # FL9_1 completion plan
 
-## Latest pipeline robustness proof — optional viewport remap — 2026-11-09
+## Latest Core/HAL boundary finding — viewport remap shader — 2026-11-09
 
-Pipeline creation now treats the viewport-remapped vertex shader as optional
-when only that variant fails with a shader-linkage/FXC error. Device, entry
-point and pipeline-constant failures still propagate. The base FL9_1 pipeline
-remains usable; a draw that requires the missing variant is rejected before
-command replay. A strict RTX 3090 Ti test used the 254-constant shader whose
-base form compiles and whose remapped form exceeds FXC's FL9_1 budget. The
-focused test passed 1/1, the existing recovery/readback test passed 1/1, and
-the complete strict private HAL suite passed 465/465. `cargo +1.93 fmt --all
--- --check`, HAL Clippy and `git diff --check` passed; existing HAL warnings
-remain. See `FL9_1_PROGRESS.md` for exact commands. This does not change the
-Core rule rejecting out-of-target viewports and adds no advertised capability.
+An optional-variant pipeline change was withdrawn after a deeper contract
+audit. Microsoft documents that level-9 `RSSetViewports` uses DWORDs
+internally, so an in-target fractional viewport also needs the adjusted
+vertex-shader variant. Core rejects out-of-target rectangles but accepts
+fractional rectangles inside the target. If FXC cannot compile the adjusted
+variant, failing pipeline creation with a linkage error is safer than
+creating a pipeline whose valid draw fails during submission. A future
+optional-variant design needs per-pipeline Core/HAL validation or a
+semantics-preserving lower-cost transform. No capability is added. Strict HAL
+and debug-layer validation passed after restoring the fail-at-pipeline path;
+details are in `FL9_1_PROGRESS.md`.
+
+This remains an experimental opt-in subset. The public Core/HAL operation
+audit, CTS routing, historical FL9_1 hardware, Lumia/CoreWindow runtime, and
+physical device-removal behavior remain open.
 
 ## Latest shader execution proof — fragment `discard` — 2026-11-09
 

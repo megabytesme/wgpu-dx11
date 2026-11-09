@@ -246,22 +246,23 @@ and the [WebGPU specification](https://www.w3.org/TR/webgpu/).
 
 ## Viewport clipping
 
-The private HAL clamps a viewport rectangle to the attachment and, when
-clipping changes its transform, selects a separately compiled FL9_1 vertex
-shader variant. That variant can fail FXC's level-9 instruction limits even
-when the original shader compiles. Core carries this implementation
+The private HAL clamps a viewport rectangle to the attachment and selects a
+separately compiled FL9_1 vertex shader variant when clipping or fractional
+coordinates change its transform. This is required because FL9_x
+`RSSetViewports` uses DWORDs internally, so fractional coordinates are not
+preserved by the native viewport. The adjusted shader can fail FXC's level-9
+instruction limits even when the original shader compiles; in that case
+pipeline creation fails with a linkage error. Core carries the outside-target
 restriction as `DownlevelLimits::viewport_rectangles_outside_target`; when it
 is false, rectangles extending past any attachment edge are rejected during
-render-command validation before the HAL is called. Rectangles contained by
-the target continue through the normal shader path. The HAL's private clipped
-viewport path remains available when its adjusted shader exists. Pipeline
-creation keeps the base shader if only this optional adjusted variant exceeds
-the FL9_1 compiler profile; a draw that still requires the absent variant is
-rejected before native replay. The controlled FL9_1 core fixture reports the
-conservative false capability and tests the public rejection. The strict
-public wgpu test also verifies a 4×6 scissor inside an 8×8 target (24 green
-and 40 unchanged blue pixels) and confirms an out-of-target viewport is
-rejected before HAL. Other backends retain the default true capability.
+render-command validation before HAL. It does not reject fractional
+rectangles contained by the target, so a pipeline still needs a valid adjusted
+variant for those requests. The controlled FL9_1 core fixture tests the
+out-of-target rejection. The strict public wgpu test also verifies a 4×6
+scissor inside an 8×8 target (24 green and 40 unchanged blue pixels) and
+confirms an out-of-target viewport is rejected before HAL. Other backends
+retain the default true capability. See Microsoft's
+[D3D11_VIEWPORT feature-level behavior](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_viewport).
 
 ## Recorded forced-FL9_1 observation
 

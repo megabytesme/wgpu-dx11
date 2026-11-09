@@ -1,22 +1,21 @@
 # FL9_1 handoff
 
-## Current coordinator checkpoint — optional viewport remap shader — 2026-11-09
+## Current coordinator checkpoint — viewport remap contract — 2026-11-09
 
-A viewport-remapped vertex shader that alone exceeds the FL9_1 FXC budget no
-longer prevents creation of the ordinary base pipeline. The optional shader
-is omitted only for linkage/FXC failures; device, entry-point and pipeline
-constant failures remain fatal. Strict execution on the physical RTX 3090 Ti
-at requested/actual FL9_1 verified base pipeline creation with the remap
-variant absent. The existing strict viewport test verified that a draw still
-requiring remapping is rejected and that returning to an in-target viewport
-allows correct readback. Full strict private HAL passed 465/465. Core continues
-to reject out-of-target viewports before HAL; this changes no public
-capabilities. Exact commands and pre-existing warnings are in
+The optional viewport-remap pipeline experiment was withdrawn. FL9_x
+`RSSetViewports` does not preserve fractional coordinates, and Core accepts
+in-target fractional rectangles even though its downlevel limit rejects
+out-of-target rectangles. Those draws need the adjusted shader. Pipeline
+creation therefore remains fail-closed if FXC cannot compile the variant;
+deferring failure until submission would admit a Core-valid operation the HAL
+cannot execute. The strict private HAL suite passed 463/463, and the explicitly
+enabled debug-layer indexed rendering test passed with zero error/corruption
+messages and no unexpected live resources. Details are in
 `FL9_1_PROGRESS.md`.
 
-The public Core/HAL acceptance audit remains incomplete. This branch remains a
-restricted opt-in backend, with shader/profile and hardware limitations as
-previously recorded.
+The larger completion mission remains active. Public Core/HAL auditing and
+CTS integration remain actionable; real historical hardware and Lumia
+CoreWindow runtime evidence require those devices.
 
 ## Current coordinator checkpoint — public fragment discard — 2026-11-09
 

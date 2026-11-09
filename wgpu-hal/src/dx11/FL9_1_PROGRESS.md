@@ -13819,35 +13819,37 @@ continues to display its `vError: Unknown error` banner, but initializes and
 runs the MSVC toolchain successfully. A DX12 regression was not rerun for this
 D3D11-only gate and Core fixture.
 
-## Optional FL9_1 viewport-remap pipeline variant — 2026-11-09
+## Viewport remap compiler-boundary correction — 2026-11-09
 
-Render-pipeline creation now preserves the ordinary vertex shader when the
-separately compiled viewport-remap variant alone fails with an FXC/linkage
-error. Device, entry-point and pipeline-constant failures remain fatal. A
-strict hardware test builds a vertex shader whose base form compiles under
-`vs_4_0_level_9_1` while its remapped form exceeds the profile's instruction
-budget; the pipeline was created with `vertex_viewport == None` on the RTX 3090
-Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested and
-actual FL9_1. The focused test passed 1/1.
+The optional viewport-shader change committed as `ac6968b53` was withdrawn
+after the Core/HAL audit found that FL9_x uses DWORDs internally for
+`RSSetViewports`. Fractional viewport coordinates therefore also need the
+adjusted vertex shader, including when the fractional rectangle is entirely
+inside the render target. Core's downlevel limit rejects out-of-target
+rectangles but accepts fractional in-target rectangles. With no per-pipeline
+Core/HAL validation signal for a missing remap variant, preserving the base
+pipeline and failing a later draw would move a valid request's failure to
+submission. The HAL again requires the adjusted variant during pipeline
+creation and reports an FXC/linkage failure if it exceeds the FL9_1 budget.
+No capability changed.
 
-The first full-suite run exposed that eagerly rejecting the viewport setter
-made the command encoder unrecoverable even when the caller changed back to an
-in-target viewport before drawing. That eager rejection was removed. The
-existing strict viewport regression then passed 1/1: drawing with the missing
-remap variant fails before replay, while switching to a contained viewport
-renders and reads back correctly. The complete strict HAL suite passed
-465/465, with four pre-existing `hal_queue.rs` qualification warnings. HAL
-Clippy and workspace formatting passed with existing warnings; `git diff
---check` passed. The opt-in Core projection still rejects out-of-target
-viewports and no public capability changed.
+Strict validation on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, requested/actual FL9_1) passed the complete private HAL suite
+at 463/463. The opt-in debug-layer indexed rendering test passed 1/1 when the
+test log confirmed `D3D11 debug layer requested: true`; the layer reported
+zero error/corruption messages and the live-object report contained only the
+expected device and immediate context. The first invocation had logged
+`requested: false`, so it was not counted as a debug-layer run. Four
+pre-existing `hal_queue.rs` qualification warnings remain.
 
-Exact commands:
+Commands:
 
 ```text
-WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib base_pipeline_survives_unavailable_viewport_remap_variant -- --nocapture --test-threads=1
-WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib fl91_viewport_missing_remap_shader_fails_only_when_drawing -- --nocapture --test-threads=1
 WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'; $env:WGPU_DX11_DEBUG_LAYER = '1'; cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib fl9_1_hardware_indexed_triangle -- --nocapture --test-threads=1
 cargo +1.93 fmt --all -- --check
 cargo +1.93 clippy --offline -j2 -p wgpu-hal --tests --no-default-features --features dx11
 git diff --check
 ```
+
+Microsoft reference: [D3D11_VIEWPORT feature-level behavior](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_viewport).

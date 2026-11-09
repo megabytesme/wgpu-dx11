@@ -425,16 +425,6 @@ fn viewport_shader_creation_error(error: &windows::core::Error) -> crate::Pipeli
     }
 }
 
-fn optional_viewport_shader_compile_result(
-    result: Result<alloc::vec::Vec<u8>, crate::PipelineError>,
-) -> Result<Option<alloc::vec::Vec<u8>>, crate::PipelineError> {
-    match result {
-        Ok(code) => Ok(Some(code)),
-        Err(crate::PipelineError::Linkage(_, _)) => Ok(None),
-        Err(error) => Err(viewport_shader_compile_error(error)),
-    }
-}
-
 fn viewport_shader_compile_error(error: crate::PipelineError) -> crate::PipelineError {
     match error {
         error @ (crate::PipelineError::Device(_)
@@ -1505,159 +1495,6 @@ mod tests {
             viewport_shader_creation_error(&windows::core::Error::from_hresult(E_FAIL)),
             crate::PipelineError::Device(crate::DeviceError::Unexpected)
         );
-    }
-
-    #[test]
-    fn unavailable_viewport_shader_does_not_hide_other_pipeline_errors() {
-        assert_eq!(
-            optional_viewport_shader_compile_result(Ok(vec![1, 2, 3])).unwrap(),
-            Some(vec![1, 2, 3])
-        );
-        assert_eq!(
-            optional_viewport_shader_compile_result(Err(crate::PipelineError::Linkage(
-                wgt::ShaderStages::VERTEX,
-                "instruction budget exceeded".into(),
-            )))
-            .unwrap(),
-            None
-        );
-        for error in [
-            crate::PipelineError::Device(crate::DeviceError::OutOfMemory),
-            crate::PipelineError::EntryPoint(naga::ShaderStage::Vertex),
-            crate::PipelineError::PipelineConstants(
-                wgt::ShaderStages::VERTEX,
-                "unresolved override".into(),
-            ),
-        ] {
-            let expected = error.clone();
-            assert_eq!(
-                optional_viewport_shader_compile_result(Err(error)).unwrap_err(),
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn base_pipeline_survives_unavailable_viewport_remap_variant() -> windows::core::Result<()> {
-        let adapters = enumerate_native_adapters()?;
-        let required =
-            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
-        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
-            .unwrap_or_else(|message| panic!("{message}"))
-        else {
-            std::println!("SKIP: no physical D3D11 adapter");
-            return Ok(());
-        };
-        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
-        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
-        std::println!(
-            "Hardware: {:?}; requested and actual FL9_1",
-            adapter.identity()
-        );
-        let device = Device::new(native);
-        let mut source = alloc::string::String::from(
-            "@group(0) @binding(0) var<uniform> c: array<vec4f, 254>; @vertex fn vs(@location(0) p: vec4f) -> @builtin(position) vec4f { var v = p;",
-        );
-        for index in 0..254 {
-            source.push_str(&alloc::format!(" v += c[{index}];"));
-        }
-        source.push_str(" return v; } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }");
-        let module = naga::front::wgsl::parse_str(&source).unwrap();
-        let info = naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::empty(),
-        )
-        .validate(&module)
-        .unwrap();
-        let shader = unsafe {
-            device
-                .create_shader_module(
-                    &crate::ShaderModuleDescriptor {
-                        label: None,
-                        runtime_checks: wgt::ShaderRuntimeChecks::checked(),
-                    },
-                    crate::ShaderInput::Naga(crate::NagaShader {
-                        module: Cow::Owned(module),
-                        info,
-                        debug_source: None,
-                    }),
-                )
-                .unwrap()
-        };
-        let entries = [wgt::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgt::ShaderStages::VERTEX,
-            ty: wgt::BindingType::Buffer {
-                ty: wgt::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: NonZeroU64::new(254 * 16),
-            },
-            count: None,
-        }];
-        let group_layout = unsafe {
-            device
-                .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
-                    label: None,
-                    flags: crate::BindGroupLayoutFlags::empty(),
-                    entries: &entries,
-                })
-                .unwrap()
-        };
-        let layout = unsafe {
-            device
-                .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
-                    label: None,
-                    flags: crate::PipelineLayoutFlags::empty(),
-                    bind_group_layouts: &[Some(&group_layout)],
-                    immediate_size: 0,
-                })
-                .unwrap()
-        };
-        let attributes = [wgt::VertexAttribute {
-            format: wgt::VertexFormat::Float32x4,
-            offset: 0,
-            shader_location: 0,
-        }];
-        let vertex_buffers = [Some(crate::VertexBufferLayout {
-            array_stride: 16,
-            step_mode: wgt::VertexStepMode::Vertex,
-            attributes: &attributes,
-        })];
-        let constants = naga::back::PipelineConstants::default();
-        let stage = |entry_point| crate::ProgrammableStage {
-            module: &shader,
-            entry_point,
-            constants: &constants,
-            zero_initialize_workgroup_memory: false,
-        };
-        let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-        let pipeline = unsafe {
-            device.create_render_pipeline(&crate::RenderPipelineDescriptor {
-                label: None,
-                layout: &layout,
-                vertex_processor: crate::VertexProcessor::Standard {
-                    vertex_buffers: &vertex_buffers,
-                    vertex_stage: stage("vs"),
-                },
-                primitive: wgt::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgt::MultisampleState::default(),
-                fragment_stage: Some(stage("fs")),
-                color_targets: &targets,
-                multiview_mask: None,
-                cache: None,
-            })
-        }
-        .expect("base FL9_1 pipeline must survive an over-budget optional remap variant");
-        assert!(pipeline.vertex_viewport.is_none());
-        std::println!("PASS: base pipeline created; only its unused viewport-remap variant exceeded the FL9_1 FXC budget");
-        unsafe {
-            device.destroy_render_pipeline(pipeline);
-            device.destroy_pipeline_layout(layout);
-            device.destroy_bind_group_layout(group_layout);
-            device.destroy_shader_module(shader);
-        }
-        Ok(())
     }
 
     #[test]
@@ -3246,21 +3083,25 @@ impl RenderPipeline {
             },
             vertex_stage.constants,
         )?;
-        let vertex_viewport_code = optional_viewport_shader_compile_result(
-            vertex_stage.module.compile_with_fl9_options_and_constants(
-                naga::ShaderStage::Vertex,
-                vertex_stage.entry_point,
-                &vertex_bindings,
-                false,
-                Fl9ShaderInputOptions {
-                    viewport_transform: true,
-                    instance_index_input: uses_instance_index,
-                    vertex_index_input: uses_vertex_index,
-                    ..Default::default()
-                },
-                vertex_stage.constants,
-            ),
-        )?;
+        let vertex_viewport_code = match vertex_stage.module.compile_with_fl9_options_and_constants(
+            naga::ShaderStage::Vertex,
+            vertex_stage.entry_point,
+            &vertex_bindings,
+            false,
+            Fl9ShaderInputOptions {
+                viewport_transform: true,
+                instance_index_input: uses_instance_index,
+                vertex_index_input: uses_vertex_index,
+                ..Default::default()
+            },
+            vertex_stage.constants,
+        ) {
+            Ok(code) => code,
+            Err(crate::PipelineError::Device(error)) => {
+                return Err(crate::PipelineError::Device(error))
+            }
+            Err(error) => return Err(viewport_shader_compile_error(error)),
+        };
         let texel_load_binding = fragment
             .map(|fragment| {
                 fragment
@@ -3441,17 +3282,19 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateVertexShader(&vertex_code, None::<&ID3D11ClassLinkage>, Some(&mut vertex))
                 .map_err(failure)?;
-            if let Some(vertex_viewport_code) = &vertex_viewport_code {
-                if let Err(error) = owner.raw_device().CreateVertexShader(
-                    vertex_viewport_code,
+            owner
+                .raw_device()
+                .CreateVertexShader(
+                    &vertex_viewport_code,
                     None::<&ID3D11ClassLinkage>,
                     Some(&mut viewport_vertex),
-                ) {
-                    match viewport_shader_creation_error(&error) {
-                        crate::PipelineError::Linkage(_, _) => viewport_vertex = None,
-                        error => return Err(error),
-                    }
-                }
+                )
+                .map_err(|error| viewport_shader_creation_error(&error))?;
+            if viewport_vertex.is_none() {
+                return Err(crate::PipelineError::Linkage(
+                    wgt::ShaderStages::VERTEX,
+                    "FL9_1 viewport-remapped vertex shader creation returned no shader".into(),
+                ));
             }
             owner
                 .raw_device()
