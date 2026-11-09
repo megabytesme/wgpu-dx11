@@ -13137,3 +13137,56 @@ remains an opt-in, intentionally restricted FL9_1 implementation, with
 unsupported intrinsic graphics features and substantial shader/API gaps.
 The verified implementation and capability documentation are checkpointed at
 `3a1cb5527` (`dx11: expose query-gated BC1-3 sRGB formats`).
+
+## Constant-mip 3D `textureDimensions` — 2026-11-09
+
+Extended the existing narrowly gated fragment 3D `textureDimensions` path to
+accept a nonnegative literal or module-constant mip level. Core, Naga and HAL
+require a direct group-zero non-array `texture_3d<f32>` identity and reject
+dynamic or negative levels. An explicit-level query cannot be combined with
+sampling in the same selected entry point; the previously verified level-less
+query plus one compatible implicit sample remains supported. HAL computes
+width, height and depth from the bound view's base dimensions at the requested
+mip and supplies them through the existing `b13` emulation constant. The
+selected device must independently report `texture_3d_mipmaps` before a
+multi-mip 3D texture can be created. General texture queries remain disabled.
+
+Strict hardware execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and selected
+FL9_1, with `texture_3d_mipmaps=true`. An 8x4x8 RGBA8 volume with three mips
+queried level 1; the 4x2x4 result was normalized and all output channels
+matched `[128,128,128,255]` within one byte. The test also prints its strict
+hardware identity and fails instead of silently skipping if hardware or the
+required 3D-mip prerequisite is unavailable.
+
+Verification (Rust 1.93.1, VS 2026 x64, offline, `-j8`):
+
+- Naga targeted HLSL proof: 1/1 passed; full Naga library: 152/152 passed.
+- Core targeted proof: 1/1 passed; strict DX11 fixture suite: 121/121 passed.
+- HAL targeted proof: 1/1 passed; strict private DX11 HAL suite: 450/450 passed.
+- Strict public forced-FL9_1 readback: 1/1 passed; full strict public D3D11
+  target: 110/110 passed, including default adapter-isolation coverage.
+- Core DX12 regression: 109/109 passed; wgpu-types: 108/108 passed.
+- Clippy passed for Naga, HAL tests, Core tests and the public D3D11 test target.
+  Existing warnings remain in HAL qualification/style sites, Core test helpers
+  and default-feature `wgpu-types` serde imports/qualifications.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed after
+  formatting.
+
+The first focused Naga run found that HLSL emission still only accepted a
+level-less 3D query; the output arm was extended. The negative dynamic-level
+WGSL test initially omitted `@interpolate(flat)` on its integer fragment input;
+the test shader was corrected. The first complete strict Core suite exposed a
+stale hardware fixture mask that omitted the already-projected
+`TIMESTAMP_QUERY_INSIDE_PASSES`; the mask now includes that query-gated feature
+and the rerun passed. A full Naga integration test attempt could not complete:
+its WGSL snapshot runner requires external `spirv-cross`, which is not
+installed, and the unconstrained package run also terminated in an existing
+recursive-template stack overflow. The Naga library and targeted HLSL proof
+tests passed; snapshot coverage remains unverified in this environment.
+
+The worktree changes are not yet checkpointed. Next choose another isolated
+Core/HAL contract gap after a fresh read-only audit, while retaining the
+experimental public-adapter gate. Historical 9_1 hardware, Lumia/CoreWindow execution,
+device-loss recovery on physical hardware, broad CTS/API coverage and
+unsupported-operation closure remain incomplete.

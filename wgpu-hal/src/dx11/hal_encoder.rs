@@ -338,6 +338,7 @@ impl RenderState {
             let (width, height) = if matches!(
                 load.kind,
                 super::hal_shader::Fl9TextureEmulationKind::Dimensions
+                    | super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
             ) {
                 (
                     dimension_for_mip(info.size[0], load.mip_level),
@@ -356,14 +357,12 @@ impl RenderState {
                 kind: load.kind,
                 width,
                 height,
-                depth: if matches!(
-                    load.kind,
-                    super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
-                        | super::hal_shader::Fl9TextureEmulationKind::Load3D
-                ) {
-                    info.size[2]
-                } else {
-                    1
+                depth: match load.kind {
+                    super::hal_shader::Fl9TextureEmulationKind::Dimensions3D => {
+                        dimension_for_mip(info.size[2], load.mip_level)
+                    }
+                    super::hal_shader::Fl9TextureEmulationKind::Load3D => info.size[2],
+                    _ => 1,
                 },
                 mip_levels: info.mip_levels,
             });

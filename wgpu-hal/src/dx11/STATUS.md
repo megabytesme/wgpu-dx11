@@ -1319,18 +1319,21 @@ The opt-in projection adds `texture_dimensions_3d_float_fragment` separately
 from the 2D query limit. It is enabled only when the selected FL9_1 device's
 RGBA8 3D sampled-format query succeeds and the backend path is enabled. The
 selected fragment entry must contain one direct `textureDimensions` query on
-one group-0, non-array `texture_3d<f32>`, with no explicit mip level, followed
-by a direct `vec3f` conversion. It may also perform one implicit sample of
-that same volume through one group-0 non-comparison sampler, using `vec3f`
-coordinates. HAL supplies the selected 3D view's width, height and depth
-through the reserved `b13` constant; texture and sampler registers remain
-allocated through the shared logical binding map. The strict public test on
-the RTX 3090 Ti explicitly selected FL9_1 and transitioned between 4x2x8 and
-2x4x1 volumes containing different colors. Both dimensions and sampled
-contents affected the expected 64 pixels. Helpers, extra resources, other
-image operations, explicit levels and additional samples remain rejected;
-this does not enable general texture queries, 3D copies, render attachments or
-readback.
+one group-0, non-array `texture_3d<f32>`, followed by a direct `vec3f`
+conversion. An explicit mip argument must be a nonnegative literal or module
+constant and cannot coexist with sampling in that entry point. Multi-mip
+resources remain separately gated by the selected device's `MIP` query and
+`texture_3d_mipmaps` limit. A level-less query may also perform one implicit
+sample of the same volume through one group-0 non-comparison sampler, using
+`vec3f` coordinates. HAL supplies the selected 3D view's dimensions at the
+requested mip through reserved `b13`; texture and sampler registers remain
+allocated through the shared logical binding map. The existing strict public
+test on the RTX 3090 Ti explicitly selected FL9_1 and transitioned between
+4x2x8 and 2x4x1 volumes containing different colors. The new mip test queries
+level 1 of an 8x4x8, three-level volume and checks 4x2x4 through GPU readback.
+Helpers, extra resources, other image operations, explicit LOD and additional
+samples remain rejected; this does not enable general texture queries, 3D
+copies, render attachments or readback.
 
 ## Narrow FL9_1 fragment 3D `textureLoad`
 

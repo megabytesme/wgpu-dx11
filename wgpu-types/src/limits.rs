@@ -1317,7 +1317,9 @@ pub struct DownlevelLimits {
     pub texture_dimensions_2d_float_fragment: bool,
     /// Whether a fragment entry point may query the size of one direct, non-array
     /// `texture_3d<f32>` using `textureDimensions` and convert the returned `vec3<u32>` directly
-    /// to `vec3<f32>`.
+    /// to `vec3<f32>`. A mip level, when present, must be a nonnegative literal or module
+    /// constant; an explicit mip-level query cannot be combined with sampling in the same entry
+    /// point.
     ///
     /// This restricted form does not imply general texture-query support. The selected entry
     /// point must also satisfy the backend's other validation requirements for this operation.

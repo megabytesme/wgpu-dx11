@@ -1305,18 +1305,23 @@ FL9_1. This narrow limit does not imply general WebGPU texture-query support.
 
 A separate `texture_dimensions_3d_float_fragment` limit covers one direct
 fragment `textureDimensions` query on a group-0, non-array
-`texture_3d<f32>`, without an explicit mip level, directly converted to
-`vec3f`. It is exposed only when the selected FL9_1 device passes the existing
-RGBA8 3D sampled-texture format query and the backend path is enabled. Core,
-Naga and HAL keep this proof distinct from the 2D path and from 2D texel-load
-emulation; helpers, additional bound resources, other image operations and
-explicit mip levels are rejected. The selected entry may also perform one
-level-less implicit sample of that same volume through one group-0
-non-comparison sampler; the coordinate must be `vec3f`. HAL supplies width,
-height and depth via `b13`, while the shared binding map assigns the ordinary
-texture and sampler registers. A strict RTX 3090 Ti test switched between
-4x2x8 and 2x4x1 volumes with different texel values; both dimensions and
-sampled data affected the expected 64 readback pixels. Helper functions,
+`texture_3d<f32>`, directly converted to `vec3f`. Its optional mip argument
+must be a nonnegative literal or module constant. A query with an explicit
+mip cannot be combined with sampling in the same entry point. The feature is
+exposed only when the selected FL9_1 device passes the existing RGBA8 3D
+sampled-texture format query and the backend path is enabled; multi-mip
+resources additionally require the selected device's `MIP` format query and
+the separate `texture_3d_mipmaps` limit. Core, Naga and HAL keep this proof
+distinct from the 2D path and from 2D texel-load emulation; helpers, additional
+bound resources and other image operations are rejected. A level-less query
+may also share the entry point with one implicit sample of that same volume
+through one group-0 non-comparison sampler using `vec3f` coordinates. HAL
+supplies the selected view's width, height and depth at the requested mip via
+`b13`, while the shared binding map assigns the ordinary texture and sampler
+registers. A strict RTX 3090 Ti test switched between 4x2x8 and 2x4x1 volumes
+with different texel values; both dimensions and sampled data affected the
+expected 64 readback pixels. A second strict test queried mip 1 of an 8x4x8,
+three-level volume and verified 4x2x4 through GPU readback. Helper functions,
 explicit LOD, extra resources and other image operations remain rejected. 3D
 texture copies, attachments, readback and general texture queries remain
 unavailable.

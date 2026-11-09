@@ -883,9 +883,89 @@ mod tests {
         )
         .validate(&explicit_level)
         .unwrap();
-        assert!(fl9_texture_emulation_binding(
+        let explicit_proof = fl9_texture_emulation_binding(
             &explicit_level,
             &explicit_info,
+            naga::ShaderStage::Fragment,
+            "fs",
+        )
+        .unwrap()
+        .expect("3D dimensions accept a constant mip level");
+        assert!(matches!(
+            explicit_proof.kind,
+            Fl9TextureEmulationKind::Dimensions3D
+        ));
+        assert_eq!(explicit_proof.mip_level, 0);
+
+        let module_constant_level = naga::front::wgsl::parse_str(
+            "const LEVEL: i32 = 2; @group(0) @binding(0) var image: texture_3d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(image, LEVEL)), 1.0); }",
+        )
+        .unwrap();
+        let module_constant_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module_constant_level)
+        .unwrap();
+        let module_constant_proof = fl9_texture_emulation_binding(
+            &module_constant_level,
+            &module_constant_info,
+            naga::ShaderStage::Fragment,
+            "fs",
+        )
+        .unwrap()
+        .expect("3D dimensions accept a nonnegative module constant mip level");
+        assert_eq!(module_constant_proof.mip_level, 2);
+
+        let explicit_level_and_sample = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn fs() -> @location(0) vec4f { return textureSample(image, smp, vec3f(0.5)) + vec4f(vec3f(textureDimensions(image, 1)), 1.0); }",
+        )
+        .unwrap();
+        let explicit_level_and_sample_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&explicit_level_and_sample)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &explicit_level_and_sample,
+            &explicit_level_and_sample_info,
+            naga::ShaderStage::Fragment,
+            "fs",
+        )
+        .is_err());
+
+        let negative_level = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_3d<f32>; @fragment fn fs() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(image, -1)), 1.0); }",
+        )
+        .unwrap();
+        let negative_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&negative_level)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &negative_level,
+            &negative_info,
+            naga::ShaderStage::Fragment,
+            "fs"
+        )
+        .is_err());
+
+        let dynamic_level = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_3d<f32>; @fragment fn fs(@location(0) @interpolate(flat) level: u32) -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(image, level)), 1.0); }",
+        )
+        .unwrap();
+        let dynamic_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&dynamic_level)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &dynamic_level,
+            &dynamic_info,
             naga::ShaderStage::Fragment,
             "fs"
         )
@@ -3230,10 +3310,10 @@ fn fl9_texture_emulation_binding(
             }
             (Fl9TextureEmulationKind::Load3D, naga::ImageDimension::D3) => {}
             (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::D3) => {
-                if has_explicit_mip_level {
+                if has_explicit_mip_level && sample_count != 0 {
                     return Err(crate::PipelineError::Linkage(
                         stages,
-                        "D3D11 FL9 3D textureDimensions does not support an explicit mip level"
+                        "D3D11 FL9 3D textureDimensions with an explicit mip level cannot also sample"
                             .into(),
                     ));
                 }

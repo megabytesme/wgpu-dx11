@@ -3530,6 +3530,26 @@ yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]` across all 64
 pixels. This is cube face-size emulation only; general texture queries,
 explicit-mip cube queries and historical-driver behavior remain unverified.
 
+### Narrow FL9_1 fragment 3D `textureDimensions` with a constant mip
+
+```powershell
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_3d_texture_dimensions_uses_host_supplied_int3
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_3d_texture_dimensions_has_an_independent_narrow_proof
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_dimensions_binding_is_distinct_from_2d_emulation
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91 -- --nocapture --test-threads=1
+```
+
+The selected fragment entry may pass only a nonnegative literal or module-
+constant mip level to the direct 3D `textureDimensions` query. Dynamic and
+negative levels, helper calls, extra resources and combining an explicit-level
+query with sampling remain rejected. The public readback uses an 8x4x8 RGBA8
+volume with three levels; querying level 1 must produce 4x2x4, normalized to
+`[128,128,128,255]`. Multi-mip volume creation is separately query-gated by
+`texture_3d_mipmaps`; a machine lacking that prerequisite cannot provide GPU
+evidence for this case. A strict run must be reported as a skip or failure,
+never as a rendering pass, if the prerequisite is unavailable.
+
 ### Narrow FL9_1 `mat2x2<f32>` matrix inverse
 
 ```powershell

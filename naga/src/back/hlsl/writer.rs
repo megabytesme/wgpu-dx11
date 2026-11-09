@@ -1131,8 +1131,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                 })
                             }
                         }
-                        (None, Some(_), None, None, crate::ImageQuery::Size { level: None }) => {
-                            implicit_sample_count <= 1
+                        (None, Some(_), None, None, crate::ImageQuery::Size { level }) => {
+                            level.is_none_or(|level| {
+                                implicit_sample_count == 0
+                                    && fl9_literal_mip_level(
+                                        module,
+                                        &entry.function.expressions,
+                                        level,
+                                    )
+                                    .is_some()
+                            }) && implicit_sample_count <= 1
                         }
                         (None, None, Some(_), None, crate::ImageQuery::NumLevels) => true,
                         _ => false,
@@ -5479,6 +5487,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         (None, Some(_), None, crate::ImageQuery::Size { level: None }) => {
                             write!(self.out, "int3(naga_fl9_load_size.xyz)")?;
                         }
+                        (None, Some(_), None, crate::ImageQuery::Size { level: Some(level) })
+                            if fl9_literal_mip_level(module, func_ctx.expressions, level)
+                                .is_some() =>
+                        {
+                            write!(self.out, "int3(naga_fl9_load_size.xyz)")?;
+                        }
                         _ => return Err(Error::Custom("unsupported FL9 texture query".into())),
                     }
                     return Ok(());
@@ -6711,7 +6725,39 @@ mod fl9_viewport_tests {
         assert!(!output.contains("GetDimensions"), "{output}");
 
         let explicit_level = "@group(0) @binding(0) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume, 0)), 1.0); }";
-        assert!(translate(explicit_level, &options, ShaderStage::Fragment).is_err());
+        let explicit_output = translate(explicit_level, &options, ShaderStage::Fragment).unwrap();
+        assert!(
+            explicit_output.contains("int3(naga_fl9_load_size.xyz)"),
+            "{explicit_output}"
+        );
+
+        let module_constant_level = "const LEVEL: i32 = 1; @group(0) @binding(0) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume, LEVEL)), 1.0); }";
+        let module_constant_output =
+            translate(module_constant_level, &options, ShaderStage::Fragment).unwrap();
+        assert!(
+            module_constant_output.contains("int3(naga_fl9_load_size.xyz)"),
+            "{module_constant_output}"
+        );
+
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        let explicit_level_and_sample = "@group(0) @binding(0) var volume: texture_3d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(volume, smp, vec3f(0.5)) + vec4f(vec3f(textureDimensions(volume, 1)), 1.0); }";
+        assert!(translate(explicit_level_and_sample, &options, ShaderStage::Fragment).is_err());
+
+        let negative_level = "@group(0) @binding(0) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume, -1)), 1.0); }";
+        assert!(translate(negative_level, &options, ShaderStage::Fragment).is_err());
+
+        let dynamic_level = "@group(0) @binding(0) var volume: texture_3d<f32>; @fragment fn main(@location(0) @interpolate(flat) level: u32) -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume, level)), 1.0); }";
+        assert!(translate(dynamic_level, &options, ShaderStage::Fragment).is_err());
 
         let wrong_dimension = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0); }";
         assert!(translate(wrong_dimension, &options, ShaderStage::Fragment).is_err());

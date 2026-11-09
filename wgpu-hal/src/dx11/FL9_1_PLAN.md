@@ -1692,3 +1692,21 @@ The follow-up that permits one compatible implicit sample alongside the direct
 97/97 passed on the RTX 3090 Ti at requested/actual FL9_1. Continue with the
 next isolated operation only after its Core, Naga and HAL validation contracts
 are audited. Public adapter exposure remains gated.
+
+## Verified continuation — constant-mip 3D `textureDimensions` — 2026-11-09
+
+The existing narrow fragment 3D dimensions proof now accepts a nonnegative
+literal or module-constant mip level when the selected entry point does not
+also sample. Core, Naga and HAL reject dynamic and negative levels; the
+level-less query may retain its previously verified single implicit sample.
+HAL provides all three mip-adjusted dimensions through the existing `b13`
+emulation constant. A strict RTX 3090 Ti FL9_1 test verified level 1 of an
+8x4x8 three-mip volume as 4x2x4. This requires the independently reported
+`texture_3d_mipmaps` capability for resources with multiple mips; no broader
+query, copy or volume operation is implied. See `FL9_1_PROGRESS.md`.
+
+Next, perform a fresh Core/HAL contract audit to select another bounded,
+publicly reachable gap. Do not enable ordinary adapter enumeration by default.
+Public exposure remains experimental; public CoreWindow on the Lumia,
+historical FL9_1 hardware, broad shader/API support and complete unsupported
+operation auditing remain open.
