@@ -19,7 +19,7 @@ operation matrix or all allowed usage combinations. Next, target an
 independently query-gated SNORM or BC operation sequence. Public D3D11 remains
 explicit opt-in and experimental; historical FL9_1 and Lumia/CoreWindow
 execution remain unverified.
-Checkpoint: `78f3242d5` (`dx11: exercise combined FL9_1 narrow texture usages`).
+Checkpoint: `48cd0b95d` (`dx11: verify FL9_1 texture readback row padding`).
 
 ## Current coordinator checkpoint — combined RGBA8/BGRA8 usage operations — 2026-11-09
 

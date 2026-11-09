@@ -6,11 +6,12 @@ The public D3D11 path now executes the complete combined
 `COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` usage set for
 R8_UNORM, R8G8_UNORM, RGB565, linear and sRGB RGBA8, and linear and sRGB
 BGRA8. The test performs a padded queue upload, same-format GPU texture copy,
-padded CPU copy-readback, sampling into a same-format render attachment, and
-attachment readback. All 64 copied texels matched exactly and all 64 sampled
-output pixels matched within one byte for each format. This exercises narrow
-channel/packed conversion, BGRA raw-byte ordering and sRGB decode/encode; it
-adds execution evidence only, not new capability.
+padded CPU copy-readback with sentinel-checked row padding, sampling into a
+same-format render attachment, and attachment readback. All 64 copied texels
+matched exactly and all 64 sampled output pixels matched within one byte for
+each format. This exercises narrow channel/packed conversion, BGRA raw-byte
+ordering and sRGB decode/encode; it adds execution evidence only, not new
+capability.
 
 Strict execution selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`, software=false), requested and confirmed FL9_1. All seven
@@ -21,7 +22,7 @@ checks 21 formats and many usage combinations by creation only. Next, extend
 representative operation sequences to query-gated SNORM/BC or packed/depth
 paths without assuming the same usage contract across formats.
 
-Checkpoint: `78f3242d5` (`dx11: exercise combined FL9_1 narrow texture usages`).
+Checkpoint: `48cd0b95d` (`dx11: verify FL9_1 texture readback row padding`).
 
 ## Latest verified MSAA depth/stencil execution coverage — 2026-11-09
 

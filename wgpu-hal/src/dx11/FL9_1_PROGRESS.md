@@ -9,8 +9,9 @@ variants. Each path performs a padded queue upload, same-format GPU texture
 copy, padded CPU copy-readback, sampled render into a same-format attachment,
 and attachment readback. All 64 copied texels matched exactly; all 64 sampled
 output pixels matched within one byte. The narrow formats exercise one-,
-two-, and packed two-byte texels without requiring a filtering sampler. This
-is operation evidence only; no capabilities changed.
+two-, and packed two-byte texels without requiring a filtering sampler. Both
+readback images were prefilled with a sentinel; every row-padding byte remained
+untouched. This is operation evidence only; no capabilities changed.
 
 The NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`, software=false) reported the full usage union for all seven
@@ -38,7 +39,7 @@ operation matrix or every allowed usage combination. Several format paths are
 still tested only at creation time. Extend operation coverage by format and
 operation class, respecting each HAL path and selected-device query.
 
-Checkpoint: `78f3242d5` (`dx11: exercise combined FL9_1 narrow texture usages`).
+Checkpoint: `48cd0b95d` (`dx11: verify FL9_1 texture readback row padding`).
 
 ## Combined linear/sRGB RGBA8/BGRA8 texture-usage execution — 2026-11-09
 
