@@ -1,5 +1,15 @@
 # FL9_1 handoff
 
+## Latest verified public rendering — depth bias — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
+
+The public D16 depth test exercises zero-, positive- and negative-constant-bias
+pipelines at forced FL9_1. Readback confirms positive bias fails and negative
+bias passes the depth test across the expected 4×8 regions; Core rejects
+nonzero depth-bias clamp. The focused GPU test passed 1/1 and the complete
+strict public D3D11 suite passed 109/109 on RTX 3090 Ti. Clippy passed with
+existing argument-count warnings, and format/diff checks passed. Exact commands
+and optional format-query skips are recorded in `FL9_1_PROGRESS.md`.
+
 ## Latest verified test coverage — indexed LineStrip restart render bundles — 2026-11-09 — `42cecc33690e20c789e1aa59bdb0dcf28283fa86`
 
 The public strict test `public_dx11_indexed_line_strip_restart_render_bundle_at_fl91`

@@ -1,5 +1,32 @@
 # FL9_1 progress
 
+## Public depth-bias execution — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
+
+Extended the public D16 depth-attachment test to execute constant-bias
+pipelines through Core and the D3D11 HAL. Two 4×8 regions first store the same
+depth/color with zero bias; a positive-bias red draw fails the depth test on
+the left, while a negative-bias red draw passes on the right. Full 8×8 GPU
+readback matched the expected green/red split. A nonzero `DepthBiasState::clamp`
+is rejected by Core through an error scope before HAL. This closes a public
+execution-coverage gap for an already implemented FL9_1 capability.
+
+The focused test passed 1/1 and the full strict public D3D11 suite passed
+109/109 (`0 failed`, `0 ignored`, `0 filtered`) on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false, requested/actual
+FL9_1). One optional Float16x2 input-format subcase reported a selected-device
+query skip; no test case skipped. Public-test Clippy passed with four existing
+`too_many_arguments` warnings in `hal_index.rs`, `hal_shader.rs` and
+`texture.rs`; formatting and `git diff --check` passed.
+
+Commands:
+
+```powershell
+& cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_INCREMENTAL=0" && set "CARGO_PROFILE_DEV_DEBUG=0" && set "CARGO_PROFILE_TEST_DEBUG=0" && cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1'
+& cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "CARGO_INCREMENTAL=0" && set "CARGO_PROFILE_DEV_DEBUG=0" && cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public'
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
 ## Indexed LineStrip restart in public render bundles — 2026-11-09 — `42cecc33690e20c789e1aa59bdb0dcf28283fa86`
 
 Added `public_dx11_indexed_line_strip_restart_render_bundle_at_fl91`. It

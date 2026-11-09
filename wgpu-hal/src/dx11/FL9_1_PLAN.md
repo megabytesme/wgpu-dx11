@@ -1,5 +1,16 @@
 # FL9_1 completion plan
 
+## Latest verified public rendering increment — depth bias — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
+
+The public D16 depth test now creates and executes zero-, positive- and
+negative-constant-bias pipelines through wgpu Core and the D3D11 HAL. A full
+8×8 readback verifies that positive bias fails the existing depth test and
+negative bias passes; the same strict test rejects nonzero bias clamp before
+native execution. The focused GPU test passed 1/1 and the full strict public
+D3D11 suite passed 109/109 on RTX 3090 Ti at requested/actual FL9_1. This
+verifies the existing constant-bias implementation across the public boundary;
+it does not add a new capability. The capability-to-HAL audit remains open.
+
 ## Latest verified coverage increment — indexed LineStrip restart bundles — 2026-11-09 — `42cecc33690e20c789e1aa59bdb0dcf28283fa86`
 
 Added a strict public regression that executes consecutive indexed LineStrip
