@@ -20,11 +20,13 @@ and nonzero-mip cases. Clippy, formatting and diff checks passed; existing
 warnings are listed in `FL9_1_PROGRESS.md`. An independent selected-entry
 review found no concrete correctness risk.
 
-This is a bounded shader improvement, not practical completion. Normal D3D11
-adapter enumeration remains disabled. Remaining material mission work includes
-finishing the public capability-to-HAL audit, representative public 3D scene
-and desktop `HWND` presentation, unresolved ordinary shader/resource subsets,
-and verification on historical FL9_1 hardware. CoreWindow, Lumia ARM32 and
+This is a bounded shader improvement, not practical completion. Explicit
+`Backends::DX11` selection already exposes the experimental FL9_1 adapter, while
+default backend selection still excludes DX11. Remaining material mission work
+includes finishing the public capability-to-HAL audit, expanding ordinary
+shader/resource subsets, and verification on historical FL9_1 hardware.
+Public textured 3D scene and desktop `HWND` presentation paths already exist
+and are documented in `TESTING.md`; CoreWindow, Lumia ARM32 and real
 device-removal recovery remain unverified.
 
 ## Latest verified increment — query-gated RGB5A1/RGBA4 GPU copies — 2026-11-09
@@ -46,7 +48,7 @@ audit and consider the directly referenced helper subset of texture-load
 emulation only with matching selected-entry validation in Core, Naga and HAL.
 FL9_1 3D texture copies are excluded by the 10Level9 contract. Historical
 hardware, Lumia/CoreWindow runtime and physical device-loss recovery remain
-unverified. Public enumeration stays isolated.
+unverified. DX11 remains excluded from default backend selection.
 
 ## Previous verified format support — BC1/BC2/BC3 sRGB — 2026-11-09
 
@@ -65,8 +67,8 @@ are in `FL9_1_PROGRESS.md`.
 Implementation checkpoint: `3a1cb5527` (`dx11: expose query-gated BC1-3 sRGB formats`).
 
 The backend remains an opt-in, restricted FL9_1 renderer, not a complete or
-drop-in general-purpose wgpu implementation. Public enumeration stays isolated
-from default backend selection. Remaining practical work includes the broader
+drop-in general-purpose wgpu implementation. Explicit DX11 selection is
+available; default backend selection remains unchanged. Remaining practical work includes the broader
 Core/HAL contract audit, unsupported shader operations and resource paths,
 public CoreWindow/UWP verification, historical FL9_1 hardware and real
 device-removal recovery. Read-only specialist audits recommend permitting a

@@ -23,11 +23,12 @@ issue. Implementation checkpoint: `6e442d1d14a5873dd83344339de56b909dbe0306`
 (`dx11: support selected-entry textureLoad helpers`).
 
 Next, finish the public capability-to-HAL projection audit, beginning with a
-data-driven matrix for query-gated format usages and transfer paths. Continue
-to keep ordinary D3D11 enumeration isolated until every Core-legal operation
-has a truthful implementation or a tested rejection. Shader breadth, full
-public integration, desktop presentation and historical-device verification
-remain substantial mission work.
+data-driven matrix for query-gated format usages and transfer paths. Explicit
+`Backends::DX11` selection already exposes the experimental FL9_1 projection;
+keep DX11 out of default backend selection while auditing every Core-legal
+operation for truthful implementation or tested rejection. A public textured
+scene and HWND path also exist, but shader/resource breadth and historical
+device verification remain substantial mission work.
 
 ## Latest bounded format increment — RGB5A1 and RGBA4 GPU copies — 2026-11-09
 
@@ -51,7 +52,8 @@ and HAL proofs; do not simply relax the helper rejection. A table-driven audit
 of the opt-in public projection remains important. Do not implement FL9_1 3D
 texture copies, which the 10Level9 contract excludes. Historical FL9_1
 hardware, Lumia/CoreWindow runtime and physical device-removal recovery remain
-unverified; public D3D11 enumeration is still deliberately isolated.
+unverified; D3D11 is explicit opt-in and remains absent from default backend
+selection.
 
 ## Previous bounded format increment — public BC1/BC2/BC3 sRGB feature — 2026-11-09
 

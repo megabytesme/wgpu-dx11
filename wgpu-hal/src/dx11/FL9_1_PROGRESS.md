@@ -37,10 +37,11 @@ offline, Cargo `-j8`):
   qualifications, range-array suggestions and test-only style warnings.
 - `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
 
-The complete strict public suite also verifies that ordinary D3D11 adapter
-enumeration remains disabled. RTX execution does not establish historical
-FL9_1 driver behavior. Commit `6e442d1d` contains the implementation; this
-journal update is pending its own documentation checkpoint.
+The complete strict public suite also verifies that DX11 remains outside the
+default backend set; explicitly requested `Backends::DX11` already exposes the
+experimental FL9_1 adapter projection. RTX execution does not establish
+historical FL9_1 driver behavior. Commit `6e442d1d` contains the implementation;
+this journal update is pending its own documentation checkpoint.
 
 ## Query-gated RGB5A1 and RGBA4 GPU texture copies — 2026-11-09
 
