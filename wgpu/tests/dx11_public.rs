@@ -28102,11 +28102,16 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         return;
     };
     let info = adapter.get_info();
-    let timestamp_features = Features::TIMESTAMP_QUERY | Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let timestamp_features = Features::TIMESTAMP_QUERY
+        | Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+        | Features::TIMESTAMP_QUERY_INSIDE_PASSES;
     if !adapter.features().contains(timestamp_features) {
         assert!(
             !required,
-            "strict mode requires timestamp and encoder timestamp features; adapter reported {:?}",
+            "strict mode requires timestamp, encoder timestamp, and in-pass timestamp features; adapter reported {:?}",
             adapter.features()
         );
         println!("SKIP: selected FL9_1 adapter has no timestamp query support");
@@ -28147,7 +28152,7 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
     let query_set = device.create_query_set(&QuerySetDescriptor {
         label: Some("FL9_1 encoder and pass timestamp queries"),
         ty: QueryType::Timestamp,
-        count: 6,
+        count: 10,
     });
     let workload = device.create_buffer(&BufferDescriptor {
         label: Some("timestamp ordering workload"),
@@ -28182,8 +28187,70 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         view_formats: &[],
     });
     let pass_target_view = pass_target.create_view(&TextureViewDescriptor::default());
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 timestamp render-pass work shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 timestamp render-pass work pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertices = [[-1.0f32, -1.0f32], [3.0, -1.0], [-1.0, 3.0]];
+    let mut vertex_bytes = [0u8; 24];
+    for (index, component) in vertices.into_iter().flatten().enumerate() {
+        let start = index * 4;
+        vertex_bytes[start..start + 4].copy_from_slice(&component.to_ne_bytes());
+    }
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 timestamp render-pass work vertices"),
+        size: 24,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map timestamp workload vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertex_buffer.unmap();
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("record encoder and render-pass timestamp writes and resolve"),
+        label: Some("record encoder, in-pass timestamps and resolve"),
     });
     encoder.write_timestamp(&query_set, 0);
     for _ in 0..32 {
@@ -28191,7 +28258,7 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
     }
     encoder.write_timestamp(&query_set, 1);
     {
-        let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("FL9_1 render-pass timestamp writes"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: &pass_target_view,
@@ -28216,9 +28283,14 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        pass.write_timestamp(&query_set, 6);
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+        pass.write_timestamp(&query_set, 7);
     }
     {
-        let _pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("FL9_1 empty compute pass timestamp writes"),
             timestamp_writes: Some(ComputePassTimestampWrites {
                 query_set: &query_set,
@@ -28226,13 +28298,15 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
                 end_of_pass_write_index: Some(5),
             }),
         });
+        pass.write_timestamp(&query_set, 8);
+        pass.write_timestamp(&query_set, 9);
     }
-    encoder.resolve_query_set(&query_set, 0..6, &query_buffer, 0);
-    encoder.copy_buffer_to_buffer(&query_buffer, 0, &readback, 0, 48);
+    encoder.resolve_query_set(&query_set, 0..10, &query_buffer, 0);
+    encoder.copy_buffer_to_buffer(&query_buffer, 0, &readback, 0, 80);
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
-        .slice(..48)
+        .slice(..80)
         .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
     device
         .poll(PollType::Wait {
@@ -28246,10 +28320,10 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         .expect("map timestamp query readback");
     let values = {
         let mapped = readback
-            .slice(..48)
+            .slice(..80)
             .get_mapped_range()
             .expect("mapped timestamp data");
-        let mut values = [0u64; 6];
+        let mut values = [0u64; 10];
         for (index, value) in values.iter_mut().enumerate() {
             let start = index * 8;
             *value = u64::from_le_bytes(mapped[start..start + 8].try_into().unwrap());
@@ -28257,13 +28331,17 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         values
     };
     readback.unmap();
-    assert!(values[0] > 0, "first timestamp must be written: {values:?}");
     assert!(
-        values.windows(2).all(|pair| pair[1] >= pair[0]),
-        "encoder and render-pass timestamps must be ordered: {values:?}"
+        values.iter().all(|value| *value > 0),
+        "all encoder and pass timestamps must be nonzero: {values:?}"
+    );
+    let execution_order = [0, 1, 2, 6, 7, 3, 4, 8, 9, 5].map(|index| values[index]);
+    assert!(
+        execution_order.windows(2).all(|pair| pair[1] >= pair[0]),
+        "timestamps must be nondecreasing in command execution order {execution_order:?}; query-index values: {values:?}"
     );
     println!(
-        "PASS: forced FL9_1 encoder, render-pass and empty-compute-pass timestamps resolved and read back {values:?}; period={period} ns/tick; occlusion and pipeline-statistics query sets were rejected"
+        "PASS: forced FL9_1 encoder and pass-boundary timestamps plus explicit render/empty-compute-pass timestamps around GPU work resolved and read back {values:?}; period={period} ns/tick; occlusion and pipeline-statistics query sets were rejected"
     );
 }
 

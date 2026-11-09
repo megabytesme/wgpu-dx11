@@ -1,5 +1,51 @@
 # FL9_1 progress
 
+## Explicit timestamps inside FL9_1 passes — 2026-11-09
+
+The selected-device timestamp/disjoint probe now enables
+`TIMESTAMP_QUERY_INSIDE_PASSES` along with `TIMESTAMP_QUERY` and
+`TIMESTAMP_QUERY_INSIDE_ENCODERS`. HAL records explicit timestamp writes
+during render or compute passes as the existing ordered D3D11 `End` command;
+query ownership and index validation are unchanged. The public test writes
+timestamps before and after a real render draw and twice inside an empty
+compute pass, in addition to encoder and pass-boundary writes. Query slots are
+not in execution order, so the test asserts ordering using indices
+`0, 1, 2, 6, 7, 3, 4, 8, 9, 5`.
+
+Strict hardware used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested/actual
+FL9_1. The focused test passed 1/1, all ten values were nonzero and
+nondecreasing in command order, and the observed period was 1 ns/tick. The
+complete strict private HAL suite passed 450/450; the strict public D3D11
+suite passed 113/113 and retained the default-adapter isolation check. Three
+optional selected-device subcases reported skips; those are not counted as
+hardware executions. HAL and public-target Clippy passed with existing HAL
+style/qualification warnings. Formatting and `git diff --check` passed. The
+first test draft failed to compile because `BufferViewMut` is intentionally
+not indexable; the vertex bytes are now assembled separately and copied with
+its write-only API.
+
+Commands (Visual Studio 2026 x64 developer environment, Rust 1.93.1, offline,
+Cargo `-j8`):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+The sampled-image audit found no confirmed unguarded Core/HAL mismatch in its
+reviewed paths. Remaining useful bounded shader/resource work includes
+constant-mip 3D dimensions, selected-entry helper shapes, non-suffix 3D mip
+views and additional format-specific copy paths. Native FL9_1 boundaries and
+historical-device, Lumia/CoreWindow and physical device-loss verification
+remain open.
+
 ## 3D and cube fragment `textureNumLevels` — 2026-11-09
 
 Extended the existing direct fragment `textureNumLevels` emulation to

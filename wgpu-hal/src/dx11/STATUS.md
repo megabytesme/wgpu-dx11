@@ -1352,15 +1352,22 @@ support remains gated by the selected RGBA8 volume-sampling query.
 ## Optional timestamp query support
 
 Native device creation performs one bounded timestamp/disjoint query probe.
-Only a nonzero frequency adds `TIMESTAMP_QUERY` and
-`TIMESTAMP_QUERY_INSIDE_ENCODERS` to the explicit FL9_1 adapter projection.
+Only a nonzero frequency adds `TIMESTAMP_QUERY`,
+`TIMESTAMP_QUERY_INSIDE_ENCODERS` and `TIMESTAMP_QUERY_INSIDE_PASSES` to the
+explicit FL9_1 adapter projection.
 Query-set creation supports timestamps only. Encoder and render/compute pass
 boundary writes issue D3D11 timestamp `End` commands; empty compute passes can
 be bracketed, while compute pipelines and dispatch remain unavailable.
-Resolve flushes, waits for `GetData` and updates the retained query-resolve
-buffer in sequence. This is correct but can stall the CPU. Explicit timestamp
-writes inside passes, occlusion and pipeline-statistics queries stay
-unavailable. See `TESTING.md` for the strict hardware command and result.
+Explicit timestamp writes inside render and compute passes also issue ordered
+D3D11 timestamp `End` commands when the same selected-device probe succeeds.
+The strict public test covers a draw bracketed by render-pass writes and two
+writes inside an empty compute pass, in addition to the existing encoder and
+pass-boundary cases. On the physical RTX 3090 Ti at requested/actual FL9_1,
+all ten resolved values were nonzero and nondecreasing in command execution
+order. Resolve flushes, waits for `GetData` and updates the retained
+query-resolve buffer in sequence, which can stall the CPU. Compute pipeline
+dispatch, occlusion and pipeline-statistics queries remain unavailable. See
+`TESTING.md` for the focused command and observed values.
 
 ## Narrow FL9_1 fragment cube `textureDimensions`
 

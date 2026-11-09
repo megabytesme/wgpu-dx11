@@ -868,7 +868,7 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        if self.render.is_some() || self.compute || !set.belongs_to(&self.device) {
+        if !set.belongs_to(&self.device) {
             self.reject();
             return;
         }

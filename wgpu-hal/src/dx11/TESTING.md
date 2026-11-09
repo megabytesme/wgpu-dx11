@@ -3297,25 +3297,35 @@ an x64 Visual Studio developer environment:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib timestamp_query_features_require_a_positive_frequency_probe_and_backend_path
-cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl91_timestamp_and_disjoint_queries_execute_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib timestamp_query_features_require_a_positive_frequency_probe_and_backend_path
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_timestamp_and_disjoint_queries_execute_on_hardware -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
 ```
 
 The native probe creates timestamp and disjoint queries on the selected FL9_1
 device, flushes and reads the disjoint frequency. A positive result enables
-timestamp query sets and encoder writes. The public test resolves timestamps
-written outside a pass, at the beginning and end of a render pass, and around
-an empty compute pass; it copies them to mapped memory and checks monotonic
-values. Pass descriptor timestamps require only `TIMESTAMP_QUERY`;
-`TIMESTAMP_QUERY_INSIDE_PASSES` remains unexposed, so explicit `write_timestamp`
-calls from inside a pass are not supported. Compute pipeline creation and
-dispatch remain unsupported. The test also confirms occlusion and
-pipeline-statistics sets remain rejected. D3D11 has no native query-result copy
-command here, so resolve waits for `GetData` on the CPU. The strict RTX 3090 Ti
-run at requested/actual FL9_1 read back `[1794147471006991360,
-1794147471006996480, 1794147471006997504, 1794147471007002624,
-1794147471007002624, 1794147471007002624]` at 1 GHz and 1 ns/tick.
+timestamp query sets, encoder writes and explicit writes inside render and
+compute passes. The public test resolves timestamps written outside a pass, at
+the beginning and end of a render pass, explicitly before and after a draw,
+around an empty compute pass, and explicitly inside that compute pass. It
+copies all ten values to mapped memory and checks every value is nonzero and
+the command sequence is nondecreasing in execution order (query indices
+`0, 1, 2, 6, 7, 3, 4, 8, 9, 5`). Pass descriptor timestamps
+require only `TIMESTAMP_QUERY`; explicit pass writes additionally require
+`TIMESTAMP_QUERY_INSIDE_PASSES`, which is exposed only with the positive
+selected-device probe. Compute pipeline creation and dispatch remain
+unsupported. The test also confirms occlusion and pipeline-statistics sets
+remain rejected. D3D11 has no native query-result copy command here, so resolve
+waits for `GetData` on the CPU. Strict execution passed 1/1 on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested/actual FL9_1 (`software=false`). The ten query-index values were
+`[1794227433154996224, 1794227433155000320, 1794227433155001344,
+1794227433155020800, 1794227433155020800, 1794227433155020800,
+1794227433155009536, 1794227433155020800, 1794227433155020800,
+1794227433155020800]`; in command order
+`0, 1, 2, 6, 7, 3, 4, 8, 9, 5`, all ten were nonzero and nondecreasing.
+The observed queue period was 1 ns/tick. The complete strict public target
+passed 113/113 and the complete strict private HAL suite passed 450/450.
 
 ### Narrow FL9_1 fragment `textureLoad`
 

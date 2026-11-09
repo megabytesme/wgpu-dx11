@@ -908,8 +908,9 @@ impl Capabilities {
         if self.backend.timestamp_queries
             && matches!(self.driver.timestamp_frequency, Query::Value(frequency) if frequency > 0)
         {
-            features |=
-                wgt::Features::TIMESTAMP_QUERY | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+            features |= wgt::Features::TIMESTAMP_QUERY
+                | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+                | wgt::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
         }
         if self
             .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
@@ -2281,8 +2282,9 @@ mod tests {
 
     #[test]
     fn timestamp_query_features_require_a_positive_frequency_probe_and_backend_path() {
-        let timestamp_features =
-            wgt::Features::TIMESTAMP_QUERY | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        let timestamp_features = wgt::Features::TIMESTAMP_QUERY
+            | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+            | wgt::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
         let mut caps = model(FeatureLevel::L9_1);
         assert!(caps
             .wgpu_projection()

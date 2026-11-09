@@ -1,5 +1,18 @@
 # FL9_1 completion plan
 
+## Latest query increment — explicit in-pass timestamps — 2026-11-09
+
+The selected-device timestamp/disjoint probe now gates
+`TIMESTAMP_QUERY_INSIDE_PASSES` together with the existing timestamp features.
+The private HAL records explicit render- and compute-pass timestamp writes as
+ordered D3D11 `End` commands. The strict public test brackets a render draw,
+adds explicit writes in an empty compute pass, resolves ten values and checks
+them in execution order. The focused test passed 1/1 on the RTX 3090 Ti at
+requested/actual FL9_1; full strict HAL passed 450/450 and public D3D11 passed
+113/113. The optional timestamp feature remains absent if the selected-device
+probe fails. Next, consider constant-mip 3D `textureDimensions`; do not enable
+3D GPU texture copies, which the current 10Level9 audit records as unavailable.
+
 ## Latest shape-aware texture-query extension — 2026-11-09
 
 The narrow fragment `textureNumLevels` emulation now has independent 2D, 3D
