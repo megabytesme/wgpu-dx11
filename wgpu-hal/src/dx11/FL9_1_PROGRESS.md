@@ -1,5 +1,44 @@
 # FL9_1 progress
 
+## Combined RGBA8/BGRA8 texture-usage execution — 2026-11-09
+
+Added a strict public GPU test for the advertised combined usage set
+`COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` on Rgba8Unorm and
+Bgra8Unorm. The test requires `FILTERABLE` as well as the usage union. It
+uploads a patterned 8x8 source, copies it to a second all-usage texture, reads
+that copy to a padded CPU buffer, samples the copy into an all-usage
+same-format color attachment, then reads the attachment back. It checked all
+64 copied texels and all 64 sampled output pixels for each format.
+
+Strict hardware was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), with requested and actual FL9_1. Both formats
+reported the full usage set and filterability; no skip occurred.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64, offline Cargo and
+bounded parallelism:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91 -- --nocapture --test-threads=1'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public'
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+Results: focused hardware test 1/1; full strict public target 117/117; both
+formats had no skipped subcases. Formatting, Clippy and diff checks passed.
+Clippy continues to report five pre-existing HAL warnings (argument count and
+one boolean simplification); this test introduced none. The first compile
+attempt caught a `u64::from` call in a const expression unsupported by the
+pinned compiler; it was replaced by equivalent casts before the passing run.
+
+The test proves one common combined usage union on two formats; it does not
+close the full format operation matrix. The selected-device table still checks
+many usage combinations only at creation time. Extend coverage by operation
+class for other formats, respecting each backend path and query gate.
+
+Checkpoint: `989ce81f2` (`dx11: execute combined FL9_1 texture usages`).
+
 ## Optional 2x/8x MSAA depth and stencil readback — 2026-11-09
 
 Extended the public optional FL9_1 resolve test to run real depth ordering at

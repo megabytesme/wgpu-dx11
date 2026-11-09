@@ -1,5 +1,28 @@
 # FL9_1 completion plan
 
+## Latest verified public usage-operation matrix slice — 2026-11-09
+
+The public D3D11 path now executes the complete combined
+`COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` usage set for
+linear RGBA8 and BGRA8. Each format is also gated on `FILTERABLE`, which the
+selected shader's filtering sampler layout requires. The test performs a
+queue upload into a patterned 8x8 texture, a GPU texture copy, copied-texture
+CPU readback, sampling into a same-format render attachment, and attachment
+readback. All 64 copied texels and all 64 sampled output pixels matched for
+both formats on strict FL9_1 hardware. This adds execution evidence only; no
+capability changed.
+
+Strict execution selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and confirmed FL9_1. Neither format
+skipped. The focused test passed 1/1 and the complete strict public D3D11 target
+passed 117/117. See `FL9_1_PROGRESS.md` for commands. The existing format
+projection audit still checks 21 formats and many usage combinations by
+creation only; next add similarly focused operations for other independently
+query-gated paths (sampled-only, packed, SNORM/BC, attachments, copy/readback)
+without assuming a common operation contract across all formats.
+
+Checkpoint: `989ce81f2` (`dx11: execute combined FL9_1 texture usages`).
+
 ## Latest verified MSAA depth/stencil execution coverage — 2026-11-09
 
 The existing query-gated 2x/8x RGBA8 multisample resolve test now checks

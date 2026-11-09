@@ -1,5 +1,25 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — combined RGBA8/BGRA8 usage operations — 2026-11-09
+
+The public adapter now has a strict GPU operation test for the full combined
+`COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` usage set on
+linear RGBA8 and BGRA8. It checks `FILTERABLE`, uploads patterned texels,
+copies on the GPU, reads the copied image to CPU memory, samples it into a
+same-format render attachment, and reads the output back. Strict RTX 3090 Ti
+execution requested/selected FL9_1 and validated all 64 copied texels plus all
+64 sampled output pixels for both formats without skips. The focused test
+passed 1/1; the full strict public D3D11 target passed 117/117. Exact commands
+are in `FL9_1_PROGRESS.md`.
+
+This is the first slice of an execution matrix, not proof for the other 21
+projected formats or all allowed usage combinations. The static projection
+test still drops each texture after creation; expand by operation class and
+query gate. The backend remains suited to opt-in applications that stay
+inside the capability matrix, not general-purpose drop-in use. Historical
+FL9_1 drivers and Lumia/CoreWindow runtime remain unverified.
+Checkpoint: `989ce81f2` (`dx11: execute combined FL9_1 texture usages`).
+
 ## Current coordinator checkpoint — query-gated MSAA depth/stencil proof — 2026-11-09
 
 The public 2x/8x RGBA8 resolve test now checks near/far depth rejection for
