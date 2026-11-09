@@ -18,6 +18,19 @@ public surface capabilities were unavailable or the adapter was offscreen-only
 describe the state at those earlier checkpoints; the current HWND contract is
 summarized above and in `CAPABILITIES.md`.
 
+### Public fragment-discard color and depth test
+
+`public_dx11_fragment_discard_preserves_color_and_depth_at_fl91` compiles an
+interpolated conditional `discard` through Naga and FXC at FL9_1. It checks
+that the discarded half preserves the cleared color and depth, then uses a
+second depth-tested draw to show only discarded pixels pass. All 128 checked
+pixels matched on the RTX 3090 Ti at requested/actual FL9_1.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test -p wgpu --features dx11-test-fixture --test dx11_public public_dx11_fragment_discard_preserves_color_and_depth_at_fl91 -- --exact --nocapture
+```
+
 ### Public unimplemented-feature boundary test
 
 `public_dx11_rejects_unimplemented_hal_features_at_fl91` verifies that the

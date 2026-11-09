@@ -21,6 +21,16 @@ adapter enumeration is offscreen-only or that surface reporting is disabled
 describes an earlier checkpoint; the current public surface is limited to the
 HWND contract summarized above.
 
+## WGSL fragment discard
+
+The ordinary WGSL fragment `discard` statement is translated by Naga's HLSL
+writer and accepted by FXC for `ps_4_0_level_9_1`. A strict public GPU test
+checks the selected conditional-discard path at requested/actual FL9_1: all
+discarded pixels retain the attachment's prior color and depth, while covered
+pixels write color and depth. A later depth-tested draw distinguishes both
+halves. This records tested behavior for that shader shape; it does not remove
+the other FL9_1 shader-profile restrictions or claim full WGSL coverage.
+
 ## FL9_1 mutable format views
 
 The backend does not expose `DownlevelFlags::VIEW_FORMATS` at FL9_1. Although

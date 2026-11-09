@@ -13,6 +13,13 @@ indexed strips resolve signed base vertices and restart runs, then expand to
 winding-preserving triangle-list IDs through Window/Gather paths. Strict RTX
 3090 Ti readback covers direct and indexed strips, signed base vertex, primitive
 restart and wide-span Gather. See `TESTING.md` for exact commands and results.
+
+The public fragment-shader path also has a strict forced-FL9_1 `discard`
+regression. Its readback proves that discarded fragments preserve both the
+prior color and depth: a subsequent depth-tested draw updates only the pixels
+that the first shader discarded. This exercises the existing Naga HLSL
+translation and FXC path without adding a backend capability or broadening the
+shader contract.
 # Direct3D 11 backend status
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an

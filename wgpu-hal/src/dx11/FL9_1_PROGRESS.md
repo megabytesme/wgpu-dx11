@@ -13723,3 +13723,45 @@ adds public execution evidence only; it does not close the broad operation
 matrix, historical FL9_1/Lumia verification or public exposure gates.
 
 Checkpoint: `f71993b7c` (`dx11: verify FL9_1 color write masks`).
+
+## Public fragment discard color/depth test — 2026-11-09
+
+Added `public_dx11_fragment_discard_preserves_color_and_depth_at_fl91` in
+`wgpu/tests/dx11_public.rs`. Its interpolated vertex alpha makes columns 0–3
+discard and columns 4–7 write red. The first strict readback checked all 64
+pixels against the initial clear color and red output. A second draw at depth
+0.4 with `LessEqual` passes only where the first draw discarded; it turns
+those pixels green while the red pixels retain their first-draw depth of 0.25.
+The second readback checked another 64 pixels. This establishes that the
+existing Naga HLSL/FXC path preserves color and depth for this conditional
+fragment `discard` shape; no backend capability changed.
+
+An independent review found the test's interpolated threshold, color
+expectations, depth proof, strict gate and queue/readback ordering sound. Strict
+execution selected the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested and
+confirmed FL9_1. FXC accepted the generated shader under
+`ps_4_0_level_9_1`. The focused test passed 1/1 and the complete strict public
+D3D11 target passed 115/115, including default-enumeration isolation.
+
+Rustup's pinned `1.93.1-x86_64-pc-windows-msvc` installation was incomplete
+(missing manifest), so test, formatting and Clippy checks used installed Rust
+1.93. Exact commands:
+
+```text
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test -p wgpu --features dx11-test-fixture --test dx11_public public_dx11_fragment_discard_preserves_color_and_depth_at_fl91 -- --exact --nocapture'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test -p wgpu --features dx11-test-fixture --test dx11_public -j2 -- --nocapture'
+cargo +1.93 fmt --all -- --check
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cargo +1.93 clippy -p wgpu --features dx11-test-fixture --test dx11_public -j8'
+git diff --check
+```
+
+All commands passed. Clippy reported the five existing D3D11 HAL style
+warnings and three existing `wgpu-core` unused-variable warnings; the new test
+introduced none. The developer prompt printed `vError: Unknown error` in its
+banner but initialized successfully. One earlier test compile caught three
+test-only `DepthStencilState` type mismatches; they were corrected before the
+passing focused and full runs. The result adds execution evidence only and
+does not imply broader WGSL, discard, or historical-driver conformance.
+
+Checkpoint: `834944c4e` (`dx11: verify FL9_1 fragment discard semantics`).

@@ -1,5 +1,24 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — public fragment discard — 2026-11-09
+
+The public WGSL fragment `discard` path is now verified at forced FL9_1.
+Naga/FXC accepted the conditional shader for `ps_4_0_level_9_1`; readback
+checked color preservation after discard and depth preservation through a
+later depth-tested draw. All 128 pixels matched. The focused test passed 1/1,
+and the full strict public D3D11 target passed 115/115 on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1,
+software=false). Independent review found no correctness blocker. This is
+execution evidence, not a capability expansion.
+
+Rust 1.93 was used because the pinned 1.93.1 MSVC installation is incomplete.
+Formatting, diff checks and targeted Clippy passed; existing HAL/Core warnings
+are recorded in `FL9_1_PROGRESS.md`. The public operation audit, hardware
+coverage matrix, historical FL9_1 and Lumia/CoreWindow verification remain
+open.
+
+Checkpoint: `834944c4e` (`dx11: verify FL9_1 fragment discard semantics`).
+
 ## Current coordinator checkpoint — public color write masks — 2026-11-09
 
 The public API test now proves the advertised per-channel `ColorWrites`

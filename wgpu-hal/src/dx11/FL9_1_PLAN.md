@@ -1,5 +1,29 @@
 # FL9_1 completion plan
 
+## Latest shader execution proof — fragment `discard` — 2026-11-09
+
+The public FL9_1 shader path now has an end-to-end conditional fragment
+`discard` test. Naga generated HLSL that FXC accepted for
+`ps_4_0_level_9_1`. The first draw discarded four of eight interpolated-alpha
+columns; all 64 readback pixels showed the clear color in the discarded half
+and red in the written half. A later `LessEqual` depth-tested draw used a
+farther depth and showed green only in the discarded half, checking that the
+first shader also left depth untouched. The two readbacks matched all 128
+pixels.
+
+Strict execution selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and confirmed FL9_1. The focused
+test passed 1/1 and the full strict public D3D11 target passed 115/115.
+Formatting, diff checks and targeted Clippy passed; pre-existing HAL/Core
+warnings remain. No capability projection changed. See `FL9_1_PROGRESS.md`
+for exact commands and diagnostics.
+
+The public shader/API matrix and historical-driver verification remain open.
+Continue with query-gated resource operation candidates and isolated shader
+shapes; retain the strict hardware requirement and default adapter isolation.
+
+Checkpoint: `834944c4e` (`dx11: verify FL9_1 fragment discard semantics`).
+
 ## Latest public render-state verification — color write masks — 2026-11-09
 
 The public FL9_1 rendering test now transitions through `ALL`, `RED`,
