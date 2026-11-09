@@ -846,8 +846,16 @@ into B5G6R5 followed by sampling matched 64 pixels within one UNORM code of
 The strict public transfer test additionally uploads each of the three queried
 formats, copies a partial rectangle between different texture dimensions and
 reads the full destination into a nonzero-offset, 256-byte-pitched buffer. All
-24 texels and untouched row padding are checked for R8, RG8 and RGB565. A
-separate strict case uses each format with `RESOURCE | COLOR_TARGET | COPY_SRC`,
+24 texels and untouched row padding are checked for R8, RG8 and RGB565. The
+public operation-matrix test also executes the complete
+`COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` union for R8, RG8,
+RGB565, linear/sRGB RGBA8 and linear/sRGB BGRA8: padded upload, same-format GPU
+copy, padded copy readback, sampled rendering to a same-format attachment and
+attachment readback. All 64 copied texels match exactly and sampled outputs
+match within one byte on the RTX 3090 Ti forced to FL9_1. This is query-gated
+execution evidence for those seven formats and does not widen the existing
+projection. A separate strict case uses each narrow format with
+`RESOURCE | COLOR_TARGET | COPY_SRC`,
 renders into it, then copies the rendered attachment to a nonzero-offset,
 padded readback buffer. It checks all 64 source texels per format and confirms
 the offset prefix and row padding retain their sentinel values. For RG8, the

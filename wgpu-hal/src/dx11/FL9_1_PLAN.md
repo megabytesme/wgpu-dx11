@@ -4,25 +4,24 @@
 
 The public D3D11 path now executes the complete combined
 `COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` usage set for
-linear and sRGB RGBA8 and BGRA8. Each format is also gated on `FILTERABLE`,
-which the selected shader's filtering sampler layout requires. The test
-performs a queue upload into a patterned 8x8 texture, a GPU texture copy,
-copied-texture CPU readback, sampling into a same-format render attachment,
-and attachment readback. All 64 copied texels matched exactly and all 64
-sampled output pixels matched within one byte for each format. This exercises
-BGRA raw-byte ordering and sRGB decode/encode; it adds execution evidence only,
-not new capability.
+R8_UNORM, R8G8_UNORM, RGB565, linear and sRGB RGBA8, and linear and sRGB
+BGRA8. The test performs a padded queue upload, same-format GPU texture copy,
+padded CPU copy-readback, sampling into a same-format render attachment, and
+attachment readback. All 64 copied texels matched exactly and all 64 sampled
+output pixels matched within one byte for each format. This exercises narrow
+channel/packed conversion, BGRA raw-byte ordering and sRGB decode/encode; it
+adds execution evidence only, not new capability.
 
 Strict execution selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
-`32.0.16.2101`, software=false), requested and confirmed FL9_1. None of the
-four formats skipped. The focused test passed 1/1 and the complete strict
-public D3D11 target passed 117/117. See `FL9_1_PROGRESS.md` for commands. The
-existing format projection audit still checks 21 formats and many usage
-combinations by creation only. The next focused slice is the same usage union
-on R8_UNORM, R8G8_UNORM and B5G6R5_UNORM, whose existing upload/copy and
-render/sample paths are tested separately.
+`32.0.16.2101`, software=false), requested and confirmed FL9_1. All seven
+formats reported the full usage union and none skipped. The focused test
+passed 1/1 and the complete strict public D3D11 target passed 117/117. See
+`FL9_1_PROGRESS.md` for commands. The existing format projection audit still
+checks 21 formats and many usage combinations by creation only. Next, extend
+representative operation sequences to query-gated SNORM/BC or packed/depth
+paths without assuming the same usage contract across formats.
 
-Checkpoint: `1967b0722` (`dx11: verify combined sRGB texture usage at FL9_1`).
+Checkpoint: `78f3242d5` (`dx11: exercise combined FL9_1 narrow texture usages`).
 
 ## Latest verified MSAA depth/stencil execution coverage — 2026-11-09
 
