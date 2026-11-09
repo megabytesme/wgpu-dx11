@@ -2,15 +2,19 @@
 
 ## Current coordination checkpoint — 2026-11-09
 
-Two test-readiness gaps were closed in isolated commits. Native pipeline-object
-creation now preserves known OOM and device-loss HRESULTs as `PipelineError::Device`
-instead of reporting every non-invalid-argument failure as shader linkage
-(`f87abf0d3`). Deno/xtask now builds the experimental DX11 backend only when
-`cargo xtask cts --backend dx11` (or `d3d11`) explicitly requests it, and the
-unset Deno backend mask excludes DX11 (`d2994cebd`). Focused tests and the CTS
-runner feature check passed. The CTS suite itself was not run: this checkout has
-no `cts/` tree or Deno executable, and adapter selection is not yet strict in the
-CTS runner. Normal backend enumeration/default selection remains unchanged.
+Test readiness now includes opt-in Deno/xtask DX11 routing and a strict
+hardware preflight. With `WGPU_DX11_REQUIRE_HARDWARE=1`, Deno requires the
+backend mask to select only DX11 and rejects adapter/configuration failures
+instead of resolving `null`; accepted adapter identity must carry the HAL's
+verified physical-FL9_1 marker. Ordinary adapter selection/defaults remain
+unchanged. The CTS runner feature check passes, but the CTS suite has not run:
+this checkout has no `cts/` tree or Deno runner setup. Commits:
+`f87abf0d3`, `d2994cebd`, `ee480928e`.
+
+The separate-alpha contract audit found the current Core `SEPARATE_ALPHA_BLEND`
+gate and HAL translation fail closed for RGB+alpha writes; RGB-only and
+alpha-only masks safely use the active equation. A strict Core fixture now
+covers alpha-only pipeline creation (`d4227636e`). No capability was added.
 
 Current main gaps remain: exhaustive Core-valid versus HAL-executable public
 contract coverage, broader shader/resource/pipeline behavior, actual historical

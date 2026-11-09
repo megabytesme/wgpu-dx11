@@ -1,5 +1,34 @@
 # FL9_1 progress
 
+## Strict CTS hardware preflight and blend-mask boundary — 2026-11-09
+
+Deno now has an explicit strict hardware mode for opt-in DX11 CTS runs. The
+`WGPU_DX11_REQUIRE_HARDWARE=1` setting requires `DENO_WEBGPU_BACKEND` to select
+only DX11; absent, mixed or mismatched backend masks reject the adapter
+request. Adapter request failures also reject rather than returning `None`,
+and the selected adapter must report `Backend::Dx11`, not be CPU/software, and
+carry the HAL's `FL9_1; physical DXGI adapter;` marker. Normal requestAdapter
+semantics are unchanged when strict mode is unset. The marker is a verified
+driver-info string, not a structured feature-level field.
+
+Rust 1.93.1 validation passed: the Deno backend-selection tests passed 6/6,
+the `cts_runner` DX11 feature check passed, xtask routing passed 1/1, and
+format/diff checks passed. The build reported three existing unused-variable
+warnings in `wgpu-core/src/validation.rs`. No actual CTS tests ran: this
+checkout lacks the CTS tree and helper. Strict CTS classification of a rejected
+adapter request remains unverified until a selector is run against the CTS
+runner.
+
+An independent blend audit found no uncovered full-channel separate-alpha
+descriptor: Core requires the absent `SEPARATE_ALPHA_BLEND` flag, and HAL
+independently rejects it. RGB-only and alpha-only write masks are accepted
+because the other equation is unobservable; HAL normalizes the unused native
+equation. A strict Core fixture now covers alpha-only acceptance, passing 1/1
+on the RTX 3090 Ti at requested/actual FL9_1.
+
+Related commits: `ee480928e` (strict DX11 Deno adapter preflight) and
+`d4227636e` (alpha-only blend validation coverage).
+
 ## Pipeline failure classification and opt-in CTS routing — 2026-11-09
 
 Pipeline native-object creation now reports known `E_OUTOFMEMORY` as
@@ -15,10 +44,10 @@ The Deno/xtask path now supports explicit experimental DX11 CTS selection:
 `DENO_WEBGPU_BACKEND` is unset, Deno uses `Backends::default()`, which excludes
 DX11. Backend-mask tests passed 2/2, xtask feature-routing passed 1/1, and
 `cts_runner` checked successfully with the feature enabled. Deno compilation
-reported three existing Core unused-variable warnings. CTS execution itself
-was not attempted: this checkout has no local CTS checkout and no Deno runtime.
-The runner still needs a strict adapter preflight/log before CTS output can be
-counted as physical GPU evidence.
+reported three existing Core unused-variable warnings. At this checkpoint CTS
+execution was not attempted because this checkout had no local CTS checkout or
+runner helper; the strict adapter preflight was added in the follow-up entry
+above.
 
 Commits: `f87abf0d3` (`dx11: classify pipeline device creation failures`),
 `d2994cebd` (`xtask: enable opt-in D3D11 CTS routing`). Neither change alters

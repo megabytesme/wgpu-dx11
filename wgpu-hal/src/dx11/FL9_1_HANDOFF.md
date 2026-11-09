@@ -1,5 +1,27 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — strict CTS preflight and blend audit — 2026-11-09
+
+The Deno/xtask DX11 CTS path is opt-in. With
+`WGPU_DX11_REQUIRE_HARDWARE=1`, it requires `DENO_WEBGPU_BACKEND=dx11`, rejects
+adapter/configuration failures rather than resolving `null`, and validates the
+adapter's DX11 identity plus the verified physical-FL9_1 driver-info marker.
+Six CPU tests pass and `cts_runner` builds with the DX11 feature, but no CTS
+selector has run because this checkout lacks the CTS checkout/helper. A future
+strict CTS run must confirm that rejected adapter requests are reported as test
+failures, not skips. See `FL9_1_PROGRESS.md` for exact commands.
+
+The separate-alpha audit found that Core requires the absent FL9_1
+`SEPARATE_ALPHA_BLEND` flag when both RGB and alpha writes have different
+equations; HAL repeats the guard. RGB-only and alpha-only masks are safe because
+the other equation is unobservable. The strict Core fixture now tests the
+alpha-only case. No capability changed.
+
+Commits: `ee480928e` (strict Deno preflight) and `d4227636e` (alpha-only
+blend validation coverage). Public API auditing, broader shader/resource
+coverage, historical FL9_1 hardware, Lumia runtime and physical device removal
+remain open.
+
 ## Current coordinator checkpoint — viewport remap contract — 2026-11-09
 
 The optional viewport-remap pipeline experiment was withdrawn. FL9_x

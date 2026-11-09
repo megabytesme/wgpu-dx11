@@ -18,6 +18,24 @@ public surface capabilities were unavailable or the adapter was offscreen-only
 describe the state at those earlier checkpoints; the current HWND contract is
 summarized above and in `CAPABILITIES.md`.
 
+### Strict DX11 CTS selection
+
+The xtask runner enables the experimental Deno DX11 feature only for an
+explicit DX11 backend request. For a hardware-required run, set
+`WGPU_DX11_REQUIRE_HARDWARE=1`; Deno then requires the backend mask to contain
+only DX11 and rejects an absent or unverified physical FL9_1 adapter instead
+of resolving `null`. The verified adapter identity is logged. Example:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo xtask cts --backend dx11 'webgpu:api,operation,command_buffer,basic:*'
+```
+
+This checkout does not yet have the CTS checkout/helper, so the selector above
+has not been executed here. Before counting a strict CTS result as GPU evidence,
+confirm the runner reports rejected adapter requests as test failures rather
+than skips. The regular Deno backend mask still excludes DX11 by default.
+
 ### Public fragment-discard color and depth test
 
 `public_dx11_fragment_discard_preserves_color_and_depth_at_fl91` compiles an
