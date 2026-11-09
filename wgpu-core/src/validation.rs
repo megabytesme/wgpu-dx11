@@ -297,6 +297,7 @@ struct EntryPoint {
     fl9_texture_load_3d_supported: bool,
     unsupported_runtime_integer_semantics: bool,
     matrix_inverse_used: bool,
+    unsupported_matrix_inverse_2x2: bool,
     matrix_outer_product_used: bool,
     unsupported_matrix_aggregate_store: bool,
     texture_query_used: bool,
@@ -3330,6 +3331,51 @@ fn entry_point_uses_matrix_inverse(module: &naga::Module, entry_point: &naga::En
     false
 }
 
+fn function_uses_unsupported_matrix_inverse_2x2(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    types: &naga::UniqueArena<naga::Type>,
+) -> bool {
+    function.expressions.iter().any(|(_, expression)| {
+        let naga::Expression::Math {
+            fun: naga::MathFunction::Inverse,
+            arg,
+            ..
+        } = *expression
+        else {
+            return false;
+        };
+
+        !matches!(
+            function_info[arg].ty.inner_with(types),
+            naga::TypeInner::Matrix {
+                columns: naga::VectorSize::Bi,
+                rows: naga::VectorSize::Bi,
+                scalar: naga::Scalar::F32,
+            }
+        )
+    })
+}
+
+fn entry_point_uses_unsupported_matrix_inverse_2x2(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> bool {
+    if function_uses_unsupported_matrix_inverse_2x2(
+        &entry_point.function,
+        entry_point_info,
+        &module.types,
+    ) {
+        return true;
+    }
+
+    module.functions.iter().any(|(handle, function)| {
+        function_uses_unsupported_matrix_inverse_2x2(function, &module_info[handle], &module.types)
+    })
+}
+
 fn function_uses_matrix_outer_product(function: &naga::Function) -> bool {
     function.expressions.iter().any(|(_, expression)| {
         matches!(
@@ -4685,6 +4731,12 @@ impl Interface {
                         info,
                     ),
                 matrix_inverse_used: entry_point_uses_matrix_inverse(module, entry_point),
+                unsupported_matrix_inverse_2x2: entry_point_uses_unsupported_matrix_inverse_2x2(
+                    module,
+                    module_info,
+                    entry_point,
+                    info,
+                ),
                 matrix_outer_product_used: entry_point_uses_matrix_outer_product(
                     module,
                     entry_point,
@@ -5227,8 +5279,13 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(!limits.matrix_inverse
-            && (entry_point.matrix_inverse_used || self.matrix_inverse_in_regular_function))
+        Ok(if limits.matrix_inverse {
+            false
+        } else if limits.matrix_inverse_2x2 {
+            entry_point.unsupported_matrix_inverse_2x2
+        } else {
+            entry_point.matrix_inverse_used || self.matrix_inverse_in_regular_function
+        })
     }
 
     pub(crate) fn entry_point_uses_unsupported_matrix_outer_product(
@@ -8531,6 +8588,74 @@ mod tests {
                 &limits,
             )
             .is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "glsl")]
+    fn narrow_matrix_inverse_limit_is_shape_and_entry_point_specific() {
+        fn interface(source: &str) -> Interface {
+            let mut parser = naga::front::glsl::Frontend::default();
+            let module = parser
+                .parse(
+                    &naga::front::glsl::Options::from(naga::ShaderStage::Vertex),
+                    source,
+                )
+                .unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            Interface::new(&module, &info, wgt::Limits::defaults())
+        }
+
+        let inverse_2x2_with_unused_3x3 = interface(
+            "#version 450\nmat3 unused(mat3 m) { return inverse(m); }\nmat2 apply_inverse(mat2 m) { return inverse(m); }\nvoid main() { mat2 inv = apply_inverse(mat2(1.0)); gl_Position = vec4(inv[0], 0.0, 1.0); }",
+        );
+        let inverse_2x2_only = interface(
+            "#version 450\nmat2 apply_inverse(mat2 m) { return inverse(m); }\nvoid main() { mat2 inv = apply_inverse(mat2(1.0)); gl_Position = vec4(inv[0], 0.0, 1.0); }",
+        );
+        let inverse_3x3 = interface(
+            "#version 450\nmat3 apply_inverse(mat3 m) { return inverse(m); }\nvoid main() { mat3 inv = apply_inverse(mat3(1.0)); gl_Position = vec4(inv[0], 1.0); }",
+        );
+        let narrow_limits = wgt::DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: true,
+            ..Default::default()
+        };
+
+        assert!(inverse_2x2_with_unused_3x3
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &narrow_limits,
+            )
+            .unwrap());
+        assert!(!inverse_2x2_only
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &narrow_limits,
+            )
+            .unwrap());
+        assert!(inverse_3x3
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &narrow_limits,
+            )
+            .unwrap());
+        assert!(inverse_2x2_only
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &wgt::DownlevelLimits {
+                    matrix_inverse: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap());
     }
 
     #[cfg(feature = "glsl")]

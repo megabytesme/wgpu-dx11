@@ -74,6 +74,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         texture_load_3d_float_fragment: false,
         runtime_integer_shader_operations: false,
         matrix_inverse: false,
+        matrix_inverse_2x2: false,
         matrix_outer_product: false,
         matrix_aggregate_stores: false,
         max_texture_sample_bias: 0,

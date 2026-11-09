@@ -1202,14 +1202,17 @@ core/HAL validation mismatch; it does not add shader functionality.
 
 ## Matrix inverse shader validation
 
-The HLSL writer does not lower Naga's matrix-inverse operation and returns an
-unimplemented error before FXC. `DownlevelLimits::matrix_inverse` now exposes
-that compiler restriction to core, which checks selected vertex and fragment
-entry points and regular module functions. Naga's HLSL writer emits every
-regular function, so even an unused helper containing inverse is rejected;
-ordinary separate shader modules remain valid. DX12's HLSL and Metal's MSL
-projections also disable inverse because their writers do not lower it. This
-remains a compiler limitation and does not add hardware functionality.
+Naga's HLSL writer lowers only f32 `mat2x2` inverse using scalar cofactors.
+DX11 exposes the subset with `DownlevelLimits::matrix_inverse_2x2`, while
+keeping general `matrix_inverse` false. Core validates selected entries and
+every regular module function for unsupported shapes because the HLSL writer
+emits every regular function; even an unused `mat3x3` helper is rejected
+before HAL. Strict public forced-FL9_1 GLSL tests use inverse in both shader
+stages and validate all 64 pixels; direct and unused-helper `mat3x3` requests
+are rejected as Core validation errors. WGSL has no `inverse` builtin, so this
+applies to GLSL/SPIR-V or Naga IR inputs. Other shapes and DX12/Metal
+projection remain unavailable. This is a bounded translator capability, not
+additional FL9_1 hardware support.
 
 The HLSL writer now lowers `outerProduct` for validated f32 vectors and square
 or rectangular matrices. DX11 exposes the corresponding downlevel limit, and

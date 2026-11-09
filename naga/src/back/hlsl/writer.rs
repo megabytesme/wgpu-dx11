@@ -4153,6 +4153,42 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
     ) -> BackendResult {
         use crate::MathFunction as Mf;
 
+        if fun == Mf::Inverse {
+            let TypeInner::Matrix {
+                columns: crate::VectorSize::Bi,
+                rows: crate::VectorSize::Bi,
+                scalar: Scalar::F32,
+            } = *func_ctx.resolve_type(arg, &module.types)
+            else {
+                return Err(Error::Unimplemented(String::from(
+                    "write_expr_math Inverse for matrices other than mat2x2<f32>",
+                )));
+            };
+
+            // HLSL rows represent Naga matrix columns, so lower the inverse in that orientation.
+            write!(self.out, "float2x2(")?;
+            for (index, (row, column)) in [(1, 1), (0, 1), (1, 0), (0, 0)].into_iter().enumerate() {
+                if index != 0 {
+                    write!(self.out, ", ")?;
+                }
+                if index == 1 || index == 2 {
+                    write!(self.out, "-")?;
+                }
+                self.write_expr(module, arg, func_ctx)?;
+                write!(self.out, "[{row}][{column}]")?;
+            }
+            write!(self.out, ") / (")?;
+            self.write_expr(module, arg, func_ctx)?;
+            write!(self.out, "[0][0] * ")?;
+            self.write_expr(module, arg, func_ctx)?;
+            write!(self.out, "[1][1] - ")?;
+            self.write_expr(module, arg, func_ctx)?;
+            write!(self.out, "[0][1] * ")?;
+            self.write_expr(module, arg, func_ctx)?;
+            write!(self.out, "[1][0])")?;
+            return Ok(());
+        }
+
         if fun == Mf::Outer {
             let Some(arg1) = arg1 else {
                 return Err(Error::Unimplemented(String::from(
@@ -6402,6 +6438,64 @@ mod fl9_viewport_tests {
                 "float2x3((_e4.x * _e5.x), (_e4.y * _e5.x), (_e4.z * _e5.x), (_e4.x * _e5.y), (_e4.y * _e5.y), (_e4.z * _e5.y))"
             ),
             "{rectangular}"
+        );
+    }
+
+    #[cfg(feature = "glsl-in")]
+    #[test]
+    fn matrix_inverse_emits_a_mat2_cofactor_lowering() {
+        let source = "#version 450\nvoid main() { mat2 m = mat2(1.0, 2.0, 3.0, 4.0); mat2 inv = inverse(m); gl_Position = vec4(inv[0], 0.0, 1.0); }";
+        let mut parser = crate::front::glsl::Frontend::default();
+        let module = parser
+            .parse(
+                &crate::front::glsl::Options::from(ShaderStage::Vertex),
+                source,
+            )
+            .unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::all())
+            .validate(&module)
+            .unwrap();
+        let pipeline = PipelineOptions {
+            entry_point: Some((ShaderStage::Vertex, "main".into())),
+        };
+        let mut output = String::new();
+        super::super::Writer::new(&mut output, &make_options(), &pipeline)
+            .write(&module, &info, None)
+            .unwrap();
+
+        assert!(
+            output.contains("float2x2(_e"),
+            "expected a 2x2 cofactor constructor in:\n{output}"
+        );
+        assert!(output.contains("[1][1], -_e"), "{output}");
+        assert!(output.contains("[0][1], -_e"), "{output}");
+        assert!(output.contains("[0][0]) / ("), "{output}");
+        assert!(output.contains("[0][0] * _e"), "{output}");
+        assert!(output.contains("[1][1] - _e"), "{output}");
+    }
+
+    #[cfg(feature = "glsl-in")]
+    #[test]
+    fn matrix_inverse_rejects_larger_shapes() {
+        let source = "#version 450\nvoid main() { mat3 m = mat3(1.0); mat3 inv = inverse(m); gl_Position = vec4(inv[0], 1.0); }";
+        let mut parser = crate::front::glsl::Frontend::default();
+        let module = parser
+            .parse(
+                &crate::front::glsl::Options::from(ShaderStage::Vertex),
+                source,
+            )
+            .unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let pipeline = PipelineOptions {
+            entry_point: Some((ShaderStage::Vertex, "main".into())),
+        };
+        let mut output = String::new();
+        assert!(
+            super::super::Writer::new(&mut output, &make_options(), &pipeline)
+                .write(&module, &info, None)
+                .is_err()
         );
     }
 

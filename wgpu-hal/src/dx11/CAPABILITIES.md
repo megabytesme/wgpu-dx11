@@ -1157,15 +1157,18 @@ float-only matrix reads are allowed. These are backend/compiler limits, not
 feature-level hardware guarantees. The public regression covers fragment
 integer arithmetic and vertex aggregate stores on the forced-FL9_1 path; CPU
 tests cover helper pointer arguments and entry-point selection.
-Matrix inverse is also rejected when used by a selected entry point: Naga's
-HLSL writer currently returns `Error::Unimplemented` for this operation before
-FXC, even though Naga accepts it from GLSL and SPIR-V. The new
-`DownlevelLimits::matrix_inverse` gate follows calls to helper functions. Since
-Naga's HLSL writer emits every regular module function, inverse in an otherwise
-unused helper is also rejected; a separate ordinary shader module remains
-valid. DX12's HLSL projection and Metal's MSL projection also disable this
-operation because their current writers do not lower it. This is a compiler
-limitation, not an FL9_1 hardware guarantee.
+Naga's HLSL writer lowers only f32 `mat2x2` inverse using scalar cofactors.
+DX11 exposes that subset through `DownlevelLimits::matrix_inverse_2x2` and
+keeps the general `matrix_inverse` limit false. Core validates selected
+vertex/fragment entries and every regular module function for unsupported
+shapes because Naga's HLSL writer emits all regular functions; an unused
+`mat3x3` helper therefore also causes Core validation failure. A strict
+forced-FL9_1 GLSL test exercised the operation in both shader stages and
+matched all 64 output pixels; public negative tests confirm direct and unused
+helper `mat3x3` inverse are rejected before HAL. WGSL has no `inverse` builtin,
+so this is useful for GLSL/SPIR-V or Naga IR inputs, not an expansion of WGSL
+functionality. Other HLSL shapes and DX12/Metal capability exposure remain
+disabled; this is a translator subset, not an FL9_1 hardware guarantee.
 Naga's HLSL writer now lowers `outerProduct` for validated f32 vectors and
 square or rectangular matrices. The DX11 FL9_1 projection enables
 `DownlevelLimits::matrix_outer_product`; selected-entry validation still

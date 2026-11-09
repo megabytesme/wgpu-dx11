@@ -13892,7 +13892,7 @@ fn public_dx11_rejects_unimplemented_legacy_shader_builtins_at_fl91() {
 
 #[cfg(feature = "glsl")]
 #[test]
-fn public_dx11_rejects_unimplemented_matrix_inverse_and_accepts_outer_product_at_fl91() {
+fn public_dx11_gates_matrix_inverse_shape_and_accepts_outer_product_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -13908,6 +13908,9 @@ fn public_dx11_rejects_unimplemented_matrix_inverse_and_accepts_outer_product_at
     };
     let info = adapter.get_info();
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.matrix_inverse_2x2);
+    assert!(!downlevel.limits.matrix_inverse);
     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public FL9_1 matrix inverse validation test"),
         required_features: Features::empty(),
@@ -13943,12 +13946,20 @@ fn public_dx11_rejects_unimplemented_matrix_inverse_and_accepts_outer_product_at
         })
     };
     let inverse = vertex(
-        "unsupported FL9_1 matrix inverse GLSL shader",
+        "supported FL9_1 mat2 matrix inverse GLSL shader",
         "#version 450\nvec2 apply_inverse(mat2 m, vec2 v) { return inverse(m) * v; }\nvoid main() { vec2 v = apply_inverse(mat2(1.0), vec2(0.0)); gl_Position = vec4(v, 0.0, 1.0); }",
     );
     let inverse_helper = vertex(
-        "unused FL9_1 matrix inverse GLSL helper",
+        "unused FL9_1 mat2 matrix inverse GLSL helper",
         "#version 450\nmat2 invert(mat2 m) { return inverse(m); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
+    );
+    let inverse_3x3 = vertex(
+        "unsupported FL9_1 mat3 matrix inverse GLSL shader",
+        "#version 450\nvoid main() { mat3 m = inverse(mat3(1.0)); gl_Position = vec4(m[0], 1.0); }",
+    );
+    let inverse_3x3_helper = vertex(
+        "unsupported FL9_1 mat3 matrix inverse GLSL helper",
+        "#version 450\nmat3 invert(mat3 m) { return inverse(m); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
     );
     let outer_product = vertex(
         "supported FL9_1 matrix outer-product GLSL shader",
@@ -13998,23 +14009,27 @@ fn public_dx11_rejects_unimplemented_matrix_inverse_and_accepts_outer_product_at
         })
     };
 
+    drop(pipeline(&inverse));
+    drop(pipeline(&inverse_helper));
     expect_validation_error_containing(
         &device,
-        "unsupported FL9_1 matrix inverse",
+        "unsupported FL9_1 mat3 inverse",
         "Matrix inverse",
-        || drop(pipeline(&inverse)),
+        || {
+            drop(pipeline(&inverse_3x3));
+        },
     );
     expect_validation_error_containing(
         &device,
-        "unused FL9_1 matrix inverse helper",
+        "unsupported unused FL9_1 mat3 inverse helper",
         "Matrix inverse",
-        || drop(pipeline(&inverse_helper)),
+        || drop(pipeline(&inverse_3x3_helper)),
     );
     drop(pipeline(&outer_product));
     drop(pipeline(&outer_product_helper));
     drop(pipeline(&ordinary));
     println!(
-        "PASS: core rejected unsupported matrix inverse before HAL and FXC accepted outer product in selected and helper entries"
+        "PASS: Core accepted mat2 inverse in selected/unused helpers, rejected mat3 inverse before HAL, and accepted outer product in selected and helper entries"
     );
 }
 
@@ -28474,7 +28489,7 @@ fn public_dx11_matrix_outer_product_renders_at_fl91() {
         label: Some("FL9_1 outerProduct test vertex shader"),
         source: ShaderSource::Glsl {
             shader: std::borrow::Cow::Borrowed(
-                "#version 450\nlayout(location=0) in vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }",
+                "#version 450\nlayout(location=0) in vec2 position; void main() { mat2 m = mat2(vec2(1.0, 0.0), vec2(1.0, 1.0)); vec2 p = inverse(m) * position; gl_Position = vec4(m * p, 0.0, 1.0); }",
             ),
             stage: naga::ShaderStage::Vertex,
             defines: &[],
@@ -30941,5 +30956,276 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
     assert!(sample_count_checks > 0);
     println!(
         "PASS: checked {exposed_formats} projected formats, {accepted_usage_combinations} advertised usage combinations, {validation_rejections} unreported usage rejections, {mip_checks} mip contracts and {sample_count_checks} sample-count contracts through Core on the selected physical FL9_1 device"
+    );
+}
+
+#[cfg(feature = "glsl")]
+#[test]
+fn public_dx11_mat2_matrix_inverse_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let Some(adapter) = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .find(|adapter| {
+            let info = adapter.get_info();
+            info.backend == Backend::Dx11
+                && info.driver_info.contains("FL9_1")
+                && info.driver_info.contains("physical")
+        })
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for mat2 matrix inverse");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(
+        downlevel.limits.matrix_inverse_2x2,
+        "selected FL9_1 projection must expose only the narrow mat2 inverse path"
+    );
+    assert!(
+        !downlevel.limits.matrix_inverse,
+        "general matrix inverse must remain unavailable"
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=vertex and fragment mat2 inverse",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 mat2 matrix inverse"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    let validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 matrix inverse vertex shader"),
+        source: ShaderSource::Glsl {
+            shader: std::borrow::Cow::Borrowed(
+                "#version 450\nlayout(location=0) in vec2 position; void main() { mat2 m = mat2(vec2(1.0, 0.0), vec2(1.0, 1.0)); vec2 p = m * (inverse(m) * position); gl_Position = vec4(p, 0.0, 1.0); }",
+            ),
+            stage: naga::ShaderStage::Vertex,
+            defines: &[],
+        },
+    });
+    let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 mat2 matrix inverse fragment shader"),
+        source: ShaderSource::Glsl {
+            shader: std::borrow::Cow::Borrowed(
+                "#version 450\nlayout(location=0) out vec4 color; void main() { mat2 m = mat2(vec2(1.0, 0.0), vec2(1.0, 1.0)); vec2 p = inverse(m) * vec2(2.0, 3.0); color = vec4(p.x + 1.0, p.y / 3.0, 0.0, 1.0); }",
+            ),
+            stage: naga::ShaderStage::Fragment,
+            defines: &[],
+        },
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 mat2 matrix inverse pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &vertex_shader,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &fragment_shader,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let validation_error = poll_ready(validation_scope.pop());
+    assert!(
+        validation_error.is_none(),
+        "mat2 inverse must compile for ps_4_0_level_9_1: {validation_error:?}"
+    );
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 matrix inverse output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
+    let mut vertex_bytes = Vec::with_capacity(6 * std::mem::size_of::<f32>());
+    for component in vertices.into_iter().flatten() {
+        vertex_bytes.extend_from_slice(&component.to_ne_bytes());
+    }
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 matrix inverse fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertex_bytes);
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 matrix inverse readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 matrix inverse render and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 matrix inverse pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 matrix inverse rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("matrix inverse readback callback")
+        .expect("map matrix inverse output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped matrix inverse pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[0, 255, 0, 255],
+                    "mat2 inverse pixel ({x}, {y})"
+                );
+            }
+        }
+        println!(
+            "PASS: all 64 pixels matched the non-symmetric mat2 inverse result [0, 255, 0, 255]"
+        );
+    }
+    readback.unmap();
+
+    let unsupported_fragment = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 unsupported mat3 matrix inverse fragment shader"),
+        source: ShaderSource::Glsl {
+            shader: std::borrow::Cow::Borrowed(
+                "#version 450\nlayout(location=0) out vec4 color; void main() { mat3 m = mat3(1.0); mat3 inv = inverse(m); color = vec4(inv[0], 1.0); }",
+            ),
+            stage: naga::ShaderStage::Fragment,
+            defines: &[],
+        },
+    });
+    let internal_scope = device.push_error_scope(ErrorFilter::Internal);
+    let validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let unsupported_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 rejected mat3 matrix inverse pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &vertex_shader,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &unsupported_fragment,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    drop(unsupported_pipeline);
+    let validation_error = poll_ready(validation_scope.pop());
+    let internal_error = poll_ready(internal_scope.pop());
+    assert!(
+        matches!(validation_error, Some(Error::Validation { .. })),
+        "mat3 inverse must be rejected by Core validation: {validation_error:?}"
+    );
+    assert!(
+        internal_error.is_none(),
+        "mat3 inverse rejection must not reach an unsupported HAL path: {internal_error:?}"
+    );
+    println!(
+        "PASS: Core rejected mat3 inverse as a validation error without an internal HAL error"
     );
 }

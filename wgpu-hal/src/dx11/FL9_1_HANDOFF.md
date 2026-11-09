@@ -1,5 +1,32 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — format matrix and `mat2` inverse — 2026-11-09
+
+The table-driven public format-projection test is committed as `5e82974e9`.
+On the physical RTX 3090 Ti forced to FL9_1, it checked 21 projected formats,
+189 advertised usage combinations, 136 rejected unreported combinations, 21
+mip contracts and 40 sample-count contracts; no advertised combination
+produced an internal HAL error.
+
+The working tree now has a bounded Naga/Core/Types/DX11 capability change for
+f32 `mat2x2` inverse. Naga, Core and wgpu-types focused tests pass. The strict
+public test executes the inverse in both vertex and fragment stages and checks
+all 64 pixels `[0,255,0,255]`; Core rejects `mat3` inverse without an internal
+HAL error. This feature applies to GLSL/Naga IR inputs because WGSL has no
+`inverse` builtin. Core checks the selected entry point and all regular module
+functions compiled by Naga's HLSL writer; unused unsupported `mat3` helpers
+are rejected too. Full strict D3D11, Naga, wgpu-types and DX12 regression
+suites, targeted Clippy, formatting and diff checks have passed. The most
+recent focused strict GPU test exercises inverse in both shader stages.
+
+Recent audits found no confirmed format projection mismatch. Native 3D copy
+and direct 3D readback are excluded by the 10Level9 contract; current 3D
+upload/sampling is implemented. Keep implementation under coordinator review:
+cross-crate Naga/Core/HAL capability edits share validation contracts.
+Practical limitations still include unsupported intrinsic FL9_1 features,
+the experimental opt-in public contract, historical hardware, Lumia/CoreWindow
+execution and physical device-removal recovery.
+
 ## Latest verified shader increment — selected-entry `textureLoad` helpers — 2026-11-09
 
 Commit `6e442d1d14a5873dd83344339de56b909dbe0306` adds a restricted 2D

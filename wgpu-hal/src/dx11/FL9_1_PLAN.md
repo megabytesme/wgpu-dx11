@@ -1,5 +1,33 @@
 # FL9_1 completion plan
 
+## Latest bounded capability increment — f32 `mat2x2` inverse — 2026-11-09
+
+The internal downlevel contract now has a separate `matrix_inverse_2x2`
+limit. Naga's HLSL writer lowers only f32 mat2 inverse; Core validates the
+selected entry point and every regular module function compiled for it by
+shape, leaving larger inverses rejected. Naga's HLSL writer emits regular
+module functions even when they are unreachable, so an unused unsupported
+inverse helper is rejected as well. The DX11 projection exposes the narrow
+limit while leaving general
+`matrix_inverse` false. WGSL has no inverse builtin, so this extends GLSL and
+other Naga IR inputs rather than WGSL.
+
+The strict public test exercised the operation in both shader stages on the
+RTX 3090 Ti at requested/actual FL9_1 and matched all 64 pixels to
+`[0,255,0,255]`; a `mat3` request was rejected by Core without an internal HAL
+error. Naga, Core and wgpu-types focused tests, full Naga/Core/D3D11 HAL/public
+D3D11 suites, and the DX12 Core suite passed. Formatting and diff checks
+passed; targeted Clippy remains the final gate. The public format/usage
+projection matrix was committed separately at `5e82974e9` and passed on the
+same physical device.
+
+The broader mission remains incomplete. There are no confirmed mismatches in
+the recent texture-format/Core/HAL audit, but systematic coverage remains
+partial. Compute/UAV, ordinary texture arrays, 1D textures, MRT, occlusion
+queries and native 3D copies/readback are FL9_1 boundaries. The 3D upload and
+sample path is already present. Historical FL9_1 devices, Lumia/CoreWindow
+runtime and physical device-removal/recovery remain unverified.
+
 ## Latest bounded shader increment — selected-entry helper `textureLoad` — 2026-11-09
 
 Extended the restricted 2D fragment `textureLoad` proof through reachable

@@ -1,5 +1,43 @@
 # FL9_1 progress
 
+## Narrow f32 `mat2x2` inverse — 2026-11-09
+
+Added a separate `DownlevelLimits::matrix_inverse_2x2` contract and a Naga
+HLSL lowering for f32 2x2 matrices. The DX11 FL9_1 projection enables only
+this narrow operation; general matrix inverse remains disabled. Core checks
+the selected stage entry and all regular module functions because Naga's HLSL
+writer emits those functions even when unused. Unsupported shapes such as
+`mat3x3`, including an unused helper, are rejected before HAL. WGSL has no
+matrix `inverse` builtin, so callers reach this subset through GLSL or Naga IR.
+
+Strict public execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+and confirmed FL9_1. The vertex and fragment shaders both executed the
+non-symmetric inverse; all 64 RGBA8 pixels matched `[0,255,0,255]`. The same
+test confirmed a `mat3` inverse fails as Core validation, with no internal HAL
+error.
+
+Verification on Rust 1.93.1, Visual Studio 2026 x64 developer environment,
+offline, Cargo `-j8`:
+
+- Naga library: 151/151.
+- D3D11 Core fixture library: 120/120.
+- wgpu-types library: 107/107.
+- Strict private D3D11 HAL library: 447/447.
+- Strict public D3D11 integration target: 112/112; public default adapter
+  isolation remained covered.
+- DX12 Core regression library: 108/108.
+- The focused strict public mat2 inverse test passed 1/1 after extending the
+  rendered vertex stage to execute inverse as well as the fragment stage.
+- Targeted Clippy passed for Naga (`hlsl-out,glsl-in,wgsl-in`), wgpu-types,
+  D3D11 Core fixture and the public D3D11 target. Existing HAL Clippy warnings
+  remain for argument counts in `hal_index.rs`, `hal_shader.rs` and `texture.rs`.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+The selected RTX is a modern FL11-capable GPU restricted to FL9_1; this does
+not replace testing on historical FL9_1 hardware. Public D3D11 exposure stays
+explicit opt-in, and the overall completion mission remains open.
+
 ## Selected-entry 2D fragment `textureLoad` helpers — 2026-11-09 — `6e442d1d14a5873dd83344339de56b909dbe0306`
 
 The narrow FL9_1 fragment `textureLoad` emulation now accepts nested,

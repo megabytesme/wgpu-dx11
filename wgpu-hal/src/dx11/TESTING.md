@@ -3494,3 +3494,23 @@ through one 8x8 then one 4x4 view. The shader directly converted each
 yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]` across all 64
 pixels. This is cube face-size emulation only; general texture queries,
 explicit-mip cube queries and historical-driver behavior remain unverified.
+
+### Narrow FL9_1 `mat2x2<f32>` matrix inverse
+
+```powershell
+cargo +1.93 test --offline -j8 -p naga --features glsl-in --lib matrix_inverse_
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features "wgsl glsl spirv" --lib matrix_inverse
+cargo +1.93 test --offline -j8 -p wgpu-types matrix_inverse
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_matrix_inverse_at_fl91 -- --nocapture --test-threads=1
+```
+
+The selected D3D11 projection permits only f32 `mat2x2` inverse; general
+`matrix_inverse` remains false. The public GLSL test executes inverse in both
+vertex and fragment stages at requested/actual FL9_1. Its asymmetric
+`mat2(1, 0, 1, 1)` case yields `[0, 255, 0, 255]` in all 64 pixels. It then
+confirms `mat3` inverse, including an unused regular helper that Naga still
+emits, is rejected as a Core validation error before HAL. WGSL does not define
+an inverse builtin; this path covers GLSL and other Naga IR sources that
+contain the operation. The RTX result does not establish historical driver
+behavior.

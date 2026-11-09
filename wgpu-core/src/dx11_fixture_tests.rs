@@ -147,6 +147,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     texture_load_3d_float_fragment: false,
                     runtime_integer_shader_operations: false,
                     matrix_inverse: false,
+                    matrix_inverse_2x2: false,
                     matrix_outer_product: false,
                     matrix_aggregate_stores: false,
                     max_texture_sample_bias: 3,
