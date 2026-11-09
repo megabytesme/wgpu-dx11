@@ -1585,18 +1585,25 @@ impl crate::CommandEncoder for CommandEncoder {
             if vertex_count < 3 {
                 return;
             }
-            for (_, _, offset, stride) in &mut vertices {
+            if uses_vertex_index && vertex_index.is_none() {
+                self.reject();
+                return;
+            }
+            if first_vertex.checked_add(vertex_count - 1).is_none() {
+                self.reject();
+                return;
+            }
+            for (_, _, offset, stride) in &vertices {
                 let byte_offset =
                     |index: u32| super::command::strip_vertex_offset(*offset, *stride, index).ok();
                 let start = byte_offset(first_vertex);
                 let last = first_vertex
                     .checked_add(vertex_count - 1)
                     .and_then(byte_offset);
-                let (Some(start), Some(_)) = (start, last) else {
+                let (Some(_), Some(_)) = (start, last) else {
                     self.reject();
                     return;
                 };
-                *offset = start;
             }
             let Some(binding_commands) = render.binding_commands() else {
                 self.reject();
@@ -1613,7 +1620,14 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             self.record(NativeCommand::DrawStrip {
                 vertices,
+                first_vertex,
                 count: vertex_count,
+                max_vertex_index: hardware.max_vertex_index,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instances: instance_count,
                 instance_bindings,
             });
@@ -1954,7 +1968,8 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if !render.pipeline
+            if (uses_vertex_index && vertex_index.is_none())
+                || !render.pipeline
                 || render.strip_index_format != Some(index.format())
                 || (render.viewport_remap
                     && render
@@ -2021,6 +2036,11 @@ impl crate::CommandEncoder for CommandEncoder {
                 count: index_count,
                 base_vertex,
                 max_vertices,
+                vertex_index: if uses_vertex_index {
+                    vertex_index
+                } else {
+                    None
+                },
                 instances: instance_count,
                 instance_bindings,
             });

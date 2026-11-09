@@ -13,7 +13,7 @@ use alloc::{
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
+        Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
             Direct3D::{
                 D3D_PRIMITIVE_TOPOLOGY_LINELIST, D3D_PRIMITIVE_TOPOLOGY_LINESTRIP,
@@ -313,7 +313,10 @@ pub(super) enum NativeCommand {
     },
     DrawStrip {
         vertices: Vec<(u32, ID3D11Buffer, u32, u32)>,
+        first_vertex: u32,
         count: u32,
+        max_vertex_index: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -384,6 +387,7 @@ pub(super) enum NativeCommand {
         count: u32,
         base_vertex: i32,
         max_vertices: u32,
+        vertex_index: Option<(u32, ID3D11Buffer)>,
         instances: u32,
         instance_bindings: InstanceBindings,
     },
@@ -547,6 +551,21 @@ fn strip_batches(
     Ok(())
 }
 
+fn direct_strip_vertex_indices(first: u32, count: u32) -> Result<Vec<u64>> {
+    let mut indices = Vec::new();
+    indices
+        .try_reserve_exact(count as usize)
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+    for relative in 0..count {
+        indices.push(u64::from(
+            first
+                .checked_add(relative)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+        ));
+    }
+    Ok(indices)
+}
+
 /// Owned commands retain their D3D11 resources until the command buffer drops.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -675,7 +694,7 @@ impl CommandBuffer {
                     NativeCommand::TextureToTexture(copy) => copy.execute(context),
                     #[cfg(test)]
                     NativeCommand::InjectedFailure => {
-                        return Err(Error::from_hresult(windows::Win32::Foundation::E_FAIL));
+                        return Err(Error::from_hresult(E_FAIL));
                     }
                     #[cfg(feature = "dx11-test-fixture")]
                     NativeCommand::InjectedDeviceRemoval => {
@@ -1316,22 +1335,74 @@ impl CommandBuffer {
                     }
                     NativeCommand::DrawStrip {
                         vertices,
+                        first_vertex,
                         count,
+                        max_vertex_index,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => {
                         instance_bindings.validate(*instances)?;
-                        strip_batches(*count, 1, |first, _| {
+                        first_vertex
+                            .checked_add(count.saturating_sub(1))
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        let mut restore = VertexBufferRestore::new(context);
+                        for (slot, buffer, offset, stride) in vertices {
+                            restore.add(*slot, buffer.clone(), *stride, *offset)?;
+                        }
+                        if let Some((slot, identity)) = vertex_index {
+                            restore.add(*slot, identity.clone(), 4, 0)?;
+                        }
+                        let device = if vertex_index.is_some() {
+                            Some(context.GetDevice()?)
+                        } else {
+                            None
+                        };
+                        let mut batches = Vec::new();
+                        strip_batches(*count, 1, |first, batch_count| {
+                            let absolute_first = first_vertex
+                                .checked_add(first)
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                            let last = absolute_first
+                                .checked_add(batch_count.saturating_sub(1))
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                             for (_, _, offset, stride) in vertices {
-                                strip_vertex_offset(*offset, *stride, first)?;
+                                strip_vertex_offset(*offset, *stride, absolute_first)?;
                             }
+                            let index_binding = match vertex_index {
+                                Some((_, identity)) if last <= *max_vertex_index => Some((
+                                    identity.clone(),
+                                    absolute_first
+                                        .checked_mul(4)
+                                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                                )),
+                                Some(_) => {
+                                    let indices =
+                                        direct_strip_vertex_indices(absolute_first, batch_count)?;
+                                    Some((
+                                        super::hal_index::create_vertex_index_buffer(
+                                            device
+                                                .as_ref()
+                                                .ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                                            &indices,
+                                        )?,
+                                        0,
+                                    ))
+                                }
+                                None => None,
+                            };
+                            batches
+                                .try_reserve(1)
+                                .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                            batches.push((absolute_first, batch_count, index_binding));
                             Ok(())
                         })?;
                         for instance in 0..*instances {
                             instance_bindings.bind(context, instance)?;
-                            strip_batches(*count, 1, |first, count| {
+                            for (first, count, index_binding) in &batches {
                                 for (slot, buffer, base_offset, stride) in vertices {
-                                    let offset = strip_vertex_offset(*base_offset, *stride, first)?;
+                                    let offset =
+                                        strip_vertex_offset(*base_offset, *stride, *first)?;
                                     context.IASetVertexBuffers(
                                         *slot,
                                         1,
@@ -1340,9 +1411,19 @@ impl CommandBuffer {
                                         Some(&offset),
                                     );
                                 }
-                                context.Draw(count, 0);
-                                Ok(())
-                            })?;
+                                if let (Some((slot, _)), Some((buffer, offset))) =
+                                    (vertex_index, index_binding)
+                                {
+                                    context.IASetVertexBuffers(
+                                        *slot,
+                                        1,
+                                        Some(&Some(buffer.clone())),
+                                        Some(&4),
+                                        Some(offset),
+                                    );
+                                }
+                                context.Draw(*count, 0);
+                            }
                         }
                     }
                     NativeCommand::DrawIndexed {
@@ -1460,14 +1541,17 @@ impl CommandBuffer {
                         count,
                         base_vertex,
                         max_vertices,
+                        vertex_index,
                         instances,
                         instance_bindings,
                     } => {
-                        context.IASetPrimitiveTopology(if vertices.is_empty() {
-                            D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
-                        } else {
-                            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
-                        });
+                        context.IASetPrimitiveTopology(
+                            if vertices.is_empty() && vertex_index.is_none() {
+                                D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
+                            } else {
+                                D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+                            },
+                        );
                         let result = binding.draw_triangle_strips(
                             context,
                             *first,
@@ -1476,6 +1560,7 @@ impl CommandBuffer {
                             vertices,
                             (*max_vertices, *instances),
                             instance_bindings,
+                            vertex_index.as_ref(),
                         );
                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
                         result?;
@@ -1708,6 +1793,19 @@ mod tests {
         assert_eq!(strip_vertex_offset(8, 12, 65_532).unwrap(), 786_392);
         assert!(strip_vertex_offset(8, 12, u32::MAX).is_err());
         assert!(strip_vertex_offset(u32::MAX, 4, 1).is_err());
+    }
+
+    #[test]
+    fn direct_strip_vertex_indices_preserve_first_vertex_and_check_overflow() {
+        assert_eq!(
+            direct_strip_vertex_indices(23, 4).unwrap(),
+            [23, 24, 25, 26]
+        );
+        assert_eq!(
+            direct_strip_vertex_indices(65_532, 4).unwrap(),
+            [65_532, 65_533, 65_534, 65_535]
+        );
+        assert!(direct_strip_vertex_indices(u32::MAX, 2).is_err());
     }
 
     #[test]

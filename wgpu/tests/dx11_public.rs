@@ -11410,15 +11410,25 @@ fn public_dx11_vertex_index_triangle_list_at_fl91() {
             timeout: Some(Duration::from_secs(10)),
         })
         .expect("wait for FL9_1 vertex-index execution");
-    let mut mapped = std::collections::HashMap::new();
+    let mut mapped = [false; 6];
     for _ in 0..6 {
         let (name, result) = receiver
             .recv_timeout(Duration::from_secs(10))
             .expect("vertex-index map callback");
         result.expect("map vertex-index output");
-        mapped.insert(name, ());
+        let index = match name {
+            "nonindexed" => 0,
+            "indexed" => 1,
+            "negative_base" => 2,
+            "wide_index" => 3,
+            "large_nonindexed" => 4,
+            "post_transition" => 5,
+            _ => panic!("unexpected mapped vertex-index output {name}"),
+        };
+        assert!(!mapped[index], "duplicate map callback for {name}");
+        mapped[index] = true;
     }
-    assert_eq!(mapped.len(), 6);
+    assert!(mapped.into_iter().all(|mapped| mapped));
     let count_red = |readback: &Buffer| {
         let data = readback
             .slice(..)
@@ -18940,6 +18950,307 @@ fn public_dx11_vertex_index_line_strip_at_fl91() {
 }
 
 #[test]
+fn public_dx11_vertex_index_triangle_strip_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=TriangleStrip vertex_index direct, restart-separated U16/U32 base-vertex and wide-index Gather",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 TriangleStrip vertex-index emulation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 TriangleStrip vertex-index shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                @vertex fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let id = f32(index);
+                    if id >= 100000.0 && id <= 100003.0 {
+                        let right = id == 100001.0 || id == 100003.0;
+                        let bottom = id == 100002.0 || id == 100003.0;
+                        return vec4f(select(-0.85, 0.85, right), select(0.92, 0.76, bottom), 0.5, 1.0);
+                    }
+                    if id >= 20.0 && id <= 24.0 {
+                        let right = id == 21.0 || id == 23.0;
+                        let middle = id == 22.0 || id == 23.0;
+                        let y = select(select(0.58, 0.50, middle), 0.42, id == 24.0);
+                        return vec4f(select(-0.85, 0.85, right), y, 0.5, 1.0);
+                    }
+                    if id >= 140.0 && id <= 142.0 {
+                        let right = id == 141.0;
+                        let bottom = id == 142.0;
+                        return vec4f(select(-0.85, 0.85, right), select(0.21, 0.10, bottom), 0.5, 1.0);
+                    }
+                    if id >= 10.0 && id <= 14.0 {
+                        let right = id == 11.0 || id == 13.0;
+                        let middle = id == 12.0 || id == 13.0;
+                        let y = select(select(-0.1075, -0.1875, middle), -0.2675, id == 14.0);
+                        return vec4f(select(-0.85, 0.85, right), y, 0.5, 1.0);
+                    }
+                    if id >= 110.0 && id <= 112.0 {
+                        let right = id == 111.0;
+                        let bottom = id == 112.0;
+                        return vec4f(select(-0.85, 0.85, right), select(-0.48, -0.58, bottom), 0.5, 1.0);
+                    }
+                    if id >= 70000.0 && id <= 70003.0 {
+                        let right = id == 70001.0 || id == 70003.0;
+                        let bottom = id == 70002.0 || id == 70003.0;
+                        return vec4f(select(-0.85, 0.85, right), select(-0.76, -0.93, bottom), 0.5, 1.0);
+                    }
+                    return vec4f(2.0, 2.0, 0.5, 1.0);
+                }
+                @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }
+            "#
+            .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let make_pipeline = |strip_index_format| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 TriangleStrip vertex-index pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                strip_index_format,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipelines = [
+        make_pipeline(None),
+        make_pipeline(Some(IndexFormat::Uint16)),
+        make_pipeline(Some(IndexFormat::Uint32)),
+        make_pipeline(Some(IndexFormat::Uint32)),
+    ];
+
+    let u16_indices = [0u16, 1, 2, 3, 4, u16::MAX, 120, 121, 122, 0];
+    let u16_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 TriangleStrip U16 restart indices"),
+        size: std::mem::size_of_val(&u16_indices) as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    u16_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped TriangleStrip U16 indices")
+        .copy_from_slice(bytemuck::cast_slice(&u16_indices));
+    u16_buffer.unmap();
+
+    let u32_indices = [100u32, 101, 102, 103, 104, u32::MAX, 200, 201, 202];
+    let u32_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 TriangleStrip U32 restart indices"),
+        size: std::mem::size_of_val(&u32_indices) as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    u32_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped TriangleStrip U32 indices")
+        .copy_from_slice(bytemuck::cast_slice(&u32_indices));
+    u32_buffer.unmap();
+
+    let gather_indices = [70000u32, 70001, 70002, 70003];
+    let gather_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 TriangleStrip wide-index Gather indices"),
+        size: std::mem::size_of_val(&gather_indices) as u64,
+        usage: BufferUsages::INDEX,
+        mapped_at_creation: true,
+    });
+    gather_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("mapped TriangleStrip Gather indices")
+        .copy_from_slice(bytemuck::cast_slice(&gather_indices));
+    gather_buffer.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 TriangleStrip vertex-index target"),
+        size: Extent3d {
+            width: 64,
+            height: 64,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 TriangleStrip vertex-index readback"),
+        size: 64 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 TriangleStrip vertex-index encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 direct and indexed TriangleStrip pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipelines[0]);
+        pass.draw(100_000..100_004, 0..1);
+
+        pass.set_pipeline(&pipelines[1]);
+        pass.set_index_buffer(u16_buffer.slice(..), IndexFormat::Uint16);
+        pass.draw_indexed(0..9, 20, 0..1);
+
+        pass.set_pipeline(&pipelines[2]);
+        pass.set_index_buffer(u32_buffer.slice(..), IndexFormat::Uint32);
+        pass.draw_indexed(0..9, -90, 0..1);
+
+        pass.set_pipeline(&pipelines[3]);
+        pass.set_index_buffer(gather_buffer.slice(..), IndexFormat::Uint32);
+        pass.draw_indexed(0..4, 0, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(64),
+            },
+        },
+        Extent3d {
+            width: 64,
+            height: 64,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 TriangleStrip vertex-index execution");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("TriangleStrip vertex-index map callback")
+        .expect("map TriangleStrip vertex-index output");
+    let data = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped TriangleStrip pixels");
+    let red_pixels = |image: &[u8]| {
+        image
+            .chunks_exact(4)
+            .filter(|pixel| *pixel == [255, 0, 0, 255])
+            .count()
+    };
+    let mut total_red = 0;
+    let bands = [
+        (1usize, 11usize),
+        (12, 21),
+        (22, 31),
+        (32, 43),
+        (44, 53),
+        (54, 63),
+    ];
+    for (band, (start, end)) in bands.into_iter().enumerate() {
+        let count = (start..=end)
+            .flat_map(|y| data[y * 256..(y + 1) * 256].chunks_exact(4))
+            .filter(|pixel| *pixel == [255, 0, 0, 255])
+            .count();
+        total_red += count;
+        assert!(
+            count >= 40,
+            "TriangleStrip input group {band} did not produce its expected readback region; red pixels={count}"
+        );
+    }
+    let output_red = red_pixels(&data);
+    assert!(
+        output_red >= total_red,
+        "all checked strip regions must be present in the output"
+    );
+    let black_pixels = data
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == [0, 0, 0, 255])
+        .count();
+    assert_eq!(
+        black_pixels + output_red,
+        64 * 64,
+        "the target must contain only expected red strips and the clear color"
+    );
+    drop(data);
+    readback.unmap();
+    println!(
+        "PASS: TriangleStrip direct first_vertex=100000, U16 positive base_vertex with restart, U32 negative base_vertex with restart, and wide-index Gather rendered; five-index runs exercised odd parity, three-index restart runs verified parity reset, and all six readback regions matched ({} red pixels)",
+        output_red
+    );
+}
+
+#[test]
 fn public_dx11_line_list_restores_user_vertex_stream_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -19377,11 +19688,9 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
     let topology = PrimitiveTopology::TriangleStrip;
     let scope = device.push_error_scope(ErrorFilter::Validation);
     drop(create_pipeline("vertex_index", &no_buffers, topology));
-    let error =
-        poll_ready(scope.pop()).expect("TriangleStrip vertex_index must fail core validation");
     assert!(
-        error.to_string().contains(&format!("{topology:?}")),
-        "validation must identify the unsupported topology: {error}"
+        poll_ready(scope.pop()).is_none(),
+        "TriangleStrip vertex_index must pass core validation once the HAL path is available"
     );
 
     let scope = device.push_error_scope(ErrorFilter::Validation);
@@ -19395,7 +19704,7 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
         "LineList pipelines without vertex_index remain supported"
     );
     println!(
-        "PASS: public core accepted TriangleList, PointList, LineList and LineStrip vertex builtins, rejected TriangleStrip and hidden-slot exhaustion, and retained ordinary pipelines"
+        "PASS: public core accepted TriangleList, PointList, LineList, LineStrip and TriangleStrip vertex builtins, rejected hidden-slot exhaustion, and retained ordinary pipelines"
     );
 }
 

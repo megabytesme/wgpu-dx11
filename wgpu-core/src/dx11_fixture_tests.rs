@@ -5814,21 +5814,14 @@ fn render_triangle(
         );
         global.render_pipeline_drop(line_strip_pipeline);
 
-        for topology in [wgt::PrimitiveTopology::TriangleStrip] {
-            vertex_builtin_descriptor.primitive.topology = topology;
-            let (invalid_pipeline, error) =
-                global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
-            assert!(
-                matches!(
-                    error.as_ref(),
-                    Some(pipeline::CreateRenderPipelineError::UnsupportedVertexIndexTopology {
-                        topology: rejected
-                    }) if *rejected == topology
-                ),
-                "FL9_1 core validation must reject unsupported {topology:?} vertex_index before HAL: {error:?}"
-            );
-            global.render_pipeline_drop(invalid_pipeline);
-        }
+        vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::TriangleStrip;
+        let (triangle_strip_pipeline, error) =
+            global.device_create_render_pipeline(device, &vertex_builtin_descriptor, None);
+        assert!(
+            error.is_none(),
+            "FL9_1 core and HAL must accept TriangleStrip vertex_index: {error:?}"
+        );
+        global.render_pipeline_drop(triangle_strip_pipeline);
 
         vertex_builtin_descriptor.primitive.topology = wgt::PrimitiveTopology::TriangleList;
         let (valid_pipeline, error) =
