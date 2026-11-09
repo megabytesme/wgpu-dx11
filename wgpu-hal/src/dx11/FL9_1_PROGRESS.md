@@ -1,5 +1,42 @@
 # FL9_1 progress
 
+## `vertex_index` on TriangleStrip — 2026-11-09
+
+The opt-in FL9_1 projection and defensive HAL validation now permit the
+emulated `vertex_index` subset for TriangleStrip. Direct draws preserve source
+IDs across native strip batching. Indexed Uint16/Uint32 strips resolve signed
+base vertices and primitive-restart runs, then expand to winding-preserving
+triangle-list identity values before the same Window/Gather execution paths.
+The remap and hidden IA streams restore after replay. Core fixture validation
+and the public topology projection include TriangleStrip; default backend
+selection and ordinary D3D11 enumeration remain unchanged.
+
+The strict public hardware test passed on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), software=false, requested and actual
+FL9_1. It rendered direct `first_vertex=100000`, Uint16 and Uint32 restart
+strips, positive and negative base-vertex cases, and a wide-index Gather pair.
+All six checked bands contained the expected red output; 2,942 pixels were red
+and the remaining target pixels were clear.
+
+Validation executed (MSVC x64 developer environment, Rust 1.93.1):
+
+- Private HAL direct identity/overflow test: 1/1.
+- Indexed strip expansion CPU test: 1/1.
+- Full strict private HAL suite: 443/443.
+- Focused strict public TriangleStrip test: 1/1.
+- Full strict public D3D11 suite: 104/104, including default enumeration isolation.
+- Strict controlled Core fixture: 1/1.
+- DX12 Core regression: 106/106.
+
+The hardware suites required `WGPU_DX11_REQUIRE_HARDWARE=1`; selected-device
+optional-feature skips remain visible and are not counted as GPU execution.
+The initial test failures were corrected in this increment: restart expansion
+test expectations now match batch parity, the U16 buffer has a valid four-byte
+allocation size, and readback checks the rendered bands without brittle
+subpixel-edge assumptions. Existing HAL queue qualification warnings and the
+three DX12 Core unused-variable warnings remain. Older FL9_1 drivers have not
+been tested.
+
 ## Two-byte indexed vertex extents and padded 3D upload — 2026-11-09 — `90026ebf3`
 
 Removed an unjustified four-byte copied-extent requirement from indexed

@@ -761,14 +761,15 @@ itself occurs before GPU work.
 ### FL9_1 vertex shader system-value emulation
 
 The selected FL9_1 projection supports a bounded `vertex_index` subset for
-TriangleList, PointList, LineList and LineStrip pipelines. The backend does not emit
+TriangleList, PointList, LineList, LineStrip and TriangleStrip pipelines. The backend does not emit
 `SV_VertexID`: FXC rejects that native semantic with X4555. Naga maps the
 selected input to a custom float IA semantic, and command replay binds identity
 or temporary remapping buffers. Core permits direct `u32`-to-`f32` use and
 rejects integer arithmetic. The
 `DownlevelLimits::vertex_index_topology_mask` reports TriangleList, PointList,
-LineList and LineStrip as supported; TriangleStrip remains rejected before HAL
-pipeline creation.
+LineList, LineStrip and TriangleStrip as supported; the HAL retains a defensive
+check. Indexed TriangleStrip resolves base vertex and restart runs before
+winding-preserving expansion to triangle-list identity values.
 
 The same private shader path also emulates `instance_index` from a host-updated
 constant at b13. CPU tests cover selected-entry detection and restricted integer
@@ -784,6 +785,7 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_line_list_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_line_list_restores_user_vertex_stream_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_line_strip_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_index_triangle_strip_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 ```
 
@@ -804,6 +806,13 @@ negative base vertex; and a wide-span pair that uses Gather remapping. Seven
 distinct output rows depend on the selected `vertex_index` values, and all
 other rows are checked clear. The shader uses no vertex buffers, isolating the
 emulated system value and compact index mapping.
+
+`public_dx11_vertex_index_triangle_strip_at_fl91` verifies direct
+`first_vertex=100000`, Uint16 and Uint32 restart-separated strips with positive
+and negative base vertices, and wide-span Gather remapping. Six output bands
+depend on the selected IDs; the RTX 3090 Ti readback contained 2,942 red pixels
+and clear pixels elsewhere. The focused strict test and full public target
+passed at requested/actual FL9_1.
 ### Out-of-target viewport validation
 
 The FL9_1 fixture reports

@@ -3,13 +3,15 @@ Latest shader-input status: `instance_index` and a restricted `vertex_index`
 subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
 IA semantic with direct identity IDs up to 65,534 and temporary remapped streams
 for larger IDs, including nonindexed `first_vertex`. It is supported for
-TriangleList, PointList, LineList and LineStrip, with direct `u32`-to-`f32`
+TriangleList, PointList, LineList, LineStrip and TriangleStrip, with direct `u32`-to-`f32`
 use only. LineList preserves pairs and effective indexed IDs across
 Window/Gather remapping and restores changed IA vertex slots. LineStrip keeps
 `first_vertex` through direct batching and maps indexed restart runs and wide
-Gather pairs to the same hidden ID stream. `DownlevelLimits` reports these four
-topologies; TriangleStrip remains rejected by core and HAL. Strict RTX 3090 Ti
-readback covers direct and indexed strips, signed base vertex, primitive
+Gather pairs to the same hidden ID stream. `DownlevelLimits` reports all five
+topologies. Direct TriangleStrip draws preserve source IDs across batching;
+indexed strips resolve signed base vertices and restart runs, then expand to
+winding-preserving triangle-list IDs through Window/Gather paths. Strict RTX
+3090 Ti readback covers direct and indexed strips, signed base vertex, primitive
 restart and wide-span Gather. See `TESTING.md` for exact commands and results.
 # Direct3D 11 backend status
 
@@ -442,9 +444,10 @@ impossibility.
 The selected FL9_1 projection enables `DownlevelLimits::vertex_index_input` for
 a constrained host-stream emulation. FXC rejects native `SV_VertexID` with
 X4555, so Naga emits a custom float IA semantic and command replay supplies
-identity or temporary remapping streams. This path supports TriangleList and
-PointList, and `DownlevelLimits::vertex_index_topology_mask` limits core
-validation to those topologies; the HAL retains its own defensive check. Core permits direct
+identity or temporary remapping streams. This path supports TriangleList,
+PointList, LineList, LineStrip and TriangleStrip, and
+`DownlevelLimits::vertex_index_topology_mask` limits core validation to those
+topologies; the HAL retains its own defensive check. Core permits direct
 `u32`-to-`f32` use; integer arithmetic remains rejected. `instance_index` is
 emulated through reserved vertex constant b13, updated to
 `first_instance + instance` before each draw. Neither emulation is proof of

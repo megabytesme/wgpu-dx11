@@ -1,5 +1,24 @@
 # FL9_1 completion plan
 
+## Latest verified increment — `vertex_index` with TriangleStrip — 2026-11-09
+
+The selected FL9_1 projection and defensive HAL gate now permit the emulated
+`vertex_index` subset for TriangleStrip. Direct strip batches preserve the source
+identity sequence. Indexed Uint16/Uint32 strips resolve signed base vertices and
+restart runs, then expand each run to winding-preserving triangle-list identity
+values; Window and Gather remaps retain the corresponding IDs, and temporary
+streams are restored after replay. Core fixture validation now accepts this
+topology only for the opt-in D3D11 projection.
+
+A strict public GPU test passed on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) with requested/actual FL9_1. It verified direct
+`first_vertex=100000`, Uint16 and Uint32 restart, positive/negative base vertices
+and wide Gather remapping; six output regions were populated (2,942 red pixels).
+The private HAL suite passed 443/443, strict public D3D11 passed 104/104, the
+controlled Core fixture passed 1/1, and the DX12 Core regression passed 106/106.
+See `FL9_1_PROGRESS.md` for exact commands and diagnostics. Historical FL9_1
+drivers remain unverified.
+
 ## Latest verified increment — indexed byte extents and padded volume upload — 2026-11-09 — `90026ebf3`
 
 Indexed rebase, gather, point and strip planners now accept a two-byte copied
@@ -29,7 +48,8 @@ RTX 3090 Ti test passes direct batching, both index widths, restart, positive
 and negative base vertex, and a wide-index Gather pair at requested/actual
 FL9_1. The private HAL suite passed 438/438, the strict public D3D11 target
 passed 103/103, the Core fixture suite passed 115/115, and the DX12 Core suite
-passed 106/106. TriangleStrip remains rejected.
+passed 106/106. The following historical checkpoint records the LineStrip-only
+state that preceded this TriangleStrip increment.
 
 ## Previous verified increment — `vertex_index` with LineList — 2026-11-08 — `0835c23cf`
 
@@ -39,8 +59,8 @@ draw replay applies `first_vertex` once to user streams and the hidden identity
 stream. Indexed Uint16 and Uint32 lists preserve line pairs, resolve effective
 IDs after `base_vertex`, and use Window or Gather remapping when the native
 FL9_1 index range is exceeded. Replay restores regular and hidden IA vertex
-bindings after temporary rebasing/gathering. LineStrip and TriangleStrip
-`vertex_index` remain rejected.
+bindings after temporary rebasing/gathering. TriangleStrip `vertex_index` was
+still rejected at this earlier checkpoint; the latest increment above adds it.
 
 Strict public GPU tests on the RTX 3090 Ti at requested/actual FL9_1 verified
 direct, Uint16 and Uint32 LineList output, plus a direct nonzero-`first_vertex`
@@ -775,7 +795,7 @@ entry-point selection are covered by a strict public test.
    nonindexed strips when no vertex-rate inputs exist. Strict tests cover both
     index widths, layouts and strip topologies. PointList retains its separately
     tested instance-only path. Emulated `vertex_index` covers TriangleList,
-    PointList, LineList and LineStrip; TriangleStrip remains rejected.
+    PointList, LineList, LineStrip and TriangleStrip.
     `instance_index` is limited to direct `u32`-to-`f32` use, with general
     integer semantics still unavailable.
    Broader instance semantics and indirect draws remain unavailable. Microsoft

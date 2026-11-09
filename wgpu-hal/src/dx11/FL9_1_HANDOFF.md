@@ -1,5 +1,18 @@
 # FL9_1 handoff
 
+## Latest verified checkpoint — TriangleStrip `vertex_index` — 2026-11-09
+
+The opt-in FL9_1 projection now supports host-emulated `vertex_index` for
+TriangleList, PointList, LineList, LineStrip and TriangleStrip. Direct strips
+preserve IDs across native batching. Indexed strips resolve restart and signed
+base-vertex semantics, then expand into winding-preserving triangle-list IDs
+for native execution, including Window/Gather remaps. The strict GPU test passed
+on the RTX 3090 Ti at requested/actual FL9_1; it checked six output bands and
+2,942 red pixels. The private HAL suite passed 443/443, strict public D3D11
+passed 104/104, the controlled Core fixture passed 1/1 and DX12 Core passed
+106/106. See `FL9_1_PROGRESS.md` for commands, warnings and shell setup.
+Historical FL9_1 hardware and Lumia execution remain unverified.
+
 ## Mission status — 2026-11-08
 
 The opt-in public D3D11 path is substantially usable for a restricted FL9_1
@@ -11,8 +24,8 @@ rule, while retaining offset, stride and bounds checks. A strict private test
 verified a padded nonzero-offset partial 3D volume upload by sampling the
 whole target at forced FL9_1. The private HAL suite passed 441/441 and strict
 public D3D11 passed 103/103. The preceding checkpoint `b93747fb4` added
-LineStrip to the emulated `vertex_index` subset; TriangleList, PointList,
-LineList and LineStrip are supported, while TriangleStrip remains rejected.
+LineStrip; the latest checkpoint above adds TriangleStrip to the emulated
+`vertex_index` subset.
 Full commands and warnings are recorded in `FL9_1_PROGRESS.md`. This remains
 a restricted incremental graphics subset, not mission completion.
 
