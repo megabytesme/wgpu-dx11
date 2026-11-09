@@ -356,6 +356,7 @@ impl RenderState {
                 sampler: load.sampler.clone(),
                 dimensions: load.dimensions.clone(),
                 kind: load.kind,
+                has_implicit_sample: load.has_implicit_sample,
                 width,
                 height,
                 depth: match load.kind {

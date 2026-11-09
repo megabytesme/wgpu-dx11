@@ -13243,3 +13243,142 @@ after a fresh read-only audit, while retaining the experimental public-adapter
 gate. Historical 9_1 hardware, Lumia/CoreWindow execution,
 device-loss recovery on physical hardware, broad CTS/API coverage and
 unsupported-operation closure remain incomplete.
+
+## `textureNumLevels` with one implicit sample — 2026-11-09
+
+The narrow fragment `textureNumLevels` emulation now allows exactly one
+implicit `textureSample` from the same direct image. The selected entry must
+use a dimension-matched float coordinate and one group-zero non-comparison
+sampler. Core, Naga and HAL reject a mismatched image, additional samples,
+explicit LOD, extra resources, helpers, control flow and other image operations.
+FXC compiles 2D, 3D and cube variants at `ps_4_0_level_9_1`; the public GPU test
+executes the 2D case. General texture queries remain unavailable.
+
+Strict GPU testing selected the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested FL9_1 and confirmed actual
+FL9_1 with `software=false`. A shader sampled the same RGBA8 texture it queried
+while switching from a one-level to a three-level view. Its 8x8 readback
+matched `[64,64,128,255]` on the left and `[191,128,64,255]` on the right, all
+64 pixels within one byte.
+
+The first strict hardware run compiled and submitted but returned black for the
+sampled channels. Command replay was still clearing pixel SRV `t0` unconditionally
+for the `textureNumLevels` emulation. The proof now records whether the selected
+shader samples the queried texture, and replay retains the SRV only for that
+case; the query-only path still clears the slot. The strict rerun passed. A
+first Core build also caught the missing `alloc::format` import in the new
+`no_std` test module; after adding it, the full fixture passed. An existing
+negative Core case classified this now-supported same-image query/sample shape
+as unsupported; it was removed, with mismatched images and other unsupported
+shapes covered by the new negative test.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64 and offline Cargo with
+`-j32`:
+
+- Naga targeted HLSL proof: 1/1; full Naga library: 153/153.
+- Core targeted proof: 1/1; strict D3D11 fixture: 122/122.
+- HAL relationship proof: 1/1; FL9_1 FXC compilation: 1/1; strict private
+  D3D11 HAL suite: 453/453.
+- Strict public GPU test: 1/1; full strict public D3D11 target: 110/110,
+  including `experimental_dx11_is_not_enabled_by_default`.
+- Core DX12 regression: 110/110; wgpu-types: 108/108.
+- Clippy passed for Naga, Core fixture tests, HAL tests and the public D3D11
+  target. Existing warnings remain in Naga GLSL test style, HAL qualifications
+  and argument counts, Core fixture style, and wgpu-types serde imports and
+  qualifications.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+The full public suite logged optional query-based subcase skips where the
+selected RTX did not report the feature (including R16G16_FLOAT vertex input
+and R8G8_UNORM mip support); those subcases are not hardware evidence. The
+focused query-plus-sample test had no skip. The latest supplied `AGENTS.md`
+prohibits creating commits, so this verified increment is preserved in the
+working tree. Historical FL9_1 behavior remains unverified.
+
+## Selected-entry base-clamp helper — 2026-11-09
+
+The existing narrow `textureSampleBaseClampToEdge` proof now permits one
+reachable straight-line helper called once by the selected fragment entry.
+The helper takes one `vec2f`, directly samples the same group-zero 2D float
+texture with one non-comparison sampler, and returns `vec4f`. The entry may
+compute the coordinate passed to the helper. Nested or repeated calls,
+control-flow statements, resource-handle parameters/results, additional
+selected resources and other image operations remain rejected. Naga emits only
+the selected reachable helper and its globals; the same host dimensions,
+half-texel clamp and implicit level-zero sample lowering are used as in the
+direct path. The general downlevel capability remains false.
+
+Strict public GPU execution selected the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested and confirmed FL9_1, and
+reported `software=false`. The public WGSL entry computes transformed
+coordinates and passes them to the helper. FXC compiled the helper at
+`ps_4_0_level_9_1`; the public readback validated all 64 pixels. A HAL test
+initially showed that two samples inside the helper were accepted by the
+relationship proof; HAL now enforces its existing one-sample contract. A first
+strict public attempt exposed the overly narrow raw-entry-argument requirement;
+the validators now permit any type-checked `vec2f` call argument while retaining
+the helper/resource/control-flow restrictions.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64 and offline Cargo with
+`-j8`:
+
+- Naga helper lowering: 1/1; full Naga library: 153/153, including the
+  transformed-coordinate helper case.
+- Core selected-entry helper proof: 1/1; strict D3D11 fixture suite: 122/122,
+  including the transformed-coordinate helper case.
+- HAL helper proof and FXC compilation: 3/3; strict private D3D11 suite:
+  454/454, including the transformed-coordinate helper case.
+- Strict public helper GPU test: 1/1; the full strict public D3D11 target
+  passed 110/110, including `experimental_dx11_is_not_enabled_by_default`.
+  Optional capability-specific skips within the suite are not GPU evidence.
+- Core DX12 regression: 110/110; `wgpu-types`: 108/108.
+- D3D11 HAL `cargo check` passed.
+- Clippy passed for Naga, Core fixture/tests, HAL and the public D3D11 test.
+  Naga introduced no remaining Clippy warnings. Existing HAL warnings cover
+  qualifications, argument counts, range test style and test-module ordering;
+  existing Core test-style warnings remain.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+Ordinary public D3D11 default enumeration remains disabled. Historical FL9_1
+hardware, Lumia/CoreWindow execution, the wider unsupported-operation audit,
+device-loss recovery on real hardware and broad CTS coverage remain open.
+
+## Selected-entry helper `textureNumLevels` — 2026-11-09
+
+The restricted 2D fragment `textureNumLevels` path now supports exactly one
+reachable, no-argument, straight-line helper called once by the selected
+entry. The helper performs one query on one group-zero, non-array
+`texture_2d<f32>` and returns `u32`; the entry converts that result directly to
+`f32`. Helpers with parameters, nested or repeated calls, control flow,
+additional selected resources, extra queries, other image operations and
+unrelated integer semantics remain rejected. The helper form is query-only;
+the direct query-plus-one-sample form remains separately supported. 3D and
+cube query forms remain direct-only. Core validation, Naga HLSL generation and
+the private HAL proof use the selected entry point and agree on the one-helper
+shape. The helper receives the existing host-known mip count through `b13`;
+no native image-query instruction or new shader profile is used.
+
+The strict public test explicitly selected the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested FL9_1 and confirmed
+actual FL9_1 with `software=false`. It switched between views exposing one
+and three mip levels and verified all 64 pixels. The adjacent 3D/cube query
+regression was rerun after the public test helper refactor and also passed at
+requested/actual FL9_1; both dimension cases verified all 64 pixels.
+
+Verification used Rust 1.93.1, Visual Studio x64 and offline Cargo:
+
+- Full Naga library: 154/154.
+- HAL selected-helper proof and FXC compile: 1/1 each.
+- Strict private D3D11 HAL suite: 458/458.
+- Strict D3D11 Core fixture suite: 123/123.
+- Strict public D3D11 suite: 111/111; the focused helper test and the 3D/cube
+  query test also passed after the test-helper signature cleanup.
+- Core DX12 regression: 111/111; `wgpu-types`: 108/108.
+- D3D11 build and Clippy checks passed. Existing HAL style warnings remain;
+  no new helper-related Clippy warning was reported.
+
+One optional Rg8Unorm mip subcase logged a skip in the full public suite; it is
+not counted as hardware evidence. The focused helper and 3D/cube tests each
+executed on hardware without skipping. `texture_query` remains generally
+disabled. The result covers a modern NVIDIA driver forced to FL9_1, not
+historical FL9_1 hardware.

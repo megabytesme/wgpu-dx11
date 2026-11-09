@@ -1,5 +1,44 @@
 # FL9_1 completion plan
 
+## Latest verified shader-query helper increment — 2026-11-09
+
+The narrow 2D fragment `textureNumLevels` path now permits one selected,
+argument-free straight-line helper that returns the query result for direct
+conversion to `f32`. Core, Naga and HAL use matching selected-entry proofs.
+The helper form is query-only; direct query-plus-sample remains a distinct
+path, while 3D/cube query support remains direct-only. Other resources,
+operations, calls and control flow are rejected.
+
+Strict public execution on the RTX 3090 Ti explicitly requested and confirmed
+FL9_1. It switched between one- and three-mip views and verified the full
+readback for each view. The focused helper test, the 3D/cube query regression,
+and all previous full Naga, Core, private HAL, public D3D11 and DX12 suites
+passed. See `FL9_1_PROGRESS.md` for exact command results. This remains
+metadata emulation, not general texture-query support or historical-driver
+verification.
+
+## Latest verified shader-query increment — mip count plus implicit sampling — 2026-11-09
+
+The restricted fragment `textureNumLevels` path now permits one implicit sample
+of the same direct texture using one group-zero non-comparison sampler. Core,
+Naga and HAL require a dimension-matched float coordinate, one query, one sample,
+no additional image operations, and no other bound resources. The proof metadata
+records whether the selected entry samples the texture so command replay retains
+the native SRV for query-plus-sample shaders while keeping the query-only path's
+slot clearing behavior. General `texture_query` remains disabled.
+
+Strict execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and confirmed
+FL9_1. A shader combined `textureNumLevels` with an implicit sample while
+switching between one- and three-level views. All 64 pixels matched
+`[64,64,128,255]` and `[191,128,64,255]`. Initial hardware execution revealed
+that replay cleared pixel SRV slot `t0` for the query-only case even when the
+shader sampled; the retained sample flag fixed this. Full private HAL passed
+453/453, full public D3D11 passed 110/110, strict Core fixture 122/122, Naga
+153/153, Core DX12 110/110 and wgpu-types 108/108. Details and exact commands
+are recorded in `FL9_1_PROGRESS.md`. This is a narrow selected-entry form, not
+general query support or historical-driver verification.
+
 ## Latest shader-query increment — constant-mip cube dimensions — 2026-11-09
 
 Checkpoint: `1e8407af6` (`dx11: extend FL9_1 cube queries and SNORM copies`).
@@ -452,15 +491,15 @@ unsupported. Historical drivers and Lumia/CoreWindow remain unverified.
 ## Latest verified increment — FL9_1 base-clamp sampling — 2026-11-08
 
 Added a narrow selected-entry `textureSampleBaseClampToEdge` path using
-host-supplied single-mip view dimensions and implicit `Sample`; Naga/FXC,
-Core/HAL proof tests and strict RTX readback passed. The general downlevel
-limit remains false; only the narrow direct fragment 2D-float limit is
-reported. The returned-sample proof and public selected-entry validation now
-accept the direct form while rejecting helper use before HAL. Strict forced-
-FL9_1 suites passed private HAL 430/430 and public D3D11 96/96. Core's finite
-repeat limit prevents using Repeat/MirrorRepeat descriptors in the public test,
-so sampler-independent behavior for those modes remains unverified. Continue
-the broader Core/HAL contract audit and keep historical hardware/runtime gaps
+host-supplied single-mip view dimensions and implicit `Sample`. The proof
+accepts direct use or one reachable straight-line helper called once with a
+`vec2f` argument and returning `vec4f`; the entry may compute that argument.
+Naga, Core and HAL reject nested/repeated calls, control flow, extra selected
+resources and other image operations. FXC accepted the helper at
+`ps_4_0_level_9_1`, and strict RTX public readback matched 64/64 pixels. The
+general downlevel limit remains false. Core's finite repeat limit prevents
+using Repeat/MirrorRepeat descriptors in the public test, so behavior for
+those sampler modes remains unverified. Historical hardware/runtime gaps stay
 open.
 
 ## Latest verified increment — 3D fragment `textureDimensions` — 2026-11-08
@@ -1189,9 +1228,10 @@ entry-point selection are covered by a strict public test.
    sampling remains allowed. Selected-entry `textureDimensions` and
    `textureNumLevels` use is gated by narrow downlevel limits and host-known
    view metadata; general image queries remain unavailable.
-   `textureSampleBaseClampToEdge` has a separate direct fragment 2D-float path
-   using host dimensions, half-texel coordinate clamps and implicit sampling.
-   Helper-based and more general forms remain rejected. Continue checking other
+   `textureSampleBaseClampToEdge` has a separate selected fragment 2D-float
+   path using host dimensions, half-texel coordinate clamps and implicit
+   sampling. It supports direct use or one reachable straight-line helper
+   called once; nested calls and more general forms remain rejected. Continue checking other
    WGSL expressions against the FL9_1 compiler path. Fragment
    `@builtin(sample_mask)` output is separately gated: Naga lowers it to
    `SV_Coverage`, which Microsoft documents as writable only from `ps_4_1`,

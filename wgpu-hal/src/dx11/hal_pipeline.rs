@@ -606,6 +606,7 @@ pub(super) struct TexelLoadPipeline {
     pub kind: super::hal_shader::Fl9TextureEmulationKind,
     pub dimension: naga::ImageDimension,
     pub mip_level: u32,
+    pub has_implicit_sample: bool,
     pub sampler: ID3D11SamplerState,
     pub dimensions: ID3D11Buffer,
 }
@@ -617,6 +618,7 @@ impl TexelLoadPipeline {
         kind: super::hal_shader::Fl9TextureEmulationKind,
         dimension: naga::ImageDimension,
         mip_level: u32,
+        has_implicit_sample: bool,
     ) -> Result<Self, crate::PipelineError> {
         let fail = |error: windows::core::Error| {
             if error.code() == windows::Win32::Foundation::E_OUTOFMEMORY {
@@ -670,6 +672,7 @@ impl TexelLoadPipeline {
             kind,
             dimension,
             mip_level,
+            has_implicit_sample,
             sampler,
             dimensions: dimensions.ok_or_else(|| {
                 crate::PipelineError::Linkage(
@@ -3167,6 +3170,7 @@ impl RenderPipeline {
                     proof.kind,
                     proof.dimension,
                     proof.mip_level,
+                    proof.has_implicit_sample,
                 )
             })
             .transpose()?;

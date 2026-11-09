@@ -2567,18 +2567,14 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         immediate_size: 0,
     });
     let texture_query_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 image-query selected-entry shader"),
+        label: Some("FL9_1 dynamic texture-query rejection shader"),
         source: ShaderSource::Wgsl(
             "@group(0) @binding(7) var image: texture_2d<f32>;\n\
              @group(0) @binding(23) var smp: sampler;\n\
-             fn dimensions() -> vec2u { return textureDimensions(image); }\n\
              fn sample_base_clamp(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
              @vertex fn vs() -> VertexOut { return VertexOut(vec4f(0.0, 0.0, 0.0, 1.0), vec2f(0.5)); }\n\
-             @fragment fn direct() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0); }\n\
-             @fragment fn helper() -> @location(0) vec4f { return vec4f(vec2f(dimensions()), 0.0, 1.0); }\n\
-             @fragment fn levels() -> @location(0) vec4f { return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0); }\n\
-             @fragment fn base_clamp_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }\n\
+             @fragment fn runtime_level(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, u32(uv.x))), 0.0, 1.0); }\n\
              @fragment fn base_clamp_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_base_clamp(uv); }\n\
              @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }"
                 .into(),
@@ -2591,7 +2587,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     })];
     let create_texture_query_pipeline = |entry_point| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("FL9_1 texture-query entry pipeline"),
+            label: Some("FL9_1 dynamic texture-query pipeline"),
             layout: Some(&texture_query_pipeline_layout),
             vertex: VertexState {
                 module: &texture_query_shader,
@@ -2612,14 +2608,9 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             cache: None,
         })
     };
-    for entry in ["direct", "helper", "levels"] {
-        expect_validation_error_containing(
-            &device,
-            "selected texture image query",
-            "Texture queries are not supported",
-            || drop(create_texture_query_pipeline(entry)),
-        );
-    }
+    expect_validation_error(&device, "runtime texture dimensions query", || {
+        drop(create_texture_query_pipeline("runtime_level"));
+    });
     let base_clamp_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 direct base-clamp shader without helpers"),
         source: ShaderSource::Wgsl(
@@ -2652,15 +2643,10 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         multiview_mask: None,
         cache: None,
     }));
-    expect_validation_error_containing(
-        &device,
-        "helper-reached textureSampleBaseClampToEdge",
-        "textureSampleBaseClampToEdge",
-        || drop(create_texture_query_pipeline("base_clamp_helper")),
-    );
+    drop(create_texture_query_pipeline("base_clamp_helper"));
     drop(create_texture_query_pipeline("safe"));
     println!(
-        "PASS: public core rejected selected texture queries and helper-reached base-clamp sampling while accepting the proven direct base-clamp entry"
+        "PASS: public core rejected selected texture queries and accepted direct and helper-reached base-clamp sampling"
     );
 
     expect_validation_error(
@@ -28962,7 +28948,7 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
         "general texture queries must remain unavailable"
     );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions emulation",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions through one selected helper",
         info.name, info.vendor, info.device, info.driver_info
     );
 
@@ -28981,9 +28967,9 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
         ),
     });
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 textureDimensions fragment shader"),
+        label: Some("FL9_1 textureDimensions helper fragment shader"),
         source: ShaderSource::Wgsl(
-            "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(image)); return vec4f(dimensions / vec2f(16.0, 8.0), 0.0, 1.0); }"
+            "@group(0) @binding(0) var image: texture_2d<f32>; fn query_dimensions() -> vec2u { return textureDimensions(image); } @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(query_dimensions()); return vec4f(dimensions / vec2f(16.0, 8.0), 0.0, 1.0); }"
                 .into(),
         ),
     });
@@ -29807,7 +29793,7 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
         "general texture queries must remain unavailable"
     );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureNumLevels emulation",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureNumLevels plus implicit sample emulation",
         info.name, info.vendor, info.device, info.driver_info
     );
 
@@ -29828,7 +29814,7 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 textureNumLevels fragment shader"),
         source: ShaderSource::Wgsl(
-            "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { let levels = f32(textureNumLevels(image)); return vec4f(levels / 3.0, 0.0, 0.0, 1.0); }"
+            "@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn fs() -> @location(0) vec4f { let levels = f32(textureNumLevels(image)); let sampled = textureSample(image, smp, vec2f(0.5)); return vec4f(levels / 4.0, sampled.r, sampled.g, 1.0); }"
                 .into(),
         ),
     });
@@ -29843,8 +29829,47 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
         sample_count: 1,
         dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::TEXTURE_BINDING,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
+    });
+    for (mip_level, color) in [
+        [64_u8, 128, 192, 255],
+        [128_u8, 64, 32, 255],
+        [192_u8, 32, 64, 255],
+        [32_u8, 192, 128, 255],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let size = 16_u32 >> mip_level;
+        let pixels = color.repeat((size * size) as usize);
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &input,
+                mip_level: mip_level as u32,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &pixels,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size * 4),
+                rows_per_image: Some(size),
+            },
+            Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
     });
     let one_level_view = input.create_view(&TextureViewDescriptor {
         base_mip_level: 0,
@@ -29911,18 +29936,30 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
     let one_level_bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 one-level texture view"),
         layout: &bind_group_layout,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::TextureView(&one_level_view),
-        }],
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&one_level_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
     });
     let three_level_bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 three-level texture view"),
         layout: &bind_group_layout,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::TextureView(&three_level_view),
-        }],
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&three_level_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
     });
     let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
     let mut vertex_bytes = Vec::with_capacity(6 * std::mem::size_of::<f32>());
@@ -30016,9 +30053,9 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
                 let expected = if x < 4 {
-                    [85_u8, 0, 0, 255]
+                    [64_u8, 64, 128, 255]
                 } else {
-                    [255_u8, 0, 0, 255]
+                    [191_u8, 128, 64, 255]
                 };
                 for channel in 0..4 {
                     let actual = pixels[offset + channel] as i16;
@@ -30031,20 +30068,25 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
             }
         }
         println!(
-            "PASS: forced FL9_1 textureNumLevels followed bind-group views with 1 and 3 mip levels; all 64 pixels matched"
+            "PASS: forced FL9_1 textureNumLevels and same-texture implicit sampling followed 1- and 3-level views; both count and sampled texels affected all 64 pixels"
         );
     }
     readback.unmap();
+}
+
+struct Fl9TextureNumLevelsViewConfig<'a> {
+    image_type: &'a str,
+    suffix_levels: u32,
+    helper_query: bool,
 }
 
 fn verify_fl91_texture_num_levels_views(
     device: &Device,
     queue: &Queue,
     label: &'static str,
-    image_type: &str,
     first_view: &TextureView,
     suffix_view: &TextureView,
-    suffix_levels: u32,
+    config: Fl9TextureNumLevelsViewConfig<'_>,
 ) {
     let validation_scope = device.push_error_scope(ErrorFilter::Validation);
     let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -30054,12 +30096,21 @@ fn verify_fl91_texture_num_levels_views(
                 .into(),
         ),
     });
+    let (helper, query) = if config.helper_query {
+        (
+            "fn levels_helper() -> u32 { return textureNumLevels(image); }",
+            "let levels = f32(levels_helper());",
+        )
+    } else {
+        ("", "let levels = f32(textureNumLevels(image));")
+    };
     let fragment_source = format!(
-        "@group(0) @binding(42) var image: {image_type}; \
+        "@group(0) @binding(42) var image: {image_type}; {helper} \
          @fragment fn fs() -> @location(0) vec4f {{ \
-             let levels = f32(textureNumLevels(image)); \
+             {query} \
              return vec4f(levels / 3.0, 0.0, 0.0, 1.0); \
-         }}"
+         }}",
+        image_type = config.image_type
     );
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some(label),
@@ -30225,7 +30276,7 @@ fn verify_fl91_texture_num_levels_views(
             .expect("mapped textureNumLevels pixels");
         for y in 0..8 {
             for x in 0..8 {
-                let expected_levels = if x < 4 { 1 } else { suffix_levels };
+                let expected_levels = if x < 4 { 1 } else { config.suffix_levels };
                 let expected_red = ((expected_levels as f32 / 3.0) * 255.0).round() as u8;
                 let offset = y * 256 + x * 4;
                 assert_eq!(
@@ -30237,7 +30288,85 @@ fn verify_fl91_texture_num_levels_views(
         }
     }
     readback.unmap();
-    println!("PASS: {label} selected view mip counts 1 and {suffix_levels}; all 64 pixels matched");
+    println!(
+        "PASS: {label} selected view mip counts 1 and {}; all 64 pixels matched",
+        config.suffix_levels
+    );
+}
+
+#[test]
+fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 adapter for textureNumLevels helper");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(
+        downlevel.limits.texture_num_levels_2d_float_fragment,
+        "the selected FL9_1 projection must expose the restricted 2D query"
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=selected-entry textureNumLevels helper",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 textureNumLevels helper test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 textureNumLevels helper mip source"),
+        size: Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 4,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let one_level_view = texture.create_view(&TextureViewDescriptor {
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        ..Default::default()
+    });
+    let three_level_view = texture.create_view(&TextureViewDescriptor {
+        base_mip_level: 1,
+        mip_level_count: Some(3),
+        ..Default::default()
+    });
+    verify_fl91_texture_num_levels_views(
+        &device,
+        &queue,
+        "FL9_1 selected-helper textureNumLevels",
+        &one_level_view,
+        &three_level_view,
+        Fl9TextureNumLevelsViewConfig {
+            image_type: "texture_2d<f32>",
+            suffix_levels: 3,
+            helper_query: true,
+        },
+    );
 }
 
 #[test]
@@ -30352,10 +30481,13 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &device,
             &queue,
             "FL9_1 3D textureNumLevels",
-            "texture_3d<f32>",
             &lowest_mip_view,
             &full_chain_view,
-            mip_count,
+            Fl9TextureNumLevelsViewConfig {
+                image_type: "texture_3d<f32>",
+                suffix_levels: mip_count,
+                helper_query: false,
+            },
         );
         if mip_count == 1 {
             println!("SKIP: selected FL9_1 device lacks optional 3D mip support; the single-mip query executed");
@@ -30428,10 +30560,13 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &device,
             &queue,
             "FL9_1 cube textureNumLevels",
-            "texture_cube<f32>",
             &lowest_mip_view,
             &full_chain_view,
-            mip_count,
+            Fl9TextureNumLevelsViewConfig {
+                image_type: "texture_cube<f32>",
+                suffix_levels: mip_count,
+                helper_query: false,
+            },
         );
         if !cube_mips_supported {
             println!("SKIP: selected FL9_1 device lacks optional cube mip support; the single-mip query executed");
@@ -31642,9 +31777,12 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
         source: ShaderSource::Wgsl(
             "@group(0) @binding(7) var image: texture_2d<f32>;\n\
              @group(0) @binding(42) var smp: sampler;\n\
+             fn sample_base_clamp(uv: vec2f) -> vec4f {\n\
+                 return textureSampleBaseClampToEdge(image, smp, uv);\n\
+             }\n\
              @fragment fn fs(@location(0) clip: vec2f) -> @location(0) vec4f {\n\
                  let coords = clip * 1.5 + vec2f(0.5);\n\
-                 return textureSampleBaseClampToEdge(image, smp, coords);\n\
+                 return sample_base_clamp(coords);\n\
              }"
             .into(),
         ),

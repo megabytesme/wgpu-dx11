@@ -331,11 +331,16 @@ readback and compiler validation are recorded in `TESTING.md`.
 downlevel limit remains false. Naga supplies selected-view dimensions through host constant
 `b13`, clamps coordinates to half-texel centers and emits implicit `Sample`,
 which FXC accepts for `ps_4_0_level_9_1`. Core's additional narrow limit allows
-only one direct group-0 2D float texture and one group-0 non-comparison sampler
-with no helpers, other resources or image operations. HAL revalidates the
-selected single-mip view at draw preparation and refreshes the dimensions.
-Strict RTX 3090 Ti FL9_1 readback matched all 64 pixels for out-of-range
-coordinates. The public finite repeat-per-primitive limit rejects Repeat and
+one group-0 2D float texture and one group-0 non-comparison sampler, either
+directly or through exactly one reachable straight-line helper called once
+with a `vec2f` and returning `vec4f`. The helper cannot accept resource handles;
+selected extra resources, other image operations and control flow remain
+unsupported. HAL revalidates the selected single-mip view at draw preparation
+and refreshes the dimensions. The earlier strict RTX 3090 Ti direct-path
+readback and the new helper-path readback each matched all 64 pixels for
+out-of-range coordinates at requested/actual FL9_1. The helper-path output was
+verified on the physical RTX 3090 Ti. The public finite repeat-per-primitive
+limit rejects Repeat and
 MirrorRepeat sampler descriptors, so independence from those sampler modes is
 not established by the public GPU test.
 
@@ -1265,17 +1270,20 @@ branches. No physical execution is claimed for the mip path.
 
 ## Narrow FL9_1 fragment texture dimensions
 
-The opt-in public projection now exposes a separate
+The opt-in public projection exposes a separate
 `texture_dimensions_2d_float_fragment` limit while keeping general
-`texture_query` unavailable. Core proves the selected entry point is a simple
-fragment function with one direct size query on a group-0, non-array
-`texture_2d<f32>`, converted directly to `vec2f`; helper calls, control flow,
-other resource bindings, other image operations and unrelated integer
-semantics remain rejected. HAL reuses the existing host-supplied dimension
-constant and updates it when the bound view changes. The strict RTX 3090 Ti
-test explicitly requested FL9_1 and read back all 64 pixels after switching
-from a 16x8 view to an 8x4 view. Synthetic tests verify the narrow Core limit
-and integer-operation boundary. This does not enable general texture queries.
+`texture_query` unavailable. Core proves one selected fragment query on a
+group-0, non-array `texture_2d<f32>`, directly converted to `vec2f`. The query
+may be direct or returned by exactly one reachable, argument-free, straight-
+line helper called once. The helper cannot query a mip, use other resources or
+image operations, or call another function. Unreachable sibling helpers and
+resources are pruned from emitted HLSL. Direct query behavior, including its
+existing optional constant-mip and query-plus-one-sample forms, is unchanged;
+the helper form is level-less and query-only. HAL reuses the host-supplied
+dimension constant and updates it when the bound view changes. The strict RTX
+3090 Ti test exercises the helper and reads back all 64 pixels after switching
+between texture views sized 16x8 and 8x4. General texture queries remain
+unavailable.
 
 The same narrow 2D path now also allows exactly one level-less implicit
 `textureSample` of the queried texture with one group-0 non-comparison sampler.
@@ -1293,18 +1301,26 @@ General `texture_query` remains unavailable.
 The opt-in projection exposes separate
 `texture_num_levels_2d_float_fragment`,
 `texture_num_levels_3d_float_fragment` and
-`texture_num_levels_cube_float_fragment` limits for one direct fragment
+`texture_num_levels_cube_float_fragment` limits for one fragment
 `textureNumLevels` query on a matching group-0, non-array float texture,
-directly converted to `f32`. The 3D/cube paths are gated by the selected
+directly converted to `f32`. The 2D query may be direct or returned by exactly
+one reachable, argument-free straight-line helper called once by the selected
+entry point; the helper form cannot sample. The 3D and cube forms remain
+direct-only. The selected entry may also contain exactly one
+implicit sample of that same image with a compatible coordinate type and one
+group-0 non-comparison sampler. The 3D/cube paths are gated by the selected
 device's sampled RGBA8 volume/cube support; they do not require mip support
-because a single-mip view validly reports one level. Core rejects helper calls,
-control flow, additional resources or image operations, other query forms and
-unrelated integer semantics. Naga's lowering proof is independent of the
-texel-load proof. HAL supplies the selected bound view's mip count through
-`b13`, including supported suffix views. Strict RTX 3090 Ti readback now
-verifies 2D, 3D and cube views with different visible mip counts at requested/
-actual FL9_1 when multi-mip support is reported. General `texture_query`
-remains unavailable.
+because a single-mip view validly reports one level. Core, Naga and HAL retain
+the direct-query proof, reject helpers, control flow, additional resources,
+other image operations, multiple samples, mismatched image/sampler shapes and
+unrelated integer semantics. HAL supplies the selected bound view's mip count
+through `b13`; texture and sampler retain their ordinary register assignments.
+For 2D, the helper query path is separate from the direct query-plus-sample
+path. The strict public tests check both across one- and three-level views.
+The helper-only query test verified all 64 pixels. On the RTX 3090 Ti,
+explicitly requested and selected FL9_1, the direct query-plus-sample test
+matched `[64,64,128,255]` and `[191,128,64,255]` for all 64 pixels. General
+`texture_query` remains unavailable.
 
 ## Constant-mip FL9_1 fragment `textureDimensions`
 

@@ -516,22 +516,27 @@ false even though the hardware model records query support from feature level
 
 The general `texture_sample_base_clamp_to_edge` limit remains false. The
 `texture_sample_base_clamp_to_edge_2d_float_fragment` limit covers one narrow
-FL9_1 form of `textureSampleBaseClampToEdge`. Core proves one direct
-fragment sample using one group-0 `texture_2d<f32>` and one group-0
-non-comparison sampler; helper calls, extra resources, other image operations
-and control flow are rejected before HAL. HAL requires a single-mip view and
-updates the `b13` width/height constants whenever the selected binding changes.
+FL9_1 form of `textureSampleBaseClampToEdge`. Core proves one fragment sample
+using one group-0 `texture_2d<f32>` and one group-0 non-comparison sampler,
+either directly or through one reachable straight-line helper called once with
+a `vec2f` argument and returning `vec4f`. Resource handles cannot pass through
+the helper; selected extra resources, other image operations and control flow
+are rejected before HAL. HAL requires a single-mip view and updates the `b13`
+width/height constants whenever the selected binding changes.
 Naga's writer emits an implicit level-zero `Sample` with half-texel coordinate
-clamping; the strict public test compiled the shader through FXC for
-`ps_4_0_level_9_1` and verified all 64 readback pixels. It uses an
+clamping. The helper may receive a computed `vec2f` from the entry point; the
+helper itself must directly sample the selected texture and sampler, with no
+nested calls or control flow. FXC accepted the helper at
+`ps_4_0_level_9_1`, and strict forced-FL9_1 public readback verified all 64
+pixels on the RTX 3090 Ti. The public test uses a
 ClampToEdge sampler because Core rejects Repeat/MirrorRepeat descriptors under
 the adapter's finite repeat-per-primitive limit. It does not establish
 sampler-independent edge behavior for those unavailable sampler modes.
 
 ```powershell
-cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_base_clamp_uses_host_dimensions_and_implicit_sample
-cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls
-cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_base_clamp_binding_is_direct_and_single_mip
+cargo +1.93 test --offline -j8 -p naga --lib --features hlsl-out fl9_base_clamp_uses_host_dimensions_and_implicit_sample
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib base_clamp -- --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_sample_base_clamp_to_edge_at_fl91 -- --nocapture --test-threads=1
 ```
@@ -3412,6 +3417,26 @@ values. The general `texture_query` capability remained false. This validates
 the narrow emulation on a modern GPU restricted to FL9_1, not behavior on
 historical hardware.
 
+The same strict public test now calls `textureDimensions` through one selected
+argument-free helper and switches the bound texture view between the 16x8 and
+8x4 sources. The helper proof does not permit a mip argument, sampling, nested
+calls, other selected resources or control flow. Direct queries retain their
+existing proof. Focused CPU/FXC checks are:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions_accepts_one_selected_helper
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_dimensions_emits_only_the_selected_query_helper
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_dimensions_through_selected_helper_compiles_with_fxc -- --nocapture
+```
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, run the public forced-FL9_1 render and
+readback test:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Narrow FL9_1 fragment `textureNumLevels`
 
 Run the selected-entry proof, type-limit and HLSL compilation checks, then the
@@ -3420,16 +3445,48 @@ strict public readback test:
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-types restricted_texture_num_levels_is_independent_of_other_texture_queries
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_accepts_only_direct_fragment_conversion
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_allows_one_compatible_implicit_sample
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_num_levels_can_share_texture_with_one_implicit_sample
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib texture_num_levels
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_can_share_one_implicit_sample
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_and_implicit_sample_compile -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_num_levels_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
+The 2D query also supports one selected, no-argument straight-line helper that
+returns the queried `u32` for direct conversion to `f32`. The helper form is
+query-only: it does not support sampling, nested or repeated calls, control
+flow or additional selected resources. Direct query-plus-sample and 3D/cube
+query paths retain their separate restrictions. The strict helper readback
+uses one- and three-level views and verifies all 64 pixels. Run its production
+proofs and hardware test with:
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_num_levels_accepts_one_selected_query_helper
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_accepts_one_selected_helper
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_through_selected_helper_compiles_with_fxc -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 -- --nocapture --test-threads=1
+```
+
+The query may share the selected entry with one implicit sample of the same
+texture using one group-zero non-comparison sampler. The strict public test
+switches between one- and three-level views over an initialized RGBA8 mip chain;
+the first output channel depends on the view mip count and the next two channels
+depend on the sampled texel. Core, Naga and private HAL tests accept this shape
+for 2D, 3D and cube images and reject a different image, multiple samples,
+explicit LOD or extra sampler resources. The FXC test compiles each dimension
+through `ps_4_0_level_9_1`; the host mip-count query remains the existing `b13`
+constant emulation and the sample remains an ordinary implicit `.Sample`.
+
 The public test uses one four-mip texture through two views exposing one and
-three levels. A bind-group transition changes the returned count; the 8x8
-readback expects red 85 on the left and 255 on the right, with the other
-channels fixed. General `texture_query` stays disabled. This is a narrow host
-metadata emulation and does not establish historical FL9_1 driver behavior.
+three levels. A bind-group transition changes the returned count while the
+same shader samples the selected view. The 8x8 readback expects
+`[64,64,128,255]` on the left and `[191,128,64,255]` on the right; all 64
+pixels were verified on the RTX 3090 Ti at explicitly requested and selected
+FL9_1. General `texture_query` stays disabled. This is a narrow host metadata
+emulation and does not establish historical FL9_1 driver behavior.
 
 The `public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91` test also
 queries sampled RGBA8 3D and cube views through the independent

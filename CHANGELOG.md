@@ -58,7 +58,9 @@ Bottom level categories:
 - Expose a separately gated, narrowly validated fragment `textureDimensions` subset for one bound cube float texture in the opt-in FL9_1 D3D11 backend.
 - Expose a narrowly validated fragment `textureNumLevels` subset for one bound 2D float view in the opt-in FL9_1 D3D11 backend.
 - Extend the narrowly validated fragment `textureNumLevels` emulation to query-gated 3D and cube float views in the opt-in FL9_1 D3D11 backend.
-- Emulate a direct, single-mip 2D float fragment `textureSampleBaseClampToEdge` operation in the opt-in FL9_1 D3D11 backend.
+- Allow one same-texture implicit sample alongside the restricted FL9_1 fragment `textureNumLevels` query, with the sampled texel and queried view mip count both observable.
+- Allow a selected 2D fragment `textureNumLevels` query through one narrowly validated helper in the opt-in FL9_1 D3D11 backend.
+- Emulate a single-mip 2D float fragment `textureSampleBaseClampToEdge` operation directly or through one restricted straight-line helper in the opt-in FL9_1 D3D11 backend.
 - Allow the narrow FL9_1 fragment `textureDimensions` path to co-use one implicit sample of the same 2D float texture and one compatible sampler.
 - Allow the narrow FL9_1 fragment 3D `textureDimensions` path to co-use one implicit sample of the same volume and one compatible sampler.
 - Emulate a selected-entry single-mip 3D float fragment `textureLoad` on query-supported FL9_1 volume textures in the opt-in D3D11 backend.

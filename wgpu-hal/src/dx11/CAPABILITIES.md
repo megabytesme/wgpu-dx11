@@ -1288,16 +1288,21 @@ before HAL. The model treats queries as a feature-level shader guarantee from
 level. This gate is profile/compiler-driven; it is not a driver format query.
 
 The D3D11 projection separately enables the narrow
-`texture_dimensions_2d_float_fragment` downlevel limit. It permits only a
-selected fragment entry point containing one direct `textureDimensions` query
-on a group-0, non-array `texture_2d<f32>`, directly converted to `vec2f`. The
-optional mip level must be a non-negative literal or direct module `const`.
-Dimensions are relative to the bound view. A level-less query may share the
-entry point with exactly one implicit `textureSample` of that same texture and
-one group-0 non-comparison sampler. This allows the shader to use queried
-dimensions and sampled texels together without permitting unrelated resources,
-other image operations, helpers, control flow, `select`, or runtime integer
-work. A query with an explicit mip level remains query-only. The HAL supplies
+`texture_dimensions_2d_float_fragment` downlevel limit. It permits one selected
+fragment entry point to query a group-0, non-array `texture_2d<f32>` and
+directly convert the `vec2u` result to `vec2f`. The query may appear directly
+in the entry point, or in exactly one reachable helper with no arguments that
+returns the query result. That helper must be straight-line, contain no other
+resource or image operation, and be called once. Unreachable sibling helpers
+and their resources are pruned for HLSL emission. The optional direct-query mip
+level must be a non-negative literal or direct module `const`; the helper form
+is level-less only. Dimensions are relative to the bound view. A direct
+level-less query may share the entry point with exactly one implicit
+`textureSample` of that same texture and one group-0 non-comparison sampler.
+The helper form remains query-only. This permits the proven operations without
+permitting unrelated selected resources, other image operations, control
+flow, `select`, or runtime integer work. A direct query with an explicit mip
+level remains query-only. The HAL supplies
 the selected view mip's dimensions through its existing private `b13`
 emulation path and follows bind-group changes. For a level outside the view's
 mip range, WGSL permits an indeterminate result; the host supplies a safe 1x1
@@ -1332,19 +1337,27 @@ unavailable.
 The opt-in FL9_1 projection exposes separate
 `texture_num_levels_2d_float_fragment`,
 `texture_num_levels_3d_float_fragment` and
-`texture_num_levels_cube_float_fragment` limits. Each permits one direct
+`texture_num_levels_cube_float_fragment` limits. Each permits one
 `textureNumLevels` query on one group-0, non-array float image of the matching
 dimension in a simple fragment entry point, directly converted from `u32` to
-`f32`. The 3D and cube limits are enabled only when the selected device reports
+`f32`. The 2D path additionally permits the query to be returned through
+exactly one reachable, argument-free straight-line helper called once by the
+selected entry point. That helper form is query-only; the separate direct
+query-plus-sample form does not permit helper calls. The 3D and cube limits
+remain direct-only. The 3D and cube limits are enabled only when the selected device reports
 the corresponding RGBA8 sampled-texture support; mipmap support is not required
 to query a single-mip view. The HAL supplies the currently bound view's mip
 count through the same `b13` emulation resource, including the view's suffix
-mip range. The selected entry point cannot use helpers, control flow, other
-bound resources, image operations or unrelated integer values. General
-`texture_query` remains false. This capability is compiler emulation based and
-does not imply native FL9_1 image-query instructions or historical-driver
-coverage. Strict forced-FL9_1 readback now verifies 3D and cube views with
-different visible mip counts when the selected device supports mip chains.
+mip range. The selected entry point may also contain exactly one compatible
+implicit `textureSample` of that same image with one group-0 non-comparison
+sampler; its coordinate type must match the image dimension. The query remains
+a single direct `u32` to `f32` conversion. Other helper shapes, control flow,
+extra bound resources, other image operations and unrelated integer values
+remain rejected. General `texture_query` remains false. This capability is compiler
+emulation based and does not imply native FL9_1 image-query instructions or
+historical-driver coverage. The strict forced-FL9_1 readback test checks that
+the queried mip count and sampled texel contents both affect output across
+bound views with different visible mip counts.
 
 The general `texture_sample_base_clamp_to_edge` limit remains false. The
 FL9_1 projection exposes only the separate
@@ -1353,13 +1366,19 @@ FL9_1 projection exposes only the separate
 the one supported operation to an implicit `Texture2D.Sample` after clamping
 coordinates to half-texel centers using the selected view dimensions supplied
 through `b13`; this avoids FL9_1-incompatible `GetDimensions` and
-`SampleLevel`. Core permits only a direct fragment sample of one group-0,
-non-array `texture_2d<f32>` and one group-0 non-comparison sampler, with no
-helpers, additional resources, other image operations or control flow. HAL
+`SampleLevel`. Core permits one fragment sample of a group-0, non-array
+`texture_2d<f32>` and one group-0 non-comparison sampler, either directly in
+the selected entry or through exactly one reachable straight-line helper that
+is called once, takes one `vec2f`, and returns `vec4f`. Resource handles cannot
+be passed through the helper. Additional selected resources, other image
+operations and control flow remain unsupported; unreachable sibling helpers
+do not affect the selected entry. HAL
 requires the currently selected view to expose exactly one mip and refreshes
-the host dimensions for each selected bind group before drawing. An unused
-sibling entry remains available when it does not use the builtin. Strict
-RTX 3090 Ti FL9_1 readback checked all 64 pixels for out-of-range coordinates.
+the host dimensions for each selected bind group before drawing. The entry may
+compute the `vec2f` argument passed to its helper. An unused sibling entry
+remains available when it does not use the builtin. Strict RTX 3090 Ti FL9_1
+readback verified all 64 output pixels for the helper path with transformed
+out-of-range coordinates.
 The public repeat-per-primitive limit rejects Repeat and MirrorRepeat samplers
 at creation, so the GPU test uses ClampToEdge; sampler-independent wrapping
 semantics have not been physically distinguished on this adapter.

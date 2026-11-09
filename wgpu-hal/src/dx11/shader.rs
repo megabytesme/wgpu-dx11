@@ -45,8 +45,10 @@ pub(super) struct Fl9ShaderInputOptions {
     pub vertex_index_input: bool,
     pub texel_load_binding: Option<naga::ResourceBinding>,
     pub texture_dimensions_binding: Option<naga::ResourceBinding>,
+    pub texture_dimensions_helper: bool,
     pub texture_dimensions_3d_binding: Option<naga::ResourceBinding>,
     pub texture_num_levels_binding: Option<naga::ResourceBinding>,
+    pub texture_num_levels_helper: bool,
     pub texture_base_clamp_binding: Option<naga::ResourceBinding>,
 }
 
@@ -1812,6 +1814,78 @@ mod tests {
     }
 
     #[test]
+    fn fl91_base_clamp_through_straight_line_helper_compiles() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var sibling: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn sample_image(uv: vec2f) -> vec4f {
+                return textureSampleBaseClampToEdge(image, smp, uv);
+            }
+            fn unused(uv: vec2f) -> vec4f {
+                return textureSampleBaseClampToEdge(sibling, smp, uv);
+            }
+            @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return sample_image(uv);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 6,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texture_base_clamp_binding: Some(texture_binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate the selected helper base-clamp shader");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(s3)"), "{source}");
+        assert!(source.contains("register(b13)"), "{source}");
+        assert!(
+            source.contains("nagaTextureSampleBaseClampToEdge(image"),
+            "{source}"
+        );
+        assert!(!source.contains("sibling"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 helper base-clamp HLSL failed FXC: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn level_9_pixel_profiles_reject_base_clamp_to_edge_sampling() {
         let source = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(23) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }";
         let module = naga::front::wgsl::parse_str(source).unwrap();
@@ -3140,6 +3214,61 @@ mod tests {
     }
 
     #[test]
+    fn fl91_texture_dimensions_through_selected_helper_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(1) @binding(9) var sibling_image: texture_2d<f32>;
+            fn dimensions_helper() -> vec2u { return textureDimensions(image); }
+            fn unused_helper() -> vec2u { return textureDimensions(sibling_image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                let dimensions = vec2f(dimensions_helper());
+                return vec4f(dimensions / vec2f(16.0), 0.0, 1.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return vec4f(vec2f(unused_helper()), 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &[ShaderBinding {
+                binding,
+                slot: 6,
+                kind: ShaderBindingKind::TextureFloat,
+            }],
+            Fl9ShaderInputOptions {
+                texture_dimensions_binding: Some(binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate dimensions query through the selected helper");
+        assert!(source.contains("dimensions_helper("), "{source}");
+        assert!(source.contains("int2(naga_fl9_load_size.xy)"), "{source}");
+        assert!(!source.contains("unused_helper"), "{source}");
+        assert!(!source.contains("sibling_image"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 textureDimensions helper HLSL failed FXC: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn fl91_3d_texture_dimensions_and_implicit_sample_compile() {
         let module = naga::front::wgsl::parse_str(
             "@group(0) @binding(7) var volume: texture_3d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(volume)); return textureSample(volume, smp, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 2.0, 8.0), 1.0); }",
@@ -3376,6 +3505,63 @@ mod tests {
     }
 
     #[test]
+    fn fl91_texture_num_levels_through_selected_helper_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(1) @binding(9) var sibling_image: texture_2d<f32>;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            fn unused_helper() -> u32 { return textureNumLevels(sibling_image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return vec4f(f32(levels_helper()) / 4.0, 0.0, 0.0, 1.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return vec4f(f32(unused_helper()), 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &[ShaderBinding {
+                binding,
+                slot: 6,
+                kind: ShaderBindingKind::TextureFloat,
+            }],
+            Fl9ShaderInputOptions {
+                texture_num_levels_binding: Some(binding),
+                texture_num_levels_helper: true,
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate selected-entry helper textureNumLevels");
+        assert!(source.contains("levels_helper("), "{source}");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(b13)"), "{source}");
+        assert!(source.contains("int(naga_fl9_load_size.x)"), "{source}");
+        assert!(!source.contains("unused_helper"), "{source}");
+        assert!(!source.contains("sibling_image"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 textureNumLevels helper HLSL failed: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn fl91_texture_num_levels_compiles_for_3d_and_cube_images() {
         let binding = naga::ResourceBinding {
             group: 0,
@@ -3422,6 +3608,80 @@ mod tests {
             assert!(source.contains("int(naga_fl9_load_size.x)"), "{source}");
             compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
                 panic!("FL9_1 {image_type} textureNumLevels HLSL failed: {error:?}\n{source}")
+            });
+        }
+    }
+
+    #[test]
+    fn fl91_texture_num_levels_and_implicit_sample_compile() {
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 7,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        for (image_type, coordinate_type) in [
+            ("texture_2d<f32>", "vec2f(0.5)"),
+            ("texture_3d<f32>", "vec3f(0.5)"),
+            ("texture_cube<f32>", "vec3f(0.5)"),
+        ] {
+            let wgsl = format!(
+                "@group(0) @binding(42) var image: {image_type}; \
+                 @group(0) @binding(7) var smp: sampler; \
+                 @fragment fn fs() -> @location(0) vec4f {{ \
+                     let levels = f32(textureNumLevels(image)); \
+                     let sampled = textureSample(image, smp, {coordinate_type}); \
+                     return sampled * vec4f(levels / 4.0, 1.0, 1.0, 1.0); \
+                 }}"
+            );
+            let module = naga::front::wgsl::parse_str(&wgsl).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "fs",
+                ShaderProfile::PixelLevel9_1,
+                &bindings,
+                Fl9ShaderInputOptions {
+                    texture_num_levels_binding: Some(texture_binding),
+                    ..Default::default()
+                },
+                &[],
+            )
+            .unwrap_or_else(|error| {
+                panic!("translate FL9_1 textureNumLevels plus sample for {image_type}: {error:?}")
+            });
+            assert!(source.contains("register(t0)"), "{source}");
+            assert!(source.contains("register(s3)"), "{source}");
+            assert!(source.contains("register(b13)"), "{source}");
+            assert!(source.contains("int(naga_fl9_load_size.x)"), "{source}");
+            assert!(source.contains(".Sample("), "{source}");
+            assert!(!source.contains("GetDimensions"), "{source}");
+            assert!(!source.contains("SampleLevel"), "{source}");
+            compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+                panic!(
+                    "FL9_1 {image_type} textureNumLevels/sample HLSL failed: {error:?}\n{source}"
+                )
             });
         }
     }

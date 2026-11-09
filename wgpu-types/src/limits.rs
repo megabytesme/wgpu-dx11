@@ -1339,20 +1339,26 @@ pub struct DownlevelLimits {
     /// Whether a fragment entry point may query the mip-level count of one direct, non-array
     /// `texture_2d<f32>` using `textureNumLevels` and convert the returned `u32` directly to `f32`.
     ///
-    /// This restricted form does not imply support for other texture queries.
+    /// The entry point may also make one implicit sample of the same texture with one
+    /// group-zero non-comparison sampler and a `vec2<f32>` coordinate. This restricted form does
+    /// not imply support for other texture queries or image operations.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_num_levels_2d_float_fragment: bool,
     /// Whether a fragment entry point may query the mip-level count of one direct, non-array
     /// `texture_3d<f32>` using `textureNumLevels` and convert the returned `u32` directly to `f32`.
     ///
-    /// This restricted form does not imply support for other texture queries.
+    /// The entry point may also make one implicit sample of the same texture with one
+    /// group-zero non-comparison sampler and a `vec3<f32>` coordinate. This restricted form does
+    /// not imply support for other texture queries or image operations.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_num_levels_3d_float_fragment: bool,
     /// Whether a fragment entry point may query the mip-level count of one direct, non-array
     /// `texture_cube<f32>` using `textureNumLevels` and convert the returned `u32` directly to
     /// `f32`.
     ///
-    /// This restricted form does not imply support for other texture queries.
+    /// The entry point may also make one implicit sample of the same texture with one
+    /// group-zero non-comparison sampler and a `vec3<f32>` coordinate. This restricted form does
+    /// not imply support for other texture queries or image operations.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_num_levels_cube_float_fragment: bool,
     /// Whether shader entry points may use `textureSampleBaseClampToEdge`.

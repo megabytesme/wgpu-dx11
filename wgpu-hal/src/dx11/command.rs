@@ -254,6 +254,7 @@ pub(super) enum NativeCommand {
         sampler: ID3D11SamplerState,
         dimensions: ID3D11Buffer,
         kind: super::hal_shader::Fl9TextureEmulationKind,
+        has_implicit_sample: bool,
         width: u32,
         height: u32,
         depth: u32,
@@ -878,6 +879,7 @@ impl CommandBuffer {
                         sampler,
                         dimensions,
                         kind,
+                        has_implicit_sample,
                         width,
                         height,
                         depth,
@@ -920,7 +922,8 @@ impl CommandBuffer {
                         let sampled_resource = if matches!(
                             kind,
                             super::hal_shader::Fl9TextureEmulationKind::NumLevels
-                        ) {
+                        ) && !has_implicit_sample
+                        {
                             None
                         } else {
                             Some(texture.clone())
