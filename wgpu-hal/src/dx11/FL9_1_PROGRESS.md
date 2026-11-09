@@ -1,6 +1,33 @@
 # FL9_1 progress
 
-## `vertex_index` on TriangleStrip — 2026-11-09
+## Public buffer lifetime before submission — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`
+
+A public Core↔HAL buffer-lifetime audit found no confirmed ordering or ownership
+defect. Core retains submitted resources and pending queue writes; HAL copy
+commands retain COM references. The audit identified missing public GPU
+coverage for dropping source and destination buffer handles after command
+recording but before submit. Added `public_dx11_buffer_handles_survive_until_submission_at_fl91`:
+it initializes a 64-byte source, queues destination sentinels, records a
+nonzero-offset partial copy followed by readback, finishes the command buffer,
+drops both public handles, and submits. The strict readback verified all 64
+bytes, including unchanged sentinels. Commit:
+`67e8fcde45592a8a8ccc9c7759e9a0569313abd2`.
+
+The focused strict test passed 1/1 and the complete strict public D3D11 target
+passed 105/105 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, requested/actual FL9_1, software=false). Optional selected
+feature branches still log visible skips; all strict-required hardware tests
+executed. `cargo +1.93 fmt --all -- --check`, public-test Clippy and
+`git diff --check` passed. Clippy retained four existing HAL
+`too_many_arguments` warnings; the new test produced no warning.
+
+A separate attachment lifecycle audit found Core initialization/discard
+tracking aligned with the implemented HAL load/store, transient, depth/stencil
+and resolve subset; it found no reproducible mismatch and made no changes.
+Historical-device tests and actual device removal during map flush/invalidate
+remain outstanding.
+
+## `vertex_index` on TriangleStrip — 2026-11-09 — `5552a8fa57ca1c34c89dcec70524150d15b2674f`
 
 The opt-in FL9_1 projection and defensive HAL validation now permit the
 emulated `vertex_index` subset for TriangleStrip. Direct draws preserve source

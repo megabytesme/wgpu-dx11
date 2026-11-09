@@ -1,6 +1,18 @@
 # FL9_1 completion plan
 
-## Latest verified increment — `vertex_index` with TriangleStrip — 2026-11-09
+## Latest verified increment — public buffer lifetime before submit — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`
+
+The strict public regression now records source-to-destination and
+destination-to-readback copies, drops the public source and destination handles
+before submission, then verifies the complete 64-byte result and untouched
+sentinels. It closes a public lifecycle coverage gap; the Core/HAL audit found
+no confirmed implementation defect. The focused GPU test passed 1/1 and the
+strict public D3D11 suite passed 105/105 on the RTX 3090 Ti at requested/actual
+FL9_1. Attachment load/store/discard, transient, depth/stencil and resolve
+paths were separately audited with no reproducible mismatch. See
+`FL9_1_PROGRESS.md` for exact commands and caveats.
+
+## Latest verified increment — `vertex_index` with TriangleStrip — 2026-11-09 — `5552a8fa57ca1c34c89dcec70524150d15b2674f`
 
 The selected FL9_1 projection and defensive HAL gate now permit the emulated
 `vertex_index` subset for TriangleStrip. Direct strip batches preserve the source

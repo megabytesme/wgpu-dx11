@@ -1,24 +1,26 @@
 # FL9_1 handoff
 
-## Latest verified checkpoint — TriangleStrip `vertex_index` — 2026-11-09
+## Latest verified checkpoint — public buffer lifetime before submit — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`
 
-The opt-in FL9_1 projection now supports host-emulated `vertex_index` for
-TriangleList, PointList, LineList, LineStrip and TriangleStrip. Direct strips
-preserve IDs across native batching. Indexed strips resolve restart and signed
-base-vertex semantics, then expand into winding-preserving triangle-list IDs
-for native execution, including Window/Gather remaps. The strict GPU test passed
-on the RTX 3090 Ti at requested/actual FL9_1; it checked six output bands and
-2,942 red pixels. The private HAL suite passed 443/443, strict public D3D11
-passed 104/104, the controlled Core fixture passed 1/1 and DX12 Core passed
-106/106. See `FL9_1_PROGRESS.md` for commands, warnings and shell setup.
-Historical FL9_1 hardware and Lumia execution remain unverified.
+The public GPU regression records a partial source-to-destination copy and a
+destination-to-readback copy, finishes encoding, drops both public buffer
+handles before submission, and validates all 64 bytes after completion. It
+passed 1/1 on the RTX 3090 Ti at requested/actual FL9_1; the complete strict
+public D3D11 suite passed 105/105. The preceding code checkpoint
+`5552a8fa57ca1c34c89dcec70524150d15b2674f` adds TriangleStrip `vertex_index`; the private HAL suite passed
+443/443, the controlled Core fixture 1/1 and DX12 Core 106/106 there. Two
+read-only audits found no attachment lifecycle or buffer ordering/lifetime
+defect; one identified and closed this missing public buffer-handle test.
+Historical FL9_1 hardware, Lumia runtime and real device removal remain
+unverified. Exact commands and skips are in `FL9_1_PROGRESS.md`.
 
 ## Mission status — 2026-11-08
 
-The opt-in public D3D11 path is substantially usable for a restricted FL9_1
-graphics subset, but the completion mission remains partial. It is excluded
-from default backend selection. The latest verified code checkpoint is
-`90026ebf3` (`dx11: validate indexed extents and padded volume uploads`). The
+At the time of this 2026-11-08 status entry, the opt-in public D3D11 path was
+substantially usable for a restricted FL9_1 graphics subset, but the completion
+mission remained partial. It is excluded from default backend selection. The
+latest code checkpoint at that time was `90026ebf3` (`dx11: validate indexed
+extents and padded volume uploads`). The
 HAL index remap planners no longer impose an extra four-byte copied-extent
 rule, while retaining offset, stride and bounds checks. A strict private test
 verified a padded nonzero-offset partial 3D volume upload by sampling the
