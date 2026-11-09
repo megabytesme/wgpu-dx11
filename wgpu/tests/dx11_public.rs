@@ -32279,7 +32279,12 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
         .union(TextureUsages::COPY_DST)
         .union(TextureUsages::TEXTURE_BINDING)
         .union(TextureUsages::RENDER_ATTACHMENT);
-    let formats = [TextureFormat::Rgba8Unorm, TextureFormat::Bgra8Unorm];
+    let formats = [
+        TextureFormat::Rgba8Unorm,
+        TextureFormat::Bgra8Unorm,
+        TextureFormat::Rgba8UnormSrgb,
+        TextureFormat::Bgra8UnormSrgb,
+    ];
     let mut supported_formats = Vec::new();
     for format in formats {
         let features = adapter.get_texture_format_features(format);
@@ -32297,14 +32302,17 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
             );
             continue;
         }
-        println!("FORMAT: {format:?} combined allowed usage={USAGE:?}");
+        println!(
+            "FORMAT: {format:?} combined allowed usage={USAGE:?}; feature flags={:?}",
+            features.flags
+        );
         supported_formats.push(format);
     }
     if required {
         assert_eq!(
             supported_formats.len(),
             formats.len(),
-            "strict hardware requires both linear RGBA8 format paths"
+            "strict hardware requires all four RGBA8/BGRA8 linear and sRGB format paths"
         );
     }
     if supported_formats.is_empty() {
@@ -32419,7 +32427,10 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
                 (23 + 17 * x + 11 * y) as u8,
                 255,
             ];
-            if format == TextureFormat::Bgra8Unorm {
+            if matches!(
+                format,
+                TextureFormat::Bgra8Unorm | TextureFormat::Bgra8UnormSrgb
+            ) {
                 [rgba[2], rgba[1], rgba[0], rgba[3]]
             } else {
                 rgba
@@ -32629,7 +32640,7 @@ fn public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91() {
         }
         readback.unmap();
         println!(
-            "PASS: {format:?} combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copy pixels and 64 sampled output pixels validated"
+            "PASS: {format:?} combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte"
         );
     }
 }
