@@ -1693,7 +1693,7 @@ The follow-up that permits one compatible implicit sample alongside the direct
 next isolated operation only after its Core, Naga and HAL validation contracts
 are audited. Public adapter exposure remains gated.
 
-## Verified continuation — constant-mip 3D `textureDimensions` — 2026-11-09
+## Verified continuation — constant-mip 3D `textureDimensions` — `201f55b7b` — 2026-11-09
 
 The existing narrow fragment 3D dimensions proof now accepts a nonnegative
 literal or module-constant mip level when the selected entry point does not

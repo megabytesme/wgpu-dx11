@@ -13185,8 +13185,10 @@ installed, and the unconstrained package run also terminated in an existing
 recursive-template stack overflow. The Naga library and targeted HLSL proof
 tests passed; snapshot coverage remains unverified in this environment.
 
-The worktree changes are not yet checkpointed. Next choose another isolated
-Core/HAL contract gap after a fresh read-only audit, while retaining the
-experimental public-adapter gate. Historical 9_1 hardware, Lumia/CoreWindow execution,
+The feature is checkpointed at `201f55b7b` (`dx11: support constant-mip 3D
+texture dimensions at FL9_1`); the separately verified timestamp-fixture mask
+correction is `8fe4e139d`. Next choose another isolated Core/HAL contract gap
+after a fresh read-only audit, while retaining the experimental public-adapter
+gate. Historical 9_1 hardware, Lumia/CoreWindow execution,
 device-loss recovery on physical hardware, broad CTS/API coverage and
 unsupported-operation closure remain incomplete.
