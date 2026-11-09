@@ -35,7 +35,8 @@ straight-line helper. An initial public shader attempted to pass integer
 coordinates through helper arguments, which the existing FL9_1 integer gate
 correctly rejects; the test now uses a zero-argument nested helper with a
 literal coordinate. Historical FL9_1 hardware and physical device-loss
-recovery remain unverified.
+recovery remain unverified. Implementation checkpoint:
+`ffafa8b2d` (`dx11: support FL9_1 3D textureLoad helpers`).
 
 ## Narrow f32 `mat2x2` inverse — 2026-11-09
 

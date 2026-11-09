@@ -24,7 +24,7 @@ copy, and query routes; their unsupported shapes are already gated and tested.
 The remaining mission is still broad. Next, add public slope-scaled depth-bias
 coverage for the already implemented operation, then continue the selected
 shader/resource contract audit. Do not treat this helper increment as general
-3D texture-load support.
+3D texture-load support. Checkpoint: `ffafa8b2d`.
 
 ## Latest bounded capability increment — f32 `mat2x2` inverse — 2026-11-09
 
