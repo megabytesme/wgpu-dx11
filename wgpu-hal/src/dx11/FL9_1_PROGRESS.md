@@ -1,5 +1,46 @@
 # FL9_1 progress
 
+## Query-gated RGB5A1 and RGBA4 GPU texture copies — 2026-11-09
+
+Added same-format GPU texture-to-texture `COPY_SRC` for the FL9_1 packed
+`Rgb5a1Unorm` and `Rgba4Unorm` formats. Each path requires its own backend
+implementation gate and the selected-device `TEXTURE2D` query; it does not
+require `RENDER_TARGET` and native texture creation remains SRV-only. Both
+formats remain excluded from render-attachment and texture-to-buffer readback
+support. A production capability test verifies positive, negative, failed and
+unavailable query cases and confirms the readback mask remains clear.
+
+The strict public test ran on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1 and
+`software=false`. For both packed formats it uploaded a padded 2×2 pattern,
+copied the region to destination origin (1, 1) in a larger initialized texture,
+sampled the destination, and read back 8×8 RGBA8. All 64 pixels matched per
+format, including the copied red/green/blue/transparent texels and preserved
+white border. The full strict public D3D11 suite passed 107/107, including the
+default-enumeration isolation and prior packed-upload regression. The complete
+strict private HAL suite passed 446/446.
+
+Commands:
+
+```powershell
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib packed_16bit_gpu_copies_need_only_the_selected_texture2d_query -- --nocapture --test-threads=1'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "WGPU_DX11_REQUIRE_HARDWARE=1" && cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 -- --nocapture --test-threads=1'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "WGPU_DX11_REQUIRE_HARDWARE=1" && cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "WGPU_DX11_REQUIRE_HARDWARE=1" && cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public'
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+Results: capability unit test 1/1; focused hardware test 1/1; full strict
+public D3D11 107/107; private HAL 446/446; DX12 Core 108/108; both Clippy
+commands and formatting/diff checks passed. Clippy emitted pre-existing HAL
+warnings. DX12 Core emitted three existing unused-variable warnings in
+`wgpu-core/src/validation.rs`; no code in Core or Naga changed for this
+increment.
+
 ## Public depth-bias execution — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
 
 Extended the public D16 depth-attachment test to execute constant-bias

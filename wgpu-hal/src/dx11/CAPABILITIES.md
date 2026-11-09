@@ -329,13 +329,19 @@ queries. At forced FL9_1 the RTX returned `0x0026F3A0` for B5G6R5_UNORM and
 two-byte texels, sampled all three native SRVs and matched every RGBA8 output
 pixel, including the 1-bit and 4-bit transparent alpha cases.
 
-RGB5A1 and RGBA4 are exposed only for `TEXTURE_BINDING | COPY_DST`, one 2D
-layer, one sample and one mip. B5G6R5 also permits render-target, copy-source
-and CPU-readback use when its selected-device query reports `RENDER_TARGET`;
-its draw/sample and partial-copy/readback paths have strict GPU coverage.
-`SHADER_SAMPLE` controls filterability. Mip chains remain unsupported. The
-modern RTX result verifies the query-selected path, not behavior of historical
-FL9_1 drivers.
+RGB5A1 and RGBA4 support `TEXTURE_BINDING | COPY_DST` and same-format GPU
+texture-to-texture `COPY_SRC`, for one 2D layer, one sample and one mip. Their
+copy path requires the selected format query's `TEXTURE2D` bit and backend
+implementation gate; it does not require `RENDER_TARGET` and does not add a
+native render-target bind flag. These formats remain unavailable for render
+attachments and texture-to-buffer readback. B5G6R5 also permits
+render-target, copy-source and CPU-readback use when its selected-device query
+reports `RENDER_TARGET`; its draw/sample and partial-copy/readback paths have
+strict GPU coverage. `SHADER_SAMPLE` controls filterability. Mip chains remain
+unsupported. The strict packed-format GPU-copy test uploads both packed
+formats, copies a 2×2 region to a nonzero destination origin, samples the
+destination and checks both copied and preserved texels. The modern RTX result
+verifies the query-selected path, not behavior of historical FL9_1 drivers.
 
 The same adapter returned R8G8B8A8_SNORM support mask `0x000213a0` at
 requested and selected FL9_1. This includes `TEXTURE2D | MIP | SHADER_SAMPLE`.

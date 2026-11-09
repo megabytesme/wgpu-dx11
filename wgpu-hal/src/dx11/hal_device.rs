@@ -329,6 +329,8 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Bc2RgbaUnormSrgb
                 | wgt::TextureFormat::Bc3RgbaUnormSrgb
                 | wgt::TextureFormat::Rgb5g6b5Unorm
+                | wgt::TextureFormat::Rgb5a1Unorm
+                | wgt::TextureFormat::Rgba4Unorm
         );
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
@@ -559,6 +561,8 @@ impl crate::Device for Device {
                             | wgt::TextureFormat::Bc1RgbaUnormSrgb
                             | wgt::TextureFormat::Bc2RgbaUnormSrgb
                             | wgt::TextureFormat::Bc3RgbaUnormSrgb
+                            | wgt::TextureFormat::Rgb5a1Unorm
+                            | wgt::TextureFormat::Rgba4Unorm
                     )
                     && (!cube || cube_readback))
             {
@@ -601,6 +605,8 @@ impl crate::Device for Device {
                                     | wgt::TextureFormat::Bc1RgbaUnormSrgb
                                     | wgt::TextureFormat::Bc2RgbaUnormSrgb
                                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
+                                    | wgt::TextureFormat::Rgb5a1Unorm
+                                    | wgt::TextureFormat::Rgba4Unorm
                             )),
                     format,
                     desc.sample_count,

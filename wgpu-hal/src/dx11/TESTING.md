@@ -669,14 +669,20 @@ format and checks that absent backend support does not project the format.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 packed_16bit_sampling_requires_each_selected_device_query_and_backend_path
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb565_sampled_upload_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 -- --nocapture --test-threads=1
 ```
 
 The packed sampled/upload path supports single-mip 2D
-`TEXTURE_BINDING | COPY_DST` resources. The query-gated B5G6R5 target path may
-combine `TEXTURE_BINDING`, `COPY_DST` and `RENDER_ATTACHMENT` as supported by
-the private predicate; it still has no copy-source or direct-readback path.
-RGB5A1 and RGBA4 remain sampled/upload-only. These paths do not add mip-chain
-support.
+`TEXTURE_BINDING | COPY_DST` resources. RGB5A1 and RGBA4 additionally permit
+same-format GPU texture-to-texture copies when their selected-device query
+reports `TEXTURE2D`; the path does not query or bind `RENDER_TARGET` and remains
+excluded from texture-to-buffer readback. The query-gated B5G6R5 target path
+may combine `TEXTURE_BINDING`, `COPY_DST` and `RENDER_ATTACHMENT` as supported
+by the private predicate; it still has no copy-source or direct-readback path.
+None of these paths adds mip-chain support. The strict GPU test verifies a
+partial 2×2 copy at destination origin (1, 1) for RGB5A1 and RGBA4, samples
+each result into RGBA8, and checks copied colors plus unchanged white border
+texels.
 
 ### Internal FL9_1 capability projection
 
@@ -2027,9 +2033,11 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
 texture-to-buffer attempt fails core validation because FL9_x cannot safely
-copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM,
-R8G8B8A8_SNORM, RGB5A1 and RGBA4 still do not support render-target,
-copy-source or readback operations in this private subset. R8_UNORM,
+copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM
+and R8G8B8A8_SNORM still do not support render-target, copy-source or
+readback operations in this private subset. RGB5A1 and RGBA4 remain
+non-renderable and lack texture-to-buffer readback, but support query-gated
+same-format GPU copies. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
 copy and readback path described below. RG8_UNORM linear filtering has visual
 execution coverage; R8_UNORM and the SNORM formats have query-backed
@@ -2049,7 +2057,10 @@ The 10Level9 texture transfer restriction requires the native texture to have
 render-target support for the tested GPU-to-CPU readback path. Accordingly,
 R8_UNORM, R8G8_UNORM and B5G6R5 expose `COPY_SRC` only when the selected
 device's `CheckFormatSupport` result includes `RENDER_TARGET`, and the backend
-path is enabled. RGB5A1 and RGBA4 do not have this implementation path.
+path is enabled. RGB5A1 and RGBA4 expose `COPY_SRC` for same-format GPU
+texture copies when the selected format query reports `TEXTURE2D` and their
+backend implementation paths are enabled. They do not gain render-target bind
+flags or texture-to-buffer readback.
 Texture-to-texture copies remain on the GPU. Readback copies into a staging
 texture, then uses the mapped native row pitch to pack texels into the caller's
 buffer. The format block size supplies the bytes-per-texel calculation (1 byte

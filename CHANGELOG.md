@@ -62,6 +62,7 @@ Bottom level categories:
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
+- Add selected-format-query-gated same-format GPU copies for RGB5A1 and RGBA4 textures in the opt-in FL9_1 D3D11 backend.
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
 - Add selected-device-query-gated FL9_1 RGBA8 3D texture sampling and staged uploads to the opt-in D3D11 backend.

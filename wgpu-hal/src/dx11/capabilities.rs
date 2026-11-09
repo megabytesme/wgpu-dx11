@@ -306,6 +306,8 @@ pub(super) struct BackendCapabilities {
     pub r8_unorm_copy_source: bool,
     pub rg8_unorm_copy_source: bool,
     pub rgb565_copy_source: bool,
+    pub rgb5551_texture_to_texture_copy: bool,
+    pub rgba4444_texture_to_texture_copy: bool,
     pub rg8_snorm_sampled_upload: bool,
     pub rg16_snorm_sampled_upload: bool,
     pub rgba8_snorm_sampled_upload: bool,
@@ -438,6 +440,8 @@ impl BackendCapabilities {
         r8_unorm_copy_source: true,
         rg8_unorm_copy_source: true,
         rgb565_copy_source: true,
+        rgb5551_texture_to_texture_copy: true,
+        rgba4444_texture_to_texture_copy: true,
         rg8_snorm_sampled_upload: true,
         rg16_snorm_sampled_upload: true,
         rgba8_snorm_sampled_upload: true,
@@ -1265,6 +1269,8 @@ impl Capabilities {
             wgt::TextureFormat::Bc2RgbaUnormSrgb => self.backend.bc2_texture_to_texture_copy,
             wgt::TextureFormat::Bc3RgbaUnormSrgb => self.backend.bc3_texture_to_texture_copy,
             wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_copy_source,
+            wgt::TextureFormat::Rgb5a1Unorm => self.backend.rgb5551_texture_to_texture_copy,
+            wgt::TextureFormat::Rgba4Unorm => self.backend.rgba4444_texture_to_texture_copy,
             _ => false,
         };
         let copy_source_color_attachment_implemented = match format {
@@ -1399,7 +1405,11 @@ impl Capabilities {
                     && !(format == wgt::TextureFormat::Bc2RgbaUnormSrgb
                         && self.backend.bc2_texture_to_texture_copy)
                     && !(format == wgt::TextureFormat::Bc3RgbaUnormSrgb
-                        && self.backend.bc3_texture_to_texture_copy))
+                        && self.backend.bc3_texture_to_texture_copy)
+                    && !(format == wgt::TextureFormat::Rgb5a1Unorm
+                        && self.backend.rgb5551_texture_to_texture_copy)
+                    && !(format == wgt::TextureFormat::Rgba4Unorm
+                        && self.backend.rgba4444_texture_to_texture_copy))
             {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
             } else {
@@ -1662,6 +1672,8 @@ impl Capabilities {
                     wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_copy_source,
                     wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_copy_source,
                     wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_copy_source,
+                    wgt::TextureFormat::Rgb5a1Unorm => self.backend.rgb5551_texture_to_texture_copy,
+                    wgt::TextureFormat::Rgba4Unorm => self.backend.rgba4444_texture_to_texture_copy,
                     wgt::TextureFormat::Bc1RgbaUnorm => self.backend.bc1_texture_to_texture_copy,
                     wgt::TextureFormat::Bc2RgbaUnorm => self.backend.bc2_texture_to_texture_copy,
                     wgt::TextureFormat::Bc3RgbaUnorm => self.backend.bc3_texture_to_texture_copy,
@@ -3183,11 +3195,7 @@ mod tests {
                     1,
                     1
                 ),
-                if format == wgt::TextureFormat::Rgb5g6b5Unorm {
-                    Ok(())
-                } else {
-                    Err(UnsupportedUsage)
-                }
+                Ok(())
             );
             set_packed_format_query(&mut caps, format, Query::Value(shader_sample));
             assert_eq!(
@@ -3213,6 +3221,73 @@ mod tests {
             .unwrap()
             .features
             .contains(wgt::Features::TEXTURE_FORMAT_16BIT_PACKED));
+    }
+
+    #[test]
+    fn packed_16bit_gpu_copies_need_only_the_selected_texture2d_query() {
+        use TextureRejection::*;
+
+        let mut caps = model(FeatureLevel::L9_1);
+        let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let shader_sample = D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32;
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_SRC;
+
+        for format in [
+            wgt::TextureFormat::Rgb5a1Unorm,
+            wgt::TextureFormat::Rgba4Unorm,
+        ] {
+            set_packed_format_query(&mut caps, format, Query::Value(texture2d));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Ok(())
+            );
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::COPY_SRC));
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
+            );
+
+            set_packed_format_query(&mut caps, format, Query::Value(shader_sample));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Err(DriverFormatUnsupported)
+            );
+            set_packed_format_query(&mut caps, format, Query::Unavailable(-1));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Err(DriverQueryUnavailable)
+            );
+
+            set_packed_format_query(&mut caps, format, Query::Value(texture2d));
+            match format {
+                wgt::TextureFormat::Rgb5a1Unorm => {
+                    caps.backend.rgb5551_texture_to_texture_copy = false
+                }
+                wgt::TextureFormat::Rgba4Unorm => {
+                    caps.backend.rgba4444_texture_to_texture_copy = false
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Err(UnsupportedUsage)
+            );
+            assert!(!caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::COPY_SRC));
+            match format {
+                wgt::TextureFormat::Rgb5a1Unorm => {
+                    caps.backend.rgb5551_texture_to_texture_copy = true
+                }
+                wgt::TextureFormat::Rgba4Unorm => {
+                    caps.backend.rgba4444_texture_to_texture_copy = true
+                }
+                _ => unreachable!(),
+            }
+        }
     }
 
     #[test]

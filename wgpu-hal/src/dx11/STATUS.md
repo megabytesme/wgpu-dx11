@@ -25,7 +25,9 @@ present are restricted to the creating thread. It exposes the native-only
 the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
 feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
 uploads. RGB565 additionally has queried render-target and copy/readback
-support; RGB5A1 and RGBA4 remain sampled-upload-only. R8_UNORM and R8G8_UNORM
+support; RGB5A1 and RGBA4 additionally have query-gated same-format GPU
+texture copies, but no render-target or texture-to-buffer readback support.
+R8_UNORM and R8G8_UNORM
 also expose copy-source use only when their selected format query reports
 render-target support. Their blendability is separately projected only when
 the selected query reports `BLENDABLE`; strict FL9_1 public readback verifies
@@ -1103,6 +1105,11 @@ The required FL9_x packed B5G6R5, B5G5R5A1 and B4G4R4A4 formats are now
 implemented as `Rgb5g6b5Unorm`, `Rgb5a1Unorm` and `Rgba4Unorm` with a shared
 native-only feature and individual selected-device format queries. All three
 support single-mip sampled uploads with channel/alpha readback coverage. The
+alpha-bearing formats also support same-format GPU texture-to-texture copies
+when the selected format query reports `TEXTURE2D`; the copy path does not add
+render-target bind flags or texture-to-buffer readback. A strict public test
+uploads each format, partially copies at a nonzero destination origin, samples
+the result and verifies copied and preserved pixels. The
 query-gated B5G6R5 path also supports single-mip color attachments when the
 selected device reports `RENDER_TARGET`; blending is separately projected
 only when both attachment support and `BLENDABLE` are reported, and is covered

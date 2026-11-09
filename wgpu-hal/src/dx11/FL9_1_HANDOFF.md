@@ -1,5 +1,27 @@
 # FL9_1 handoff
 
+## Latest verified increment — query-gated RGB5A1/RGBA4 GPU copies — 2026-11-09
+
+The opt-in D3D11 path supports same-format GPU texture-to-texture copies for
+`Rgb5a1Unorm` and `Rgba4Unorm`, gated by their individual backend paths and
+the selected-device `TEXTURE2D` query. It does not require `RENDER_TARGET`,
+create render-target bindings or permit texture-to-buffer readback. Strict
+forced-FL9_1 execution on the RTX 3090 Ti verified padded uploads, 2×2 copies
+to destination origin (1, 1), sampling, all 64 output pixels for each packed
+format, and preservation of the untouched border. Full strict public D3D11
+passed 107/107, private HAL 446/446 and DX12 Core 108/108. The complete
+command log and lint warnings are in `FL9_1_PROGRESS.md`.
+
+The backend remains a restricted experimental implementation; this format
+addition does not change that boundary. Next, continue the public projection
+audit and consider the directly referenced helper subset of texture-load
+emulation only with matching selected-entry validation in Core, Naga and HAL.
+FL9_1 3D texture copies are excluded by the 10Level9 contract. Historical
+hardware, Lumia/CoreWindow runtime and physical device-loss recovery remain
+unverified. Public enumeration stays isolated.
+
+## Previous verified format support — BC1/BC2/BC3 sRGB — 2026-11-09
+
 ## Latest verified format support — BC1/BC2/BC3 sRGB — 2026-11-09
 
 The opt-in public D3D11 adapter now has a separate native-only

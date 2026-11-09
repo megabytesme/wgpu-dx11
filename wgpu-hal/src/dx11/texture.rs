@@ -602,6 +602,8 @@ impl NativeDevice {
                     | DXGI_FORMAT_BC3_UNORM
                     | DXGI_FORMAT_BC3_UNORM_SRGB
                     | DXGI_FORMAT_B5G6R5_UNORM
+                    | DXGI_FORMAT_B5G5R5A1_UNORM
+                    | DXGI_FORMAT_B4G4R4A4_UNORM
             )
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))

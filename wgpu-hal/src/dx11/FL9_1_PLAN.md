@@ -1,5 +1,30 @@
 # FL9_1 completion plan
 
+## Latest bounded format increment — RGB5A1 and RGBA4 GPU copies — 2026-11-09
+
+The opt-in FL9_1 path now supports same-format GPU texture copies from
+`Rgb5a1Unorm` and `Rgba4Unorm` when the selected device reports
+`TEXTURE2D` and the matching backend path is enabled. This does not require
+`RENDER_TARGET`, create RTV-capable resources, or enable texture-to-buffer
+readback. A strict public test on the RTX 3090 Ti at requested/actual FL9_1
+verified padded uploads, partial copies to nonzero destination origins,
+sampling, preserved destination pixels and all 64 readback pixels for each
+format. Synthetic tests cover unsupported/unavailable queries and disabled
+backend paths. Full strict public D3D11 passed 107/107, private HAL 446/446,
+and DX12 Core 108/108; Clippy, format and diff checks passed. See
+`FL9_1_PROGRESS.md` for exact commands and diagnostics.
+
+Continue the audit and prioritize useful bounded shader/resource additions.
+The best shader candidate remains selected-entry helper support for the
+existing direct-global `textureLoad` emulation, with coordinated Core, Naga
+and HAL proofs; do not simply relax the helper rejection. A table-driven audit
+of the opt-in public projection remains important. Do not implement FL9_1 3D
+texture copies, which the 10Level9 contract excludes. Historical FL9_1
+hardware, Lumia/CoreWindow runtime and physical device-removal recovery remain
+unverified; public D3D11 enumeration is still deliberately isolated.
+
+## Previous bounded format increment — public BC1/BC2/BC3 sRGB feature — 2026-11-09
+
 ## Latest bounded format increment — public BC1/BC2/BC3 sRGB feature — 2026-11-09
 
 The existing BC1/2/3 sampled-upload and same-format GPU-copy paths now include
