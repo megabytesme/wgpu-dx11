@@ -8,8 +8,9 @@ On the physical RTX 3090 Ti forced to FL9_1, it checked 21 projected formats,
 mip contracts and 40 sample-count contracts; no advertised combination
 produced an internal HAL error.
 
-The working tree now has a bounded Naga/Core/Types/DX11 capability change for
-f32 `mat2x2` inverse. Naga, Core and wgpu-types focused tests pass. The strict
+Commit `9e1ef2f7d` contains the bounded Naga/Core/Types/DX11 capability change
+for f32 `mat2x2` inverse. The working tree is clean. Naga, Core and wgpu-types
+focused tests pass. The strict
 public test executes the inverse in both vertex and fragment stages and checks
 all 64 pixels `[0,255,0,255]`; Core rejects `mat3` inverse without an internal
 HAL error. This feature applies to GLSL/Naga IR inputs because WGSL has no
