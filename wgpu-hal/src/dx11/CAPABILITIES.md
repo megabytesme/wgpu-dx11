@@ -851,8 +851,9 @@ public operation-matrix test also executes the complete
 `COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` union for R8, RG8,
 RGB565, linear/sRGB RGBA8 and linear/sRGB BGRA8: padded upload, same-format GPU
 copy, padded copy readback, sampled rendering to a same-format attachment and
-attachment readback. All 64 copied texels match exactly and sampled outputs
-match within one byte on the RTX 3090 Ti forced to FL9_1. This is query-gated
+attachment readback. All 64 copied texels match exactly, sampled outputs match
+within one byte and sentinel-filled row padding remains untouched on the RTX
+3090 Ti forced to FL9_1. This is query-gated
 execution evidence for those seven formats and does not widen the existing
 projection. A separate strict case uses each narrow format with
 `RESOURCE | COLOR_TARGET | COPY_SRC`,
