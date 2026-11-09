@@ -1,5 +1,27 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — linear/sRGB RGBA8/BGRA8 usage operations — 2026-11-09
+
+Extended the public combined `COPY_SRC | COPY_DST | TEXTURE_BINDING |
+RENDER_ATTACHMENT` execution test to linear and sRGB RGBA8/BGRA8. Strict RTX
+3090 Ti execution requested and selected FL9_1. All four formats reported the
+full usage union and `FILTERABLE`; upload, GPU copy, exact copied-texture
+readback, same-format sampled render and attachment readback succeeded. Each
+format validated all 64 copied texels exactly and all 64 sampled pixels within
+one byte, with no skip. The focused test passed 1/1, the complete strict public
+D3D11 target passed 117/117, and targeted Clippy, formatting and diff checks
+passed. Clippy emitted five existing HAL warnings. See `FL9_1_PROGRESS.md` for
+device details.
+
+This verifies four related formats under one combined usage set; it does not
+close the 21-format operation matrix or prove other usage combinations. Next,
+test the same full usage union on query-positive R8_UNORM, R8G8_UNORM and
+B5G6R5_UNORM paths. Existing tests currently verify their uploads/copies and
+render/sample behavior separately. Public D3D11 remains explicit opt-in and
+experimental; historical FL9_1 and Lumia/CoreWindow execution remain
+unverified.
+Checkpoint: `1967b0722` (`dx11: verify combined sRGB texture usage at FL9_1`).
+
 ## Current coordinator checkpoint — combined RGBA8/BGRA8 usage operations — 2026-11-09
 
 The public adapter now has a strict GPU operation test for the full combined

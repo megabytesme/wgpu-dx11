@@ -1,5 +1,45 @@
 # FL9_1 progress
 
+## Combined linear/sRGB RGBA8/BGRA8 texture-usage execution — 2026-11-09
+
+Extended the strict public GPU test for the advertised combined usage set
+`COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` to Rgba8Unorm,
+Bgra8Unorm and their sRGB variants. The test requires `FILTERABLE` as well as
+the usage union. It uploads a patterned 8x8 source, copies it to a second
+all-usage texture, reads that copy to a padded CPU buffer, samples the copy
+into an all-usage same-format color attachment, then reads the attachment
+back. It checked all 64 copied texels exactly and all 64 sampled output pixels
+within one byte for each format, including sRGB decode/encode and BGRA byte
+ordering.
+
+Strict hardware was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), with requested and actual FL9_1. All four
+formats reported the full usage set and filterability; no skip occurred.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64, offline Cargo and
+bounded parallelism:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_executes_combined_rgba8_bgra8_usages_at_fl91 -- --nocapture --test-threads=1'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public'
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+Results: focused strict test 1/1; full strict public D3D11 target 117/117;
+formatting and diff checks passed. Targeted Clippy passed with five existing
+HAL warnings (argument counts and one boolean simplification); the test
+introduced no warning.
+
+This proves one combined usage union on four related formats, not the other
+projected formats or all allowed usage combinations. The selected-device
+table still checks many combinations only at creation time. Extend operation
+coverage by format and operation class, respecting each HAL path and query
+gate.
+
+Checkpoint: `1967b0722` (`dx11: verify combined sRGB texture usage at FL9_1`).
+
 ## Combined RGBA8/BGRA8 texture-usage execution — 2026-11-09
 
 Added a strict public GPU test for the advertised combined usage set
