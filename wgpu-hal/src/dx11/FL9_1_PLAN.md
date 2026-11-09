@@ -1,5 +1,31 @@
 # FL9_1 completion plan
 
+## Latest bounded shader increment — 3D fragment `textureLoad` helpers — 2026-11-09
+
+The existing query-gated fragment 3D `textureLoad` emulation now supports
+selected-entry reachable straight-line helpers. Core, the D3D11 HAL proof and
+Naga HLSL generation enforce the same resource identity and helper-shape
+restrictions: one directly referenced group-0 3D float image, no resource
+handles passed through functions, no control flow or select, and no additional
+image operations or bound resources. The operation is unchanged: Naga lowers
+the load to point sampling at texel centers and the HAL supplies dimensions
+through the reserved constant buffer.
+
+The strict public test explicitly requested and selected FL9_1 on the RTX
+3090 Ti. Direct loads and a nested helper load produced the expected output
+across 320 pixels; an out-of-bounds coordinate and nonzero mip returned zero,
+and Core rejected a branching helper before HAL. Naga passed 152/152, the
+strict D3D11 Core fixture 120/120, strict private HAL 448/448, strict public
+D3D11 112/112, and DX12 Core 108/108. Historical FL9_1 behavior remains
+unverified.
+
+The Core/HAL audit found no new mismatch in the inspected array, cube-view,
+copy, and query routes; their unsupported shapes are already gated and tested.
+The remaining mission is still broad. Next, add public slope-scaled depth-bias
+coverage for the already implemented operation, then continue the selected
+shader/resource contract audit. Do not treat this helper increment as general
+3D texture-load support.
+
 ## Latest bounded capability increment — f32 `mat2x2` inverse — 2026-11-09
 
 The internal downlevel contract now has a separate `matrix_inverse_2x2`

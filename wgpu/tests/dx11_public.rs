@@ -13480,7 +13480,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
     }
     assert!(!downlevel.limits.texture_load);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=single-mip fragment 3D textureLoad emulation",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=single-mip fragment 3D textureLoad emulation with reachable helpers",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -13564,14 +13564,19 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 direct fragment 3D textureLoad shader"),
+        label: Some("FL9_1 fragment 3D textureLoad shader with helpers"),
         source: ShaderSource::Wgsl(
             "@group(0) @binding(7) var volume: texture_3d<f32>;\n\
+             fn load_volume() -> vec4f { return textureLoad(volume, vec3i(1, 0, 1), 0); }\n\
+             fn relay_volume() -> vec4f { return load_volume(); }\n\
              @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
              @fragment fn magenta() -> @location(0) vec4f { return textureLoad(volume, vec3i(1, 0, 1), 0); }\n\
              @fragment fn blue() -> @location(0) vec4f { return textureLoad(volume, vec3i(0, 1, 0), 0); }\n\
              @fragment fn outside() -> @location(0) vec4f { return textureLoad(volume, vec3i(1, 0, 2), 0); }\n\
-             @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(volume, vec3i(0, 0, 0), 1); }"
+             @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(volume, vec3i(0, 0, 0), 1); }\n\
+             @fragment fn through_nested_helper() -> @location(0) vec4f { return relay_volume(); }\n\
+             fn branch_volume() -> vec4f { if true { return textureLoad(volume, vec3i(1, 0, 1), 0); } return vec4f(0.0); }\n\
+             @fragment fn branching_helper() -> @location(0) vec4f { return branch_volume(); }"
                 .into(),
         ),
     });
@@ -13614,11 +13619,18 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
             cache: None,
         })
     };
+    expect_validation_error_containing(
+        &device,
+        "control flow in a 3D textureLoad helper",
+        "Texture loads are not supported",
+        || drop(make_pipeline("branching_helper")),
+    );
     let pipelines = [
         make_pipeline("magenta"),
         make_pipeline("blue"),
         make_pipeline("outside"),
         make_pipeline("invalid_level"),
+        make_pipeline("through_nested_helper"),
     ];
     let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
     let vertex_bytes: Vec<u8> = vertices
@@ -13636,7 +13648,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         .expect("mapped 3D textureLoad triangle")
         .copy_from_slice(&vertex_bytes);
     vertex.unmap();
-    let targets: Vec<_> = (0..4)
+    let targets: Vec<_> = (0..5)
         .map(|_| {
             device.create_texture(&TextureDescriptor {
                 label: Some("FL9_1 3D textureLoad output"),
@@ -13660,14 +13672,14 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         .collect();
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 3D textureLoad readback"),
-        size: 4 * 8 * 256,
+        size: 5 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 3D textureLoad render and readback"),
     });
-    for index in 0..4 {
+    for index in 0..5 {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("FL9_1 3D textureLoad pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
@@ -13736,6 +13748,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         [0, 0, 255, 255],
         [0, 0, 0, 0],
         [0, 0, 0, 0],
+        [255, 0, 255, 255],
     ];
     {
         let pixels = readback
@@ -13756,7 +13769,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: FL9_1 3D textureLoad read 2 distinct volume texels and returned zero for an out-of-bounds coordinate and nonzero mip across 256 pixels");
+    println!("PASS: FL9_1 3D textureLoad read 2 distinct volume texels, returned zero for out-of-bounds/nonzero-mip cases, and nested straight-line helpers matched direct loads across 320 pixels; Core rejected control flow before HAL");
 }
 
 #[cfg(feature = "glsl")]

@@ -522,17 +522,20 @@ results on a physical RTX 3090 Ti explicitly restricted to FL9_1. This does
 not enable general texture-load support or establish compatibility with
 historical 9_1 hardware.
 
-A separate `texture_load_3d_float_fragment` limit covers one direct fragment
-`textureLoad` from a single-mip, non-arrayed `texture_3d<f32>`. It is enabled
-only at FL9_1 when the selected device positively reports RGBA8
+A separate `texture_load_3d_float_fragment` limit covers one fragment
+`textureLoad` from a single-mip, non-arrayed `texture_3d<f32>`. The selected
+entry point and its reachable helpers may perform the load when every helper
+is straight-line, directly references that same image global, and passes no
+resource handles. Control flow, selects, other image operations, additional
+resources and unsupported shader forms remain rejected before HAL. The limit
+is enabled only at FL9_1 when the selected device positively reports RGBA8
 `TEXTURE3D | SHADER_SAMPLE` support and the 3D sampled-upload path is enabled.
 The backend maps the volume to `t0`, uses its internal point sampler at `s15`,
 and supplies `(width, height, depth, 0)` through `b13`; it samples at texel
 centers and returns zero for out-of-bounds coordinates or nonzero mip levels.
-Core rejects helper calls, control flow, other image operations, additional
-resources and unsupported shader forms before HAL. Strict public FL9_1
-readback on the RTX 3090 Ti verified two distinct volume texels plus both zero
-cases across 256 pixels. The 2D and 3D narrow limits are independent, while the
+Strict public FL9_1 readback on the RTX 3090 Ti verifies direct and nested
+helper loads, two distinct volume texels, both zero cases, and Core rejection
+of a branching helper. The 2D and 3D narrow limits are independent, while the
 general `texture_load` limit remains false. This selected modern-driver result
 does not establish historical FL9_1 behavior.
 

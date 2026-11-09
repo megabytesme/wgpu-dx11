@@ -548,6 +548,93 @@ mod tests {
         )
         .is_err());
 
+        let volume_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @group(0) @binding(8) var sibling_volume: texture_3d<f32>;
+            fn leaf() -> vec4f {
+                return textureLoad(volume, vec3i(1, 0, 1), 0);
+            }
+            fn middle() -> vec4f {
+                return leaf();
+            }
+            fn sibling_only() -> vec4f {
+                return textureLoad(sibling_volume, vec3i(0), 0);
+            }
+            @fragment fn selected() -> @location(0) vec4f {
+                return middle();
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return sibling_only();
+            }
+            "#,
+        )
+        .unwrap();
+        let volume_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&volume_module)
+        .unwrap();
+        let volume_proof = fl9_texture_emulation_binding(
+            &volume_module,
+            &volume_info,
+            naga::ShaderStage::Fragment,
+            "selected",
+        )
+        .unwrap()
+        .expect("nested 3D textureLoad helpers have an emulation proof");
+        assert_eq!(
+            volume_proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(volume_proof.kind, Fl9TextureEmulationKind::Load3D));
+        let sibling_proof = fl9_texture_emulation_binding(
+            &volume_module,
+            &volume_info,
+            naga::ShaderStage::Fragment,
+            "sibling",
+        )
+        .unwrap()
+        .expect("the sibling entry has its own 3D textureLoad proof");
+        assert_eq!(
+            sibling_proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 8,
+            }
+        );
+
+        let branching_volume = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            fn conditional(coord: vec3i) -> vec4f {
+                if coord.x == 0 { return textureLoad(volume, coord, 0); }
+                return vec4f(0.0);
+            }
+            @fragment fn selected() -> @location(0) vec4f {
+                return conditional(vec3i(1, 0, 1));
+            }
+            "#,
+        )
+        .unwrap();
+        let branching_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&branching_volume)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &branching_volume,
+            &branching_info,
+            naga::ShaderStage::Fragment,
+            "selected"
+        )
+        .is_err());
+
         let mixed = naga::front::wgsl::parse_str(
             r#"
             @group(0) @binding(7) var first: texture_2d<f32>;
@@ -3153,12 +3240,6 @@ fn fl9_texture_emulation_binding(
                 "D3D11 FL9 texture emulation uses more than one image".into(),
             ));
         }
-    }
-    if matches!(kind, Fl9TextureEmulationKind::Load3D) && !module.functions.is_empty() {
-        return Err(crate::PipelineError::Linkage(
-            stages,
-            "D3D11 FL9 3D textureLoad does not support helper functions".into(),
-        ));
     }
     if matches!(
         kind,

@@ -2785,17 +2785,6 @@ fn entry_point_fl9_texture_load_support(
     if image.space != naga::AddressSpace::Handle || image.binding.is_none() {
         return (false, false);
     }
-    if !reachable_functions.is_empty()
-        && matches!(
-            module.types[image.ty].inner,
-            naga::TypeInner::Image {
-                dim: naga::ImageDimension::D3,
-                ..
-            }
-        )
-    {
-        return (false, false);
-    }
     match module.types[image.ty].inner {
         naga::TypeInner::Image {
             dim: naga::ImageDimension::D2,
@@ -6455,6 +6444,66 @@ mod tests {
                 &load_3d_limits,
             )
             .unwrap());
+
+        let helper_module_3d = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_3d<f32>;
+            fn load() -> vec4f { return textureLoad(image, vec3i(1, 0, 1), 0); }
+            fn relay() -> vec4f { return load(); }
+            @fragment fn loaded() -> @location(0) vec4f {
+                return relay();
+            }
+            "#,
+        )
+        .unwrap();
+        let helper_info_3d = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper_module_3d)
+        .unwrap();
+        let helper_interface_3d =
+            Interface::new(&helper_module_3d, &helper_info_3d, wgt::Limits::defaults());
+        assert!(!helper_interface_3d
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "loaded",
+                &load_3d_limits,
+            )
+            .unwrap());
+
+        let branching_helper_3d = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_3d<f32>;
+            fn load(coord: vec3i) -> vec4f {
+                if coord.x == 0 { return textureLoad(image, coord, 0); }
+                return vec4f(0.0);
+            }
+            @fragment fn loaded() -> @location(0) vec4f {
+                return load(vec3i(1, 0, 1));
+            }
+            "#,
+        )
+        .unwrap();
+        let branching_info_3d = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&branching_helper_3d)
+        .unwrap();
+        let branching_interface_3d = Interface::new(
+            &branching_helper_3d,
+            &branching_info_3d,
+            wgt::Limits::defaults(),
+        );
+        assert!(branching_interface_3d
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "loaded",
+                &load_3d_limits,
+            )
+            .unwrap());
+
         assert!(interface_3d
             .entry_point_uses_unsupported_fl9_texture_load(
                 naga::ShaderStage::Fragment,

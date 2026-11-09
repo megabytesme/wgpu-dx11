@@ -1328,17 +1328,20 @@ readback.
 
 ## Narrow FL9_1 fragment 3D `textureLoad`
 
-A separate `texture_load_3d_float_fragment` downlevel limit now covers a
-direct, single-mip RGBA8 volume load in a restricted fragment entry point.
-Naga lowers it to internal point sampling at texel centers; HAL supplies the
-selected D3 view dimensions in `b13` and binds its internal `s15` sampler.
-Core rejects the shape unless the 3D-specific limit is true, independently of
-the existing 2D load limit. A real RTX 3090 Ti at requested/actual FL9_1
-verified two in-bounds colors, zero for an out-of-bounds coordinate and zero
-for a nonzero mip level across all 256 pixels. FXC accepted the generated
-shader under `ps_4_0_level_9_1`. This does not enable general `texture_load`
-or 3D copies, attachments or readback; device support remains gated by the
-selected RGBA8 volume-sampling query.
+A separate `texture_load_3d_float_fragment` downlevel limit covers a
+single-mip RGBA8 volume load in a restricted fragment entry point and its
+reachable straight-line helpers. Each load must directly reference the same
+image global; helpers cannot pass resource handles, branch, select, use other
+image operations or add other bound resources. Naga lowers the load to
+internal point sampling at texel centers; HAL supplies the selected D3 view
+dimensions in `b13` and binds its internal `s15` sampler. Core rejects an
+unsupported shape unless the 3D-specific limit is true, independently of the
+existing 2D load limit. The strict RTX 3090 Ti test at requested/actual FL9_1
+checks two in-bounds colors, zero for an out-of-bounds coordinate and a
+nonzero mip, plus a nested helper result, across 320 pixels. FXC accepts the
+generated direct and helper shaders under `ps_4_0_level_9_1`. This does not
+enable general `texture_load` or 3D copies, attachments or readback; device
+support remains gated by the selected RGBA8 volume-sampling query.
 
 ## Optional timestamp query support
 

@@ -1234,8 +1234,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             }
             if self.options.fl9_texel_load_proof.is_some() {
                 let reachable = fl9_reachable_functions(module, &entry.function);
-                if (is_3d_texel_load && !module.functions.is_empty())
-                    || !fl9_texture_load_function_is_supported(module, &entry.function, handle)
+                if !fl9_texture_load_function_is_supported(module, &entry.function, handle)
                     || reachable.iter().any(|function| {
                         !fl9_texture_load_function_is_supported(
                             module,
@@ -6866,8 +6865,13 @@ mod fl9_viewport_tests {
         let wrong_texture_type = "@group(0) @binding(7) var volume: texture_3d<u32>; @fragment fn main() -> @location(0) vec4f { return vec4f(textureLoad(volume, vec3i(0), 0)); }";
         assert!(translate(wrong_texture_type, &options, ShaderStage::Fragment).is_err());
 
-        let helper = "@group(0) @binding(7) var volume: texture_3d<f32>; fn load_volume(coord: vec3i) -> vec4f { return textureLoad(volume, coord, 0); } @fragment fn main() -> @location(0) vec4f { return load_volume(vec3i(0)); }";
-        assert!(translate(helper, &options, ShaderStage::Fragment).is_err());
+        let helper = "@group(0) @binding(7) var volume: texture_3d<f32>; fn load_volume() -> vec4f { return textureLoad(volume, vec3i(0), 0); } @fragment fn main() -> @location(0) vec4f { return load_volume(); }";
+        let helper_output = translate(helper, &options, ShaderStage::Fragment).unwrap();
+        assert!(helper_output.contains("load_volume("), "{helper_output}");
+        assert!(
+            helper_output.contains("naga_fl9_load(float3("),
+            "{helper_output}"
+        );
 
         let wrong_coordinate = "@group(0) @binding(7) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return textureLoad(volume, vec2i(0), 0); }";
         let wrong_coordinate_module = crate::front::wgsl::parse_str(wrong_coordinate).unwrap();
@@ -6986,6 +6990,67 @@ mod fl9_viewport_tests {
                 assert!(translate(texture_parameter, &options, ShaderStage::Fragment).is_err());
             }
         }
+    }
+
+    #[test]
+    fn fl9_3d_texel_load_emits_only_proven_reachable_helpers() {
+        let binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texel_load_proof: Some(binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        let nested = r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @group(0) @binding(8) var sibling_volume: texture_3d<f32>;
+            fn leaf() -> vec4f {
+                return textureLoad(volume, vec3i(1, 0, 1), 0);
+            }
+            fn middle() -> vec4f {
+                return leaf();
+            }
+            fn sibling_only() -> vec4f {
+                return textureLoad(sibling_volume, vec3i(0), 0);
+            }
+            @fragment fn main() -> @location(0) vec4f {
+                return middle();
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return sibling_only();
+            }
+        "#;
+        let output = translate(nested, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("leaf("), "{output}");
+        assert!(output.contains("middle("), "{output}");
+        assert!(!output.contains("sibling_only"), "{output}");
+        assert!(!output.contains("sibling_volume"), "{output}");
+        assert!(output.contains("naga_fl9_load(float3("), "{output}");
+        assert!(
+            output.contains("volume.Sample(naga_fl9_load_sampler"),
+            "{output}"
+        );
+
+        let control_flow = r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            fn branch_load(coord: vec3i) -> vec4f {
+                if coord.x == 0 { return textureLoad(volume, coord, 0); }
+                return vec4f(0.0);
+            }
+            @fragment fn main() -> @location(0) vec4f {
+                return branch_load(vec3i(0));
+            }
+        "#;
+        assert!(translate(control_flow, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]

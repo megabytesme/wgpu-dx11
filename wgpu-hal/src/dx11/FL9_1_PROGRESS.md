@@ -1,5 +1,42 @@
 # FL9_1 progress
 
+## 3D fragment `textureLoad` helpers — 2026-11-09
+
+Extended the existing query-gated single-mip 3D float fragment `textureLoad`
+subset through selected-entry reachable straight-line helper functions. Core,
+HAL and Naga all require direct references to the same image global, reject
+resource-handle parameters/results, branching, selects, other image operations
+and additional bound resources. The native emulation remains point sampling
+at texel centers with out-of-bounds and nonzero-mip loads returning zero.
+
+Strict public execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+and confirmed FL9_1. The public test verified two direct texel values, a nested
+helper result, out-of-bounds zero and nonzero-mip zero across 320 output pixels.
+It also confirmed Core rejects a branching helper before HAL. FXC compiled the
+helper shader for `ps_4_0_level_9_1`.
+
+Verification on Rust 1.93.1, Visual Studio 2026 x64 developer environment,
+offline, Cargo `-j8`:
+
+- Naga library: 152/152.
+- D3D11 Core fixture library: 120/120 with hardware required.
+- Strict private D3D11 HAL library: 448/448 with hardware required.
+- Strict public D3D11 integration target: 112/112; the hardware helper test
+  passed 1/1 and the default-adapter isolation test remained covered.
+- DX12 Core regression library: 108/108.
+- Naga, Core, HAL and public-target Clippy passed. HAL reported existing lint
+  warnings; no new warnings point to the helper implementation.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+An initial Naga full-suite run found the old direct-3D test still expected all
+helpers to fail; its assertion was corrected to require the now-supported
+straight-line helper. An initial public shader attempted to pass integer
+coordinates through helper arguments, which the existing FL9_1 integer gate
+correctly rejects; the test now uses a zero-argument nested helper with a
+literal coordinate. Historical FL9_1 hardware and physical device-loss
+recovery remain unverified.
+
 ## Narrow f32 `mat2x2` inverse — 2026-11-09
 
 Added a separate `DownlevelLimits::matrix_inverse_2x2` contract and a Naga

@@ -3459,22 +3459,27 @@ This result does not establish historical FL9_1 driver behavior.
 ### Narrow FL9_1 fragment 3D `textureLoad`
 
 ```powershell
-cargo +1.93 test --offline -j1 -p wgpu-types texture_load_3d_float_fragment --features serde
-cargo +1.93 test --offline -j1 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
-cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_load_selects_a_distinct_single_mip_emulation
-cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texel_load_compiles_with_the_level_9_1_profile
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_3d_texture_load_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_3d_texel_load_emits_only_proven_reachable_helpers
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_load_emulation_accepts_direct_global_nested_helpers
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texel_load_helpers_compile_with_the_level_9_1_profile
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_load_selects_a_distinct_single_mip_emulation
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texel_load_compiles_with_the_level_9_1_profile
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_3d_texture_load_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The FL9_1 HLSL test compiles a `Texture3D.Sample` texel-center lowering with
-the actual level-9_1 pixel profile. The public test uploads an asymmetric 2x2x2
-RGBA8 volume and checks two distinct in-bounds loads, an out-of-bounds depth
-coordinate and a nonzero mip request through GPU readback. The new
-`texture_load_3d_float_fragment` limit is separate from the 2D limit and is
-projected only for positively queried, implemented RGBA8 volume sampling.
-General `texture_load` stays disabled; historical FL9_1 drivers are not
-represented by the RTX result.
+The Naga and HAL proof tests accept nested straight-line helpers that directly
+load the same volume and reject branching or mixed-resource helpers. The
+FXC test compiles the helper shader using the actual level-9_1 pixel profile.
+The public test uploads an asymmetric 2x2x2 RGBA8 volume and checks two direct
+loads, a nested helper load, an out-of-bounds depth coordinate, and a nonzero
+mip request through GPU readback; it also confirms Core rejects a branching
+helper before HAL. The `texture_load_3d_float_fragment` limit remains separate
+from the 2D limit and is projected only for positively queried, implemented
+RGBA8 volume sampling. General `texture_load` stays disabled; historical
+FL9_1 drivers are not represented by the RTX result.
 
 ### Narrow FL9_1 fragment cube `textureDimensions`
 

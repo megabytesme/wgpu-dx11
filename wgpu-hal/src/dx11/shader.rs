@@ -3038,6 +3038,64 @@ mod tests {
     }
 
     #[test]
+    fn fl91_3d_texel_load_helpers_compile_with_the_level_9_1_profile() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(42) var volume: texture_3d<f32>;
+            fn leaf() -> vec4f {
+                return textureLoad(volume, vec3i(1, 0, 1), 0);
+            }
+            fn relay() -> vec4f {
+                return leaf();
+            }
+            @fragment fn fs() -> @location(0) vec4f {
+                return relay();
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let bindings = [ShaderBinding {
+            binding,
+            slot: 7,
+            kind: ShaderBindingKind::TextureFloat,
+        }];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texel_load_binding: Some(binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate nested 3D texture-load helpers at FL9_1");
+        assert!(
+            source.contains("float4 naga_fl9_load(float3 p, float mip)"),
+            "{source}"
+        );
+        assert!(source.contains("leaf("), "{source}");
+        assert!(source.contains("relay("), "{source}");
+        assert!(source.contains("naga_fl9_load(float3("), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 3D texel-load helper HLSL failed: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn fl91_texture_dimensions_uses_host_supplied_size() {
         let module = naga::front::wgsl::parse_str(
             "@group(4) @binding(42) var image: texture_2d<f32>; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(image)); return vec4f(dimensions, 0.0, 1.0); }",
