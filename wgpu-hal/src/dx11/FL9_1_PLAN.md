@@ -19,7 +19,8 @@ out-of-bounds and nonzero-mip cases matched. An initial regression run exposed
 three stale tests that still expected helper loads to be rejected; those tests
 now accept only the proven helper shape and continue rejecting control flow.
 The independent selected-entry proof review found no concrete correctness
-issue. Implementation checkpoint will be recorded in the progress journal.
+issue. Implementation checkpoint: `6e442d1d14a5873dd83344339de56b909dbe0306`
+(`dx11: support selected-entry textureLoad helpers`).
 
 Next, finish the public capability-to-HAL projection audit, beginning with a
 data-driven matrix for query-gated format usages and transfer paths. Continue

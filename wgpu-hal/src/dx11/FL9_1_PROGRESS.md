@@ -1,5 +1,47 @@
 # FL9_1 progress
 
+## Selected-entry 2D fragment `textureLoad` helpers — 2026-11-09 — `6e442d1d14a5873dd83344339de56b909dbe0306`
+
+The narrow FL9_1 fragment `textureLoad` emulation now accepts nested,
+straight-line helper calls when each load directly names the same global
+single-mip `texture_2d<f32>`. Core, the HAL proof and Naga use the selected
+entry point's reachable function closure. Resource handles cannot be passed
+through helper parameters/results; reachable control flow, selects, sampling,
+queries, additional image identities and other bound resources remain rejected.
+Naga omits sibling-only helper functions and globals from the compiled shader.
+The 3D emulation still rejects helper functions.
+
+An initial regression sweep found stale Core, HAL and public tests that expected
+all helper texture loads to fail. Those assertions were updated to accept the
+proven helper subset while retaining control-flow rejection. An independent
+read-only audit found no concrete selected-entry or resource-identity issue.
+
+Final-tree results (Rust 1.93.1, Visual Studio x64 developer environment,
+offline, Cargo `-j8`):
+
+- Naga library: 149/149.
+- D3D11 Core fixture library: 119/119, including selected-entry helper proof
+  and hardware fixture coverage.
+- Strict private D3D11 HAL library: 447/447 with
+  `WGPU_DX11_REQUIRE_HARDWARE=1`.
+- Strict public D3D11 integration target: 110/110 with hardware required.
+- Focused strict public helper render/readback: 1/1 on NVIDIA GeForce RTX
+  3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+  `software=false`. Four 8×8 outputs verified 64 direct-load green pixels,
+  64 out-of-bounds zero pixels, 64 nonzero-mip zero pixels and 64 nested-helper
+  green pixels (256 checked pixels total).
+- DX12 Core regression library: 110/110.
+- Naga, Core fixture, HAL and public-test Clippy commands passed. Naga had no
+  warnings after cleanup. Core/HAL emitted existing warnings, including
+  unused variables in DX12-only validation, argument counts, queue
+  qualifications, range-array suggestions and test-only style warnings.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed.
+
+The complete strict public suite also verifies that ordinary D3D11 adapter
+enumeration remains disabled. RTX execution does not establish historical
+FL9_1 driver behavior. Commit `6e442d1d` contains the implementation; this
+journal update is pending its own documentation checkpoint.
+
 ## Query-gated RGB5A1 and RGBA4 GPU texture copies — 2026-11-09
 
 Added same-format GPU texture-to-texture `COPY_SRC` for the FL9_1 packed

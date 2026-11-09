@@ -1,5 +1,32 @@
 # FL9_1 handoff
 
+## Latest verified shader increment — selected-entry `textureLoad` helpers — 2026-11-09
+
+Commit `6e442d1d14a5873dd83344339de56b909dbe0306` adds a restricted 2D
+fragment `textureLoad` helper subset. The selected entry point and its
+reachable straight-line helpers may directly reference one shared global
+single-mip `texture_2d<f32>`. Core validation, the HAL proof and Naga HLSL
+generation use matching selected-entry reachability. Unsupported control flow,
+other image operations/resources, additional texture identities and resource
+handles passed through helpers remain rejected; sibling-only helpers are not
+emitted. 3D `textureLoad` helper calls remain unsupported.
+
+Verification on Rust 1.93.1: Naga 149/149, Core D3D11 fixture 119/119,
+strict private HAL 447/447, strict public D3D11 110/110 and DX12 Core 110/110.
+The focused strict public test passed on the RTX 3090 Ti at requested/actual
+FL9_1 (driver `32.0.16.2101`, physical hardware, not software) and matched all
+256 pixels across direct and nested helper loads, valid bounds, out-of-bounds
+and nonzero-mip cases. Clippy, formatting and diff checks passed; existing
+warnings are listed in `FL9_1_PROGRESS.md`. An independent selected-entry
+review found no concrete correctness risk.
+
+This is a bounded shader improvement, not practical completion. Normal D3D11
+adapter enumeration remains disabled. Remaining material mission work includes
+finishing the public capability-to-HAL audit, representative public 3D scene
+and desktop `HWND` presentation, unresolved ordinary shader/resource subsets,
+and verification on historical FL9_1 hardware. CoreWindow, Lumia ARM32 and
+device-removal recovery remain unverified.
+
 ## Latest verified increment — query-gated RGB5A1/RGBA4 GPU copies — 2026-11-09
 
 The opt-in D3D11 path supports same-format GPU texture-to-texture copies for
