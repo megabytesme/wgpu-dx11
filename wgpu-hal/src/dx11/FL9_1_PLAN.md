@@ -26,7 +26,7 @@ format and sample count support it. In parallel, continue the public
 Core-accepted-operation versus HAL-execution matrix; do not broaden public
 exposure based on resource creation alone. Historical FL9_1 hardware and
 Lumia/CoreWindow execution remain unverified.
-Checkpoint: pending.
+Checkpoint: `8a8e6350f` (`dx11: sample through selected textureNumLevels helper`).
 
 ## Latest verified shader-query increment — selected 2D dimensions helper plus sample — 2026-11-09
 

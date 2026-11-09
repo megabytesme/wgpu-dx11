@@ -29,7 +29,10 @@ bounded `-j8` parallelism:
 - Strict public D3D11 target: 116/116; the focused GPU test executed without
   skipping and confirmed all 64 pixels in each view.
 - Core DX12 regression: 116/116.
-- Full format, diff and lint checks are recorded after final validation.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed. Targeted
+  Clippy passed for Naga, Core, HAL and the public D3D11 test target. Existing
+  warnings remain in Naga GLSL tests, Core fixture style, HAL style/tests and
+  wgpu-types dependencies; no new warning remains in the increment.
 
 An initial public readback assertion used an incorrect channel expression; it
 was corrected to make the mip-count and sampled texel independently visible.
@@ -45,7 +48,7 @@ Core-accepted-operation versus HAL-execution matrix also remains necessary.
 Historical FL9_1 hardware, Lumia/CoreWindow execution and physical
 device-removal recovery remain unverified.
 
-Checkpoint: pending.
+Checkpoint: `8a8e6350f` (`dx11: sample through selected textureNumLevels helper`).
 
 ## Selected 2D dimensions helper plus implicit sample — 2026-11-09
 
@@ -13380,9 +13383,8 @@ Verification used Rust 1.93.1, Visual Studio 2026 x64 and offline Cargo with
 The full public suite logged optional query-based subcase skips where the
 selected RTX did not report the feature (including R16G16_FLOAT vertex input
 and R8G8_UNORM mip support); those subcases are not hardware evidence. The
-focused query-plus-sample test had no skip. The latest supplied `AGENTS.md`
-prohibits creating commits, so this verified increment is preserved in the
-working tree. Historical FL9_1 behavior remains unverified.
+focused query-plus-sample test had no skip. The implementation was checkpointed
+after final tests; historical FL9_1 behavior remains unverified.
 
 ## Selected-entry base-clamp helper — 2026-11-09
 

@@ -25,7 +25,7 @@ rejection for each query-positive format and add stencil checks where
 supported. Continue the public Core-acceptance/HAL-execution audit in parallel.
 Specialists can own bounded independent audits or isolated test files; the
 coordinator owns cross-crate design, integration, validation and commits.
-Checkpoint: pending.
+Checkpoint: `8a8e6350f` (`dx11: sample through selected textureNumLevels helper`).
 
 ## Current coordinator checkpoint — selected dimensions helper plus sample — 2026-11-09
 
