@@ -688,6 +688,15 @@ bitflags_array! {
         ///
         #[name("wgpu-texture-compression-bc1-bc2-bc3-unorm", "texture-compression-bc1-bc2-bc3-unorm")]
         const TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM = 1 << 25;
+        /// Enables the BC1, BC2 and BC3 RGBA sRGB texture formats on native adapters that expose
+        /// them. This extension does not enable unorm variants, BC4 through BC7, or 3D BC textures.
+        ///
+        /// Allowed usages are reported per format by `Adapter::get_texture_format_features`.
+        /// This extension does not guarantee texture-to-buffer readback on downlevel adapters.
+        ///
+        /// This is a native-only feature.
+        #[name("wgpu-texture-compression-bc1-bc2-bc3-srgb", "texture-compression-bc1-bc2-bc3-srgb")]
+        const TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB = 1 << 16;
 
         // API:
 
@@ -2010,6 +2019,7 @@ mod tests {
             let prefix_backcompat_features = [
                 Features::TEXTURE_FORMAT_16BIT_NORM,
                 Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM,
+                Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB,
                 Features::TEXTURE_COMPRESSION_ASTC_HDR,
                 Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 Features::PIPELINE_STATISTICS_QUERY,

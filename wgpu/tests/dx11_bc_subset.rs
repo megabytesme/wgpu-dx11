@@ -34,7 +34,7 @@ fn poll_ready<T>(future: impl Future<Output = T>) -> T {
 }
 
 #[test]
-fn public_dx11_bc1_bc2_bc3_unorm_subset_at_fl91() {
+fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -53,6 +53,7 @@ fn public_dx11_bc1_bc2_bc3_unorm_subset_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let feature = Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM;
+    let srgb_feature = Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB;
     let available = adapter.features();
     if !available.contains(feature) {
         assert!(
@@ -62,13 +63,22 @@ fn public_dx11_bc1_bc2_bc3_unorm_subset_at_fl91() {
         println!("SKIP: selected FL9_1 adapter does not expose the narrow BC feature");
         return;
     }
+    let srgb_available = available.contains(srgb_feature);
+    if !srgb_available {
+        assert!(
+            !required,
+            "strict mode requires queried BC1/BC2/BC3 sRGB support"
+        );
+        println!("SKIP: selected FL9_1 adapter does not expose the narrow BC sRGB feature");
+    }
     assert!(
         !available.contains(Features::TEXTURE_COMPRESSION_BC),
         "FL9_1 BC1/BC2/BC3 support must not imply BC4-BC7"
     );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; feature=BC1/BC2/BC3_UNORM",
-        info.name, info.vendor, info.device, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; features=BC1/BC2/BC3_UNORM{}",
+        info.name, info.vendor, info.device, info.driver_info,
+        if srgb_available { "+BC1/BC2/BC3_SRGB" } else { "" }
     );
 
     let formats = [
@@ -96,7 +106,12 @@ fn public_dx11_bc1_bc2_bc3_unorm_subset_at_fl91() {
     }
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 BC1/2/3 subset"),
-        required_features: feature,
+        required_features: feature
+            | if srgb_available {
+                srgb_feature
+            } else {
+                Features::empty()
+            },
         required_limits: adapter.limits(),
         ..Default::default()
     }))
@@ -463,6 +478,243 @@ fn public_dx11_bc1_bc2_bc3_unorm_subset_at_fl91() {
         }
     }
     readback.unmap();
+
+    if srgb_available {
+        let srgb_formats = [
+            TextureFormat::Bc1RgbaUnormSrgb,
+            TextureFormat::Bc2RgbaUnormSrgb,
+            TextureFormat::Bc3RgbaUnormSrgb,
+        ];
+        for format in srgb_formats {
+            let caps = adapter.get_texture_format_features(format);
+            assert!(
+                caps.allowed_usages
+                    .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST),
+                "narrow sRGB feature sampled-upload capability for {format:?}: {caps:?}"
+            );
+        }
+        let srgb_copy_supported = srgb_formats.iter().all(|format| {
+            adapter
+                .get_texture_format_features(*format)
+                .allowed_usages
+                .contains(TextureUsages::COPY_SRC)
+        });
+        let mut srgb_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST;
+        if srgb_copy_supported {
+            srgb_usage |= TextureUsages::COPY_SRC;
+        }
+        let srgb_sources = srgb_formats.map(|format| {
+            device.create_texture(&TextureDescriptor {
+                label: Some("FL9_1 compressed sRGB source"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format,
+                usage: srgb_usage,
+                view_formats: &[],
+            })
+        });
+        for ((texture, format), color) in srgb_sources.iter().zip(srgb_formats).zip([0x8410u16; 3])
+        {
+            let color_bytes = color.to_le_bytes();
+            let mut block = Vec::new();
+            match format {
+                TextureFormat::Bc1RgbaUnormSrgb => {}
+                TextureFormat::Bc2RgbaUnormSrgb => block.extend_from_slice(&[0xff; 8]),
+                TextureFormat::Bc3RgbaUnormSrgb => {
+                    block.extend_from_slice(&[0xff, 0, 0, 0, 0, 0, 0, 0])
+                }
+                _ => unreachable!(),
+            }
+            block.extend_from_slice(&[color_bytes[0], color_bytes[1], 0, 0, 0, 0, 0, 0]);
+            let block_size = block.len();
+            let bytes = block.repeat(4);
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                &bytes,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some((block_size * 2) as u32),
+                    rows_per_image: Some(2),
+                },
+                Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let srgb_destinations = srgb_copy_supported.then(|| {
+            srgb_formats.map(|format| {
+                device.create_texture(&TextureDescriptor {
+                    label: Some("FL9_1 compressed sRGB copy destination"),
+                    size: Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format,
+                    usage: srgb_usage,
+                    view_formats: &[],
+                })
+            })
+        });
+        let mut srgb_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 BC sRGB encoding"),
+        });
+        if let Some(destinations) = &srgb_destinations {
+            for (source, destination) in srgb_sources.iter().zip(destinations) {
+                srgb_encoder.copy_texture_to_texture(
+                    TexelCopyTextureInfo {
+                        texture: source,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    TexelCopyTextureInfo {
+                        texture: destination,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+        let srgb_views = if let Some(destinations) = &srgb_destinations {
+            destinations
+                .iter()
+                .map(|texture| texture.create_view(&TextureViewDescriptor::default()))
+                .collect::<Vec<_>>()
+        } else {
+            srgb_sources
+                .iter()
+                .map(|texture| texture.create_view(&TextureViewDescriptor::default()))
+                .collect::<Vec<_>>()
+        };
+        let srgb_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 BC sRGB bind group"),
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&srgb_views[0]),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&srgb_views[1]),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&srgb_views[2]),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        {
+            let mut pass = srgb_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 BC sRGB pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &srgb_bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        srgb_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([srgb_encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for BC sRGB upload/copy/sample rendering");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("BC sRGB readback callback")
+            .expect("map BC sRGB readback");
+        {
+            let pixels = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped BC sRGB readback");
+            let expected = [59i16, 57, 59, 255];
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    for channel in 0..4 {
+                        let actual = i16::from(pixels[offset + channel]);
+                        assert!(
+                            (actual - expected[channel]).abs() <= 3,
+                            "BC sRGB sampled output at ({x}, {y}) channel {channel}: expected about {}, got {actual}",
+                            expected[channel]
+                        );
+                    }
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: BC1/BC2/BC3 sRGB mid-gray sampled to approximately [59, 57, 59, 255] in 64 pixels{}",
+            if srgb_copy_supported { " after texture-to-texture copies" } else { "" }
+        );
+    }
 
     let error_scope = device.push_error_scope(ErrorFilter::Validation);
     let _unsupported_bc4 = device.create_texture(&TextureDescriptor {

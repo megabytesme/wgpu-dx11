@@ -70,6 +70,7 @@ Bottom level categories:
 - Add query-gated R8, RG8 and RGB565 attachment blending to the opt-in D3D11 backend.
 - Add selected-device-query-gated FL9_1 D16 and D24S8 depth comparison sampling through the opt-in public D3D11 adapter.
 - Expose query-validated BC1, BC2 and BC3 unorm textures through a narrow native feature on the opt-in FL9_1 D3D11 adapter.
+- Expose independently query-validated BC1, BC2 and BC3 sRGB textures through a narrow native feature on the opt-in FL9_1 D3D11 adapter.
 - Add query-backed Depth24Plus attachment and shadow-sampling support to the opt-in FL9_1 D3D11 adapter using D24S8 native storage without exposing stencil.
 - Add query-gated FL9_1 black and white border addressing for depth comparison samplers while rejecting ordinary border samplers.
 - Accept proven in-range `textureSampleBias` literals forwarded through helper calls in the opt-in FL9_1 D3D11 backend.

@@ -685,9 +685,11 @@ explicitly selected physical adapter. It returns a snapshot only for an
 actually created FL9_1 device. Both ordinary opt-in D3D11 enumeration and the
 core fixture consume the projected limits, alignments and downlevel gates. The
 fixture uses the production projection's narrow
-`TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature when all three selected-device
-sampled-upload paths are available. The broad `TEXTURE_COMPRESSION_BC` feature
-remains withheld because BC4–BC7 are not implemented.
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` and
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` features independently when all three
+selected-device sampled-upload paths in each family are available. The broad
+`TEXTURE_COMPRESSION_BC` feature remains withheld because BC4–BC7 are not
+implemented.
 
 ```powershell
 cargo +1.93 test --offline -j 16 -p wgpu-hal --lib --no-default-features --features dx11 wgpu_projection -- --nocapture --test-threads=1
@@ -2005,14 +2007,17 @@ blocks are 16 bytes. Each test replaces the block at [4,0] using an aligned
 32-byte pitch, copies the result to a second sampled texture, and checks all
 256 output pixels. The forced-FL9_1 RTX reports `0x000213a0` and filtered
 sampling for all three formats.
-The native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature is available
-only when every format passes its selected-device sampled-upload query and
-backend check. A separate public wgpu test requested and confirmed FL9_1,
-uploaded BC1 red, BC2 green and BC3 blue blocks, copied each texture on the
-RTX 3090 Ti, sampled all three in one fragment shader and verified 64 white
-pixels. The same device did not advertise the full BC feature, and the test
-confirmed a BC4 texture descriptor is rejected. BC sRGB variants and
-texture-to-buffer readback remain unavailable.
+The native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` and
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` features are independently available
+only when every format in the respective family passes its selected-device
+sampled-upload query and backend check. A strict public wgpu test requested and
+confirmed FL9_1, uploaded BC1 red, BC2 green and BC3 blue unorm blocks, copied
+each texture on the RTX 3090 Ti, sampled all three in one fragment shader and
+verified 64 white pixels. It then uploaded matching mid-gray sRGB blocks,
+copied and sampled them, verifying 64 pixels near `[59, 57, 59, 255]`; raw
+unorm sampling would be around `[132, 130, 132]`. The same device did not
+advertise the full BC feature, and the test confirmed BC4 and BC3 3D texture
+descriptors are rejected. BC texture-to-buffer readback remains unavailable.
 
 Run the public strict execution test with:
 

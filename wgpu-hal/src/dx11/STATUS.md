@@ -1374,3 +1374,22 @@ all three in one fragment shader and verifies 64 white pixels. A BC4 texture
 request is rejected. The Core fixture uses the same projected feature; the
 broad aggregate BC feature remains absent. The feature does not add BC sRGB,
 BC4–BC7, mip, render-target or CPU-readback support.
+
+## Narrow public BC1/BC2/BC3 sRGB feature — 2026-11-09
+
+Added the independent native-only
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` feature. The selected-device projection
+requires separate `CheckFormatSupport` results for all three typed sRGB formats,
+their FL9_1 guarantees and the existing sampled-upload implementation. Core
+permits only BC1/2/3 sRGB through this feature; it does not imply the unorm
+feature or the aggregate BC feature. Per-format usages gate GPU copies, and
+texture-to-buffer readback remains unavailable.
+
+Strict forced-FL9_1 public execution on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) uploaded and copied mid-gray BC1/2/3 sRGB blocks, sampled them
+through the public wgpu pipeline and verified all 64 readback pixels near
+linear `[59, 57, 59, 255]`. This differs decisively from raw unorm values near
+`[132, 130, 132]`, proving sRGB decoding as well as format creation and copy.
+The existing unorm workload still produced 64 white pixels; BC4 and BC3 3D
+texture creation were rejected. This modern-driver result does not establish
+behavior on historical FL9_1 hardware.

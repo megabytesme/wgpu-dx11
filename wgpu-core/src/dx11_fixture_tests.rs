@@ -357,7 +357,8 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let query_gated_features = wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER
         | wgt::Features::POLYGON_MODE_LINE
         | wgt::Features::TIMESTAMP_QUERY
-        | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+        | wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB;
     assert_eq!(features & !query_gated_features, expected_features);
     assert_eq!(
         features.contains(wgt::Features::TIMESTAMP_QUERY),
@@ -1783,10 +1784,26 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST,
         )
     });
+    let bc123_srgb_supported = [
+        wgt::TextureFormat::Bc1RgbaUnormSrgb,
+        wgt::TextureFormat::Bc2RgbaUnormSrgb,
+        wgt::TextureFormat::Bc3RgbaUnormSrgb,
+    ]
+    .into_iter()
+    .all(|format| {
+        unsafe { hal::Adapter::texture_format_capabilities(&fixture, format) }.contains(
+            hal::TextureFormatCapabilities::SAMPLED | hal::TextureFormatCapabilities::COPY_DST,
+        )
+    });
     assert_eq!(
         projected_features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM),
         bc123_supported,
         "the narrow BC feature must match all three selected-device sampled-upload paths"
+    );
+    assert_eq!(
+        projected_features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB),
+        bc123_srgb_supported,
+        "the narrow BC sRGB feature must match all three selected-device sampled-upload paths"
     );
     assert!(
         !projected_features.contains(wgt::Features::TEXTURE_COMPRESSION_BC),
@@ -1797,11 +1814,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             bc123_supported,
             "strict mode requires BC1/BC2/BC3 sampled upload support"
         );
+        assert!(
+            bc123_srgb_supported,
+            "strict mode requires BC1/BC2/BC3 sRGB sampled upload support"
+        );
     }
     for unsupported_bc in [
-        wgt::TextureFormat::Bc1RgbaUnormSrgb,
-        wgt::TextureFormat::Bc2RgbaUnormSrgb,
-        wgt::TextureFormat::Bc3RgbaUnormSrgb,
         wgt::TextureFormat::Bc4RUnorm,
         wgt::TextureFormat::Bc4RSnorm,
         wgt::TextureFormat::Bc5RgUnorm,
@@ -2807,9 +2825,6 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     if bc1_supported {
         for format in [
-            wgt::TextureFormat::Bc1RgbaUnormSrgb,
-            wgt::TextureFormat::Bc2RgbaUnormSrgb,
-            wgt::TextureFormat::Bc3RgbaUnormSrgb,
             wgt::TextureFormat::Bc4RUnorm,
             wgt::TextureFormat::Bc4RSnorm,
             wgt::TextureFormat::Bc5RgUnorm,

@@ -97,13 +97,18 @@ fn missing_texture_format_features(
     features: wgt::Features,
 ) -> wgt::Features {
     let missing = format.required_features() - features;
-    if missing == wgt::Features::TEXTURE_COMPRESSION_BC
-        && features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM)
-        && matches!(
-            format,
-            TextureFormat::Bc1RgbaUnorm | TextureFormat::Bc2RgbaUnorm | TextureFormat::Bc3RgbaUnorm
-        )
-    {
+    let narrow_bc_feature_enabled = match format {
+        TextureFormat::Bc1RgbaUnorm | TextureFormat::Bc2RgbaUnorm | TextureFormat::Bc3RgbaUnorm => {
+            features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM)
+        }
+        TextureFormat::Bc1RgbaUnormSrgb
+        | TextureFormat::Bc2RgbaUnormSrgb
+        | TextureFormat::Bc3RgbaUnormSrgb => {
+            features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB)
+        }
+        _ => false,
+    };
+    if missing == wgt::Features::TEXTURE_COMPRESSION_BC && narrow_bc_feature_enabled {
         wgt::Features::empty()
     } else {
         missing
@@ -150,6 +155,45 @@ mod texture_format_feature_tests {
                 missing_texture_format_features(format, subset),
                 Features::TEXTURE_COMPRESSION_BC,
                 "{format:?} must remain behind the complete BC feature"
+            );
+        }
+    }
+
+    #[test]
+    fn narrow_bc_srgb_feature_enables_only_bc1_to_bc3_srgb_formats() {
+        let subset = Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB;
+        for format in [
+            TextureFormat::Bc1RgbaUnormSrgb,
+            TextureFormat::Bc2RgbaUnormSrgb,
+            TextureFormat::Bc3RgbaUnormSrgb,
+        ] {
+            assert_eq!(
+                missing_texture_format_features(format, subset),
+                Features::empty()
+            );
+            assert_eq!(
+                missing_texture_format_features(format, Features::TEXTURE_COMPRESSION_BC),
+                Features::empty()
+            );
+            assert_eq!(
+                missing_texture_format_features(format, Features::empty()),
+                Features::TEXTURE_COMPRESSION_BC
+            );
+        }
+
+        for format in [
+            TextureFormat::Bc1RgbaUnorm,
+            TextureFormat::Bc2RgbaUnorm,
+            TextureFormat::Bc3RgbaUnorm,
+            TextureFormat::Bc4RUnorm,
+            TextureFormat::Bc5RgUnorm,
+            TextureFormat::Bc6hRgbUfloat,
+            TextureFormat::Bc7RgbaUnorm,
+        ] {
+            assert_eq!(
+                missing_texture_format_features(format, subset),
+                Features::TEXTURE_COMPRESSION_BC,
+                "{format:?} must remain behind its own narrow or the complete BC feature"
             );
         }
     }

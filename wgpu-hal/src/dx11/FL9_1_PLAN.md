@@ -1,14 +1,35 @@
 # FL9_1 completion plan
 
-## Latest bounded format increment — public BC1/BC2/BC3 unorm feature — 2026-11-09
+## Latest bounded format increment — public BC1/BC2/BC3 sRGB feature — 2026-11-09
+
+The existing BC1/2/3 sampled-upload and same-format GPU-copy paths now include
+the typed sRGB formats behind an independent native-only
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` feature. Projection requires the FL9_1
+guarantees, three separate selected-device format queries and backend paths.
+Core accepts only these three sRGB formats with this feature; the unorm subset
+and standard BC1–BC7 feature remain independent. Strict public execution on
+the RTX 3090 Ti forced to FL9_1 sampled copied mid-gray BC blocks to approximately
+linear `[59,57,59,255]` in all 64 target pixels, proving the sRGB decode path.
+BC4–BC7, BC texture readback, mip chains and format reinterpretation remain
+unavailable. The complete strict private HAL, Core and public regression runs
+passed; see the latest `FL9_1_PROGRESS.md` entry for commands and diagnostics.
+
+This is a useful format increment, not completion of FL9_1 support. Continue
+with a safe bounded shader-composition or resource capability. Do not implement
+3D texture copies: the existing 10Level9 audit documents that copy path as
+unavailable at FL9_1. Public CoreWindow presentation and historical-device
+behavior remain external verification requirements.
+
+## Previous bounded format increment — public BC1/BC2/BC3 unorm feature — 2026-11-09
 
 Added the native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature for the
 existing BC1/2/3 unorm sampled-upload path. The selected-device projection
 requires every format's queried sampled-upload capability and backend path;
-Core accepts only those three unorm formats through the narrow feature. The
-standard BC feature remains withheld, BC sRGB and BC4–BC7 remain rejected, and
-the FL9_x texture-to-buffer readback mask remains clear. A strict public
-forced-FL9_1 test on the RTX 3090 Ti uploaded and copied three differently
+Core accepts only those three unorm formats through the narrow feature. At
+that checkpoint the standard BC feature remained withheld, BC sRGB and BC4–BC7
+remained rejected, and the FL9_x texture-to-buffer readback mask remained
+clear. A strict public forced-FL9_1 test on the RTX 3090 Ti uploaded and copied
+three differently
 colored compressed textures, sampled each in one shader and verified 64 white
 pixels; it also confirmed BC4 rejection. Synthetic capability and Core feature
 gate tests cover partial/failed queries and the exact supported format set.

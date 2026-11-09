@@ -16,10 +16,11 @@ use windows::Win32::Graphics::{
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
         DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-        DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_D16_UNORM,
-        DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R8G8B8A8_SNORM,
-        DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM,
-        DXGI_FORMAT_R8G8_UNORM,
+        DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM,
+        DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB,
+        DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
+        DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
     },
 };
 
@@ -62,6 +63,9 @@ pub(super) struct HardwareGuarantees {
     pub bc1_unorm_sampled_texture: bool,
     pub bc2_unorm_sampled_texture: bool,
     pub bc3_unorm_sampled_texture: bool,
+    pub bc1_srgb_sampled_texture: bool,
+    pub bc2_srgb_sampled_texture: bool,
+    pub bc3_srgb_sampled_texture: bool,
     pub d16_unorm_depth_attachment: bool,
     pub rgba8_srgb_texture: bool,
     pub bgra8_srgb_texture: bool,
@@ -153,6 +157,9 @@ impl HardwareGuarantees {
             bc1_unorm_sampled_texture: true,
             bc2_unorm_sampled_texture: true,
             bc3_unorm_sampled_texture: true,
+            bc1_srgb_sampled_texture: true,
+            bc2_srgb_sampled_texture: true,
+            bc3_srgb_sampled_texture: true,
             d16_unorm_depth_attachment: true,
             rgba8_srgb_texture: true,
             bgra8_srgb_texture: true,
@@ -235,6 +242,9 @@ pub(super) struct DriverCapabilities {
     pub bc1_unorm: Query<u32>,
     pub bc2_unorm: Query<u32>,
     pub bc3_unorm: Query<u32>,
+    pub bc1_srgb: Query<u32>,
+    pub bc2_srgb: Query<u32>,
+    pub bc3_srgb: Query<u32>,
     pub rgb565_unorm: Query<u32>,
     pub rgb5551_unorm: Query<u32>,
     pub rgba4444_unorm: Query<u32>,
@@ -883,6 +893,9 @@ impl Capabilities {
         if self.bc1_bc2_bc3_unorm_supported() {
             features |= wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM;
         }
+        if self.bc1_bc2_bc3_srgb_supported() {
+            features |= wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB;
+        }
         if comparison_sampling {
             features |= wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
         }
@@ -969,6 +982,9 @@ impl Capabilities {
             (wgt::TextureFormat::Bc1RgbaUnorm, self.driver.bc1_unorm),
             (wgt::TextureFormat::Bc2RgbaUnorm, self.driver.bc2_unorm),
             (wgt::TextureFormat::Bc3RgbaUnorm, self.driver.bc3_unorm),
+            (wgt::TextureFormat::Bc1RgbaUnormSrgb, self.driver.bc1_srgb),
+            (wgt::TextureFormat::Bc2RgbaUnormSrgb, self.driver.bc2_srgb),
+            (wgt::TextureFormat::Bc3RgbaUnormSrgb, self.driver.bc3_srgb),
             (wgt::TextureFormat::Rgb5g6b5Unorm, self.driver.rgb565_unorm),
             (wgt::TextureFormat::Rgb5a1Unorm, self.driver.rgb5551_unorm),
             (wgt::TextureFormat::Rgba4Unorm, self.driver.rgba4444_unorm),
@@ -1100,6 +1116,9 @@ impl Capabilities {
                 bc1_unorm: format(DXGI_FORMAT_BC1_UNORM),
                 bc2_unorm: format(DXGI_FORMAT_BC2_UNORM),
                 bc3_unorm: format(DXGI_FORMAT_BC3_UNORM),
+                bc1_srgb: format(DXGI_FORMAT_BC1_UNORM_SRGB),
+                bc2_srgb: format(DXGI_FORMAT_BC2_UNORM_SRGB),
+                bc3_srgb: format(DXGI_FORMAT_BC3_UNORM_SRGB),
                 rgb565_unorm: format(DXGI_FORMAT_B5G6R5_UNORM),
                 rgb5551_unorm: format(DXGI_FORMAT_B5G5R5A1_UNORM),
                 rgba4444_unorm: format(DXGI_FORMAT_B4G4R4A4_UNORM),
@@ -1132,6 +1151,9 @@ impl Capabilities {
             wgt::TextureFormat::Bc1RgbaUnorm => (self.driver.bc1_unorm, true),
             wgt::TextureFormat::Bc2RgbaUnorm => (self.driver.bc2_unorm, true),
             wgt::TextureFormat::Bc3RgbaUnorm => (self.driver.bc3_unorm, true),
+            wgt::TextureFormat::Bc1RgbaUnormSrgb => (self.driver.bc1_srgb, true),
+            wgt::TextureFormat::Bc2RgbaUnormSrgb => (self.driver.bc2_srgb, true),
+            wgt::TextureFormat::Bc3RgbaUnormSrgb => (self.driver.bc3_srgb, true),
             wgt::TextureFormat::Rgb5g6b5Unorm => (self.driver.rgb565_unorm, true),
             wgt::TextureFormat::Rgb5a1Unorm => (self.driver.rgb5551_unorm, true),
             wgt::TextureFormat::Rgba4Unorm => (self.driver.rgba4444_unorm, true),
@@ -1195,6 +1217,12 @@ impl Capabilities {
                 && !self.hardware.bc2_unorm_sampled_texture
             || format == wgt::TextureFormat::Bc3RgbaUnorm
                 && !self.hardware.bc3_unorm_sampled_texture
+            || format == wgt::TextureFormat::Bc1RgbaUnormSrgb
+                && !self.hardware.bc1_srgb_sampled_texture
+            || format == wgt::TextureFormat::Bc2RgbaUnormSrgb
+                && !self.hardware.bc2_srgb_sampled_texture
+            || format == wgt::TextureFormat::Bc3RgbaUnormSrgb
+                && !self.hardware.bc3_srgb_sampled_texture
             || format == wgt::TextureFormat::Rgba8UnormSrgb && !self.hardware.rgba8_srgb_texture
             || format == wgt::TextureFormat::Bgra8UnormSrgb && !self.hardware.bgra8_srgb_texture
             || matches!(
@@ -1233,6 +1261,9 @@ impl Capabilities {
             wgt::TextureFormat::Bc1RgbaUnorm => self.backend.bc1_texture_to_texture_copy,
             wgt::TextureFormat::Bc2RgbaUnorm => self.backend.bc2_texture_to_texture_copy,
             wgt::TextureFormat::Bc3RgbaUnorm => self.backend.bc3_texture_to_texture_copy,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb => self.backend.bc1_texture_to_texture_copy,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb => self.backend.bc2_texture_to_texture_copy,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb => self.backend.bc3_texture_to_texture_copy,
             wgt::TextureFormat::Rgb5g6b5Unorm => self.backend.rgb565_copy_source,
             _ => false,
         };
@@ -1249,6 +1280,12 @@ impl Capabilities {
                 || (format == wgt::TextureFormat::Bc2RgbaUnorm
                     && self.backend.bc2_texture_to_texture_copy)
                 || (format == wgt::TextureFormat::Bc3RgbaUnorm
+                    && self.backend.bc3_texture_to_texture_copy)
+                || (format == wgt::TextureFormat::Bc1RgbaUnormSrgb
+                    && self.backend.bc1_texture_to_texture_copy)
+                || (format == wgt::TextureFormat::Bc2RgbaUnormSrgb
+                    && self.backend.bc2_texture_to_texture_copy)
+                || (format == wgt::TextureFormat::Bc3RgbaUnormSrgb
                     && self.backend.bc3_texture_to_texture_copy))
             && (!usage.contains(wgt::TextureUses::COLOR_TARGET)
                 || copy_source_color_attachment_implemented);
@@ -1266,6 +1303,12 @@ impl Capabilities {
                 || (format == wgt::TextureFormat::Bc1RgbaUnorm && !self.backend.bc1_sampled_upload)
                 || (format == wgt::TextureFormat::Bc2RgbaUnorm && !self.backend.bc2_sampled_upload)
                 || (format == wgt::TextureFormat::Bc3RgbaUnorm && !self.backend.bc3_sampled_upload)
+                || (format == wgt::TextureFormat::Bc1RgbaUnormSrgb
+                    && !self.backend.bc1_sampled_upload)
+                || (format == wgt::TextureFormat::Bc2RgbaUnormSrgb
+                    && !self.backend.bc2_sampled_upload)
+                || (format == wgt::TextureFormat::Bc3RgbaUnormSrgb
+                    && !self.backend.bc3_sampled_upload)
                 || (matches!(
                     format,
                     wgt::TextureFormat::Rgb5g6b5Unorm
@@ -1294,6 +1337,9 @@ impl Capabilities {
             wgt::TextureFormat::Bc1RgbaUnorm
                 | wgt::TextureFormat::Bc2RgbaUnorm
                 | wgt::TextureFormat::Bc3RgbaUnorm
+                | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                | wgt::TextureFormat::Bc3RgbaUnormSrgb
         ) && (extent[0] < 4
             || extent[1] < 4
             || !extent[0].is_multiple_of(4)
@@ -1347,6 +1393,12 @@ impl Capabilities {
                     && !(format == wgt::TextureFormat::Bc2RgbaUnorm
                         && self.backend.bc2_texture_to_texture_copy)
                     && !(format == wgt::TextureFormat::Bc3RgbaUnorm
+                        && self.backend.bc3_texture_to_texture_copy)
+                    && !(format == wgt::TextureFormat::Bc1RgbaUnormSrgb
+                        && self.backend.bc1_texture_to_texture_copy)
+                    && !(format == wgt::TextureFormat::Bc2RgbaUnormSrgb
+                        && self.backend.bc2_texture_to_texture_copy)
+                    && !(format == wgt::TextureFormat::Bc3RgbaUnormSrgb
                         && self.backend.bc3_texture_to_texture_copy))
             {
                 D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
@@ -1437,6 +1489,9 @@ impl Capabilities {
             wgt::TextureFormat::Bc1RgbaUnorm => self.driver.bc1_unorm,
             wgt::TextureFormat::Bc2RgbaUnorm => self.driver.bc2_unorm,
             wgt::TextureFormat::Bc3RgbaUnorm => self.driver.bc3_unorm,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb => self.driver.bc1_srgb,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb => self.driver.bc2_srgb,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb => self.driver.bc3_srgb,
             wgt::TextureFormat::Rgb5g6b5Unorm => self.driver.rgb565_unorm,
             wgt::TextureFormat::Rgb5a1Unorm => self.driver.rgb5551_unorm,
             wgt::TextureFormat::Rgba4Unorm => self.driver.rgba4444_unorm,
@@ -1547,6 +1602,9 @@ impl Capabilities {
                 | wgt::TextureFormat::Bc1RgbaUnorm
                 | wgt::TextureFormat::Bc2RgbaUnorm
                 | wgt::TextureFormat::Bc3RgbaUnorm
+                | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                | wgt::TextureFormat::Bc3RgbaUnormSrgb
                 | wgt::TextureFormat::Rgb5g6b5Unorm
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm
@@ -1582,6 +1640,9 @@ impl Capabilities {
                     wgt::TextureFormat::Bc1RgbaUnorm => self.driver.bc1_unorm,
                     wgt::TextureFormat::Bc2RgbaUnorm => self.driver.bc2_unorm,
                     wgt::TextureFormat::Bc3RgbaUnorm => self.driver.bc3_unorm,
+                    wgt::TextureFormat::Bc1RgbaUnormSrgb => self.driver.bc1_srgb,
+                    wgt::TextureFormat::Bc2RgbaUnormSrgb => self.driver.bc2_srgb,
+                    wgt::TextureFormat::Bc3RgbaUnormSrgb => self.driver.bc3_srgb,
                     wgt::TextureFormat::Rgb5g6b5Unorm => self.driver.rgb565_unorm,
                     wgt::TextureFormat::Rgb5a1Unorm => self.driver.rgb5551_unorm,
                     wgt::TextureFormat::Rgba4Unorm => self.driver.rgba4444_unorm,
@@ -1604,6 +1665,15 @@ impl Capabilities {
                     wgt::TextureFormat::Bc1RgbaUnorm => self.backend.bc1_texture_to_texture_copy,
                     wgt::TextureFormat::Bc2RgbaUnorm => self.backend.bc2_texture_to_texture_copy,
                     wgt::TextureFormat::Bc3RgbaUnorm => self.backend.bc3_texture_to_texture_copy,
+                    wgt::TextureFormat::Bc1RgbaUnormSrgb => {
+                        self.backend.bc1_texture_to_texture_copy
+                    }
+                    wgt::TextureFormat::Bc2RgbaUnormSrgb => {
+                        self.backend.bc2_texture_to_texture_copy
+                    }
+                    wgt::TextureFormat::Bc3RgbaUnormSrgb => {
+                        self.backend.bc3_texture_to_texture_copy
+                    }
                     _ => false,
                 };
                 if copy_source_implemented
@@ -1738,6 +1808,18 @@ impl Capabilities {
         .into_iter()
         .all(|format| self.texture_format_capabilities(format).contains(required))
     }
+
+    fn bc1_bc2_bc3_srgb_supported(&self) -> bool {
+        use crate::TextureFormatCapabilities as Caps;
+        let required = Caps::SAMPLED | Caps::COPY_DST;
+        [
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        ]
+        .into_iter()
+        .all(|format| self.texture_format_capabilities(format).contains(required))
+    }
 }
 
 const fn vertex_format_bit(format: wgt::VertexFormat) -> u64 {
@@ -1826,6 +1908,9 @@ mod tests {
                 bc1_unorm: Query::Value(u32::MAX),
                 bc2_unorm: Query::Value(u32::MAX),
                 bc3_unorm: Query::Value(u32::MAX),
+                bc1_srgb: Query::Value(u32::MAX),
+                bc2_srgb: Query::Value(u32::MAX),
+                bc3_srgb: Query::Value(u32::MAX),
                 rgb565_unorm: Query::Value(u32::MAX),
                 rgb5551_unorm: Query::Value(u32::MAX),
                 rgba4444_unorm: Query::Value(u32::MAX),
@@ -3274,10 +3359,13 @@ mod tests {
             .wgpu_projection()
             .expect("the selected FL9_1 path has a wgpu capability projection");
         std::println!(
-            "FL9_1 BC projection: queries={bc_queries:?}; BC1/BC2/BC3_UNORM feature={}; full BC feature={}",
+            "FL9_1 BC projection: queries={bc_queries:?}; BC1/BC2/BC3_UNORM feature={}; BC1/BC2/BC3_SRGB feature={}; full BC feature={}",
             projection
                 .features
                 .contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM),
+            projection
+                .features
+                .contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB),
             projection
                 .features
                 .contains(wgt::Features::TEXTURE_COMPRESSION_BC)
@@ -3555,6 +3643,9 @@ mod tests {
             assert!(caps.hardware.bc1_unorm_sampled_texture);
             assert!(caps.hardware.bc2_unorm_sampled_texture);
             assert!(caps.hardware.bc3_unorm_sampled_texture);
+            assert!(caps.hardware.bc1_srgb_sampled_texture);
+            assert!(caps.hardware.bc2_srgb_sampled_texture);
+            assert!(caps.hardware.bc3_srgb_sampled_texture);
             assert_eq!(
                 caps.hardware.vertex_texture_sampling,
                 level.as_raw() >= FeatureLevel::L10_0.as_raw()
@@ -5913,6 +6004,137 @@ mod tests {
         assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
         caps.hardware.bc2_unorm_sampled_texture = true;
         caps.hardware.bc3_unorm_sampled_texture = false;
+        assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
+    }
+
+    #[test]
+    fn bc_srgb_subset_requires_all_three_queried_sampled_upload_paths() {
+        let feature = wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB;
+        let mut caps = model(FeatureLevel::L9_1);
+        assert!(caps.wgpu_projection().unwrap().features.contains(feature));
+        assert!(!caps
+            .wgpu_projection()
+            .unwrap()
+            .features
+            .contains(wgt::Features::TEXTURE_COMPRESSION_BC));
+        let mut srgb_only = caps;
+        srgb_only.driver.bc1_unorm = Query::Unavailable(-1);
+        srgb_only.driver.bc2_unorm = Query::Unavailable(-1);
+        srgb_only.driver.bc3_unorm = Query::Unavailable(-1);
+        let srgb_only_features = srgb_only.wgpu_projection().unwrap().features;
+        assert!(srgb_only_features.contains(feature));
+        assert!(!srgb_only_features.contains(wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM));
+
+        for (format, field) in [
+            (wgt::TextureFormat::Bc1RgbaUnormSrgb, 0),
+            (wgt::TextureFormat::Bc2RgbaUnormSrgb, 1),
+            (wgt::TextureFormat::Bc3RgbaUnormSrgb, 2),
+        ] {
+            let mut query_missing = caps;
+            match field {
+                0 => query_missing.driver.bc1_srgb = Query::Unavailable(-1),
+                1 => query_missing.driver.bc2_srgb = Query::Unavailable(-1),
+                _ => query_missing.driver.bc3_srgb = Query::Unavailable(-1),
+            }
+            assert!(!query_missing
+                .wgpu_projection()
+                .unwrap()
+                .features
+                .contains(feature));
+            assert!(query_missing.texture_format_capabilities(format).is_empty());
+
+            let mut no_guarantee = caps;
+            match field {
+                0 => no_guarantee.hardware.bc1_srgb_sampled_texture = false,
+                1 => no_guarantee.hardware.bc2_srgb_sampled_texture = false,
+                _ => no_guarantee.hardware.bc3_srgb_sampled_texture = false,
+            }
+            assert!(!no_guarantee
+                .wgpu_projection()
+                .unwrap()
+                .features
+                .contains(feature));
+
+            let mut no_backend = caps;
+            match field {
+                0 => no_backend.backend.bc1_sampled_upload = false,
+                1 => no_backend.backend.bc2_sampled_upload = false,
+                _ => no_backend.backend.bc3_sampled_upload = false,
+            }
+            assert!(!no_backend
+                .wgpu_projection()
+                .unwrap()
+                .features
+                .contains(feature));
+        }
+
+        let texture2d_only = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        for format in [
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        ] {
+            let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Ok(())
+            );
+            assert_eq!(
+                caps.check_private_texture_2d(
+                    format,
+                    usage | wgt::TextureUses::COPY_SRC,
+                    [8, 8],
+                    1,
+                    1,
+                    1,
+                ),
+                Ok(())
+            );
+            assert!(caps.texture_format_capabilities(format).contains(
+                crate::TextureFormatCapabilities::SAMPLED
+                    | crate::TextureFormatCapabilities::COPY_DST
+                    | crate::TextureFormatCapabilities::COPY_SRC
+                    | crate::TextureFormatCapabilities::SINGLE_MIP_ONLY
+            ));
+            let mut no_sampling = caps;
+            match format {
+                wgt::TextureFormat::Bc1RgbaUnormSrgb => {
+                    no_sampling.driver.bc1_srgb = Query::Value(texture2d_only)
+                }
+                wgt::TextureFormat::Bc2RgbaUnormSrgb => {
+                    no_sampling.driver.bc2_srgb = Query::Value(texture2d_only)
+                }
+                wgt::TextureFormat::Bc3RgbaUnormSrgb => {
+                    no_sampling.driver.bc3_srgb = Query::Value(texture2d_only)
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                no_sampling.check_private_texture_2d(
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [8, 8],
+                    1,
+                    1,
+                    1,
+                ),
+                Ok(()),
+                "point sampling remains available when the optional filtering query bit is absent"
+            );
+            assert!(no_sampling
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::SAMPLED));
+            assert!(!no_sampling
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
+            );
+        }
+
+        caps.driver.bc2_srgb = Query::Unavailable(-1);
         assert!(!caps.wgpu_projection().unwrap().features.contains(feature));
     }
 

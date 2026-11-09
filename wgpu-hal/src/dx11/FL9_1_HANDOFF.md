@@ -1,5 +1,36 @@
 # FL9_1 handoff
 
+## Latest verified format support — BC1/BC2/BC3 sRGB — 2026-11-09
+
+The opt-in public D3D11 adapter now has a separate native-only
+`TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` feature. It is projected only when the
+selected FL9_1 device, independent format queries and backend sampled-upload
+paths support all three formats. Strict public GPU readback on the RTX 3090 Ti
+at explicitly requested/actual FL9_1 verified BC1/2/3 sRGB mid-gray output near
+`[59,57,59,255]` in all 64 pixels after GPU texture copies, demonstrating
+decode. The narrow unorm feature remains separate; standard BC1–BC7, BC4–7,
+reinterpreted BC views, mipmapped BC and CPU BC readback remain unavailable.
+The private HAL passed 445/445, strict Core passed 119/119, focused public BC
+passed 1/1, full strict public D3D11 passed 106/106, DX12 Core passed 108/108,
+and targeted Clippy/format/diff checks passed. Exact commands and query results
+are in `FL9_1_PROGRESS.md`.
+
+The backend remains an opt-in, restricted FL9_1 renderer, not a complete or
+drop-in general-purpose wgpu implementation. Public enumeration stays isolated
+from default backend selection. Remaining practical work includes the broader
+Core/HAL contract audit, unsupported shader operations and resource paths,
+public CoreWindow/UWP verification, historical FL9_1 hardware and real
+device-removal recovery. Read-only specialist audits recommend permitting a
+carefully proven helper-call subset of the existing `textureLoad` emulation as
+one next contained shader task; matrix inverse needs Naga HLSL lowering and
+strict numerical/instruction-boundary evidence. Do not implement FL9_1 3D
+texture copies because the existing 10Level9 audit records them as unavailable.
+
+Use specialist agents for non-overlapping research and review, but keep
+cross-crate Core/Naga/HAL changes and capability integration under one
+coordinator; the shader paths share proof metadata and should not be edited in
+parallel. The overall mission is still incomplete.
+
 ## Narrow public BC1/BC2/BC3 unorm feature — 2026-11-09
 
 The opt-in public D3D11 adapter now exposes the native-only

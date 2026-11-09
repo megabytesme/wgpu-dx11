@@ -13,8 +13,8 @@ general wgpu support. The
 internal model separates feature-level minima, per-device query results, and
 implemented backend paths. `check_private_texture_2d` is a conservative
 predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_UNORM, R8G8_SNORM,
-R16G16_SNORM, R8G8B8A8_SNORM, B5G6R5 and BC1/BC2/BC3_UNORM subsets; it is not a complete
-texture validation rule.
+R16G16_SNORM, R8G8B8A8_SNORM, B5G6R5 and BC1/BC2/BC3 unorm and sRGB subsets;
+it is not a complete texture validation rule.
 
 This file also retains historical audit notes. Any older statement below that
 adapter enumeration is offscreen-only or that surface reporting is disabled
@@ -348,11 +348,11 @@ pixels. Render-target, copy-source and readback uses remain unsupported.
 The adapter returned BC1_UNORM support mask `0x000213a0` at requested and
 selected FL9_1. The initial strict test uploaded four solid-color blocks with a
 nonzero buffer offset and padded rows, then replaced one block. The current
-private subset supports one-mip, one-layer, 4-aligned BC1/BC2/BC3_UNORM
-textures with RESOURCE and/or COPY_DST usage and queried GPU texture-copy
+private subset supports one-mip, one-layer, 4-aligned BC1/BC2/BC3 unorm and
+sRGB textures with RESOURCE and/or COPY_DST usage and queried GPU texture-copy
 source usage. Upload and copy regions must cover complete aligned blocks.
 Texture-to-buffer readback, render-target use, mip chains, non-block-aligned
-dimensions and BC sRGB views remain unavailable. A per-format downlevel limit
+dimensions and cross-format BC views remain unavailable. A per-format downlevel limit
 prevents core from treating BC `COPY_SRC` as CPU readback support. Microsoft's
 [10Level9 context restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
 permit FL9_1 copies within GPU-accessible Texture2D resources and prohibit
@@ -370,11 +370,18 @@ tests uploaded a patterned image, replaced one block at a nonzero origin,
 copied the result to a second resource and sampled all 256 output pixels. On
 the RTX 3090 Ti, BC2 and BC3 each returned support mask `0x000213a0` with
 linear-filter support. Texture-to-buffer readback, render targets, mip chains,
-non-block-aligned dimensions, sRGB views and cross-format BC copies remain
-unavailable. BC sRGB variants and BC4 through BC7 remain withheld. A public
-strict test samples BC1, BC2 and BC3 after upload and texture-to-texture copy;
-its 64 readback pixels confirm the red, green and blue compressed inputs all
-contribute to white output. Core's BC readback mask remains clear.
+non-block-aligned dimensions, UNORM/sRGB reinterpretation and cross-format BC
+copies remain unavailable. A separate native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB`
+feature exposes the typed BC1/2/3 sRGB variants only when all three sRGB
+sampled-upload paths pass their own selected-device queries and backend checks.
+Their shader-resource views perform sRGB decoding; same-format GPU copies are
+supported when the per-format usage query allows them. The strict public test
+also sampled three compressed mid-gray sRGB textures after GPU copies and
+verified all 64 pixels near linear `[59, 57, 59, 255]`, distinguishing sRGB
+decode from unorm sampling. BC4 through BC7, CPU readback, mip chains and
+render-target use remain unavailable. UNORM↔sRGB reinterpretation and
+cross-format BC copies remain unavailable. Core's BC readback mask remains
+clear.
 
 On 2026-11-05, the same adapter returned `CheckFormatSupport` mask
 `0x112ef3e0` for both `R8G8B8A8_UNORM_SRGB` and
@@ -414,7 +421,7 @@ historical-driver behavior remain unsupported or unverified.
 | --- | --- | --- |
 | Device / adapter | Native DXGI discovery excludes software adapters and creates only an explicitly requested FL9_1 device. The public opt-in adapter exposes the selected-device projection and a constrained HWND surface: BGRA8 sRGB FIFO, opaque composition, render-attachment usage, one frame of latency and owner-thread lifecycle. | Strict public wgpu tests select the RTX 3090 Ti, render/read back with uniforms in group 0, a sampler in group 4 and textures in group 7, replace only the group-7 texture between draws, verify overlapping near/far draws in both orders, concurrently submit through two public devices sharing the selected native device/context, and verify core rejection of unsupported resource/layout requests. A hidden-window lifecycle test configures, presents, resizes and presents again; a visible-window example presents 60 animated textured, indexed, depth-tested frames. The adapter exposes `TEXTURE_FORMAT_16BIT_NORM`, `TEXTURE_FORMAT_16BIT_PACKED` and comparison-sampler `ADDRESS_MODE_CLAMP_TO_BORDER` only when their implemented paths and selected-device queries permit them. It is not WebGPU-compliant. The exhaustive contract audit remains outstanding; visible client-area output has been qualitatively captured and inspected. |
 | Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; vertex+index is rejected at 9_1/9_2. The FL9_1 logical size limit leaves one 4-byte alignment unit below `u32::MAX`, so core's vertex sentinel byte and 4-byte allocation rounding still fit D3D11's `ByteWidth`. Storage usage bits and even storage-only allocation are accepted when otherwise core-valid; FL9_1 native allocation uses a dummy vertex bind for storage-only buffers, while shader storage binding remains unavailable. Indirect usage is unsupported. | Copy, clear, map, initialization and ownership tests. Core requires `VERTEX_STORAGE`, `FRAGMENT_STORAGE` or `COMPUTE_SHADERS` for storage-buffer layouts visible to those stages; writable fragment buffers also require `FRAGMENT_WRITABLE_STORAGE`. The controlled fixture verifies unsupported stage layouts fail before HAL and a storage/copy buffer still uploads, copies and reads back. A strict public test creates a storage-only buffer but verifies storage layouts remain rejected. Public `Buffer::destroy` rejects outstanding mapped views before core unmaps the D3D11 shadow allocation; strict public readback coverage verifies disjoint views remain valid after the rejected destroy. Strict public `clear_buffer` readback verifies an aligned 16..48 byte range is zeroed in queue order while the surrounding bytes retain their uploaded values; core rejects unaligned and out-of-bounds clear ranges. `UNRESTRICTED_INDEX_BUFFER` and limits describe only part of the buffer contract. |
-| 2D textures / formats / views | FL9_1 texture use is projected per format from the static level guarantee, selected-device `CheckFormatSupport` and implemented usage path. RGBA8/BGRA8 support sampled/upload, render-target, copy and readback paths; mip support and optional attachment/copy uses require the relevant query. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM support sampled/upload, with mip chains gated by `TEXTURE2D | MIP`; R8G8_UNORM, R16G16_SNORM and packed 16-bit formats have narrower selected-query paths. BC1/2/3 support block-aligned sampled/upload and GPU-copy subsets, not CPU readback. D16/D24 formats support their restricted depth attachment and query-gated sampling paths. Other formats/usages remain unavailable. | Strict public tests verify uploads, sampled readback, optional per-format attachments/copies, mip selection and format-specific validation. RGBA8_SNORM mip sampling matched all 16 pixels at requested/actual FL9_1; its mip path does not add render-target, copy-source or readback use. Core `TextureFormatFeatures` and downlevel limits must track the same query and backend predicates. Historical-driver format behavior remains unverified. |
+| 2D textures / formats / views | FL9_1 texture use is projected per format from the static level guarantee, selected-device `CheckFormatSupport` and implemented usage path. RGBA8/BGRA8 support sampled/upload, render-target, copy and readback paths; mip support and optional attachment/copy uses require the relevant query. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM support sampled/upload, with mip chains gated by `TEXTURE2D | MIP`; R8G8_UNORM, R16G16_SNORM and packed 16-bit formats have narrower selected-query paths. BC1/2/3 unorm and sRGB each have a separate narrow sampled/upload feature and query-gated GPU-copy subset, not CPU readback. D16/D24 formats support their restricted depth attachment and query-gated sampling paths. Other formats/usages remain unavailable. | Strict public tests verify uploads, sampled readback, optional per-format attachments/copies, mip selection and format-specific validation. BC sRGB sampling verifies actual decoding; RGBA8_SNORM mip sampling matched all 16 pixels at requested/actual FL9_1; its mip path does not add render-target, copy-source or readback use. Core `TextureFormatFeatures` and downlevel limits must track the same query and backend predicates. Historical-driver format behavior remains unverified. |
 | Texture view dimensions | The native resource path now includes RGBA8-family and selected query-backed cube SRVs: square POT, six faces, one sample, sampled-only; mip chains are query-gated. The reported six array layers cover the cube backing only; `TEXTURE_2D_ARRAYS` remains absent. Ordinary arrays, cube arrays, render-target cubes and single-face D2 views remain unsupported. | Core gates cube resources/views on `CUBE_TEXTURES`, the selected cube dimension/NPOT limits and per-format cube mask; the no-array path rejects unsupported cube shapes/usages before HAL. Strict public forced-FL9_1 rendering samples all six RGBA8 faces across four mips and a non-suffix view (960/960 pixels). D1 and ordinary array paths remain gated; the separate 3D RGBA8 sampled-upload path is narrowly query-gated below. Historical drivers are unverified. |
 | Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 2D textures and sampled cube textures can have mip chains when format support is reported. Sampled suffix views are native; other supported mip ranges use a GPU clone. Color-attachment views select one mip. Sampled and color-attachment usages can coexist, with optional copy usages. NPOT 2D mip chains are capability-gated by positive `FullNonPow2TextureSupport` and per-format `MIP`; cube mip chains remain square POT, and ordinary arrays remain unavailable. | Strict FL9_1 tests verify per-mip transfers, attachment rendering, suffix and clone-backed non-suffix sampling on the RTX. A public 6×10 four-level RGBA8 texture uploaded with padded rows and sampled at mip 2 matched 64/64 output pixels. Cube mip chains require square POT dimensions, exactly six faces, one sample, supported sampled usage and a positive per-format `MIP` query. Contents are caller-uploaded; autogeneration is unavailable. Core requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`; D3D11 sets it only when its implementation path and the selected 9_x device's full-NPOT query are positive (10+ treats the hardware guarantee as sufficient). Negative or unavailable 9_x results leave the flag absent. Other NPOT formats/usages are gated by format and backend validation and remain less thoroughly tested. |
 | Samplers | Independent point/linear min/mag, clamp/wrap/mirror and anisotropy up to 2 are implemented in the private HAL. When `D3D11_FEATURE_D3D9_SHADOW_SUPPORT` is positive, the public projection adds only `LessEqual` depth comparison with equal min/mag filters, anisotropy 1 and single-sample D16/Depth24Plus/D24S8 views. Other comparison functions and sampler combinations remain unavailable. Opaque black and opaque white border addressing is available only to those comparison samplers; ordinary border samplers, clamp-to-zero and other comparison combinations remain unavailable. Translated LOD ranges are checked against each used sampled view. | Patterned FL9_1 GPU readback covers filter and address modes, sampled mip levels and sampler switching. Strict private and public tests verify D16, Depth24Plus and D24S8 comparison. Public tests reject unsupported functions, filter mismatch, anisotropy, ordinary border and clamp-to-zero before HAL; black and white comparison-border samples each checked all 64 output pixels. Synthetic projection tests verify unavailable/negative queries expose no depth sampling; the controlled core fixture still verifies rejection when the flag is absent. Anisotropy 2 creates and samples but visual anisotropic quality is unverified. |
@@ -1469,11 +1476,11 @@ remains rejected at pipeline validation.
 
 The projection withholds `Features::TEXTURE_COMPRESSION_BC`: that feature
 covers BC1 through BC7, while this backend implements only BC1, BC2 and BC3
-unorm. The native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM` feature unlocks
-only those three formats, and only when the selected device and backend report
-their sampled-upload paths. Format usages remain query-specific; BC sRGB,
-BC4–BC7 and CPU readback are not exposed. Strict public GPU coverage verifies
-all three formats together, including GPU copies on the RTX 3090 Ti.
+unorm and sRGB. Separate native-only unorm and sRGB subset features each unlock
+only their own three formats, and only when every selected-device sampled-upload
+query and backend path is available. Format usages remain query-specific; BC4–BC7
+and CPU readback are not exposed. Strict public GPU coverage verifies the
+unorm and sRGB paths, including same-format GPU copies, on the RTX 3090 Ti.
 
 ## Public render bundles
 

@@ -12775,3 +12775,60 @@ selected-device fixture. It was updated to include the newly projected narrow
 feature while continuing to assert that broad BC support is absent; the full
 Core suite then passed. No public enumeration default or backend priority was
 changed.
+
+## Query-gated BC1/BC2/BC3 sRGB subset — 2026-11-09
+
+Added a separate native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` feature.
+The FL9_1 capability projection now keeps sRGB guarantees, three independent
+`CheckFormatSupport` results, and backend implementation paths distinct from
+the unorm feature. Core permits only BC1/2/3 sRGB through that exact feature;
+the standard BC feature remains absent. Typed sRGB views and same-format GPU
+copies work on the selected device, but format reinterpretation, BC4–BC7, mip
+chains, render-target use and texture-to-buffer readback remain unavailable.
+The optional `SHADER_SAMPLE` query controls linear-filter reporting; when that
+bit is absent the established point-sampling path remains valid.
+
+Strict public execution selected the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+and confirmed FL9_1. The selected device reported `0x000213a0` for each BC1,
+BC2 and BC3 sRGB format (same as their unorm formats); BC4–BC7 queries returned
+`E_FAIL` (`-2147467259`). The public test uploaded mid-gray sRGB blocks, copied
+them GPU-to-GPU, sampled all three through the public pipeline and verified 64
+pixels near `[59,57,59,255]`, well below the corresponding raw-unorm values.
+The existing unorm path still verified 64 white pixels, and unsupported BC4
+and BC3 3D creation remained rejected.
+
+Verification after the final capability-contract correction:
+
+- `cargo +1.93 test --offline -j 8 -p wgpu-hal --no-default-features --features dx11 --lib capabilities::tests -- --nocapture --test-threads=1`: 51/51 CPU/model tests passed, including selected-device diagnostics.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j 8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 445/445 passed. This strict run included private HAL rendering/readback on the physical device.
+- `cargo +1.93 test --offline -j 8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib texture_format_feature_tests -- --nocapture --test-threads=1`: 2/2 exact-format Core unit tests passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j 8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware -- --nocapture --test-threads=1`: 1/1 physical-device capability-projection fixture passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j 8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1`: 1/1 real GPU test passed with the readback values above.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j 8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1`: 106/106 passed, including the public default-enumeration isolation test. Optional query-based subcases may skip within the suite; none are counted as evidence for this feature.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j 8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib -- --test-threads=1`: 119/119 passed.
+- `cargo +1.93 test --offline -j 8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1`: 108/108 passed.
+- `cargo +1.93 test --offline -j 8 -p wgpu-types --lib features_names`: 1/1 passed. Existing serde-import and qualification warnings remain.
+- HAL, Core and focused public-target Clippy passed. Existing warnings remain in `hal_queue.rs`, HAL helper/test sites and older Core fixture tests; a new Core `if_same_then_else` warning found during Clippy was corrected and is absent on the final run.
+- `cargo +1.93 fmt --all -- --check` and `git diff --check` passed. Git emitted only the repository's existing LF-to-CRLF working-copy notices.
+
+The first full HAL run after implementation failed three synthetic BC query tests
+because the new path incorrectly required the optional filterability bit for
+resource creation. The code and synthetic expectation now retain the established
+point-sampled contract while keeping `SAMPLED_LINEAR` query-gated; the complete
+strict HAL suite then passed. An initial direct test invocation outside the VS
+developer shell could not locate `link.exe`; using `VsDevCmd.bat` resolved the
+environment issue. Normal public D3D11 enumeration remains disabled.
+
+Independent audits recommend keeping shader/Core/HAL implementation centralized:
+the next contained shader candidate is allowing selected helper functions in
+the existing single-resource `textureLoad` emulation after all three layers
+prove the reachable call graph. Naga's HLSL `matrixInverse` lowering is another
+compiler gap, but requires numerical and instruction-budget coverage before its
+limit changes. A suggestion to implement 3D texture copies conflicts with the
+existing 10Level9 audit, which documents that path as unsupported at FL9_1;
+do not pursue it. Public CoreWindow presentation still needs an actual UWP
+runtime test, while historical FL9_1 devices and Lumia ARM32 remain unverified.
+The overall mission is far from complete as a general-purpose backend: this
+remains an opt-in, intentionally restricted FL9_1 implementation, with
+unsupported intrinsic graphics features and substantial shader/API gaps.
