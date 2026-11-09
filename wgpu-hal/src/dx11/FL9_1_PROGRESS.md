@@ -13382,3 +13382,6 @@ not counted as hardware evidence. The focused helper and 3D/cube tests each
 executed on hardware without skipping. `texture_query` remains generally
 disabled. The result covers a modern NVIDIA driver forced to FL9_1, not
 historical FL9_1 hardware.
+
+Checkpoint: `8ba3f0f6418afedde998b3b615f0d30e1b21420c`
+(`dx11: support selected-entry texture emulation helpers`).
