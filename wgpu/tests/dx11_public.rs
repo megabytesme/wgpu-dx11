@@ -642,6 +642,104 @@ fn public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91() {
 }
 
 #[test]
+fn public_dx11_buffer_handles_survive_until_submission_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=buffer copy and readback after public handles are dropped before submission",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 buffer lifetime before submission"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let source_bytes: Vec<u8> = (0..64).map(|value| (value * 13 + 7) as u8).collect();
+    let source = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 source dropped before submit"),
+        size: source_bytes.len() as u64,
+        usage: BufferUsages::COPY_SRC,
+        mapped_at_creation: true,
+    });
+    source
+        .get_mapped_range_mut(..)
+        .expect("map source initialization")
+        .copy_from_slice(&source_bytes);
+    source.unmap();
+
+    let destination = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 destination dropped before submit"),
+        size: 64,
+        usage: BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let sentinels = [0xcd; 64];
+    queue.write_buffer(&destination, 0, &sentinels);
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 retained buffer readback"),
+        size: 64,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("record buffer copies before dropping handles"),
+    });
+    encoder.copy_buffer_to_buffer(&source, 12, &destination, 20, 28);
+    encoder.copy_buffer_to_buffer(&destination, 0, &readback, 0, 64);
+    let command_buffer = encoder.finish();
+    drop(source);
+    drop(destination);
+
+    let submission = queue.submit([command_buffer]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for copies referencing dropped public buffers");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("retained buffer readback callback")
+        .expect("map retained buffer readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped retained buffer readback");
+        let mut expected = sentinels;
+        expected[20..48].copy_from_slice(&source_bytes[12..40]);
+        assert_eq!(&data[..], &expected);
+    }
+    readback.unmap();
+    println!(
+        "PASS: source initialization, source-to-destination partial copy, and destination-to-readback copy completed after the public source and destination handles were dropped; all 64 bytes and untouched sentinels matched"
+    );
+}
+
+#[test]
 fn public_dx11_async_write_map_updates_nonzero_slice_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
