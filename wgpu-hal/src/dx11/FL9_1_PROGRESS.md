@@ -13765,3 +13765,56 @@ passing focused and full runs. The result adds execution evidence only and
 does not imply broader WGSL, discard, or historical-driver conformance.
 
 Checkpoint: `834944c4e` (`dx11: verify FL9_1 fragment discard semantics`).
+
+## RG8_SNORM FL9_1 copy probe — 2026-11-09
+
+The selected RTX 3090 Ti reports `TEXTURE2D` support for R8G8_SNORM, but a
+positive format query did not predict the result of the copy call at forced
+FL9_1. A diagnostic public test created and uploaded source/destination
+textures successfully. Submitting a valid equal-size `CopySubresourceRegion`
+caused device removal with `HRESULT(0x80070057)` (`E_INVALIDARG`). Replacing
+the call diagnostically with `CopyResource` caused the same failure. These
+results are specific to this GPU/driver combination, not proof that every
+FL9_1 implementation forbids the operation.
+
+With copies omitted, the same diagnostic rendered the uploaded signed texture
+through the public sampling/render/readback path and all 16 RGBA8 pixels
+matched. The backend now conservatively rejects RG8_SNORM `COPY_SRC` even when
+the device reports `TEXTURE2D`; the format remains sampled/upload-only. The
+public copy test was removed, and the generic Core readback-mask fixture now
+uses RGBA8 with a synthetic cleared mask bit instead of depending on an
+unsupported RG8_SNORM copy usage. The D3D11 public adapter remains gated from
+ordinary enumeration.
+
+Focused validation after the conservative gate:
+
+```text
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 rg8_snorm_texture_copy_source_stays_disabled_without_verified_backend_support -- --nocapture
+# 1 passed; query-positive Rg8Snorm still has no COPY_SRC implementation path.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std instance::dx11_fixture_tests::fl91_core_format_mask_rejects_texture_readback_before_hal -- --nocapture --test-threads=1
+# 1 passed on RTX 3090 Ti at requested/actual FL9_1; synthetic RGBA8 mask exclusion rejected before HAL.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_snorm_sampled_uploads_at_fl91 -- --exact --nocapture --test-threads=1
+# 1 passed on RTX 3090 Ti; Rg8Snorm exposed COPY_DST | TEXTURE_BINDING only and all 64 rendered pixels matched.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy public_dx11_rgba8_snorm_ -- --nocapture --test-threads=1
+# 2 passed; RGBA8_SNORM full and partial GPU copies verified 80 readback pixels total.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 463 passed, 0 failed, 0 ignored; strict hardware mode. Four pre-existing hal_queue.rs unused-qualification warnings.
+
+cargo +1.93.1 clippy --offline -j2 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93.1 clippy --offline -j2 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,wgsl,std
+# both passed with existing warnings; no warning was introduced by the new fixture or capability test.
+
+rustfmt +1.93.1 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/hal_device.rs
+git diff --check
+# both passed.
+```
+
+The normal DX11 enumeration test also passed on the RTX and found one physical
+FL9_1 adapter when explicitly requested. The Visual Studio developer prompt
+continues to display its `vError: Unknown error` banner, but initializes and
+runs the MSVC toolchain successfully. A DX12 regression was not rerun for this
+D3D11-only gate and Core fixture.

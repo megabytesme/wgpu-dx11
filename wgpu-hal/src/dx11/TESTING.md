@@ -2051,11 +2051,12 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
 texture-to-buffer attempt fails core validation because FL9_x cannot safely
-copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM and R16G16_SNORM
-still do not support render-target, copy-source or readback operations in this
-private subset. RGBA8_SNORM now supports same-format GPU texture copies only
-when the selected device reports `TEXTURE2D`; its readback mask remains clear
-and texture-to-buffer readback is still rejected. RGB5A1 and RGBA4 remain
+copy an SRV-only BC texture to CPU-visible memory. R16G16_SNORM still does not
+support render-target, copy-source or readback operations in this private
+subset. RG8_SNORM remains sampled/upload-only because valid FL9_1 GPU copies
+failed on the development driver; RGBA8_SNORM supports same-format GPU texture
+copies only when the selected device reports `TEXTURE2D`. Their readback masks
+remain clear and texture-to-buffer readback is still rejected. RGB5A1 and RGBA4 remain
 non-renderable and lack texture-to-buffer readback, but support query-gated
 same-format GPU copies. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
@@ -2082,6 +2083,27 @@ verify historical FL9_1 drivers.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib rgba8_snorm_texture_copy_source_requires_implementation_and_positive_query -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy public_dx11_rgba8_snorm_texture_copy_then_sample_at_fl91 -- --nocapture --test-threads=1
+```
+
+### RG8_SNORM GPU texture copy boundary
+
+`CheckFormatSupport(TEXTURE2D)` is not sufficient evidence that the backend's
+copy operation is safe. A strict forced-FL9_1 probe selected the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) and exercised RG8_SNORM upload,
+sampling, RGBA8 render and readback. Those operations verified all 16 output
+pixels when copies were omitted. Submitting a valid full
+`CopySubresourceRegion` removed the device with `E_INVALIDARG`; replacing it
+diagnostically with `CopyResource` produced the same result. RG8_SNORM
+`COPY_SRC` is therefore disabled in both the private validation model and
+public capability projection. The test does not establish a universal FL9_1
+limitation; other device and driver behavior remains unverified. A separate
+Core fixture checks that a synthetically cleared texture-to-buffer format-mask
+bit rejects readback before HAL.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 rg8_snorm_texture_copy_source_stays_disabled_without_verified_backend_support -- --exact --nocapture
+cargo +1.93.1 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std instance::dx11_fixture_tests::fl91_core_format_mask_rejects_texture_readback_before_hal -- --exact --nocapture --test-threads=1
 ```
 
 Run the controlled core copy/readback boundary test with strict physical

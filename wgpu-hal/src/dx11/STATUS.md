@@ -629,8 +629,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   selected device reports `TEXTURE2D`. A separate sampled/upload mip-chain
   path requires positive `TEXTURE2D | MIP` support. Strict
   forced-FL9_1 tests verify padded signed two-channel data and a three-level
-  chain through GPU sampling. Render-target, copy-source and readback uses
-  remain unsupported.
+  chain through GPU sampling. Same-format texture copies remain disabled: on
+  the forced-FL9_1 RTX 3090 Ti, a full-resource `CopySubresourceRegion` with a valid source box and a diagnostic `CopyResource` both caused device removal with `E_INVALIDARG`. This query result alone is not
+  enough to advertise copy support. Render-target use and CPU readback also
+  remain unsupported, and the readback mask remains clear.
 - R16G16_SNORM is not guaranteed to support shader sampling at FL9_1; the
   required-format table raises `SHADER_SAMPLE` to FL9_2. The selected device
   can still support point-only sampling when it reports `TEXTURE2D`. The RTX

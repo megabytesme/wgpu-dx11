@@ -4,6 +4,180 @@ use core::{num::NonZeroU64, time::Duration};
 use crate::{binding_model, device::HostMap, global::Global, resource::BufferMapOperation};
 
 #[test]
+fn fl91_core_format_mask_rejects_texture_readback_before_hal() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!("Hardware: {identity:?}; requested and actual FL9_1; Core readback-mask override is synthetic");
+
+    let global = unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 synthetic texture readback validation fixture",
+            hal::dx11::Instance,
+        )
+    };
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, mut capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let format = wgt::TextureFormat::Rgba8Unorm;
+    let readback_bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+    assert_ne!(readback_bit, 0);
+    assert_ne!(
+        capabilities
+            .downlevel
+            .limits
+            .texture_to_buffer_copy_format_mask
+            & readback_bit,
+        0,
+        "the selected hardware fixture must normally expose RGBA8 readback"
+    );
+    capabilities
+        .downlevel
+        .limits
+        .texture_to_buffer_copy_format_mask &= !readback_bit;
+    assert_eq!(
+        capabilities
+            .downlevel
+            .limits
+            .texture_to_buffer_copy_format_mask
+            & readback_bit,
+        0
+    );
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled FL9_1 Core device");
+
+    let format_features = global.adapter_get_texture_format_features(adapter_id, format);
+    assert!(
+        format_features
+            .allowed_usages
+            .contains(
+                wgt::TextureUsages::TEXTURE_BINDING
+                    | wgt::TextureUsages::COPY_DST
+                    | wgt::TextureUsages::COPY_SRC
+            ),
+        "the synthetic restriction must be limited to texture-to-buffer copies: {format_features:?}"
+    );
+    let (texture, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format,
+            usage: wgt::TextureUsages::TEXTURE_BINDING
+                | wgt::TextureUsages::COPY_DST
+                | wgt::TextureUsages::COPY_SRC,
+            view_formats: vec![],
+        },
+        None,
+    );
+    assert!(error.is_none(), "RGBA8 COPY_SRC texture: {error:?}");
+    let (buffer, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 1024,
+            usage: wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "readback buffer: {error:?}");
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "readback validation encoder: {error:?}");
+    global
+        .command_encoder_copy_texture_to_buffer(
+            encoder,
+            &wgt::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &wgt::TexelCopyBufferInfo {
+                buffer,
+                layout: wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(4),
+                },
+            },
+            &wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+        )
+        .expect("record otherwise-valid texture readback request");
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some((_, crate::command::CommandEncoderError::Transfer(
+                crate::command::TransferError::UnsupportedTextureToBufferFormat(actual)
+            ))) if *actual == format
+        ),
+        "the synthetic format-mask exclusion must fail before HAL: {error:?}"
+    );
+
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.buffer_drop(buffer);
+    global.texture_drop(texture);
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!("PASS: Core rejected texture-to-buffer copying from a format excluded by the synthetic mask");
+}
+
+#[test]
 fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
