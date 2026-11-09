@@ -12832,3 +12832,5 @@ runtime test, while historical FL9_1 devices and Lumia ARM32 remain unverified.
 The overall mission is far from complete as a general-purpose backend: this
 remains an opt-in, intentionally restricted FL9_1 implementation, with
 unsupported intrinsic graphics features and substantial shader/API gaps.
+The verified implementation and capability documentation are checkpointed at
+`3a1cb5527` (`dx11: expose query-gated BC1-3 sRGB formats`).

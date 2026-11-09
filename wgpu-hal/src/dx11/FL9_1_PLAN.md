@@ -13,6 +13,7 @@ linear `[59,57,59,255]` in all 64 target pixels, proving the sRGB decode path.
 BC4–BC7, BC texture readback, mip chains and format reinterpretation remain
 unavailable. The complete strict private HAL, Core and public regression runs
 passed; see the latest `FL9_1_PROGRESS.md` entry for commands and diagnostics.
+Implementation checkpoint: `3a1cb5527` (`dx11: expose query-gated BC1-3 sRGB formats`).
 
 This is a useful format increment, not completion of FL9_1 support. Continue
 with a safe bounded shader-composition or resource capability. Do not implement

@@ -14,6 +14,7 @@ The private HAL passed 445/445, strict Core passed 119/119, focused public BC
 passed 1/1, full strict public D3D11 passed 106/106, DX12 Core passed 108/108,
 and targeted Clippy/format/diff checks passed. Exact commands and query results
 are in `FL9_1_PROGRESS.md`.
+Implementation checkpoint: `3a1cb5527` (`dx11: expose query-gated BC1-3 sRGB formats`).
 
 The backend remains an opt-in, restricted FL9_1 renderer, not a complete or
 drop-in general-purpose wgpu implementation. Public enumeration stays isolated
