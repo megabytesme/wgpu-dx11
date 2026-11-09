@@ -12,7 +12,8 @@ sampling, preserved destination pixels and all 64 readback pixels for each
 format. Synthetic tests cover unsupported/unavailable queries and disabled
 backend paths. Full strict public D3D11 passed 107/107, private HAL 446/446,
 and DX12 Core 108/108; Clippy, format and diff checks passed. See
-`FL9_1_PROGRESS.md` for exact commands and diagnostics.
+`FL9_1_PROGRESS.md` for exact commands and diagnostics. Implementation
+checkpoint: `317cb9a38` (`dx11: support packed FL9_1 GPU texture copies`).
 
 Continue the audit and prioritize useful bounded shader/resource additions.
 The best shader candidate remains selected-entry helper support for the
@@ -24,8 +25,6 @@ hardware, Lumia/CoreWindow runtime and physical device-removal recovery remain
 unverified; public D3D11 enumeration is still deliberately isolated.
 
 ## Previous bounded format increment — public BC1/BC2/BC3 sRGB feature — 2026-11-09
-
-## Latest bounded format increment — public BC1/BC2/BC3 sRGB feature — 2026-11-09
 
 The existing BC1/2/3 sampled-upload and same-format GPU-copy paths now include
 the typed sRGB formats behind an independent native-only

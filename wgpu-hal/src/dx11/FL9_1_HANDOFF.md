@@ -10,7 +10,8 @@ forced-FL9_1 execution on the RTX 3090 Ti verified padded uploads, 2×2 copies
 to destination origin (1, 1), sampling, all 64 output pixels for each packed
 format, and preservation of the untouched border. Full strict public D3D11
 passed 107/107, private HAL 446/446 and DX12 Core 108/108. The complete
-command log and lint warnings are in `FL9_1_PROGRESS.md`.
+command log and lint warnings are in `FL9_1_PROGRESS.md`. Checkpoint:
+`317cb9a38` (`dx11: support packed FL9_1 GPU texture copies`).
 
 The backend remains a restricted experimental implementation; this format
 addition does not change that boundary. Next, continue the public projection
@@ -21,8 +22,6 @@ hardware, Lumia/CoreWindow runtime and physical device-loss recovery remain
 unverified. Public enumeration stays isolated.
 
 ## Previous verified format support — BC1/BC2/BC3 sRGB — 2026-11-09
-
-## Latest verified format support — BC1/BC2/BC3 sRGB — 2026-11-09
 
 The opt-in public D3D11 adapter now has a separate native-only
 `TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` feature. It is projected only when the

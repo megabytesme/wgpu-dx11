@@ -39,7 +39,8 @@ public D3D11 107/107; private HAL 446/446; DX12 Core 108/108; both Clippy
 commands and formatting/diff checks passed. Clippy emitted pre-existing HAL
 warnings. DX12 Core emitted three existing unused-variable warnings in
 `wgpu-core/src/validation.rs`; no code in Core or Naga changed for this
-increment.
+increment. Implementation checkpoint: `317cb9a38` (`dx11: support packed
+FL9_1 GPU texture copies`).
 
 ## Public depth-bias execution — 2026-11-09 — `27b6901bc97706617054f1ef2ff78af4eec630eb`
 
