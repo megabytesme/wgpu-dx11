@@ -1,5 +1,23 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — RGBA8_SNORM multi-mip GPU copy — 2026-11-09
+
+The public FL9_1 path now combines query-gated RGBA8_SNORM mips with GPU
+texture copying: it uploads four mip levels, copies a 2x2 region within mip 1
+between nonzero origins, samples a mip-1 suffix view into RGBA8, and checks all
+16 output pixels including untouched texels. The RTX 3090 Ti selected at
+requested/actual FL9_1 reported `COPY_SRC | COPY_DST | TEXTURE_BINDING`,
+`FILTERABLE` and multi-mip support. Strict `dx11_snorm_copy` passed 2/2;
+SNORM CPU texture readback remains unavailable and was not used. Clippy,
+formatting and diff checks passed; five existing HAL lint warnings remain.
+Commands and capability details are recorded in `FL9_1_PROGRESS.md`.
+
+This adds operation evidence but no public capability. The next step is to
+review the remaining public-valid format/usage intersections and choose another
+compact query-gated GPU operation. Public D3D11 remains experimental and
+historical FL9_1 driver behavior remains unverified.
+Checkpoint: `effae2add` (`dx11: verify multi-mip FL9_1 SNORM copies`).
+
 ## Current coordinator checkpoint — narrow and RGBA/BGRA usage operations — 2026-11-09
 
 The strict public combined `COPY_SRC | COPY_DST | TEXTURE_BINDING |

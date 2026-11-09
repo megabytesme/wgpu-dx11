@@ -1,5 +1,25 @@
 # FL9_1 completion plan
 
+## Latest verified multi-mip SNORM copy operation — 2026-11-09
+
+The public FL9_1 path now executes a partial same-format RGBA8_SNORM copy at
+mip 1 of four-level textures. The test uploads distinct signed patterns,
+copies a 2x2 rectangle between nonzero origins in the 4x4 mip-1 subresources,
+then samples a mip-1 suffix view into RGBA8 and verifies all 16 copied and
+untouched output texels. The copy-source, copy-destination, sampled and mip
+paths remain query-gated. CPU texture readback for SNORM stays unavailable;
+only the RGBA8 rendered output is read back. This is execution evidence, not a
+capability expansion.
+
+Strict execution used the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and selected FL9_1. The focused
+test passed and the complete `dx11_snorm_copy` target passed 2/2. See
+`FL9_1_PROGRESS.md` for the exact command and results. Next, review the
+remaining public-valid format/usage intersections and prioritize another
+independently query-gated operation path.
+
+Checkpoint: `effae2add` (`dx11: verify multi-mip FL9_1 SNORM copies`).
+
 ## Latest verified public usage-operation matrix slice — 2026-11-09
 
 The public D3D11 path now executes the complete combined

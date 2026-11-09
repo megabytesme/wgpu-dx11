@@ -1,5 +1,39 @@
 # FL9_1 progress
 
+## Multi-mip RGBA8_SNORM partial copy — 2026-11-09
+
+Added a strict public test combining the existing RGBA8_SNORM multi-mip and
+GPU-copy paths. It uploads distinct signed patterns to four mip levels of
+source and destination textures, copies a 2x2 region between nonzero origins
+in mip 1, then samples a suffix view into an RGBA8 render target. All 16
+sampled output pixels distinguish the copied region from untouched destination
+texels. The strict capability report showed `COPY_SRC | COPY_DST |
+TEXTURE_BINDING`, `FILTERABLE` and no `SINGLE_MIP_ONLY`; the public
+texture-to-buffer-copy mask remained clear for RGBA8_SNORM. The only CPU
+readback is from the RGBA8 output target.
+
+The NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false) was selected with requested and actual FL9_1.
+The new test did not skip. The full file passed both public GPU tests.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64, offline Cargo and
+bounded parallelism:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy -- --nocapture --test-threads=1'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy'
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+Results: strict public SNORM target 2/2; formatting and diff checks passed;
+Clippy passed with five existing HAL warnings (argument counts and one boolean
+simplification), with no new test warning. No capability or backend code
+changed. The test confirms a copied mip-1 subresource through sampled output;
+it does not enable SNORM CPU readback or render attachment usage.
+
+Checkpoint: `effae2add` (`dx11: verify multi-mip FL9_1 SNORM copies`).
+
 ## Combined narrow and RGBA/BGRA texture-usage execution — 2026-11-09
 
 The strict public usage-operation test now covers the complete combined

@@ -352,6 +352,15 @@ sampled/upload test selected mip 1 with a literal bias and matched all 16
 pixels. A separate single-mip, same-format GPU copy-source path is query-gated
 by `TEXTURE2D`; render-target and CPU readback uses remain unsupported.
 
+The strict public operation test now combines the query-gated mip path with
+same-format GPU copy: it uploads four-level RGBA8_SNORM textures, copies a
+partial mip-1 region between nonzero origins, then samples a mip-1 suffix view
+into RGBA8. All 16 copied and untouched pixels matched within one byte on the
+RTX 3090 Ti forced to FL9_1. The sampled output target is the only resource
+read back; the SNORM texture-to-buffer-copy bit remains clear. This verifies
+the operation intersection on one driver without changing the format
+projection.
+
 The adapter returned BC1_UNORM support mask `0x000213a0` at requested and
 selected FL9_1. The initial strict test uploaded four solid-color blocks with a
 nonzero buffer offset and padded rows, then replaced one block. The current
