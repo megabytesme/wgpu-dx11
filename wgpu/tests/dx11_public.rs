@@ -30709,3 +30709,237 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
     }
     readback.unmap();
 }
+
+#[test]
+fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let Some(adapter) = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 format projection contract test"),
+        required_features: adapter.features(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device with its projected features");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+
+    let formats = [
+        TextureFormat::Rgba8Unorm,
+        TextureFormat::Bgra8Unorm,
+        TextureFormat::Rgba8UnormSrgb,
+        TextureFormat::Bgra8UnormSrgb,
+        TextureFormat::R8Unorm,
+        TextureFormat::Rg8Unorm,
+        TextureFormat::Rg8Snorm,
+        TextureFormat::Rg16Snorm,
+        TextureFormat::Rgba8Snorm,
+        TextureFormat::Bc1RgbaUnorm,
+        TextureFormat::Bc2RgbaUnorm,
+        TextureFormat::Bc3RgbaUnorm,
+        TextureFormat::Bc1RgbaUnormSrgb,
+        TextureFormat::Bc2RgbaUnormSrgb,
+        TextureFormat::Bc3RgbaUnormSrgb,
+        TextureFormat::Rgb5g6b5Unorm,
+        TextureFormat::Rgb5a1Unorm,
+        TextureFormat::Rgba4Unorm,
+        TextureFormat::Depth16Unorm,
+        TextureFormat::Depth24Plus,
+        TextureFormat::Depth24PlusStencil8,
+    ];
+    let usage_bits = [
+        TextureUsages::COPY_SRC,
+        TextureUsages::COPY_DST,
+        TextureUsages::TEXTURE_BINDING,
+        TextureUsages::RENDER_ATTACHMENT,
+    ];
+    let mut exposed_formats = 0usize;
+    let mut accepted_usage_combinations = 0usize;
+    let mut validation_rejections = 0usize;
+    let mut mip_checks = 0usize;
+    let mut sample_count_checks = 0usize;
+
+    let create_texture = |format, usage, mip_level_count, sample_count| {
+        let internal_scope = device.push_error_scope(ErrorFilter::Internal);
+        let validation_scope = device.push_error_scope(ErrorFilter::Validation);
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 projected format usage probe"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count,
+            sample_count,
+            dimension: TextureDimension::D2,
+            format,
+            usage,
+            view_formats: &[],
+        });
+        drop(texture);
+        let validation = poll_ready(validation_scope.pop());
+        let internal = poll_ready(internal_scope.pop());
+        (validation, internal)
+    };
+
+    for format in formats {
+        let features = adapter.get_texture_format_features(format);
+        let allowed = features.allowed_usages;
+        if allowed.is_empty() {
+            println!(
+                "UNSUPPORTED: {format:?} allowed_usages={allowed:?} flags={:?}",
+                features.flags
+            );
+            continue;
+        }
+        exposed_formats += 1;
+        println!(
+            "FORMAT: {format:?} allowed_usages={allowed:?} flags={:?}",
+            features.flags
+        );
+
+        for mask in 1u8..(1 << usage_bits.len()) {
+            let usage = usage_bits
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| mask & (1 << index) != 0)
+                .fold(TextureUsages::empty(), |usage, (_, bit)| usage | *bit);
+            let reported = allowed.contains(usage);
+            let (validation, internal) = create_texture(format, usage, 1, 1);
+            assert!(
+                internal.is_none(),
+                "{format:?} usage {usage:?} reached an internal HAL/device error: {internal:?}"
+            );
+            if reported {
+                assert!(
+                    validation.is_none(),
+                    "adapter reported {format:?} usage {usage:?}, but Core rejected creation: {validation:?}"
+                );
+                accepted_usage_combinations += 1;
+            } else {
+                assert!(
+                    matches!(validation, Some(Error::Validation { .. })),
+                    "unreported {format:?} usage {usage:?} was not rejected by Core validation: {validation:?}"
+                );
+                validation_rejections += 1;
+            }
+        }
+
+        if allowed.contains(TextureUsages::RENDER_ATTACHMENT) {
+            let transient_usage =
+                TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT;
+            let (validation, internal) = create_texture(format, transient_usage, 1, 1);
+            assert!(
+                internal.is_none(),
+                "{format:?} transient attachment reached an internal error: {internal:?}"
+            );
+            assert!(
+                validation.is_none(),
+                "adapter reported {format:?} render attachment, but its canonical transient usage failed: {validation:?}"
+            );
+            accepted_usage_combinations += 1;
+        }
+
+        let mip_usage = [
+            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+            TextureUsages::TEXTURE_BINDING,
+            TextureUsages::COPY_DST,
+            TextureUsages::RENDER_ATTACHMENT,
+            TextureUsages::COPY_SRC,
+        ]
+        .into_iter()
+        .find(|usage| allowed.contains(*usage));
+        if let Some(usage) = mip_usage {
+            let single_mip_only = features
+                .flags
+                .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+            let (validation, internal) = create_texture(format, usage, 2, 1);
+            assert!(
+                internal.is_none(),
+                "{format:?} two-mip usage {usage:?} reached an internal error: {internal:?}"
+            );
+            if single_mip_only {
+                assert!(
+                    matches!(validation, Some(Error::Validation { .. })),
+                    "{format:?} reports SINGLE_MIP_ONLY but Core did not reject a two-mip texture: {validation:?}"
+                );
+            } else {
+                assert!(
+                    validation.is_none(),
+                    "{format:?} permits mip chains but Core rejected the two-mip {usage:?} shape: {validation:?}"
+                );
+            }
+            mip_checks += 1;
+        }
+
+        if allowed.contains(TextureUsages::RENDER_ATTACHMENT) {
+            for sample_count in [2, 4, 8, 16] {
+                let supported = match sample_count {
+                    2 => features
+                        .flags
+                        .contains(TextureFormatFeatureFlags::MULTISAMPLE_X2),
+                    4 => features
+                        .flags
+                        .contains(TextureFormatFeatureFlags::MULTISAMPLE_X4),
+                    8 => features
+                        .flags
+                        .contains(TextureFormatFeatureFlags::MULTISAMPLE_X8),
+                    16 => features
+                        .flags
+                        .contains(TextureFormatFeatureFlags::MULTISAMPLE_X16),
+                    _ => unreachable!(),
+                };
+                let (validation, internal) =
+                    create_texture(format, TextureUsages::RENDER_ATTACHMENT, 1, sample_count);
+                assert!(
+                    internal.is_none(),
+                    "{format:?} sample_count={sample_count} reached an internal error: {internal:?}"
+                );
+                if supported {
+                    assert!(
+                        validation.is_none(),
+                        "{format:?} advertises sample_count={sample_count}, but Core rejected creation: {validation:?}"
+                    );
+                } else {
+                    assert!(
+                        matches!(validation, Some(Error::Validation { .. })),
+                        "{format:?} does not advertise sample_count={sample_count}, but Core did not reject it: {validation:?}"
+                    );
+                }
+                sample_count_checks += 1;
+            }
+        }
+    }
+
+    assert!(
+        exposed_formats > 0,
+        "the selected adapter exposed no tested formats"
+    );
+    assert!(accepted_usage_combinations > 0);
+    assert!(validation_rejections > 0);
+    assert!(mip_checks > 0);
+    assert!(sample_count_checks > 0);
+    println!(
+        "PASS: checked {exposed_formats} projected formats, {accepted_usage_combinations} advertised usage combinations, {validation_rejections} unreported usage rejections, {mip_checks} mip contracts and {sample_count_checks} sample-count contracts through Core on the selected physical FL9_1 device"
+    );
+}
