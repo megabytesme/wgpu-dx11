@@ -1346,9 +1346,10 @@ The opt-in FL9_1 projection exposes separate
 dimension in a simple fragment entry point, directly converted from `u32` to
 `f32`. The 2D path additionally permits the query to be returned through
 exactly one reachable, argument-free straight-line helper called once by the
-selected entry point. That helper form is query-only; the separate direct
-query-plus-sample form does not permit helper calls. The 3D and cube limits
-remain direct-only. The 3D and cube limits are enabled only when the selected device reports
+selected entry point. The helper itself remains query-only, but its selected
+entry may also sample the same image once directly through one group-0
+non-comparison sampler using implicit LOD and `vec2f` coordinates. The 3D and
+cube limits remain direct-only. The 3D and cube limits are enabled only when the selected device reports
 the corresponding RGBA8 sampled-texture support; mipmap support is not required
 to query a single-mip view. The HAL supplies the currently bound view's mip
 count through the same `b13` emulation resource, including the view's suffix

@@ -30105,6 +30105,7 @@ struct Fl9TextureNumLevelsViewConfig<'a> {
     image_type: &'a str,
     suffix_levels: u32,
     helper_query: bool,
+    sample: bool,
 }
 
 fn verify_fl91_texture_num_levels_views(
@@ -30131,11 +30132,21 @@ fn verify_fl91_texture_num_levels_views(
     } else {
         ("", "let levels = f32(textureNumLevels(image));")
     };
+    let sample_declaration = if config.sample {
+        "@group(0) @binding(7) var smp: sampler;"
+    } else {
+        ""
+    };
+    let output = if config.sample {
+        "let sampled = textureSample(image, smp, vec2f(0.5)); return vec4f(levels / 3.0, sampled.r, sampled.g, 1.0);"
+    } else {
+        "return vec4f(levels / 3.0, 0.0, 0.0, 1.0);"
+    };
     let fragment_source = format!(
-        "@group(0) @binding(42) var image: {image_type}; {helper} \
+        "@group(0) @binding(42) var image: {image_type}; {sample_declaration} {helper} \
          @fragment fn fs() -> @location(0) vec4f {{ \
              {query} \
-             return vec4f(levels / 3.0, 0.0, 0.0, 1.0); \
+             {output} \
          }}",
         image_type = config.image_type
     );
@@ -30180,14 +30191,31 @@ fn verify_fl91_texture_num_levels_views(
         cache: None,
     });
     let layout = pipeline.get_bind_group_layout(0);
+    let sampler = config.sample.then(|| {
+        device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: MipmapFilterMode::Nearest,
+            ..Default::default()
+        })
+    });
     let bind_group = |view: &TextureView, label| {
+        let mut entries = vec![BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::TextureView(view),
+        }];
+        if let Some(sampler) = &sampler {
+            entries.push(BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::Sampler(sampler),
+            });
+        }
         device.create_bind_group(&BindGroupDescriptor {
             label: Some(label),
             layout: &layout,
-            entries: &[BindGroupEntry {
-                binding: 42,
-                resource: BindingResource::TextureView(view),
-            }],
+            entries: &entries,
         })
     };
     let first_group = bind_group(first_view, "FL9_1 first mip-count view");
@@ -30304,11 +30332,24 @@ fn verify_fl91_texture_num_levels_views(
         for y in 0..8 {
             for x in 0..8 {
                 let expected_levels = if x < 4 { 1 } else { config.suffix_levels };
-                let expected_red = ((expected_levels as f32 / 3.0) * 255.0).round() as u8;
+                let expected = if config.sample {
+                    if x < 4 {
+                        [85_u8, 64, 128, 255]
+                    } else {
+                        [255_u8, 128, 64, 255]
+                    }
+                } else {
+                    [
+                        ((expected_levels as f32 / 3.0) * 255.0).round() as u8,
+                        0,
+                        0,
+                        255,
+                    ]
+                };
                 let offset = y * 256 + x * 4;
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    &[expected_red, 0, 0, 255],
+                    &expected,
                     "{label} pixel ({x}, {y}), mip count {expected_levels}"
                 );
             }
@@ -30372,6 +30413,36 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
+    for (mip_level, color) in [
+        [64_u8, 128, 192, 255],
+        [128_u8, 64, 32, 255],
+        [192_u8, 32, 64, 255],
+        [32_u8, 192, 128, 255],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let side = 16_u32 >> mip_level;
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: mip_level as u32,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &color.repeat((side * side) as usize),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(side * 4),
+                rows_per_image: Some(side),
+            },
+            Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
     let one_level_view = texture.create_view(&TextureViewDescriptor {
         base_mip_level: 0,
         mip_level_count: Some(1),
@@ -30392,6 +30463,20 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: true,
+            sample: false,
+        },
+    );
+    verify_fl91_texture_num_levels_views(
+        &device,
+        &queue,
+        "FL9_1 selected-helper textureNumLevels plus sample",
+        &one_level_view,
+        &three_level_view,
+        Fl9TextureNumLevelsViewConfig {
+            image_type: "texture_2d<f32>",
+            suffix_levels: 3,
+            helper_query: true,
+            sample: true,
         },
     );
 }
@@ -30514,6 +30599,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
                 image_type: "texture_3d<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
+                sample: false,
             },
         );
         if mip_count == 1 {
@@ -30593,6 +30679,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
                 image_type: "texture_cube<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
+                sample: false,
             },
         );
         if !cube_mips_supported {

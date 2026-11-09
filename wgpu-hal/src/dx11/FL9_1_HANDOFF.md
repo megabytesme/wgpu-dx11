@@ -1,5 +1,32 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — selected `textureNumLevels` helper plus sample — 2026-11-09
+
+The selected 2D fragment `textureNumLevels` helper may coexist with one direct
+implicit sample of the same image. Core, Naga and HAL enforce matching
+selected-entry rules; FXC compiles at `ps_4_0_level_9_1`. Strict readback on
+the RTX 3090 Ti, requested/actual FL9_1, checked all 64 pixels for helper-only
+and composed variants across one- and three-level views. The composed colors
+were `[85,64,128,255]` and `[255,128,64,255]`. Full private HAL passed
+462/462, Core 125/125, Naga 156/156, public D3D11 116/116 and Core DX12
+116/116. The exact commands and limits are in `FL9_1_PROGRESS.md` and
+`TESTING.md`. General `texture_query` remains disabled.
+
+The implementation remains an opt-in FL9_1 subset, not a complete drop-in
+wgpu backend. Intrinsic FL9_1 boundaries include compute/UAV, ordinary texture
+arrays, 1D textures, MRT, occlusion queries and native 3D copy/readback.
+Implementation/validation and test-coverage work remains for broader shader
+operations, resource usages, Core-to-HAL operation correspondence and precise
+errors. Historical FL9_1 hardware, Lumia/CoreWindow runtime and physical
+device-removal recovery remain unverified.
+
+Next: extend the existing optional 2x/8x MSAA depth test to prove near/far
+rejection for each query-positive format and add stencil checks where
+supported. Continue the public Core-acceptance/HAL-execution audit in parallel.
+Specialists can own bounded independent audits or isolated test files; the
+coordinator owns cross-crate design, integration, validation and commits.
+Checkpoint: pending.
+
 ## Current coordinator checkpoint — selected dimensions helper plus sample — 2026-11-09
 
 The narrow selected-entry 2D fragment `textureDimensions` helper may now

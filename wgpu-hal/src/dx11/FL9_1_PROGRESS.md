@@ -1,5 +1,52 @@
 # FL9_1 progress
 
+## Selected-entry `textureNumLevels` helper plus sample — 2026-11-09
+
+The narrow selected 2D fragment `textureNumLevels` helper may now coexist
+with one direct implicit sample of the same texture. The helper remains a
+single no-argument straight-line query called once; the selected entry uses
+one group-zero non-comparison sampler, `vec2f` coordinates and the same
+`texture_2d<f32>`. Core, Naga and HAL agree on selected-entry resource and
+operation restrictions. The helper itself cannot sample; mismatched images,
+multiple samples, explicit LOD, helper sampling and additional selected
+resources remain rejected. FXC compiles the combined shader at
+`ps_4_0_level_9_1`; general `texture_query` remains disabled.
+
+Strict hardware execution used the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false), explicitly requested
+FL9_1 and asserted actual FL9_1. The public test ran helper-only and
+helper-plus-sample shaders over one- and three-level views. All 64 pixels
+matched `[85,64,128,255]` for the one-level view and `[255,128,64,255]` for
+the three-level view.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64, offline Cargo and
+bounded `-j8` parallelism:
+
+- Focused Naga, Core, HAL relationship and FXC tests: 1/1 each.
+- Strict private D3D11 HAL suite: 462/462.
+- Strict Core fixture suite: 125/125.
+- Full Naga library: 156/156.
+- Strict public D3D11 target: 116/116; the focused GPU test executed without
+  skipping and confirmed all 64 pixels in each view.
+- Core DX12 regression: 116/116.
+- Full format, diff and lint checks are recorded after final validation.
+
+An initial public readback assertion used an incorrect channel expression; it
+was corrected to make the mip-count and sampled texel independently visible.
+The full HAL regression initially found that an unused sibling-entry sampler
+was rejected for the old query-helper path. Resource filtering is now limited
+to the selected reachable entry, and both the new proof and the existing
+negative test pass. No public adapter enumeration or general query capability
+was enabled.
+
+The next bounded gap is to make the existing optional 2x/8x multisample depth
+test prove near/far rejection (and stencil where supported). A broader
+Core-accepted-operation versus HAL-execution matrix also remains necessary.
+Historical FL9_1 hardware, Lumia/CoreWindow execution and physical
+device-removal recovery remain unverified.
+
+Checkpoint: pending.
+
 ## Selected 2D dimensions helper plus implicit sample — 2026-11-09
 
 The selected-entry 2D fragment `textureDimensions` helper path now permits

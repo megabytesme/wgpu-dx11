@@ -520,7 +520,6 @@ fn fl9_texture_num_levels_functions(
                 expression,
                 crate::Expression::Select { .. }
                     | crate::Expression::ImageQuery { .. }
-                    | crate::Expression::ImageSample { .. }
                     | crate::Expression::ImageLoad { .. }
             )
         })
@@ -648,9 +647,78 @@ fn fl9_texture_num_levels_functions(
                 multi: false
             }
         }
-    ) || module.global_variables.iter().any(|(global, variable)| {
+    ) {
+        return None;
+    }
+    let mut sampled_sampler = None;
+    for (handle, expression) in entry.function.expressions.iter() {
+        let (sample_image, sampler, coordinate) = match *expression {
+            crate::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                level: crate::SampleLevel::Auto,
+                gather: None,
+                array_index: None,
+                offset: None,
+                depth_ref: None,
+                clamp_to_edge: false,
+            } => (image, sampler, coordinate),
+            crate::Expression::ImageSample { .. } => return None,
+            _ => continue,
+        };
+        if sampled_sampler.is_some()
+            || entry_info[handle].ref_count == 0
+            || !matches!(
+                entry_info[handle].ty.inner_with(&module.types),
+                TypeInner::Vector {
+                    size: crate::VectorSize::Quad,
+                    scalar: Scalar {
+                        kind: ScalarKind::Float,
+                        width: 4
+                    }
+                }
+            )
+            || !matches!(
+                entry.function.expressions[sample_image],
+                crate::Expression::GlobalVariable(global) if global == image_handle
+            )
+            || !matches!(
+                entry_info[coordinate].ty.inner_with(&module.types),
+                TypeInner::Vector {
+                    size: crate::VectorSize::Bi,
+                    scalar: Scalar {
+                        kind: ScalarKind::Float,
+                        width: 4
+                    }
+                }
+            )
+        {
+            return None;
+        }
+        let crate::Expression::GlobalVariable(sampler_handle) = entry.function.expressions[sampler]
+        else {
+            return None;
+        };
+        let sampler_global = &module.global_variables[sampler_handle];
+        if sampler_global.space != crate::AddressSpace::Handle
+            || !matches!(
+                sampler_global.binding,
+                Some(crate::ResourceBinding { group: 0, .. })
+            )
+            || !matches!(
+                module.types[sampler_global.ty].inner,
+                TypeInner::Sampler { comparison: false }
+            )
+        {
+            return None;
+        }
+        sampled_sampler = Some(sampler_handle);
+    }
+    if module.global_variables.iter().any(|(global, variable)| {
         variable.binding.is_some()
             && global != image_handle
+            && Some(global) != sampled_sampler
             && (!entry_info[global].is_empty() || !helper_info[global].is_empty())
     }) {
         return None;
@@ -7978,6 +8046,75 @@ mod fl9_viewport_tests {
             "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSampleLevel(image, smp, vec2f(0.5), 0.0) * vec4f(f32(textureNumLevels(image))); }",
         ] {
             assert!(translate(source, &options, ShaderStage::Fragment).is_err());
+        }
+    }
+
+    #[test]
+    fn fl9_texture_num_levels_helper_can_sample_same_texture() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let sibling_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 3,
+        };
+        let source = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(3) var sibling_image: texture_2d<f32>;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            fn sibling_levels() -> u32 { return textureNumLevels(sibling_image); }
+            @fragment fn main() -> @location(0) vec4f {
+                let levels = f32(levels_helper());
+                let sampled = textureSample(image, smp, vec2f(0.5));
+                return sampled * vec4f(levels / 4.0, 1.0, 1.0, 1.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return vec4f(f32(sibling_levels()));
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_num_levels_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        for (binding, register) in [
+            (texture_binding, 0),
+            (sampler_binding, 3),
+            (sibling_binding, 1),
+        ] {
+            options.binding_map.insert(
+                binding,
+                super::super::BindTarget {
+                    register,
+                    ..Default::default()
+                },
+            );
+        }
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("levels_helper("), "{output}");
+        assert!(output.contains("image.Sample(smp"), "{output}");
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(!output.contains("sibling_levels"), "{output}");
+        assert!(!output.contains("sibling_image"), "{output}");
+        assert!(!output.contains("register(t1)"), "{output}");
+
+        for invalid in [
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(8) var other: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { return textureSample(other, smp, vec2f(0.5)) * vec4f(f32(levels_helper())); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.25)) + textureSample(image, smp, vec2f(0.75)) + vec4f(f32(levels_helper())); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { return textureSampleLevel(image, smp, vec2f(0.5), 0.0) * vec4f(f32(levels_helper())); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(91) var depth: texture_depth_2d; @group(0) @binding(92) var compare_smp: sampler_comparison; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { let sampled = textureSample(image, smp, vec2f(0.5)); let comparison = textureSampleCompare(depth, compare_smp, vec2f(0.5), 0.5); return sampled + vec4f(comparison + f32(levels_helper())); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(91) var<uniform> extra: vec4f; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5)) + extra + vec4f(f32(levels_helper())); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(1) @binding(42) var smp: sampler; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5)) * vec4f(f32(levels_helper())); }"#,
+        ] {
+            assert!(translate(invalid, &options, ShaderStage::Fragment).is_err());
         }
     }
 

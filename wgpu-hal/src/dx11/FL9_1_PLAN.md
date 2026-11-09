@@ -1,5 +1,33 @@
 # FL9_1 completion plan
 
+## Latest verified shader-query increment — selected `textureNumLevels` helper plus sample — 2026-11-09
+
+The selected 2D fragment `textureNumLevels` helper may now coexist with one
+direct implicit sample of the same image. The helper remains a single
+argument-free straight-line query; the entry point must use one group-zero
+non-comparison sampler, `vec2f` coordinates and the same `texture_2d<f32>`.
+Core, Naga and HAL validate the selected entry and reject mismatched images,
+multiple samples, explicit LOD, helper sampling and extra selected resources.
+FXC accepts the combined shader at `ps_4_0_level_9_1`. General
+`texture_query` remains unavailable.
+
+Strict public execution on the physical RTX 3090 Ti requested and selected
+FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false). The test
+verified helper-only and helper-plus-sample variants across one- and
+three-level views; the composed readback matched `[85,64,128,255]` and
+`[255,128,64,255]` for all 64 pixels. Full strict private HAL passed 462/462,
+public D3D11 116/116, Naga 156/156, Core 125/125, and Core DX12 116/116.
+See `FL9_1_PROGRESS.md` for exact commands and resolved failures.
+
+The next small execution-coverage gap is depth testing in the optional 2x and
+8x MSAA cases; the current test only verifies resolved color there. Add
+near/far depth rejection for each query-positive format and stencil where the
+format and sample count support it. In parallel, continue the public
+Core-accepted-operation versus HAL-execution matrix; do not broaden public
+exposure based on resource creation alone. Historical FL9_1 hardware and
+Lumia/CoreWindow execution remain unverified.
+Checkpoint: pending.
+
 ## Latest verified shader-query increment — selected 2D dimensions helper plus sample — 2026-11-09
 
 The selected 2D fragment `textureDimensions` helper path now permits one

@@ -1700,6 +1700,121 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_num_levels_helper_accepts_one_same_texture_sample() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(9) var sibling_image: texture_2d<f32>;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            fn sibling_levels() -> u32 { return textureNumLevels(sibling_image); }
+            @fragment fn selected() -> @location(0) vec4f {
+                let levels = f32(levels_helper());
+                return textureSample(image, smp, vec2f(0.5)) * vec4f(levels / 4.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return vec4f(f32(sibling_levels()));
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "selected")
+                .unwrap()
+                .expect("the selected mip-count helper may sample its image once");
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::NumLevels));
+        assert!(proof.has_helper);
+        assert!(proof.has_implicit_sample);
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "sibling"
+        )
+        .is_err());
+
+        for source in [
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(8) var other: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return textureSample(other, smp, vec2f(0.5)) * vec4f(f32(levels_helper()));
+            }
+            "#,
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                let levels = f32(levels_helper());
+                return textureSample(image, smp, vec2f(0.25))
+                    + textureSample(image, smp, vec2f(0.75)) + vec4f(levels);
+            }
+            "#,
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, vec2f(0.5), 0.0)
+                    * vec4f(f32(levels_helper()));
+            }
+            "#,
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            fn sample_helper() -> vec4f { return textureSample(image, smp, vec2f(0.5)); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return sample_helper() * vec4f(f32(levels_helper()));
+            }
+            "#,
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(91) var<uniform> extra: vec4f;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return textureSample(image, smp, vec2f(0.5)) + extra
+                    + vec4f(f32(levels_helper()));
+            }
+            "#,
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(1) @binding(42) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return textureSample(image, smp, vec2f(0.5))
+                    * vec4f(f32(levels_helper()));
+            }
+            "#,
+        ] {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            assert!(fl9_texture_emulation_binding(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "fs",
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
     fn fl9_texture_base_clamp_binding_is_direct_and_single_mip() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -3657,7 +3772,6 @@ fn fl9_texture_num_levels_helper(
                 expression,
                 naga::Expression::Select { .. }
                     | naga::Expression::ImageQuery { .. }
-                    | naga::Expression::ImageSample { .. }
                     | naga::Expression::ImageLoad { .. }
             )
         })
@@ -3798,12 +3912,26 @@ fn fl9_texture_num_levels_helper(
     let naga::Expression::GlobalVariable(image_handle) = helper.expressions[image] else {
         return None;
     };
-    if module.global_variables.iter().any(|(global, variable)| {
-        variable.binding.is_some()
-            && global != image_handle
-            && (!entry_info[global].is_empty() || !helper_info[global].is_empty())
-    }) {
-        return None;
+    let mut sampler_identity = None;
+    for (global, variable) in module.global_variables.iter() {
+        if global == image_handle
+            || variable.binding.is_none()
+            || (entry_info[global].is_empty() && helper_info[global].is_empty())
+        {
+            continue;
+        }
+        if variable.space != naga::AddressSpace::Handle
+            || variable.binding.is_none_or(|binding| binding.group != 0)
+            || !matches!(
+                module.types[variable.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            )
+            || sampler_identity
+                .replace(global)
+                .is_some_and(|previous| previous != global)
+        {
+            return None;
+        }
     }
     let image = &module.global_variables[image_handle];
     if image.space != naga::AddressSpace::Handle
@@ -4481,7 +4609,10 @@ fn fl9_texture_emulation_binding(
         ));
     }
     let allow_unselected_bound_resources = matches!(kind, Fl9TextureEmulationKind::BaseClamp)
-        || (matches!(kind, Fl9TextureEmulationKind::Dimensions) && !reachable_functions.is_empty());
+        || (matches!(
+            kind,
+            Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::NumLevels
+        ) && !reachable_functions.is_empty());
     if matches!(kind, Fl9TextureEmulationKind::BaseClamp)
         || (matches!(
             kind,
@@ -4518,7 +4649,8 @@ fn fl9_texture_emulation_binding(
         && module.global_variables.iter().any(|(handle, global)| {
             global.binding.is_some_and(|resource| {
                 Some(resource) != binding && Some(resource) != sampler_binding
-            }) && (!function_info[handle].is_empty()
+            }) && (!allow_unselected_bound_resources
+                || !function_info[handle].is_empty()
                 || reachable_functions
                     .iter()
                     .any(|function| !info[*function][handle].is_empty()))

@@ -1309,8 +1309,9 @@ The opt-in projection exposes separate
 `textureNumLevels` query on a matching group-0, non-array float texture,
 directly converted to `f32`. The 2D query may be direct or returned by exactly
 one reachable, argument-free straight-line helper called once by the selected
-entry point; the helper form cannot sample. The 3D and cube forms remain
-direct-only. The selected entry may also contain exactly one
+entry point. That helper itself cannot sample, but the selected entry may also
+contain one direct implicit sample of the same 2D image with one group-0
+non-comparison sampler. The 3D and cube forms remain direct-only. The selected entry may also contain exactly one
 implicit sample of that same image with a compatible coordinate type and one
 group-0 non-comparison sampler. The 3D/cube paths are gated by the selected
 device's sampled RGBA8 volume/cube support; they do not require mip support
@@ -1319,11 +1320,12 @@ the direct-query proof, reject helpers, control flow, additional resources,
 other image operations, multiple samples, mismatched image/sampler shapes and
 unrelated integer semantics. HAL supplies the selected bound view's mip count
 through `b13`; texture and sampler retain their ordinary register assignments.
-For 2D, the helper query path is separate from the direct query-plus-sample
-path. The strict public tests check both across one- and three-level views.
-The helper-only query test verified all 64 pixels. On the RTX 3090 Ti,
-explicitly requested and selected FL9_1, the direct query-plus-sample test
-matched `[64,64,128,255]` and `[191,128,64,255]` for all 64 pixels. General
+The 2D selected-helper-plus-sample path remains restricted to one direct sample
+of the same image; 3D/cube helpers are unsupported. The strict public helper
+test checks both helper-only and helper-plus-sample rendering across one- and
+three-level views. The composed output matched `[85,64,128,255]` and
+`[255,128,64,255]` for all 64 pixels on the RTX 3090 Ti at requested/actual
+FL9_1. The separate direct query-plus-sample test also remains covered. General
 `texture_query` remains unavailable.
 
 ## Constant-mip FL9_1 fragment `textureDimensions`

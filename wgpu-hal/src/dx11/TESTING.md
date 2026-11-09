@@ -3455,30 +3455,42 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The 2D query also supports one selected, no-argument straight-line helper that
-returns the queried `u32` for direct conversion to `f32`. The helper form is
-query-only: it does not support sampling, nested or repeated calls, control
-flow or additional selected resources. Direct query-plus-sample and 3D/cube
-query paths retain their separate restrictions. The strict helper readback
-uses one- and three-level views and verifies all 64 pixels. Run its production
-proofs and hardware test with:
+returns the queried `u32` for direct conversion to `f32`. The helper itself is
+query-only, but the selected entry may also contain exactly one direct implicit
+sample of the same image through one group-zero non-comparison sampler. Nested
+or repeated calls, helper sampling, control flow, mismatched images, additional
+selected resources, multiple samples and explicit LOD remain rejected. 3D/cube
+query paths remain direct-only. The strict helper readback uses one- and
+three-level views and checks both helper-only and helper-plus-sample variants.
+Run its production proofs and hardware test with:
 
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_num_levels_accepts_one_selected_query_helper
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib fl9_texture_num_levels_helper_allows_one_matching_implicit_sample
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_accepts_one_selected_helper
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_helper_accepts_one_same_texture_sample
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_through_selected_helper_compiles_with_fxc -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_helper_with_implicit_sample_compiles_with_fxc -- --nocapture --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 -- --nocapture --test-threads=1
 ```
 
 The query may share the selected entry with one implicit sample of the same
-texture using one group-zero non-comparison sampler. The strict public test
-switches between one- and three-level views over an initialized RGBA8 mip chain;
-the first output channel depends on the view mip count and the next two channels
-depend on the sampled texel. Core, Naga and private HAL tests accept this shape
-for 2D, 3D and cube images and reject a different image, multiple samples,
-explicit LOD or extra sampler resources. The FXC test compiles each dimension
-through `ps_4_0_level_9_1`; the host mip-count query remains the existing `b13`
+texture using one group-zero non-comparison sampler. For helper-backed 2D
+queries, the helper remains query-only and the sample must be a direct entry
+operation. The strict public test switches between one- and three-level views
+over an initialized RGBA8 mip chain; the first output channel depends on the
+view mip count and the next two channels depend on the sampled texel. Core,
+Naga and private HAL tests accept the helper-plus-sample shape only for 2D and
+reject a different image, multiple samples, explicit LOD, helper sampling,
+comparison sampling or extra resources. FXC compiles the helper composition at
+`ps_4_0_level_9_1`; the host mip-count query remains the existing `b13`
 constant emulation and the sample remains an ordinary implicit `.Sample`.
+
+The strict RTX 3090 Ti helper-plus-sample readback explicitly requested and
+selected FL9_1. It verified `[85,64,128,255]` for the one-level view and
+`[255,128,64,255]` for the three-level view across all 64 pixels. The same test
+also reruns the helper-only form, retaining its previous readback coverage.
 
 The public test uses one four-mip texture through two views exposing one and
 three levels. A bind-group transition changes the returned count while the

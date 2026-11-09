@@ -3752,6 +3752,73 @@ mod tests {
     }
 
     #[test]
+    fn fl91_texture_num_levels_helper_with_implicit_sample_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(42) var image: texture_2d<f32>;
+            @group(0) @binding(7) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                let levels = f32(levels_helper());
+                let sampled = textureSample(image, smp, vec2f(0.5));
+                return sampled * vec4f(levels / 4.0, 1.0, 1.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 7,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texture_num_levels_binding: Some(texture_binding),
+                texture_num_levels_helper: true,
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate textureNumLevels helper and implicit sample");
+        assert!(source.contains("levels_helper("), "{source}");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(s3)"), "{source}");
+        assert!(source.contains("register(b13)"), "{source}");
+        assert!(source.contains(".Sample("), "{source}");
+        assert!(!source.contains("GetDimensions"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 textureNumLevels helper/sample HLSL failed: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn level_9_1_rejects_vertex_texture_sampling() {
         use naga::{
             valid::{Capabilities, ValidationFlags, Validator},

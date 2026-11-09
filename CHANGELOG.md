@@ -63,6 +63,7 @@ Bottom level categories:
 - Emulate a single-mip 2D float fragment `textureSampleBaseClampToEdge` operation directly or through one restricted straight-line helper in the opt-in FL9_1 D3D11 backend.
 - Allow the narrow FL9_1 fragment `textureDimensions` path to co-use one implicit sample of the same 2D float texture and one compatible sampler.
 - Allow the restricted FL9_1 2D `textureDimensions` helper path to co-use one implicit sample of the same texture.
+- Allow the restricted FL9_1 2D `textureNumLevels` helper path to co-use one implicit sample of the same texture.
 - Allow the narrow FL9_1 fragment 3D `textureDimensions` path to co-use one implicit sample of the same volume and one compatible sampler.
 - Emulate a selected-entry single-mip 3D float fragment `textureLoad` on query-supported FL9_1 volume textures in the opt-in D3D11 backend.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
