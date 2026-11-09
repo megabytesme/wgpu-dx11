@@ -434,6 +434,22 @@ fn expect_validation_error_containing(
     );
 }
 
+fn expect_internal_error_containing(
+    device: &Device,
+    label: &str,
+    expected: &str,
+    operation: impl FnOnce(),
+) {
+    let scope = device.push_error_scope(ErrorFilter::Internal);
+    operation();
+    let error = poll_ready(scope.pop()).unwrap_or_else(|| panic!("{label} was accepted"));
+    assert!(matches!(error, Error::Internal { .. }), "{error:?}");
+    assert!(
+        format!("{error:?}").contains(expected),
+        "{label} produced the wrong internal error: {error:?}"
+    );
+}
+
 #[test]
 fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -1818,6 +1834,58 @@ fn public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at
         }
         error => panic!("unexpected 256-vector error: {error:?}"),
     }
+
+    let mut viewport_budget_source = String::from(
+        "@group(0) @binding(7) var<uniform> c: array<vec4f, 254>; @vertex fn vs(@location(0) p: vec4f) -> @builtin(position) vec4f { var v = p;",
+    );
+    for index in 0..254 {
+        viewport_budget_source.push_str(&format!(" v += c[{index}];"));
+    }
+    viewport_budget_source.push_str(
+        " return v; } @fragment fn fs() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }",
+    );
+    let viewport_budget_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 viewport-remap shader budget boundary"),
+        source: ShaderSource::Wgsl(viewport_budget_source.into()),
+    });
+    let viewport_budget_attributes = [VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let viewport_budget_vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 16,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &viewport_budget_attributes,
+    })];
+    expect_internal_error_containing(
+        &device,
+        "FL9_1 vertex shader whose viewport-remapped variant exceeds FXC limits",
+        "viewport-remapped vertex shader compilation failed",
+        || {
+            drop(device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("FL9_1 viewport-remap shader budget rejection"),
+                layout: Some(&pipeline_layout),
+                vertex: VertexState {
+                    module: &viewport_budget_shader,
+                    entry_point: Some("vs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    buffers: &viewport_budget_vertex_layout,
+                },
+                primitive: PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &viewport_budget_shader,
+                    entry_point: Some("fs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    targets: &targets,
+                }),
+                multiview_mask: None,
+                cache: None,
+            }));
+        },
+    );
 
     let create_buffer = |label: &'static str, size: usize, data: &[u8], usage| {
         let buffer = device.create_buffer(&BufferDescriptor {
@@ -16157,7 +16225,12 @@ fn public_dx11_rejects_unimplemented_hal_features_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let features = adapter.features();
-    let unsupported = [Features::PIPELINE_CACHE, Features::EXPERIMENTAL_RAY_QUERY];
+    let unsupported = [
+        Features::PIPELINE_CACHE,
+        Features::EXPERIMENTAL_RAY_QUERY,
+        Features::CLIP_DISTANCES,
+        Features::SHADER_F16,
+    ];
     for feature in unsupported {
         assert!(
             !features.contains(feature),
@@ -16174,12 +16247,41 @@ fn public_dx11_rejects_unimplemented_hal_features_at_fl91() {
             "device creation unexpectedly accepted {feature:?}"
         );
     }
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(!downlevel.flags.contains(DownlevelFlags::SHADER_F16_IN_F32));
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 shader-capability validation test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    expect_validation_error(&device, "WGSL clip_distances without its feature", || {
+        drop(device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("unavailable FL9_1 clip_distances"),
+            source: ShaderSource::Wgsl(
+                "enable clip_distances; struct Output { @builtin(position) position: vec4f, @builtin(clip_distances) distances: array<f32, 1> } @vertex fn main() -> Output { var output: Output; output.position = vec4f(0.0, 0.0, 0.5, 1.0); output.distances[0] = 0.5; return output; }".into(),
+            ),
+        }));
+    });
+    expect_validation_error(
+        &device,
+        "WGSL quantizeToF16 without its downlevel capability",
+        || {
+            drop(device.create_shader_module(ShaderModuleDescriptor {
+                label: Some("unavailable FL9_1 quantizeToF16"),
+                source: ShaderSource::Wgsl(
+                    "@fragment fn main(@location(0) value: f32) -> @location(0) vec4f { let quantized = quantizeToF16(value); return vec4f(quantized, 0.0, 0.0, 1.0); }".into(),
+                ),
+            }));
+        },
+    );
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.driver_info
     );
     println!(
-        "PASS: public adapter withheld PIPELINE_CACHE and EXPERIMENTAL_RAY_QUERY; both device requests failed before HAL open"
+        "PASS: public adapter withheld PIPELINE_CACHE, EXPERIMENTAL_RAY_QUERY, CLIP_DISTANCES, and SHADER_F16; clip-distance and quantizeToF16 shader modules failed Core validation"
     );
 }
 
@@ -23701,6 +23803,167 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
         assert!(edge > 0, "expected resolved partial-coverage edge pixels");
         println!(
             "PASS: FL9_1 4x {depth_format:?} depth test checked 64 resolved pixels ({covered} near red, {edge} partial coverage, {clear} clear); farther green draw was rejected"
+        );
+
+        let prepass_internal_scope = device.push_error_scope(ErrorFilter::Internal);
+        let prepass_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+        let depth_prepass_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 four-sample targetless depth prepass pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: depth_format,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState {
+                count: 4,
+                ..Default::default()
+            },
+            fragment: None,
+            multiview_mask: None,
+            cache: None,
+        });
+        if let Some(error) = poll_ready(prepass_validation_scope.pop()) {
+            panic!("FL9_1 targetless multisample depth pipeline validation failed: {error:?}");
+        }
+        if let Some(error) = poll_ready(prepass_internal_scope.pop()) {
+            panic!("FL9_1 targetless multisample depth pipeline failed internally: {error:?}");
+        }
+
+        let mut prepass_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 targetless multisample depth prepass commands"),
+        });
+        let prepass_internal_scope = device.push_error_scope(ErrorFilter::Internal);
+        let prepass_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+        {
+            let mut pass = prepass_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 targetless multisample depth prepass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: (depth_format == TextureFormat::Depth24PlusStencil8).then_some(
+                        Operations {
+                            load: LoadOp::Clear(0),
+                            store: StoreOp::Store,
+                        },
+                    ),
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&depth_prepass_pipeline);
+            pass.set_vertex_buffer(0, vertices.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        {
+            let mut pass = prepass_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 color pass consuming multisample depth prepass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &msaa_view,
+                    depth_slice: None,
+                    resolve_target: Some(&resolved_view),
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLUE),
+                        store: StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: (depth_format == TextureFormat::Depth24PlusStencil8).then_some(
+                        Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    ),
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertices.slice(..));
+            pass.draw(3..6, 0..1);
+        }
+        prepass_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &resolved,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let prepass_commands = prepass_encoder.finish();
+        if let Some(error) = poll_ready(prepass_validation_scope.pop()) {
+            panic!("FL9_1 targetless multisample depth recording failed validation: {error:?}");
+        }
+        if let Some(error) = poll_ready(prepass_internal_scope.pop()) {
+            panic!("FL9_1 targetless multisample depth recording failed internally: {error:?}");
+        }
+        let prepass_submission = queue.submit([prepass_commands]);
+        let (prepass_sender, prepass_receiver) = std::sync::mpsc::channel();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            prepass_sender.send(result).unwrap()
+        });
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(prepass_submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for targetless multisample depth prepass resolve");
+        prepass_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("targetless multisample depth resolve callback")
+            .expect("map targetless multisample depth resolve");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped targetless multisample depth resolve");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        &[0, 0, 255, 255],
+                        "{depth_format:?} targetless prepass occlusion at ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: FL9_1 4x targetless {depth_format:?} depth prepass blocked the later green draw; 64/64 resolved pixels remained blue"
         );
     }
     let masked_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {

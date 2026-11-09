@@ -46,6 +46,8 @@ Bottom level categories:
 
 #### Hal
 
+- Fail pipeline creation when the required FL9_1 viewport-remapped shader exceeds compiler limits.
+- Support query-validated targetless depth-only multisample prepasses in the opt-in FL9_1 D3D11 backend.
 - Preserve core-validated byte offsets for query-supported FL9_1 D3D11 vertex formats.
 - Permit selected-device-supported FL9_1 cube-face copies and texture-to-buffer readback in the opt-in D3D11 backend.
 - Emulate the proven single-mip 2D float fragment `textureLoad` subset in the opt-in FL9_1 D3D11 backend.

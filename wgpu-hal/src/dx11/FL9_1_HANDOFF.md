@@ -1,5 +1,57 @@
 # FL9_1 handoff
 
+## Latest verified working-tree checkpoint — depth-only MSAA, viewport remap, and shader gates — 2026-11-09
+
+The HAL permits a multisample pipeline without a color target when it has a
+depth attachment whose selected format/sample count passed the capability
+query. A color target still requires the implemented query-validated RGBA8
+path. The strict public regression performed a 4x targetless depth prepass,
+then a color+depth draw and resolve. D16, Depth24Plus and D24S8 blocked the
+farther draw; all 64 pixels remained blue on the RTX 3090 Ti at requested and
+actual FL9_1. The final strict public D3D11 suite passed 108/108 and the
+complete strict private HAL suite passed 443/443 on that physical adapter.
+Core's zero-adapter isolation test passed 1/1; the DX12 Core suite passed
+106/106. Clippy, formatting and `git diff --check` passed with existing
+warnings. Read-only shader/pipeline, resource/transfer, render/attachment,
+surface/query, buffer/command, capability, panic/error and unsafe-contract
+audits found no further confirmed execution or safety mismatch. The nonzero
+1D dimension limit while 1D textures are
+disabled is a reporting clarity issue because Core rejects that shape. The
+broader audit and historical hardware/platform verification remain open.
+
+The viewport-remap fix described below is also included in this checkpoint.
+The public capability-gate test covers unrequestable clip distances and f16.
+
+The HAL now fails pipeline creation with a vertex linkage error when FXC cannot
+compile the FL9_1 viewport-remapped shader variant. This closes a conditional
+path where a later fractional-viewport draw could surface an `Unexpected` HAL
+error that Core treats as device loss. The 254-vector shader boundary test
+proves base compilation succeeds while the remapped version exceeds FXC's
+256-instruction limit at 258. A strict public regression caught the pipeline
+error and then rendered/read back successfully on the same RTX 3090 Ti. The
+strict fractional-viewport GPU test also passed.
+
+The full strict private HAL suite passed 443/443 and public D3D11 suite passed
+108/108 at explicitly requested/selected FL9_1 on RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, software=false). Three optional public format subcases
+reported query-based skips; no required hardware test skipped. Core adapter
+isolation passed 1/1 and DX12 Core passed 106/106. Clippy, formatting and
+`git diff --check` passed; existing lint warnings remain. Rustc initially OOMed
+with debug info enabled; the public suite passed with incremental compilation
+and debug info disabled. The public shader-feature gates, viewport fix and
+depth-only MSAA support are part of this checkpoint.
+
+Status: the backend is useful for carefully scoped Windows graphics prototypes
+that stay within `CAPABILITIES.md`, but it is not a complete or drop-in general
+purpose FL9_1 wgpu implementation. A full operation-by-operation Core/HAL audit
+remains open. Compute/UAV, geometry/tessellation, more than one simultaneous
+color target, indirect draws, occlusion queries and additional shader/resource
+combinations are absent or outside the FL9_1 contract. Public CoreWindow and
+Lumia ARM32 runtime behavior, historical FL9_1 drivers, and physical device
+removal/recovery remain unverified. Focused audits found one issue now fixed,
+no issue in the reviewed query/surface paths, and one stale resource finding
+already fixed by `f3926cf9b`. See `FL9_1_PROGRESS.md` for exact evidence.
+
 ## Latest verified checkpoint — public buffer lifetime before submit — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`
 
 The public GPU regression records a partial source-to-destination copy and a

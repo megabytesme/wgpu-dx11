@@ -415,6 +415,28 @@ fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::De
     }
 }
 
+fn viewport_shader_creation_error(error: &windows::core::Error) -> crate::PipelineError {
+    match viewport_shader_fatal_error(error) {
+        Some(error) => crate::PipelineError::Device(error),
+        None => crate::PipelineError::Linkage(
+            wgt::ShaderStages::VERTEX,
+            alloc::format!("FL9_1 viewport-remapped vertex shader creation failed: {error}"),
+        ),
+    }
+}
+
+fn viewport_shader_compile_error(error: crate::PipelineError) -> crate::PipelineError {
+    match error {
+        error @ (crate::PipelineError::Device(_)
+        | crate::PipelineError::EntryPoint(_)
+        | crate::PipelineError::PipelineConstants(..)) => error,
+        crate::PipelineError::Linkage(_, message) => crate::PipelineError::Linkage(
+            wgt::ShaderStages::VERTEX,
+            alloc::format!("FL9_1 viewport-remapped vertex shader compilation failed: {message}"),
+        ),
+    }
+}
+
 fn depth_only_shader_error(error: super::shader::ShaderCompileError) -> crate::PipelineError {
     if error.code == windows::Win32::Foundation::E_OUTOFMEMORY.0 {
         crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
@@ -1425,7 +1447,7 @@ mod tests {
     }
 
     #[test]
-    fn optional_viewport_shader_errors_distinguish_device_failure() {
+    fn viewport_shader_creation_errors_distinguish_linkage_from_device_failure() {
         use windows::Win32::{
             Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
             Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DRIVER_INTERNAL_ERROR},
@@ -1453,6 +1475,19 @@ mod tests {
         assert_eq!(
             viewport_shader_fatal_error(&windows::core::Error::from_hresult(E_FAIL)),
             Some(crate::DeviceError::Unexpected)
+        );
+        assert!(matches!(
+            viewport_shader_creation_error(&windows::core::Error::from_hresult(E_INVALIDARG)),
+            crate::PipelineError::Linkage(wgt::ShaderStages::VERTEX, message)
+                if message.contains("viewport-remapped vertex shader creation failed")
+        ));
+        assert_eq!(
+            viewport_shader_creation_error(&windows::core::Error::from_hresult(E_OUTOFMEMORY)),
+            crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
+        );
+        assert_eq!(
+            viewport_shader_creation_error(&windows::core::Error::from_hresult(E_FAIL)),
+            crate::PipelineError::Device(crate::DeviceError::Unexpected)
         );
     }
 
@@ -2821,17 +2856,20 @@ impl RenderPipeline {
             return Err(invalid());
         }
         if desc.multisample.count > 1
-            && (target.is_none_or(|target| target.format != wgt::TextureFormat::Rgba8Unorm)
-                || super::capabilities::Capabilities::query(owner)
-                    .check_private_texture_2d(
-                        wgt::TextureFormat::Rgba8Unorm,
-                        wgt::TextureUses::COLOR_TARGET,
-                        [8, 8],
-                        1,
-                        1,
-                        desc.multisample.count,
-                    )
-                    .is_err()
+            && ((target.is_none() && desc.depth_stencil.is_none())
+                || target.is_some_and(|target| {
+                    target.format != wgt::TextureFormat::Rgba8Unorm
+                        || super::capabilities::Capabilities::query(owner)
+                            .check_private_texture_2d(
+                                wgt::TextureFormat::Rgba8Unorm,
+                                wgt::TextureUses::COLOR_TARGET,
+                                [8, 8],
+                                1,
+                                1,
+                                desc.multisample.count,
+                            )
+                            .is_err()
+                })
                 || desc.depth_stencil.as_ref().is_some_and(|depth| {
                     super::capabilities::Capabilities::query(owner)
                         .check_private_depth_stencil_samples(depth.format, desc.multisample.count)
@@ -3039,7 +3077,6 @@ impl RenderPipeline {
             },
             vertex_stage.constants,
         )?;
-        // Keep the original shader available when the remap exceeds FL9 limits.
         let vertex_viewport_code = match vertex_stage.module.compile_with_fl9_options_and_constants(
             naga::ShaderStage::Vertex,
             vertex_stage.entry_point,
@@ -3053,14 +3090,11 @@ impl RenderPipeline {
             },
             vertex_stage.constants,
         ) {
-            Ok(code) => Some(code),
+            Ok(code) => code,
             Err(crate::PipelineError::Device(error)) => {
                 return Err(crate::PipelineError::Device(error))
             }
-            Err(error) => {
-                log::debug!("D3D11 viewport-remapped vertex shader unavailable: {error:?}");
-                None
-            }
+            Err(error) => return Err(viewport_shader_compile_error(error)),
         };
         let texel_load_binding = fragment
             .map(|fragment| {
@@ -3233,18 +3267,19 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateVertexShader(&vertex_code, None::<&ID3D11ClassLinkage>, Some(&mut vertex))
                 .map_err(failure)?;
-            if let Some(code) = &vertex_viewport_code {
-                if let Err(error) = owner.raw_device().CreateVertexShader(
-                    code,
+            owner
+                .raw_device()
+                .CreateVertexShader(
+                    &vertex_viewport_code,
                     None::<&ID3D11ClassLinkage>,
                     Some(&mut viewport_vertex),
-                ) {
-                    if let Some(error) = viewport_shader_fatal_error(&error) {
-                        return Err(crate::PipelineError::Device(error));
-                    }
-                    log::debug!("D3D11 viewport-remapped vertex shader creation failed: {error}");
-                    viewport_vertex = None;
-                }
+                )
+                .map_err(|error| viewport_shader_creation_error(&error))?;
+            if viewport_vertex.is_none() {
+                return Err(crate::PipelineError::Linkage(
+                    wgt::ShaderStages::VERTEX,
+                    "FL9_1 viewport-remapped vertex shader creation returned no shader".into(),
+                ));
             }
             owner
                 .raw_device()

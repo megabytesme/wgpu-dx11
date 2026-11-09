@@ -1,5 +1,85 @@
 # FL9_1 progress
 
+## Depth-only multisample pipelines — 2026-11-09 — working tree
+
+The HAL no longer rejects a multisample pipeline solely because it has no
+color target. A depth-only pipeline still requires positive support for its
+selected depth format and sample count; a present color target independently
+requires the implemented RGBA8 render/resolve path. Core already allowed this
+public request, so the old HAL check surfaced as a pipeline linkage failure.
+
+The strict public regression extends
+`public_dx11_resolves_four_sample_rgba8_at_fl91`: it performs a targetless 4x
+depth prepass, then draws farther geometry in a color+depth pass and resolves
+the RGBA8 target. On the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false, requested/actual FL9_1), D16, Depth24Plus and
+D24S8 each blocked the later draw; all 64 resolved pixels remained blue. The
+focused public test passed 1/1. The final strict public D3D11 target passed
+108/108 on the same forced-FL9_1 adapter; the complete private HAL suite passed
+443/443. Core's zero-adapter isolation test passed 1/1 and the DX12 Core suite
+passed 106/106. HAL and public-test Clippy, workspace formatting and
+`git diff --check` passed. Clippy reported existing HAL warnings; the Core
+DX12 build reported three unrelated unused-variable warnings. The strict runs
+used the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false, requested/actual FL9_1). No required strict
+hardware case skipped.
+
+The render audit confirmed this Core/HAL mismatch. The resource audit found no
+other mismatch in its reviewed texture, transfer, view and mapping paths. A
+surface-format concern was withdrawn after the Microsoft required-format table
+confirmed BGRA8 UNORM and sRGB display/render-target support at FL9_1. The
+broader operation-by-operation audit remains open; historical hardware,
+Lumia/CoreWindow execution and physical device removal/recovery remain
+unverified. Independent shader/pipeline, buffer/command and capability audits
+found no further confirmed Core/HAL execution mismatch. They identified only
+the clarity issue that `max_texture_dimension_1d` is nonzero while the
+`texture_1d` capability flag is false; Core still rejects 1D texture creation.
+An additional public panic-path audit found the HAL stubs and unwraps gated by
+unadvertised features or Core mapping state; no legal public path to a panic
+was confirmed. A separate unsafe-contract audit found no concrete public-path
+memory-safety, ownership, mapping, or submission-lifetime issue. The
+implementation and test changes are ready for a focused checkpoint.
+
+## Viewport-remap fail-fast and shader feature gates — 2026-11-09 — working tree
+
+Render-pipeline creation now requires the FL9_1 viewport-remapped vertex
+variant. A shader can no longer leave a usable-looking pipeline whose later
+Core-valid fractional-viewport draw latches `DeviceError::Unexpected` and is
+reported by Core as device loss. A variant compilation or nonfatal native
+shader-creation failure is returned as a vertex linkage error at pipeline
+creation; device and out-of-memory failures retain their device-error mapping.
+The normal vertex variant remains compiled for integer viewport use.
+
+The exact FXC boundary is covered by Naga/HLSL tests: the ordinary 254-vector
+vertex shader compiles, while the viewport-remapped shader fails with FXC
+X5615 because it requires 258 instruction slots against a 256-slot target.
+The strict public regression observes the pipeline internal error and then
+completes the existing render/readback on the same device (17 green and 4 red
+pixels). A separate strict fractional-viewport rendering test passed.
+
+The public FL9_1 feature-gate test also now verifies `CLIP_DISTANCES` and
+`SHADER_F16` are unavailable, `SHADER_F16_IN_F32` is absent, and Core rejects
+clip-distance output and `quantizeToF16`. The strict public D3D11 target passed
+105/105 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false, requested/actual FL9_1). Three optional format
+subcases visibly skipped from selected-device query results; no required strict
+hardware test skipped. The strict private HAL suite passed 443/443, including
+fractional viewports. Public and private HAL Clippy passed with existing
+warnings only; formatting and `git diff --check` passed.
+
+An initial public rebuild at `-j8` and then `-j2` with debug info enabled hit
+Rustc LLVM out-of-memory failures. The successful full public run used
+`CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`,
+`CARGO_PROFILE_TEST_DEBUG=0`, and `-j2`.
+
+The render audit found and fixed this conditional gap. The query/surface audit
+found no new mismatch. A proposed combined depth-view mismatch was a stale
+finding: commit `f3926cf9b` had already fixed that path. These focused audits
+do not complete the operation-by-operation Core/HAL review. Historical FL9_1
+drivers, Lumia ARM32/CoreWindow execution, and physical device removal/recovery
+remain unverified. The viewport and shader-gate changes are part of the
+current verified checkpoint.
+
 ## Public buffer lifetime before submission — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`
 
 A public Core↔HAL buffer-lifetime audit found no confirmed ordering or ownership

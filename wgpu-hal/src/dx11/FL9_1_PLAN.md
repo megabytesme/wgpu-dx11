@@ -1,5 +1,27 @@
 # FL9_1 completion plan
 
+## Current continuation — depth-only MSAA and public-contract audits — 2026-11-09 — working tree
+
+The HAL now accepts query-supported multisample pipelines with depth-only
+attachments, while still rejecting attachment-free multisample pipelines and
+requiring the existing RGBA8 support for color targets. A strict public GPU
+regression ran a targetless four-sample depth prepass for D16, Depth24Plus and
+D24S8, followed by a color+depth draw and resolve. The farther draw was
+rejected in all three cases and all 64 resolved pixels stayed blue on the RTX
+3090 Ti at explicitly requested/actual FL9_1.
+
+The final strict public suite passed 108/108 and the private HAL suite 443/443.
+The Core zero-adapter isolation test passed 1/1; DX12 Core passed 106/106.
+Clippy, formatting and `git diff --check` passed, with existing lint warnings.
+Independent shader/pipeline, resource/transfer, render/attachment,
+surface/query, buffer/command, capability, panic/error and unsafe-contract
+reviews found no additional confirmed Core/HAL mismatch or public-path safety
+issue. The broad operation-by-operation audit
+is still open; historical FL9_1 devices, Lumia/CoreWindow runtime and actual
+device removal/recovery remain unverified. These changes are ready for a
+focused checkpoint. Continue with the next independent audit slice and
+implement only a concrete, tested mismatch or a useful bounded feature gap.
+
 ## Latest verified increment — public buffer lifetime before submit — 2026-11-09 — `67e8fcde45592a8a8ccc9c7759e9a0569313abd2`
 
 The strict public regression now records source-to-destination and
