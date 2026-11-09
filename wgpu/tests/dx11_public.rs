@@ -17196,7 +17196,7 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         step_mode: VertexStepMode::Vertex,
         attributes: &attributes,
     })];
-    let make_pipeline = |vertex_entry, fragment_entry, stencil| {
+    let make_pipeline = |vertex_entry, fragment_entry, stencil, bias| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("FL9_1 D16 depth pipeline"),
             layout: None,
@@ -17215,7 +17215,7 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
                 depth_write_enabled: Some(true),
                 depth_compare: Some(CompareFunction::Less),
                 stencil,
-                bias: DepthBiasState::default(),
+                bias,
             }),
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
@@ -17232,8 +17232,18 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
             cache: None,
         })
     };
-    let near = make_pipeline("vs_near", "green", StencilState::default());
-    let far = make_pipeline("vs_far", "red", StencilState::default());
+    let near = make_pipeline(
+        "vs_near",
+        "green",
+        StencilState::default(),
+        DepthBiasState::default(),
+    );
+    let far = make_pipeline(
+        "vs_far",
+        "red",
+        StencilState::default(),
+        DepthBiasState::default(),
+    );
     expect_validation_error(&device, "stencil state on D16 pipeline", || {
         drop(make_pipeline(
             "vs_near",
@@ -17245,6 +17255,37 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
                 },
                 ..StencilState::default()
             },
+            DepthBiasState::default(),
+        ));
+    });
+    let positive_bias = make_pipeline(
+        "vs_near",
+        "red",
+        StencilState::default(),
+        DepthBiasState {
+            constant: 1_048_576,
+            ..Default::default()
+        },
+    );
+    let negative_bias = make_pipeline(
+        "vs_near",
+        "red",
+        StencilState::default(),
+        DepthBiasState {
+            constant: -1_048_576,
+            ..Default::default()
+        },
+    );
+    expect_validation_error(&device, "nonzero D16 depth-bias clamp", || {
+        drop(make_pipeline(
+            "vs_near",
+            "red",
+            StencilState::default(),
+            DepthBiasState {
+                constant: 1,
+                clamp: 0.5,
+                ..Default::default()
+            },
         ));
     });
     let readback = device.create_buffer(&BufferDescriptor {
@@ -17253,6 +17294,104 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
+
+    let mut bias_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 D16 public constant depth bias"),
+    });
+    {
+        let mut pass = bias_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 D16 public constant depth bias pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.set_pipeline(&near);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&positive_bias);
+        pass.draw(0..3, 0..1);
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.set_pipeline(&near);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&negative_bias);
+        pass.draw(0..3, 0..1);
+    }
+    bias_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([bias_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public FL9_1 depth-bias render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public D16 depth-bias map callback")
+        .expect("map public D16 depth-bias output");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped public D16 depth-bias output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = if x < 4 {
+                    [0, 255, 0, 255]
+                } else {
+                    [255, 0, 0, 255]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "public D16 depth-bias pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
 
     for far_first in [false, true] {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -17584,7 +17723,7 @@ fn public_dx11_d16_depth_attachment_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: public FL9_1 D16 depth attachment; near geometry won both draw orders, LOAD preserved depth, CLEAR reset depth and a post-discard LOAD did not expose stale depth; 192/192 pass-transition pixels validated; core rejected mips, stencil view, stencil state"
+        "PASS: public FL9_1 D16 depth attachment and constant bias; unbiased depth won both draw orders, positive bias failed and negative bias passed across 64/64 pixels, LOAD preserved depth, CLEAR reset depth and post-discard LOAD initialized depth; core rejected mips, stencil view/state and nonzero bias clamp"
     );
 }
 
