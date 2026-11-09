@@ -1,5 +1,29 @@
 # FL9_1 progress
 
+## Pipeline failure classification and opt-in CTS routing — 2026-11-09
+
+Pipeline native-object creation now reports known `E_OUTOFMEMORY` as
+`PipelineError::Device(OutOfMemory)` and DXGI device hung/removed/reset/driver
+internal errors as `PipelineError::Device(Lost)`. `E_INVALIDARG` continues to
+produce a linkage error. A production-mapper unit test covers these HRESULTs.
+The focused HAL error tests passed 3/3. Existing `hal_queue.rs`
+`unused_qualifications` warnings remain.
+
+The Deno/xtask path now supports explicit experimental DX11 CTS selection:
+`cargo xtask cts --backend dx11` enables `deno_webgpu/dx11`, which compiles
+`wgpu-core/dx11`; the `d3d11` alias is accepted too. If
+`DENO_WEBGPU_BACKEND` is unset, Deno uses `Backends::default()`, which excludes
+DX11. Backend-mask tests passed 2/2, xtask feature-routing passed 1/1, and
+`cts_runner` checked successfully with the feature enabled. Deno compilation
+reported three existing Core unused-variable warnings. CTS execution itself
+was not attempted: this checkout has no local CTS checkout and no Deno runtime.
+The runner still needs a strict adapter preflight/log before CTS output can be
+counted as physical GPU evidence.
+
+Commits: `f87abf0d3` (`dx11: classify pipeline device creation failures`),
+`d2994cebd` (`xtask: enable opt-in D3D11 CTS routing`). Neither change alters
+the D3D11 capability projection or normal adapter enumeration.
+
 ## Multi-mip RGBA8_SNORM partial copy — 2026-11-09
 
 Added a strict public test combining the existing RGBA8_SNORM multi-mip and

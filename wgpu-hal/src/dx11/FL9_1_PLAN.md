@@ -1,5 +1,23 @@
 # FL9_1 completion plan
 
+## Current coordination checkpoint — 2026-11-09
+
+Two test-readiness gaps were closed in isolated commits. Native pipeline-object
+creation now preserves known OOM and device-loss HRESULTs as `PipelineError::Device`
+instead of reporting every non-invalid-argument failure as shader linkage
+(`f87abf0d3`). Deno/xtask now builds the experimental DX11 backend only when
+`cargo xtask cts --backend dx11` (or `d3d11`) explicitly requests it, and the
+unset Deno backend mask excludes DX11 (`d2994cebd`). Focused tests and the CTS
+runner feature check passed. The CTS suite itself was not run: this checkout has
+no `cts/` tree or Deno executable, and adapter selection is not yet strict in the
+CTS runner. Normal backend enumeration/default selection remains unchanged.
+
+Current main gaps remain: exhaustive Core-valid versus HAL-executable public
+contract coverage, broader shader/resource/pipeline behavior, actual historical
+FL9_1 hardware, Lumia ARM32/CoreWindow runtime, and physical device-removal
+recovery. See the latest progress entries and handoff for boundaries and
+verification detail.
+
 ## Latest Core/HAL boundary finding — viewport remap shader — 2026-11-09
 
 An optional-variant pipeline change was withdrawn after a deeper contract
