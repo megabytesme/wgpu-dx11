@@ -425,6 +425,16 @@ fn viewport_shader_creation_error(error: &windows::core::Error) -> crate::Pipeli
     }
 }
 
+fn pipeline_object_creation_error(error: &windows::core::Error) -> crate::PipelineError {
+    match viewport_shader_fatal_error(error) {
+        Some(error) => crate::PipelineError::Device(error),
+        None => crate::PipelineError::Linkage(
+            wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
+            error.to_string(),
+        ),
+    }
+}
+
 fn viewport_shader_compile_error(error: crate::PipelineError) -> crate::PipelineError {
     match error {
         error @ (crate::PipelineError::Device(_)
@@ -1495,6 +1505,43 @@ mod tests {
             viewport_shader_creation_error(&windows::core::Error::from_hresult(E_FAIL)),
             crate::PipelineError::Device(crate::DeviceError::Unexpected)
         );
+    }
+
+    #[test]
+    fn native_pipeline_object_errors_preserve_device_failures() {
+        use windows::Win32::{
+            Foundation::{E_INVALIDARG, E_OUTOFMEMORY},
+            Graphics::Dxgi::{
+                DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+                DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+            },
+        };
+
+        assert_eq!(
+            pipeline_object_creation_error(&windows::core::Error::from_hresult(E_OUTOFMEMORY)),
+            crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
+        );
+        for error in [
+            DXGI_ERROR_DEVICE_HUNG,
+            DXGI_ERROR_DEVICE_REMOVED,
+            DXGI_ERROR_DEVICE_RESET,
+            DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+        ] {
+            assert_eq!(
+                pipeline_object_creation_error(&windows::core::Error::from_hresult(error)),
+                crate::PipelineError::Device(crate::DeviceError::Lost)
+            );
+        }
+        match pipeline_object_creation_error(&windows::core::Error::from_hresult(E_INVALIDARG)) {
+            crate::PipelineError::Linkage(stages, message) => {
+                assert_eq!(
+                    stages,
+                    wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT
+                );
+                assert!(!message.is_empty());
+            }
+            error => panic!("expected linkage error, got {error:?}"),
+        }
     }
 
     #[test]
@@ -3271,12 +3318,7 @@ impl RenderPipeline {
             (None, None, None, None, None, None);
         let mut vertex_index_buffer = None;
         let mut viewport_vertex = None;
-        let failure = |error: windows::core::Error| {
-            crate::PipelineError::Linkage(
-                wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
-                error.to_string(),
-            )
-        };
+        let failure = |error: windows::core::Error| pipeline_object_creation_error(&error);
         unsafe {
             owner
                 .raw_device()
