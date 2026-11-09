@@ -361,6 +361,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         | wgt::Features::POLYGON_MODE_LINE
         | wgt::Features::TIMESTAMP_QUERY
         | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+        | wgt::Features::TIMESTAMP_QUERY_INSIDE_PASSES
         | wgt::Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB;
     assert_eq!(features & !query_gated_features, expected_features);
     assert_eq!(
