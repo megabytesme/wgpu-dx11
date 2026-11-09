@@ -16,6 +16,8 @@ from a stale 17 to 22 (six vertex uniforms plus sixteen vertex input buffers).
 CTS operation coverage still needs a downlevel-aware request path; other Core
 defaults also exceed this adapter's projection. Commits:
 `f87abf0d3`, `d2994cebd`, `ee480928e`.
+The corrected limit and its verification are checkpointed at
+`bb34517a9ddb8a82c883f4a64c9a3154169e61f8`.
 
 The separate-alpha contract audit found the current Core `SEPARATE_ALPHA_BLEND`
 gate and HAL translation fail closed for RGB+alpha writes; RGB-only and

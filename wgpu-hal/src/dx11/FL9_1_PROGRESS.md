@@ -52,6 +52,8 @@ compatibility/downlevel API path. Keep the standard CTS failure visible and use
 strict native wgpu tests with explicitly requested supported limits for GPU
 execution evidence.
 
+Checkpoint: `bb34517a9ddb8a82c883f4a64c9a3154169e61f8` (`dx11: correct FL9_1 combined buffer limit`).
+
 ## Strict CTS hardware preflight and blend-mask boundary — 2026-11-09
 
 Deno now has an explicit strict hardware mode for opt-in DX11 CTS runs. The

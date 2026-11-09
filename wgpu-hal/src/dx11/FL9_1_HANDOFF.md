@@ -12,6 +12,7 @@ buffers per stage, above the adapter's truthful limit of 22; no GPU operation
 ran. This is expected for the non-Core-WebGPU adapter. The preflight correctly
 reported failure rather than skip. Do not change public defaults or falsify the
 projection to force these cases. See `FL9_1_PROGRESS.md` for exact commands.
+Checkpoint: `bb34517a9ddb8a82c883f4a64c9a3154169e61f8` (`dx11: correct FL9_1 combined buffer limit`).
 
 The separate-alpha audit found that Core requires the absent FL9_1
 `SEPARATE_ALPHA_BLEND` flag when both RGB and alpha writes have different
