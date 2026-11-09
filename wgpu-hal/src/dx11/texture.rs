@@ -595,6 +595,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_R24G8_TYPELESS
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
+                    | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB
                     | DXGI_FORMAT_BC2_UNORM
@@ -1620,8 +1621,9 @@ impl NativeDevice {
 
     pub(super) fn validate_texture_readback_source(&self, texture: &NativeTexture) -> Result<()> {
         let desc = self.texture_desc(texture)?;
-        if self.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
-            && desc.BindFlags == D3D11_BIND_SHADER_RESOURCE.0 as u32
+        if desc.Format == DXGI_FORMAT_R8G8B8A8_SNORM
+            || (self.feature_level().as_raw() < FeatureLevel::L10_0.as_raw()
+                && desc.BindFlags == D3D11_BIND_SHADER_RESOURCE.0 as u32)
         {
             return Err(invalid());
         }

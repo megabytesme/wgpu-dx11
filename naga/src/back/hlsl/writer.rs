@@ -1118,7 +1118,17 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         query,
                     ) {
                         (Some(_), None, None, None, crate::ImageQuery::Size { level }) => {
-                            if is_cube_dimensions || implicit_sample_count != 0 {
+                            if is_cube_dimensions {
+                                level.is_none_or(|level| {
+                                    implicit_sample_count == 0
+                                        && fl9_literal_mip_level(
+                                            module,
+                                            &entry.function.expressions,
+                                            level,
+                                        )
+                                        .is_some()
+                                })
+                            } else if implicit_sample_count != 0 {
                                 level.is_none()
                             } else {
                                 level.is_none_or(|level| {
@@ -6862,6 +6872,31 @@ mod fl9_viewport_tests {
         assert!(output.contains("int2(naga_fl9_load_size.xy)"), "{output}");
         assert!(output.contains(".Sample("), "{output}");
         assert!(!output.contains("GetDimensions"), "{output}");
+
+        for source in [
+            "@group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube, 1u)); return vec4f(dimensions / vec2f(8.0), 0.0, 1.0); }",
+            "const LEVEL: i32 = 1; @group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube, LEVEL)); return vec4f(dimensions / vec2f(8.0), 0.0, 1.0); }",
+        ] {
+            let explicit_output = translate(source, &options, ShaderStage::Fragment).unwrap();
+            assert!(
+                explicit_output.contains("int2(naga_fl9_load_size.xy)"),
+                "{explicit_output}"
+            );
+            assert!(!explicit_output.contains("GetDimensions"), "{explicit_output}");
+        }
+
+        let explicit_level_and_sample = "@group(0) @binding(7) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) + vec4f(vec2f(textureDimensions(cube, 1u)), 0.0, 1.0); }";
+        assert!(translate(explicit_level_and_sample, &options, ShaderStage::Fragment).is_err());
+
+        let negative_level = "@group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, -1)), 0.0, 1.0); }";
+        assert!(translate(negative_level, &options, ShaderStage::Fragment).is_err());
+
+        for unsupported_level in [
+            "@group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main(@location(0) input: vec2f) -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, u32(input.x))), 0.0, 1.0); }",
+            "override LEVEL: u32 = 1u; @group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, LEVEL)), 0.0, 1.0); }",
+        ] {
+            assert!(translate(unsupported_level, &options, ShaderStage::Fragment).is_err());
+        }
 
         let helper = "@group(0) @binding(7) var cube: texture_cube<f32>; fn unused() -> f32 { return 1.0; } @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube)), 0.0, 1.0); }";
         assert!(translate(helper, &options, ShaderStage::Fragment).is_err());

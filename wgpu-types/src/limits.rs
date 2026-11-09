@@ -1329,6 +1329,9 @@ pub struct DownlevelLimits {
     /// non-array `texture_cube<f32>` using `textureDimensions` and convert the
     /// returned `vec2<u32>` directly to `vec2<f32>`.
     ///
+    /// The query may specify a nonnegative literal or module-constant mip level, but such an
+    /// explicit-level query cannot be combined with sampling in the same entry point.
+    ///
     /// This restricted form does not imply general texture-query support. The selected entry
     /// point must also satisfy the backend's other validation requirements for this operation.
     #[cfg_attr(feature = "serde", serde(default))]

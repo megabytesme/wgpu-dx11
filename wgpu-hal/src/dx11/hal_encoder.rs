@@ -339,6 +339,7 @@ impl RenderState {
                 load.kind,
                 super::hal_shader::Fl9TextureEmulationKind::Dimensions
                     | super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
+                    | super::hal_shader::Fl9TextureEmulationKind::DimensionsCube
             ) {
                 (
                     dimension_for_mip(info.size[0], load.mip_level),

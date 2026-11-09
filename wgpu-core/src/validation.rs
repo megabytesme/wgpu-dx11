@@ -3009,7 +3009,7 @@ fn entry_point_supports_fl9_texture_dimensions(
         return false;
     };
     if let Some(level) = query_level {
-        if dimension == naga::ImageDimension::Cube || sample_image.is_some() {
+        if sample_image.is_some() {
             return false;
         }
         if !matches!(
@@ -7780,6 +7780,98 @@ mod tests {
             "#,
         );
         assert!(!cube
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        for source in [
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image, 1u)), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            const LEVEL: i32 = 1;
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image, LEVEL)), 0.0, 1.0);
+            }
+            "#,
+        ] {
+            let explicit_cube = make_interface(source);
+            assert!(!explicit_cube
+                .entry_point_uses_unsupported_texture_query(
+                    naga::ShaderStage::Fragment,
+                    "main",
+                    &cube_only,
+                )
+                .unwrap());
+        }
+
+        let explicit_level_and_sample = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureSample(image, image_sampler, vec3f(1.0, 0.0, 0.0))
+                    + vec4f(vec2f(textureDimensions(image, 1u)), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(explicit_level_and_sample
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        let dynamic_level = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn main(@location(0) input: vec2f) -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image, u32(input.x))), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(dynamic_level
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        let negative_level = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image, -1)), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(negative_level
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &cube_only,
+            )
+            .unwrap());
+
+        let override_level = make_interface(
+            r#"
+            override LEVEL: u32 = 1u;
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image, LEVEL)), 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(override_level
             .entry_point_uses_unsupported_texture_query(
                 naga::ShaderStage::Fragment,
                 "main",

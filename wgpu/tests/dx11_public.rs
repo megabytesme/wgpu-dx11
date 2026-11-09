@@ -31061,8 +31061,18 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
     }
     assert!(downlevel.flags.contains(DownlevelFlags::CUBE_TEXTURES));
     assert!(!downlevel.limits.texture_query);
+    let cube_mips_supported = !adapter
+        .get_texture_format_features(TextureFormat::Rgba8Unorm)
+        .flags
+        .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+    if required {
+        assert!(
+            cube_mips_supported,
+            "strict mode requires selected-device RGBA8 cube mip support"
+        );
+    }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment cube textureDimensions host emulation",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false rgba8_cube_mipmaps={cube_mips_supported}; operation=fragment cube textureDimensions host emulation",
         info.name, info.vendor, info.device, info.driver_info
     );
 
@@ -31342,6 +31352,190 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
         }
         println!(
             "PASS: forced FL9_1 cube textureDimensions followed a view transition from 8x8 to 4x4; all 64 pixels matched"
+        );
+    }
+    readback.unmap();
+
+    if !cube_mips_supported {
+        println!("SKIP: selected FL9_1 device lacks RGBA8 cube mip support for explicit-level dimensions");
+        return;
+    }
+
+    let mipmapped_cube = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 constant mip cube dimensions source"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 6,
+        },
+        mip_level_count: 4,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    for mip_level in 0..4 {
+        let mip_size = (8 >> mip_level).max(1);
+        for face in 0..6 {
+            let color = [
+                (24 + mip_level * 32) as u8,
+                (48 + face * 24) as u8,
+                (160 - mip_level * 24) as u8,
+                255,
+            ];
+            let pixels = color.repeat((mip_size * mip_size) as usize);
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &mipmapped_cube,
+                    mip_level,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: face,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                &pixels,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(mip_size * 4),
+                    rows_per_image: Some(mip_size),
+                },
+                Extent3d {
+                    width: mip_size,
+                    height: mip_size,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+    let mipmapped_cube_view = mipmapped_cube.create_view(&TextureViewDescriptor {
+        label: Some("full mipmapped FL9_1 cube dimensions view"),
+        format: Some(TextureFormat::Rgba8Unorm),
+        dimension: Some(TextureViewDimension::Cube),
+        usage: Some(TextureUsages::TEXTURE_BINDING),
+        aspect: TextureAspect::All,
+        base_mip_level: 0,
+        mip_level_count: Some(4),
+        base_array_layer: 0,
+        array_layer_count: Some(6),
+    });
+    let mipmapped_cube_bind_group = bind_group(
+        "FL9_1 constant mip cube dimensions binding",
+        &mipmapped_cube_view,
+    );
+    let explicit_mip_fragment = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 constant mip cube dimensions shader"),
+        source: ShaderSource::Wgsl(
+            "const LEVEL: u32 = 1u; @group(0) @binding(7) var image: texture_cube<f32>; @fragment fn fs() -> @location(0) vec4f { let size = vec2f(textureDimensions(image, LEVEL)); return vec4f(size / vec2f(8.0), 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let explicit_mip_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 constant mip cube dimensions pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &vertex_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &explicit_mip_fragment,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mut mip_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 constant mip cube dimensions render and readback"),
+    });
+    {
+        let mut pass = mip_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 constant mip cube dimensions pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&explicit_mip_pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_bind_group(0, &mipmapped_cube_bind_group, &[]);
+        pass.draw(0..6, 0..1);
+        pass.draw(6..12, 0..1);
+    }
+    mip_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let mip_submission = queue.submit([mip_encoder.finish()]);
+    let (mip_sender, mip_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        mip_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(mip_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 constant mip cube dimensions rendering");
+    mip_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("constant mip cube textureDimensions map callback")
+        .expect("map FL9_1 constant mip cube dimensions output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped FL9_1 constant mip cube dimensions pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = [128_u8, 128, 0, 255];
+                for channel in 0..4 {
+                    let actual = pixels[offset + channel] as i16;
+                    let expected = expected[channel] as i16;
+                    assert!(
+                        (actual - expected).abs() <= 1,
+                        "constant mip cube textureDimensions pixel ({x}, {y}) channel {channel}: actual={actual}, expected={expected}"
+                    );
+                }
+            }
+        }
+        println!(
+            "PASS: forced FL9_1 constant mip-1 cube textureDimensions used an initialized four-level cube; all 64 pixels matched [128,128,0,255]"
         );
     }
     readback.unmap();

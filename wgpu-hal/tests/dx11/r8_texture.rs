@@ -115,14 +115,18 @@ fn sample_upload(
                 view_formats: vec![],
             })
         };
-        let usage_supported = if usage == wgt::TextureUses::COPY_SRC
-            && matches!(
+        let usage_supported = if usage == wgt::TextureUses::COPY_SRC {
+            if matches!(
                 format,
                 wgt::TextureFormat::Bc1RgbaUnorm
                     | wgt::TextureFormat::Bc2RgbaUnorm
                     | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Rgba8Snorm
             ) {
-            format_support & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0
+                format_support & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0
+            } else {
+                render_target_supported
+            }
         } else {
             render_target_supported
         };

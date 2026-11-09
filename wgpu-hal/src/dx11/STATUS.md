@@ -359,9 +359,10 @@ Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 R8G8_UNORM, R16G16_SNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8
 remain single-mip in the private implementation. R8G8_SNORM and
 R8G8B8A8_SNORM support sampled/upload mip chains only when the selected device
-reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE` query controls
-filterability. Render-target, copy-source and readback uses remain
-unsupported. RGBA8 and BGRA8, including their
+  reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE` query controls
+  filterability. Same-format GPU texture copies are separately available for
+  RGBA8_SNORM when its selected `TEXTURE2D` query and backend path are positive.
+  Render-target and CPU readback uses remain unsupported. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
 backend mip path is unavailable. The controlled fixture asserts this
@@ -631,8 +632,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   the implementation also requires the selected device's `TEXTURE2D | MIP`
   query and enabled backend path before exposing mip chains. Strict public
   tests verify padded signed four-channel sampling and three-level biased
-  mip sampling. Render-target, copy-source and readback uses remain
-  unsupported.
+  mip sampling. Same-format texture-to-texture copies are enabled only when
+  the selected `TEXTURE2D` query and backend path are positive; a strict public
+  FL9_1 test uploads, copies, samples and validates the destination. Render-
+  target and CPU readback uses remain unsupported.
 - BC1/BC2/BC3_UNORM have queried one-mip, one-layer sampled/upload subsets and
   block-aligned GPU texture-copy source paths. Dimensions, row pitches, offsets,
   updates and copy boxes align to 4×4 blocks and the format block size (8 bytes
@@ -1376,13 +1379,18 @@ dispatch, occlusion and pipeline-statistics queries remain unavailable. See
 
 The opt-in projection adds `texture_dimensions_cube_float_fragment`, gated by
 the selected device's cube-format sampling query and the backend path. Core,
-Naga and HAL permit only a direct, no-level cube face-size query converted
-from `vec2u` to `vec2f` in the selected fragment entry. The HAL supplies the
-current cube view's width and height through `b13`; ordinary cube resource
-binding continues through the existing mapping. FXC accepted the shader under
-`ps_4_0_level_9_1`. The strict public RTX 3090 Ti test initialized and
-transitioned between 8x8 and 4x4 cube views and matched all 64 readback pixels.
-Helpers, explicit levels, unrelated image operations and general texture
+Naga and HAL permit a direct cube face-size query converted from `vec2u` to
+`vec2f`, with either no mip argument or a nonnegative literal/module-constant
+level. An explicit-level query cannot also sample in the same selected entry
+point; the existing level-less query may share one implicit sample. The HAL
+supplies the selected view's face dimensions at that mip through `b13`;
+nonzero levels additionally require the existing selected-format mip support
+query. Ordinary cube resource binding continues through the existing mapping.
+FXC's level-9 profile does not receive `GetDimensions`; the size comes from
+the shared emulation constant. Strict public execution on the RTX 3090 Ti at
+requested/actual FL9_1 verified both 8x8/4x4 view transitions and a mip-1
+query on a populated four-level cube. Helpers, dynamic/negative levels,
+explicit level plus sampling, unrelated image operations and general texture
 queries remain unsupported.
 
 ## Narrow public BC1/BC2/BC3 unorm feature — 2026-11-09

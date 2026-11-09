@@ -1009,6 +1009,60 @@ mod tests {
             Fl9TextureEmulationKind::DimensionsCube
         ));
 
+        for (source, expected_level) in [
+            (
+                "@group(0) @binding(7) var image: texture_cube<f32>; @fragment fn dimensions() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, 1u)), 0.0, 1.0); }",
+                1,
+            ),
+            (
+                "const LEVEL: i32 = 2; @group(0) @binding(7) var image: texture_cube<f32>; @fragment fn dimensions() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, LEVEL)), 0.0, 1.0); }",
+                2,
+            ),
+        ] {
+            let explicit_module = naga::front::wgsl::parse_str(source).unwrap();
+            let explicit_info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&explicit_module)
+            .unwrap();
+            let explicit_proof = fl9_texture_emulation_binding(
+                &explicit_module,
+                &explicit_info,
+                naga::ShaderStage::Fragment,
+                "dimensions",
+            )
+            .unwrap()
+            .expect("constant-mip cube dimensions use host-provided face dimensions");
+            assert_eq!(explicit_proof.mip_level, expected_level);
+            assert!(matches!(
+                explicit_proof.kind,
+                Fl9TextureEmulationKind::DimensionsCube
+            ));
+        }
+
+        for source in [
+            "@group(0) @binding(7) var image: texture_cube<f32>; @fragment fn dimensions() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, -1)), 0.0, 1.0); }",
+            "@group(0) @binding(7) var image: texture_cube<f32>; @fragment fn dimensions(@location(0) input: vec2f) -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, u32(input.x))), 0.0, 1.0); }",
+            "override LEVEL: u32 = 1u; @group(0) @binding(7) var image: texture_cube<f32>; @fragment fn dimensions() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(image, LEVEL)), 0.0, 1.0); }",
+            "@group(0) @binding(7) var image: texture_cube<f32>; @group(0) @binding(42) var image_sampler: sampler; @fragment fn dimensions() -> @location(0) vec4f { return textureSample(image, image_sampler, vec3f(1.0, 0.0, 0.0)) + vec4f(vec2f(textureDimensions(image, 1u)), 0.0, 1.0); }",
+        ] {
+            let invalid_module = naga::front::wgsl::parse_str(source).unwrap();
+            let invalid_info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&invalid_module)
+            .unwrap();
+            assert!(fl9_texture_emulation_binding(
+                &invalid_module,
+                &invalid_info,
+                naga::ShaderStage::Fragment,
+                "dimensions",
+            )
+            .is_err());
+        }
+
         let sampled_module = naga::front::wgsl::parse_str(
             r#"
             @group(0) @binding(7) var image: texture_cube<f32>;
@@ -3321,10 +3375,10 @@ fn fl9_texture_emulation_binding(
             }
             (Fl9TextureEmulationKind::Dimensions3D, naga::ImageDimension::D3) => {}
             (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::Cube) => {
-                if has_explicit_mip_level {
+                if has_explicit_mip_level && sample_count != 0 {
                     return Err(crate::PipelineError::Linkage(
                         stages,
-                        "D3D11 FL9 cube textureDimensions does not support an explicit mip level"
+                        "D3D11 FL9 cube textureDimensions with an explicit mip level cannot also sample"
                             .into(),
                     ));
                 }

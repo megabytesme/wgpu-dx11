@@ -2033,15 +2033,38 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
 texture-to-buffer attempt fails core validation because FL9_x cannot safely
-copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM, R16G16_SNORM
-and R8G8B8A8_SNORM still do not support render-target, copy-source or
-readback operations in this private subset. RGB5A1 and RGBA4 remain
+copy an SRV-only BC texture to CPU-visible memory. R8G8_SNORM and R16G16_SNORM
+still do not support render-target, copy-source or readback operations in this
+private subset. RGBA8_SNORM now supports same-format GPU texture copies only
+when the selected device reports `TEXTURE2D`; its readback mask remains clear
+and texture-to-buffer readback is still rejected. RGB5A1 and RGBA4 remain
 non-renderable and lack texture-to-buffer readback, but support query-gated
 same-format GPU copies. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
 copy and readback path described below. RG8_UNORM linear filtering has visual
 execution coverage; R8_UNORM and the SNORM formats have query-backed
 filterability but only nearest-sampling readback coverage.
+
+### Query-gated RGBA8_SNORM GPU texture copies
+
+The backend permits a single-mip RGBA8_SNORM texture to be a same-format
+texture-copy source only when the selected device positively reports
+`TEXTURE2D` and the backend copy path is enabled. A synthetic capability test
+checks that a missing query or disabled implementation keeps `COPY_SRC`
+unavailable. The strict public test explicitly requests FL9_1, uploads signed
+texels, copies the texture to a second RGBA8_SNORM resource, samples the copy
+and checks all 64 output pixels after RGBA8 readback. It also verifies that
+`texture_to_buffer_copy_format_mask` does not advertise SNORM CPU readback.
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the selected
+format query returned `0x000213a0` and all 64 pixels matched
+`[255, 0, 255, 0]`. This confirms the selected-device path only; it does not
+verify historical FL9_1 drivers.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib rgba8_snorm_texture_copy_source_requires_implementation_and_positive_query -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy public_dx11_rgba8_snorm_texture_copy_then_sample_at_fl91 -- --nocapture --test-threads=1
+```
 
 Run the controlled core copy/readback boundary test with strict physical
 hardware required:
@@ -3522,13 +3545,19 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_cube_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The strict public test explicitly selected the physical RTX 3090 Ti at
-requested/actual FL9_1, initialized two RGBA8 cube resources, and rendered
-through one 8x8 then one 4x4 view. The shader directly converted each
-`textureDimensions` result to `vec2f`; the padded readback matched the expected
-yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]` across all 64
-pixels. This is cube face-size emulation only; general texture queries,
-explicit-mip cube queries and historical-driver behavior remain unverified.
+The previously verified strict public test explicitly selected the physical
+RTX 3090 Ti at requested/actual FL9_1, initialized two RGBA8 cube resources,
+and rendered through one 8x8 then one 4x4 view. Its padded readback matched
+yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]` across all 64 pixels.
+The test now also includes a constant-level query of mip 1 from an initialized
+four-level cube when the selected-device RGBA8 format features permit mip
+chains. Strict execution on the RTX 3090 Ti at requested/actual FL9_1 matched
+all 64 pixels to `[128,128,0,255]` within one byte. Strict mode fails if the
+mip prerequisite is absent, while normal mode reports the mip-specific case
+as skipped.
+Dynamic or negative levels and an explicit-level query combined with sampling
+remain rejected. This does not establish general texture-query support or
+historical-driver behavior.
 
 ### Narrow FL9_1 fragment 3D `textureDimensions` with a constant mip
 

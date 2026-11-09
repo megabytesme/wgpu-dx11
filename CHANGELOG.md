@@ -79,6 +79,8 @@ Bottom level categories:
 - Add query-gated FL9_1 black and white border addressing for depth comparison samplers while rejecting ordinary border samplers.
 - Accept proven in-range `textureSampleBias` literals forwarded through helper calls in the opt-in FL9_1 D3D11 backend.
 - Support direct `vertex_index` and `instance_index` reads, including unchanged helper forwarding, from fixed-size `vec3` and `vec4` uniform arrays in the opt-in FL9_1 D3D11 backend.
+- Support constant-mip cube `textureDimensions` queries in the narrowly validated FL9_1 D3D11 fragment subset.
+- Expose same-format RGBA8_SNORM GPU texture copies when the selected FL9_1 D3D11 device query supports them, without enabling CPU readback.
 
 ### Changes
 
@@ -94,6 +96,7 @@ Bottom level categories:
 - Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.
 - Add `DownlevelLimits::shader_dynamic_loops` so downlevel backends can reject selected shader entry points with runtime-dependent loop exits while retaining support for statically bounded loops.
 - Add `DownlevelLimits::texture_dimensions_cube_float_fragment` for narrowly validated cube face-size queries when general texture queries are unavailable.
+- Allow nonnegative literal and module-constant mip levels in the narrow selected-entry FL9_1 cube `textureDimensions` proof.
 - Add independent `DownlevelLimits` for the restricted fragment-stage 3D and cube float `textureNumLevels` subsets.
 - Add a downlevel per-stage sampled texture/sampler relationship limit so shader-profile compiler boundaries can be validated before HAL compilation.
 - Gate bind-group layouts with empty shader visibility on downlevel support.

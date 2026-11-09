@@ -331,7 +331,8 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rgb5g6b5Unorm
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm
-        );
+        ) || (desc.format == wgt::TextureFormat::Rgba8Snorm
+            && capabilities.backend.rgba8_snorm_texture_to_texture_copy);
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ
@@ -535,6 +536,20 @@ impl crate::Device for Device {
                 )
                 .map_err(|_| DeviceError::Unexpected)?;
         }
+        if desc.format == wgt::TextureFormat::Rgba8Snorm
+            && desc.usage.contains(wgt::TextureUses::COPY_SRC)
+        {
+            capabilities
+                .check_private_texture_2d(
+                    desc.format,
+                    desc.usage,
+                    [desc.size.width, desc.size.height],
+                    desc.size.depth_or_array_layers,
+                    desc.mip_level_count,
+                    desc.sample_count,
+                )
+                .map_err(|_| DeviceError::Unexpected)?;
+        }
         let support =
             unsafe { self.native.raw_device().CheckFormatSupport(format) }.map_err(device_error)?;
         let cube_readback = cube
@@ -563,6 +578,7 @@ impl crate::Device for Device {
                             | wgt::TextureFormat::Bc3RgbaUnormSrgb
                             | wgt::TextureFormat::Rgb5a1Unorm
                             | wgt::TextureFormat::Rgba4Unorm
+                            | wgt::TextureFormat::Rgba8Snorm
                     )
                     && (!cube || cube_readback))
             {
@@ -607,6 +623,7 @@ impl crate::Device for Device {
                                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
                                     | wgt::TextureFormat::Rgb5a1Unorm
                                     | wgt::TextureFormat::Rgba4Unorm
+                                    | wgt::TextureFormat::Rgba8Snorm
                             )),
                     format,
                     desc.sample_count,
