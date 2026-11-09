@@ -741,7 +741,7 @@ impl Capabilities {
         limits.max_color_attachments = self.backend.color_attachments;
         limits.max_color_attachment_bytes_per_sample = 8;
         limits.max_buffers_and_acceleration_structures_per_shader_stage =
-            self.backend.vertex_buffers + 1;
+            self.backend.vertex_buffers + uniform_buffers_per_stage;
 
         let mut flags = wgt::DownlevelFlags::empty();
         if self.backend.uniform_binding_sizes_unaligned_16 {
@@ -2708,6 +2708,12 @@ mod tests {
         assert_eq!(exposed.limits.max_sampled_textures_per_shader_stage, 8);
         assert_eq!(exposed.limits.max_samplers_per_shader_stage, 16);
         assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 6);
+        assert_eq!(
+            exposed
+                .limits
+                .max_buffers_and_acceleration_structures_per_shader_stage,
+            22
+        );
         assert_eq!(
             exposed
                 .limits

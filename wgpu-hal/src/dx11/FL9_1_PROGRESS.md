@@ -1,5 +1,57 @@
 # FL9_1 progress
 
+## Strict CTS default-limit boundary and combined-limit correction — 2026-11-09
+
+The pinned CTS checkout was made available and a strict DX11 run of
+`webgpu:api,operation,command_buffer,basic:*` executed 3 cases: 0 passed, 3
+failed, 0 skipped. The strict Deno preflight selected the opt-in DX11 route,
+but each case failed before GPU operations because the CTS/Deno device request
+uses Core WebGPU defaults. It requested 28 combined buffers per shader stage;
+the adapter's prior projection was 17. This adapter intentionally does not
+meet Core defaults, and other default limits also exceed its projection, so
+this is an expected adapter-contract mismatch rather than a rendering failure.
+Do not change Deno defaults or claim standard CTS success for this adapter.
+
+The audit found that 17 was stale: this projection allows six uniform buffers
+in the vertex stage and sixteen vertex-input buffers, and Core checks their
+sum against `max_buffers_and_acceleration_structures_per_shader_stage`. The
+projection now reports 22, and the synthetic projection test asserts that
+value. This is a Core validation limit, not a native D3D11 register limit.
+
+Validation:
+
+```text
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_wgpu_projection_is_conservative_and_uses_only_implemented_paths -- --nocapture
+# 1 passed; four pre-existing unnecessary-qualification warnings in hal_queue.rs.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 464 passed, 0 failed; strict hardware mode; includes CPU and GPU tests.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+# 115 passed, 0 failed; includes ordinary-enumeration isolation and strict FL9_1 GPU paths.
+
+cargo +1.93 clippy --offline -p wgpu-hal --tests --no-default-features --features dx11
+# passed with 18 existing warnings; no warning in the changed capability projection.
+
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs
+git diff --check
+# both passed.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:DENO_WEBGPU_BACKEND = 'dx11'
+cargo +1.93 xtask cts --backend dx11 'webgpu:api,operation,command_buffer,basic:*'
+# 0 passed, 0 skipped, 3 failed; request of 28 exceeded the corrected limit 22 before any GPU operation.
+```
+
+Deno's default request is correct for Core WebGPU semantics, so satisfying it
+requires either a broader Core-level adapter contract or an explicit
+compatibility/downlevel API path. Keep the standard CTS failure visible and use
+strict native wgpu tests with explicitly requested supported limits for GPU
+execution evidence.
+
 ## Strict CTS hardware preflight and blend-mask boundary — 2026-11-09
 
 Deno now has an explicit strict hardware mode for opt-in DX11 CTS runs. The

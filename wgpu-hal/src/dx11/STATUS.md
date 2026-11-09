@@ -824,6 +824,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   textures and sixteen samplers in total. The internal wgpu capability
   projection exposes six uniforms per shader stage, ensuring disjoint vertex
   and fragment bindings fit the shared thirteen-slot allocator. The public
+  combined buffers-per-stage limit is 22 (six vertex uniforms plus sixteen
+  vertex input buffers); it is a Core pipeline limit rather than a native
+  D3D11 register limit. The standard Core WebGPU default of 28 is not met.
   dynamic uniform limit is twelve per pipeline layout, the maximum disjoint
   six-vertex/six-fragment split. Strict FL9_1 public readback exercises all
   twelve sparse ranges from one source buffer and switches their selected

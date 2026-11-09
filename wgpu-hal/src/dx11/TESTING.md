@@ -31,10 +31,16 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo xtask cts --backend dx11 'webgpu:api,operation,command_buffer,basic:*'
 ```
 
-This checkout does not yet have the CTS checkout/helper, so the selector above
-has not been executed here. Before counting a strict CTS result as GPU evidence,
-confirm the runner reports rejected adapter requests as test failures rather
-than skips. The regular Deno backend mask still excludes DX11 by default.
+The `basic:*` command was run in strict mode after obtaining the pinned CTS
+checkout. All three cases failed during device creation (0 passed, 0 skipped,
+3 failed): Deno supplies Core WebGPU default limits, including 28 combined
+buffers per shader stage, while this experimental FL9_1 adapter reports 22. No
+command-buffer operation ran, so this is not GPU execution evidence. The
+rejection is expected for a deliberately non-Core-WebGPU adapter; other Core
+defaults also exceed the FL9_1 projection. Do not raise projected limits or
+lower Deno defaults to mask this contract mismatch. The strict preflight did
+surface the request as failure rather than skip. The regular Deno backend mask
+still excludes DX11 by default.
 
 ### Public fragment-discard color and depth test
 

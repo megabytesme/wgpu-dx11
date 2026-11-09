@@ -6,10 +6,12 @@ The Deno/xtask DX11 CTS path is opt-in. With
 `WGPU_DX11_REQUIRE_HARDWARE=1`, it requires `DENO_WEBGPU_BACKEND=dx11`, rejects
 adapter/configuration failures rather than resolving `null`, and validates the
 adapter's DX11 identity plus the verified physical-FL9_1 driver-info marker.
-Six CPU tests pass and `cts_runner` builds with the DX11 feature, but no CTS
-selector has run because this checkout lacks the CTS checkout/helper. A future
-strict CTS run must confirm that rejected adapter requests are reported as test
-failures, not skips. See `FL9_1_PROGRESS.md` for exact commands.
+The strict `basic:*` CTS slice ran 3 cases: 0 passed, 3 failed, 0 skipped.
+Device creation failed because Deno's Core WebGPU defaults request 28 combined
+buffers per stage, above the adapter's truthful limit of 22; no GPU operation
+ran. This is expected for the non-Core-WebGPU adapter. The preflight correctly
+reported failure rather than skip. Do not change public defaults or falsify the
+projection to force these cases. See `FL9_1_PROGRESS.md` for exact commands.
 
 The separate-alpha audit found that Core requires the absent FL9_1
 `SEPARATE_ALPHA_BLEND` flag when both RGB and alpha writes have different

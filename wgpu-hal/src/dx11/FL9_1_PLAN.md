@@ -7,8 +7,14 @@ hardware preflight. With `WGPU_DX11_REQUIRE_HARDWARE=1`, Deno requires the
 backend mask to select only DX11 and rejects adapter/configuration failures
 instead of resolving `null`; accepted adapter identity must carry the HAL's
 verified physical-FL9_1 marker. Ordinary adapter selection/defaults remain
-unchanged. The CTS runner feature check passes, but the CTS suite has not run:
-this checkout has no `cts/` tree or Deno runner setup. Commits:
+unchanged. The strict `basic:*` CTS slice ran 3 cases: 0 passed, 3 failed,
+0 skipped. Deno requested Core WebGPU default limits (including a combined
+buffers-per-stage limit of 28), while this experimental adapter reports 22;
+device creation failed before test operations. This is an expected default-
+contract mismatch, not GPU execution evidence. The combined limit was corrected
+from a stale 17 to 22 (six vertex uniforms plus sixteen vertex input buffers).
+CTS operation coverage still needs a downlevel-aware request path; other Core
+defaults also exceed this adapter's projection. Commits:
 `f87abf0d3`, `d2994cebd`, `ee480928e`.
 
 The separate-alpha contract audit found the current Core `SEPARATE_ALPHA_BLEND`
