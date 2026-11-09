@@ -32344,6 +32344,7 @@ fn public_dx11_executes_combined_texture_format_usages_at_fl91() {
     const HEIGHT: u32 = 8;
     const ROW_PITCH: u32 = 256;
     const IMAGE_BYTES: u64 = ROW_PITCH as u64 * HEIGHT as u64;
+    const READBACK_SENTINEL: u8 = 0xCD;
     let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
     let vertex_bytes: Vec<u8> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
     let vertex_buffer = device.create_buffer(&BufferDescriptor {
@@ -32538,6 +32539,11 @@ fn public_dx11_executes_combined_texture_format_usages_at_fl91() {
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        queue.write_buffer(
+            &readback,
+            0,
+            &vec![READBACK_SENTINEL; (IMAGE_BYTES * 2) as usize],
+        );
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("combined usage operation sequence"),
         });
@@ -32663,6 +32669,17 @@ fn public_dx11_executes_combined_texture_format_usages_at_fl91() {
                             "{format:?} sampled attachment pixel ({x}, {y}) channel {channel}: actual={actual}, expected={expected}"
                         );
                     }
+                }
+                for image_offset in [0, IMAGE_BYTES as usize] {
+                    let row_offset = image_offset + (y * ROW_PITCH) as usize;
+                    let row_start = row_offset + WIDTH as usize * bytes_per_pixel;
+                    let row_end = row_offset + ROW_PITCH as usize;
+                    assert!(
+                        data[row_start..row_end]
+                            .iter()
+                            .all(|&byte| byte == READBACK_SENTINEL),
+                        "{format:?} readback row {y} padding at image offset {image_offset}"
+                    );
                 }
             }
         }
