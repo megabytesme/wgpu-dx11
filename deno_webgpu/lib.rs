@@ -54,6 +54,56 @@ fn backends_from_env(value: Option<&str>) -> wgpu_types::Backends {
   )
 }
 
+fn strict_dx11_configuration_issue(
+  require_hardware: bool,
+  backend: Option<&str>,
+) -> Option<&'static str> {
+  if !require_hardware {
+    None
+  } else if backend.is_none() {
+    Some("WGPU_DX11_REQUIRE_HARDWARE=1 requires DENO_WEBGPU_BACKEND to explicitly include dx11")
+  } else if backends_from_env(backend) != wgpu_types::Backends::DX11 {
+    Some("WGPU_DX11_REQUIRE_HARDWARE=1 requires DENO_WEBGPU_BACKEND to select only dx11")
+  } else {
+    None
+  }
+}
+
+fn feature_level_is_valid(value: &str) -> bool {
+  wgpu_types::FeatureLevel::deserialize(IntoDeserializer::<
+    serde::de::value::Error,
+  >::into_deserializer(value))
+  .is_ok()
+}
+
+fn invalid_feature_level_issue(
+  valid: bool,
+  strict_dx11: bool,
+) -> Option<&'static str> {
+  (!valid && strict_dx11)
+    .then_some("strict D3D11 hardware request requires a valid feature level")
+}
+
+fn has_verified_dx11_fl91_marker(info: &wgpu_types::AdapterInfo) -> bool {
+  info
+    .driver_info
+    .starts_with("FL9_1; physical DXGI adapter;")
+}
+
+fn dx11_hardware_identity_issue(
+  info: &wgpu_types::AdapterInfo,
+) -> Option<&'static str> {
+  if info.backend != wgpu_types::Backend::Dx11 {
+    Some("selected adapter is not DX11")
+  } else if info.device_type == wgpu_types::DeviceType::Cpu {
+    Some("selected adapter is software")
+  } else if !has_verified_dx11_fl91_marker(info) {
+    Some("selected adapter lacks the verified FL9_1 D3D11 marker")
+  } else {
+    None
+  }
+}
+
 #[allow(clippy::print_stdout)]
 pub fn print_linker_flags(name: &str) {
   if cfg!(windows) {
@@ -178,14 +228,22 @@ impl GPU {
     &self,
     state: Rc<RefCell<OpState>>,
     #[webidl] options: adapter::GPURequestAdapterOptions,
-  ) -> Option<adapter::GPUAdapter> {
+  ) -> Result<Option<adapter::GPUAdapter>, JsErrorBox> {
     let mut state = state.borrow_mut();
 
     let dx12_compiler = std::env::var(DX12_COMPILER_ENV_VAR)
       .ok()
       .and_then(|s| s.parse().ok());
-    let backends =
-      backends_from_env(std::env::var("DENO_WEBGPU_BACKEND").ok().as_deref());
+    let backend_env = std::env::var("DENO_WEBGPU_BACKEND").ok();
+    let backends = backends_from_env(backend_env.as_deref());
+    let require_hardware = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE")
+      .is_some_and(|value| value == "1");
+    if let Some(issue) =
+      strict_dx11_configuration_issue(require_hardware, backend_env.as_deref())
+    {
+      return Err(JsErrorBox::type_error(issue));
+    }
+    let strict_dx11 = require_hardware;
     let instance = if let Some(instance) = state.try_borrow::<Instance>() {
       instance
     } else {
@@ -221,12 +279,13 @@ impl GPU {
     // Check that the feature level string is valid.
     // `wgpu` does not support compatibility-level adapters. As permitted
     // by the spec, we always return a core-level adapter.
-    wgpu_types::FeatureLevel::deserialize(IntoDeserializer::<
-      serde::de::value::Error,
-    >::into_deserializer(
-      options.feature_level.as_str()
-    ))
-    .ok()?;
+    let valid_feature_level = feature_level_is_valid(&options.feature_level);
+    if !valid_feature_level {
+      if let Some(issue) = invalid_feature_level_issue(false, strict_dx11) {
+        return Err(JsErrorBox::type_error(issue));
+      }
+      return Ok(None);
+    }
 
     let descriptor = wgpu_core::instance::RequestAdapterOptions {
       power_preference: options
@@ -242,15 +301,45 @@ impl GPU {
       compatible_surface: None, // windowless
       apply_limit_buckets: false,
     };
-    let id = instance.request_adapter(&descriptor, backends, None).ok()?;
+    let id = match instance.request_adapter(&descriptor, backends, None) {
+      Ok(id) => id,
+      Err(error) if strict_dx11 => {
+        eprintln!("D3D11 strict hardware adapter request failed: {error:?}");
+        return Err(JsErrorBox::type_error(format!(
+          "strict D3D11 hardware request failed: {error:?}"
+        )));
+      }
+      Err(_) => return Ok(None),
+    };
 
-    Some(adapter::GPUAdapter {
+    if strict_dx11 {
+      let info = instance.adapter_get_info(id);
+      let fl91_marker = has_verified_dx11_fl91_marker(&info);
+      eprintln!(
+        "D3D11 strict hardware selection: backend={:?} name={:?} vendor={:#06x} device={:#06x} device_type={:?} driver={:?} driver_info={:?} verified_FL9_1_marker={fl91_marker}",
+        info.backend,
+        info.name,
+        info.vendor,
+        info.device,
+        info.device_type,
+        info.driver,
+        info.driver_info,
+      );
+      if let Some(issue) = dx11_hardware_identity_issue(&info) {
+        instance.adapter_drop(id);
+        return Err(JsErrorBox::type_error(format!(
+          "strict D3D11 hardware request rejected adapter: {issue}"
+        )));
+      }
+    }
+
+    Ok(Some(adapter::GPUAdapter {
       instance: instance.clone(),
       features: SameObject::new(),
       limits: SameObject::new(),
       info: Rc::new(SameObject::new()),
       id,
-    })
+    }))
   }
 
   #[string]
@@ -277,8 +366,12 @@ impl GPU {
 
 #[cfg(test)]
 mod backend_selection_tests {
-  use super::backends_from_env;
-  use wgpu_types::Backends;
+  use super::{
+    backends_from_env, dx11_hardware_identity_issue, feature_level_is_valid,
+    has_verified_dx11_fl91_marker, invalid_feature_level_issue,
+    strict_dx11_configuration_issue,
+  };
+  use wgpu_types::{AdapterInfo, Backend, Backends, DeviceType};
 
   #[test]
   fn default_backend_mask_excludes_experimental_dx11() {
@@ -293,6 +386,81 @@ mod backend_selection_tests {
     assert_eq!(
       backends_from_env(Some("dx11, dx12")),
       Backends::DX11 | Backends::DX12
+    );
+  }
+
+  #[test]
+  fn strict_hardware_mode_requires_an_explicit_dx11_backend() {
+    assert_eq!(strict_dx11_configuration_issue(false, None), None);
+    assert_eq!(strict_dx11_configuration_issue(false, Some("dx12")), None);
+    assert_eq!(
+      strict_dx11_configuration_issue(true, None),
+      Some("WGPU_DX11_REQUIRE_HARDWARE=1 requires DENO_WEBGPU_BACKEND to explicitly include dx11")
+    );
+    assert_eq!(
+      strict_dx11_configuration_issue(true, Some("dx12")),
+      Some("WGPU_DX11_REQUIRE_HARDWARE=1 requires DENO_WEBGPU_BACKEND to select only dx11")
+    );
+    assert_eq!(
+      strict_dx11_configuration_issue(true, Some("dx11,dx12")),
+      Some("WGPU_DX11_REQUIRE_HARDWARE=1 requires DENO_WEBGPU_BACKEND to select only dx11")
+    );
+    assert_eq!(strict_dx11_configuration_issue(true, Some("dx11")), None);
+    assert_eq!(strict_dx11_configuration_issue(true, Some("D3D11")), None);
+    assert_eq!(
+      strict_dx11_configuration_issue(false, Some("dx11,dx12")),
+      None
+    );
+  }
+
+  #[test]
+  fn invalid_feature_levels_reject_only_in_strict_hardware_mode() {
+    assert!(feature_level_is_valid("core"));
+    assert!(!feature_level_is_valid("unknown"));
+    assert_eq!(invalid_feature_level_issue(false, false), None);
+    assert_eq!(
+      invalid_feature_level_issue(false, true),
+      Some("strict D3D11 hardware request requires a valid feature level")
+    );
+    assert_eq!(invalid_feature_level_issue(true, true), None);
+  }
+
+  #[test]
+  fn only_the_physical_dx11_fl91_driver_info_marker_is_recognized() {
+    let mut info = AdapterInfo::new(DeviceType::Other, Backend::Dx11);
+    info.driver_info =
+      String::from("FL9_1; physical DXGI adapter; driver version 32.0.16.2101");
+    assert!(has_verified_dx11_fl91_marker(&info));
+
+    info.driver_info = String::from("D3D11; feature level 9_1");
+    assert!(!has_verified_dx11_fl91_marker(&info));
+  }
+
+  #[test]
+  fn strict_adapter_identity_rejects_non_dx11_software_and_unmarked_devices() {
+    let mut info = AdapterInfo::new(DeviceType::Other, Backend::Dx11);
+    info.driver_info =
+      String::from("FL9_1; physical DXGI adapter; driver version 32.0.16.2101");
+    assert_eq!(dx11_hardware_identity_issue(&info), None);
+
+    info.backend = Backend::Dx12;
+    assert_eq!(
+      dx11_hardware_identity_issue(&info),
+      Some("selected adapter is not DX11")
+    );
+    info.backend = Backend::Dx11;
+
+    info.device_type = DeviceType::Cpu;
+    assert_eq!(
+      dx11_hardware_identity_issue(&info),
+      Some("selected adapter is software")
+    );
+    info.device_type = DeviceType::Other;
+
+    info.driver_info.clear();
+    assert_eq!(
+      dx11_hardware_identity_issue(&info),
+      Some("selected adapter lacks the verified FL9_1 D3D11 marker")
     );
   }
 }
